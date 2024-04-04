@@ -375,11 +375,8 @@ fn get_top_props(deps: Deps, round_id: u64, num: usize) -> Result<Vec<Proposal>,
         top_props.push(prop);
     }
 
-    // loop to find sum of power
-    let mut sum_power = 0;
-    for prop in top_props {
-        sum_power += prop.power.u128();
-    }
+    // find sum of power
+    let sum_power = top_props.iter().fold(0u128, |sum, prop| { sum + prop.power.u128() });
 
     // // loop to find percentage of power
     // for mut prop in top_props {
