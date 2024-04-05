@@ -171,7 +171,6 @@ fn create_proposal(deps: DepsMut, covenant_params: String) -> Result<Response, C
         executed: false,
         power: Uint128::zero(),
         percentage: Uint128::zero(),
-        amount: Uint128::zero(),
     };
 
     let prop_id = PROP_ID.load(deps.storage)?;
@@ -378,75 +377,16 @@ fn get_top_props(deps: Deps, round_id: u64, num: usize) -> Result<Vec<Proposal>,
     // find sum of power
     let sum_power = top_props.iter().fold(0u128, |sum, prop| { sum + prop.power.u128() });
 
-    // // loop to find percentage of power
-    // for mut prop in top_props {
-    //     prop.percentage = (prop.power.u128() / sum_power).into();
-    // }
-
-    // // Multiply by total pool to find exact amount
-    // for mut prop in top_props {
-    //     prop.amount = prop.percentage * CONSTANTS.load(deps.storage)?.total_pool;
-    // }
-
-    // for top_props {
-    //     prop.percentage = (prop.power.u128() / sum_power).into();
-    //     prop.amount = prop.percentage * CONSTANTS.load(deps.storage)?.total_pool;
-    // }
-
-    let total_pool = CONSTANTS.load(deps.storage)?.total_pool;
-
     // return top props
     return Ok(top_props
         .into_iter() // Change from iter() to into_iter()
         .map(|mut prop| {
             // Change to mutable binding
             prop.percentage = (prop.power.u128() / sum_power).into();
-            prop.amount = prop.percentage * total_pool;
             prop
         })
         .collect());
 }
-
-// TODO: we need to do this differently to allocate liquidity proportionally to the top props instead of the old
-// winner takes all method
-// fn execute_proposal(
-//     deps: DepsMut,
-//     env: Env,
-//     info: MessageInfo,
-//     proposal_id: u64,
-// ) -> Result<Response, ContractError> {
-//     // Load the last round_id
-//     let last_round_id = ROUND_ID.load(deps.storage)? - 1;
-
-//     // Load the winning prop_id
-//     let winning_prop_id = get_winning_prop(deps.as_ref(), last_round_id)?;
-
-//     // Check that this prop is the one that won
-//     if winning_prop_id != proposal_id {
-//         return Err(ContractError::Std(StdError::generic_err(
-//             "Proposal did not win the last round",
-//         )));
-//     }
-
-//     // Load the proposal
-//     let mut proposal = PROPOSAL_MAP.load(deps.storage, (last_round_id, proposal_id))?;
-
-//     // Check that the proposal has not already been executed
-//     if proposal.executed {
-//         return Err(ContractError::Std(StdError::generic_err(
-//             "Proposal already executed",
-//         )));
-//     }
-
-//     // Execute proposal
-//     do_covenant_stuff(deps.as_ref(), env, info, proposal.clone().covenant_params)?;
-
-//     // Mark proposal as executed
-//     proposal.executed = true;
-//     PROPOSAL_MAP.save(deps.storage, (last_round_id, proposal_id), &proposal)?;
-
-//     Ok(Response::new().add_attribute("action", "execute_proposal"))
-// }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
@@ -454,11 +394,6 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::GetCount {} => query_count(deps),
     }
 }
-
-// pub fn query_winning_proposal(deps: Deps) -> StdResult<Binary> {
-//     let winning_prop_id = get_winning_prop(deps)?;
-//     to_json_binary(&winning_prop_id)
-// }
 
 pub fn query_count(_deps: Deps) -> StdResult<Binary> {
     to_json_binary(&(CountResponse { count: 0 }))
