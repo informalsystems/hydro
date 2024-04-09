@@ -46,7 +46,7 @@ Hydro provides the following methods:
 ### Open Questions
 
 * How important is it for rounds and lock_durations to align? In the properties below, I assume they closely align, e.g. if you lock for 12 round_durations, you should also
-get to have 12 rounds of voting power.
+get to have 12 rounds of voting power; this is not the case in the implementati right now.
 * Is it important that tokens stay locked while the LP position they voted for is being executed? In the spec, I assume that it's the case because that is the way it is in the litepaper.
 
 
