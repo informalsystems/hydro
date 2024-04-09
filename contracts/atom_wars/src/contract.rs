@@ -408,6 +408,7 @@ pub fn query_constants(deps: Deps) -> StdResult<Constants> {
     CONSTANTS.load(deps.storage)
 }
 
+// TODO: implement a proper pagination for this and other queries
 pub fn query_all_user_lockups(deps: Deps, address: String) -> StdResult<UserLockupsResponse> {
     let user_address = deps.api.addr_validate(address.as_str())?;
 
