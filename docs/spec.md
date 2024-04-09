@@ -1,7 +1,9 @@
 # Hydro: Technical Specification
+This document describes the technical specification of the Hydro protocol. 
 
-This document describes the technical specification of the Hydro protocol.
-It does not handle the tribute contract, which is described separately.
+## Main contract
+The main contract is the Hydro contract, which is responsible for managing token locks,
+proposals, voting, and the execution of proposals.
 
 Hydro keeps the following state:
 * locks: a collection of locks, each of which has an id, sender, tokens, and lock_end_time
@@ -30,6 +32,17 @@ Hydro provides the following methods:
     Each proposal will only be executed once, even if this function is called multiple times. If the round did not reach enough total votes to reach some pre-defined quorum, the proposals will not be executed.
     * Changes to the state: distributes the funding for the tranche to the proposals according to their score via integration with Timewave, and sets the executed flag for each funded proposal to true.
 
+## Voting power formula:
+    round_locked_multiplier = (lock_end_time - current_round_end_time) / round_duration
+        * For example, say lock_end_time = 5, current_round_end_time = 1, round_duration = 2. Then round_locked_multiplier = 2, beacuse at the end of the round, the funds will be locked for 2 more rounds.
+        * Then, we look up the power_factor according to the round_locked_multiplier. The function for computing the power_factor is
+    power_factor = 
+            * 0 if round_locked_multiplier < 1
+            * 1 if 2 > round_locked_multiplier >= 1
+            * 1.5 if 4 > round_locked_multiplier >= 2
+            * 2 if 7 > round_locked_multiplier >= 4
+            * 4 if round_locked_multiplier >= 7
+
 
 ### Correctness Properties
 
@@ -45,13 +58,29 @@ Hydro provides the following methods:
 
 #### If you lock during round R for M rounds, you should have M rounds of non-zero voting power: R, R+1, ..., R+M-1
 
-#### Voting power formula:
-    * round_locked_multiplier = (lock_end_time - current_round_end_time) / round_duration
-        * For example, say lock_end_time = 5, current_round_end_time = 1, round_duration = 2. Then round_locked_multiplier = 2, beacuse at the end of the round, the funds will be locked for 2 more rounds.
-    * Then, we look up the power_factor according to the round_locked_multiplier. The function for computing the power_factor is
-        * power_factor = 
-            * 0 if round_locked_multiplier < 1
-            * 1 if 2 > round_locked_multiplier >= 1
-            * 1.5 if 4 > round_locked_multiplier >= 2
-            * 2 if 7 > round_locked_multiplier >= 4
-            * 4 if round_locked_multiplier >= 7
+#### Voting power is zero if the lock_end_time has passed.
+
+#### If tokens are reclaimed during round R+1, then the tokens must add zero voting power in round R.
+
+
+## Tribute
+The tribute contract handles the incentivization of voters by allowing anyone to
+lock a tribute for a specified proposal, which, upon the end of a round, will be distributed to
+the voters of the proposal. The tribute contract keeps the following state:
+* tributes: a collection of tributes, each of which has an id, sender, tokens, proposal_id, and round_id.
+* claimers: a collection of claimers, each of which has a tribute_id and claimer_address. Used to keep track of who has claimed their share of the tribute, to avoid people claiming multiple times.
+
+The tribute contract provides the following methods:
+* LockTribute(sender: Account, tokens: Coin, proposal_id: int, round_id: int)
+    * Locks the given tokens for the given proposal_id and round_id. The tokens will become claimable after the round ends and proposals were executed; who can claim them depends on the outcome
+    for the proposal.
+    * Changes to the state: creates a new tribute with the given sender, tokens, proposal_id, and round_id.
+
+* ClaimTribute(sender: Account, tribute_id: int):
+    * If the sender voted for the proposal associated with the tribute_id, the sender can claim their share of the tribute. The share is proportional to the proportion of the power of the
+    sender's vote to the total power of the votes for the proposal. In particular, claimed_tokens = total_tribute_amount * sender_vote_power_for_prop / total_prop_score
+    * Changes to the state: transfers the tokens to the sender, adds the sender to the claimers list for the tribute_id.
+
+* RefundTribute(sender: Account, tribute_id: int):
+    * If the proposal associated with the tribute_id received no support at all, the sender can reclaim their tokens. This is only possible after the round has ended, and we know the final scores.
+    * Changes to the state: transfers the tribute tokens back to the sender.
