@@ -21,6 +21,7 @@ use crate::state::{
 };
 
 pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
+pub const DEFAULT_MAX_ENTRIES: usize = 100;
 
 #[entry_point]
 pub fn instantiate(
@@ -407,13 +408,13 @@ pub fn query_constants(deps: Deps) -> StdResult<Constants> {
     CONSTANTS.load(deps.storage)
 }
 
-// TODO: set maximum entries returned?
 pub fn query_all_user_lockups(deps: Deps, address: String) -> StdResult<UserLockupsResponse> {
     let user_address = deps.api.addr_validate(address.as_str())?;
 
     let user_lockups: Vec<LockEntry> = LOCKS_MAP
         .prefix(user_address)
         .range(deps.storage, None, None, Order::Ascending)
+        .take(DEFAULT_MAX_ENTRIES)
         .into_iter()
         .map(|l| l.unwrap().1)
         .collect();
@@ -429,7 +430,7 @@ pub fn query_proposal(deps: Deps, round_id: u64, proposal_id: u64) -> StdResult<
 
 pub fn query_round_proposals(deps: Deps, round_id: u64) -> StdResult<RoundProposalsResponse> {
     // check if the round exists so that we can make distinction between non-existing round and round without proposals
-    if let Err(_) = ROUND_ID.may_load(deps.storage) {
+    if let Err(_) = ROUND_MAP.may_load(deps.storage, round_id) {
         return Err(StdError::generic_err("Round does not exist"));
     }
 
@@ -451,6 +452,11 @@ pub fn query_current_round(deps: Deps) -> StdResult<Round> {
 }
 
 pub fn query_top_n_proposals(deps: Deps, round_id: u64, num: usize) -> StdResult<Vec<Proposal>> {
+    // check if the round exists
+    if let Err(_) = ROUND_MAP.may_load(deps.storage, round_id) {
+        return Err(StdError::generic_err("Round does not exist"));
+    }
+
     // Iterate through PROPS_BY_SCORE to find the top ten props
     let top_prop_ids: Vec<u64> = PROPS_BY_SCORE
         .sub_prefix(round_id)
