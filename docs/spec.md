@@ -84,3 +84,15 @@ The tribute contract provides the following methods:
 * RefundTribute(sender: Account, tribute_id: int):
     * If the proposal associated with the tribute_id received no support at all, the sender can reclaim their tokens. This is only possible after the round has ended, and we know the final scores.
     * Changes to the state: transfers the tribute tokens back to the sender.
+
+Open questions:
+* What happens to unclaimed tribute (could become refundable by the sender after some time; could be reallocated to other claimers after a time; could just be locked forever/essentially burned?) Locking without fallback is easiest, reallocating might be most exciting for community.
+
+
+### Correctness Properties
+
+#### All IDs are unique - there cannot ever be two tributes with the same ID.
+
+#### The sum of the claimed tokens for a tribute should be at most the total tokens locked for the tribute.
+
+#### The claim amount for each voter is defined as claimed_tokens = total_tribute_amount * sender_vote_power_for_prop / total_prop_score
