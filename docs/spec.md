@@ -43,6 +43,12 @@ Hydro provides the following methods:
             * 2 if 7 > round_locked_multiplier >= 4
             * 4 if round_locked_multiplier >= 7
 
+### Open Questions
+
+* How important is it for rounds and lock_durations to align? In the properties below, I assume they closely align, e.g. if you lock for 12 round_durations, you should also
+get to have 12 rounds of voting power.
+* Is it important that tokens stay locked while the LP position they voted for is being executed? In the spec, I assume that it's the case because that is the way it is in the litepaper.
+
 
 ### Correctness Properties
 
@@ -85,7 +91,7 @@ The tribute contract provides the following methods:
     * If the proposal associated with the tribute_id received no support at all, the sender can reclaim their tokens. This is only possible after the round has ended, and we know the final scores.
     * Changes to the state: transfers the tribute tokens back to the sender.
 
-Open questions:
+### Open questions:
 * What happens to unclaimed tribute (could become refundable by the sender after some time; could be reallocated to other claimers after a time; could just be locked forever/essentially burned?) Locking without fallback is easiest, reallocating might be most exciting for community.
 
 
