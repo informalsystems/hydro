@@ -41,7 +41,7 @@ pub const PROPOSAL_MAP: Map<(u64, u64), Proposal> = Map::new("prop_map");
 pub struct Proposal {
     pub round_id: u64,
     pub covenant_params: String,
-    pub executed: bool,     // maybe remove in the future
+    pub executed: bool, // TODO: maybe remove in the future
     pub power: Uint128,
     pub percentage: Uint128,
 }

@@ -13,16 +13,20 @@ use cosmwasm_std::{
 };
 
 use crate::error::ContractError;
-use crate::msg::{CountResponse, ExecuteMsg, InstantiateMsg, QueryMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg};
+use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
     Constants, LockEntry, Proposal, Round, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP,
     PROPS_BY_SCORE, PROP_ID, ROUND_ID, ROUND_MAP, TOTAL_POWER_VOTING, VOTE_MAP,
 };
 
+pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
+pub const DEFAULT_MAX_ENTRIES: usize = 100;
+
 #[entry_point]
 pub fn instantiate(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
@@ -31,7 +35,28 @@ pub fn instantiate(
         round_length: msg.round_length,
         total_pool: msg.total_pool,
     };
+
     CONSTANTS.save(deps.storage, &state)?;
+    LOCK_ID.save(deps.storage, &0)?;
+    PROP_ID.save(deps.storage, &0)?;
+
+    // TODO: Is it ok to start the first round immediately?
+    // If not, just EndRound is not enough, sice we need to create initial round somehow.
+    // Possible solutions:
+    //      1. Create initial round when the first proposal gets submitted
+    //      2. Specify initial round start time through some InstantiateMsg field
+    let round_id = 0;
+    ROUND_ID.save(deps.storage, &round_id)?;
+    ROUND_MAP.save(
+        deps.storage,
+        0,
+        &Round {
+            round_id: round_id,
+            round_end: env.block.time.plus_nanos(msg.round_length),
+        },
+    )?;
+    TOTAL_POWER_VOTING.save(deps.storage, round_id, &Uint128::zero())?;
+
     Ok(Response::new()
         .add_attribute("action", "initialisation")
         .add_attribute("sender", _info.sender.clone())
@@ -68,12 +93,10 @@ fn lock_tokens(
     lock_duration: u64,
 ) -> Result<Response, ContractError> {
     // Validate that their lock duration (given in nanos) is either 1 month, 3 months, 6 months, or 12 months
-    let one_month_in_nanos: u64 = 2629746000000000;
-
-    if lock_duration != one_month_in_nanos
-        && lock_duration != one_month_in_nanos * 3
-        && lock_duration != one_month_in_nanos * 6
-        && lock_duration != one_month_in_nanos * 12
+    if lock_duration != ONE_MONTH_IN_NANO_SECONDS
+        && lock_duration != ONE_MONTH_IN_NANO_SECONDS * 3
+        && lock_duration != ONE_MONTH_IN_NANO_SECONDS * 6
+        && lock_duration != ONE_MONTH_IN_NANO_SECONDS * 12
     {
         return Err(ContractError::Std(StdError::generic_err(
             "Lock duration must be 1, 3, 6, or 12 months",
@@ -131,8 +154,8 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
         if lock_entry.lock_end < env.block.time {
             // Send tokens back to caller
             sends.push(lock_entry.funds.clone());
-            // Delete entry from LocksMap
 
+            // Delete entry from LocksMap
             to_delete.push((info.sender.clone(), lock_id));
         }
     }
@@ -142,12 +165,16 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
         LOCKS_MAP.remove(deps.storage, (addr, lock_id));
     }
 
-    Ok(Response::new()
-        .add_attribute("action", "unlock_tokens")
-        .add_message(BankMsg::Send {
+    let mut response = Response::new().add_attribute("action", "unlock_tokens");
+
+    if sends.len() > 0 {
+        response = response.add_message(BankMsg::Send {
             to_address: info.sender.to_string(),
             amount: sends,
-        }))
+        })
+    }
+
+    Ok(response)
 }
 
 fn validate_covenant_params(_covenant_params: String) -> Result<(), ContractError> {
@@ -181,8 +208,6 @@ fn create_proposal(deps: DepsMut, covenant_params: String) -> Result<Response, C
 }
 
 fn scale_lockup_power(lockup_time: u64, raw_power: Uint128) -> Uint128 {
-    let one_month_in_nanos: u64 = 2629746000000000;
-
     let two: Uint128 = 2u16.into();
 
     // Scale lockup power
@@ -193,11 +218,11 @@ fn scale_lockup_power(lockup_time: u64, raw_power: Uint128) -> Uint128 {
     // TODO: is there a less funky way to do Uint128 math???
     let scaled_power = match lockup_time {
         // 4x if lockup is over 6 months
-        lockup_time if lockup_time > one_month_in_nanos * 6 => raw_power * two * two,
+        lockup_time if lockup_time > ONE_MONTH_IN_NANO_SECONDS * 6 => raw_power * two * two,
         // 2x if lockup is between 3 and 6 months
-        lockup_time if lockup_time > one_month_in_nanos * 3 => raw_power * two,
+        lockup_time if lockup_time > ONE_MONTH_IN_NANO_SECONDS * 3 => raw_power * two,
         // 1.5x if lockup is between 1 and 3 months
-        lockup_time if lockup_time > one_month_in_nanos => raw_power + (raw_power / two),
+        lockup_time if lockup_time > ONE_MONTH_IN_NANO_SECONDS => raw_power + (raw_power / two),
         // Covers 0 and 1 month which have no scaling
         _ => raw_power,
     };
@@ -341,11 +366,13 @@ fn end_round(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response, Co
             round_id,
         },
     )?;
+    // Initialize total voting power for new round
+    TOTAL_POWER_VOTING.save(deps.storage, round_id, &Uint128::zero())?;
 
     Ok(Response::new().add_attribute("action", "tally"))
 }
 
-fn do_covenant_stuff(
+fn _do_covenant_stuff(
     _deps: Deps,
     _env: Env,
     _info: MessageInfo,
@@ -355,7 +382,82 @@ fn do_covenant_stuff(
     Ok(Response::new().add_attribute("action", "do_covenant_stuff"))
 }
 
-fn get_top_props(deps: Deps, round_id: u64, num: usize) -> Result<Vec<Proposal>, ContractError> {
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+    match msg {
+        QueryMsg::Constants {} => to_json_binary(&query_constants(deps)?),
+        QueryMsg::AllUserLockups { address } => {
+            to_json_binary(&query_all_user_lockups(deps, address)?)
+        }
+        QueryMsg::Proposal {
+            round_id,
+            proposal_id,
+        } => to_json_binary(&query_proposal(deps, round_id, proposal_id)?),
+        QueryMsg::RoundProposals { round_id } => {
+            to_json_binary(&query_round_proposals(deps, round_id)?)
+        }
+        QueryMsg::CurrentRound {} => to_json_binary(&query_current_round(deps)?),
+        QueryMsg::TopNProposals {
+            round_id,
+            number_of_proposals,
+        } => to_json_binary(&query_top_n_proposals(deps, round_id, number_of_proposals)?),
+    }
+}
+
+pub fn query_constants(deps: Deps) -> StdResult<Constants> {
+    CONSTANTS.load(deps.storage)
+}
+
+// TODO: implement a proper pagination for this and other queries
+pub fn query_all_user_lockups(deps: Deps, address: String) -> StdResult<UserLockupsResponse> {
+    let user_address = deps.api.addr_validate(address.as_str())?;
+
+    let user_lockups: Vec<LockEntry> = LOCKS_MAP
+        .prefix(user_address)
+        .range(deps.storage, None, None, Order::Ascending)
+        .take(DEFAULT_MAX_ENTRIES)
+        .into_iter()
+        .map(|l| l.unwrap().1)
+        .collect();
+
+    Ok(UserLockupsResponse {
+        lockups: user_lockups,
+    })
+}
+
+pub fn query_proposal(deps: Deps, round_id: u64, proposal_id: u64) -> StdResult<Proposal> {
+    Ok(PROPOSAL_MAP.load(deps.storage, (round_id, proposal_id))?)
+}
+
+pub fn query_round_proposals(deps: Deps, round_id: u64) -> StdResult<RoundProposalsResponse> {
+    // check if the round exists so that we can make distinction between non-existing round and round without proposals
+    if let Err(_) = ROUND_MAP.may_load(deps.storage, round_id) {
+        return Err(StdError::generic_err("Round does not exist"));
+    }
+
+    let props = PROPOSAL_MAP
+        .prefix(round_id)
+        .range(deps.storage, None, None, Order::Ascending);
+
+    let mut proposals = vec![];
+    for proposal in props {
+        let (_, proposal) = proposal?;
+        proposals.push(proposal);
+    }
+
+    Ok(RoundProposalsResponse { proposals })
+}
+
+pub fn query_current_round(deps: Deps) -> StdResult<Round> {
+    Ok(ROUND_MAP.load(deps.storage, ROUND_ID.load(deps.storage)?)?)
+}
+
+pub fn query_top_n_proposals(deps: Deps, round_id: u64, num: usize) -> StdResult<Vec<Proposal>> {
+    // check if the round exists
+    if let Err(_) = ROUND_MAP.may_load(deps.storage, round_id) {
+        return Err(StdError::generic_err("Round does not exist"));
+    }
+
     // Iterate through PROPS_BY_SCORE to find the top ten props
     let top_prop_ids: Vec<u64> = PROPS_BY_SCORE
         .sub_prefix(round_id)
@@ -375,7 +477,9 @@ fn get_top_props(deps: Deps, round_id: u64, num: usize) -> Result<Vec<Proposal>,
     }
 
     // find sum of power
-    let sum_power = top_props.iter().fold(0u128, |sum, prop| { sum + prop.power.u128() });
+    let sum_power = top_props
+        .iter()
+        .fold(0u128, |sum, prop| sum + prop.power.u128());
 
     // return top props
     return Ok(top_props
@@ -386,15 +490,4 @@ fn get_top_props(deps: Deps, round_id: u64, num: usize) -> Result<Vec<Proposal>,
             prop
         })
         .collect());
-}
-
-#[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
-    match msg {
-        QueryMsg::GetCount {} => query_count(deps),
-    }
-}
-
-pub fn query_count(_deps: Deps) -> StdResult<Binary> {
-    to_json_binary(&(CountResponse { count: 0 }))
 }
