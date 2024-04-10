@@ -28,7 +28,6 @@ serde = { version = "1.0.103", default-features = false, features = ["derive"] }
 snafu = { version = "0.6.3" }
 thiserror = { version = "1.0.23" }
 cw-storage-plus = { version = "0.13.2" }
-osmosis-std = "0.21.0"
 cosmwasm-schema = { version = "1.0.0-beta8" }
 
 [dev-dependencies]
