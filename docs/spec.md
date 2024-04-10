@@ -56,11 +56,13 @@ Hydro provides the following methods:
 
 #### If you voted with power from N tokens in round R, then your N tokens remain locked until all proposals that you voted for in round R are resolved.
 
-#### If you lock during round R for M rounds, you should have M rounds of non-zero voting power: R, R+1, ..., R+M-1
+#### If you lock during round R for M rounds, you should have exactly M rounds of non-zero voting power: R, R+1, ..., R+M-1
 
 #### The voting power of locked tokens where current_round >= lock_end_round is zero.
 
 #### If tokens are reclaimed during round R+1, then those tokens must give you no voting power in round R.
+
+#### If all proposals that the owner of a lock has voted for are resolved and the lock_end_round is in the past, the tokens should be reclaimable.
 
 
 ## Tribute
