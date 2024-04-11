@@ -93,6 +93,19 @@ pub fn execute(
     }
 }
 
+// Validates that the tranche with the given ID exists.
+// Returns an error if the tranche does not exist, and ok otherwise.
+fn validate_tranche_id(deps: Deps, tranche_id: u64) -> Result<(), ContractError> {
+    // Validate that the tranche exists
+    if TRANCHE_MAP.may_load(deps.storage, tranche_id).is_err() {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Tranche does not exist",
+        )));
+    } else {
+        return Ok(());
+    }
+}
+
 // LockTokens(lock_duration):
 //     Receive tokens
 //     Validate against denom whitelist
@@ -199,6 +212,7 @@ fn validate_covenant_params(_covenant_params: String) -> Result<(), ContractErro
 //     Create in PropMap
 fn create_proposal(deps: DepsMut, tranche_id: u64, covenant_params: String) -> Result<Response, ContractError> {
     validate_covenant_params(covenant_params.clone())?;
+    validate_tranche_id(deps.as_ref(), tranche_id)?;
 
     let round_id = ROUND_ID.load(deps.storage)?;
 
@@ -254,6 +268,7 @@ fn vote(deps: DepsMut, info: MessageInfo, tranche_id: u64, proposal_id: u64) -> 
     // - To enable switching votes (and for other stuff too), we store the vote in VOTE_MAP.
     // - When a user votes the second time in a round, the information about their previous vote from VOTE_MAP is used to reverse the effect of their previous vote.
     // - This leads to slightly higher gas costs for each vote, in exchange for a much lower gas cost at the end of the round.
+    validate_tranche_id(deps.as_ref(), tranche_id)?;
 
     // Load the round_id
     let round_id = ROUND_ID.load(deps.storage)?;
@@ -458,6 +473,10 @@ pub fn query_round_tranche_proposals(deps: Deps, round_id: u64, tranche_id: u64)
         return Err(StdError::generic_err("Round does not exist"));
     }
 
+    if let Err(_) = validate_tranche_id(deps, tranche_id) { 
+        return Err(StdError::generic_err("Tranche does not exist"));
+    }
+
     let props = PROPOSAL_MAP
         .prefix((round_id, tranche_id))
         .range(deps.storage, None, None, Order::Ascending);
@@ -481,7 +500,11 @@ pub fn query_top_n_proposals(deps: Deps, round_id: u64, tranche_id: u64, num: us
         return Err(StdError::generic_err("Round does not exist"));
     }
 
-    // Iterate through PROPS_BY_SCORE to find the top ten props
+    if let Err(_) = validate_tranche_id(deps, tranche_id) { 
+        return Err(StdError::generic_err("Tranche does not exist"));
+    }
+
+    // Iterate through PROPS_BY_SCORE to find the top num props
     let top_prop_ids: Vec<u64> = PROPS_BY_SCORE
         .sub_prefix((round_id, tranche_id))
         .range(deps.storage, None, None, Order::Descending)
@@ -523,3 +546,5 @@ pub fn query_tranches (deps: Deps) -> StdResult<Vec<Tranche>> {
 
     Ok(tranches)
 }
+
+
