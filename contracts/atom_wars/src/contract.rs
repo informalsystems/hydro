@@ -16,7 +16,9 @@ use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
-    Constants, LockEntry, Proposal, Round, Vote, Tranche, CONSTANTS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, ROUND_ID, ROUND_MAP, TOTAL_POWER_VOTING, TRANCHE_MAP, VOTE_MAP
+    Constants, LockEntry, Proposal, Round, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID,
+    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, ROUND_ID, ROUND_MAP, TOTAL_POWER_VOTING, TRANCHE_MAP,
+    VOTE_MAP,
 };
 
 pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
@@ -65,7 +67,11 @@ pub fn instantiate(
             )));
         }
         TRANCHE_MAP.save(deps.storage, tranche.tranche_id, &tranche)?;
-        TOTAL_POWER_VOTING.save(deps.storage, (round_id, tranche.tranche_id), &Uint128::zero())?;
+        TOTAL_POWER_VOTING.save(
+            deps.storage,
+            (round_id, tranche.tranche_id),
+            &Uint128::zero(),
+        )?;
     }
 
     Ok(Response::new()
@@ -84,8 +90,14 @@ pub fn execute(
     match msg {
         ExecuteMsg::LockTokens { lock_duration } => lock_tokens(deps, env, info, lock_duration),
         ExecuteMsg::UnlockTokens {} => unlock_tokens(deps, env, info),
-        ExecuteMsg::CreateProposal { tranche_id, covenant_params } => create_proposal(deps, tranche_id, covenant_params),
-        ExecuteMsg::Vote { tranche_id, proposal_id } => vote(deps, info, tranche_id, proposal_id),
+        ExecuteMsg::CreateProposal {
+            tranche_id,
+            covenant_params,
+        } => create_proposal(deps, tranche_id, covenant_params),
+        ExecuteMsg::Vote {
+            tranche_id,
+            proposal_id,
+        } => vote(deps, info, tranche_id, proposal_id),
         ExecuteMsg::EndRound {} => end_round(deps, env, info),
         // ExecuteMsg::ExecuteProposal { proposal_id } => {
         //     execute_proposal(deps, env, info, proposal_id)
@@ -210,7 +222,11 @@ fn validate_covenant_params(_covenant_params: String) -> Result<(), ContractErro
 //     Validate covenant_params
 //     Hold tribute in contract's account
 //     Create in PropMap
-fn create_proposal(deps: DepsMut, tranche_id: u64, covenant_params: String) -> Result<Response, ContractError> {
+fn create_proposal(
+    deps: DepsMut,
+    tranche_id: u64,
+    covenant_params: String,
+) -> Result<Response, ContractError> {
     validate_covenant_params(covenant_params.clone())?;
     validate_tranche_id(deps.as_ref(), tranche_id)?;
 
@@ -256,7 +272,12 @@ fn scale_lockup_power(lockup_time: u64, raw_power: Uint128) -> Uint128 {
     scaled_power
 }
 
-fn vote(deps: DepsMut, info: MessageInfo, tranche_id: u64, proposal_id: u64) -> Result<Response, ContractError> {
+fn vote(
+    deps: DepsMut,
+    info: MessageInfo,
+    tranche_id: u64,
+    proposal_id: u64,
+) -> Result<Response, ContractError> {
     // This voting system is designed to allow for an unlimited number of proposals and an unlimited number of votes
     // to be created, without being vulnerable to DOS. A naive implementation, where all votes or all proposals were iterated
     // at the end of the round could be DOSed by creating a large number of votes or proposals. This is not a problem
@@ -287,25 +308,41 @@ fn vote(deps: DepsMut, info: MessageInfo, tranche_id: u64, proposal_id: u64) -> 
         // Remove proposal's old power in PROPS_BY_SCORE
         PROPS_BY_SCORE.remove(
             deps.storage,
-            ((round_id, proposal.tranche_id), proposal.power.into(), vote.prop_id),
+            (
+                (round_id, proposal.tranche_id),
+                proposal.power.into(),
+                vote.prop_id,
+            ),
         );
 
         // Decrement proposal's power
         proposal.power -= vote.power;
 
         // Save the proposal
-        PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, vote.prop_id), &proposal)?;
+        PROPOSAL_MAP.save(
+            deps.storage,
+            (round_id, tranche_id, vote.prop_id),
+            &proposal,
+        )?;
 
         // Add proposal's new power in PROPS_BY_SCORE
         PROPS_BY_SCORE.save(
             deps.storage,
-            ((round_id, proposal.tranche_id), proposal.power.into(), vote.prop_id),
+            (
+                (round_id, proposal.tranche_id),
+                proposal.power.into(),
+                vote.prop_id,
+            ),
             &vote.prop_id,
         )?;
 
         // Decrement total power voting
         let total_power_voting = TOTAL_POWER_VOTING.load(deps.storage, (round_id, tranche_id))?;
-        TOTAL_POWER_VOTING.save(deps.storage, (round_id, tranche_id), &(total_power_voting - vote.power))?;
+        TOTAL_POWER_VOTING.save(
+            deps.storage,
+            (round_id, tranche_id),
+            &(total_power_voting - vote.power),
+        )?;
 
         // Delete vote
         VOTE_MAP.remove(deps.storage, (round_id, tranche_id, info.sender.clone()));
@@ -335,7 +372,10 @@ fn vote(deps: DepsMut, info: MessageInfo, tranche_id: u64, proposal_id: u64) -> 
     let mut proposal = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
 
     // Delete the proposal's old power in PROPS_BY_SCORE
-    PROPS_BY_SCORE.remove(deps.storage, ((round_id, tranche_id), proposal.power.into(), proposal_id));
+    PROPS_BY_SCORE.remove(
+        deps.storage,
+        ((round_id, tranche_id), proposal.power.into(), proposal_id),
+    );
 
     // Update proposal's power
     proposal.power += power;
@@ -352,7 +392,11 @@ fn vote(deps: DepsMut, info: MessageInfo, tranche_id: u64, proposal_id: u64) -> 
 
     // Increment total power voting
     let total_power_voting = TOTAL_POWER_VOTING.load(deps.storage, (round_id, tranche_id))?;
-    TOTAL_POWER_VOTING.save(deps.storage, (round_id, tranche_id), &(total_power_voting + power))?;
+    TOTAL_POWER_VOTING.save(
+        deps.storage,
+        (round_id, tranche_id),
+        &(total_power_voting + power),
+    )?;
 
     // Create vote in Votemap
     let vote = Vote {
@@ -393,7 +437,7 @@ fn end_round(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response, Co
             round_id,
         },
     )?;
-    
+
     let tranches = TRANCHE_MAP
         .range(deps.storage, None, None, Order::Ascending)
         .map(|t| t.unwrap().1)
@@ -402,7 +446,11 @@ fn end_round(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response, Co
     // Iterate through each tranche
     for tranche in tranches {
         // Initialize total voting power for new round
-        TOTAL_POWER_VOTING.save(deps.storage, (round_id, tranche.tranche_id), &Uint128::zero())?;
+        TOTAL_POWER_VOTING.save(
+            deps.storage,
+            (round_id, tranche.tranche_id),
+            &Uint128::zero(),
+        )?;
     }
 
     Ok(Response::new().add_attribute("action", "tally"))
@@ -427,18 +475,24 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         }
         QueryMsg::Proposal {
             round_id,
-            tranche_id, 
+            tranche_id,
             proposal_id,
         } => to_json_binary(&query_proposal(deps, round_id, tranche_id, proposal_id)?),
-        QueryMsg::RoundProposals { round_id , tranche_id} => {
-            to_json_binary(&query_round_tranche_proposals(deps, round_id, tranche_id)?)
-        }
+        QueryMsg::RoundProposals {
+            round_id,
+            tranche_id,
+        } => to_json_binary(&query_round_tranche_proposals(deps, round_id, tranche_id)?),
         QueryMsg::CurrentRound {} => to_json_binary(&query_current_round(deps)?),
         QueryMsg::TopNProposals {
             round_id,
             tranche_id,
             number_of_proposals,
-        } => to_json_binary(&query_top_n_proposals(deps, round_id, tranche_id, number_of_proposals)?),
+        } => to_json_binary(&query_top_n_proposals(
+            deps,
+            round_id,
+            tranche_id,
+            number_of_proposals,
+        )?),
     }
 }
 
@@ -463,23 +517,35 @@ pub fn query_all_user_lockups(deps: Deps, address: String) -> StdResult<UserLock
     })
 }
 
-pub fn query_proposal(deps: Deps, round_id: u64, tranche_id: u64, proposal_id: u64) -> StdResult<Proposal> {
+pub fn query_proposal(
+    deps: Deps,
+    round_id: u64,
+    tranche_id: u64,
+    proposal_id: u64,
+) -> StdResult<Proposal> {
     Ok(PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?)
 }
 
-pub fn query_round_tranche_proposals(deps: Deps, round_id: u64, tranche_id: u64) -> StdResult<RoundProposalsResponse> {
+pub fn query_round_tranche_proposals(
+    deps: Deps,
+    round_id: u64,
+    tranche_id: u64,
+) -> StdResult<RoundProposalsResponse> {
     // check if the round exists so that we can make distinction between non-existing round and round without proposals
     if let Err(_) = ROUND_MAP.may_load(deps.storage, round_id) {
         return Err(StdError::generic_err("Round does not exist"));
     }
 
-    if let Err(_) = validate_tranche_id(deps, tranche_id) { 
+    if let Err(_) = validate_tranche_id(deps, tranche_id) {
         return Err(StdError::generic_err("Tranche does not exist"));
     }
 
-    let props = PROPOSAL_MAP
-        .prefix((round_id, tranche_id))
-        .range(deps.storage, None, None, Order::Ascending);
+    let props = PROPOSAL_MAP.prefix((round_id, tranche_id)).range(
+        deps.storage,
+        None,
+        None,
+        Order::Ascending,
+    );
 
     let mut proposals = vec![];
     for proposal in props {
@@ -494,13 +560,18 @@ pub fn query_current_round(deps: Deps) -> StdResult<Round> {
     Ok(ROUND_MAP.load(deps.storage, ROUND_ID.load(deps.storage)?)?)
 }
 
-pub fn query_top_n_proposals(deps: Deps, round_id: u64, tranche_id: u64, num: usize) -> StdResult<Vec<Proposal>> {
+pub fn query_top_n_proposals(
+    deps: Deps,
+    round_id: u64,
+    tranche_id: u64,
+    num: usize,
+) -> StdResult<Vec<Proposal>> {
     // check if the round exists
     if let Err(_) = ROUND_MAP.may_load(deps.storage, round_id) {
         return Err(StdError::generic_err("Round does not exist"));
     }
 
-    if let Err(_) = validate_tranche_id(deps, tranche_id) { 
+    if let Err(_) = validate_tranche_id(deps, tranche_id) {
         return Err(StdError::generic_err("Tranche does not exist"));
     }
 
@@ -538,7 +609,7 @@ pub fn query_top_n_proposals(deps: Deps, round_id: u64, tranche_id: u64, num: us
         .collect());
 }
 
-pub fn query_tranches (deps: Deps) -> StdResult<Vec<Tranche>> {
+pub fn query_tranches(deps: Deps) -> StdResult<Vec<Tranche>> {
     let tranches = TRANCHE_MAP
         .range(deps.storage, None, None, Order::Ascending)
         .map(|t| t.unwrap().1)
@@ -546,5 +617,3 @@ pub fn query_tranches (deps: Deps) -> StdResult<Vec<Tranche>> {
 
     Ok(tranches)
 }
-
-

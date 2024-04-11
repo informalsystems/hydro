@@ -14,7 +14,7 @@ pub enum QueryMsg {
     // Round { round_id } ?
     RoundProposals {
         round_id: u64,
-        tranche_id: u64
+        tranche_id: u64,
     },
     Proposal {
         round_id: u64,

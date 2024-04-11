@@ -2,8 +2,8 @@ use crate::state::Tranche;
 use crate::{
     contract::{
         execute, instantiate, query_all_user_lockups, query_constants, query_current_round,
-        query_proposal, query_round_tranche_proposals, ONE_MONTH_IN_NANO_SECONDS,
-        query_top_n_proposals,
+        query_proposal, query_round_tranche_proposals, query_top_n_proposals,
+        ONE_MONTH_IN_NANO_SECONDS,
     },
     ExecuteMsg, InstantiateMsg,
 };
@@ -282,7 +282,11 @@ fn end_round_basic_test() {
 
 #[test]
 fn multi_tranches_test() {
-    let (mut deps, env, info) = (mock_dependencies(), mock_env(), mock_info("addr0000", &[ Coin::new(1000, STATOM.to_string())]));
+    let (mut deps, env, info) = (
+        mock_dependencies(),
+        mock_env(),
+        mock_info("addr0000", &[Coin::new(1000, STATOM.to_string())]),
+    );
     let mut msg = get_default_instantiate_msg();
     msg.tranches = vec![
         Tranche {
@@ -334,7 +338,7 @@ fn multi_tranches_test() {
 
     // vote with user 1
     // lock some tokens to get voting power
-     let msg = ExecuteMsg::LockTokens {
+    let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -392,7 +396,6 @@ fn multi_tranches_test() {
     };
     let res = execute(deps.as_mut(), env.clone(), info3.clone(), msg.clone());
     assert!(res.is_ok());
-
 
     // query voting powers
     // top proposals for tranche 1
