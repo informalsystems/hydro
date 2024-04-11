@@ -48,7 +48,7 @@ pub fn instantiate(
     // For each tranche, create a tranche in the TRANCHE_MAP and set the total power to 0
     let mut tranche_ids = std::collections::HashSet::new();
     for tranche in msg.tranches {
-        if !tranche_ids.insert(tranche.tranche_id.clone()) {
+        if !tranche_ids.insert(tranche.tranche_id) {
             return Err(ContractError::Std(StdError::generic_err(
                 "Duplicate tranche ID found in provided tranches, but tranche IDs must be unique",
             )));
