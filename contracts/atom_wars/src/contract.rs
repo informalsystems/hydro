@@ -294,6 +294,11 @@ fn vote(deps: DepsMut, info: MessageInfo, proposal_id: u64) -> Result<Response, 
     for lock in locks {
         let (_, lock_entry) = lock?;
 
+        // user gets 0 voting power for lockups that expire before the current round ends
+        if round.round_end.nanos() > lock_entry.lock_end.nanos() {
+            continue;
+        }
+
         // Get the remaining lockup time at the end of this round.
         // This means that their power will be scaled the same by this function no matter when they vote in the round
         let lockup_time = lock_entry.lock_end.nanos() - round.round_end.nanos();
@@ -302,6 +307,13 @@ fn vote(deps: DepsMut, info: MessageInfo, proposal_id: u64) -> Result<Response, 
         let scaled_power = scale_lockup_power(lockup_time, lock_entry.funds.amount);
 
         power += scaled_power;
+    }
+
+    let response = Response::new().add_attribute("action", "vote");
+
+    // if users voting power is 0 we don't need to update any of the stores
+    if power.eq(&Uint128::zero()) {
+        return Ok(response);
     }
 
     // Load the proposal being voted on
@@ -334,7 +346,7 @@ fn vote(deps: DepsMut, info: MessageInfo, proposal_id: u64) -> Result<Response, 
     };
     VOTE_MAP.save(deps.storage, (round_id, info.sender), &vote)?;
 
-    Ok(Response::new().add_attribute("action", "vote"))
+    Ok(response)
 }
 
 fn end_round(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response, ContractError> {
