@@ -421,3 +421,29 @@ fn multi_tranches_test() {
     // check that the voting power of the second proposal is 0
     assert_eq!(1, res[1].power.u128());
 }
+
+#[test]
+fn duplicate_tranche_id_test() {
+    // try to instantiate the contract with two tranches with the same id
+    // this should fail
+    let (mut deps, env, info) = (mock_dependencies(), mock_env(), mock_info("addr0000", &[]));
+    let mut msg = get_default_instantiate_msg();
+    msg.tranches = vec![
+        Tranche {
+            tranche_id: 1,
+            metadata: "tranche 1".to_string(),
+        },
+        Tranche {
+            tranche_id: 1,
+            metadata: "tranche 2".to_string(),
+        },
+    ];
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_err());
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .to_lowercase()
+        .contains("duplicate tranche id"));
+}

@@ -45,18 +45,14 @@ pub fn instantiate(
     //      1. Create initial round when the first proposal gets submitted
     //      2. Specify initial round start time through some InstantiateMsg field
     let round_id = 0;
-    ROUND_ID.save(deps.storage, &round_id)?;
-    ROUND_MAP.save(
-        deps.storage,
-        0,
-        &Round {
-            round_id: round_id,
-            round_end: env.block.time.plus_nanos(msg.round_length),
-        },
-    )?;
-
     // For each tranche, create a tranche in the TRANCHE_MAP and set the total power to 0
+    let mut tranche_ids = std::collections::HashSet::new();
     for tranche in msg.tranches {
+        if !tranche_ids.insert(tranche.tranche_id.clone()) {
+            return Err(ContractError::Std(StdError::generic_err(
+                "Duplicate tranche ID found in provided tranches, but tranche IDs must be unique",
+            )));
+        }
         TRANCHE_MAP.save(deps.storage, tranche.tranche_id, &tranche)?;
         TOTAL_POWER_VOTING.save(deps.storage, (round_id, tranche.tranche_id), &Uint128::zero())?;
     }
