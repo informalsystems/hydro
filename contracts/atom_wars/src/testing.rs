@@ -15,8 +15,6 @@ const STATOM: &str = "ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA522
 const TWO_WEEKS_IN_NANO_SECONDS: u64 = 14 * 24 * 60 * 60 * 1000000000;
 const THREE_MONTHS_IN_NANO_SECONDS: u64 = 3 * ONE_MONTH_IN_NANO_SECONDS;
 
-// To reduce code duplication, we define a helper function that returns a default InstantiateMsg
-// that can be used for most tests.
 fn get_default_instantiate_msg() -> InstantiateMsg {
     InstantiateMsg {
         denom: STATOM.to_string(),
