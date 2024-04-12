@@ -8,8 +8,8 @@
 // - Covenant Question: Can people sandwich this whole thing - covenant system has price limits - but we should allow people to retry executing the prop during the round
 
 use cosmwasm_std::{
-    entry_point, to_json_binary, BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, Order, Response,
-    StdError, StdResult, Uint128,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, Order,
+    Response, StdError, StdResult, Uint128,
 };
 
 use crate::error::ContractError;
@@ -466,11 +466,17 @@ fn _do_covenant_stuff(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Constants {} => to_json_binary(&query_constants(deps)?),
         QueryMsg::AllUserLockups { address } => {
             to_json_binary(&query_all_user_lockups(deps, address)?)
+        }
+        QueryMsg::ExpiredUserLockups { address } => {
+            to_json_binary(&query_expired_user_lockups(deps, env, address)?)
+        }
+        QueryMsg::UserVotingPower { address } => {
+            to_json_binary(&query_user_voting_power(deps, address)?)
         }
         QueryMsg::Proposal {
             round_id,
@@ -499,20 +505,22 @@ pub fn query_constants(deps: Deps) -> StdResult<Constants> {
     CONSTANTS.load(deps.storage)
 }
 
-// TODO: implement a proper pagination for this and other queries
 pub fn query_all_user_lockups(deps: Deps, address: String) -> StdResult<UserLockupsResponse> {
-    let user_address = deps.api.addr_validate(address.as_str())?;
+    Ok(UserLockupsResponse {
+        lockups: query_user_lockups(deps, deps.api.addr_validate(&address)?, |_| true),
+    })
+}
 
-    let user_lockups: Vec<LockEntry> = LOCKS_MAP
-        .prefix(user_address)
-        .range(deps.storage, None, None, Order::Ascending)
-        .take(DEFAULT_MAX_ENTRIES)
-        .into_iter()
-        .map(|l| l.unwrap().1)
-        .collect();
+pub fn query_expired_user_lockups(
+    deps: Deps,
+    env: Env,
+    address: String,
+) -> StdResult<UserLockupsResponse> {
+    let user_address = deps.api.addr_validate(&address)?;
+    let expired_lockup_predicate = |l: &LockEntry| l.lock_end < env.block.time;
 
     Ok(UserLockupsResponse {
-        lockups: user_lockups,
+        lockups: query_user_lockups(deps, user_address, expired_lockup_predicate),
     })
 }
 
@@ -523,6 +531,24 @@ pub fn query_proposal(
     proposal_id: u64,
 ) -> StdResult<Proposal> {
     Ok(PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?)
+}
+
+pub fn query_user_voting_power(deps: Deps, address: String) -> StdResult<u128> {
+    let user_address = deps.api.addr_validate(&address)?;
+    let round_end = ROUND_MAP
+        .load(deps.storage, ROUND_ID.load(deps.storage)?)?
+        .round_end;
+
+    Ok(LOCKS_MAP
+        .prefix(user_address)
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|l| l.unwrap().1)
+        .filter(|l| l.lock_end > round_end)
+        .map(|lockup| {
+            let lockup_time = lockup.lock_end.nanos() - round_end.nanos();
+            scale_lockup_power(lockup_time, lockup.funds.amount).u128()
+        })
+        .sum())
 }
 
 pub fn query_round_tranche_proposals(
@@ -615,4 +641,18 @@ pub fn query_tranches(deps: Deps) -> StdResult<Vec<Tranche>> {
         .collect::<Vec<_>>();
 
     Ok(tranches)
+}
+
+fn query_user_lockups(
+    deps: Deps,
+    user_address: Addr,
+    predicate: impl FnMut(&LockEntry) -> bool,
+) -> Vec<LockEntry> {
+    LOCKS_MAP
+        .prefix(user_address)
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|l| l.unwrap().1)
+        .filter(predicate)
+        .take(DEFAULT_MAX_ENTRIES)
+        .collect()
 }
