@@ -228,7 +228,7 @@ fn create_proposal(
     covenant_params: String,
 ) -> Result<Response, ContractError> {
     validate_covenant_params(covenant_params.clone())?;
-    validate_tranche_id(deps.as_ref(), tranche_id)?;
+    TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
     let round_id = ROUND_ID.load(deps.storage)?;
 
@@ -289,7 +289,7 @@ fn vote(
     // - To enable switching votes (and for other stuff too), we store the vote in VOTE_MAP.
     // - When a user votes the second time in a round, the information about their previous vote from VOTE_MAP is used to reverse the effect of their previous vote.
     // - This leads to slightly higher gas costs for each vote, in exchange for a much lower gas cost at the end of the round.
-    validate_tranche_id(deps.as_ref(), tranche_id)?;
+    TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
     // Load the round_id
     let round_id = ROUND_ID.load(deps.storage)?;
