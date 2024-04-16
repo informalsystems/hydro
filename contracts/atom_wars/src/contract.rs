@@ -105,19 +105,6 @@ pub fn execute(
     }
 }
 
-// Validates that the tranche with the given ID exists.
-// Returns an error if the tranche does not exist, and ok otherwise.
-fn validate_tranche_id(deps: Deps, tranche_id: u64) -> Result<(), ContractError> {
-    // Validate that the tranche exists
-    if TRANCHE_MAP.may_load(deps.storage, tranche_id).is_err() {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Tranche does not exist",
-        )));
-    } else {
-        return Ok(());
-    }
-}
-
 // LockTokens(lock_duration):
 //     Receive tokens
 //     Validate against denom whitelist
@@ -536,7 +523,7 @@ pub fn query_round_tranche_proposals(
         return Err(StdError::generic_err("Round does not exist"));
     }
 
-    if let Err(_) = validate_tranche_id(deps, tranche_id) {
+    if let Err(_) = TRANCHE_MAP.load(deps.storage, tranche_id) {
         return Err(StdError::generic_err("Tranche does not exist"));
     }
 
@@ -571,7 +558,7 @@ pub fn query_top_n_proposals(
         return Err(StdError::generic_err("Round does not exist"));
     }
 
-    if let Err(_) = validate_tranche_id(deps, tranche_id) {
+    if let Err(_) = TRANCHE_MAP.load(deps.storage, tranche_id) {
         return Err(StdError::generic_err("Tranche does not exist"));
     }
 
