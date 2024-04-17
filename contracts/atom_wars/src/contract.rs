@@ -9,7 +9,7 @@
 
 use cosmwasm_std::{
     entry_point, to_json_binary, BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, Order, Response,
-    StdError, StdResult, Uint128,
+    StdError, StdResult, Timestamp, Uint128,
 };
 
 use crate::error::ContractError;
@@ -17,8 +17,7 @@ use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
     Constants, LockEntry, Proposal, Round, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID,
-    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_POWER_VOTING, TRANCHE_MAP,
-    VOTE_MAP,
+    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_POWER_VOTING, TRANCHE_MAP, VOTE_MAP,
 };
 
 pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
@@ -31,7 +30,6 @@ pub fn instantiate(
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
-
     // validate that the first round starts in the future
     if msg.first_round_start < env.block.time {
         return Err(ContractError::Std(StdError::generic_err(
@@ -52,15 +50,6 @@ pub fn instantiate(
 
     let first_round_id = 0;
 
-    ROUND_MAP.save(
-        deps.storage,
-        0,
-        &Round {
-            round_id: first_round_id,
-            round_end: env.block.time.plus_nanos(msg.round_length),
-        },
-    )?;
-
     // For each tranche, create a tranche in the TRANCHE_MAP and set the total power to 0
     let mut tranche_ids = std::collections::HashSet::new();
 
@@ -71,11 +60,6 @@ pub fn instantiate(
             )));
         }
         TRANCHE_MAP.save(deps.storage, tranche.tranche_id, &tranche)?;
-        TOTAL_POWER_VOTING.save(
-            deps.storage,
-            (first_round_id, tranche.tranche_id),
-            &Uint128::zero(),
-        )?;
     }
 
     Ok(Response::new()
@@ -284,10 +268,10 @@ fn vote(
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
     // Load the round_id
-    let round_id = compute_current_round_id(deps.as_ref(), env)?;
+    let round_id = compute_current_round_id(deps.as_ref(), env.clone())?;
 
-    // Load the round
-    let round = ROUND_MAP.load(deps.storage, round_id)?;
+    // compute the round end
+    let round_end = compute_round_end(deps.as_ref(), env.clone(), round_id)?;
 
     // Get any existing vote for this sender and reverse it- this may be a vote for a different proposal (if they are switching their vote),
     // or it may be a vote for the same proposal (if they have increased their power by locking more and want to update their vote).
@@ -351,13 +335,13 @@ fn vote(
         let (_, lock_entry) = lock?;
 
         // user gets 0 voting power for lockups that expire before the current round ends
-        if round.round_end.nanos() > lock_entry.lock_end.nanos() {
+        if round_end.nanos() > lock_entry.lock_end.nanos() {
             continue;
         }
 
         // Get the remaining lockup time at the end of this round.
         // This means that their power will be scaled the same by this function no matter when they vote in the round
-        let lockup_time = lock_entry.lock_end.nanos() - round.round_end.nanos();
+        let lockup_time = lock_entry.lock_end.nanos() - round_end.nanos();
 
         // Scale power. This is what implements the different powers for different lockup times.
         let scaled_power = scale_lockup_power(lockup_time, lock_entry.funds.amount);
@@ -438,7 +422,8 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
             round_id,
             tranche_id,
         } => to_json_binary(&query_round_tranche_proposals(deps, round_id, tranche_id)?),
-        QueryMsg::CurrentRound {} => to_json_binary(&query_current_round(deps, env)?),
+        QueryMsg::CurrentRound {} => to_json_binary(&compute_current_round_id(deps, env)?),
+        QueryMsg::RoundEnd { round_id } => to_json_binary(&compute_round_end(deps, env, round_id)?),
         QueryMsg::TopNProposals {
             round_id,
             tranche_id,
@@ -487,11 +472,6 @@ pub fn query_round_tranche_proposals(
     round_id: u64,
     tranche_id: u64,
 ) -> StdResult<RoundProposalsResponse> {
-    // check if the round exists so that we can make distinction between non-existing round and round without proposals
-    if let Err(_) = ROUND_MAP.may_load(deps.storage, round_id) {
-        return Err(StdError::generic_err("Round does not exist"));
-    }
-
     if let Err(_) = TRANCHE_MAP.load(deps.storage, tranche_id) {
         return Err(StdError::generic_err("Tranche does not exist"));
     }
@@ -512,22 +492,12 @@ pub fn query_round_tranche_proposals(
     Ok(RoundProposalsResponse { proposals })
 }
 
-pub fn query_current_round(deps: Deps, env: Env) -> StdResult<Round> {
-    let round_id = compute_current_round_id(deps, env)?;
-    Ok(ROUND_MAP.load(deps.storage, round_id)?)
-}
-
 pub fn query_top_n_proposals(
     deps: Deps,
     round_id: u64,
     tranche_id: u64,
     num: usize,
 ) -> StdResult<Vec<Proposal>> {
-    // check if the round exists
-    if let Err(_) = ROUND_MAP.may_load(deps.storage, round_id) {
-        return Err(StdError::generic_err("Round does not exist"));
-    }
-
     if let Err(_) = TRANCHE_MAP.load(deps.storage, tranche_id) {
         return Err(StdError::generic_err("Tranche does not exist"));
     }
@@ -590,9 +560,12 @@ pub fn compute_current_round_id(deps: Deps, env: Env) -> StdResult<u64> {
     Ok(current_round_id)
 }
 
-pub fn compute_round_end(deps: Deps, env: Env, round_id: u64) -> StdResult<u64> {
+pub fn compute_round_end(deps: Deps, env: Env, round_id: u64) -> StdResult<Timestamp> {
     let constants = CONSTANTS.load(deps.storage)?;
 
+    let round_end = constants
+        .first_round_start
+        .plus_nanos(constants.round_length * (round_id + 1));
 
-
+    Ok(round_end)
 }

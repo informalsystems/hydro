@@ -1,15 +1,15 @@
 use crate::state::Tranche;
 use crate::{
     contract::{
-        execute, instantiate, query_all_user_lockups, query_constants, compute_current_round_id,
+        compute_current_round_id, execute, instantiate, query_all_user_lockups, query_constants,
         query_proposal, query_round_tranche_proposals, query_top_n_proposals,
         ONE_MONTH_IN_NANO_SECONDS,
     },
     ExecuteMsg, InstantiateMsg,
 };
 use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+use cosmwasm_std::{BankMsg, CosmosMsg, Timestamp, Uint128};
 use cosmwasm_std::{Coin, StdError, StdResult};
-use cosmwasm_std::{BankMsg, CosmosMsg, Uint128, Timestamp};
 
 const STATOM: &str = "ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA5222815620B3C";
 const TWO_WEEKS_IN_NANO_SECONDS: u64 = 14 * 24 * 60 * 60 * 1000000000;
@@ -416,70 +416,66 @@ fn duplicate_tranche_id_test() {
         .to_lowercase()
         .contains("duplicate tranche id"));
 }
-    #[test]
-    fn test_round_id_computation() {
-        let test_cases: Vec<(u64, u64, u64, StdResult<u64>)> = vec![
-            (
-                0, // contract start time
-                1000, // round length
-                500, // current time
-                Ok(0), // expected round_id
-            ),
-            (
-                1000, // contract start time
-                1000, // round length
-                1500, // current time
-                Ok(0), // expected round_id
-            ),
-            (
-                0, // contract start time
-                1000, // round length
-                2500, // current time
-                Ok(2), // expected round_id
-            ),
-            (
-                0, // contract start time
-                2000, // round length
-                6000, // current time
-                Ok(3), // expected round_id
-            ),
-            (
-                10000, // contract start time
-                5000, // round length
-                12000, // current time
-                Ok(0), // expected round_id
-            ),
-            (
-                3000, // contract start time
-                1000, // round length
-                2000, // current time
-                Err(StdError::generic_err("The first round has not started yet")), // expected error
-            ),
-        ];
+#[test]
+fn test_round_id_computation() {
+    let test_cases: Vec<(u64, u64, u64, StdResult<u64>)> = vec![
+        (
+            0,     // contract start time
+            1000,  // round length
+            500,   // current time
+            Ok(0), // expected round_id
+        ),
+        (
+            1000,  // contract start time
+            1000,  // round length
+            1500,  // current time
+            Ok(0), // expected round_id
+        ),
+        (
+            0,     // contract start time
+            1000,  // round length
+            2500,  // current time
+            Ok(2), // expected round_id
+        ),
+        (
+            0,     // contract start time
+            2000,  // round length
+            6000,  // current time
+            Ok(3), // expected round_id
+        ),
+        (
+            10000, // contract start time
+            5000,  // round length
+            12000, // current time
+            Ok(0), // expected round_id
+        ),
+        (
+            3000,                                                              // contract start time
+            1000,                                                              // round length
+            2000,                                                              // current time
+            Err(StdError::generic_err("The first round has not started yet")), // expected error
+        ),
+    ];
 
-        for (contract_start_time, round_length, current_time, expected_round_id) in test_cases {
-            // instantiate the contract
-            let mut deps = mock_dependencies();
-            let msg = InstantiateMsg {
-                denom: STATOM.to_string(),
-                round_length,
-                total_pool: Uint128::zero(),
-                tranches: vec![],
-                first_round_start: Timestamp::from_nanos(contract_start_time),
-            };
-            let mut env = mock_env();
-            env.block.time = Timestamp::from_nanos(contract_start_time);
-            let info = mock_info("addr0000", &[]);
-            let _ = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone()).unwrap();
+    for (contract_start_time, round_length, current_time, expected_round_id) in test_cases {
+        // instantiate the contract
+        let mut deps = mock_dependencies();
+        let msg = InstantiateMsg {
+            denom: STATOM.to_string(),
+            round_length,
+            total_pool: Uint128::zero(),
+            tranches: vec![],
+            first_round_start: Timestamp::from_nanos(contract_start_time),
+        };
+        let mut env = mock_env();
+        env.block.time = Timestamp::from_nanos(contract_start_time);
+        let info = mock_info("addr0000", &[]);
+        let _ = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone()).unwrap();
 
+        // set the time to the current time
+        env.block.time = Timestamp::from_nanos(current_time);
 
-            // set the time to the current time
-            env.block.time = Timestamp::from_nanos(current_time);
-            
-
-            let round_id = compute_current_round_id(deps.as_ref(), env);
-            assert_eq!(expected_round_id, round_id);
-        }
+        let round_id = compute_current_round_id(deps.as_ref(), env);
+        assert_eq!(expected_round_id, round_id);
     }
-
-
+}
