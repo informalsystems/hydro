@@ -17,7 +17,7 @@ use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
     Constants, LockEntry, Proposal, Round, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID,
-    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, ROUND_ID, ROUND_MAP, TOTAL_POWER_VOTING, TRANCHE_MAP,
+    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, ROUND_MAP, TOTAL_POWER_VOTING, TRANCHE_MAP,
     VOTE_MAP,
 };
 
@@ -31,28 +31,32 @@ pub fn instantiate(
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
+
+    // validate that the first round starts in the future
+    if msg.first_round_start < env.block.time {
+        return Err(ContractError::Std(StdError::generic_err(
+            "First round start time must be in the future",
+        )));
+    }
+
     let state = Constants {
         denom: msg.denom.clone(),
         round_length: msg.round_length,
         total_pool: msg.total_pool,
+        first_round_start: msg.first_round_start,
     };
 
     CONSTANTS.save(deps.storage, &state)?;
     LOCK_ID.save(deps.storage, &0)?;
     PROP_ID.save(deps.storage, &0)?;
 
-    // TODO: Is it ok to start the first round immediately?
-    // If not, just EndRound is not enough, sice we need to create initial round somehow.
-    // Possible solutions:
-    //      1. Create initial round when the first proposal gets submitted
-    //      2. Specify initial round start time through some InstantiateMsg field
-    let round_id = 0;
-    ROUND_ID.save(deps.storage, &round_id)?;
+    let first_round_id = 0;
+
     ROUND_MAP.save(
         deps.storage,
         0,
         &Round {
-            round_id: round_id,
+            round_id: first_round_id,
             round_end: env.block.time.plus_nanos(msg.round_length),
         },
     )?;
@@ -69,7 +73,7 @@ pub fn instantiate(
         TRANCHE_MAP.save(deps.storage, tranche.tranche_id, &tranche)?;
         TOTAL_POWER_VOTING.save(
             deps.storage,
-            (round_id, tranche.tranche_id),
+            (first_round_id, tranche.tranche_id),
             &Uint128::zero(),
         )?;
     }
@@ -93,12 +97,11 @@ pub fn execute(
         ExecuteMsg::CreateProposal {
             tranche_id,
             covenant_params,
-        } => create_proposal(deps, tranche_id, covenant_params),
+        } => create_proposal(deps, env, tranche_id, covenant_params),
         ExecuteMsg::Vote {
             tranche_id,
             proposal_id,
-        } => vote(deps, info, tranche_id, proposal_id),
-        ExecuteMsg::EndRound {} => end_round(deps, env, info),
+        } => vote(deps, env, info, tranche_id, proposal_id),
         // ExecuteMsg::ExecuteProposal { proposal_id } => {
         //     execute_proposal(deps, env, info, proposal_id)
         // }
@@ -211,13 +214,14 @@ fn validate_covenant_params(_covenant_params: String) -> Result<(), ContractErro
 //     Create in PropMap
 fn create_proposal(
     deps: DepsMut,
+    env: Env,
     tranche_id: u64,
     covenant_params: String,
 ) -> Result<Response, ContractError> {
     validate_covenant_params(covenant_params.clone())?;
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
-    let round_id = ROUND_ID.load(deps.storage)?;
+    let round_id = compute_current_round_id(deps.as_ref(), env)?;
 
     // Create proposal in PropMap
     let proposal = Proposal {
@@ -261,6 +265,7 @@ fn scale_lockup_power(lockup_time: u64, raw_power: Uint128) -> Uint128 {
 
 fn vote(
     deps: DepsMut,
+    env: Env,
     info: MessageInfo,
     tranche_id: u64,
     proposal_id: u64,
@@ -279,7 +284,7 @@ fn vote(
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
     // Load the round_id
-    let round_id = ROUND_ID.load(deps.storage)?;
+    let round_id = compute_current_round_id(deps.as_ref(), env)?;
 
     // Load the round
     let round = ROUND_MAP.load(deps.storage, round_id)?;
@@ -407,54 +412,6 @@ fn vote(
     Ok(response)
 }
 
-fn end_round(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response, ContractError> {
-    // Check that round has ended by getting latest round and checking if round_end < now
-    let round_id = ROUND_ID.load(deps.storage)?;
-    let round = ROUND_MAP.load(deps.storage, round_id)?;
-
-    if round.round_end > env.block.time {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Round has not ended yet",
-        )));
-    }
-
-    // Calculate the round_end for the next round
-    let round_end = env
-        .block
-        .time
-        .plus_nanos(CONSTANTS.load(deps.storage)?.round_length);
-
-    // Increment the round_id
-    let round_id = round.round_id + 1;
-    ROUND_ID.save(deps.storage, &(round_id))?;
-    // Save the round
-    ROUND_MAP.save(
-        deps.storage,
-        round_id,
-        &Round {
-            round_end,
-            round_id,
-        },
-    )?;
-
-    let tranches = TRANCHE_MAP
-        .range(deps.storage, None, None, Order::Ascending)
-        .map(|t| t.unwrap().1)
-        .collect::<Vec<_>>();
-
-    // Iterate through each tranche
-    for tranche in tranches {
-        // Initialize total voting power for new round
-        TOTAL_POWER_VOTING.save(
-            deps.storage,
-            (round_id, tranche.tranche_id),
-            &Uint128::zero(),
-        )?;
-    }
-
-    Ok(Response::new().add_attribute("action", "tally"))
-}
-
 fn _do_covenant_stuff(
     _deps: Deps,
     _env: Env,
@@ -466,7 +423,7 @@ fn _do_covenant_stuff(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Constants {} => to_json_binary(&query_constants(deps)?),
         QueryMsg::AllUserLockups { address } => {
@@ -481,7 +438,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             round_id,
             tranche_id,
         } => to_json_binary(&query_round_tranche_proposals(deps, round_id, tranche_id)?),
-        QueryMsg::CurrentRound {} => to_json_binary(&query_current_round(deps)?),
+        QueryMsg::CurrentRound {} => to_json_binary(&query_current_round(deps, env)?),
         QueryMsg::TopNProposals {
             round_id,
             tranche_id,
@@ -555,8 +512,9 @@ pub fn query_round_tranche_proposals(
     Ok(RoundProposalsResponse { proposals })
 }
 
-pub fn query_current_round(deps: Deps) -> StdResult<Round> {
-    Ok(ROUND_MAP.load(deps.storage, ROUND_ID.load(deps.storage)?)?)
+pub fn query_current_round(deps: Deps, env: Env) -> StdResult<Round> {
+    let round_id = compute_current_round_id(deps, env)?;
+    Ok(ROUND_MAP.load(deps.storage, round_id)?)
 }
 
 pub fn query_top_n_proposals(
@@ -615,4 +573,19 @@ pub fn query_tranches(deps: Deps) -> StdResult<Vec<Tranche>> {
         .collect::<Vec<_>>();
 
     Ok(tranches)
+}
+
+// Computes the current round_id by taking contract_start_time and dividing the time since
+// by the round_length.
+pub fn compute_current_round_id(deps: Deps, env: Env) -> StdResult<u64> {
+    let constants = CONSTANTS.load(deps.storage)?;
+    let current_time = env.block.time.nanos();
+    // If the first round has not started yet, return an error
+    if current_time < constants.first_round_start.nanos() {
+        return Err(StdError::generic_err("The first round has not started yet"));
+    }
+    let time_since_start = current_time - constants.first_round_start.nanos();
+    let current_round_id = time_since_start / constants.round_length;
+
+    Ok(current_round_id)
 }
