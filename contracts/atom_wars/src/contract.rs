@@ -585,6 +585,15 @@ pub fn query_top_n_proposals(
         .iter()
         .fold(0u128, |sum, prop| sum + prop.power.u128());
 
+    // check if the sum_power is at least 25% of the total locked power
+    // return an error if not
+    let total_power_voting = TOTAL_POWER_VOTING.load(deps.storage, (round_id, tranche_id))?;
+    if sum_power < total_power_voting.u128() / 4 {
+        return Err(StdError::generic_err(
+            "Sum of power of top proposals is less than 25% of total locked power",
+        ));
+    }
+
     // return top props
     return Ok(top_props
         .into_iter() // Change from iter() to into_iter()
