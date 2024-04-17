@@ -17,7 +17,7 @@ use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
     Constants, LockEntry, Proposal, Round, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID,
-    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, ROUND_MAP, TOTAL_POWER_VOTING, TRANCHE_MAP,
+    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_POWER_VOTING, TRANCHE_MAP,
     VOTE_MAP,
 };
 
@@ -588,4 +588,11 @@ pub fn compute_current_round_id(deps: Deps, env: Env) -> StdResult<u64> {
     let current_round_id = time_since_start / constants.round_length;
 
     Ok(current_round_id)
+}
+
+pub fn compute_round_end(deps: Deps, env: Env, round_id: u64) -> StdResult<u64> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+
+
 }
