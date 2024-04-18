@@ -59,12 +59,6 @@ pub struct Vote {
     pub power: Uint128,
 }
 
-#[cw_serde]
-pub struct Round {
-    pub round_id: u64,
-    pub round_end: Timestamp,
-}
-
 // PROPS_BY_SCORE: key((round_id, tranche_id), score, prop_id) -> prop_id
 pub const PROPS_BY_SCORE: Map<((u64, u64), u128, u64), u64> = Map::new("props_by_score");
 
