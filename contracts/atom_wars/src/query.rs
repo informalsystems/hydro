@@ -11,7 +11,9 @@ pub enum QueryMsg {
     },
     // ExpiredUserLockups ?
     CurrentRound {},
-    // Round { round_id } ?
+    RoundEnd {
+        round_id: u64,
+    },
     RoundProposals {
         round_id: u64,
         tranche_id: u64,

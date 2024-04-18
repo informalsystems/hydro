@@ -9,13 +9,12 @@ pub struct Constants {
     pub denom: String,
     pub round_length: u64,
     pub total_pool: Uint128,
+    pub first_round_start: Timestamp,
 }
 
 pub const LOCK_ID: Item<u64> = Item::new("lock_id");
 
 pub const PROP_ID: Item<u64> = Item::new("prop_id");
-
-pub const ROUND_ID: Item<u64> = Item::new("round_id");
 
 // LOCKS_MAP: key(sender_address, lock_id) -> LockEntry {
 //     funds: Coin,

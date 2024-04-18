@@ -1,4 +1,4 @@
-use cosmwasm_std::Uint128;
+use cosmwasm_std::{Timestamp, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +10,7 @@ pub struct InstantiateMsg {
     pub round_length: u64,
     pub total_pool: Uint128,
     pub tranches: Vec<Tranche>,
+    pub first_round_start: Timestamp,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -27,6 +28,5 @@ pub enum ExecuteMsg {
         tranche_id: u64,
         proposal_id: u64,
     },
-    EndRound {},
     // ExecuteProposal { proposal_id: u64 },
 }
