@@ -16,6 +16,9 @@ pub enum QueryMsg {
         address: String,
     },
     CurrentRound {},
+    RoundEnd {
+        round_id: u64,
+    },
     RoundProposals {
         round_id: u64,
         tranche_id: u64,
