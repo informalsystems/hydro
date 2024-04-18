@@ -8,16 +8,16 @@
 // - Covenant Question: Can people sandwich this whole thing - covenant system has price limits - but we should allow people to retry executing the prop during the round
 
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Deps, DepsMut,
-    Env, MessageInfo, Order, Response, StdError, StdResult, Timestamp, Uint128,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, Order,
+    Response, StdError, StdResult, Timestamp, Uint128,
 };
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
-    Constants, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID,
-    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_POWER_VOTING, TRANCHE_MAP, VOTE_MAP,
+    Constants, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP,
+    PROPS_BY_SCORE, PROP_ID, TOTAL_POWER_VOTING, TRANCHE_MAP, VOTE_MAP,
 };
 
 pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
