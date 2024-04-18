@@ -11,11 +11,11 @@ use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
 use cosmwasm_std::{BankMsg, CosmosMsg, Timestamp, Uint128};
 use cosmwasm_std::{Coin, StdError, StdResult};
 
-const STATOM: &str = "ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA5222815620B3C";
-const TWO_WEEKS_IN_NANO_SECONDS: u64 = 14 * 24 * 60 * 60 * 1000000000;
-const THREE_MONTHS_IN_NANO_SECONDS: u64 = 3 * ONE_MONTH_IN_NANO_SECONDS;
+pub const STATOM: &str = "ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA5222815620B3C";
+pub const TWO_WEEKS_IN_NANO_SECONDS: u64 = 14 * 24 * 60 * 60 * 1000000000;
+pub const THREE_MONTHS_IN_NANO_SECONDS: u64 = 3 * ONE_MONTH_IN_NANO_SECONDS;
 
-fn get_default_instantiate_msg() -> InstantiateMsg {
+pub fn get_default_instantiate_msg() -> InstantiateMsg {
     InstantiateMsg {
         denom: STATOM.to_string(),
         round_length: TWO_WEEKS_IN_NANO_SECONDS,

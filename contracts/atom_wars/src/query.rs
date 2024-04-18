@@ -9,7 +9,12 @@ pub enum QueryMsg {
     AllUserLockups {
         address: String,
     },
-    // ExpiredUserLockups ?
+    ExpiredUserLockups {
+        address: String,
+    },
+    UserVotingPower {
+        address: String,
+    },
     CurrentRound {},
     RoundEnd {
         round_id: u64,

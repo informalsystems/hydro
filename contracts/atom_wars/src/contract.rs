@@ -8,16 +8,16 @@
 // - Covenant Question: Can people sandwich this whole thing - covenant system has price limits - but we should allow people to retry executing the prop during the round
 
 use cosmwasm_std::{
-    entry_point, to_json_binary, BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, Order, Response,
-    StdError, StdResult, Timestamp, Uint128,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, Order,
+    Response, StdError, StdResult, Timestamp, Uint128,
 };
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
-    Constants, LockEntry, Proposal, Round, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID,
-    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_POWER_VOTING, TRANCHE_MAP, VOTE_MAP,
+    Constants, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP,
+    PROPS_BY_SCORE, PROP_ID, TOTAL_POWER_VOTING, TRANCHE_MAP, VOTE_MAP,
 };
 
 pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
@@ -419,6 +419,12 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::AllUserLockups { address } => {
             to_json_binary(&query_all_user_lockups(deps, address)?)
         }
+        QueryMsg::ExpiredUserLockups { address } => {
+            to_json_binary(&query_expired_user_lockups(deps, env, address)?)
+        }
+        QueryMsg::UserVotingPower { address } => {
+            to_json_binary(&query_user_voting_power(deps, env, address)?)
+        }
         QueryMsg::Proposal {
             round_id,
             tranche_id,
@@ -447,20 +453,22 @@ pub fn query_constants(deps: Deps) -> StdResult<Constants> {
     CONSTANTS.load(deps.storage)
 }
 
-// TODO: implement a proper pagination for this and other queries
 pub fn query_all_user_lockups(deps: Deps, address: String) -> StdResult<UserLockupsResponse> {
-    let user_address = deps.api.addr_validate(address.as_str())?;
+    Ok(UserLockupsResponse {
+        lockups: query_user_lockups(deps, deps.api.addr_validate(&address)?, |_| true),
+    })
+}
 
-    let user_lockups: Vec<LockEntry> = LOCKS_MAP
-        .prefix(user_address)
-        .range(deps.storage, None, None, Order::Ascending)
-        .take(DEFAULT_MAX_ENTRIES)
-        .into_iter()
-        .map(|l| l.unwrap().1)
-        .collect();
+pub fn query_expired_user_lockups(
+    deps: Deps,
+    env: Env,
+    address: String,
+) -> StdResult<UserLockupsResponse> {
+    let user_address = deps.api.addr_validate(&address)?;
+    let expired_lockup_predicate = |l: &LockEntry| l.lock_end < env.block.time;
 
     Ok(UserLockupsResponse {
-        lockups: user_lockups,
+        lockups: query_user_lockups(deps, user_address, expired_lockup_predicate),
     })
 }
 
@@ -471,6 +479,23 @@ pub fn query_proposal(
     proposal_id: u64,
 ) -> StdResult<Proposal> {
     Ok(PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?)
+}
+
+pub fn query_user_voting_power(deps: Deps, env: Env, address: String) -> StdResult<u128> {
+    let user_address = deps.api.addr_validate(&address)?;
+    let current_round_id = compute_current_round_id(deps, env)?;
+    let round_end = compute_round_end(deps, current_round_id)?;
+
+    Ok(LOCKS_MAP
+        .prefix(user_address)
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|l| l.unwrap().1)
+        .filter(|l| l.lock_end > round_end)
+        .map(|lockup| {
+            let lockup_time = lockup.lock_end.nanos() - round_end.nanos();
+            scale_lockup_power(lockup_time, lockup.funds.amount).u128()
+        })
+        .sum())
 }
 
 pub fn query_round_tranche_proposals(
@@ -549,6 +574,20 @@ pub fn query_tranches(deps: Deps) -> StdResult<Vec<Tranche>> {
         .collect::<Vec<_>>();
 
     Ok(tranches)
+}
+
+fn query_user_lockups(
+    deps: Deps,
+    user_address: Addr,
+    predicate: impl FnMut(&LockEntry) -> bool,
+) -> Vec<LockEntry> {
+    LOCKS_MAP
+        .prefix(user_address)
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|l| l.unwrap().1)
+        .filter(predicate)
+        .take(DEFAULT_MAX_ENTRIES)
+        .collect()
 }
 
 // Computes the current round_id by taking contract_start_time and dividing the time since
