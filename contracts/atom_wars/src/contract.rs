@@ -48,8 +48,6 @@ pub fn instantiate(
     LOCK_ID.save(deps.storage, &0)?;
     PROP_ID.save(deps.storage, &0)?;
 
-    let first_round_id = 0;
-
     // For each tranche, create a tranche in the TRANCHE_MAP and set the total power to 0
     let mut tranche_ids = std::collections::HashSet::new();
 
@@ -221,6 +219,14 @@ fn create_proposal(
     PROP_ID.save(deps.storage, &(prop_id + 1))?;
     PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, prop_id), &proposal)?;
 
+    // load the total voting power for this round and tranche
+    let total_power_voting = TOTAL_POWER_VOTING.load(deps.storage, (round_id, tranche_id));
+
+    // if there is no total power voting for this round and tranche, set it to 0
+    if total_power_voting.is_err() {
+        TOTAL_POWER_VOTING.save(deps.storage, (round_id, tranche_id), &Uint128::zero())?;
+    }
+
     Ok(Response::new().add_attribute("action", "create_proposal"))
 }
 
@@ -271,7 +277,7 @@ fn vote(
     let round_id = compute_current_round_id(deps.as_ref(), env.clone())?;
 
     // compute the round end
-    let round_end = compute_round_end(deps.as_ref(), env.clone(), round_id)?;
+    let round_end = compute_round_end(deps.as_ref(), round_id)?;
 
     // Get any existing vote for this sender and reverse it- this may be a vote for a different proposal (if they are switching their vote),
     // or it may be a vote for the same proposal (if they have increased their power by locking more and want to update their vote).
@@ -423,7 +429,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
             tranche_id,
         } => to_json_binary(&query_round_tranche_proposals(deps, round_id, tranche_id)?),
         QueryMsg::CurrentRound {} => to_json_binary(&compute_current_round_id(deps, env)?),
-        QueryMsg::RoundEnd { round_id } => to_json_binary(&compute_round_end(deps, env, round_id)?),
+        QueryMsg::RoundEnd { round_id } => to_json_binary(&compute_round_end(deps, round_id)?),
         QueryMsg::TopNProposals {
             round_id,
             tranche_id,
@@ -560,7 +566,7 @@ pub fn compute_current_round_id(deps: Deps, env: Env) -> StdResult<u64> {
     Ok(current_round_id)
 }
 
-pub fn compute_round_end(deps: Deps, env: Env, round_id: u64) -> StdResult<Timestamp> {
+pub fn compute_round_end(deps: Deps, round_id: u64) -> StdResult<Timestamp> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     let round_end = constants
