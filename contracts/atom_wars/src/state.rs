@@ -59,11 +59,6 @@ pub struct Vote {
     pub power: Uint128,
 }
 
-// ROUND_MAP: key(round_id) -> Round {
-//     round_id: u64,
-//     round_end: Timestamp
-// }
-pub const ROUND_MAP: Map<u64, Round> = Map::new("round_map");
 #[cw_serde]
 pub struct Round {
     pub round_id: u64,

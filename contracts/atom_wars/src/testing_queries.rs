@@ -126,7 +126,7 @@ fn query_user_voting_power_test() {
     // first lockup expires one day after the round 0 ends, and the second
     // lockup expires 2 months and 2 days after the round 0 ends, so the
     // expected voting power multipler is 1 for first lockup and 1.5 for second lockup
-    let voting_power = get_user_voting_power(&deps, user_address.to_string());
+    let voting_power = get_user_voting_power(&deps, env.clone(), user_address.to_string());
     let expected_voting_power =
         first_lockup_amount + second_lockup_amount + (second_lockup_amount / 2);
     assert_eq!(expected_voting_power, voting_power);
@@ -134,14 +134,10 @@ fn query_user_voting_power_test() {
     // advance the chain for 1 month and start a new round
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
 
-    let msg = ExecuteMsg::EndRound {};
-    let res = execute(deps.as_mut(), env, info.clone(), msg);
-    assert!(res.is_ok());
-
     // first lockup expires 29 days before the round 1 ends, and the second
     // lockup expires 1 month and 2 days after the round 1 ends, so the
     // expected voting power multipler is 0 for first lockup and 1.5 for second lockup
-    let voting_power = get_user_voting_power(&deps, user_address.to_string());
+    let voting_power = get_user_voting_power(&deps, env.clone(), user_address.to_string());
     let expected_voting_power = second_lockup_amount + (second_lockup_amount / 2);
     assert_eq!(expected_voting_power, voting_power);
 }
@@ -160,9 +156,10 @@ fn get_expired_user_lockups(
 
 fn get_user_voting_power(
     deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, Empty>,
+    env: Env,
     user_address: String,
 ) -> u128 {
-    let res = query_user_voting_power(deps.as_ref(), user_address.to_string());
+    let res = query_user_voting_power(deps.as_ref(), env, user_address.to_string());
     assert!(res.is_ok());
 
     res.unwrap()

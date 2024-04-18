@@ -8,17 +8,15 @@
 // - Covenant Question: Can people sandwich this whole thing - covenant system has price limits - but we should allow people to retry executing the prop during the round
 
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, Order,
-    Response, StdError, StdResult, Uint128,
-    entry_point, to_json_binary, BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, Order, Response,
-    StdError, StdResult, Timestamp, Uint128,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Deps, DepsMut,
+    Env, MessageInfo, Order, Response, StdError, StdResult, Timestamp, Uint128,
 };
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
-    Constants, LockEntry, Proposal, Round, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID,
+    Constants, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID,
     PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_POWER_VOTING, TRANCHE_MAP, VOTE_MAP,
 };
 
@@ -425,7 +423,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
             to_json_binary(&query_expired_user_lockups(deps, env, address)?)
         }
         QueryMsg::UserVotingPower { address } => {
-            to_json_binary(&query_user_voting_power(deps, address)?)
+            to_json_binary(&query_user_voting_power(deps, env, address)?)
         }
         QueryMsg::Proposal {
             round_id,
@@ -483,11 +481,10 @@ pub fn query_proposal(
     Ok(PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?)
 }
 
-pub fn query_user_voting_power(deps: Deps, address: String) -> StdResult<u128> {
+pub fn query_user_voting_power(deps: Deps, env: Env, address: String) -> StdResult<u128> {
     let user_address = deps.api.addr_validate(&address)?;
-    let round_end = ROUND_MAP
-        .load(deps.storage, ROUND_ID.load(deps.storage)?)?
-        .round_end;
+    let current_round_id = compute_current_round_id(deps, env)?;
+    let round_end = compute_round_end(deps, current_round_id)?;
 
     Ok(LOCKS_MAP
         .prefix(user_address)
