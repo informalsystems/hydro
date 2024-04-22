@@ -1,34 +1,40 @@
-use cosmwasm_std::Uint128;
+use cosmwasm_std::{Addr, Timestamp, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+use crate::state::{CovenantParams, Tranche};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
     pub denom: String,
     pub round_length: u64,
     pub total_pool: Uint128,
+    pub tranches: Vec<Tranche>,
+    pub first_round_start: Timestamp,
+    pub whitelist_admins: Vec<Addr>,
+    pub initial_whitelist: Vec<CovenantParams>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    LockTokens { lock_duration: u64 },
+    LockTokens {
+        lock_duration: u64,
+    },
     UnlockTokens {},
-    CreateProposal { covenant_params: String },
-    Vote { proposal_id: u64 },
-    EndRound {},
+    CreateProposal {
+        tranche_id: u64,
+        covenant_params: CovenantParams,
+    },
+    Vote {
+        tranche_id: u64,
+        proposal_id: u64,
+    },
+    AddToWhitelist {
+        covenant_params: CovenantParams,
+    },
+    RemoveFromWhitelist {
+        covenant_params: CovenantParams,
+    },
     // ExecuteProposal { proposal_id: u64 },
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum QueryMsg {
-    // GetCount returns the current count as a json-encoded number
-    GetCount {},
-}
-
-// We define a custom struct for each query response
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct CountResponse {
-    pub count: i32,
 }
