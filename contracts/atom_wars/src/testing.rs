@@ -25,6 +25,16 @@ pub fn get_default_instantiate_msg() -> InstantiateMsg {
             metadata: "tranche 1".to_string(),
         }],
         first_round_start: mock_env().block.time,
+        initial_whitelist: vec![get_default_covenant_params()],
+        whitelist_admins: vec![],
+    }
+}
+
+pub fn get_default_covenant_params() -> crate::state::CovenantParams {
+    crate::state::CovenantParams {
+        pool_id: "pool_id".to_string(),
+        outgoing_channel_id: "outgoing_channel_id".to_string(),
+        funding_destination_name: "funding_destination_name".to_string(),
     }
 }
 
@@ -171,18 +181,22 @@ fn create_proposal_basic_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    let covenant_params_1 = "first proposal";
+    let covenant_params_1 = get_default_covenant_params();
     let msg1 = ExecuteMsg::CreateProposal {
         tranche_id: 1,
-        covenant_params: covenant_params_1.to_string(),
+        covenant_params: covenant_params_1.clone(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg1.clone());
     assert!(res.is_ok());
 
-    let covenant_params_2 = "second proposal";
+    let mut covenant_params_2 = get_default_covenant_params().clone();
+    covenant_params_2.pool_id = "pool_id_2".to_string();
+    covenant_params_2.outgoing_channel_id = "outgoing_channel_id_2".to_string();
+    covenant_params_2.funding_destination_name = "funding_destination_name_2".to_string();
+
     let msg2 = ExecuteMsg::CreateProposal {
         tranche_id: 1,
-        covenant_params: covenant_params_2.to_string(),
+        covenant_params: covenant_params_2.clone(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg2.clone());
     assert!(res.is_ok());
@@ -228,7 +242,7 @@ fn vote_basic_test() {
     // create a new proposal
     let msg = ExecuteMsg::CreateProposal {
         tranche_id: 1,
-        covenant_params: "proposal".to_string(),
+        covenant_params: get_default_covenant_params(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
@@ -274,7 +288,7 @@ fn multi_tranches_test() {
     let covenant_params_1 = "first proposal";
     let msg1 = ExecuteMsg::CreateProposal {
         tranche_id: 1,
-        covenant_params: covenant_params_1.to_string(),
+        covenant_params: get_default_covenant_params(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg1.clone());
     assert!(res.is_ok());
@@ -282,7 +296,7 @@ fn multi_tranches_test() {
     let covenant_params_2 = "second proposal";
     let msg2 = ExecuteMsg::CreateProposal {
         tranche_id: 1,
-        covenant_params: covenant_params_2.to_string(),
+        covenant_params: get_default_covenant_params(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg2.clone());
     assert!(res.is_ok());
@@ -291,7 +305,7 @@ fn multi_tranches_test() {
     let covenant_params_3 = "third proposal";
     let msg3 = ExecuteMsg::CreateProposal {
         tranche_id: 2,
-        covenant_params: covenant_params_3.to_string(),
+        covenant_params: get_default_covenant_params(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg3.clone());
     assert!(res.is_ok());
@@ -299,7 +313,7 @@ fn multi_tranches_test() {
     let covenant_params_4 = "fourth proposal";
     let msg4 = ExecuteMsg::CreateProposal {
         tranche_id: 2,
-        covenant_params: covenant_params_4.to_string(),
+        covenant_params: get_default_covenant_params(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg4.clone());
     assert!(res.is_ok());
@@ -460,13 +474,10 @@ fn test_round_id_computation() {
     for (contract_start_time, round_length, current_time, expected_round_id) in test_cases {
         // instantiate the contract
         let mut deps = mock_dependencies();
-        let msg = InstantiateMsg {
-            denom: STATOM.to_string(),
-            round_length,
-            total_pool: Uint128::zero(),
-            tranches: vec![],
-            first_round_start: Timestamp::from_nanos(contract_start_time),
-        };
+        let mut msg = get_default_instantiate_msg();
+        msg.round_length = round_length;
+        msg.first_round_start = Timestamp::from_nanos(contract_start_time);
+
         let mut env = mock_env();
         env.block.time = Timestamp::from_nanos(contract_start_time);
         let info = mock_info("addr0000", &[]);

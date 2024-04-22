@@ -38,6 +38,8 @@ pub enum QueryMsg {
         tranche_id: u64,
         number_of_proposals: usize,
     },
+    Whitelist {},
+    WhitelistAdmins {},
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug, Default)]

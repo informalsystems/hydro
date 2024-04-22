@@ -43,10 +43,22 @@ pub struct Proposal {
     pub round_id: u64,
     pub tranche_id: u64,
     pub proposal_id: u64,
-    pub covenant_params: String,
+    pub covenant_params: CovenantParams,
     pub executed: bool, // TODO: maybe remove in the future
     pub power: Uint128,
     pub percentage: Uint128,
+}
+
+#[cw_serde]
+pub struct CovenantParams {
+    // identifies the pool in which to deploy the funds
+    pub pool_id: String,
+
+    // Identifies the channel to the chain on which the funds should be deployed
+    pub outgoing_channel_id: String,
+
+    // Another identifier to check the destination of the funds, e.g. Astroport, Osmosis, etc.
+    pub funding_destination_name: String,
 }
 
 // VOTE_MAP: key(round_id, tranche_id, sender_addr) -> Vote {
@@ -77,3 +89,11 @@ pub struct Tranche {
     pub tranche_id: u64,
     pub metadata: String,
 }
+
+// The initial whitelist is set upon contract instantiation.
+// It can be updated by anyone on the WHITELIST_ADMINS list
+// via the update_whitelist message.
+pub const WHITELIST: Item<Vec<CovenantParams>> = Item::new("whitelist");
+
+// Every address in this list can manage the whitelist.
+pub const WHITELIST_ADMINS: Item<Vec<Addr>> = Item::new("whitelist_admins");
