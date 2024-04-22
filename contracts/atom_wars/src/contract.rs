@@ -16,7 +16,9 @@ use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
-    Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_POWER_VOTING, TRANCHE_MAP, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
+    Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID,
+    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_POWER_VOTING, TRANCHE_MAP, VOTE_MAP, WHITELIST,
+    WHITELIST_ADMINS,
 };
 
 pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
@@ -86,8 +88,12 @@ pub fn execute(
             tranche_id,
             proposal_id,
         } => vote(deps, env, info, tranche_id, proposal_id),
-        ExecuteMsg::AddToWhitelist { covenant_params } => add_to_whitelist(deps, env, info, covenant_params),
-        ExecuteMsg::RemoveFromWhitelist { covenant_params } => remove_from_whitelist(deps, env, info, covenant_params),
+        ExecuteMsg::AddToWhitelist { covenant_params } => {
+            add_to_whitelist(deps, env, info, covenant_params)
+        }
+        ExecuteMsg::RemoveFromWhitelist { covenant_params } => {
+            remove_from_whitelist(deps, env, info, covenant_params)
+        }
         // ExecuteMsg::ExecuteProposal { proposal_id } => {
         //     execute_proposal(deps, env, info, proposal_id)
         // }
@@ -417,7 +423,12 @@ fn _do_covenant_stuff(
 }
 
 // Adds a new covenant target to the whitelist.
-fn add_to_whitelist(deps: DepsMut, _env: Env, info: MessageInfo, covenant_params: CovenantParams) -> Result<Response, ContractError> {
+fn add_to_whitelist(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    covenant_params: CovenantParams,
+) -> Result<Response, ContractError> {
     // Validate that the sender is a whitelist admin
     let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
     if !whitelist_admins.contains(&info.sender) {
@@ -435,7 +446,12 @@ fn add_to_whitelist(deps: DepsMut, _env: Env, info: MessageInfo, covenant_params
     Ok(Response::new().add_attribute("action", "add_to_whitelist"))
 }
 
-fn remove_from_whitelist(deps: DepsMut, _env: Env, info: MessageInfo, covenant_params: CovenantParams) -> Result<Response, ContractError> {
+fn remove_from_whitelist(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    covenant_params: CovenantParams,
+) -> Result<Response, ContractError> {
     // Validate that the sender is a whitelist admin
     let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
     if !whitelist_admins.contains(&info.sender) {
@@ -586,7 +602,9 @@ pub fn query_top_n_proposals(
         // filter out any props that are not on the whitelist
         .filter(|x| match x {
             Ok((_, prop_id)) => {
-                let prop = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, *prop_id)).unwrap();
+                let prop = PROPOSAL_MAP
+                    .load(deps.storage, (round_id, tranche_id, *prop_id))
+                    .unwrap();
                 if whitelist.contains(&prop.covenant_params) {
                     true
                 } else {

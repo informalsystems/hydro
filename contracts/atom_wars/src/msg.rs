@@ -1,8 +1,8 @@
-use cosmwasm_std::{Timestamp, Uint128, Addr};
+use cosmwasm_std::{Addr, Timestamp, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::state::{Tranche, CovenantParams};
+use crate::state::{CovenantParams, Tranche};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
