@@ -16,8 +16,7 @@ use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
-    Constants, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP,
-    PROPS_BY_SCORE, PROP_ID, TOTAL_POWER_VOTING, TRANCHE_MAP, VOTE_MAP,
+    Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_POWER_VOTING, TRANCHE_MAP, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
 };
 
 pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
@@ -47,6 +46,9 @@ pub fn instantiate(
     CONSTANTS.save(deps.storage, &state)?;
     LOCK_ID.save(deps.storage, &0)?;
     PROP_ID.save(deps.storage, &0)?;
+
+    WHITELIST_ADMINS.save(deps.storage, &msg.whitelist_admins)?;
+    WHITELIST.save(deps.storage, &msg.initial_whitelist)?;
 
     // For each tranche, create a tranche in the TRANCHE_MAP and set the total power to 0
     let mut tranche_ids = std::collections::HashSet::new();
@@ -84,6 +86,7 @@ pub fn execute(
             tranche_id,
             proposal_id,
         } => vote(deps, env, info, tranche_id, proposal_id),
+        ExecuteMsg::AddToWhitelist { covenant_params } => add_to_whitelist(deps, env, info, covenant_params),
         // ExecuteMsg::ExecuteProposal { proposal_id } => {
         //     execute_proposal(deps, env, info, proposal_id)
         // }
@@ -185,7 +188,7 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
     Ok(response)
 }
 
-fn validate_covenant_params(_covenant_params: String) -> Result<(), ContractError> {
+fn validate_covenant_params(_covenant_params: CovenantParams) -> Result<(), ContractError> {
     // Validate covenant_params
     Ok(())
 }
@@ -198,7 +201,7 @@ fn create_proposal(
     deps: DepsMut,
     env: Env,
     tranche_id: u64,
-    covenant_params: String,
+    covenant_params: CovenantParams,
 ) -> Result<Response, ContractError> {
     validate_covenant_params(covenant_params.clone())?;
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
@@ -412,6 +415,43 @@ fn _do_covenant_stuff(
     Ok(Response::new().add_attribute("action", "do_covenant_stuff"))
 }
 
+// Adds a new covenant target to the whitelist.
+fn add_to_whitelist(deps: DepsMut, _env: Env, info: MessageInfo, covenant_params: CovenantParams) -> Result<Response, ContractError> {
+    // Validate that the sender is a whitelist admin
+    let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
+    if !whitelist_admins.contains(&info.sender) {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    // Validate covenant_params
+    validate_covenant_params(covenant_params.clone())?;
+
+    // Add covenant_params to whitelist
+    let mut whitelist = WHITELIST.load(deps.storage)?;
+    whitelist.push(covenant_params.clone());
+    WHITELIST.save(deps.storage, &whitelist)?;
+
+    Ok(Response::new().add_attribute("action", "add_to_whitelist"))
+}
+
+fn remove_from_whitelist(deps: DepsMut, _env: Env, info: MessageInfo, covenant_params: CovenantParams) -> Result<Response, ContractError> {
+    // Validate that the sender is a whitelist admin
+    let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
+    if !whitelist_admins.contains(&info.sender) {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    // Validate covenant_params
+    validate_covenant_params(covenant_params.clone())?;
+
+    // Remove covenant_params from whitelist
+    let mut whitelist = WHITELIST.load(deps.storage)?;
+    whitelist.retain(|cp| cp != &covenant_params);
+    WHITELIST.save(deps.storage, &whitelist)?;
+
+    Ok(Response::new().add_attribute("action", "remove_from_whitelist"))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
@@ -446,6 +486,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
             tranche_id,
             number_of_proposals,
         )?),
+        QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(deps)?),
     }
 }
 
@@ -588,6 +629,10 @@ fn query_user_lockups(
         .filter(predicate)
         .take(DEFAULT_MAX_ENTRIES)
         .collect()
+}
+
+fn query_whitelist(deps: Deps) -> StdResult<Vec<CovenantParams>> {
+    WHITELIST.load(deps.storage)
 }
 
 // Computes the current round_id by taking contract_start_time and dividing the time since
