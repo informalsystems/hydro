@@ -440,7 +440,7 @@ fn add_to_whitelist(
 
     // Add covenant_params to whitelist
     let mut whitelist = WHITELIST.load(deps.storage)?;
-    
+
     // return an error if the covenant_params is already in the whitelist
     if whitelist.contains(&covenant_params) {
         return Err(ContractError::Std(StdError::generic_err(
