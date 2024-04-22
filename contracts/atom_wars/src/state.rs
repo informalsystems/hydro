@@ -32,6 +32,7 @@ pub struct LockEntry {
 // PROP_MAP: key(round_id, tranche_id, prop_id) -> Proposal {
 //     round_id: u64,
 //     tranche_id: u64,
+//     proposal_id: u64,
 //     covenant_params: String,
 //     executed: bool,
 //     power: Uint128
@@ -41,6 +42,7 @@ pub const PROPOSAL_MAP: Map<(u64, u64, u64), Proposal> = Map::new("prop_map");
 pub struct Proposal {
     pub round_id: u64,
     pub tranche_id: u64,
+    pub proposal_id: u64,
     pub covenant_params: CovenantParams,
     pub executed: bool, // TODO: maybe remove in the future
     pub power: Uint128,
