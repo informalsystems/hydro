@@ -1,8 +1,5 @@
 // MAIN TODOS:
-// - Query methods! We want a very complete set so that it is easy for third party tribute contracts
-// - Tests!
 // - Add real covenant logic
-// - Make it work for separate tranches
 // - Question: How to handle the case where a proposal is executed but the covenant fails?
 // - Covenant Question: How to deal with someone using MEV to skew the pool ratio right before the liquidity is pulled? Streaming the liquidity pull? You'd have to set up a cron job for that.
 // - Covenant Question: Can people sandwich this whole thing - covenant system has price limits - but we should allow people to retry executing the prop during the round

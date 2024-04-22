@@ -16,11 +16,7 @@ pub const LOCK_ID: Item<u64> = Item::new("lock_id");
 
 pub const PROP_ID: Item<u64> = Item::new("prop_id");
 
-// LOCKS_MAP: key(sender_address, lock_id) -> LockEntry {
-//     funds: Coin,
-//     lock_start: Timestamp,
-//     lock_end: Timestamp
-// }
+// LOCKS_MAP: key(sender_address, lock_id) -> LockEntry
 pub const LOCKS_MAP: Map<(Addr, u64), LockEntry> = Map::new("locks_map");
 #[cw_serde]
 pub struct LockEntry {
@@ -29,14 +25,7 @@ pub struct LockEntry {
     pub lock_end: Timestamp,
 }
 
-// PROP_MAP: key(round_id, tranche_id, prop_id) -> Proposal {
-//     round_id: u64,
-//     tranche_id: u64,
-//     proposal_id: u64,
-//     covenant_params: String,
-//     executed: bool,
-//     power: Uint128
-// }
+// PROPOSAL_MAP: key(round_id, tranche_id, prop_id) -> Proposal
 pub const PROPOSAL_MAP: Map<(u64, u64, u64), Proposal> = Map::new("prop_map");
 #[cw_serde]
 pub struct Proposal {
@@ -61,11 +50,7 @@ pub struct CovenantParams {
     pub funding_destination_name: String,
 }
 
-// VOTE_MAP: key(round_id, tranche_id, sender_addr) -> Vote {
-//     prop_id: u64,
-//     power: Uint128,
-//     tribute_claimed: bool
-// }
+// VOTE_MAP: key(round_id, tranche_id, sender_addr) -> Vote
 pub const VOTE_MAP: Map<(u64, u64, Addr), Vote> = Map::new("vote_map");
 #[cw_serde]
 pub struct Vote {
@@ -79,10 +64,7 @@ pub const PROPS_BY_SCORE: Map<((u64, u64), u128, u64), u64> = Map::new("props_by
 // TOTAL_POWER_VOTING: key(round_id, tranche_id) -> Uint128
 pub const TOTAL_POWER_VOTING: Map<(u64, u64), Uint128> = Map::new("total_power_voting");
 
-// TRANCHE_MAP: key(tranche_id) -> Tranche {
-//     tranche_id: u64,
-//     metadata: String
-// }
+// TRANCHE_MAP: key(tranche_id) -> Tranche
 pub const TRANCHE_MAP: Map<u64, Tranche> = Map::new("tranche_map");
 #[cw_serde]
 pub struct Tranche {
