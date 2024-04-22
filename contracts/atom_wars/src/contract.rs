@@ -93,10 +93,9 @@ pub fn execute(
         }
         ExecuteMsg::RemoveFromWhitelist { covenant_params } => {
             remove_from_whitelist(deps, env, info, covenant_params)
-        }
-        // ExecuteMsg::ExecuteProposal { proposal_id } => {
-        //     execute_proposal(deps, env, info, proposal_id)
-        // }
+        } // ExecuteMsg::ExecuteProposal { proposal_id } => {
+          //     execute_proposal(deps, env, info, proposal_id)
+          // }
     }
 }
 
