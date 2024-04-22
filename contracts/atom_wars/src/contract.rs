@@ -623,11 +623,7 @@ pub fn query_top_n_proposals(
                 let prop = PROPOSAL_MAP
                     .load(deps.storage, (round_id, tranche_id, *prop_id))
                     .unwrap();
-                if whitelist.contains(&prop.covenant_params) {
-                    true
-                } else {
-                    false
-                }
+                whitelist.contains(&prop.covenant_params)
             }
             Err(e) => false,
         })
