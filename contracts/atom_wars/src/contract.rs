@@ -204,20 +204,21 @@ fn create_proposal(
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
     let round_id = compute_current_round_id(deps.as_ref(), env)?;
+    let proposal_id = PROP_ID.load(deps.storage)?;
 
     // Create proposal in PropMap
     let proposal = Proposal {
         round_id,
         tranche_id,
+        proposal_id,
         covenant_params,
         executed: false,
         power: Uint128::zero(),
         percentage: Uint128::zero(),
     };
 
-    let prop_id = PROP_ID.load(deps.storage)?;
-    PROP_ID.save(deps.storage, &(prop_id + 1))?;
-    PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, prop_id), &proposal)?;
+    PROP_ID.save(deps.storage, &(proposal_id + 1))?;
+    PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, proposal_id), &proposal)?;
 
     // load the total voting power for this round and tranche
     let total_power_voting = TOTAL_POWER_VOTING.load(deps.storage, (round_id, tranche_id));
@@ -425,6 +426,11 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::UserVotingPower { address } => {
             to_json_binary(&query_user_voting_power(deps, env, address)?)
         }
+        QueryMsg::UserVote {
+            round_id,
+            tranche_id,
+            address,
+        } => to_json_binary(&query_user_vote(deps, round_id, tranche_id, address)?),
         QueryMsg::Proposal {
             round_id,
             tranche_id,
@@ -496,6 +502,18 @@ pub fn query_user_voting_power(deps: Deps, env: Env, address: String) -> StdResu
             scale_lockup_power(lockup_time, lockup.funds.amount).u128()
         })
         .sum())
+}
+
+pub fn query_user_vote(
+    deps: Deps,
+    round_id: u64,
+    tranche_id: u64,
+    user_address: String,
+) -> StdResult<Vote> {
+    Ok(VOTE_MAP.load(
+        deps.storage,
+        (round_id, tranche_id, deps.api.addr_validate(&user_address)?),
+    )?)
 }
 
 pub fn query_round_tranche_proposals(

@@ -15,6 +15,11 @@ pub enum QueryMsg {
     UserVotingPower {
         address: String,
     },
+    UserVote {
+        round_id: u64,
+        tranche_id: u64,
+        address: String,
+    },
     CurrentRound {},
     RoundEnd {
         round_id: u64,
