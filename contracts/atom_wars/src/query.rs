@@ -39,6 +39,7 @@ pub enum QueryMsg {
         number_of_proposals: usize,
     },
     Whitelist {},
+    WhitelistAdmins {},
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug, Default)]

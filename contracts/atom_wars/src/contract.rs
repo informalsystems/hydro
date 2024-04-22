@@ -509,6 +509,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
             number_of_proposals,
         )?),
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(deps)?),
+        QueryMsg::WhitelistAdmins {} => to_json_binary(&query_whitelist_admins(deps)?),
     }
 }
 
@@ -685,6 +686,10 @@ fn query_user_lockups(
 
 fn query_whitelist(deps: Deps) -> StdResult<Vec<CovenantParams>> {
     WHITELIST.load(deps.storage)
+}
+
+fn query_whitelist_admins(deps: Deps) -> StdResult<Vec<Addr>> {
+    WHITELIST_ADMINS.load(deps.storage)
 }
 
 // Computes the current round_id by taking contract_start_time and dividing the time since
