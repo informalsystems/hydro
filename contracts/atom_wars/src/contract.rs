@@ -586,7 +586,7 @@ pub fn query_top_n_proposals(
         // filter out any props that are not on the whitelist
         .filter(|x| match x {
             Ok((_, prop_id)) => {
-                let prop = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, prop_id)).unwrap();
+                let prop = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, *prop_id)).unwrap();
                 if whitelist.contains(&prop.covenant_params) {
                     true
                 } else {

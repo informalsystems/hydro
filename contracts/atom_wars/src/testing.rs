@@ -25,7 +25,7 @@ pub fn get_default_instantiate_msg() -> InstantiateMsg {
             metadata: "tranche 1".to_string(),
         }],
         first_round_start: mock_env().block.time,
-        initial_whitelist: vec![],
+        initial_whitelist: vec![get_default_covenant_params()],
         whitelist_admins: vec![],
     }
 }
@@ -477,7 +477,7 @@ fn test_round_id_computation() {
         let mut msg = get_default_instantiate_msg();
         msg.round_length = round_length;
         msg.first_round_start = Timestamp::from_nanos(contract_start_time);
-        
+
         let mut env = mock_env();
         env.block.time = Timestamp::from_nanos(contract_start_time);
         let info = mock_info("addr0000", &[]);
