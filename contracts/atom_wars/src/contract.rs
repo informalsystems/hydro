@@ -87,6 +87,7 @@ pub fn execute(
             proposal_id,
         } => vote(deps, env, info, tranche_id, proposal_id),
         ExecuteMsg::AddToWhitelist { covenant_params } => add_to_whitelist(deps, env, info, covenant_params),
+        ExecuteMsg::RemoveFromWhitelist { covenant_params } => remove_from_whitelist(deps, env, info, covenant_params),
         // ExecuteMsg::ExecuteProposal { proposal_id } => {
         //     execute_proposal(deps, env, info, proposal_id)
         // }
