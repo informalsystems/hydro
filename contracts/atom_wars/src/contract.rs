@@ -575,10 +575,26 @@ pub fn query_top_n_proposals(
         return Err(StdError::generic_err("Tranche does not exist"));
     }
 
-    // Iterate through PROPS_BY_SCORE to find the top num props
+    // load the whitelist
+    let whitelist = WHITELIST.load(deps.storage)?;
+
+    // Iterate through PROPS_BY_SCORE to find the top num props, while ignoring
+    // any props that are not on the whitelist
     let top_prop_ids: Vec<u64> = PROPS_BY_SCORE
         .sub_prefix((round_id, tranche_id))
         .range(deps.storage, None, None, Order::Descending)
+        // filter out any props that are not on the whitelist
+        .filter(|x| match x {
+            Ok((_, prop_id)) => {
+                let prop = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, prop_id)).unwrap();
+                if whitelist.contains(&prop.covenant_params) {
+                    true
+                } else {
+                    false
+                }
+            }
+            Err(e) => false,
+        })
         .take(num)
         .map(|x| match x {
             Ok((_, prop_id)) => prop_id,
