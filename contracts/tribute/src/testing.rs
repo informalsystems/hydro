@@ -2,7 +2,7 @@ use crate::{
     contract::{execute, instantiate, query_proposal_tributes},
     ExecuteMsg, InstantiateMsg,
 };
-use atom_wars::{Proposal, QueryMsg as AtomWarsQueryMsg, Vote};
+use atom_wars::{CovenantParams, Proposal, QueryMsg as AtomWarsQueryMsg, Vote};
 use cosmwasm_std::{
     from_json,
     testing::{mock_dependencies, mock_env, mock_info},
@@ -169,7 +169,11 @@ fn add_tribute_test() {
         round_id: 10,
         tranche_id: 0,
         proposal_id: 5,
-        covenant_params: "covenant params".to_string(),
+        covenant_params: CovenantParams {
+            pool_id: "pool 1".to_string(),
+            outgoing_channel_id: "channel-1".to_string(),
+            funding_destination_name: "".to_string(),
+        },
         executed: false,
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
@@ -286,7 +290,11 @@ fn claim_tribute_test() {
         round_id: 10,
         tranche_id: 0,
         proposal_id: 5,
-        covenant_params: "covenant params".to_string(),
+        covenant_params: CovenantParams {
+            pool_id: "pool 1".to_string(),
+            outgoing_channel_id: "channel-1".to_string(),
+            funding_destination_name: "".to_string(),
+        },
         executed: false,
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
@@ -297,7 +305,11 @@ fn claim_tribute_test() {
             round_id: 10,
             tranche_id: 0,
             proposal_id: 5,
-            covenant_params: "covenant params".to_string(),
+            covenant_params: CovenantParams {
+                pool_id: "pool 1".to_string(),
+                outgoing_channel_id: "channel-1".to_string(),
+                funding_destination_name: "".to_string(),
+            },
             executed: false,
             power: Uint128::new(10000),
             percentage: Uint128::zero(),
@@ -306,7 +318,11 @@ fn claim_tribute_test() {
             round_id: 10,
             tranche_id: 0,
             proposal_id: 6,
-            covenant_params: "covenant params".to_string(),
+            covenant_params: CovenantParams {
+                pool_id: "pool 2".to_string(),
+                outgoing_channel_id: "channel-2".to_string(),
+                funding_destination_name: "".to_string(),
+            },
             executed: false,
             power: Uint128::new(10000),
             percentage: Uint128::zero(),
@@ -488,7 +504,11 @@ fn refund_tribute_test() {
         round_id: 10,
         tranche_id: 0,
         proposal_id: 5,
-        covenant_params: "covenant params".to_string(),
+        covenant_params: CovenantParams {
+            pool_id: "pool 1".to_string(),
+            outgoing_channel_id: "channel-1".to_string(),
+            funding_destination_name: "".to_string(),
+        },
         executed: false,
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
@@ -498,7 +518,11 @@ fn refund_tribute_test() {
         round_id: 10,
         tranche_id: 0,
         proposal_id: 6,
-        covenant_params: "covenant params".to_string(),
+        covenant_params: CovenantParams {
+            pool_id: "pool 2".to_string(),
+            outgoing_channel_id: "channel-2".to_string(),
+            funding_destination_name: "".to_string(),
+        },
         executed: false,
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
