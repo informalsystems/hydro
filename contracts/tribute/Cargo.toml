@@ -1,7 +1,6 @@
 [package]
-name = "atom-wars"
+name = "tribute"
 version = "1.0.0"
-authors = ["Udit Gulati"]
 edition = "2018"
 
 exclude = [
@@ -29,6 +28,7 @@ snafu = { version = "0.6.3" }
 thiserror = { version = "1.0.23" }
 cw-storage-plus = { version = "0.13.2" }
 cosmwasm-schema = { version = "1.0.0-beta8" }
+atom-wars = { path = "../atom_wars" }
 
 [dev-dependencies]
 cosmwasm-schema = { version = "1.0.0-beta8" }
