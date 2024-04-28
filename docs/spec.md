@@ -5,18 +5,17 @@ This document describes the technical specification of the Hydro protocol.
 The main contract is the Hydro contract, which is responsible for managing token locks,
 proposals, voting, and the execution of proposals.
 
-Hydro keeps the following state:
-* locks: a collection of locks, each of which has an id, sender, tokens, and lock_end_round
-* proposals: a collection of proposals, each of which has an id, round_id, tranche_id, metadata (e.g. description, covenant parameters, etc), whether the proposal was executed, whether the proposal was resolved, and current score.
-* votes: a collection of votes, each of which has a sender, round_id, proposal_id, and power
+The state that Hydro keeps can be found in [`../contracts/atom_wars/src/state.rs`](../contracts/atom_wars/src/state.rs).
 
 Hydro provides the following methods:
-* LockTokens(sender: Account, num_rounds: int, tokens: Coin)
-    * Escrow sent tokens to get voting power in the next rounds_locked rounds (this includes the current round).
+* LockTokens(sender: Account, duration: Time, tokens: Coin)
+    * Escrow sent tokens to get voting power according to the voting power formula.
     * The tokens will be locked until at least num_rounds rounds have been passed since locking, and further until for all proposals that the sender voted for with voting power from these tokens, the proposal has been marked as resolved.
+
 * IncreaseLock(sender: Account, lock_id: int, num_rounds: int)
     * Prerequisite: lock_end_round of the lock with the given lock_id must be less than current_round + num_rounds
     * Increase the lock_duration of the lock with the given lock_id. The lock_end_round is updated to the current_round + num_rounds.
+    * 
 * ReclaimUnlockedTokens(sender: Account)
 	* Reclaims all the tokens escrowed on behalf of the sender for which all proposals that were voted on with voting power from these tokens are marked as resolved. The tokens are sent back to the sender and the locks are deleted.
 * SubmitProposal(data: ?, tranche_id: int):
@@ -35,7 +34,7 @@ Hydro provides the following methods:
     be unlocked. This function should only be callable by authorized accounts: Either a multisig that handles the funds, or automatically by the Timewave covenant that enters/rebalances the LP positions.
 
 ## Voting power formula:
-    rounds_locked = (lock_end_round - current_round)
+    months_locked = (lock_end_time - current_time)
     power_factor = 
             * 0 if rounds_locked < 1
             * 1 if 2 > rounds_locked >= 1
