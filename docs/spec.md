@@ -63,6 +63,7 @@ Hydro provides the following methods:
 
 #### If all proposals that the owner of a lock has voted for are resolved and the lock_end_round is in the past, the tokens should be reclaimable.
 
+### After the round is over, the powers for proposals, the total power, etc should all be frozen and cannot be updated.
 
 ## Tribute
 The tribute contract handles the incentivization of voters by allowing anyone to
