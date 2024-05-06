@@ -10,6 +10,7 @@ use crate::{
 use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
 use cosmwasm_std::{BankMsg, CosmosMsg, Timestamp, Uint128};
 use cosmwasm_std::{Coin, StdError, StdResult};
+use proptest::prelude::*;
 
 pub const STATOM: &str = "ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA5222815620B3C";
 pub const TWO_WEEKS_IN_NANO_SECONDS: u64 = 14 * 24 * 60 * 60 * 1000000000;
@@ -488,5 +489,74 @@ fn test_round_id_computation() {
 
         let round_id = compute_current_round_id(deps.as_ref(), env);
         assert_eq!(expected_round_id, round_id);
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(10000))] // set the number of test cases to run
+    #[test]
+    fn relock_proptest(old_lock_remaining_time: u64, new_lock_duration: u8) {
+        let (mut deps, mut env, info) = (
+            mock_dependencies(),
+            mock_env(),
+            mock_info("addr0001", &[Coin::new(1000, STATOM.to_string())]),
+        );
+        let msg = get_default_instantiate_msg();
+
+        let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_ok());
+
+        // get the new lock duration
+        // list of plausible values, plus a value that should give an error every time (0)
+        let possible_lock_durations = vec![0, ONE_MONTH_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS * 3, ONE_MONTH_IN_NANO_SECONDS * 6, ONE_MONTH_IN_NANO_SECONDS * 12];
+        let new_lock_duration = possible_lock_durations[new_lock_duration as usize % possible_lock_durations.len()];
+
+        // old lock remaining time must be at most 12 months, so we take the modulo
+        let old_lock_remaining_time = old_lock_remaining_time % (ONE_MONTH_IN_NANO_SECONDS * 12);
+
+        // lock the tokens for 12 months
+        let msg = ExecuteMsg::LockTokens {
+            lock_duration: ONE_MONTH_IN_NANO_SECONDS * 12,
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+        assert!(res.is_ok());
+
+        // set the time so that old_lock_remaining_time remains on the old lock
+        env.block.time = env.block.time.plus_nanos(12 * ONE_MONTH_IN_NANO_SECONDS - old_lock_remaining_time);
+
+        // try to refresh the lock duration as a different user
+        let info2 = mock_info("addr0002", &[]);
+        let msg = ExecuteMsg::RefreshLockDuration {
+            lock_id: 0,
+            lock_duration: new_lock_duration,
+        };
+        let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
+
+        // different user cannot refresh the lock
+        assert!(res.is_err(), "different user should not be able to refresh the lock: {:?}", res);
+
+        // refresh the lock duration
+        let info = mock_info("addr0001", &[]);
+        let msg = ExecuteMsg::RefreshLockDuration {
+            lock_id: 0,
+            lock_duration: new_lock_duration,
+        };
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+
+        // if we try to refresh the lock with a duration of 0, it should fail
+        if new_lock_duration == 0 {
+            assert!(res.is_err());
+            return Ok(()); // end the test
+        }
+
+        // if we tried to make the lock_end sooner, it should fail
+        if new_lock_duration < old_lock_remaining_time {
+            assert!(res.is_err());
+            return Ok(()); // end the test
+        }
+
+        // otherwise, succeed
+        assert!(res.is_ok());
     }
 }

@@ -76,6 +76,10 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::LockTokens { lock_duration } => lock_tokens(deps, env, info, lock_duration),
+        ExecuteMsg::RefreshLockDuration {
+            lock_id,
+            lock_duration,
+        } => refresh_lock_duration(deps, env, info, lock_id, lock_duration),
         ExecuteMsg::UnlockTokens {} => unlock_tokens(deps, env, info),
         ExecuteMsg::CreateProposal {
             tranche_id,
@@ -106,16 +110,7 @@ fn lock_tokens(
     info: MessageInfo,
     lock_duration: u64,
 ) -> Result<Response, ContractError> {
-    // Validate that their lock duration (given in nanos) is either 1 month, 3 months, 6 months, or 12 months
-    if lock_duration != ONE_MONTH_IN_NANO_SECONDS
-        && lock_duration != ONE_MONTH_IN_NANO_SECONDS * 3
-        && lock_duration != ONE_MONTH_IN_NANO_SECONDS * 6
-        && lock_duration != ONE_MONTH_IN_NANO_SECONDS * 12
-    {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Lock duration must be 1, 3, 6, or 12 months",
-        )));
-    }
+    validate_lock_duration(lock_duration)?;
 
     // Validate that sent funds are the required denom
     if info.funds.len() != 1 {
@@ -146,6 +141,65 @@ fn lock_tokens(
     LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
 
     Ok(Response::new().add_attribute("action", "lock_tokens"))
+}
+
+// Extends the lock duration of a lock entry to be current_block_time + lock_duration,
+// assuming that this would actually increase the lock_end_time (so this *should not* be a way to make the lock time shorter).
+// Thus, the lock_end_time afterwards *must* be later than the lock_end_time before.
+// This should essentially have the same effect as removing the old lock and immediately re-locking all
+// the same funds for the new lock duration.
+fn refresh_lock_duration(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    lock_id: u64,
+    lock_duration: u64,
+) -> Result<Response, ContractError> {
+    validate_lock_duration(lock_duration)?;
+
+    // try to get the lock with the given id
+    // note that this is already indexed by the caller, so if it is successful, the sender owns this lock
+    let lock_entry = LOCKS_MAP.load(deps.storage, (info.sender.clone(), lock_id))?;
+
+    // log the lock entry
+    deps.api.debug(&format!("lock_entry: {:?}", lock_entry));
+
+    // compute the new lock_end_time
+    let new_lock_end = env.block.time.plus_nanos(lock_duration);
+
+    // check that the new lock_end_time is later than the old lock_end_time
+    if new_lock_end < lock_entry.lock_end {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Shortening locks is not allowed, new lock end time must be after the old lock end",
+        )));
+    }
+
+    // update the lock entry with the new lock_end_time
+    let updated_lock_entry = LockEntry {
+        funds: lock_entry.funds.clone(),
+        lock_start: lock_entry.lock_start,
+        lock_end: new_lock_end,
+    };
+
+    // save the updated lock entry
+    LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &updated_lock_entry)?;
+
+    Ok(Response::new().add_attribute("action", "refresh_lock_duration"))
+}
+
+// Validate that their lock duration (given in nanos) is either 1 month, 3 months, 6 months, or 12 months
+fn validate_lock_duration(lock_duration: u64) -> Result<(), ContractError> {
+    if lock_duration != ONE_MONTH_IN_NANO_SECONDS
+        && lock_duration != ONE_MONTH_IN_NANO_SECONDS * 3
+        && lock_duration != ONE_MONTH_IN_NANO_SECONDS * 6
+        && lock_duration != ONE_MONTH_IN_NANO_SECONDS * 12
+    {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Lock duration must be 1, 3, 6, or 12 months",
+        )));
+    } else {
+        Ok(())
+    }
 }
 
 // UnlockTokens():
