@@ -1,11 +1,8 @@
 # Hydro: Technical Specification
 This document describes the technical specification of the Hydro protocol. 
 
-## Main contract
-The main contract is the Hydro contract, which is responsible for managing token locks,
-proposals, voting, and the execution of proposals.
-
 The state that Hydro keeps can be found in [`../contracts/atom_wars/src/state.rs`](../contracts/atom_wars/src/state.rs).
+and [`../contracts/tribute/state.rs`](../contracts/tribute/state.rs).
 
 Let us first give a high-level overview of the functionality.
 Hydro allows users to lock tokens for a specified duration, and then vote on user-submitted proposals, with voting power depending on the
