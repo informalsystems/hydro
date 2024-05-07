@@ -7,90 +7,127 @@ proposals, voting, and the execution of proposals.
 
 The state that Hydro keeps can be found in [`../contracts/atom_wars/src/state.rs`](../contracts/atom_wars/src/state.rs).
 
-Hydro provides the following methods:
-* LockTokens(sender: Account, duration: Time, tokens: Coin)
-    * Escrow sent tokens to get voting power according to the voting power formula.
-    * The tokens will be locked until at least num_rounds rounds have been passed since locking, and further until for all proposals that the sender voted for with voting power from these tokens, the proposal has been marked as resolved.
+Let us first give a high-level overview of the functionality.
+Hydro allows users to lock tokens for a specified duration, and then vote on user-submitted proposals, with voting power depending on the
+duration of the lock and the number of tokens locked.
+Voting happens in rounds, each of which has a fixed duration.
+Further, there are multiple tranches, each of which has its own set of proposals, and each user can vote once for each tranche.
+Hydro also allows setting a whitelist of proposals which are acceptable, filtered on certain parameters in the proposal.
+For example, the parameters might be a pool ID on a DEX, a specific IBC channel over which to send tokens, etc.
 
-* IncreaseLock(sender: Account, lock_id: int, num_rounds: int)
-    * Prerequisite: lock_end_round of the lock with the given lock_id must be less than current_round + num_rounds
-    * Increase the lock_duration of the lock with the given lock_id. The lock_end_round is updated to the current_round + num_rounds.
-    * 
-* ReclaimUnlockedTokens(sender: Account)
-	* Reclaims all the tokens escrowed on behalf of the sender for which all proposals that were voted on with voting power from these tokens are marked as resolved. The tokens are sent back to the sender and the locks are deleted.
-* SubmitProposal(data: ?, tranche_id: int):
-    * Submit a new proposal in the current round. This stores the proposal data, and creates a proposal_id to identify it. Submitting a proposal also requires a configurable entry fee, which is paid, according to the
-    voting power distribution at the time of payment, to all the locked token accounts.
-    * Changes to the state: creates a new proposal with the given data and tranche_id, and sets the initial score to 0.
-* Vote(sender: Account, round_id: int, proposal_id: int):
-    * Adds the sender_power=senders tokens * power_factor (see below) to the score of the proposal with the given proposal_id. If the sender already voted in the tranche that proposal this is in, the previous vote is overwritten, i.e. the previous vote is removed from the score of the old proposal.
-    * Changes to the state: creates a new vote with the sender, round_id, proposal_id, and sender_power, and updates the score of the proposal with the given proposal_id.
-* ExecuteProposals(round_id: int):
-    * Once a round has ended, this function can be called to execute the proposals in the round. This function will distribute the funding for the tranche to the proposals according to their score via integration with Timewave.
-    Each proposal will only be executed once, even if this function is called multiple times. If the round did not reach enough total votes to reach some pre-defined quorum, the proposals will not be executed.
-    * Changes to the state: distributes the funding for the tranche to the proposals according to their score via integration with Timewave, and sets the executed flag for each funded proposal to true.
-* ResolveProposal(proposal_id: int):
-    * Once a proposal has been executed, this function should be called once the liquidity has been returned; or rebalanced according to the new proposal. This function will mark the proposal as resolved, and tokens that voted for this proposal can
-    be unlocked. This function should only be callable by authorized accounts: Either a multisig that handles the funds, or automatically by the Timewave covenant that enters/rebalances the LP positions.
 
-## Voting power formula:
-    months_locked = (lock_end_time - current_time)
-    power_factor = 
-            * 0 if rounds_locked < 1
-            * 1 if 2 > rounds_locked >= 1
-            * 1.5 if 4 > rounds_locked >= 2
-            * 2 if 7 > rounds_locked >= 4
-            * 4 if rounds_locked >= 7
+Additionally, anyone can submit *Tribute* for a proposal, which will be distributed to whoever voted on the proposal.
+The *Tribute* contract is a separate contract that interacts with the Hydro contract, and anyone can permissionlessly deploy their own, alternative
+Tribute contract by querying votes and proposals from Hydro.
+
+We assume that outside of Hydro, there is a separate contract that manages some funds which will be deployed according to
+the voting results aggregated by Hydro, but importantly, *the Hydro contract is agnostic to this*.
+This contract specifically only manages user locks, proposals, tribute, and voting.
+The actual fund distribution is done outside the Hydro contract. Due to this separation, funds could also be distributed by a trusted multisig instead of a smart contract, or any other mechanism.
+
+In the following, we give the technical specification of the Hydro contract.
+We group methods by functionality.
+We focus on the high-level concepts here, so datatypes are idealized (i.e. `Time` might be represented as a `u64` representing nanoseconds in the actual implementation).
+
+### Locks
+
+#### `LockTokens(sender: Account, tokens: Coin, lock_duration: Time)`
+Locks the given tokens for the duration.
+In the code, this creates a lock entry in the state, with the `sender`, `tokens`, `lock_end` (computed as `current_time` + `lock_duration`), and `lock_id`.
+In the current implementation, the tokens must be stAtoms only.
+The locked tokens will be held in escrow until they are reclaimed (see UnlockTokens).
+
+#### `RelockTokens(sender: Account, lock_id: int, new_lock_duration: Time)`
+Lets a user refresh the duration of an existing lock.
+The sender **must** be the account that created the original lock.
+The `new_lock_duration` must be greater than the remaining time of the original lock, that is, it is not allowed to shorten the lock duration
+with this function.
+
+#### `ReclaimUnlockedTokens(sender: Account)`
+For each lock created by the `sender` where `lock_end` is in the past, this function sends the tokens back to the sender and deletes the lock.
+
+### Proposals
+#### `SubmitProposal(metadata: CovenantParameters, tranche_id: int)`
+Submits a new proposal in the current round and the given tranche.
+The `metadata` is a struct that contains the parameters of the proposal.
+TODO: entry fee
+
+#### `Vote(sender: Account, proposal_id: int)`
+Adds the sender's voting power to the score of the proposal with the given `proposal_id`.
+If the sender already voted in the tranche that proposal is in, the previous vote is overwritten.
+The voting power is computed as a function of the remaining lock duration when the current round ends and the number of tokens locked, specifically
+`voting_power = \sum_{lock \in locks created by the sender} lock.tokens * power_factor(lock.lock_end - current_round_end)`,
+where `power_factor` is defined as:
+```
+power_factor(remaining_lock_time) = 
+    * 0 if remaining_lock_time <= 0
+    * 1 if 0 < remaining_lock_time <= 1 month
+    * 1.5 if 1 month < remaining_lock_time <= 3 months
+    * 2 if 3 months < remaining_lock_time <= 6 months
+    * 4 if remaining_lock_time >= 6 months
+```
+
+
+### Whitelist
+
+Hydro keeps a whitelist of what metadata is appropriate for proposals (e.g. to which liquidity pools can funding be deployed).
+This whitelist can be updated by a specific address which is set on contract creation, so all methods in this section
+require the sender to be this address.
+When querying the scores of proposals, the whitelist is checked to filter out proposals that are not whitelisted.
+
+#### `AddToWhiteList(sender: Account, metadata: CovenantParameters)`
+Adds the given metadata to the whitelist.
+
+#### `RemoveFromWhiteList(sender: Account, metadata: CovenantParameters)`
+Removes the given metadata from the whitelist.
+
+### Tribute
+
+Hydro provides a standard Tribute implementation, which should be appropriate for many cases.
+
+#### `LockTribute(sender: Account, tokens: Coin, proposal_id: int)`
+Locks the given tokens for the given `proposal_id`. Can only be done while the round this proposal is in is ongoing.
+
+#### `ClaimTribute(sender: Account, tribute_id: int)`
+After the round is over, the sender can claim their share of the tribute. The share is proportional to the proportion of the power of the
+sender's vote to the total power of the votes for the proposal, e.g. if the sender contributed 10% of the voting power, they can claim 10% of the tribute.
+
+For spam prevention, we assume that only the top N proposals are counted in the outcome, where N is a parameter of the contract and
+assumed to be large.
+If a proposal is not in the top N, the tribute is not actually claimable, but can be reclaimed (see below).
+
+#### `RefundTribute(sender: Account, tribute_id: int)`
+If the proposal associated with the tribute_id received no support at all, the sender can reclaim their tokens.
+
 
 
 ### Correctness Properties
-
-#### All IDs are unique - there cannot ever be two proposals with the same ID, nor two locks with the same lock_id, etc.
 
 #### The score of a proposal should be the sum of the lock-weighted tokens that voted for it.
 
-#### For each round, the sum of assigned funding for all proposals should be the total available funding * the proportion of lock_weighted tokens that voted.
-
 #### For every tranche, the total voting power should be at most the total lock_weighted locked tokens.
 
-#### If you voted with power from N tokens in round R, then your N tokens remain locked until all proposals that you voted for in round R are resolved.
-
-#### If you lock during round R for M rounds, you should have exactly M rounds of non-zero voting power: R, R+1, ..., R+M-1
+#### If a user locks during round R for M rounds, they should have exactly M rounds of non-zero voting power from these tokens: R, R+1, ..., R+M-1
 
 #### The voting power of locked tokens where current_round >= lock_end_round is zero.
 
-#### If tokens are reclaimed during round R+1, then those tokens must give you no voting power in round R.
-
 #### If all proposals that the owner of a lock has voted for are resolved and the lock_end_round is in the past, the tokens should be reclaimable.
 
-### After the round is over, the powers for proposals, the total power, etc should all be frozen and cannot be updated.
+#### After the round is over, the powers for proposals, the total power, etc should all be frozen and cannot be updated.
 
-## Tribute
-The tribute contract handles the incentivization of voters by allowing anyone to
-lock a tribute for a specified proposal, which, upon the end of a round, will be distributed to
-the voters of the proposal. The tribute contract keeps the following state:
-* tributes: a collection of tributes, each of which has an id, sender, tokens, proposal_id, and round_id.
-* claimers: a collection of claimers, each of which has a tribute_id and claimer_address. Used to keep track of who has claimed their share of the tribute, to avoid people claiming multiple times.
+#### If tokens are locked at time t for a duration d, there should be no way to reclaim these tokens before t+d.
 
-The tribute contract provides the following methods:
-* LockTribute(sender: Account, tokens: Coin, proposal_id: int, round_id: int)
-    * Locks the given tokens for the given proposal_id and round_id. The tokens will become claimable after the round ends and proposals were executed; who can claim them depends on the outcome
-    for the proposal.
-    * Changes to the state: creates a new tribute with the given sender, tokens, proposal_id, and round_id.
+#### During a round, tributes for proposals in that round can never be deleted or decrease in token amount, only new tributes can be added.
 
-* ClaimTribute(sender: Account, tribute_id: int):
-    * If the sender voted for the proposal associated with the tribute_id, the sender can claim their share of the tribute. The share is proportional to the proportion of the power of the
-    sender's vote to the total power of the votes for the proposal. In particular, claimed_tokens = total_tribute_amount * sender_vote_power_for_prop / total_prop_score
-    * Changes to the state: transfers the tokens to the sender, adds the sender to the claimers list for the tribute_id.
+#### After a round has ended, no new tributes can be added for proposals in that round.
 
-* RefundTribute(sender: Account, tribute_id: int):
-    * If the proposal associated with the tribute_id received no support at all, the sender can reclaim their tokens. This is only possible after the round has ended, and we know the final scores.
-    * Changes to the state: transfers the tribute tokens back to the sender.
+In consequence, over a round, the total number of locked tokens in tributes can only increase.
+After the round is over, the total number of locked tokens can only decrease.
 
-### Correctness Properties
+#### If a proposal is not in the top N proposals, the tribute should be refundable.
 
-#### All IDs are unique - there cannot ever be two tributes with the same ID.
+#### If a proposal does not get any votes at all, the tribute should be refundable.
 
 #### The sum of the claimed tokens for a tribute should be at most the total tokens locked for the tribute.
 
-#### The claim amount for each voter is defined as claimed_tokens = total_tribute_amount * sender_vote_power_for_prop / total_prop_score
+#### For any tribute, it should hold that *either* the tribute is refundable by the sender, or it is claimable by the voters. It should never be the case that some address can claim a tribute, but also that same tribute is refundable, and neither should a tribute be both refundable and claimable.
