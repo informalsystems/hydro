@@ -228,7 +228,7 @@ fn refund_tribute(
 ) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
 
-    // Check that the round is ended by checking that the round_id is not the current round
+    // Check that the round is ended by checking that the round_id is less than the current round
     let current_round_id = query_current_round_id(&deps, &config.atom_wars_contract)?;
     if round_id >= current_round_id {
         return Err(ContractError::Std(StdError::generic_err(
