@@ -14,6 +14,6 @@ compile:
 
 compile-rust-optimizer:
 	@docker run --rm -v "$(CURDIR)":/code \
-		--mount type=volume,source="$(basename "$(CURDIR)")_cache",target=/target \
+		--mount type=volume,source="$(notdir $(CURDIR))_cache",target=/target \
 		--mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
 		cosmwasm/optimizer:0.15.0
