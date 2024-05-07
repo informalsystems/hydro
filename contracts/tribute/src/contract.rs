@@ -123,7 +123,7 @@ fn add_tribute(
 
 // ClaimTribute(round_id, tranche_id, prop_id):
 //     Check that the round is ended
-//     Check that the prop won
+//     Check that the prop was among the top N proposals for this tranche/round
 //     Look up sender's vote for the round
 //     Check that the sender voted for the prop
 //     Check that the sender has not already claimed the tribute
