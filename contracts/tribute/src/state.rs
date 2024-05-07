@@ -16,6 +16,10 @@ pub const TRIBUTE_ID: Item<u64> = Item::new("tribute_id");
 pub const TRIBUTE_MAP: Map<((u64, u64), u64, u64), Tribute> = Map::new("tribute_map");
 #[cw_serde]
 pub struct Tribute {
+    pub round_id: u64,
+    pub tranche_id: u64,
+    pub proposal_id: u64,
+    pub tribute_id: u64,
     pub depositor: Addr,
     pub funds: Coin,
     pub refunded: bool,

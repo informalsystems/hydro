@@ -102,6 +102,10 @@ fn add_tribute(
     let tribute_id = TRIBUTE_ID.load(deps.storage)?;
     TRIBUTE_ID.save(deps.storage, &(tribute_id + 1))?;
     let tribute = Tribute {
+        round_id: current_round_id,
+        tranche_id,
+        proposal_id,
+        tribute_id,
         funds: info.funds[0].clone(),
         depositor: info.sender.clone(),
         refunded: false,
@@ -165,19 +169,14 @@ fn claim_tribute(
     )?;
 
     // Check that the sender voted for one of the top N proposals
-    if !is_top_n_proposal(&deps, &config, round_id, tranche_id, vote.prop_id)? {
-        return Err(ContractError::Std(StdError::generic_err(
-            "User voted for proposal outside of top N proposals",
-        )));
-    }
-
-    let proposal = query_proposal(
-        &deps,
-        &config.atom_wars_contract,
-        round_id,
-        tranche_id,
-        vote.prop_id,
-    )?;
+    let proposal = match get_top_n_proposal(&deps, &config, round_id, tranche_id, vote.prop_id)? {
+        Some(prop) => prop,
+        None => {
+            return Err(ContractError::Std(StdError::generic_err(
+                "User voted for proposal outside of top N proposals",
+            )))
+        }
+    };
 
     // Load the tribute and use the percentage to figure out how much of the tribute to send them
     let tribute = TRIBUTE_MAP.load(
@@ -187,6 +186,10 @@ fn claim_tribute(
 
     // Divide sender's vote power by the prop's power to figure out their percentage
     let percentage_fraction = (vote.power, proposal.power);
+    // checked_mul_floor() is used so that, due to the precision, contract doesn't transfer by 1 token more
+    // to some users, which would leave the last users trying to claim the tribute unable to do so
+    // This also implies that some dust amount of tokens could be left on the contract after everyone
+    // claiming their portion of the tribute
     let amount = match tribute.funds.amount.checked_mul_floor(percentage_fraction) {
         Ok(amount) => amount,
         Err(_) => {
@@ -236,7 +239,7 @@ fn refund_tribute(
         )));
     }
 
-    if is_top_n_proposal(&deps, &config, round_id, tranche_id, proposal_id)? {
+    if let Some(_) = get_top_n_proposal(&deps, &config, round_id, tranche_id, proposal_id)? {
         return Err(ContractError::Std(StdError::generic_err(
             "Can't refund top N proposal",
         )));
@@ -354,13 +357,13 @@ fn query_user_vote(
     )?)
 }
 
-fn is_top_n_proposal(
+fn get_top_n_proposal(
     deps: &DepsMut,
     config: &Config,
     round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
-) -> Result<bool, ContractError> {
+) -> Result<Option<Proposal>, ContractError> {
     let proposals: Vec<Proposal> = deps.querier.query_wasm_smart(
         &config.atom_wars_contract,
         &AtomWarsQueryMsg::TopNProposals {
@@ -372,9 +375,9 @@ fn is_top_n_proposal(
 
     for proposal in proposals {
         if proposal.proposal_id == proposal_id {
-            return Ok(true);
+            return Ok(Some(proposal));
         }
     }
 
-    Ok(false)
+    Ok(None)
 }
