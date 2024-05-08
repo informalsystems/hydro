@@ -35,9 +35,17 @@ pub fn instantiate(
         )));
     }
 
+    // validate that the lock epoch length is not shorter than the round length
+    if msg.lock_epoch_length < msg.round_length {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Lock epoch length must not be shorter than the round length",
+        )));
+    }
+
     let state = Constants {
         denom: msg.denom.clone(),
         round_length: msg.round_length,
+        lock_epoch_length: msg.lock_epoch_length,
         total_pool: msg.total_pool,
         first_round_start: msg.first_round_start,
     };
@@ -110,7 +118,8 @@ fn lock_tokens(
     info: MessageInfo,
     lock_duration: u64,
 ) -> Result<Response, ContractError> {
-    validate_lock_duration(lock_duration)?;
+    let constants = CONSTANTS.load(deps.storage)?;
+    validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
 
     // Validate that sent funds are the required denom
     if info.funds.len() != 1 {
@@ -119,12 +128,8 @@ fn lock_tokens(
         )));
     }
 
-    let sent_funds = info
-        .funds
-        .get(0)
-        .ok_or_else(|| ContractError::Std(StdError::generic_err("Must send exactly one coin")))?;
-
-    if sent_funds.denom != CONSTANTS.load(deps.storage)?.denom {
+    let sent_funds = info.funds[0].clone();
+    if sent_funds.denom != constants.denom {
         return Err(ContractError::Std(StdError::generic_err(
             "Must send the correct denom",
         )));
@@ -132,10 +137,11 @@ fn lock_tokens(
 
     // Create entry in LocksMap
     let lock_entry = LockEntry {
-        funds: sent_funds.clone(),
+        funds: sent_funds,
         lock_start: env.block.time,
         lock_end: env.block.time.plus_nanos(lock_duration),
     };
+
     let lock_id = LOCK_ID.load(deps.storage)?;
     LOCK_ID.save(deps.storage, &(lock_id + 1))?;
     LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
@@ -155,7 +161,8 @@ fn refresh_lock_duration(
     lock_id: u64,
     lock_duration: u64,
 ) -> Result<Response, ContractError> {
-    validate_lock_duration(lock_duration)?;
+    let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
+    validate_lock_duration(lock_epoch_length, lock_duration)?;
 
     // try to get the lock with the given id
     // note that this is already indexed by the caller, so if it is successful, the sender owns this lock
@@ -183,15 +190,15 @@ fn refresh_lock_duration(
     Ok(Response::new().add_attribute("action", "refresh_lock_duration"))
 }
 
-// Validate that their lock duration (given in nanos) is either 1 month, 3 months, 6 months, or 12 months
-fn validate_lock_duration(lock_duration: u64) -> Result<(), ContractError> {
-    if lock_duration != ONE_MONTH_IN_NANO_SECONDS
-        && lock_duration != ONE_MONTH_IN_NANO_SECONDS * 3
-        && lock_duration != ONE_MONTH_IN_NANO_SECONDS * 6
-        && lock_duration != ONE_MONTH_IN_NANO_SECONDS * 12
+// Validate that the lock duration (given in nanos) is either 1, 3, 6, or 12 epochs
+fn validate_lock_duration(lock_epoch_length: u64, lock_duration: u64) -> Result<(), ContractError> {
+    if lock_duration != lock_epoch_length
+        && lock_duration != lock_epoch_length * 3
+        && lock_duration != lock_epoch_length * 6
+        && lock_duration != lock_epoch_length * 12
     {
         return Err(ContractError::Std(StdError::generic_err(
-            "Lock duration must be 1, 3, 6, or 12 months",
+            "Lock duration must be 1, 3, 6, or 12 epochs",
         )));
     }
 
@@ -287,27 +294,25 @@ fn create_proposal(
     Ok(Response::new().add_attribute("action", "create_proposal"))
 }
 
-fn scale_lockup_power(lockup_time: u64, raw_power: Uint128) -> Uint128 {
+fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: Uint128) -> Uint128 {
     let two: Uint128 = 2u16.into();
 
     // Scale lockup power
-    // 1x if lockup is between 0 and 1 months
-    // 1.5x if lockup is between 1 and 3 months
-    // 2x if lockup is between 3 and 6 months
-    // 4x if lockup is between 6 and 12 months
+    // 1x if lockup is between 0 and 1 epochs
+    // 1.5x if lockup is between 1 and 3 epochs
+    // 2x if lockup is between 3 and 6 epochs
+    // 4x if lockup is between 6 and 12 epochs
     // TODO: is there a less funky way to do Uint128 math???
-    let scaled_power = match lockup_time {
-        // 4x if lockup is over 6 months
-        lockup_time if lockup_time > ONE_MONTH_IN_NANO_SECONDS * 6 => raw_power * two * two,
-        // 2x if lockup is between 3 and 6 months
-        lockup_time if lockup_time > ONE_MONTH_IN_NANO_SECONDS * 3 => raw_power * two,
-        // 1.5x if lockup is between 1 and 3 months
-        lockup_time if lockup_time > ONE_MONTH_IN_NANO_SECONDS => raw_power + (raw_power / two),
-        // Covers 0 and 1 month which have no scaling
+    match lockup_time {
+        // 4x if lockup is over 6 epochs
+        lockup_time if lockup_time > lock_epoch_length * 6 => raw_power * two * two,
+        // 2x if lockup is between 3 and 6 epochs
+        lockup_time if lockup_time > lock_epoch_length * 3 => raw_power * two,
+        // 1.5x if lockup is between 1 and 3 epochs
+        lockup_time if lockup_time > lock_epoch_length => raw_power + (raw_power / two),
+        // Covers 0 and 1 epoch which have no scaling
         _ => raw_power,
-    };
-
-    scaled_power
+    }
 }
 
 fn vote(
@@ -387,6 +392,7 @@ fn vote(
         VOTE_MAP.remove(deps.storage, (round_id, tranche_id, info.sender.clone()));
     }
 
+    let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
     // Get sender's total locked power
     let mut power: Uint128 = Uint128::zero();
     let locks =
@@ -402,12 +408,13 @@ fn vote(
             continue;
         }
 
-        // Get the remaining lockup time at the end of this round.
+        // Get the remaining lockup length at the end of this round.
         // This means that their power will be scaled the same by this function no matter when they vote in the round
-        let lockup_time = lock_entry.lock_end.nanos() - round_end.nanos();
+        let lockup_length = lock_entry.lock_end.nanos() - round_end.nanos();
 
         // Scale power. This is what implements the different powers for different lockup times.
-        let scaled_power = scale_lockup_power(lockup_time, lock_entry.funds.amount);
+        let scaled_power =
+            scale_lockup_power(lock_epoch_length, lockup_length, lock_entry.funds.amount);
 
         power += scaled_power;
     }
@@ -604,6 +611,7 @@ pub fn query_user_voting_power(deps: Deps, env: Env, address: String) -> StdResu
     let user_address = deps.api.addr_validate(&address)?;
     let current_round_id = compute_current_round_id(deps, env)?;
     let round_end = compute_round_end(deps, current_round_id)?;
+    let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
 
     Ok(LOCKS_MAP
         .prefix(user_address)
@@ -611,8 +619,8 @@ pub fn query_user_voting_power(deps: Deps, env: Env, address: String) -> StdResu
         .map(|l| l.unwrap().1)
         .filter(|l| l.lock_end > round_end)
         .map(|lockup| {
-            let lockup_time = lockup.lock_end.nanos() - round_end.nanos();
-            scale_lockup_power(lockup_time, lockup.funds.amount).u128()
+            let lockup_length = lockup.lock_end.nanos() - round_end.nanos();
+            scale_lockup_power(lock_epoch_length, lockup_length, lockup.funds.amount).u128()
         })
         .sum())
 }
@@ -680,7 +688,7 @@ pub fn query_top_n_proposals(
                     .unwrap();
                 whitelist.contains(&prop.covenant_params)
             }
-            Err(e) => false,
+            Err(_) => false,
         })
         .take(num)
         .map(|x| match x {

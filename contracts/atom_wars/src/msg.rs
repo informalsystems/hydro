@@ -8,6 +8,7 @@ use crate::state::{CovenantParams, Tranche};
 pub struct InstantiateMsg {
     pub denom: String,
     pub round_length: u64,
+    pub lock_epoch_length: u64,
     pub total_pool: Uint128,
     pub tranches: Vec<Tranche>,
     pub first_round_start: Timestamp,
