@@ -159,7 +159,7 @@ fn refresh_lock_duration(
 
     // try to get the lock with the given id
     // note that this is already indexed by the caller, so if it is successful, the sender owns this lock
-    let lock_entry = LOCKS_MAP.load(deps.storage, (info.sender.clone(), lock_id))?;
+    let mut lock_entry = LOCKS_MAP.load(deps.storage, (info.sender.clone(), lock_id))?;
 
     // log the lock entry
     deps.api.debug(&format!("lock_entry: {:?}", lock_entry));
@@ -175,14 +175,10 @@ fn refresh_lock_duration(
     }
 
     // update the lock entry with the new lock_end_time
-    let updated_lock_entry = LockEntry {
-        funds: lock_entry.funds.clone(),
-        lock_start: lock_entry.lock_start,
-        lock_end: new_lock_end,
-    };
+    lock_entry.lock_end = new_lock_end;
 
     // save the updated lock entry
-    LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &updated_lock_entry)?;
+    LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
 
     Ok(Response::new().add_attribute("action", "refresh_lock_duration"))
 }
