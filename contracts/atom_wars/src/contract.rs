@@ -238,7 +238,7 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
 
     let mut response = Response::new().add_attribute("action", "unlock_tokens");
 
-    if sends.len() > 0 {
+    if !sends.is_empty() {
         response = response.add_message(BankMsg::Send {
             to_address: info.sender.to_string(),
             amount: sends,
@@ -604,7 +604,7 @@ pub fn query_proposal(
     tranche_id: u64,
     proposal_id: u64,
 ) -> StdResult<Proposal> {
-    Ok(PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?)
+    PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))
 }
 
 pub fn query_user_voting_power(deps: Deps, env: Env, address: String) -> StdResult<u128> {
@@ -631,10 +631,10 @@ pub fn query_user_vote(
     tranche_id: u64,
     user_address: String,
 ) -> StdResult<Vote> {
-    Ok(VOTE_MAP.load(
+    VOTE_MAP.load(
         deps.storage,
         (round_id, tranche_id, deps.api.addr_validate(&user_address)?),
-    )?)
+    )
 }
 
 pub fn query_round_tranche_proposals(
@@ -642,7 +642,7 @@ pub fn query_round_tranche_proposals(
     round_id: u64,
     tranche_id: u64,
 ) -> StdResult<RoundProposalsResponse> {
-    if let Err(_) = TRANCHE_MAP.load(deps.storage, tranche_id) {
+    if TRANCHE_MAP.load(deps.storage, tranche_id).is_err() {
         return Err(StdError::generic_err("Tranche does not exist"));
     }
 
@@ -668,7 +668,7 @@ pub fn query_top_n_proposals(
     tranche_id: u64,
     num: usize,
 ) -> StdResult<Vec<Proposal>> {
-    if let Err(_) = TRANCHE_MAP.load(deps.storage, tranche_id) {
+    if TRANCHE_MAP.load(deps.storage, tranche_id).is_err() {
         return Err(StdError::generic_err("Tranche does not exist"));
     }
 
@@ -710,14 +710,14 @@ pub fn query_top_n_proposals(
         .fold(0u128, |sum, prop| sum + prop.power.u128());
 
     // return top props
-    return Ok(top_props
+    Ok(top_props
         .into_iter() // Change from iter() to into_iter()
         .map(|mut prop| {
             // Change to mutable binding
             prop.percentage = (prop.power.u128() / sum_power).into();
             prop
         })
-        .collect());
+        .collect())
 }
 
 pub fn query_tranches(deps: Deps) -> StdResult<Vec<Tranche>> {

@@ -87,7 +87,7 @@ fn lock_tokens_basic_test() {
     let res = query_all_user_lockups(deps.as_ref(), user_address.to_string());
     assert!(res.is_ok());
     let res = res.unwrap();
-    assert_eq!(2, (&res).lockups.len());
+    assert_eq!(2, res.lockups.len());
 
     let lockup = &res.lockups[0];
     assert_eq!(info1.funds[0].amount.u128(), lockup.funds.amount.u128());
@@ -208,7 +208,7 @@ fn create_proposal_basic_test() {
     assert!(res.is_ok());
 
     let res = res.unwrap();
-    assert_eq!(2, (&res).proposals.len());
+    assert_eq!(2, res.proposals.len());
 
     let proposal = &res.proposals[0];
     assert_eq!(expected_round_id, proposal.round_id);
@@ -505,7 +505,7 @@ proptest! {
 
         // get the new lock duration
         // list of plausible values, plus a value that should give an error every time (0)
-        let possible_lock_durations = vec![0, ONE_MONTH_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS * 3, ONE_MONTH_IN_NANO_SECONDS * 6, ONE_MONTH_IN_NANO_SECONDS * 12];
+        let possible_lock_durations = [0, ONE_MONTH_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS * 3, ONE_MONTH_IN_NANO_SECONDS * 6, ONE_MONTH_IN_NANO_SECONDS * 12];
         let new_lock_duration = possible_lock_durations[new_lock_duration as usize % possible_lock_durations.len()];
 
         // old lock remaining time must be at most 12 months, so we take the modulo

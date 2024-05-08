@@ -239,7 +239,7 @@ fn refund_tribute(
         )));
     }
 
-    if let Some(_) = get_top_n_proposal(&deps, &config, round_id, tranche_id, proposal_id)? {
+    if get_top_n_proposal(&deps, &config, round_id, tranche_id, proposal_id)?.is_some() {
         return Err(ContractError::Std(StdError::generic_err(
             "Can't refund top N proposal",
         )));
