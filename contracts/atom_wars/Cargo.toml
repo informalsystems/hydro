@@ -32,3 +32,4 @@ cosmwasm-schema = { version = "1.0.0-beta8" }
 
 [dev-dependencies]
 cosmwasm-schema = { version = "1.0.0-beta8" }
+proptest = "1.0.0"

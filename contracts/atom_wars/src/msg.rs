@@ -21,6 +21,10 @@ pub enum ExecuteMsg {
     LockTokens {
         lock_duration: u64,
     },
+    RefreshLockDuration {
+        lock_id: u64,
+        lock_duration: u64,
+    },
     UnlockTokens {},
     CreateProposal {
         tranche_id: u64,
