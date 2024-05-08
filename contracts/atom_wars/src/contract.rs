@@ -168,7 +168,7 @@ fn refresh_lock_duration(
     let new_lock_end = env.block.time.plus_nanos(lock_duration);
 
     // check that the new lock_end_time is later than the old lock_end_time
-    if new_lock_end < lock_entry.lock_end {
+    if new_lock_end <= lock_entry.lock_end {
         return Err(ContractError::Std(StdError::generic_err(
             "Shortening locks is not allowed, new lock end time must be after the old lock end",
         )));
