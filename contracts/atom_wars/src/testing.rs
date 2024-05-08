@@ -5,7 +5,7 @@ use crate::{
         query_proposal, query_round_tranche_proposals, query_top_n_proposals,
         ONE_MONTH_IN_NANO_SECONDS,
     },
-    ExecuteMsg, InstantiateMsg,
+    msg::{ExecuteMsg, InstantiateMsg},
 };
 use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
 use cosmwasm_std::{BankMsg, CosmosMsg, Timestamp, Uint128};

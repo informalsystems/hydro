@@ -1,8 +1,9 @@
 use crate::{
     contract::{execute, instantiate, query_proposal_tributes},
-    ExecuteMsg, InstantiateMsg,
+    msg::{ExecuteMsg, InstantiateMsg},
 };
-use atom_wars::{CovenantParams, Proposal, QueryMsg as AtomWarsQueryMsg, Vote};
+use atom_wars::query::QueryMsg as AtomWarsQueryMsg;
+use atom_wars::state::{CovenantParams, Proposal, Vote};
 use cosmwasm_std::{
     from_json,
     testing::{mock_dependencies, mock_env, mock_info},
