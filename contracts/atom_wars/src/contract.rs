@@ -198,7 +198,7 @@ fn validate_lock_duration(lock_duration: u64) -> Result<(), ContractError> {
             "Lock duration must be 1, 3, 6, or 12 months",
         )));
     }
-    
+
     Ok(())
 }
 
