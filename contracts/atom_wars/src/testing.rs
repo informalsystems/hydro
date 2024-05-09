@@ -223,7 +223,7 @@ fn vote_basic_test() {
     let user_address = "addr0000";
     let user_token = Coin::new(1000, STATOM.to_string());
 
-    let (mut deps, env, info) = (
+    let (mut deps, mut env, info) = (
         mock_dependencies(),
         mock_env(),
         mock_info(user_address, &[user_token.clone()]),
@@ -261,6 +261,21 @@ fn vote_basic_test() {
     let res = query_proposal(deps.as_ref(), round_id, 1, proposal_id);
     assert!(res.is_ok());
     assert_eq!(info.funds[0].amount.u128(), res.unwrap().power.u128());
+
+    // advance the chain by two weeks + 1 nano second to move to the next round and try to unlock tokens
+    env.block.time = env.block.time.plus_nanos(TWO_WEEKS_IN_NANO_SECONDS + 1);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::UnlockTokens {},
+    );
+
+    // user voted for a proposal in previous round so it won't be able to unlock tokens
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains(
+        "Tokens can not be unlocked, user voted for at least one proposal in previous round"
+    ));
 }
 
 #[test]
