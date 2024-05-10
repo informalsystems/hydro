@@ -2,6 +2,7 @@ use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
     Order, Response, StdError, StdResult,
 };
+use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
@@ -9,6 +10,11 @@ use crate::query::QueryMsg;
 use crate::state::{Config, Tribute, CONFIG, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP};
 use atom_wars::query::QueryMsg as AtomWarsQueryMsg;
 use atom_wars::state::{Proposal, Vote};
+
+/// Contract name that is used for migration.
+const CONTRACT_NAME: &str = "tribute";
+/// Contract version that is used for migration.
+const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const DEFAULT_MAX_ENTRIES: usize = 100;
 
@@ -19,6 +25,7 @@ pub fn instantiate(
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
+    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     let config = Config {
         atom_wars_contract: deps.api.addr_validate(&msg.atom_wars_contract)?,
         top_n_props_count: msg.top_n_props_count,
