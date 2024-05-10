@@ -20,6 +20,7 @@ pub fn get_default_instantiate_msg() -> InstantiateMsg {
     InstantiateMsg {
         denom: STATOM.to_string(),
         round_length: TWO_WEEKS_IN_NANO_SECONDS,
+        lock_epoch_length: ONE_MONTH_IN_NANO_SECONDS,
         total_pool: Uint128::zero(),
         tranches: vec![Tranche {
             tranche_id: 1,
@@ -286,7 +287,6 @@ fn multi_tranches_test() {
     assert!(res.is_ok());
 
     // create two proposals for tranche 1
-    let covenant_params_1 = "first proposal";
     let msg1 = ExecuteMsg::CreateProposal {
         tranche_id: 1,
         covenant_params: get_default_covenant_params(),
@@ -294,7 +294,6 @@ fn multi_tranches_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg1.clone());
     assert!(res.is_ok());
 
-    let covenant_params_2 = "second proposal";
     let msg2 = ExecuteMsg::CreateProposal {
         tranche_id: 1,
         covenant_params: get_default_covenant_params(),
@@ -303,7 +302,6 @@ fn multi_tranches_test() {
     assert!(res.is_ok());
 
     // create two proposals for tranche 2
-    let covenant_params_3 = "third proposal";
     let msg3 = ExecuteMsg::CreateProposal {
         tranche_id: 2,
         covenant_params: get_default_covenant_params(),
@@ -311,7 +309,6 @@ fn multi_tranches_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg3.clone());
     assert!(res.is_ok());
 
-    let covenant_params_4 = "fourth proposal";
     let msg4 = ExecuteMsg::CreateProposal {
         tranche_id: 2,
         covenant_params: get_default_covenant_params(),
