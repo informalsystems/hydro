@@ -18,7 +18,6 @@ use crate::state::{
     WHITELIST_ADMINS,
 };
 
-pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
 pub const DEFAULT_MAX_ENTRIES: usize = 100;
 
 #[entry_point]

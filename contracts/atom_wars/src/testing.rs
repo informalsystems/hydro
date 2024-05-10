@@ -3,7 +3,6 @@ use crate::{
     contract::{
         compute_current_round_id, execute, instantiate, query_all_user_lockups, query_constants,
         query_proposal, query_round_tranche_proposals, query_top_n_proposals,
-        ONE_MONTH_IN_NANO_SECONDS,
     },
     msg::{ExecuteMsg, InstantiateMsg},
 };
@@ -14,6 +13,7 @@ use proptest::prelude::*;
 
 pub const STATOM: &str = "ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA5222815620B3C";
 pub const TWO_WEEKS_IN_NANO_SECONDS: u64 = 14 * 24 * 60 * 60 * 1000000000;
+pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
 pub const THREE_MONTHS_IN_NANO_SECONDS: u64 = 3 * ONE_MONTH_IN_NANO_SECONDS;
 
 pub fn get_default_instantiate_msg() -> InstantiateMsg {
