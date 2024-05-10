@@ -1,8 +1,9 @@
 use crate::{
     contract::{execute, instantiate, query_proposal_tributes},
-    ExecuteMsg, InstantiateMsg,
+    msg::{ExecuteMsg, InstantiateMsg},
 };
-use atom_wars::{CovenantParams, Proposal, QueryMsg as AtomWarsQueryMsg, Vote};
+use atom_wars::query::QueryMsg as AtomWarsQueryMsg;
+use atom_wars::state::{CovenantParams, Proposal, Vote};
 use cosmwasm_std::{
     from_json,
     testing::{mock_dependencies, mock_env, mock_info},
@@ -137,18 +138,21 @@ struct ClaimTributeTestCase {
     // (round_id, tranche_id, proposal_id, tribute_id)
     tribute_info: (u64, u64, u64, u64),
     tribute_to_add: Vec<Coin>,
-    // (add_tribute_round_id, claim_tribute_round_id, proposal, user_vote, top_n_proposals)
-    mock_data: (
-        u64,
-        u64,
-        Option<Proposal>,
-        Option<(u64, u64, String, Vote)>,
-        Vec<Proposal>,
-    ),
+    mock_data: ClaimTributeMockData,
     expected_tribute_claim: u128,
     expected_success: bool,
     expected_error_msg: String,
 }
+
+// to make clippy happy :)
+// (add_tribute_round_id, claim_tribute_round_id, proposal, user_vote, top_n_proposals)
+type ClaimTributeMockData = (
+    u64,
+    u64,
+    Option<Proposal>,
+    Option<(u64, u64, String, Vote)>,
+    Vec<Proposal>,
+);
 
 struct RefundTributeTestCase {
     description: String,
@@ -275,11 +279,10 @@ fn add_tribute_test() {
         );
         assert_eq!(test.tributes_to_add.len(), res.len());
 
-        for i in 0..test.tributes_to_add.len() - 1 {
-            let tribute = &test.tributes_to_add[i];
+        for (i, tribute) in test.tributes_to_add.iter().enumerate() {
             assert_eq!(res[i].funds, tribute[0].clone());
             assert_eq!(res[i].depositor.to_string(), tribute_payer.to_string());
-            assert_eq!(res[i].refunded, false);
+            assert!(!res[i].refunded);
         }
     }
 }

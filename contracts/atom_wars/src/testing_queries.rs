@@ -1,11 +1,9 @@
+use crate::testing::ONE_MONTH_IN_NANO_SECONDS;
 use crate::{
-    contract::{
-        execute, instantiate, query_expired_user_lockups, query_user_voting_power,
-        ONE_MONTH_IN_NANO_SECONDS,
-    },
+    contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
+    msg::ExecuteMsg,
     state::LockEntry,
     testing::{get_default_instantiate_msg, STATOM},
-    ExecuteMsg,
 };
 use cosmwasm_std::{
     testing::{mock_dependencies, mock_env, mock_info, MockApi, MockQuerier, MockStorage},

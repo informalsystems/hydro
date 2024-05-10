@@ -1,11 +1,8 @@
 pub mod contract;
 mod error;
-mod msg;
-mod query;
+pub mod msg;
+pub mod query;
 mod state;
-
-pub use msg::{ExecuteMsg, InstantiateMsg};
-pub use query::QueryMsg;
 
 #[cfg(test)]
 mod testing;

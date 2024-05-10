@@ -7,7 +7,8 @@ use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::QueryMsg;
 use crate::state::{Config, Tribute, CONFIG, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP};
-use atom_wars::{Proposal, QueryMsg as AtomWarsQueryMsg, Vote};
+use atom_wars::query::QueryMsg as AtomWarsQueryMsg;
+use atom_wars::state::{Proposal, Vote};
 
 pub const DEFAULT_MAX_ENTRIES: usize = 100;
 
@@ -239,7 +240,7 @@ fn refund_tribute(
         )));
     }
 
-    if let Some(_) = get_top_n_proposal(&deps, &config, round_id, tranche_id, proposal_id)? {
+    if get_top_n_proposal(&deps, &config, round_id, tranche_id, proposal_id)?.is_some() {
         return Err(ContractError::Std(StdError::generic_err(
             "Can't refund top N proposal",
         )));

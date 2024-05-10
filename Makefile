@@ -1,10 +1,10 @@
-.PHONY: test fmt fmt-fix compile compile-rust-optimizer
+.PHONY: test fmt clippy compile compile-rust-optimizer
 
 fmt:
-	@cargo fmt --all --check
-
-fmt-fix:
 	@cargo fmt --all
+
+clippy:
+	@cargo clippy --all --all-targets -- -D warnings
 
 test:
 	@cargo test
