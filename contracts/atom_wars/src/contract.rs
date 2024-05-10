@@ -8,6 +8,7 @@ use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, Order,
     Response, StdError, StdResult, Timestamp, Uint128,
 };
+use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
@@ -18,6 +19,11 @@ use crate::state::{
     WHITELIST_ADMINS,
 };
 
+/// Contract name that is used for migration.
+const CONTRACT_NAME: &str = "atom_wars";
+/// Contract version that is used for migration.
+const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub const DEFAULT_MAX_ENTRIES: usize = 100;
 
 #[entry_point]
@@ -27,6 +33,8 @@ pub fn instantiate(
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
+    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
+
     // validate that the first round starts in the future
     if msg.first_round_start < env.block.time {
         return Err(ContractError::Std(StdError::generic_err(
