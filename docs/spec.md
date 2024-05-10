@@ -42,6 +42,9 @@ with this function.
 
 #### `ReclaimUnlockedTokens(sender: Account)`
 For each lock created by the `sender` where `lock_end` is in the past, this function sends the tokens back to the sender and deletes the lock.
+However, if the user has voted on a proposal during the last round, any tokens are not reclaimable until the round is over.
+Thus, the user can reclaim tokens only if they have not voted in the last round.
+In general, this means that users should first reclaim their tokens before voting.
 
 ### Proposals
 #### `SubmitProposal(metadata: CovenantParameters, tranche_id: int)`
@@ -107,6 +110,11 @@ If the proposal associated with the tribute_id received no support at all, the s
 #### If a user locks during round R for M rounds, they should have exactly M rounds of non-zero voting power from these tokens: R, R+1, ..., R+M-1
 
 #### The voting power of locked tokens where current_round >= lock_end_round is zero.
+
+#### If tokens contribute voting power to a proposal in round R, they should not be reclaimable until round R+1 is over
+We assume that some liquidity is deployed according to the voting results of round R, and this liquidity will be deployed until voting for round R+1 is over.
+Thus, this mechanism keeps the tokens locked until the deployment for round R is over, and thus the tokens are still attributable and could be slashed via
+social consensus in extreme cases.
 
 #### If all proposals that the owner of a lock has voted for are resolved and the lock_end_round is in the past, the tokens should be reclaimable.
 
