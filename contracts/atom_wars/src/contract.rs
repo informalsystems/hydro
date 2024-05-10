@@ -205,11 +205,14 @@ fn validate_lock_duration(lock_epoch_length: u64, lock_duration: u64) -> Result<
 }
 
 // UnlockTokens():
+//     Validate that the caller didn't vote in previous round
 //     Validate caller
 //     Validate `lock_end` < now
 //     Send `amount` tokens back to caller
 //     Delete entry from LocksMap
 fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
+    validate_previous_round_vote(&deps, &env, info.sender.clone())?;
+
     // Iterate all locks for the caller and unlock them if lock_end < now
     let locks =
         LOCKS_MAP
@@ -245,6 +248,31 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
     }
 
     Ok(response)
+}
+
+fn validate_previous_round_vote(
+    deps: &DepsMut,
+    env: &Env,
+    sender: Addr,
+) -> Result<(), ContractError> {
+    let current_round_id = compute_current_round_id(deps.as_ref(), env.clone())?;
+    if current_round_id > 0 {
+        for tranche_id in TRANCHE_MAP.keys(deps.storage, None, None, Order::Ascending) {
+            if VOTE_MAP
+                .may_load(
+                    deps.storage,
+                    (current_round_id - 1, tranche_id?, sender.clone()),
+                )?
+                .is_some()
+            {
+                return Err(ContractError::Std(StdError::generic_err(
+                    "Tokens can not be unlocked, user voted for at least one proposal in previous round",
+                )));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_covenant_params(_covenant_params: CovenantParams) -> Result<(), ContractError> {
