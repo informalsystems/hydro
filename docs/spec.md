@@ -5,6 +5,9 @@ The state that Hydro keeps can be found in [`../contracts/atom_wars/src/state.rs
 and [`../contracts/tribute/state.rs`](../contracts/tribute/state.rs).
 
 Let us first give a high-level overview of the functionality.
+
+![High-level overview of Hydro](../images/contract_overview.png)
+
 Hydro allows users to lock tokens for a specified duration, and then vote on user-submitted proposals, with voting power depending on the
 duration of the lock and the number of tokens locked.
 Voting happens in rounds, each of which has a fixed duration.
