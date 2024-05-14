@@ -418,7 +418,7 @@ fn claim_tribute_test() {
             ),
             expected_tribute_claim: 0,
             expected_success: false,
-            expected_error_msg: "Tribute not found".to_string(),
+            expected_error_msg: "not found".to_string(),
         },
     ];
 
@@ -590,7 +590,7 @@ fn refund_tribute_test() {
             tribute_refunder: None,
             expected_tribute_refund: 0,
             expected_success: false,
-            expected_error_msg: "Tribute not found".to_string(),
+            expected_error_msg: "not found".to_string(),
         },
         RefundTributeTestCase {
             description: "try to get refund if not the depositor".to_string(),
