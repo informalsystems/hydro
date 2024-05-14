@@ -62,8 +62,11 @@ pub struct Vote {
 // PROPS_BY_SCORE: key((round_id, tranche_id), score, prop_id) -> prop_id
 pub const PROPS_BY_SCORE: Map<((u64, u64), u128, u64), u64> = Map::new("props_by_score");
 
-// TOTAL_POWER_VOTING: key(round_id, tranche_id) -> Uint128
-pub const TOTAL_POWER_VOTING: Map<(u64, u64), Uint128> = Map::new("total_power_voting");
+// TOTAL_VOTED_POWER: key(round_id, tranche_id) -> Uint128
+pub const TOTAL_VOTED_POWER: Map<(u64, u64), Uint128> = Map::new("total_voted_power");
+
+// TOTAL_ROUND_POWER: key(round_id) -> total_round_voting_power
+pub const TOTAL_ROUND_POWER: Map<u64, Uint128> = Map::new("total_round_power");
 
 // TRANCHE_MAP: key(tranche_id) -> Tranche
 pub const TRANCHE_MAP: Map<u64, Tranche> = Map::new("tranche_map");

@@ -2,16 +2,18 @@ use crate::state::Tranche;
 use crate::{
     contract::{
         compute_current_round_id, execute, instantiate, query_all_user_lockups, query_constants,
-        query_proposal, query_round_tranche_proposals, query_top_n_proposals,
+        query_proposal, query_round_total_power, query_round_tranche_proposals,
+        query_top_n_proposals,
     },
     msg::{ExecuteMsg, InstantiateMsg},
 };
 use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-use cosmwasm_std::{BankMsg, CosmosMsg, Timestamp, Uint128};
+use cosmwasm_std::{BankMsg, CosmosMsg, Deps, Timestamp, Uint128};
 use cosmwasm_std::{Coin, StdError, StdResult};
 use proptest::prelude::*;
 
 pub const STATOM: &str = "ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA5222815620B3C";
+pub const ONE_DAY_IN_NANO_SECONDS: u64 = 24 * 60 * 60 * 1000000000;
 pub const TWO_WEEKS_IN_NANO_SECONDS: u64 = 14 * 24 * 60 * 60 * 1000000000;
 pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
 pub const THREE_MONTHS_IN_NANO_SECONDS: u64 = 3 * ONE_MONTH_IN_NANO_SECONDS;
@@ -499,8 +501,124 @@ fn test_round_id_computation() {
         // set the time to the current time
         env.block.time = Timestamp::from_nanos(current_time);
 
-        let round_id = compute_current_round_id(deps.as_ref(), env);
+        let constants = query_constants(deps.as_ref());
+        assert!(constants.is_ok());
+
+        let round_id = compute_current_round_id(&env, &constants.unwrap());
         assert_eq!(expected_round_id, round_id);
+    }
+}
+
+#[test]
+fn total_voting_power_tracking_test() {
+    let user_address = "addr0000";
+    let (mut deps, mut env, info) = (
+        mock_dependencies(),
+        mock_env(),
+        mock_info(user_address, &[]),
+    );
+
+    let mut msg = get_default_instantiate_msg();
+
+    // align round length with lock epoch length for easier calculations
+    msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
+
+    let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
+    assert!(res.is_ok());
+
+    let info1 = mock_info(user_address, &[Coin::new(10, STATOM.to_string())]);
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg);
+    assert!(res.is_ok());
+
+    // user locks 10 tokens for one month, so it will have 1x voting power in the first round only
+    let expected_total_voting_powers = [(0, Some(10)), (1, None)];
+    verify_expected_voting_power(deps.as_ref(), &expected_total_voting_powers);
+
+    // advance the chain by 10 days and have user lock more tokens
+    env.block.time = env.block.time.plus_nanos(10 * ONE_DAY_IN_NANO_SECONDS);
+
+    let info2 = mock_info(user_address, &[Coin::new(20, STATOM.to_string())]);
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
+    assert!(res.is_ok());
+
+    // user locks 20 additional tokens for three months, so the expectation is:
+    // round:         0      1       2       3
+    // power:       10+30   0+30    0+20    0+0
+    let expected_total_voting_powers = [(0, Some(40)), (1, Some(30)), (2, Some(20)), (3, None)];
+    verify_expected_voting_power(deps.as_ref(), &expected_total_voting_powers);
+
+    // advance the chain by 25 more days to move to round 1 and have user refresh second lockup to 6 months
+    env.block.time = env.block.time.plus_nanos(25 * ONE_DAY_IN_NANO_SECONDS);
+
+    let info3 = mock_info(user_address, &[]);
+    let msg = ExecuteMsg::RefreshLockDuration {
+        lock_id: 1,
+        lock_duration: 2 * THREE_MONTHS_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info3.clone(), msg);
+    assert!(res.is_ok());
+
+    // user relocks second lockup worth 20 tokens for six months in round 1, so the expectation is (note that round 0 is not affected):
+    // round:         0       1       2       3       4       5       6       7
+    // power:       10+30    0+40    0+40    0+40    0+30    0+30    0+20    0+0
+    let expected_total_voting_powers = [
+        (0, Some(40)),
+        (1, Some(40)),
+        (2, Some(40)),
+        (3, Some(40)),
+        (4, Some(30)),
+        (5, Some(30)),
+        (6, Some(20)),
+        (7, None),
+    ];
+    verify_expected_voting_power(deps.as_ref(), &expected_total_voting_powers);
+
+    // advance the chain by 5 more days and have user lock 50 more tokens for three months
+    env.block.time = env.block.time.plus_nanos(5 * ONE_DAY_IN_NANO_SECONDS);
+
+    let info2 = mock_info(user_address, &[Coin::new(50, STATOM.to_string())]);
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
+    assert!(res.is_ok());
+
+    // user locks 50 additional tokens in round 1 for three months, so the expectation is (note that round 0 is not affected):
+    // round:         0        1          2          3          4         5         6         7
+    // power:       10+30    0+40+75    0+40+75    0+40+50    0+30+0    0+30+0    0+20+0    0+0+0
+    let expected_total_voting_powers = [
+        (0, Some(40)),
+        (1, Some(115)),
+        (2, Some(115)),
+        (3, Some(90)),
+        (4, Some(30)),
+        (5, Some(30)),
+        (6, Some(20)),
+        (7, None),
+    ];
+    verify_expected_voting_power(deps.as_ref(), &expected_total_voting_powers);
+}
+
+fn verify_expected_voting_power(deps: Deps, expected_powers: &[(u64, Option<u128>)]) {
+    for expected_power in expected_powers {
+        let res = query_round_total_power(deps, expected_power.0);
+
+        match expected_power.1 {
+            Some(total_power) => {
+                assert!(res.is_ok());
+                let res = res.unwrap();
+                assert_eq!(total_power, res.u128());
+            }
+            None => {
+                assert!(res.is_err());
+            }
+        }
     }
 }
 
