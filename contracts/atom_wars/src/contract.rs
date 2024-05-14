@@ -15,8 +15,8 @@ use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
     Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID,
-    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_POWER_VOTING, TRANCHE_MAP, VOTE_MAP, WHITELIST,
-    WHITELIST_ADMINS,
+    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER, TOTAL_VOTED_POWER, TRANCHE_MAP,
+    VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
 };
 
 /// Contract name that is used for migration.
@@ -148,10 +148,26 @@ fn lock_tokens(
         lock_start: env.block.time,
         lock_end: env.block.time.plus_nanos(lock_duration),
     };
+    let lock_end = lock_entry.lock_end.nanos();
 
     let lock_id = LOCK_ID.load(deps.storage)?;
     LOCK_ID.save(deps.storage, &(lock_id + 1))?;
     LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
+
+    // Calculate and update the total voting power info for current and all
+    // future rounds in which the user will have voting power greather than 0
+    let current_round = compute_current_round_id(&env, &constants)?;
+    let last_round_with_power = compute_round_id_for_timestamp(&constants, lock_end)? - 1;
+
+    update_total_voting_power(
+        deps,
+        &constants,
+        current_round,
+        last_round_with_power,
+        lock_end,
+        lock_entry.funds.amount,
+        |_, _, _| Uint128::zero(),
+    )?;
 
     Ok(Response::new().add_attribute("action", "lock_tokens"))
 }
@@ -168,8 +184,8 @@ fn refresh_lock_duration(
     lock_id: u64,
     lock_duration: u64,
 ) -> Result<Response, ContractError> {
-    let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
-    validate_lock_duration(lock_epoch_length, lock_duration)?;
+    let constants = CONSTANTS.load(deps.storage)?;
+    validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
 
     // try to get the lock with the given id
     // note that this is already indexed by the caller, so if it is successful, the sender owns this lock
@@ -179,20 +195,51 @@ fn refresh_lock_duration(
     deps.api.debug(&format!("lock_entry: {:?}", lock_entry));
 
     // compute the new lock_end_time
-    let new_lock_end = env.block.time.plus_nanos(lock_duration);
+    let new_lock_end = env.block.time.plus_nanos(lock_duration).nanos();
 
     // check that the new lock_end_time is later than the old lock_end_time
-    if new_lock_end <= lock_entry.lock_end {
+    if new_lock_end <= lock_entry.lock_end.nanos() {
         return Err(ContractError::Std(StdError::generic_err(
             "Shortening locks is not allowed, new lock end time must be after the old lock end",
         )));
     }
 
+    let old_lock_end = lock_entry.lock_end.nanos();
     // update the lock entry with the new lock_end_time
-    lock_entry.lock_end = new_lock_end;
+    lock_entry.lock_end = Timestamp::from_nanos(new_lock_end);
 
     // save the updated lock entry
     LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
+
+    // Calculate and update the total voting power info for current and all
+    // future rounds in which the user will have voting power greather than 0.
+    // The voting power originated from the old lockup is subtracted from the
+    // total voting power, and the voting power gained with the new lockup is
+    // added to the total voting power for each applicable round.
+    let current_round = compute_current_round_id(&env, &constants)?;
+    let old_last_round_with_power = compute_round_id_for_timestamp(&constants, old_lock_end)? - 1;
+    let new_last_round_with_power = compute_round_id_for_timestamp(&constants, new_lock_end)? - 1;
+
+    update_total_voting_power(
+        deps,
+        &constants,
+        current_round,
+        new_last_round_with_power,
+        new_lock_end,
+        lock_entry.funds.amount,
+        |round, round_end, locked_amount| {
+            if round > old_last_round_with_power {
+                return Uint128::zero();
+            }
+
+            let old_lockup_length = old_lock_end - round_end.nanos();
+            scale_lockup_power(
+                constants.lock_epoch_length,
+                old_lockup_length,
+                locked_amount,
+            )
+        },
+    )?;
 
     Ok(Response::new().add_attribute("action", "refresh_lock_duration"))
 }
@@ -263,7 +310,8 @@ fn validate_previous_round_vote(
     env: &Env,
     sender: Addr,
 ) -> Result<(), ContractError> {
-    let current_round_id = compute_current_round_id(deps.as_ref(), env.clone())?;
+    let constants = CONSTANTS.load(deps.storage)?;
+    let current_round_id = compute_current_round_id(env, &constants)?;
     if current_round_id > 0 {
         for tranche_id in TRANCHE_MAP.keys(deps.storage, None, None, Order::Ascending) {
             if VOTE_MAP
@@ -301,7 +349,8 @@ fn create_proposal(
     validate_covenant_params(covenant_params.clone())?;
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
-    let round_id = compute_current_round_id(deps.as_ref(), env)?;
+    let constants = CONSTANTS.load(deps.storage)?;
+    let round_id = compute_current_round_id(&env, &constants)?;
     let proposal_id = PROP_ID.load(deps.storage)?;
 
     // Create proposal in PropMap
@@ -318,12 +367,12 @@ fn create_proposal(
     PROP_ID.save(deps.storage, &(proposal_id + 1))?;
     PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, proposal_id), &proposal)?;
 
-    // load the total voting power for this round and tranche
-    let total_power_voting = TOTAL_POWER_VOTING.load(deps.storage, (round_id, tranche_id));
+    // load the total voted power for this round and tranche
+    let total_voted_power = TOTAL_VOTED_POWER.load(deps.storage, (round_id, tranche_id));
 
-    // if there is no total power voting for this round and tranche, set it to 0
-    if total_power_voting.is_err() {
-        TOTAL_POWER_VOTING.save(deps.storage, (round_id, tranche_id), &Uint128::zero())?;
+    // if there is no total voted power for this round and tranche, set it to 0
+    if total_voted_power.is_err() {
+        TOTAL_VOTED_POWER.save(deps.storage, (round_id, tranche_id), &Uint128::zero())?;
     }
 
     Ok(Response::new().add_attribute("action", "create_proposal"))
@@ -370,11 +419,13 @@ fn vote(
     // - This leads to slightly higher gas costs for each vote, in exchange for a much lower gas cost at the end of the round.
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
-    // Load the round_id
-    let round_id = compute_current_round_id(deps.as_ref(), env.clone())?;
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    // compute the round_id
+    let round_id = compute_current_round_id(&env, &constants)?;
 
     // compute the round end
-    let round_end = compute_round_end(deps.as_ref(), round_id)?;
+    let round_end = compute_round_end(&constants, round_id)?;
 
     // Get any existing vote for this sender and reverse it- this may be a vote for a different proposal (if they are switching their vote),
     // or it may be a vote for the same proposal (if they have increased their power by locking more and want to update their vote).
@@ -415,12 +466,12 @@ fn vote(
             &vote.prop_id,
         )?;
 
-        // Decrement total power voting
-        let total_power_voting = TOTAL_POWER_VOTING.load(deps.storage, (round_id, tranche_id))?;
-        TOTAL_POWER_VOTING.save(
+        // Decrement total voted power
+        let total_voted_power = TOTAL_VOTED_POWER.load(deps.storage, (round_id, tranche_id))?;
+        TOTAL_VOTED_POWER.save(
             deps.storage,
             (round_id, tranche_id),
-            &(total_power_voting - vote.power),
+            &(total_voted_power - vote.power),
         )?;
 
         // Delete vote
@@ -483,12 +534,12 @@ fn vote(
         &proposal_id,
     )?;
 
-    // Increment total power voting
-    let total_power_voting = TOTAL_POWER_VOTING.load(deps.storage, (round_id, tranche_id))?;
-    TOTAL_POWER_VOTING.save(
+    // Increment total voted power
+    let total_voted_power = TOTAL_VOTED_POWER.load(deps.storage, (round_id, tranche_id))?;
+    TOTAL_VOTED_POWER.save(
         deps.storage,
         (round_id, tranche_id),
-        &(total_power_voting + power),
+        &(total_voted_power + power),
     )?;
 
     // Create vote in Votemap
@@ -589,12 +640,21 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
             tranche_id,
             proposal_id,
         } => to_json_binary(&query_proposal(deps, round_id, tranche_id, proposal_id)?),
+        QueryMsg::RoundTotalVotingPower { round_id } => {
+            to_json_binary(&query_round_total_power(deps, round_id)?)
+        }
         QueryMsg::RoundProposals {
             round_id,
             tranche_id,
         } => to_json_binary(&query_round_tranche_proposals(deps, round_id, tranche_id)?),
-        QueryMsg::CurrentRound {} => to_json_binary(&compute_current_round_id(deps, env)?),
-        QueryMsg::RoundEnd { round_id } => to_json_binary(&compute_round_end(deps, round_id)?),
+        QueryMsg::CurrentRound {} => to_json_binary(&compute_current_round_id(
+            &env,
+            &CONSTANTS.load(deps.storage)?,
+        )?),
+        QueryMsg::RoundEnd { round_id } => to_json_binary(&compute_round_end(
+            &CONSTANTS.load(deps.storage)?,
+            round_id,
+        )?),
         QueryMsg::TopNProposals {
             round_id,
             tranche_id,
@@ -608,6 +668,10 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(deps)?),
         QueryMsg::WhitelistAdmins {} => to_json_binary(&query_whitelist_admins(deps)?),
     }
+}
+
+pub fn query_round_total_power(deps: Deps, round_id: u64) -> StdResult<Uint128> {
+    TOTAL_ROUND_POWER.load(deps.storage, round_id)
 }
 
 pub fn query_constants(deps: Deps) -> StdResult<Constants> {
@@ -644,8 +708,9 @@ pub fn query_proposal(
 
 pub fn query_user_voting_power(deps: Deps, env: Env, address: String) -> StdResult<u128> {
     let user_address = deps.api.addr_validate(&address)?;
-    let current_round_id = compute_current_round_id(deps, env)?;
-    let round_end = compute_round_end(deps, current_round_id)?;
+    let constants = CONSTANTS.load(deps.storage)?;
+    let current_round_id = compute_current_round_id(&env, &constants)?;
+    let round_end = compute_round_end(&constants, current_round_id)?;
     let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
 
     Ok(LOCKS_MAP
@@ -739,17 +804,14 @@ pub fn query_top_n_proposals(
         top_props.push(prop);
     }
 
-    // find sum of power
-    let sum_power = top_props
-        .iter()
-        .fold(0u128, |sum, prop| sum + prop.power.u128());
+    // get total voting power for the round
+    let total_voting_power = TOTAL_ROUND_POWER.load(deps.storage, round_id)?.u128();
 
     // return top props
     Ok(top_props
-        .into_iter() // Change from iter() to into_iter()
+        .into_iter()
         .map(|mut prop| {
-            // Change to mutable binding
-            prop.percentage = (prop.power.u128() / sum_power).into();
+            prop.percentage = (prop.power.u128() / total_voting_power).into();
             prop
         })
         .collect())
@@ -788,25 +850,60 @@ fn query_whitelist_admins(deps: Deps) -> StdResult<Vec<Addr>> {
 
 // Computes the current round_id by taking contract_start_time and dividing the time since
 // by the round_length.
-pub fn compute_current_round_id(deps: Deps, env: Env) -> StdResult<u64> {
-    let constants = CONSTANTS.load(deps.storage)?;
-    let current_time = env.block.time.nanos();
-    // If the first round has not started yet, return an error
-    if current_time < constants.first_round_start.nanos() {
-        return Err(StdError::generic_err("The first round has not started yet"));
-    }
-    let time_since_start = current_time - constants.first_round_start.nanos();
-    let current_round_id = time_since_start / constants.round_length;
-
-    Ok(current_round_id)
+pub fn compute_current_round_id(env: &Env, constants: &Constants) -> StdResult<u64> {
+    compute_round_id_for_timestamp(constants, env.block.time.nanos())
 }
 
-pub fn compute_round_end(deps: Deps, round_id: u64) -> StdResult<Timestamp> {
-    let constants = CONSTANTS.load(deps.storage)?;
+fn compute_round_id_for_timestamp(constants: &Constants, timestamp: u64) -> StdResult<u64> {
+    // If the first round has not started yet, return an error
+    if timestamp < constants.first_round_start.nanos() {
+        return Err(StdError::generic_err("The first round has not started yet"));
+    }
+    let time_since_start = timestamp - constants.first_round_start.nanos();
+    let round_id = time_since_start / constants.round_length;
 
+    Ok(round_id)
+}
+
+fn compute_round_end(constants: &Constants, round_id: u64) -> StdResult<Timestamp> {
     let round_end = constants
         .first_round_start
         .plus_nanos(constants.round_length * (round_id + 1));
 
     Ok(round_end)
+}
+
+fn update_total_voting_power<T>(
+    deps: DepsMut,
+    constants: &Constants,
+    start_round_id: u64,
+    end_round_id: u64,
+    lock_end: u64,
+    funds: Uint128,
+    get_old_voting_power: T,
+) -> StdResult<()>
+where
+    T: Fn(u64, Timestamp, Uint128) -> Uint128,
+{
+    for round in start_round_id..=end_round_id {
+        let round_end = compute_round_end(constants, round)?;
+        let lockup_length = lock_end - round_end.nanos();
+        let voting_power_change =
+            scale_lockup_power(constants.lock_epoch_length, lockup_length, funds)
+                - get_old_voting_power(round, round_end, funds);
+
+        // save some gas if there was no power change
+        if voting_power_change == Uint128::zero() {
+            continue;
+        }
+
+        TOTAL_ROUND_POWER.update(deps.storage, round, |power| -> Result<Uint128, StdError> {
+            match power {
+                Some(power) => Ok(power + voting_power_change),
+                None => Ok(voting_power_change),
+            }
+        })?;
+    }
+
+    Ok(())
 }

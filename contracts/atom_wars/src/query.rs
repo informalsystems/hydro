@@ -24,6 +24,9 @@ pub enum QueryMsg {
     RoundEnd {
         round_id: u64,
     },
+    RoundTotalVotingPower {
+        round_id: u64,
+    },
     RoundProposals {
         round_id: u64,
         tranche_id: u64,
