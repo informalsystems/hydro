@@ -9,7 +9,6 @@ pub struct Constants {
     pub denom: String,
     pub round_length: u64,
     pub lock_epoch_length: u64,
-    pub total_pool: Uint128,
     pub first_round_start: Timestamp,
 }
 

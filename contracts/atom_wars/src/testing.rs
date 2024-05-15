@@ -8,7 +8,7 @@ use crate::{
     msg::{ExecuteMsg, InstantiateMsg},
 };
 use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-use cosmwasm_std::{BankMsg, CosmosMsg, Deps, Timestamp, Uint128};
+use cosmwasm_std::{BankMsg, CosmosMsg, Deps, Timestamp};
 use cosmwasm_std::{Coin, StdError, StdResult};
 use proptest::prelude::*;
 
@@ -23,7 +23,6 @@ pub fn get_default_instantiate_msg() -> InstantiateMsg {
         denom: STATOM.to_string(),
         round_length: TWO_WEEKS_IN_NANO_SECONDS,
         lock_epoch_length: ONE_MONTH_IN_NANO_SECONDS,
-        total_pool: Uint128::zero(),
         tranches: vec![Tranche {
             tranche_id: 1,
             metadata: "tranche 1".to_string(),
@@ -56,7 +55,6 @@ fn instantiate_test() {
     let constants = res.unwrap();
     assert_eq!(msg.denom, constants.denom);
     assert_eq!(msg.round_length, constants.round_length);
-    assert_eq!(msg.total_pool, constants.total_pool);
 }
 
 #[test]
