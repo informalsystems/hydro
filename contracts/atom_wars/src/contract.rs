@@ -53,7 +53,6 @@ pub fn instantiate(
         denom: msg.denom.clone(),
         round_length: msg.round_length,
         lock_epoch_length: msg.lock_epoch_length,
-        total_pool: msg.total_pool,
         first_round_start: msg.first_round_start,
     };
 
