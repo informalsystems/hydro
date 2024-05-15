@@ -621,6 +621,7 @@ fn remove_from_whitelist(
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Constants {} => to_json_binary(&query_constants(deps)?),
+        QueryMsg::Tranches {} => to_json_binary(&query_tranches(deps)?),
         QueryMsg::AllUserLockups { address } => {
             to_json_binary(&query_all_user_lockups(deps, address)?)
         }
@@ -821,7 +822,7 @@ pub fn query_tranches(deps: Deps) -> StdResult<Vec<Tranche>> {
     let tranches = TRANCHE_MAP
         .range(deps.storage, None, None, Order::Ascending)
         .map(|t| t.unwrap().1)
-        .collect::<Vec<_>>();
+        .collect();
 
     Ok(tranches)
 }
