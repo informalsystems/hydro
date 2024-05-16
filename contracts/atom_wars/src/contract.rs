@@ -455,15 +455,17 @@ fn vote(
         )?;
 
         // Add proposal's new power in PROPS_BY_SCORE
-        PROPS_BY_SCORE.save(
-            deps.storage,
-            (
-                (round_id, proposal.tranche_id),
-                proposal.power.into(),
-                vote.prop_id,
-            ),
-            &vote.prop_id,
-        )?;
+        if proposal.power > Uint128::zero() {
+            PROPS_BY_SCORE.save(
+                deps.storage,
+                (
+                    (round_id, proposal.tranche_id),
+                    proposal.power.into(),
+                    vote.prop_id,
+                ),
+                &vote.prop_id,
+            )?;
+        }
 
         // Decrement total voted power
         let total_voted_power = TOTAL_VOTED_POWER.load(deps.storage, (round_id, tranche_id))?;
@@ -507,7 +509,7 @@ fn vote(
     let response = Response::new().add_attribute("action", "vote");
 
     // if users voting power is 0 we don't need to update any of the stores
-    if power.eq(&Uint128::zero()) {
+    if power == Uint128::zero() {
         return Ok(response);
     }
 
@@ -805,13 +807,13 @@ pub fn query_top_n_proposals(
     }
 
     // get total voting power for the round
-    let total_voting_power = TOTAL_ROUND_POWER.load(deps.storage, round_id)?.u128();
+    let total_voting_power = TOTAL_ROUND_POWER.load(deps.storage, round_id)?;
 
     // return top props
     Ok(top_props
         .into_iter()
         .map(|mut prop| {
-            prop.percentage = (prop.power.u128() / total_voting_power).into();
+            prop.percentage = (prop.power * Uint128::from(100u128)) / total_voting_power;
             prop
         })
         .collect())
