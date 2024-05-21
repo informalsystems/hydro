@@ -60,7 +60,12 @@ pub fn instantiate(
     LOCK_ID.save(deps.storage, &0)?;
     PROP_ID.save(deps.storage, &0)?;
 
-    WHITELIST_ADMINS.save(deps.storage, &msg.whitelist_admins)?;
+    let mut whitelist_admins: Vec<Addr> = vec![];
+    for admin in msg.whitelist_admins {
+        whitelist_admins.push(deps.api.addr_validate(&admin)?);
+    }
+
+    WHITELIST_ADMINS.save(deps.storage, &whitelist_admins)?;
     WHITELIST.save(deps.storage, &msg.initial_whitelist)?;
 
     // For each tranche, create a tranche in the TRANCHE_MAP and set the total power to 0
