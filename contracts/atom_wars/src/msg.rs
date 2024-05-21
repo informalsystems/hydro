@@ -1,4 +1,4 @@
-use cosmwasm_std::{Addr, Timestamp};
+use cosmwasm_std::Timestamp;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +11,7 @@ pub struct InstantiateMsg {
     pub lock_epoch_length: u64,
     pub tranches: Vec<Tranche>,
     pub first_round_start: Timestamp,
-    pub whitelist_admins: Vec<Addr>,
+    pub whitelist_admins: Vec<String>,
     pub initial_whitelist: Vec<CovenantParams>,
 }
 
