@@ -106,36 +106,36 @@ If the proposal associated with the tribute_id received no support at all, the s
 
 ### Correctness Properties
 
-#### The score of a proposal should be the sum of the lock-weighted tokens that voted for it.
+* The score of a proposal should be the sum of the lock-weighted tokens that voted for it.
 
-#### For every tranche, the total voting power should be at most the total lock_weighted locked tokens.
+* For every tranche, the total voting power should be at most the total lock_weighted locked tokens.
 
-#### If a user locks during round R for M rounds, they should have exactly M rounds of non-zero voting power from these tokens: R, R+1, ..., R+M-1
+* If a user locks during round R for M rounds, they should have exactly M rounds of non-zero voting power from these tokens: R, R+1, ..., R+M-1
 
-#### The voting power of locked tokens where current_round >= lock_end_round is zero.
+* The voting power of locked tokens where current_round >= lock_end_round is zero.
 
-#### If tokens contribute voting power to a proposal in round R, they should not be reclaimable until round R+1 is over
+* If tokens contribute voting power to a proposal in round R, they should not be reclaimable until round R+1 is over
 We assume that some liquidity is deployed according to the voting results of round R, and this liquidity will be deployed until voting for round R+1 is over.
 Thus, this mechanism keeps the tokens locked until the deployment for round R is over, and thus the tokens are still attributable and could be slashed via
 social consensus in extreme cases.
 
-#### If all proposals that the owner of a lock has voted for are resolved and the lock_end_round is in the past, the tokens should be reclaimable.
+* If all proposals that the owner of a lock has voted for are resolved and the lock_end_round is in the past, the tokens should be reclaimable.
 
-#### After the round is over, the powers for proposals, the total power, etc should all be frozen and cannot be updated.
+* After the round is over, the powers for proposals, the total power, etc should all be frozen and cannot be updated.
 
-#### If tokens are locked at time t for a duration d, there should be no way to reclaim these tokens before t+d.
+* If tokens are locked at time t for a duration d, there should be no way to reclaim these tokens before t+d.
 
-#### During a round, tributes for proposals in that round can never be deleted or decrease in token amount, only new tributes can be added.
+* During a round, tributes for proposals in that round can never be deleted or decrease in token amount, only new tributes can be added.
 
-#### After a round has ended, no new tributes can be added for proposals in that round.
+* After a round has ended, no new tributes can be added for proposals in that round.
 
 In consequence, over a round, the total number of locked tokens in tributes can only increase.
 After the round is over, the total number of locked tokens can only decrease.
 
-#### If a proposal is not in the top N proposals, the tribute should be refundable.
+* If a proposal is not in the top N proposals, the tribute should be refundable.
 
-#### If a proposal does not get any votes at all, the tribute should be refundable.
+* If a proposal does not get any votes at all, the tribute should be refundable.
 
-#### The sum of the claimed tokens for a tribute should be at most the total tokens locked for the tribute.
+* The sum of the claimed tokens for a tribute should be at most the total tokens locked for the tribute.
 
-#### For any tribute, it should hold that *either* the tribute is refundable by the sender, or it is claimable by the voters. It should never be the case that some address can claim a tribute, but also that same tribute is refundable, and neither should a tribute be both refundable and claimable.
+* For any tribute, after the round of the proposal the tribute is for ends, it should hold that *either* the tribute is refundable by the sender, or it is claimable by the voters. It should never be the case that some address can claim a tribute, but also that same tribute is refundable, and neither should a tribute be both *not* refundable and *not* claimable.
