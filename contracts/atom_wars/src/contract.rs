@@ -5,8 +5,8 @@
 // - Covenant Question: Can people sandwich this whole thing - covenant system has price limits - but we should allow people to retry executing the prop during the round
 
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, Order,
-    Response, StdError, StdResult, Timestamp, Uint128,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
+    Order, Response, StdError, StdResult, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
 
@@ -278,14 +278,14 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
             .prefix(info.sender.clone())
             .range(deps.storage, None, None, Order::Ascending);
 
-    let mut sends = vec![];
+    let mut send = Coin::new(0, CONSTANTS.load(deps.storage)?.denom);
     let mut to_delete = vec![];
 
     for lock in locks {
         let (lock_id, lock_entry) = lock?;
         if lock_entry.lock_end < env.block.time {
             // Send tokens back to caller
-            sends.push(lock_entry.funds.clone());
+            send.amount = send.amount.checked_add(lock_entry.funds.amount)?;
 
             // Delete entry from LocksMap
             to_delete.push((info.sender.clone(), lock_id));
@@ -299,10 +299,10 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
 
     let mut response = Response::new().add_attribute("action", "unlock_tokens");
 
-    if !sends.is_empty() {
+    if !send.amount.is_zero() {
         response = response.add_message(BankMsg::Send {
             to_address: info.sender.to_string(),
-            amount: sends,
+            amount: vec![send],
         })
     }
 
