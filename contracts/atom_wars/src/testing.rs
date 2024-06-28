@@ -123,9 +123,14 @@ fn unlock_tokens_basic_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
+    // lock 1000 tokens for one month
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
     };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // lock another 1000 tokens for one month
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
@@ -158,9 +163,9 @@ fn unlock_tokens_basic_test() {
         CosmosMsg::Bank(bank_msg) => match bank_msg {
             BankMsg::Send { to_address, amount } => {
                 assert_eq!(user_address.to_string(), *to_address);
-                assert_eq!(1, amount.len());
+                assert_eq!(1, amount.len()); // all lock entries summed-up into one
                 assert_eq!(user_token.denom, amount[0].denom);
-                assert_eq!(user_token.amount.u128(), amount[0].amount.u128());
+                assert_eq!(user_token.amount.u128() * 2, amount[0].amount.u128());
             }
             _ => panic!("expected BankMsg::Send message"),
         },
