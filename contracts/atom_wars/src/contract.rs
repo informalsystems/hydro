@@ -4,6 +4,8 @@
 // - Covenant Question: How to deal with someone using MEV to skew the pool ratio right before the liquidity is pulled? Streaming the liquidity pull? You'd have to set up a cron job for that.
 // - Covenant Question: Can people sandwich this whole thing - covenant system has price limits - but we should allow people to retry executing the prop during the round
 
+use std::convert::TryInto;
+
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
     Order, Response, StdError, StdResult, Timestamp, Uint128,
@@ -142,6 +144,15 @@ fn lock_tokens(
         return Err(ContractError::Std(StdError::generic_err(
             "Must send the correct denom",
         )));
+    }
+
+    // validate that the user does not have too many locks
+    if get_lock_count(deps.as_ref(), info.sender.clone()) >= DEFAULT_MAX_ENTRIES.try_into().unwrap()
+    {
+        return Err(ContractError::Std(StdError::generic_err(format!(
+            "User has too many locks, only {} locks allowed",
+            DEFAULT_MAX_ENTRIES
+        ))));
     }
 
     // Create entry in LocksMap
@@ -898,4 +909,12 @@ where
     }
 
     Ok(())
+}
+
+// Returns the number of locks for a given user
+fn get_lock_count(deps: Deps, user_address: Addr) -> u64 {
+    LOCKS_MAP
+        .prefix(user_address)
+        .range(deps.storage, None, None, Order::Ascending)
+        .count() as u64
 }

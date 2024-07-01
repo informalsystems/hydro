@@ -1,3 +1,4 @@
+use crate::contract::DEFAULT_MAX_ENTRIES;
 use crate::state::Tranche;
 use crate::{
     contract::{
@@ -691,5 +692,70 @@ proptest! {
 
         // otherwise, succeed
         assert!(res.is_ok());
+    }
+}
+
+#[test]
+fn test_too_many_locks() {
+    let (mut deps, mut env, info) = (
+        mock_dependencies(),
+        mock_env(),
+        mock_info("addr0000", &[Coin::new(1000, STATOM.to_string())]),
+    );
+    let mut msg = get_default_instantiate_msg();
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // lock tokens many times
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+    for i in 0..DEFAULT_MAX_ENTRIES + 10 {
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
+        if i < DEFAULT_MAX_ENTRIES {
+            assert!(res.is_ok());
+        } else {
+            assert!(res.is_err());
+            assert!(res
+                .unwrap_err()
+                .to_string()
+                .contains("User has too many locks"));
+        }
+    }
+
+    // now test that another user can still lock tokens
+    let info2 = mock_info("addr0001", &[Coin::new(1000, STATOM.to_string())]);
+    for i in 0..DEFAULT_MAX_ENTRIES + 10 {
+        let res = execute(deps.as_mut(), env.clone(), info2.clone(), lock_msg.clone());
+        if i < DEFAULT_MAX_ENTRIES {
+            assert!(res.is_ok());
+        } else {
+            assert!(res.is_err());
+            assert!(res
+                .unwrap_err()
+                .to_string()
+                .contains("User has too many locks"));
+        }
+    }
+
+    // now test that the first user can unlock tokens after we have passed enough time so that they are unlocked
+    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
+    let unlock_msg = ExecuteMsg::UnlockTokens {};
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), unlock_msg.clone());
+    assert!(res.is_ok());
+
+    // now the first user can lock tokens again
+    for i in 0..DEFAULT_MAX_ENTRIES + 10 {
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
+        if i < DEFAULT_MAX_ENTRIES {
+            assert!(res.is_ok());
+        } else {
+            assert!(res.is_err());
+            assert!(res
+                .unwrap_err()
+                .to_string()
+                .contains("User has too many locks"));
+        }
     }
 }
