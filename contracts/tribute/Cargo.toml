@@ -1,7 +1,7 @@
 [package]
 name = "tribute"
 version = "1.0.0"
-edition = "2024"
+edition = "2018"
 authors = ["Jehan Tremback", "Philip Offtermatt", "Dusan Maksimovic"]
 
 
