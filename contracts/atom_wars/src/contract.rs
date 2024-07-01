@@ -20,6 +20,7 @@ use crate::state::{
     PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER, TOTAL_VOTED_POWER, TRANCHE_MAP,
     VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
 };
+use cw_utils::must_pay;
 
 /// Contract name that is used for migration.
 const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -148,11 +149,14 @@ fn lock_tokens(
     }
 
     let sent_funds = info.funds[0].clone();
-    if sent_funds.denom != constants.denom {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Must send the correct denom",
-        )));
-    }
+
+    // validate that the sent funds are the required denom using must_pay
+    must_pay(&info, &constants.denom).map_err(|_| {
+        ContractError::Std(StdError::generic_err(format!(
+            "Must send {} tokens",
+            constants.denom
+        )))
+    })?;
 
     // validate that the user does not have too many locks
     if get_lock_count(deps.as_ref(), info.sender.clone()) >= MAX_LOCK_ENTRIES.try_into().unwrap() {
@@ -745,8 +749,8 @@ pub fn query_proposal(
 }
 
 pub fn query_user_voting_power(deps: Deps, env: Env, address: String) -> StdResult<u128> {
-    let constants = CONSTANTS.load(deps.storage)?;
     let user_address = deps.api.addr_validate(&address)?;
+    let constants = CONSTANTS.load(deps.storage)?;
     let current_round_id = compute_current_round_id(&env, &constants)?;
     let round_end = compute_round_end(&constants, current_round_id)?;
     let lock_epoch_length = constants.lock_epoch_length;

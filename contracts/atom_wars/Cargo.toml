@@ -29,6 +29,7 @@ thiserror = { workspace = true }
 cw-storage-plus = { workspace = true }
 cw2 = { workspace = true }
 cosmwasm-schema = { workspace = true }
+cw-utils = { workspace = true }
 
 [dev-dependencies]
 cosmwasm-schema = { workspace = true }
