@@ -649,7 +649,11 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::RoundProposals {
             round_id,
             tranche_id,
-        } => to_json_binary(&query_round_tranche_proposals(deps, round_id, tranche_id)?),
+            start_from,
+            limit,
+        } => to_json_binary(&query_round_tranche_proposals(
+            deps, round_id, tranche_id, start_from, limit,
+        )?),
         QueryMsg::CurrentRound {} => to_json_binary(&compute_current_round_id(
             &env,
             &CONSTANTS.load(deps.storage)?,
@@ -744,17 +748,18 @@ pub fn query_round_tranche_proposals(
     deps: Deps,
     round_id: u64,
     tranche_id: u64,
+    start_from: u32,
+    limit: u32,
 ) -> StdResult<RoundProposalsResponse> {
     if TRANCHE_MAP.load(deps.storage, tranche_id).is_err() {
         return Err(StdError::generic_err("Tranche does not exist"));
     }
 
-    let props = PROPOSAL_MAP.prefix((round_id, tranche_id)).range(
-        deps.storage,
-        None,
-        None,
-        Order::Ascending,
-    );
+    let props = PROPOSAL_MAP
+        .prefix((round_id, tranche_id))
+        .range(deps.storage, None, None, Order::Ascending)
+        .skip(start_from as usize)
+        .take(limit as usize);
 
     let mut proposals = vec![];
     for proposal in props {

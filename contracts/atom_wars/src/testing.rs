@@ -1,4 +1,5 @@
 use crate::contract::DEFAULT_MAX_ENTRIES;
+use crate::query::QueryMsg;
 use crate::state::Tranche;
 use crate::{
     contract::{
@@ -210,8 +211,8 @@ fn create_proposal_basic_test() {
     assert!(res.is_ok());
 
     let expected_round_id = 0;
-    let res = query_round_tranche_proposals(deps.as_ref(), expected_round_id, 1);
-    assert!(res.is_ok());
+    let res = query_round_tranche_proposals(deps.as_ref(), expected_round_id, 1, 0, 3000);
+    assert!(res.is_ok(), "error: {:?}", res);
 
     let res = res.unwrap();
     assert_eq!(2, res.proposals.len());
@@ -422,6 +423,69 @@ fn multi_tranches_test() {
     assert_eq!(3000, res[0].power.u128());
     // check that the voting power of the second proposal is 0
     assert_eq!(1, res[1].power.u128());
+}
+
+#[test]
+fn test_query_round_tranche_proposals_pagination() {
+    let (mut deps, env, info) = (
+        mock_dependencies(),
+        mock_env(),
+        mock_info("addr0000", &[Coin::new(1000, STATOM.to_string())]),
+    );
+    let mut msg = get_default_instantiate_msg();
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // Create multiple proposals
+    let num_proposals = 5;
+    for i in 0..num_proposals {
+        let create_proposal_msg = ExecuteMsg::CreateProposal {
+            tranche_id: 1,
+            covenant_params: crate::state::CovenantParams {
+                pool_id: format!("Pool ID {}", i),
+                outgoing_channel_id: format!("Outgoing Channel ID {}", i),
+                funding_destination_name: format!("Funding Destination Name {}", i),
+            },
+        };
+        let _ = execute(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            create_proposal_msg,
+        )
+        .unwrap();
+    }
+
+    // Define test cases for start_after and limit with expected results
+    let test_cases = vec![
+        ((0, 2), vec![0, 1]), // Start from the beginning and get 2 elements -> we expect element 0 and 1
+        ((0, 2), vec![0, 1]), // Start from the beginning and get 2 elements -> we expect element 0 and 1
+        ((2, 2), vec![2, 3]), // Start from the second element, limit 2 -> we expect element 2 and 3
+        ((4, 2), vec![4]),    // Start from the last element, limit 2 -> we expect element 4
+        ((0, 5), vec![0, 1, 2, 3, 4]), // get the whole list -> we expect all elements
+        ((0, 10), vec![0, 1, 2, 3, 4]), // get the whole list and the limit is even bigger -> we expect all elements
+        ((2, 5), vec![2, 3, 4]), // Start from the middle, limit 5 -> we expect elements 2, 3, and 4
+        ((4, 5), vec![4]),       // Start from the end, limit 5 -> we expect element 4
+        ((5, 2), vec![]),        // start after the list is over -> we expect an empty list
+        ((0, 0), vec![]),        // limit to 0 -> we expect an empty list
+    ];
+
+    // Test pagination for different start_after and limit values
+    for ((start_after, limit), expected_proposals) in test_cases {
+        let response =
+            query_round_tranche_proposals(deps.as_ref(), 0, 1, start_after, limit).unwrap();
+
+        // Check that pagination works correctly
+        let proposals = response.proposals;
+        assert_eq!(proposals.len(), expected_proposals.len());
+        for (proposal, expected_proposal) in proposals.iter().zip(expected_proposals.iter()) {
+            assert_eq!(
+                proposal.covenant_params.pool_id,
+                format!("Pool ID {}", *expected_proposal)
+            );
+        }
+    }
 }
 
 #[test]

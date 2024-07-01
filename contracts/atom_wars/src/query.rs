@@ -31,6 +31,8 @@ pub enum QueryMsg {
     RoundProposals {
         round_id: u64,
         tranche_id: u64,
+        start_from: u32,
+        limit: u32,
     },
     Proposal {
         round_id: u64,
