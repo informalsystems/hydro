@@ -747,7 +747,6 @@ pub fn query_proposal(
 pub fn query_user_voting_power(deps: Deps, env: Env, address: String) -> StdResult<u128> {
     let constants = CONSTANTS.load(deps.storage)?;
     let user_address = deps.api.addr_validate(&address)?;
-    let constants = constants;
     let current_round_id = compute_current_round_id(&env, &constants)?;
     let round_end = compute_round_end(&constants, current_round_id)?;
     let lock_epoch_length = constants.lock_epoch_length;
