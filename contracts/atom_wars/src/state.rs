@@ -33,7 +33,6 @@ pub struct Proposal {
     pub tranche_id: u64,
     pub proposal_id: u64,
     pub covenant_params: CovenantParams,
-    pub executed: bool, // TODO: maybe remove in the future
     pub power: Uint128,
     pub percentage: Uint128,
 }

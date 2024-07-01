@@ -113,9 +113,7 @@ pub fn execute(
         }
         ExecuteMsg::RemoveFromWhitelist { covenant_params } => {
             remove_from_whitelist(deps, env, info, covenant_params)
-        } // ExecuteMsg::ExecuteProposal { proposal_id } => {
-          //     execute_proposal(deps, env, info, proposal_id)
-          // }
+        }
     }
 }
 
@@ -363,7 +361,6 @@ fn create_proposal(
         tranche_id,
         proposal_id,
         covenant_params,
-        executed: false,
         power: Uint128::zero(),
         percentage: Uint128::zero(),
     };

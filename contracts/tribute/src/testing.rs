@@ -178,7 +178,6 @@ fn add_tribute_test() {
             outgoing_channel_id: "channel-1".to_string(),
             funding_destination_name: "".to_string(),
         },
-        executed: false,
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
     };
@@ -298,7 +297,6 @@ fn claim_tribute_test() {
             outgoing_channel_id: "channel-1".to_string(),
             funding_destination_name: "".to_string(),
         },
-        executed: false,
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
     };
@@ -313,7 +311,6 @@ fn claim_tribute_test() {
                 outgoing_channel_id: "channel-1".to_string(),
                 funding_destination_name: "".to_string(),
             },
-            executed: false,
             power: Uint128::new(10000),
             percentage: Uint128::zero(),
         },
@@ -326,7 +323,6 @@ fn claim_tribute_test() {
                 outgoing_channel_id: "channel-2".to_string(),
                 funding_destination_name: "".to_string(),
             },
-            executed: false,
             power: Uint128::new(10000),
             percentage: Uint128::zero(),
         },
@@ -512,7 +508,6 @@ fn refund_tribute_test() {
             outgoing_channel_id: "channel-1".to_string(),
             funding_destination_name: "".to_string(),
         },
-        executed: false,
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
     };
@@ -526,7 +521,6 @@ fn refund_tribute_test() {
             outgoing_channel_id: "channel-2".to_string(),
             funding_destination_name: "".to_string(),
         },
-        executed: false,
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
     }];
