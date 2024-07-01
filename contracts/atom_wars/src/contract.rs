@@ -334,11 +334,12 @@ fn validate_previous_round_vote(
     let constants = CONSTANTS.load(deps.storage)?;
     let current_round_id = compute_current_round_id(env, &constants)?;
     if current_round_id > 0 {
+        let previous_round_id = current_round_id - 1;
         for tranche_id in TRANCHE_MAP.keys(deps.storage, None, None, Order::Ascending) {
             if VOTE_MAP
                 .may_load(
                     deps.storage,
-                    (current_round_id - 1, tranche_id?, sender.clone()),
+                    (previous_round_id, tranche_id?, sender.clone()),
                 )?
                 .is_some()
             {
