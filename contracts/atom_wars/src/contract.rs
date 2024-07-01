@@ -333,11 +333,6 @@ fn validate_previous_round_vote(
     Ok(())
 }
 
-fn validate_covenant_params(_covenant_params: CovenantParams) -> Result<(), ContractError> {
-    // Validate covenant_params
-    Ok(())
-}
-
 // CreateProposal(covenant_params, tribute):
 //     Validate covenant_params
 //     Hold tribute in contract's account
@@ -348,7 +343,6 @@ fn create_proposal(
     tranche_id: u64,
     covenant_params: CovenantParams,
 ) -> Result<Response, ContractError> {
-    validate_covenant_params(covenant_params.clone())?;
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
     let constants = CONSTANTS.load(deps.storage)?;
@@ -578,9 +572,6 @@ fn add_to_whitelist(
         return Err(ContractError::Unauthorized {});
     }
 
-    // Validate covenant_params
-    validate_covenant_params(covenant_params.clone())?;
-
     // Add covenant_params to whitelist
     let mut whitelist = WHITELIST.load(deps.storage)?;
 
@@ -608,9 +599,6 @@ fn remove_from_whitelist(
     if !whitelist_admins.contains(&info.sender) {
         return Err(ContractError::Unauthorized {});
     }
-
-    // Validate covenant_params
-    validate_covenant_params(covenant_params.clone())?;
 
     // Remove covenant_params from whitelist
     let mut whitelist = WHITELIST.load(deps.storage)?;
