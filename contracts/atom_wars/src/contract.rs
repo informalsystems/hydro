@@ -129,7 +129,7 @@ pub fn execute(
 
 // LockTokens(lock_duration):
 //     Receive tokens
-//     Validate against denom whitelist
+//     Validate against the accepted denom
 //     Create entry in LocksMap
 fn lock_tokens(
     deps: DepsMut,
