@@ -1,4 +1,4 @@
-use crate::contract::DEFAULT_MAX_ENTRIES;
+use crate::contract::MAX_LOCK_ENTRIES;
 use crate::query::QueryMsg;
 use crate::state::Tranche;
 use crate::{
@@ -86,7 +86,7 @@ fn lock_tokens_basic_test() {
     let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
     assert!(res.is_ok());
 
-    let res = query_all_user_lockups(deps.as_ref(), user_address.to_string());
+    let res = query_all_user_lockups(deps.as_ref(), user_address.to_string(), 0, 2000);
     assert!(res.is_ok());
     let res = res.unwrap();
     assert_eq!(2, res.lockups.len());
@@ -775,9 +775,9 @@ fn test_too_many_locks() {
     let lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
     };
-    for i in 0..DEFAULT_MAX_ENTRIES + 10 {
+    for i in 0..MAX_LOCK_ENTRIES + 10 {
         let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
-        if i < DEFAULT_MAX_ENTRIES {
+        if i < MAX_LOCK_ENTRIES {
             assert!(res.is_ok());
         } else {
             assert!(res.is_err());
@@ -790,9 +790,9 @@ fn test_too_many_locks() {
 
     // now test that another user can still lock tokens
     let info2 = mock_info("addr0001", &[Coin::new(1000, STATOM.to_string())]);
-    for i in 0..DEFAULT_MAX_ENTRIES + 10 {
+    for i in 0..MAX_LOCK_ENTRIES + 10 {
         let res = execute(deps.as_mut(), env.clone(), info2.clone(), lock_msg.clone());
-        if i < DEFAULT_MAX_ENTRIES {
+        if i < MAX_LOCK_ENTRIES {
             assert!(res.is_ok());
         } else {
             assert!(res.is_err());
@@ -810,9 +810,9 @@ fn test_too_many_locks() {
     assert!(res.is_ok());
 
     // now the first user can lock tokens again
-    for i in 0..DEFAULT_MAX_ENTRIES + 10 {
+    for i in 0..MAX_LOCK_ENTRIES + 10 {
         let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
-        if i < DEFAULT_MAX_ENTRIES {
+        if i < MAX_LOCK_ENTRIES {
             assert!(res.is_ok());
         } else {
             assert!(res.is_err());

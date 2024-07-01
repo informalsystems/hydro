@@ -9,9 +9,13 @@ pub enum QueryMsg {
     Tranches {},
     AllUserLockups {
         address: String,
+        start_from: u32,
+        limit: u32,
     },
     ExpiredUserLockups {
         address: String,
+        start_from: u32,
+        limit: u32,
     },
     UserVotingPower {
         address: String,

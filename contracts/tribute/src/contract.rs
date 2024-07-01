@@ -298,11 +298,15 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             round_id,
             tranche_id,
             proposal_id,
+            start_from,
+            limit,
         } => to_json_binary(&query_proposal_tributes(
             deps,
             round_id,
             tranche_id,
             proposal_id,
+            start_from,
+            limit,
         )),
     }
 }
@@ -312,12 +316,15 @@ pub fn query_proposal_tributes(
     round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
+    start_from: u32,
+    limit: u32,
 ) -> Vec<Tribute> {
     TRIBUTE_MAP
         .prefix(((round_id, tranche_id), proposal_id))
         .range(deps.storage, None, None, Order::Ascending)
         .map(|l| l.unwrap().1)
-        .take(DEFAULT_MAX_ENTRIES)
+        .skip(start_from as usize)
+        .take(limit as usize)
         .collect()
 }
 

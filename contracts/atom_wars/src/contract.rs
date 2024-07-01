@@ -26,7 +26,7 @@ const CONTRACT_NAME: &str = "atom_wars";
 /// Contract version that is used for migration.
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub const DEFAULT_MAX_ENTRIES: usize = 100;
+pub const MAX_LOCK_ENTRIES: usize = 100;
 
 #[entry_point]
 pub fn instantiate(
@@ -147,11 +147,10 @@ fn lock_tokens(
     }
 
     // validate that the user does not have too many locks
-    if get_lock_count(deps.as_ref(), info.sender.clone()) >= DEFAULT_MAX_ENTRIES.try_into().unwrap()
-    {
+    if get_lock_count(deps.as_ref(), info.sender.clone()) >= MAX_LOCK_ENTRIES.try_into().unwrap() {
         return Err(ContractError::Std(StdError::generic_err(format!(
             "User has too many locks, only {} locks allowed",
-            DEFAULT_MAX_ENTRIES
+            MAX_LOCK_ENTRIES
         ))));
     }
 
@@ -624,12 +623,18 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Constants {} => to_json_binary(&query_constants(deps)?),
         QueryMsg::Tranches {} => to_json_binary(&query_tranches(deps)?),
-        QueryMsg::AllUserLockups { address } => {
-            to_json_binary(&query_all_user_lockups(deps, address)?)
-        }
-        QueryMsg::ExpiredUserLockups { address } => {
-            to_json_binary(&query_expired_user_lockups(deps, env, address)?)
-        }
+        QueryMsg::AllUserLockups {
+            address,
+            start_from,
+            limit,
+        } => to_json_binary(&query_all_user_lockups(deps, address, start_from, limit)?),
+        QueryMsg::ExpiredUserLockups {
+            address,
+            start_from,
+            limit,
+        } => to_json_binary(&query_expired_user_lockups(
+            deps, env, address, start_from, limit,
+        )?),
         QueryMsg::UserVotingPower { address } => {
             to_json_binary(&query_user_voting_power(deps, env, address)?)
         }
@@ -685,9 +690,20 @@ pub fn query_constants(deps: Deps) -> StdResult<Constants> {
     CONSTANTS.load(deps.storage)
 }
 
-pub fn query_all_user_lockups(deps: Deps, address: String) -> StdResult<UserLockupsResponse> {
+pub fn query_all_user_lockups(
+    deps: Deps,
+    address: String,
+    start_from: u32,
+    limit: u32,
+) -> StdResult<UserLockupsResponse> {
     Ok(UserLockupsResponse {
-        lockups: query_user_lockups(deps, deps.api.addr_validate(&address)?, |_| true),
+        lockups: query_user_lockups(
+            deps,
+            deps.api.addr_validate(&address)?,
+            |_| true,
+            start_from,
+            limit,
+        ),
     })
 }
 
@@ -695,12 +711,20 @@ pub fn query_expired_user_lockups(
     deps: Deps,
     env: Env,
     address: String,
+    start_from: u32,
+    limit: u32,
 ) -> StdResult<UserLockupsResponse> {
     let user_address = deps.api.addr_validate(&address)?;
     let expired_lockup_predicate = |l: &LockEntry| l.lock_end < env.block.time;
 
     Ok(UserLockupsResponse {
-        lockups: query_user_lockups(deps, user_address, expired_lockup_predicate),
+        lockups: query_user_lockups(
+            deps,
+            user_address,
+            expired_lockup_predicate,
+            start_from,
+            limit,
+        ),
     })
 }
 
@@ -838,13 +862,16 @@ fn query_user_lockups(
     deps: Deps,
     user_address: Addr,
     predicate: impl FnMut(&LockEntry) -> bool,
+    start_from: u32,
+    limit: u32,
 ) -> Vec<LockEntry> {
     LOCKS_MAP
         .prefix(user_address)
         .range(deps.storage, None, None, Order::Ascending)
         .map(|l| l.unwrap().1)
         .filter(predicate)
-        .take(DEFAULT_MAX_ENTRIES)
+        .skip(start_from as usize)
+        .take(limit as usize)
         .collect()
 }
 

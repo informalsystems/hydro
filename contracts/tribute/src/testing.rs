@@ -275,6 +275,8 @@ fn add_tribute_test() {
             test.mock_data.0,
             test.proposal_info.0,
             test.proposal_info.1,
+            0,
+            3000,
         );
         assert_eq!(test.tributes_to_add.len(), res.len());
 

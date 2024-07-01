@@ -145,7 +145,13 @@ fn get_expired_user_lockups(
     env: Env,
     user_address: String,
 ) -> Vec<LockEntry> {
-    let res = query_expired_user_lockups(deps.as_ref(), env.clone(), user_address.to_string());
+    let res = query_expired_user_lockups(
+        deps.as_ref(),
+        env.clone(),
+        user_address.to_string(),
+        0,
+        2000,
+    );
     assert!(res.is_ok());
     let res = res.unwrap();
 
