@@ -22,7 +22,7 @@ use crate::state::{
 };
 
 /// Contract name that is used for migration.
-const CONTRACT_NAME: &str = "atom_wars";
+const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
 /// Contract version that is used for migration.
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
