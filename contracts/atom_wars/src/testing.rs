@@ -1,5 +1,4 @@
 use crate::contract::{query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES};
-use crate::query::QueryMsg;
 use crate::state::Tranche;
 use crate::{
     contract::{
@@ -459,7 +458,7 @@ fn test_query_round_tranche_proposals_pagination() {
         mock_env(),
         mock_info("addr0000", &[Coin::new(1000, STATOM.to_string())]),
     );
-    let mut msg = get_default_instantiate_msg();
+    let msg = get_default_instantiate_msg();
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
@@ -793,7 +792,7 @@ fn test_too_many_locks() {
         mock_env(),
         mock_info("addr0000", &[Coin::new(1000, STATOM.to_string())]),
     );
-    let mut msg = get_default_instantiate_msg();
+    let msg = get_default_instantiate_msg();
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
