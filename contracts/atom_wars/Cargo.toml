@@ -1,8 +1,8 @@
 [package]
 name = "atom-wars"
 version = "1.0.0"
-authors = ["Udit Gulati"]
-edition = "2018"
+authors = ["Jehan Tremback", "Philip Offtermatt", "Dusan Maksimovic"]
+edition = "2024"
 
 exclude = [
   # Those files are rust-optimizer artifacts. You might want to commit them for convenience but they should not be part of the source code publication.
