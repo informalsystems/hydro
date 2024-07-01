@@ -217,14 +217,15 @@ fn refresh_lock_duration(
     // compute the new lock_end_time
     let new_lock_end = env.block.time.plus_nanos(lock_duration).nanos();
 
+    let old_lock_end = lock_entry.lock_end.nanos();
+
     // check that the new lock_end_time is later than the old lock_end_time
-    if new_lock_end <= lock_entry.lock_end.nanos() {
+    if new_lock_end <= old_lock_end {
         return Err(ContractError::Std(StdError::generic_err(
             "Shortening locks is not allowed, new lock end time must be after the old lock end",
         )));
     }
 
-    let old_lock_end = lock_entry.lock_end.nanos();
     // update the lock entry with the new lock_end_time
     lock_entry.lock_end = Timestamp::from_nanos(new_lock_end);
 
