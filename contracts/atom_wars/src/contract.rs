@@ -382,11 +382,8 @@ fn create_proposal(
     PROP_ID.save(deps.storage, &(proposal_id + 1))?;
     PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, proposal_id), &proposal)?;
 
-    // load the total voted power for this round and tranche
-    let total_voted_power = TOTAL_VOTED_POWER.load(deps.storage, (round_id, tranche_id));
-
     // if there is no total voted power for this round and tranche, set it to 0
-    if total_voted_power.is_err() {
+    if !TOTAL_VOTED_POWER.has(deps.storage, (round_id, tranche_id)) {
         TOTAL_VOTED_POWER.save(deps.storage, (round_id, tranche_id), &Uint128::zero())?;
     }
 
@@ -404,11 +401,11 @@ fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: Uint1
     // TODO: is there a less funky way to do Uint128 math???
     match lockup_time {
         // 4x if lockup is over 6 epochs
-        lockup_time if lockup_time > lock_epoch_length * 6 => raw_power * two * two,
+        _ if lockup_time > lock_epoch_length * 6 => raw_power * two * two,
         // 2x if lockup is between 3 and 6 epochs
-        lockup_time if lockup_time > lock_epoch_length * 3 => raw_power * two,
+        _ if lockup_time > lock_epoch_length * 3 => raw_power * two,
         // 1.5x if lockup is between 1 and 3 epochs
-        lockup_time if lockup_time > lock_epoch_length => raw_power + (raw_power / two),
+        _ if lockup_time > lock_epoch_length => raw_power + (raw_power / two),
         // Covers 0 and 1 epoch which have no scaling
         _ => raw_power,
     }
