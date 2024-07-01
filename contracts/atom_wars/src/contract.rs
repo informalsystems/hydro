@@ -63,12 +63,20 @@ pub fn instantiate(
     PROP_ID.save(deps.storage, &0)?;
 
     let mut whitelist_admins: Vec<Addr> = vec![];
+    let mut whitelist: Vec<CovenantParams> = vec![];
     for admin in msg.whitelist_admins {
-        whitelist_admins.push(deps.api.addr_validate(&admin)?);
+        let admin_addr = deps.api.addr_validate(&admin)?;
+        if !whitelist_admins.contains(&admin_addr) {
+            whitelist_admins.push(admin_addr.clone());
+        }
     }
-
+    for covenant in msg.initial_whitelist {
+        if !whitelist.contains(&covenant) {
+            whitelist.push(covenant.clone());
+        }
+    }
     WHITELIST_ADMINS.save(deps.storage, &whitelist_admins)?;
-    WHITELIST.save(deps.storage, &msg.initial_whitelist)?;
+    WHITELIST.save(deps.storage, &whitelist)?;
 
     // For each tranche, create a tranche in the TRANCHE_MAP and set the total power to 0
     let mut tranche_ids = std::collections::HashSet::new();
@@ -875,11 +883,11 @@ fn query_user_lockups(
         .collect()
 }
 
-fn query_whitelist(deps: Deps) -> StdResult<Vec<CovenantParams>> {
+pub fn query_whitelist(deps: Deps) -> StdResult<Vec<CovenantParams>> {
     WHITELIST.load(deps.storage)
 }
 
-fn query_whitelist_admins(deps: Deps) -> StdResult<Vec<Addr>> {
+pub fn query_whitelist_admins(deps: Deps) -> StdResult<Vec<Addr>> {
     WHITELIST_ADMINS.load(deps.storage)
 }
 

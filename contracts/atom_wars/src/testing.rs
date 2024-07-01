@@ -1,4 +1,4 @@
-use crate::contract::MAX_LOCK_ENTRIES;
+use crate::contract::{query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES};
 use crate::query::QueryMsg;
 use crate::state::Tranche;
 use crate::{
@@ -57,6 +57,33 @@ fn instantiate_test() {
     let constants = res.unwrap();
     assert_eq!(msg.denom, constants.denom);
     assert_eq!(msg.round_length, constants.round_length);
+}
+
+#[test]
+fn deduplicate_whitelist_admins_test() {
+    let (mut deps, env, info) = (mock_dependencies(), mock_env(), mock_info("addr0000", &[]));
+    let mut msg = get_default_instantiate_msg();
+    msg.initial_whitelist = vec![
+        get_default_covenant_params(),
+        get_default_covenant_params(),
+        get_default_covenant_params(),
+    ];
+    msg.whitelist_admins = vec![
+        "admin3".to_string(),
+        "admin2".to_string(),
+        "admin3".to_string(),
+    ];
+    let res = instantiate(deps.as_mut(), env, info, msg);
+    assert!(res.is_ok());
+    let whitelist = query_whitelist(deps.as_ref()).unwrap();
+    let whitelist_admins = query_whitelist_admins(deps.as_ref()).unwrap();
+
+    assert_eq!(whitelist.len(), 1);
+    assert_eq!(whitelist[0], get_default_covenant_params());
+
+    assert_eq!(whitelist_admins.len(), 2);
+    assert_eq!(whitelist_admins[0], "admin3");
+    assert_eq!(whitelist_admins[1], "admin2");
 }
 
 #[test]
