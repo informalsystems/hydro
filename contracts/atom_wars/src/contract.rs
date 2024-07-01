@@ -32,7 +32,7 @@ pub const MAX_LOCK_ENTRIES: usize = 100;
 pub fn instantiate(
     deps: DepsMut,
     env: Env,
-    _info: MessageInfo,
+    info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
@@ -92,7 +92,7 @@ pub fn instantiate(
 
     Ok(Response::new()
         .add_attribute("action", "initialisation")
-        .add_attribute("sender", _info.sender.clone())
+        .add_attribute("sender", info.sender.clone())
         .add_attribute("denom", msg.denom))
 }
 
