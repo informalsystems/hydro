@@ -1,4 +1,7 @@
-use crate::contract::{query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES};
+use crate::contract::{
+    query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES, MAX_PROP_DESC_LENGTH,
+    MAX_PROP_TITLE_LENGTH, MIN_PROP_TITLE_LENGTH,
+};
 use crate::state::Tranche;
 use crate::{
     contract::{
@@ -219,18 +222,22 @@ fn create_proposal_basic_test() {
     let covenant_params_1 = get_default_covenant_params();
     let msg1 = ExecuteMsg::CreateProposal {
         tranche_id: 1,
+        title: "proposal title 1".to_string(),
+        description: "proposal description 1".to_string(),
         covenant_params: covenant_params_1.clone(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg1.clone());
     assert!(res.is_ok());
 
-    let mut covenant_params_2 = get_default_covenant_params().clone();
+    let mut covenant_params_2 = get_default_covenant_params();
     covenant_params_2.pool_id = "pool_id_2".to_string();
     covenant_params_2.outgoing_channel_id = "outgoing_channel_id_2".to_string();
     covenant_params_2.funding_destination_name = "funding_destination_name_2".to_string();
 
     let msg2 = ExecuteMsg::CreateProposal {
         tranche_id: 1,
+        title: "proposal title 2".to_string(),
+        description: "proposal description 2".to_string(),
         covenant_params: covenant_params_2.clone(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg2.clone());
@@ -250,6 +257,71 @@ fn create_proposal_basic_test() {
     let proposal = &res.proposals[1];
     assert_eq!(expected_round_id, proposal.round_id);
     assert_eq!(covenant_params_2, proposal.covenant_params);
+}
+
+#[test]
+fn proposal_title_and_desc_validation_test() {
+    let user_address = "addr0000";
+    let user_token = Coin::new(1000, STATOM.to_string());
+
+    let (mut deps, env, info) = (
+        mock_dependencies(),
+        mock_env(),
+        mock_info(user_address, &[user_token.clone()]),
+    );
+    let msg = get_default_instantiate_msg();
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    let too_long_title = String::from("too long title ".repeat(20).trim());
+    let too_long_desc = "a".repeat(10001);
+
+    let test_cases = vec![
+        (
+            "proposal title too short",
+            "".to_string(),
+            "proposal description".to_string(),
+            format!(
+                "Invalid string length, got {}, expected length to be between {} and {}",
+                "", MIN_PROP_TITLE_LENGTH, MAX_PROP_TITLE_LENGTH
+            ),
+        ),
+        (
+            "proposal title too long",
+            too_long_title.clone(),
+            "proposal description".to_string(),
+            format!(
+                "Invalid string length, got {}, expected length to be between {} and {}",
+                too_long_title, MIN_PROP_TITLE_LENGTH, MAX_PROP_TITLE_LENGTH
+            ),
+        ),
+        (
+            "proposal description too long",
+            "proposal title".to_string(),
+            too_long_desc.clone(),
+            format!(
+                "Invalid string length, got {}, expected length to be between {} and {}",
+                too_long_desc, 0, MAX_PROP_DESC_LENGTH
+            ),
+        ),
+    ];
+
+    for test_case in test_cases {
+        println!("running test case: {}", test_case.0);
+
+        let msg = ExecuteMsg::CreateProposal {
+            tranche_id: 1,
+            title: test_case.1.to_string(),
+            description: test_case.2.to_string(),
+            covenant_params: get_default_covenant_params(),
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_err());
+
+        assert!(res.unwrap_err().to_string().contains(test_case.3.as_str()));
+    }
 }
 
 #[test]
@@ -277,6 +349,8 @@ fn vote_basic_test() {
     // create a new proposal
     let msg = ExecuteMsg::CreateProposal {
         tranche_id: 1,
+        title: "proposal title 1".to_string(),
+        description: "proposal description 1".to_string(),
         covenant_params: get_default_covenant_params(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -337,6 +411,8 @@ fn multi_tranches_test() {
     // create two proposals for tranche 1
     let msg1 = ExecuteMsg::CreateProposal {
         tranche_id: 1,
+        title: "proposal title 1".to_string(),
+        description: "proposal description 1".to_string(),
         covenant_params: get_default_covenant_params(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg1.clone());
@@ -344,6 +420,8 @@ fn multi_tranches_test() {
 
     let msg2 = ExecuteMsg::CreateProposal {
         tranche_id: 1,
+        title: "proposal title 2".to_string(),
+        description: "proposal description 2".to_string(),
         covenant_params: get_default_covenant_params(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg2.clone());
@@ -352,6 +430,8 @@ fn multi_tranches_test() {
     // create two proposals for tranche 2
     let msg3 = ExecuteMsg::CreateProposal {
         tranche_id: 2,
+        title: "proposal title 3".to_string(),
+        description: "proposal description 3".to_string(),
         covenant_params: get_default_covenant_params(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg3.clone());
@@ -359,6 +439,8 @@ fn multi_tranches_test() {
 
     let msg4 = ExecuteMsg::CreateProposal {
         tranche_id: 2,
+        title: "proposal title 4".to_string(),
+        description: "proposal description 4".to_string(),
         covenant_params: get_default_covenant_params(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg4.clone());
@@ -468,6 +550,8 @@ fn test_query_round_tranche_proposals_pagination() {
     for i in 0..num_proposals {
         let create_proposal_msg = ExecuteMsg::CreateProposal {
             tranche_id: 1,
+            title: format!("proposal title {}", i + 1),
+            description: format!("proposal description {}", i + 1),
             covenant_params: crate::state::CovenantParams {
                 pool_id: format!("Pool ID {}", i),
                 outgoing_channel_id: format!("Outgoing Channel ID {}", i),

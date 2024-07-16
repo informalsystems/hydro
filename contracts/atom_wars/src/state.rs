@@ -32,6 +32,8 @@ pub struct Proposal {
     pub round_id: u64,
     pub tranche_id: u64,
     pub proposal_id: u64,
+    pub title: String,
+    pub description: String,
     pub covenant_params: CovenantParams,
     pub power: Uint128,
     pub percentage: Uint128,
