@@ -28,6 +28,8 @@ pub enum ExecuteMsg {
     UnlockTokens {},
     CreateProposal {
         tranche_id: u64,
+        title: String,
+        description: String,
         covenant_params: CovenantParams,
     },
     Vote {
@@ -40,5 +42,4 @@ pub enum ExecuteMsg {
     RemoveFromWhitelist {
         covenant_params: CovenantParams,
     },
-    // ExecuteProposal { proposal_id: u64 },
 }

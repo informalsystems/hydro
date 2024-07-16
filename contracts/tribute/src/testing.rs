@@ -173,6 +173,8 @@ fn add_tribute_test() {
         round_id: 10,
         tranche_id: 0,
         proposal_id: 5,
+        title: "proposal title 1".to_string(),
+        description: "proposal description 1".to_string(),
         covenant_params: CovenantParams {
             pool_id: "pool 1".to_string(),
             outgoing_channel_id: "channel-1".to_string(),
@@ -294,6 +296,8 @@ fn claim_tribute_test() {
         round_id: 10,
         tranche_id: 0,
         proposal_id: 5,
+        title: "proposal title 1".to_string(),
+        description: "proposal description 1".to_string(),
         covenant_params: CovenantParams {
             pool_id: "pool 1".to_string(),
             outgoing_channel_id: "channel-1".to_string(),
@@ -308,6 +312,8 @@ fn claim_tribute_test() {
             round_id: 10,
             tranche_id: 0,
             proposal_id: 5,
+            title: "proposal title 1".to_string(),
+            description: "proposal description 1".to_string(),
             covenant_params: CovenantParams {
                 pool_id: "pool 1".to_string(),
                 outgoing_channel_id: "channel-1".to_string(),
@@ -320,6 +326,8 @@ fn claim_tribute_test() {
             round_id: 10,
             tranche_id: 0,
             proposal_id: 6,
+            title: "proposal title 2".to_string(),
+            description: "proposal description 2".to_string(),
             covenant_params: CovenantParams {
                 pool_id: "pool 2".to_string(),
                 outgoing_channel_id: "channel-2".to_string(),
@@ -505,6 +513,8 @@ fn refund_tribute_test() {
         round_id: 10,
         tranche_id: 0,
         proposal_id: 5,
+        title: "proposal title 1".to_string(),
+        description: "proposal description 1".to_string(),
         covenant_params: CovenantParams {
             pool_id: "pool 1".to_string(),
             outgoing_channel_id: "channel-1".to_string(),
@@ -518,6 +528,8 @@ fn refund_tribute_test() {
         round_id: 10,
         tranche_id: 0,
         proposal_id: 6,
+        title: "proposal title 2".to_string(),
+        description: "proposal description 2".to_string(),
         covenant_params: CovenantParams {
             pool_id: "pool 2".to_string(),
             outgoing_channel_id: "channel-2".to_string(),
