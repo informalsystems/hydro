@@ -972,6 +972,7 @@ fn get_lock_count(deps: Deps, user_address: Addr) -> usize {
         .count()
 }
 
+// Trims the input string and validates its minimum and maximum length
 fn sanitize_input_string(input: String, min_length: usize, max_length: usize) -> StdResult<String> {
     let input = input.trim().to_string();
     let input_length = input.len();
