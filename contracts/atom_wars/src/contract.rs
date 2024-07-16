@@ -143,24 +143,9 @@ fn lock_tokens(
     lock_duration: u64,
 ) -> Result<Response, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
+
     validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
-
-    // Validate that sent funds are the required denom
-    if info.funds.len() != 1 {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Must send exactly one coin",
-        )));
-    }
-
-    let sent_funds = info.funds[0].clone();
-
-    // validate that the sent funds are the required denom using must_pay
-    must_pay(&info, &constants.denom).map_err(|_| {
-        ContractError::Std(StdError::generic_err(format!(
-            "Must send {} tokens",
-            constants.denom
-        )))
-    })?;
+    must_pay(&info, &constants.denom)?;
 
     // validate that the user does not have too many locks
     if get_lock_count(deps.as_ref(), info.sender.clone()) >= MAX_LOCK_ENTRIES {
@@ -170,9 +155,8 @@ fn lock_tokens(
         ))));
     }
 
-    // Create entry in LocksMap
     let lock_entry = LockEntry {
-        funds: sent_funds,
+        funds: info.funds[0].clone(),
         lock_start: env.block.time,
         lock_end: env.block.time.plus_nanos(lock_duration),
     };
@@ -600,7 +584,7 @@ fn add_to_whitelist(
     // Validate that the sender is a whitelist admin
     let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
     if !whitelist_admins.contains(&info.sender) {
-        return Err(ContractError::Unauthorized {});
+        return Err(ContractError::Unauthorized);
     }
 
     // Add covenant_params to whitelist
@@ -628,7 +612,7 @@ fn remove_from_whitelist(
     // Validate that the sender is a whitelist admin
     let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
     if !whitelist_admins.contains(&info.sender) {
-        return Err(ContractError::Unauthorized {});
+        return Err(ContractError::Unauthorized);
     }
 
     // Remove covenant_params from whitelist
