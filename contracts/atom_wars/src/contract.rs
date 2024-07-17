@@ -27,10 +27,6 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const MAX_LOCK_ENTRIES: usize = 100;
 
-pub const MIN_PROP_TITLE_LENGTH: usize = 3;
-pub const MAX_PROP_TITLE_LENGTH: usize = 256;
-pub const MAX_PROP_DESC_LENGTH: usize = 10000;
-
 #[entry_point]
 pub fn instantiate(
     deps: DepsMut,
@@ -363,18 +359,15 @@ fn create_proposal(
     let round_id = compute_current_round_id(&env, &constants)?;
     let proposal_id = PROP_ID.load(deps.storage)?;
 
-    let title = sanitize_input_string(title, MIN_PROP_TITLE_LENGTH, MAX_PROP_TITLE_LENGTH)?;
-    let description = sanitize_input_string(description, 0, MAX_PROP_DESC_LENGTH)?;
-
     let proposal = Proposal {
         round_id,
         tranche_id,
         proposal_id,
-        title,
-        description,
         covenant_params,
         power: Uint128::zero(),
         percentage: Uint128::zero(),
+        title: title.trim().to_string(),
+        description: description.trim().to_string(),
     };
 
     PROP_ID.save(deps.storage, &(proposal_id + 1))?;
@@ -954,19 +947,4 @@ fn get_lock_count(deps: Deps, user_address: Addr) -> usize {
         .prefix(user_address)
         .range(deps.storage, None, None, Order::Ascending)
         .count()
-}
-
-// Trims the input string and validates its minimum and maximum length
-fn sanitize_input_string(input: String, min_length: usize, max_length: usize) -> StdResult<String> {
-    let input = input.trim().to_string();
-    let input_length = input.len();
-
-    if input_length < min_length || input_length > max_length {
-        return Err(StdError::generic_err(format!(
-            "Invalid string length, got {}, expected length to be between {} and {}",
-            input, min_length, max_length
-        )));
-    }
-
-    Ok(input)
 }

@@ -1,7 +1,4 @@
-use crate::contract::{
-    query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES, MAX_PROP_DESC_LENGTH,
-    MAX_PROP_TITLE_LENGTH, MIN_PROP_TITLE_LENGTH,
-};
+use crate::contract::{query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES};
 use crate::state::Tranche;
 use crate::{
     contract::{
@@ -257,71 +254,6 @@ fn create_proposal_basic_test() {
     let proposal = &res.proposals[1];
     assert_eq!(expected_round_id, proposal.round_id);
     assert_eq!(covenant_params_2, proposal.covenant_params);
-}
-
-#[test]
-fn proposal_title_and_desc_validation_test() {
-    let user_address = "addr0000";
-    let user_token = Coin::new(1000, STATOM.to_string());
-
-    let (mut deps, env, info) = (
-        mock_dependencies(),
-        mock_env(),
-        mock_info(user_address, &[user_token.clone()]),
-    );
-    let msg = get_default_instantiate_msg();
-
-    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok());
-
-    let too_long_title = String::from("too long title ".repeat(20).trim());
-    let too_long_desc = "a".repeat(10001);
-
-    let test_cases = vec![
-        (
-            "proposal title too short",
-            "".to_string(),
-            "proposal description".to_string(),
-            format!(
-                "Invalid string length, got {}, expected length to be between {} and {}",
-                "", MIN_PROP_TITLE_LENGTH, MAX_PROP_TITLE_LENGTH
-            ),
-        ),
-        (
-            "proposal title too long",
-            too_long_title.clone(),
-            "proposal description".to_string(),
-            format!(
-                "Invalid string length, got {}, expected length to be between {} and {}",
-                too_long_title, MIN_PROP_TITLE_LENGTH, MAX_PROP_TITLE_LENGTH
-            ),
-        ),
-        (
-            "proposal description too long",
-            "proposal title".to_string(),
-            too_long_desc.clone(),
-            format!(
-                "Invalid string length, got {}, expected length to be between {} and {}",
-                too_long_desc, 0, MAX_PROP_DESC_LENGTH
-            ),
-        ),
-    ];
-
-    for test_case in test_cases {
-        println!("running test case: {}", test_case.0);
-
-        let msg = ExecuteMsg::CreateProposal {
-            tranche_id: 1,
-            title: test_case.1.to_string(),
-            description: test_case.2.to_string(),
-            covenant_params: get_default_covenant_params(),
-        };
-
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-        assert!(res.is_err());
-
-        assert!(res.unwrap_err().to_string().contains(test_case.3.as_str()));
-    }
 }
 
 #[test]
