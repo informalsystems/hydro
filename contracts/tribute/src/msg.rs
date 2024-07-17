@@ -18,6 +18,7 @@ pub enum ExecuteMsg {
         round_id: u64,
         tranche_id: u64,
         tribute_id: u64,
+        voter_address: String,
     },
     RefundTribute {
         round_id: u64,
