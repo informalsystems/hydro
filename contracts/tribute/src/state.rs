@@ -25,5 +25,5 @@ pub struct Tribute {
     pub refunded: bool,
 }
 
-// TRIBUTE_CLAIMS: key(sender_addr, tribute_id) -> bool
+// TRIBUTE_CLAIMS: key(voter_addr, tribute_id) -> bool
 pub const TRIBUTE_CLAIMS: Map<(Addr, u64), bool> = Map::new("tribute_claims");

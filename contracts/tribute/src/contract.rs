@@ -42,7 +42,7 @@ pub fn instantiate(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
@@ -50,32 +50,24 @@ pub fn execute(
         ExecuteMsg::AddTribute {
             tranche_id,
             proposal_id,
-        } => add_tribute(deps, env, info, tranche_id, proposal_id),
+        } => add_tribute(deps, info, tranche_id, proposal_id),
         ExecuteMsg::ClaimTribute {
             round_id,
             tranche_id,
             tribute_id,
-        } => claim_tribute(deps, env, info, round_id, tranche_id, tribute_id),
+            voter_address,
+        } => claim_tribute(deps, round_id, tranche_id, tribute_id, voter_address),
         ExecuteMsg::RefundTribute {
             round_id,
             tranche_id,
             proposal_id,
             tribute_id,
-        } => refund_tribute(
-            deps,
-            env,
-            info,
-            round_id,
-            proposal_id,
-            tranche_id,
-            tribute_id,
-        ),
+        } => refund_tribute(deps, info, round_id, proposal_id, tranche_id, tribute_id),
     }
 }
 
 fn add_tribute(
     deps: DepsMut,
-    _env: Env,
     info: MessageInfo,
     tranche_id: u64,
     proposal_id: u64,
@@ -133,27 +125,28 @@ fn add_tribute(
         .add_attribute("funds", info.funds[0].to_string()))
 }
 
-// ClaimTribute(round_id, tranche_id, prop_id):
+// ClaimTribute(round_id, tranche_id, prop_id, tribute_id, voter_address):
+//     Check that the voter has not already claimed the tribute
 //     Check that the round is ended
 //     Check that the prop was among the top N proposals for this tranche/round
-//     Look up sender's vote for the round
-//     Check that the sender voted for the prop
-//     Check that the sender has not already claimed the tribute
-//     Divide sender's vote power by total power voting for the prop to figure out their percentage
-//     Use the sender's percentage to send them the right portion of the tribute
-//     Mark on the sender's vote that they claimed the tribute
+//     Look up voter's vote for the round
+//     Check that the voter voted for the prop
+//     Divide voter's vote power by total power voting for the prop to figure out their percentage
+//     Use the voter's percentage to send them the right portion of the tribute
+//     Mark on the voter's vote that they claimed the tribute
 fn claim_tribute(
     deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
     round_id: u64,
     tranche_id: u64,
     tribute_id: u64,
+    voter_address: String,
 ) -> Result<Response, ContractError> {
-    // Check that the sender has not already claimed the tribute using the TRIBUTE_CLAIMS map
-    if TRIBUTE_CLAIMS.may_load(deps.storage, (info.sender.clone(), tribute_id))? == Some(true) {
+    let voter = deps.api.addr_validate(&voter_address)?;
+
+    // Check that the voter has not already claimed the tribute using the TRIBUTE_CLAIMS map
+    if TRIBUTE_CLAIMS.may_load(deps.storage, (voter.clone(), tribute_id))? == Some(true) {
         return Err(ContractError::Std(StdError::generic_err(
-            "Sender has already claimed the tribute",
+            "User has already claimed the tribute",
         )));
     }
 
@@ -167,16 +160,16 @@ fn claim_tribute(
         )));
     }
 
-    // Look up sender's vote for the round, error if it cannot be found
+    // Look up voter's vote for the round, error if it cannot be found
     let vote = query_user_vote(
         &deps,
         &config.atom_wars_contract,
         round_id,
         tranche_id,
-        info.sender.clone().to_string(),
+        voter.clone().to_string(),
     )?;
 
-    // Check that the sender voted for one of the top N proposals
+    // Check that the voter voted for one of the top N proposals
     let proposal = match get_top_n_proposal(&deps, &config, round_id, tranche_id, vote.prop_id)? {
         Some(prop) => prop,
         None => {
@@ -192,7 +185,7 @@ fn claim_tribute(
         ((round_id, tranche_id), vote.prop_id, tribute_id),
     )?;
 
-    // Divide sender's vote power by the prop's power to figure out their percentage
+    // Divide voter's vote power by the prop's power to figure out their percentage
     let percentage_fraction = (vote.power, proposal.power);
     // checked_mul_floor() is used so that, due to the precision, contract doesn't transfer by 1 token more
     // to some users, which would leave the last users trying to claim the tribute unable to do so
@@ -207,14 +200,14 @@ fn claim_tribute(
         }
     };
 
-    // Mark in the TRIBUTE_CLAIMS that the sender has claimed this tribute
-    TRIBUTE_CLAIMS.save(deps.storage, (info.sender.clone(), tribute_id), &true)?;
+    // Mark in the TRIBUTE_CLAIMS that the voter has claimed this tribute
+    TRIBUTE_CLAIMS.save(deps.storage, (voter.clone(), tribute_id), &true)?;
 
-    // Send the tribute to the sender
+    // Send the tribute to the voter
     Ok(Response::new()
         .add_attribute("action", "claim_tribute")
         .add_message(BankMsg::Send {
-            to_address: info.sender.to_string(),
+            to_address: voter.to_string(),
             amount: vec![Coin {
                 denom: tribute.funds.denom,
                 amount,
@@ -230,7 +223,6 @@ fn claim_tribute(
 //     Send the tribute back to the sender
 fn refund_tribute(
     deps: DepsMut,
-    _env: Env,
     info: MessageInfo,
     round_id: u64,
     proposal_id: u64,

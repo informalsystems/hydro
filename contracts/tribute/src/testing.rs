@@ -471,11 +471,12 @@ fn claim_tribute_test() {
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
         let tribute_claimer = USER_ADDRESS_2;
-        let info = mock_info(tribute_claimer, &[]);
+        let info = mock_info(USER_ADDRESS_1, &[]);
         let msg = ExecuteMsg::ClaimTribute {
             round_id: test.tribute_info.0,
             tranche_id: test.tribute_info.1,
             tribute_id: test.tribute_info.3,
+            voter_address: tribute_claimer.to_string(),
         };
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
 
@@ -498,12 +499,12 @@ fn claim_tribute_test() {
             test.expected_tribute_claim,
         );
 
-        // Verify that the user can't claim the same tribute twice
+        // Verify that the same tribute can't be claimed twice for the same user
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res
             .unwrap_err()
             .to_string()
-            .contains("Sender has already claimed the tribute"))
+            .contains("User has already claimed the tribute"))
     }
 }
 
