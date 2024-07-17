@@ -1,16 +1,16 @@
-# Atom Wars technical spec
+# Hydro technical spec
 
-This is an overview of **the first version of** Atom Wars from a technical and user perspective. The code implementing most of the voting system has already been written, but there is still a substantial amount of work to do to allow the contract to handle protocol owned liquidity. This integration will be done by Timewave.
+This is an overview of **the first version of** Hydro from a technical and user perspective. The code implementing most of the voting system has already been written, but there is still a substantial amount of work to do to allow the contract to handle protocol owned liquidity. This integration will be done by Timewave.
 
-Much of this has already been covered in the original Atom Wars post, but there are some nuances and differences here since this describes the functioning of the actual contract.
+Much of this has already been covered in the original Hydro post, but there are some nuances and differences here since this describes the functioning of the actual contract.
 
 # Protocol Owned Liquidity
 
-Atom Wars is a system where Atom stakers can lock up their staked Atoms in exchange for voting power, which they can use to vote on proposals to deploy Atoms owned by the community pool into liquidity (aka market-making) positions on various decentralized exchanges.
+Hydro is a system where Atom stakers can lock up their staked Atoms in exchange for voting power, which they can use to vote on proposals to deploy Atoms owned by the community pool into liquidity (aka market-making) positions on various decentralized exchanges.
 
-Like other “___ Wars” competitions, Atom Wars uses the concept of “gauges”- deployed liquidity is split between proposals proportional to the number of votes that they receive, instead of a winner-takes-all approach.
+Like other “___ Wars” competitions, Hydro uses the concept of “gauges”- deployed liquidity is split between proposals proportional to the number of votes that they receive, instead of a winner-takes-all approach.
 
-Atom is commonly used to enter and exit positions of other Cosmos tokens. Supplying more liquidity will help to cement Atom’s role as interchain money. The competition in Atom Wars to secure these PoL spots will generate excitement around Atom, and incentivize holders to lock it up.
+Atom is commonly used to enter and exit positions of other Cosmos tokens. Supplying more liquidity will help to cement Atom’s role as interchain money. The competition in Hydro to secure these PoL spots will generate excitement around Atom, and incentivize holders to lock it up.
 
 Projects using the Cosmos Hub’s Interchain Security platform will receive a gauge multiplier. For a given percentage of the vote, they will receive a higher percentage of the deployed PoL.
 
@@ -18,13 +18,13 @@ Projects using the Cosmos Hub’s Interchain Security platform will receive a ga
 
 ## Collateral
 
-The first version of Atom Wars will take stAtom as collateral. There has been some opposition to this since there is still debate over whether liquid staking is safe, and Stride (the issuer of stAtom) charges a 10% fee on staking rewards. However, Stride is a consumer chain, and a portion of this fee ultimately goes back to the Hub.
+The first version of Hydro will take stAtom as collateral. There has been some opposition to this since there is still debate over whether liquid staking is safe, and Stride (the issuer of stAtom) charges a 10% fee on staking rewards. However, Stride is a consumer chain, and a portion of this fee ultimately goes back to the Hub.
 
 Accepting multiple liquid staking tokens would be complicated and require using an price oracle, and/or querying multiple LST providers before most actions to check how many Atoms each LST represents.
 
-A future version of Atom Wars will let people lock up their Atoms without using a liquid staking token or unstaking from their current validator by using a technology called “LSM shares”, which effectively create a separate denomination for every delegator’s stake on every Hub validator. This is exciting, but non-trivial, since it will require the Atom Wars contract to be able to handle a potentially unlimited number of locked denominations, and it will require Atom Wars to query the Cosmos Hub in several places to validate these denominations whenever a user takes an action.
+A future version of Hydro will let people lock up their Atoms without using a liquid staking token or unstaking from their current validator by using a technology called “LSM shares”, which effectively create a separate denomination for every delegator’s stake on every Hub validator. This is exciting, but non-trivial, since it will require the Hydro contract to be able to handle a potentially unlimited number of locked denominations, and it will require Hydro to query the Cosmos Hub in several places to validate these denominations whenever a user takes an action.
 
-Until this technology is ready, Atom Wars will institute a cap on the number of stAtoms that can be locked in the contract. This cap will be a fraction of a percent of the total Atom supply, alleviating any security concerns.
+Until this technology is ready, Hydro will institute a cap on the number of stAtoms that can be locked in the contract. This cap will be a fraction of a percent of the total Atom supply, alleviating any security concerns.
 
 ## Lock lengths
 
@@ -53,6 +53,6 @@ Once the round is over, proposals are deployed using Timewave, a product which a
 
 # Tribute
 
-The Atom Wars forum post mentions “tribute”- funds that proposal creators can attach to proposals which is paid out to the winning proposal. This is not implemented within the main Atom Wars contract, but it is possible for tribute to be awarded with pluggable tribute contracts that read from the Atom Wars contract. These can be switched out permissionlessly and even customized or reinvented by proposal authors.
+The Hydro forum post mentions “tribute”- funds that proposal creators can attach to proposals which is paid out to the winning proposal. This is not implemented within the main Hydro contract, but it is possible for tribute to be awarded with pluggable tribute contracts that read from the Hydro contract. These can be switched out permissionlessly and even customized or reinvented by proposal authors.
 
 We will deploy an example default tribute contract which pays out tribute to anyone who voted for a proposal- but only if that proposal wins. This can be used as is by proposal authors, or used as a starting point for custom tribute contracts.

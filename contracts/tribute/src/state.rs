@@ -6,7 +6,7 @@ pub const CONFIG: Item<Config> = Item::new("config");
 
 #[cw_serde]
 pub struct Config {
-    pub atom_wars_contract: Addr,
+    pub hydro_contract: Addr,
     pub top_n_props_count: u64,
 }
 

@@ -1,7 +1,7 @@
 # Hydro: Technical Specification
 This document describes the technical specification of the Hydro protocol. 
 
-The state that Hydro keeps can be found in [`../contracts/atom_wars/src/state.rs`](../contracts/atom_wars/src/state.rs).
+The state that Hydro keeps can be found in [`../contracts/hydro/src/state.rs`](../contracts/hydro/src/state.rs).
 and [`../contracts/tribute/state.rs`](../contracts/tribute/state.rs).
 
 Let us first give a high-level overview of the functionality.
