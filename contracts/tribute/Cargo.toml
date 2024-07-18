@@ -30,7 +30,7 @@ thiserror = { workspace = true }
 cw-storage-plus = { workspace = true }
 cw2 = { workspace = true }
 cosmwasm-schema = { workspace = true }
-atom-wars = { path = "../atom_wars" }
+hydro = { path = "../hydro" }
 
 [dev-dependencies]
 cosmwasm-schema = { workspace = true }

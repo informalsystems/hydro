@@ -2,8 +2,6 @@ use crate::{
     contract::{execute, instantiate, query_proposal_tributes},
     msg::{ExecuteMsg, InstantiateMsg},
 };
-use atom_wars::query::QueryMsg as AtomWarsQueryMsg;
-use atom_wars::state::{CovenantParams, Proposal, Vote};
 use cosmwasm_std::{
     from_json,
     testing::{mock_dependencies, mock_env, mock_info},
@@ -11,21 +9,23 @@ use cosmwasm_std::{
     Uint128, WasmQuery,
 };
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
+use hydro::query::QueryMsg as HydroQueryMsg;
+use hydro::state::{CovenantParams, Proposal, Vote};
 
-pub fn get_instantiate_msg(atom_wars_contract: String) -> InstantiateMsg {
+pub fn get_instantiate_msg(hydro_contract: String) -> InstantiateMsg {
     InstantiateMsg {
-        atom_wars_contract,
+        hydro_contract,
         top_n_props_count: 10,
     }
 }
 
 const DEFAULT_DENOM: &str = "uatom";
-const ATOM_WARS_CONTRACT_ADDRESS: &str = "addr0000";
+const HYDRO_CONTRACT_ADDRESS: &str = "addr0000";
 const USER_ADDRESS_1: &str = "addr0001";
 const USER_ADDRESS_2: &str = "addr0002";
 
 pub struct MockWasmQuerier {
-    atom_wars_contract: String,
+    hydro_contract: String,
     current_round: u64,
     proposal: Option<Proposal>,
     user_vote: Option<(u64, u64, String, Vote)>,
@@ -34,14 +34,14 @@ pub struct MockWasmQuerier {
 
 impl MockWasmQuerier {
     fn new(
-        atom_wars_contract: String,
+        hydro_contract: String,
         current_round: u64,
         proposal: Option<Proposal>,
         user_vote: Option<(u64, u64, String, Vote)>,
         top_n_proposals: Vec<Proposal>,
     ) -> Self {
         Self {
-            atom_wars_contract,
+            hydro_contract,
             current_round,
             proposal,
             user_vote,
@@ -52,15 +52,15 @@ impl MockWasmQuerier {
     fn handler(&self, query: &WasmQuery) -> QuerierResult {
         match query {
             WasmQuery::Smart { contract_addr, msg } => {
-                if *contract_addr != self.atom_wars_contract {
+                if *contract_addr != self.hydro_contract {
                     return SystemResult::Err(SystemError::NoSuchContract {
                         addr: contract_addr.to_string(),
                     });
                 }
 
                 let response = match from_json(msg).unwrap() {
-                    AtomWarsQueryMsg::CurrentRound {} => to_json_binary(&self.current_round),
-                    AtomWarsQueryMsg::Proposal {
+                    HydroQueryMsg::CurrentRound {} => to_json_binary(&self.current_round),
+                    HydroQueryMsg::Proposal {
                         round_id,
                         tranche_id,
                         proposal_id,
@@ -84,7 +84,7 @@ impl MockWasmQuerier {
                             _ => return err,
                         }
                     }
-                    AtomWarsQueryMsg::UserVote {
+                    HydroQueryMsg::UserVote {
                         round_id,
                         tranche_id,
                         address,
@@ -105,7 +105,7 @@ impl MockWasmQuerier {
                             _ => return err,
                         }
                     }
-                    AtomWarsQueryMsg::TopNProposals {
+                    HydroQueryMsg::TopNProposals {
                         round_id: _,
                         tranche_id: _,
                         number_of_proposals: _,
@@ -235,7 +235,7 @@ fn add_tribute_test() {
         );
 
         let mock_querier = MockWasmQuerier::new(
-            ATOM_WARS_CONTRACT_ADDRESS.to_string(),
+            HYDRO_CONTRACT_ADDRESS.to_string(),
             test.mock_data.0,
             test.mock_data.1,
             None,
@@ -243,7 +243,7 @@ fn add_tribute_test() {
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
-        let msg = get_instantiate_msg(ATOM_WARS_CONTRACT_ADDRESS.to_string());
+        let msg = get_instantiate_msg(HYDRO_CONTRACT_ADDRESS.to_string());
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 
@@ -438,7 +438,7 @@ fn claim_tribute_test() {
         );
 
         let mock_querier = MockWasmQuerier::new(
-            ATOM_WARS_CONTRACT_ADDRESS.to_string(),
+            HYDRO_CONTRACT_ADDRESS.to_string(),
             test.mock_data.0,
             test.mock_data.2.clone(),
             None,
@@ -446,7 +446,7 @@ fn claim_tribute_test() {
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
-        let msg = get_instantiate_msg(ATOM_WARS_CONTRACT_ADDRESS.to_string());
+        let msg = get_instantiate_msg(HYDRO_CONTRACT_ADDRESS.to_string());
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 
@@ -462,7 +462,7 @@ fn claim_tribute_test() {
 
         // Update the expected round so that the tribute can be claimed
         let mock_querier = MockWasmQuerier::new(
-            ATOM_WARS_CONTRACT_ADDRESS.to_string(),
+            HYDRO_CONTRACT_ADDRESS.to_string(),
             test.mock_data.1,
             test.mock_data.2.clone(),
             test.mock_data.3.clone(),
@@ -628,7 +628,7 @@ fn refund_tribute_test() {
         );
 
         let mock_querier = MockWasmQuerier::new(
-            ATOM_WARS_CONTRACT_ADDRESS.to_string(),
+            HYDRO_CONTRACT_ADDRESS.to_string(),
             test.mock_data.0,
             test.mock_data.2.clone(),
             None,
@@ -636,7 +636,7 @@ fn refund_tribute_test() {
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
-        let msg = get_instantiate_msg(ATOM_WARS_CONTRACT_ADDRESS.to_string());
+        let msg = get_instantiate_msg(HYDRO_CONTRACT_ADDRESS.to_string());
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 
@@ -652,7 +652,7 @@ fn refund_tribute_test() {
 
         // Update the expected round so that the tribute can be refunded
         let mock_querier = MockWasmQuerier::new(
-            ATOM_WARS_CONTRACT_ADDRESS.to_string(),
+            HYDRO_CONTRACT_ADDRESS.to_string(),
             test.mock_data.1,
             test.mock_data.2.clone(),
             None,

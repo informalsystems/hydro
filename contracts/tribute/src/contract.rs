@@ -8,8 +8,8 @@ use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::QueryMsg;
 use crate::state::{Config, Tribute, CONFIG, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP};
-use atom_wars::query::QueryMsg as AtomWarsQueryMsg;
-use atom_wars::state::{Proposal, Vote};
+use hydro::query::QueryMsg as HydroQueryMsg;
+use hydro::state::{Proposal, Vote};
 
 /// Contract name that is used for migration.
 const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -27,7 +27,7 @@ pub fn instantiate(
 ) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     let config = Config {
-        atom_wars_contract: deps.api.addr_validate(&msg.atom_wars_contract)?,
+        hydro_contract: deps.api.addr_validate(&msg.hydro_contract)?,
         top_n_props_count: msg.top_n_props_count,
     };
 
@@ -72,13 +72,13 @@ fn add_tribute(
     tranche_id: u64,
     proposal_id: u64,
 ) -> Result<Response, ContractError> {
-    let atom_wars_contract = CONFIG.load(deps.storage)?.atom_wars_contract;
-    let current_round_id = query_current_round_id(&deps, &atom_wars_contract)?;
+    let hydro_contract = CONFIG.load(deps.storage)?.hydro_contract;
+    let current_round_id = query_current_round_id(&deps, &hydro_contract)?;
 
     // Check that the proposal exists
     query_proposal(
         &deps,
-        &atom_wars_contract,
+        &hydro_contract,
         current_round_id,
         tranche_id,
         proposal_id,
@@ -152,7 +152,7 @@ fn claim_tribute(
 
     // Check that the round is ended
     let config = CONFIG.load(deps.storage)?;
-    let current_round_id = query_current_round_id(&deps, &config.atom_wars_contract)?;
+    let current_round_id = query_current_round_id(&deps, &config.hydro_contract)?;
 
     if round_id >= current_round_id {
         return Err(ContractError::Std(StdError::generic_err(
@@ -163,7 +163,7 @@ fn claim_tribute(
     // Look up voter's vote for the round, error if it cannot be found
     let vote = query_user_vote(
         &deps,
-        &config.atom_wars_contract,
+        &config.hydro_contract,
         round_id,
         tranche_id,
         voter.clone().to_string(),
@@ -232,7 +232,7 @@ fn refund_tribute(
     let config = CONFIG.load(deps.storage)?;
 
     // Check that the round is ended by checking that the round_id is less than the current round
-    let current_round_id = query_current_round_id(&deps, &config.atom_wars_contract)?;
+    let current_round_id = query_current_round_id(&deps, &config.hydro_contract)?;
     if round_id >= current_round_id {
         return Err(ContractError::Std(StdError::generic_err(
             "Round has not ended yet",
@@ -320,24 +320,24 @@ pub fn query_proposal_tributes(
         .collect()
 }
 
-fn query_current_round_id(deps: &DepsMut, atom_wars_contract: &Addr) -> Result<u64, ContractError> {
+fn query_current_round_id(deps: &DepsMut, hydro_contract: &Addr) -> Result<u64, ContractError> {
     let current_round_id: u64 = deps
         .querier
-        .query_wasm_smart(atom_wars_contract, &AtomWarsQueryMsg::CurrentRound {})?;
+        .query_wasm_smart(hydro_contract, &HydroQueryMsg::CurrentRound {})?;
 
     Ok(current_round_id)
 }
 
 fn query_proposal(
     deps: &DepsMut,
-    atom_wars_contract: &Addr,
+    hydro_contract: &Addr,
     round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
 ) -> Result<Proposal, ContractError> {
     let proposal: Proposal = deps.querier.query_wasm_smart(
-        atom_wars_contract,
-        &AtomWarsQueryMsg::Proposal {
+        hydro_contract,
+        &HydroQueryMsg::Proposal {
             round_id,
             tranche_id,
             proposal_id,
@@ -349,14 +349,14 @@ fn query_proposal(
 
 fn query_user_vote(
     deps: &DepsMut,
-    atom_wars_contract: &Addr,
+    hydro_contract: &Addr,
     round_id: u64,
     tranche_id: u64,
     address: String,
 ) -> Result<Vote, ContractError> {
     Ok(deps.querier.query_wasm_smart(
-        atom_wars_contract,
-        &AtomWarsQueryMsg::UserVote {
+        hydro_contract,
+        &HydroQueryMsg::UserVote {
             round_id,
             tranche_id,
             address,
@@ -372,8 +372,8 @@ fn get_top_n_proposal(
     proposal_id: u64,
 ) -> Result<Option<Proposal>, ContractError> {
     let proposals: Vec<Proposal> = deps.querier.query_wasm_smart(
-        &config.atom_wars_contract,
-        &AtomWarsQueryMsg::TopNProposals {
+        &config.hydro_contract,
+        &HydroQueryMsg::TopNProposals {
             round_id,
             tranche_id,
             number_of_proposals: config.top_n_props_count as usize,
