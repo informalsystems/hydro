@@ -29,6 +29,7 @@ pub fn get_default_instantiate_msg() -> InstantiateMsg {
             metadata: "tranche 1".to_string(),
         }],
         first_round_start: mock_env().block.time,
+        max_locked_tokens: 1000000,
         initial_whitelist: vec![get_default_covenant_params()],
         whitelist_admins: vec![],
     }
@@ -864,4 +865,84 @@ fn test_too_many_locks() {
                 .contains("User has too many locks"));
         }
     }
+}
+
+#[test]
+fn max_locked_tokens_test() {
+    let (mut deps, mut env, mut info) =
+        (mock_dependencies(), mock_env(), mock_info("addr0000", &[]));
+
+    let mut msg = get_default_instantiate_msg();
+    msg.max_locked_tokens = 2000;
+    msg.whitelist_admins = vec!["addr0001".to_string()];
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // total tokens locked after this action will be 1500
+    info = mock_info("addr0000", &[Coin::new(1500, STATOM.to_string())]);
+    let mut lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
+    assert!(res.is_ok());
+
+    // total tokens locked after this action would be 3000, which is not allowed
+    info = mock_info("addr0000", &[Coin::new(1500, STATOM.to_string())]);
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
+    assert!(res.is_err());
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .contains("The limit for locking tokens has been reached. No more tokens can be locked."));
+
+    // total tokens locked after this action will be 2000, which is the cap
+    info = mock_info("addr0000", &[Coin::new(500, STATOM.to_string())]);
+    lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
+    assert!(res.is_ok());
+
+    // advance the chain by one month plus one nanosecond and unlock the first lockup
+    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::UnlockTokens {},
+    );
+    assert!(res.is_ok());
+
+    // now a user can lock new 1500 tokens
+    info = mock_info("addr0000", &[Coin::new(1500, STATOM.to_string())]);
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
+    assert!(res.is_ok());
+
+    // a privileged user can update the maximum allowed locked tokens
+    info = mock_info("addr0001", &[]);
+    let update_max_locked_tokens_msg = ExecuteMsg::UpdateMaxLockedTokens {
+        max_locked_tokens: 3000,
+    };
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        update_max_locked_tokens_msg,
+    );
+    assert!(res.is_ok());
+
+    // now a user can lock up to additional 1000 tokens
+    info = mock_info("addr0002", &[Coin::new(1000, STATOM.to_string())]);
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
+    assert!(res.is_ok());
+
+    // but no more than the cap of 3000 tokens
+    info = mock_info("addr0002", &[Coin::new(1, STATOM.to_string())]);
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
+    assert!(res.is_err());
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .contains("The limit for locking tokens has been reached. No more tokens can be locked."));
 }

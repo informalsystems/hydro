@@ -10,7 +10,10 @@ pub struct Constants {
     pub round_length: u64,
     pub lock_epoch_length: u64,
     pub first_round_start: Timestamp,
+    pub max_locked_tokens: u128,
 }
+
+pub const LOCKED_TOKENS: Item<u128> = Item::new("locked_tokens");
 
 pub const LOCK_ID: Item<u64> = Item::new("lock_id");
 

@@ -11,6 +11,7 @@ pub struct InstantiateMsg {
     pub lock_epoch_length: u64,
     pub tranches: Vec<Tranche>,
     pub first_round_start: Timestamp,
+    pub max_locked_tokens: u128,
     pub whitelist_admins: Vec<String>,
     pub initial_whitelist: Vec<CovenantParams>,
 }
@@ -41,5 +42,8 @@ pub enum ExecuteMsg {
     },
     RemoveFromWhitelist {
         covenant_params: CovenantParams,
+    },
+    UpdateMaxLockedTokens {
+        max_locked_tokens: u128,
     },
 }
