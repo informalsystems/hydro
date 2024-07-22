@@ -1,4 +1,4 @@
-use crate::contract::{query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES};
+use crate::contract::{query_user_vote, query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES};
 use crate::state::Tranche;
 use crate::{
     contract::{
@@ -278,29 +278,74 @@ fn vote_basic_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
-    // create a new proposal
-    let msg = ExecuteMsg::CreateProposal {
-        tranche_id: 1,
-        title: "proposal title 1".to_string(),
-        description: "proposal description 1".to_string(),
-        covenant_params: get_default_covenant_params(),
-    };
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok());
+    let prop_infos = vec![
+        (
+            1,
+            "proposal title 1".to_string(),
+            "proposal description 1".to_string(),
+        ),
+        (
+            1,
+            "proposal title 2".to_string(),
+            "proposal description 2".to_string(),
+        ),
+    ];
 
-    // vote for the proposal
-    let proposal_id = 0;
+    for prop_info in prop_infos {
+        let msg = ExecuteMsg::CreateProposal {
+            tranche_id: prop_info.0,
+            title: prop_info.1,
+            description: prop_info.2,
+            covenant_params: get_default_covenant_params(),
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_ok());
+    }
+
+    // vote for the first proposal
+    let first_proposal_id = 0;
     let msg = ExecuteMsg::Vote {
         tranche_id: 1,
-        proposal_id,
+        proposal_id: first_proposal_id,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
+    // verify users vote for the first proposal
     let round_id = 0;
-    let res = query_proposal(deps.as_ref(), round_id, 1, proposal_id);
+    let tranche_id = 1;
+
+    let res = query_user_vote(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
+    assert!(res.is_ok());
+    assert_eq!(first_proposal_id, res.unwrap().prop_id);
+
+    let res = query_proposal(deps.as_ref(), round_id, tranche_id, first_proposal_id);
     assert!(res.is_ok());
     assert_eq!(info.funds[0].amount.u128(), res.unwrap().power.u128());
+
+    // switch vote to the second proposal
+    let second_proposal_id = 1;
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposal_id: second_proposal_id,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // verify users vote for the second proposal
+    let res = query_user_vote(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
+    assert!(res.is_ok());
+    assert_eq!(second_proposal_id, res.unwrap().prop_id);
+
+    let res = query_proposal(deps.as_ref(), round_id, tranche_id, second_proposal_id);
+    assert!(res.is_ok());
+    assert_eq!(info.funds[0].amount.u128(), res.unwrap().power.u128());
+
+    // verify that the vote for the first proposal was removed
+    let res = query_proposal(deps.as_ref(), round_id, tranche_id, first_proposal_id);
+    assert!(res.is_ok());
+    assert_eq!(0, res.unwrap().power.u128());
 
     // advance the chain by two weeks + 1 nano second to move to the next round and try to unlock tokens
     env.block.time = env.block.time.plus_nanos(TWO_WEEKS_IN_NANO_SECONDS + 1);

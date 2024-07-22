@@ -1,4 +1,4 @@
-.PHONY: test fmt clippy compile compile-rust-optimizer
+.PHONY: test fmt clippy compile compile-rust-optimizer coverage
 
 fmt:
 	@cargo fmt --all
@@ -8,6 +8,10 @@ clippy:
 
 test:
 	@cargo test
+
+coverage:
+	# to install see here: https://crates.io/crates/cargo-tarpaulin
+	@cargo tarpaulin --skip-clean --frozen --out html
 
 compile:
 	@RUSTFLAGS='-C link-arg=-s' cargo build --release --target wasm32-unknown-unknown
