@@ -14,9 +14,9 @@ use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
-    Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKS_MAP, LOCK_ID,
-    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER, TOTAL_VOTED_POWER, TRANCHE_MAP,
-    VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
+    Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKED_TOKENS,
+    LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER,
+    TOTAL_VOTED_POWER, TRANCHE_MAP, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
 };
 use cw_utils::must_pay;
 
@@ -55,9 +55,11 @@ pub fn instantiate(
         round_length: msg.round_length,
         lock_epoch_length: msg.lock_epoch_length,
         first_round_start: msg.first_round_start,
+        max_locked_tokens: msg.max_locked_tokens,
     };
 
     CONSTANTS.save(deps.storage, &state)?;
+    LOCKED_TOKENS.save(deps.storage, &0)?;
     LOCK_ID.save(deps.storage, &0)?;
     PROP_ID.save(deps.storage, &0)?;
 
@@ -125,6 +127,9 @@ pub fn execute(
         ExecuteMsg::RemoveFromWhitelist { covenant_params } => {
             remove_from_whitelist(deps, env, info, covenant_params)
         }
+        ExecuteMsg::UpdateMaxLockedTokens { max_locked_tokens } => {
+            update_max_locked_tokens(deps, info, max_locked_tokens)
+        }
     }
 }
 
@@ -142,6 +147,16 @@ fn lock_tokens(
 
     validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
     must_pay(&info, &constants.denom)?;
+
+    // validate that this wouldn't cause the contract to have more locked tokens than the limit
+    let amount_to_lock = info.funds[0].amount.u128();
+    let locked_tokens = LOCKED_TOKENS.load(deps.storage)?;
+
+    if locked_tokens + amount_to_lock > constants.max_locked_tokens {
+        return Err(ContractError::Std(StdError::generic_err(
+            "The limit for locking tokens has been reached. No more tokens can be locked.",
+        )));
+    }
 
     // validate that the user does not have too many locks
     if get_lock_count(deps.as_ref(), info.sender.clone()) >= MAX_LOCK_ENTRIES {
@@ -161,6 +176,7 @@ fn lock_tokens(
     let lock_id = LOCK_ID.load(deps.storage)?;
     LOCK_ID.save(deps.storage, &(lock_id + 1))?;
     LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
+    LOCKED_TOKENS.save(deps.storage, &(locked_tokens + amount_to_lock))?;
 
     // Calculate and update the total voting power info for current and all
     // future rounds in which the user will have voting power greather than 0
@@ -305,6 +321,13 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
     let mut response = Response::new().add_attribute("action", "unlock_tokens");
 
     if !send.amount.is_zero() {
+        LOCKED_TOKENS.update(
+            deps.storage,
+            |locked_tokens| -> Result<u128, ContractError> {
+                Ok(locked_tokens - send.amount.u128())
+            },
+        )?;
+
         response = response.add_message(BankMsg::Send {
             to_address: info.sender.to_string(),
             amount: vec![send],
@@ -574,11 +597,7 @@ fn add_to_whitelist(
     info: MessageInfo,
     covenant_params: CovenantParams,
 ) -> Result<Response, ContractError> {
-    // Validate that the sender is a whitelist admin
-    let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
-    if !whitelist_admins.contains(&info.sender) {
-        return Err(ContractError::Unauthorized);
-    }
+    validate_sender_is_whitelist_admin(&deps, &info)?;
 
     // Add covenant_params to whitelist
     let mut whitelist = WHITELIST.load(deps.storage)?;
@@ -602,11 +621,7 @@ fn remove_from_whitelist(
     info: MessageInfo,
     covenant_params: CovenantParams,
 ) -> Result<Response, ContractError> {
-    // Validate that the sender is a whitelist admin
-    let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
-    if !whitelist_admins.contains(&info.sender) {
-        return Err(ContractError::Unauthorized);
-    }
+    validate_sender_is_whitelist_admin(&deps, &info)?;
 
     // Remove covenant_params from whitelist
     let mut whitelist = WHITELIST.load(deps.storage)?;
@@ -614,6 +629,40 @@ fn remove_from_whitelist(
     WHITELIST.save(deps.storage, &whitelist)?;
 
     Ok(Response::new().add_attribute("action", "remove_from_whitelist"))
+}
+
+fn update_max_locked_tokens(
+    deps: DepsMut,
+    info: MessageInfo,
+    max_locked_tokens: u128,
+) -> Result<Response, ContractError> {
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    CONSTANTS.update(
+        deps.storage,
+        |mut constants| -> Result<Constants, ContractError> {
+            constants.max_locked_tokens = max_locked_tokens;
+
+            Ok(constants)
+        },
+    )?;
+
+    Ok(Response::new()
+        .add_attribute("action", "update_max_locked_tokens")
+        .add_attribute("sender", info.sender.clone())
+        .add_attribute("max_locked_tokens", max_locked_tokens.to_string()))
+}
+
+fn validate_sender_is_whitelist_admin(
+    deps: &DepsMut,
+    info: &MessageInfo,
+) -> Result<(), ContractError> {
+    let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
+    if !whitelist_admins.contains(&info.sender) {
+        return Err(ContractError::Unauthorized);
+    }
+
+    Ok(())
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -677,6 +726,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         )?),
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(deps)?),
         QueryMsg::WhitelistAdmins {} => to_json_binary(&query_whitelist_admins(deps)?),
+        QueryMsg::TotalLockedTokens => to_json_binary(&LOCKED_TOKENS.load(deps.storage)?),
     }
 }
 
