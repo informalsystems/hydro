@@ -13,6 +13,7 @@ pub struct Constants {
     pub max_locked_tokens: u128,
 }
 
+// the total number of tokens locked in the contract
 pub const LOCKED_TOKENS: Item<u128> = Item::new("locked_tokens");
 
 pub const LOCK_ID: Item<u64> = Item::new("lock_id");

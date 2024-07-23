@@ -148,6 +148,7 @@ fn lock_tokens(
     validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
     must_pay(&info, &constants.denom)?;
 
+    // validate that this wouldn't cause the contract to have more locked tokens than the limit
     let amount_to_lock = info.funds[0].amount.u128();
     let locked_tokens = LOCKED_TOKENS.load(deps.storage)?;
 
