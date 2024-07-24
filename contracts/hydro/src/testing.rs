@@ -1045,6 +1045,7 @@ fn contract_pausing_test() {
         ExecuteMsg::UpdateMaxLockedTokens {
             max_locked_tokens: 0,
         },
+        ExecuteMsg::Pause {},
     ];
 
     for msg in msgs {
@@ -1052,13 +1053,4 @@ fn contract_pausing_test() {
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("Paused"));
     }
-
-    // verify that the privileged user receives an error if it tries to pause already paused contract
-    let msg = ExecuteMsg::Pause {};
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_err());
-    assert!(res
-        .unwrap_err()
-        .to_string()
-        .contains("Contract is already paused"));
 }

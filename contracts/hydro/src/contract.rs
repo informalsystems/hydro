@@ -670,18 +670,14 @@ fn update_max_locked_tokens(
 }
 
 // Pause:
+//     Validate that the contract isn't already paused
 //     Validate sender is whitelist admin
-//     Validate that the contract isn't already locked
 //     Set paused to true and save the changes
 fn pause_contract(deps: DepsMut, info: MessageInfo) -> Result<Response, ContractError> {
-    validate_sender_is_whitelist_admin(&deps, &info)?;
-
     let mut constants = CONSTANTS.load(deps.storage)?;
-    if constants.paused {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Contract is already paused",
-        )));
-    }
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_sender_is_whitelist_admin(&deps, &info)?;
 
     constants.paused = true;
     CONSTANTS.save(deps.storage, &constants)?;
