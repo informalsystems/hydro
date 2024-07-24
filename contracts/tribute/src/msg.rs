@@ -27,3 +27,6 @@ pub enum ExecuteMsg {
         tribute_id: u64,
     },
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct MigrateMsg {}

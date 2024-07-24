@@ -11,6 +11,7 @@ pub struct Constants {
     pub lock_epoch_length: u64,
     pub first_round_start: Timestamp,
     pub max_locked_tokens: u128,
+    pub paused: bool,
 }
 
 // the total number of tokens locked in the contract

@@ -991,3 +991,66 @@ fn max_locked_tokens_test() {
         .to_string()
         .contains("The limit for locking tokens has been reached. No more tokens can be locked."));
 }
+
+#[test]
+fn contract_pausing_test() {
+    let (mut deps, env, mut info) = (mock_dependencies(), mock_env(), mock_info("addr0000", &[]));
+
+    let whitelist_admin = "addr0001";
+    let mut msg = get_default_instantiate_msg();
+    msg.whitelist_admins = vec![whitelist_admin.to_string()];
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // verify that non-privileged user can not pause the contract
+    let msg = ExecuteMsg::Pause {};
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("Unauthorized"));
+
+    // verify that privileged user can pause the contract
+    info = mock_info(whitelist_admin, &[]);
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    let constants = query_constants(deps.as_ref());
+    assert!(constants.is_ok());
+    assert!(constants.unwrap().paused);
+
+    // verify that no action can be executed while the contract is paused
+    let msgs = vec![
+        ExecuteMsg::LockTokens { lock_duration: 0 },
+        ExecuteMsg::RefreshLockDuration {
+            lock_id: 0,
+            lock_duration: 0,
+        },
+        ExecuteMsg::UnlockTokens {},
+        ExecuteMsg::CreateProposal {
+            tranche_id: 0,
+            title: "".to_string(),
+            description: "".to_string(),
+            covenant_params: get_default_covenant_params(),
+        },
+        ExecuteMsg::Vote {
+            tranche_id: 0,
+            proposal_id: 0,
+        },
+        ExecuteMsg::AddToWhitelist {
+            covenant_params: get_default_covenant_params(),
+        },
+        ExecuteMsg::RemoveFromWhitelist {
+            covenant_params: get_default_covenant_params(),
+        },
+        ExecuteMsg::UpdateMaxLockedTokens {
+            max_locked_tokens: 0,
+        },
+        ExecuteMsg::Pause {},
+    ];
+
+    for msg in msgs {
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("Paused"));
+    }
+}

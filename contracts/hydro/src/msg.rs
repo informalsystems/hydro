@@ -46,4 +46,8 @@ pub enum ExecuteMsg {
     UpdateMaxLockedTokens {
         max_locked_tokens: u128,
     },
+    Pause {},
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct MigrateMsg {}

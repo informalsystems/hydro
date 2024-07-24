@@ -50,7 +50,7 @@ pub enum QueryMsg {
     },
     Whitelist {},
     WhitelistAdmins {},
-    TotalLockedTokens,
+    TotalLockedTokens {},
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug, Default)]
