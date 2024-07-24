@@ -11,7 +11,7 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
 use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
     Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKED_TOKENS,
@@ -56,6 +56,7 @@ pub fn instantiate(
         lock_epoch_length: msg.lock_epoch_length,
         first_round_start: msg.first_round_start,
         max_locked_tokens: msg.max_locked_tokens,
+        paused: false,
     };
 
     CONSTANTS.save(deps.storage, &state)?;
@@ -130,6 +131,7 @@ pub fn execute(
         ExecuteMsg::UpdateMaxLockedTokens { max_locked_tokens } => {
             update_max_locked_tokens(deps, info, max_locked_tokens)
         }
+        ExecuteMsg::Pause {} => pause_contract(deps, info),
     }
 }
 
@@ -145,6 +147,7 @@ fn lock_tokens(
 ) -> Result<Response, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
+    validate_contract_is_not_paused(&constants)?;
     validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
     must_pay(&info, &constants.denom)?;
 
@@ -209,6 +212,8 @@ fn refresh_lock_duration(
     lock_duration: u64,
 ) -> Result<Response, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
     validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
 
     // try to get the lock with the given id
@@ -291,6 +296,9 @@ fn validate_lock_duration(lock_epoch_length: u64, lock_duration: u64) -> Result<
 //     Send `amount` tokens back to caller
 //     Delete entry from LocksMap
 fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
     validate_previous_round_vote(&deps, &env, info.sender.clone())?;
 
     // Iterate all locks for the caller and unlock them if lock_end < now
@@ -376,9 +384,12 @@ fn create_proposal(
     description: String,
     covenant_params: CovenantParams,
 ) -> Result<Response, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+
+    // check that the tranche with the given id exists
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
-    let constants = CONSTANTS.load(deps.storage)?;
     let round_id = compute_current_round_id(&env, &constants)?;
     let proposal_id = PROP_ID.load(deps.storage)?;
 
@@ -443,9 +454,11 @@ fn vote(
     // - To enable switching votes (and for other stuff too), we store the vote in VOTE_MAP.
     // - When a user votes the second time in a round, the information about their previous vote from VOTE_MAP is used to reverse the effect of their previous vote.
     // - This leads to slightly higher gas costs for each vote, in exchange for a much lower gas cost at the end of the round.
-    TRANCHE_MAP.load(deps.storage, tranche_id)?;
-
     let constants = CONSTANTS.load(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+
+    // check that the tranche with the given id exists
+    TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
     // compute the round_id
     let round_id = compute_current_round_id(&env, &constants)?;
@@ -597,6 +610,9 @@ fn add_to_whitelist(
     info: MessageInfo,
     covenant_params: CovenantParams,
 ) -> Result<Response, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
     // Add covenant_params to whitelist
@@ -621,6 +637,9 @@ fn remove_from_whitelist(
     info: MessageInfo,
     covenant_params: CovenantParams,
 ) -> Result<Response, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
     // Remove covenant_params from whitelist
@@ -636,21 +655,41 @@ fn update_max_locked_tokens(
     info: MessageInfo,
     max_locked_tokens: u128,
 ) -> Result<Response, ContractError> {
+    let mut constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
-    CONSTANTS.update(
-        deps.storage,
-        |mut constants| -> Result<Constants, ContractError> {
-            constants.max_locked_tokens = max_locked_tokens;
-
-            Ok(constants)
-        },
-    )?;
+    constants.max_locked_tokens = max_locked_tokens;
+    CONSTANTS.save(deps.storage, &constants)?;
 
     Ok(Response::new()
         .add_attribute("action", "update_max_locked_tokens")
         .add_attribute("sender", info.sender.clone())
         .add_attribute("max_locked_tokens", max_locked_tokens.to_string()))
+}
+
+// Pause:
+//     Validate sender is whitelist admin
+//     Validate that the contract isn't already locked
+//     Set paused to true and save the changes
+fn pause_contract(deps: DepsMut, info: MessageInfo) -> Result<Response, ContractError> {
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    let mut constants = CONSTANTS.load(deps.storage)?;
+    if constants.paused {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Contract is already paused",
+        )));
+    }
+
+    constants.paused = true;
+    CONSTANTS.save(deps.storage, &constants)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "pause_contract")
+        .add_attribute("sender", info.sender.clone())
+        .add_attribute("paused", "true"))
 }
 
 fn validate_sender_is_whitelist_admin(
@@ -663,6 +702,13 @@ fn validate_sender_is_whitelist_admin(
     }
 
     Ok(())
+}
+
+fn validate_contract_is_not_paused(constants: &Constants) -> Result<(), ContractError> {
+    match constants.paused {
+        true => Err(ContractError::Paused),
+        false => Ok(()),
+    }
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -726,7 +772,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         )?),
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(deps)?),
         QueryMsg::WhitelistAdmins {} => to_json_binary(&query_whitelist_admins(deps)?),
-        QueryMsg::TotalLockedTokens => to_json_binary(&LOCKED_TOKENS.load(deps.storage)?),
+        QueryMsg::TotalLockedTokens {} => to_json_binary(&LOCKED_TOKENS.load(deps.storage)?),
     }
 }
 
@@ -997,4 +1043,23 @@ fn get_lock_count(deps: Deps, user_address: Addr) -> usize {
         .prefix(user_address)
         .range(deps.storage, None, None, Order::Ascending)
         .count()
+}
+
+/// In the first version of Hydro, we allow contract to be un-paused through the Cosmos Hub governance
+/// by migrating contract to the same code ID. This will trigger the migrate() function where we set
+/// the paused flag to false.
+/// Keep in mind that, for the future versions, this function should check the `CONTRACT_VERSION` and
+/// perform any state changes needed. It should also handle the un-pausing of the contract, depending if
+/// it was previously paused or not.
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+    CONSTANTS.update(
+        deps.storage,
+        |mut constants| -> Result<Constants, ContractError> {
+            constants.paused = false;
+            Ok(constants)
+        },
+    )?;
+
+    Ok(Response::default())
 }

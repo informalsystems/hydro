@@ -56,3 +56,6 @@ Once the round is over, proposals are deployed using Timewave, a product which a
 The Hydro forum post mentions “tribute”- funds that proposal creators can attach to proposals which is paid out to the winning proposal. This is not implemented within the main Hydro contract, but it is possible for tribute to be awarded with pluggable tribute contracts that read from the Hydro contract. These can be switched out permissionlessly and even customized or reinvented by proposal authors.
 
 We will deploy an example default tribute contract which pays out tribute to anyone who voted for a proposal- but only if that proposal wins. This can be used as is by proposal authors, or used as a starting point for custom tribute contracts.
+
+# Pausing/Un-pausing of the contract
+In case of emergency, the Oversight committee will be able to suspend any actions on the smart contract by submitting the Pause transaction to the smart contract. Once the contract is paused, it can be un-paused through the Cosmos Hub governance by submitting the proposal to migrate the contract state to the same Code ID. Such proposal execution will trigger the `migrate()` function that will un-pause the contract and allow normal functioning of the contract to continue.
