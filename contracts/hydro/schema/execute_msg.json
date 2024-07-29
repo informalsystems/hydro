@@ -1,0 +1,226 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecuteMsg",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "lock_tokens"
+      ],
+      "properties": {
+        "lock_tokens": {
+          "type": "object",
+          "required": [
+            "lock_duration"
+          ],
+          "properties": {
+            "lock_duration": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "refresh_lock_duration"
+      ],
+      "properties": {
+        "refresh_lock_duration": {
+          "type": "object",
+          "required": [
+            "lock_duration",
+            "lock_id"
+          ],
+          "properties": {
+            "lock_duration": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "lock_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "unlock_tokens"
+      ],
+      "properties": {
+        "unlock_tokens": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "create_proposal"
+      ],
+      "properties": {
+        "create_proposal": {
+          "type": "object",
+          "required": [
+            "covenant_params",
+            "description",
+            "title",
+            "tranche_id"
+          ],
+          "properties": {
+            "covenant_params": {
+              "$ref": "#/definitions/CovenantParams"
+            },
+            "description": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "vote"
+      ],
+      "properties": {
+        "vote": {
+          "type": "object",
+          "required": [
+            "proposal_id",
+            "tranche_id"
+          ],
+          "properties": {
+            "proposal_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "add_to_whitelist"
+      ],
+      "properties": {
+        "add_to_whitelist": {
+          "type": "object",
+          "required": [
+            "covenant_params"
+          ],
+          "properties": {
+            "covenant_params": {
+              "$ref": "#/definitions/CovenantParams"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "remove_from_whitelist"
+      ],
+      "properties": {
+        "remove_from_whitelist": {
+          "type": "object",
+          "required": [
+            "covenant_params"
+          ],
+          "properties": {
+            "covenant_params": {
+              "$ref": "#/definitions/CovenantParams"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "update_max_locked_tokens"
+      ],
+      "properties": {
+        "update_max_locked_tokens": {
+          "type": "object",
+          "required": [
+            "max_locked_tokens"
+          ],
+          "properties": {
+            "max_locked_tokens": {
+              "type": "integer",
+              "format": "uint128",
+              "minimum": 0.0
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "pause"
+      ],
+      "properties": {
+        "pause": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    }
+  ],
+  "definitions": {
+    "CovenantParams": {
+      "type": "object",
+      "required": [
+        "funding_destination_name",
+        "outgoing_channel_id",
+        "pool_id"
+      ],
+      "properties": {
+        "funding_destination_name": {
+          "type": "string"
+        },
+        "outgoing_channel_id": {
+          "type": "string"
+        },
+        "pool_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
