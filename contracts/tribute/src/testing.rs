@@ -67,7 +67,7 @@ impl MockWasmQuerier {
                     } => {
                         let err = SystemResult::Err(SystemError::InvalidRequest {
                             error: "proposal couldn't be found".to_string(),
-                            request: Binary(vec![]),
+                            request: Binary::new(vec![]),
                         });
 
                         match &self.proposal {
@@ -91,7 +91,7 @@ impl MockWasmQuerier {
                     } => {
                         let err = SystemResult::Err(SystemError::InvalidRequest {
                             error: "vote couldn't be found".to_string(),
-                            request: Binary(vec![]),
+                            request: Binary::new(vec![]),
                         });
 
                         match &self.user_vote {
@@ -189,8 +189,8 @@ fn add_tribute_test() {
             description: "happy path".to_string(),
             proposal_info: (0, 5),
             tributes_to_add: vec![
-                vec![Coin::new(1000, DEFAULT_DENOM)],
-                vec![Coin::new(5000, DEFAULT_DENOM)],
+                vec![Coin::new(Uint128::new(1000), DEFAULT_DENOM)],
+                vec![Coin::new(Uint128::new(5000), DEFAULT_DENOM)],
             ],
             mock_data: (10, Some(mock_proposal.clone())),
             expected_success: true,
@@ -199,7 +199,7 @@ fn add_tribute_test() {
         AddTributeTestCase {
             description: "try adding tribute for non-existing proposal".to_string(),
             proposal_info: (0, 5),
-            tributes_to_add: vec![vec![Coin::new(1000, DEFAULT_DENOM)]],
+            tributes_to_add: vec![vec![Coin::new(Uint128::new(1000), DEFAULT_DENOM)]],
             mock_data: (10, None),
             expected_success: false,
             expected_error_msg: "proposal couldn't be found".to_string(),
@@ -216,8 +216,8 @@ fn add_tribute_test() {
             description: "try adding tribute by providing more than one token".to_string(),
             proposal_info: (0, 5),
             tributes_to_add: vec![vec![
-                Coin::new(1000, DEFAULT_DENOM),
-                Coin::new(1000, "stake"),
+                Coin::new(Uint128::new(1000), DEFAULT_DENOM),
+                Coin::new(Uint128::new(1000), "stake"),
             ]],
             mock_data: (10, Some(mock_proposal.clone())),
             expected_success: false,
@@ -342,7 +342,7 @@ fn claim_tribute_test() {
         ClaimTributeTestCase {
             description: "happy path".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(Uint128::new(1000), DEFAULT_DENOM)],
             mock_data: (
                 10,
                 11,
@@ -365,7 +365,7 @@ fn claim_tribute_test() {
         ClaimTributeTestCase {
             description: "try claim tribute for proposal in current round".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(Uint128::new(1000), DEFAULT_DENOM)],
             mock_data: (10, 10, Some(mock_proposal.clone()), None, vec![]),
             expected_tribute_claim: 0,
             expected_success: false,
@@ -374,7 +374,7 @@ fn claim_tribute_test() {
         ClaimTributeTestCase {
             description: "try claim tribute if user didn't vote at all".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(Uint128::new(1000), DEFAULT_DENOM)],
             mock_data: (10, 11, Some(mock_proposal.clone()), None, vec![]),
             expected_tribute_claim: 0,
             expected_success: false,
@@ -383,7 +383,7 @@ fn claim_tribute_test() {
         ClaimTributeTestCase {
             description: "try claim tribute if user didn't vote for top N proposal".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(Uint128::new(1000), DEFAULT_DENOM)],
             mock_data: (
                 10,
                 11,
@@ -406,7 +406,7 @@ fn claim_tribute_test() {
         ClaimTributeTestCase {
             description: "try claim tribute for non existing tribute id".to_string(),
             tribute_info: (10, 0, 5, 1),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(Uint128::new(1000), DEFAULT_DENOM)],
             mock_data: (
                 10,
                 11,
@@ -544,7 +544,7 @@ fn refund_tribute_test() {
         RefundTributeTestCase {
             description: "happy path".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(Uint128::new(1000), DEFAULT_DENOM)],
             mock_data: (
                 10,
                 11,
@@ -559,7 +559,7 @@ fn refund_tribute_test() {
         RefundTributeTestCase {
             description: "try to get refund for the current round".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(Uint128::new(1000), DEFAULT_DENOM)],
             mock_data: (
                 10,
                 10,
@@ -574,7 +574,7 @@ fn refund_tribute_test() {
         RefundTributeTestCase {
             description: "try to get refund for the top N proposal".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(Uint128::new(1000), DEFAULT_DENOM)],
             mock_data: (
                 10,
                 11,
@@ -589,7 +589,7 @@ fn refund_tribute_test() {
         RefundTributeTestCase {
             description: "try to get refund for non existing tribute".to_string(),
             tribute_info: (10, 0, 5, 1),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(Uint128::new(1000), DEFAULT_DENOM)],
             mock_data: (
                 10,
                 11,
@@ -604,7 +604,7 @@ fn refund_tribute_test() {
         RefundTributeTestCase {
             description: "try to get refund if not the depositor".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(Uint128::new(1000), DEFAULT_DENOM)],
             mock_data: (
                 10,
                 11,

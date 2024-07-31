@@ -1,4 +1,9 @@
-use crate::contract::{query_user_vote, query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES};
+use std::borrow::Borrow;
+
+use crate::contract::{
+    compute_lsm_denom_voting_power, make_validator_query, query_user_vote, query_whitelist,
+    query_whitelist_admins, Validator, MAX_LOCK_ENTRIES,
+};
 use crate::state::Tranche;
 use crate::{
     contract::{
@@ -8,8 +13,11 @@ use crate::{
     },
     msg::{ExecuteMsg, InstantiateMsg},
 };
-use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-use cosmwasm_std::{BankMsg, CosmosMsg, Deps, Timestamp};
+use cosmwasm_std::testing::{message_info, mock_dependencies, mock_env, MockApi};
+use cosmwasm_std::{
+    to_json_vec, Addr, BankMsg, Binary, CosmosMsg, Decimal, Deps, Int256, SystemResult, Timestamp,
+    Uint128,
+};
 use cosmwasm_std::{Coin, StdError, StdResult};
 use proptest::prelude::*;
 
@@ -45,7 +53,11 @@ pub fn get_default_covenant_params() -> crate::state::CovenantParams {
 
 #[test]
 fn instantiate_test() {
-    let (mut deps, env, info) = (mock_dependencies(), mock_env(), mock_info("addr0000", &[]));
+    let (mut deps, env, info) = (
+        mock_dependencies(),
+        mock_env(),
+        message_info(&Addr::unchecked("addr0000"), &[]),
+    );
     let msg = get_default_instantiate_msg();
 
     let res = instantiate(deps.as_mut(), env, info, msg.clone());
@@ -61,7 +73,12 @@ fn instantiate_test() {
 
 #[test]
 fn deduplicate_whitelist_admins_test() {
-    let (mut deps, env, info) = (mock_dependencies(), mock_env(), mock_info("addr0000", &[]));
+    let api = MockApi::default().with_prefix("cosmwasm");
+    let (mut deps, env, info) = (
+        mock_dependencies(),
+        mock_env(),
+        message_info(&api.addr_make("addr0000"), &[]),
+    );
     let mut msg = get_default_instantiate_msg();
     msg.initial_whitelist = vec![
         get_default_covenant_params(),
@@ -69,12 +86,12 @@ fn deduplicate_whitelist_admins_test() {
         get_default_covenant_params(),
     ];
     msg.whitelist_admins = vec![
-        "admin3".to_string(),
-        "admin2".to_string(),
-        "admin3".to_string(),
+        api.addr_make("admin3").to_string(),
+        api.addr_make("admin2").to_string(),
+        api.addr_make("admin3").to_string(),
     ];
     let res = instantiate(deps.as_mut(), env, info, msg);
-    assert!(res.is_ok());
+    assert!(res.is_ok(), "error: {:?}", res);
     let whitelist = query_whitelist(deps.as_ref()).unwrap();
     let whitelist_admins = query_whitelist_admins(deps.as_ref()).unwrap();
 
@@ -82,8 +99,14 @@ fn deduplicate_whitelist_admins_test() {
     assert_eq!(whitelist[0], get_default_covenant_params());
 
     assert_eq!(whitelist_admins.len(), 2);
-    assert_eq!(whitelist_admins[0], "admin3");
-    assert_eq!(whitelist_admins[1], "admin2");
+    assert_eq!(
+        whitelist_admins[0].to_string(),
+        api.addr_make("admin3").to_string()
+    );
+    assert_eq!(
+        whitelist_admins[1].to_string(),
+        api.addr_make("admin2").to_string()
+    );
 }
 
 #[test]
@@ -92,21 +115,27 @@ fn lock_tokens_basic_test() {
     let (mut deps, env, info) = (
         mock_dependencies(),
         mock_env(),
-        mock_info(user_address, &[]),
+        message_info(&Addr::unchecked(user_address), &[]),
     );
     let msg = get_default_instantiate_msg();
 
     let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
     assert!(res.is_ok());
 
-    let info1 = mock_info(user_address, &[Coin::new(1000, STATOM.to_string())]);
+    let info1 = message_info(
+        &Addr::unchecked(user_address),
+        &[Coin::new(Uint128::new(1000), STATOM.to_string())],
+    );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
     };
     let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg);
     assert!(res.is_ok());
 
-    let info2 = mock_info(user_address, &[Coin::new(3000, STATOM.to_string())]);
+    let info2 = message_info(
+        &Addr::unchecked(user_address),
+        &[Coin::new(Uint128::new(3000), STATOM.to_string())],
+    );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
     };
@@ -140,12 +169,12 @@ fn lock_tokens_basic_test() {
 #[test]
 fn unlock_tokens_basic_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000, STATOM.to_string());
+    let user_token = Coin::new(Uint128::new(1000), STATOM.to_string());
 
     let (mut deps, mut env, info) = (
         mock_dependencies(),
         mock_env(),
-        mock_info(user_address, &[user_token.clone()]),
+        message_info(&Addr::unchecked(user_address), &[user_token.clone()]),
     );
     let msg = get_default_instantiate_msg();
 
@@ -205,12 +234,12 @@ fn unlock_tokens_basic_test() {
 #[test]
 fn create_proposal_basic_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000, STATOM.to_string());
+    let user_token = Coin::new(Uint128::new(1000), STATOM.to_string());
 
     let (mut deps, env, info) = (
         mock_dependencies(),
         mock_env(),
-        mock_info(user_address, &[user_token.clone()]),
+        message_info(&Addr::unchecked(user_address), &[user_token.clone()]),
     );
     let msg = get_default_instantiate_msg();
 
@@ -260,12 +289,12 @@ fn create_proposal_basic_test() {
 #[test]
 fn vote_basic_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000, STATOM.to_string());
+    let user_token = Coin::new(Uint128::new(1000), STATOM.to_string());
 
     let (mut deps, mut env, info) = (
         mock_dependencies(),
         mock_env(),
-        mock_info(user_address, &[user_token.clone()]),
+        message_info(&Addr::unchecked(user_address), &[user_token.clone()]),
     );
     let msg = get_default_instantiate_msg();
 
@@ -318,7 +347,7 @@ fn vote_basic_test() {
     let tranche_id = 1;
 
     let res = query_user_vote(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
-    assert!(res.is_ok());
+    assert!(res.is_ok(), "error: {:?}", res);
     assert_eq!(first_proposal_id, res.unwrap().prop_id);
 
     let res = query_proposal(deps.as_ref(), round_id, tranche_id, first_proposal_id);
@@ -369,7 +398,10 @@ fn multi_tranches_test() {
     let (mut deps, env, info) = (
         mock_dependencies(),
         mock_env(),
-        mock_info("addr0000", &[Coin::new(1000, STATOM.to_string())]),
+        message_info(
+            &Addr::unchecked("addr0000"),
+            &[Coin::new(Uint128::new(1000), STATOM.to_string())],
+        ),
     );
     let mut msg = get_default_instantiate_msg();
     msg.tranches = vec![
@@ -449,7 +481,10 @@ fn multi_tranches_test() {
     assert!(res.is_ok());
 
     // vote for the second proposal of tranche 2 with a different user, who also locks more toekns
-    let info2 = mock_info("addr0001", &[Coin::new(2000, STATOM.to_string())]);
+    let info2 = message_info(
+        &Addr::unchecked("addr0001"),
+        &[Coin::new(Uint128::new(2000), STATOM.to_string())],
+    );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
     };
@@ -464,7 +499,10 @@ fn multi_tranches_test() {
     assert!(res.is_ok());
 
     // vote for the so-far unvoted proposals with a new user with just 1 token
-    let info3 = mock_info("addr0002", &[Coin::new(1, STATOM.to_string())]);
+    let info3 = message_info(
+        &Addr::unchecked("addr0002"),
+        &[Coin::new(Uint128::new(1), STATOM.to_string())],
+    );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
     };
@@ -516,7 +554,10 @@ fn test_query_round_tranche_proposals_pagination() {
     let (mut deps, env, info) = (
         mock_dependencies(),
         mock_env(),
-        mock_info("addr0000", &[Coin::new(1000, STATOM.to_string())]),
+        message_info(
+            &Addr::unchecked("addr0000"),
+            &[Coin::new(Uint128::new(1000), STATOM.to_string())],
+        ),
     );
     let msg = get_default_instantiate_msg();
 
@@ -580,7 +621,11 @@ fn test_query_round_tranche_proposals_pagination() {
 fn duplicate_tranche_id_test() {
     // try to instantiate the contract with two tranches with the same id
     // this should fail
-    let (mut deps, env, info) = (mock_dependencies(), mock_env(), mock_info("addr0000", &[]));
+    let (mut deps, env, info) = (
+        mock_dependencies(),
+        mock_env(),
+        message_info(&Addr::unchecked("addr0000"), &[]),
+    );
     let mut msg = get_default_instantiate_msg();
     msg.tranches = vec![
         Tranche {
@@ -651,7 +696,7 @@ fn test_round_id_computation() {
 
         let mut env = mock_env();
         env.block.time = Timestamp::from_nanos(contract_start_time);
-        let info = mock_info("addr0000", &[]);
+        let info = message_info(&Addr::unchecked("addr0000"), &[]);
         let _ = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone()).unwrap();
 
         // set the time to the current time
@@ -671,7 +716,7 @@ fn total_voting_power_tracking_test() {
     let (mut deps, mut env, info) = (
         mock_dependencies(),
         mock_env(),
-        mock_info(user_address, &[]),
+        message_info(&Addr::unchecked(user_address), &[]),
     );
 
     let mut msg = get_default_instantiate_msg();
@@ -682,7 +727,10 @@ fn total_voting_power_tracking_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
     assert!(res.is_ok());
 
-    let info1 = mock_info(user_address, &[Coin::new(10, STATOM.to_string())]);
+    let info1 = message_info(
+        &Addr::unchecked(user_address),
+        &[Coin::new(Uint128::new(10), STATOM.to_string())],
+    );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
     };
@@ -696,7 +744,10 @@ fn total_voting_power_tracking_test() {
     // advance the chain by 10 days and have user lock more tokens
     env.block.time = env.block.time.plus_nanos(10 * ONE_DAY_IN_NANO_SECONDS);
 
-    let info2 = mock_info(user_address, &[Coin::new(20, STATOM.to_string())]);
+    let info2 = message_info(
+        &Addr::unchecked(user_address),
+        &[Coin::new(Uint128::new(20), STATOM.to_string())],
+    );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
     };
@@ -712,7 +763,7 @@ fn total_voting_power_tracking_test() {
     // advance the chain by 25 more days to move to round 1 and have user refresh second lockup to 6 months
     env.block.time = env.block.time.plus_nanos(25 * ONE_DAY_IN_NANO_SECONDS);
 
-    let info3 = mock_info(user_address, &[]);
+    let info3 = message_info(&Addr::unchecked(user_address), &[]);
     let msg = ExecuteMsg::RefreshLockDuration {
         lock_id: 1,
         lock_duration: 2 * THREE_MONTHS_IN_NANO_SECONDS,
@@ -738,7 +789,10 @@ fn total_voting_power_tracking_test() {
     // advance the chain by 5 more days and have user lock 50 more tokens for three months
     env.block.time = env.block.time.plus_nanos(5 * ONE_DAY_IN_NANO_SECONDS);
 
-    let info2 = mock_info(user_address, &[Coin::new(50, STATOM.to_string())]);
+    let info2 = message_info(
+        &Addr::unchecked(user_address),
+        &[Coin::new(Uint128::new(50), STATOM.to_string())],
+    );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
     };
@@ -785,7 +839,7 @@ proptest! {
         let (mut deps, mut env, info) = (
             mock_dependencies(),
             mock_env(),
-            mock_info("addr0001", &[Coin::new(1000, STATOM.to_string())]),
+            message_info(&Addr::unchecked("addr0001"), &[Coin::new(Uint128::new(1000), STATOM.to_string())]),
         );
         let msg = get_default_instantiate_msg();
 
@@ -812,7 +866,7 @@ proptest! {
         env.block.time = env.block.time.plus_nanos(12 * ONE_MONTH_IN_NANO_SECONDS - old_lock_remaining_time);
 
         // try to refresh the lock duration as a different user
-        let info2 = mock_info("addr0002", &[]);
+        let info2 = message_info(&Addr::unchecked("addr0002"), &[]);
         let msg = ExecuteMsg::RefreshLockDuration {
             lock_id: 0,
             lock_duration: new_lock_duration,
@@ -823,7 +877,7 @@ proptest! {
         assert!(res.is_err(), "different user should not be able to refresh the lock: {:?}", res);
 
         // refresh the lock duration
-        let info = mock_info("addr0001", &[]);
+        let info = message_info(&Addr::unchecked("addr0001"), &[]);
         let msg = ExecuteMsg::RefreshLockDuration {
             lock_id: 0,
             lock_duration: new_lock_duration,
@@ -852,7 +906,10 @@ fn test_too_many_locks() {
     let (mut deps, mut env, info) = (
         mock_dependencies(),
         mock_env(),
-        mock_info("addr0000", &[Coin::new(1000, STATOM.to_string())]),
+        message_info(
+            &Addr::unchecked("addr0000"),
+            &[Coin::new(Uint128::new(1000), STATOM.to_string())],
+        ),
     );
     let msg = get_default_instantiate_msg();
 
@@ -877,7 +934,10 @@ fn test_too_many_locks() {
     }
 
     // now test that another user can still lock tokens
-    let info2 = mock_info("addr0001", &[Coin::new(1000, STATOM.to_string())]);
+    let info2 = message_info(
+        &Addr::unchecked("addr0001"),
+        &[Coin::new(Uint128::new(1000), STATOM.to_string())],
+    );
     for i in 0..MAX_LOCK_ENTRIES + 10 {
         let res = execute(deps.as_mut(), env.clone(), info2.clone(), lock_msg.clone());
         if i < MAX_LOCK_ENTRIES {
@@ -914,8 +974,11 @@ fn test_too_many_locks() {
 
 #[test]
 fn max_locked_tokens_test() {
-    let (mut deps, mut env, mut info) =
-        (mock_dependencies(), mock_env(), mock_info("addr0000", &[]));
+    let (mut deps, mut env, mut info) = (
+        mock_dependencies(),
+        mock_env(),
+        message_info(&Addr::unchecked("addr0000"), &[]),
+    );
 
     let mut msg = get_default_instantiate_msg();
     msg.max_locked_tokens = 2000;
@@ -925,7 +988,10 @@ fn max_locked_tokens_test() {
     assert!(res.is_ok());
 
     // total tokens locked after this action will be 1500
-    info = mock_info("addr0000", &[Coin::new(1500, STATOM.to_string())]);
+    info = message_info(
+        &Addr::unchecked("addr0000"),
+        &[Coin::new(Uint128::new(1500), STATOM.to_string())],
+    );
     let mut lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
     };
@@ -933,7 +999,10 @@ fn max_locked_tokens_test() {
     assert!(res.is_ok());
 
     // total tokens locked after this action would be 3000, which is not allowed
-    info = mock_info("addr0000", &[Coin::new(1500, STATOM.to_string())]);
+    info = message_info(
+        &Addr::unchecked("addr0000"),
+        &[Coin::new(Uint128::new(1500), STATOM.to_string())],
+    );
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_err());
     assert!(res
@@ -942,7 +1011,10 @@ fn max_locked_tokens_test() {
         .contains("The limit for locking tokens has been reached. No more tokens can be locked."));
 
     // total tokens locked after this action will be 2000, which is the cap
-    info = mock_info("addr0000", &[Coin::new(500, STATOM.to_string())]);
+    info = message_info(
+        &Addr::unchecked("addr0000"),
+        &[Coin::new(Uint128::new(500), STATOM.to_string())],
+    );
     lock_msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
     };
@@ -960,12 +1032,15 @@ fn max_locked_tokens_test() {
     assert!(res.is_ok());
 
     // now a user can lock new 1500 tokens
-    info = mock_info("addr0000", &[Coin::new(1500, STATOM.to_string())]);
+    info = message_info(
+        &Addr::unchecked("addr0000"),
+        &[Coin::new(Uint128::new(1500), STATOM.to_string())],
+    );
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_ok());
 
     // a privileged user can update the maximum allowed locked tokens
-    info = mock_info("addr0001", &[]);
+    info = message_info(&Addr::unchecked("addr0001"), &[]);
     let update_max_locked_tokens_msg = ExecuteMsg::UpdateMaxLockedTokens {
         max_locked_tokens: 3000,
     };
@@ -978,12 +1053,18 @@ fn max_locked_tokens_test() {
     assert!(res.is_ok());
 
     // now a user can lock up to additional 1000 tokens
-    info = mock_info("addr0002", &[Coin::new(1000, STATOM.to_string())]);
+    info = message_info(
+        &Addr::unchecked("addr0002"),
+        &[Coin::new(Uint128::new(1000), STATOM.to_string())],
+    );
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_ok());
 
     // but no more than the cap of 3000 tokens
-    info = mock_info("addr0002", &[Coin::new(1, STATOM.to_string())]);
+    info = message_info(
+        &Addr::unchecked("addr0002"),
+        &[Coin::new(Uint128::new(1), STATOM.to_string())],
+    );
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_err());
     assert!(res
@@ -994,7 +1075,11 @@ fn max_locked_tokens_test() {
 
 #[test]
 fn contract_pausing_test() {
-    let (mut deps, env, mut info) = (mock_dependencies(), mock_env(), mock_info("addr0000", &[]));
+    let (mut deps, env, mut info) = (
+        mock_dependencies(),
+        mock_env(),
+        message_info(&Addr::unchecked("addr0000"), &[]),
+    );
 
     let whitelist_admin = "addr0001";
     let mut msg = get_default_instantiate_msg();
@@ -1010,7 +1095,7 @@ fn contract_pausing_test() {
     assert!(res.unwrap_err().to_string().contains("Unauthorized"));
 
     // verify that privileged user can pause the contract
-    info = mock_info(whitelist_admin, &[]);
+    info = message_info(&Addr::unchecked(whitelist_admin), &[]);
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
@@ -1053,4 +1138,42 @@ fn contract_pausing_test() {
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("Paused"));
     }
+}
+
+#[test]
+fn test_denom() {
+    let mock_deps = mock_dependencies();
+    let (mut deps, env, mut info) = (
+        mock_deps,
+        mock_env(),
+        message_info(&Addr::unchecked("addr0000"), &[]),
+    );
+
+    let msg = get_default_instantiate_msg();
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    let val_address = "addr0001";
+
+    let request = make_validator_query(val_address);
+
+    let response = Validator {
+        address: val_address.to_string(),
+        tokens: Int256::from(1000),
+        delegator_shares: Decimal::new(Uint128::new(1000)),
+    };
+
+    let mocked_deps = deps.querier.with_custom_handler(move |_| {
+        let response_clone = response.clone();
+        SystemResult::Ok(cosmwasm_std::ContractResult::Ok(Binary::from(
+            to_json_vec(&response_clone).unwrap(),
+        )))
+    });
+
+    deps.querier = mocked_deps;
+
+    let res = compute_lsm_denom_voting_power(deps.as_ref(), val_address.to_string() + "/1");
+
+    assert_eq!(res, Decimal::one());
 }

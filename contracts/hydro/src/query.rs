@@ -51,6 +51,9 @@ pub enum QueryMsg {
     Whitelist {},
     WhitelistAdmins {},
     TotalLockedTokens {},
+    Validator {
+        address: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug, Default)]

@@ -13,12 +13,12 @@ incremental = false
 overflow-checks = true
 
 [workspace.dependencies]
-cosmwasm-std = "1.4.0"
+cosmwasm-std = {version = "2.0.2", features = ["staking", "cosmwasm_2_0"]}
 schemars = "0.8.15"
 serde = { version = "1.0.188", default-features = false, features = ["derive"] }
 thiserror = { version = "1.0.49" }
-cw-storage-plus = { version = "1.1.0" }
-cw2 = "1.1.1"
-cosmwasm-schema = { version = "1.4.0" }
+cw-storage-plus = { version = "2.0.0" }
+cw2 = "2.0.0"
+cosmwasm-schema = { version = "2.0.0" }
 proptest = "1.0.0"
-cw-utils = "1.0.3"
+cw-utils = "2.0.0"

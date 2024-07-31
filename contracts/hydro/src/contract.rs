@@ -4,11 +4,16 @@
 // - Covenant Question: How to deal with someone using MEV to skew the pool ratio right before the liquidity is pulled? Streaming the liquidity pull? You'd have to set up a cron job for that.
 // - Covenant Question: Can people sandwich this whole thing - covenant system has price limits - but we should allow people to retry executing the prop during the round
 
+use std::convert::TryFrom;
+
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
-    Order, Response, StdError, StdResult, Timestamp, Uint128,
+    entry_point, to_json_binary, to_json_vec, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut,
+    Env, GrpcQuery, Int256, MessageInfo, Order, QueryRequest, Response, StakingQuery, StdError,
+    StdResult, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
@@ -149,7 +154,6 @@ fn lock_tokens(
 
     validate_contract_is_not_paused(&constants)?;
     validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
-    must_pay(&info, &constants.denom)?;
 
     // validate that this wouldn't cause the contract to have more locked tokens than the limit
     let amount_to_lock = info.funds[0].amount.u128();
@@ -307,7 +311,7 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
             .prefix(info.sender.clone())
             .range(deps.storage, None, None, Order::Ascending);
 
-    let mut send = Coin::new(0, CONSTANTS.load(deps.storage)?.denom);
+    let mut send = Coin::new(Uint128::zero(), CONSTANTS.load(deps.storage)?.denom);
     let mut to_delete = vec![];
 
     for lock in locks {
@@ -769,6 +773,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(deps)?),
         QueryMsg::WhitelistAdmins {} => to_json_binary(&query_whitelist_admins(deps)?),
         QueryMsg::TotalLockedTokens {} => to_json_binary(&LOCKED_TOKENS.load(deps.storage)?),
+        QueryMsg::Validator { address } => to_json_binary(&query_validator(deps, address)?),
     }
 }
 
@@ -1058,4 +1063,71 @@ pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, C
     )?;
 
     Ok(Response::default())
+}
+
+// For a given LSM token denom, computes the
+// voting power that corresponds to one
+// token of that denom.
+pub fn compute_lsm_denom_voting_power(deps: Deps, denom: String) -> Decimal {
+    // get the validator from the denom
+    // the denom looks like cosmosvaloper1clpqr4nrk4khgkxj78fcwwh6dl3uw4epsluffn/6551
+    // we would like to get the cosmosvaloper1clpqr4nrk4khgkxj78fcwwh6dl3uw4epsluffn part
+    let address = denom.split('/').next().unwrap().to_string();
+
+    // get the validator info
+    let validator = query_validator(deps, address).unwrap().unwrap();
+
+    // compute the ratio between tokens and delegator shares
+    let tokens = validator.tokens;
+    let delegator_shares = validator.delegator_shares;
+
+    let u128_tokens = Uint128::try_from(tokens).unwrap();
+
+    Decimal::from_ratio(u128_tokens, delegator_shares.to_uint_ceil())
+}
+
+pub fn query_validator(deps: Deps, address: impl Into<String>) -> StdResult<Option<Validator>> {
+    let query_request = make_validator_query(address);
+
+    let res: ValidatorResponse = deps.querier.query(&query_request)?;
+    Ok(res.validator)
+}
+
+pub fn make_validator_query(address: impl Into<String>) -> QueryRequest {
+    let request = StakingQuery::Validator {
+        address: address.into(),
+    };
+    let request_binary = to_json_vec(&request).unwrap();
+
+    QueryRequest::Grpc(GrpcQuery {
+        path: "/cosmos.staking.v1beta1.Query/Validator".to_string(),
+        data: Binary::from(request_binary),
+    })
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+#[non_exhaustive]
+pub struct Validator {
+    /// The operator address of the validator (e.g. cosmosvaloper1...).
+    /// See https://github.com/cosmos/cosmos-sdk/blob/v0.47.4/proto/cosmos/staking/v1beta1/staking.proto#L95-L96
+    /// for more information.
+    ///
+    /// This uses `String` instead of `Addr` since the bech32 address prefix is different from
+    /// the ones that regular user accounts use.
+    pub address: String,
+
+    pub tokens: Int256,
+
+    pub delegator_shares: Decimal,
+}
+
+pub struct ValidatorQuery {
+    pub address: String,
+}
+
+/// The data format returned from StakingRequest::Validator query
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+#[non_exhaustive]
+pub struct ValidatorResponse {
+    pub validator: Option<Validator>,
 }
