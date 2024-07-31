@@ -4,6 +4,14 @@
 * and run the @cosmwasm/ts-codegen generate command to regenerate this file.
 */
 
+export type Addr = string;
+export interface ConfigResponse {
+  config: Config;
+}
+export interface Config {
+  hydro_contract: Addr;
+  top_n_props_count: number;
+}
 export type ExecuteMsg = {
   add_tribute: {
     proposal_id: number;
@@ -30,6 +38,24 @@ export type ExecuteMsg = {
 export interface InstantiateMsg {
   hydro_contract: string;
   top_n_props_count: number;
+  [k: string]: unknown;
+}
+export type Uint128 = string;
+export interface ProposalTributesResponse {
+  tributes: Tribute[];
+}
+export interface Tribute {
+  depositor: Addr;
+  funds: Coin;
+  proposal_id: number;
+  refunded: boolean;
+  round_id: number;
+  tranche_id: number;
+  tribute_id: number;
+}
+export interface Coin {
+  amount: Uint128;
+  denom: string;
   [k: string]: unknown;
 }
 export type QueryMsg = {

@@ -6,9 +6,12 @@ use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
-use crate::query::QueryMsg;
+use crate::query::{ConfigResponse, ProposalTributesResponse, QueryMsg};
 use crate::state::{Config, Tribute, CONFIG, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP};
-use hydro::query::QueryMsg as HydroQueryMsg;
+use hydro::query::{
+    CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
+    UserVoteResponse,
+};
 use hydro::state::{Proposal, Vote};
 
 /// Contract name that is used for migration.
@@ -285,7 +288,7 @@ fn refund_tribute(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
-        QueryMsg::Config {} => to_json_binary(&CONFIG.load(deps.storage)?),
+        QueryMsg::Config {} => to_json_binary(&query_config(deps)?),
         QueryMsg::ProposalTributes {
             round_id,
             tranche_id,
@@ -299,8 +302,14 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             proposal_id,
             start_from,
             limit,
-        )),
+        )?),
     }
+}
+
+fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
+    Ok(ConfigResponse {
+        config: CONFIG.load(deps.storage)?,
+    })
 }
 
 pub fn query_proposal_tributes(
@@ -310,22 +319,24 @@ pub fn query_proposal_tributes(
     proposal_id: u64,
     start_from: u32,
     limit: u32,
-) -> Vec<Tribute> {
-    TRIBUTE_MAP
+) -> StdResult<ProposalTributesResponse> {
+    let tributes = TRIBUTE_MAP
         .prefix(((round_id, tranche_id), proposal_id))
         .range(deps.storage, None, None, Order::Ascending)
         .map(|l| l.unwrap().1)
         .skip(start_from as usize)
         .take(limit as usize)
-        .collect()
+        .collect();
+
+    Ok(ProposalTributesResponse { tributes })
 }
 
 fn query_current_round_id(deps: &DepsMut, hydro_contract: &Addr) -> Result<u64, ContractError> {
-    let current_round_id: u64 = deps
+    let current_round_resp: CurrentRoundResponse = deps
         .querier
         .query_wasm_smart(hydro_contract, &HydroQueryMsg::CurrentRound {})?;
 
-    Ok(current_round_id)
+    Ok(current_round_resp.round_id)
 }
 
 fn query_proposal(
@@ -335,7 +346,7 @@ fn query_proposal(
     tranche_id: u64,
     proposal_id: u64,
 ) -> Result<Proposal, ContractError> {
-    let proposal: Proposal = deps.querier.query_wasm_smart(
+    let proposal_resp: ProposalResponse = deps.querier.query_wasm_smart(
         hydro_contract,
         &HydroQueryMsg::Proposal {
             round_id,
@@ -344,7 +355,7 @@ fn query_proposal(
         },
     )?;
 
-    Ok(proposal)
+    Ok(proposal_resp.proposal)
 }
 
 fn query_user_vote(
@@ -354,14 +365,16 @@ fn query_user_vote(
     tranche_id: u64,
     address: String,
 ) -> Result<Vote, ContractError> {
-    Ok(deps.querier.query_wasm_smart(
+    let user_vote_resp: UserVoteResponse = deps.querier.query_wasm_smart(
         hydro_contract,
         &HydroQueryMsg::UserVote {
             round_id,
             tranche_id,
             address,
         },
-    )?)
+    )?;
+
+    Ok(user_vote_resp.vote)
 }
 
 fn get_top_n_proposal(
@@ -371,7 +384,7 @@ fn get_top_n_proposal(
     tranche_id: u64,
     proposal_id: u64,
 ) -> Result<Option<Proposal>, ContractError> {
-    let proposals: Vec<Proposal> = deps.querier.query_wasm_smart(
+    let proposals_resp: TopNProposalsResponse = deps.querier.query_wasm_smart(
         &config.hydro_contract,
         &HydroQueryMsg::TopNProposals {
             round_id,
@@ -380,7 +393,7 @@ fn get_top_n_proposal(
         },
     )?;
 
-    for proposal in proposals {
+    for proposal in proposals_resp.proposals {
         if proposal.proposal_id == proposal_id {
             return Ok(Some(proposal));
         }

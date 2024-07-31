@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TotalLockedTokensResponse",
+  "type": "object",
+  "required": [
+    "total_locked_tokens"
+  ],
+  "properties": {
+    "total_locked_tokens": {
+      "type": "integer",
+      "format": "uint128",
+      "minimum": 0.0
+    }
+  },
+  "additionalProperties": false
+}

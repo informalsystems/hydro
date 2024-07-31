@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TranchesResponse",
+  "type": "object",
+  "required": [
+    "tranches"
+  ],
+  "properties": {
+    "tranches": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Tranche"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "Tranche": {
+      "type": "object",
+      "required": [
+        "metadata",
+        "tranche_id"
+      ],
+      "properties": {
+        "metadata": {
+          "type": "string"
+        },
+        "tranche_id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

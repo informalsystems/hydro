@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WhitelistResponse",
+  "type": "object",
+  "required": [
+    "whitelist"
+  ],
+  "properties": {
+    "whitelist": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/CovenantParams"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "CovenantParams": {
+      "type": "object",
+      "required": [
+        "funding_destination_name",
+        "outgoing_channel_id",
+        "pool_id"
+      ],
+      "properties": {
+        "funding_destination_name": {
+          "type": "string"
+        },
+        "outgoing_channel_id": {
+          "type": "string"
+        },
+        "pool_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

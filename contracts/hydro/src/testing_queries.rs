@@ -166,5 +166,5 @@ fn get_user_voting_power(
     let res = query_user_voting_power(deps.as_ref(), env, user_address.to_string());
     assert!(res.is_ok());
 
-    res.unwrap()
+    res.unwrap().voting_power
 }

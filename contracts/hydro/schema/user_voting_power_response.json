@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UserVotingPowerResponse",
+  "type": "object",
+  "required": [
+    "voting_power"
+  ],
+  "properties": {
+    "voting_power": {
+      "type": "integer",
+      "format": "uint128",
+      "minimum": 0.0
+    }
+  },
+  "additionalProperties": false
+}
