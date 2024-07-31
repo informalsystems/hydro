@@ -54,7 +54,7 @@ fn instantiate_test() {
     let res = query_constants(deps.as_ref());
     assert!(res.is_ok());
 
-    let constants = res.unwrap();
+    let constants = res.unwrap().constants;
     assert_eq!(msg.denom, constants.denom);
     assert_eq!(msg.round_length, constants.round_length);
 }
@@ -75,8 +75,8 @@ fn deduplicate_whitelist_admins_test() {
     ];
     let res = instantiate(deps.as_mut(), env, info, msg);
     assert!(res.is_ok());
-    let whitelist = query_whitelist(deps.as_ref()).unwrap();
-    let whitelist_admins = query_whitelist_admins(deps.as_ref()).unwrap();
+    let whitelist = query_whitelist(deps.as_ref()).unwrap().whitelist;
+    let whitelist_admins = query_whitelist_admins(deps.as_ref()).unwrap().admins;
 
     assert_eq!(whitelist.len(), 1);
     assert_eq!(whitelist[0], get_default_covenant_params());
@@ -319,11 +319,14 @@ fn vote_basic_test() {
 
     let res = query_user_vote(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
     assert!(res.is_ok());
-    assert_eq!(first_proposal_id, res.unwrap().prop_id);
+    assert_eq!(first_proposal_id, res.unwrap().vote.prop_id);
 
     let res = query_proposal(deps.as_ref(), round_id, tranche_id, first_proposal_id);
     assert!(res.is_ok());
-    assert_eq!(info.funds[0].amount.u128(), res.unwrap().power.u128());
+    assert_eq!(
+        info.funds[0].amount.u128(),
+        res.unwrap().proposal.power.u128()
+    );
 
     // switch vote to the second proposal
     let second_proposal_id = 1;
@@ -337,16 +340,19 @@ fn vote_basic_test() {
     // verify users vote for the second proposal
     let res = query_user_vote(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
     assert!(res.is_ok());
-    assert_eq!(second_proposal_id, res.unwrap().prop_id);
+    assert_eq!(second_proposal_id, res.unwrap().vote.prop_id);
 
     let res = query_proposal(deps.as_ref(), round_id, tranche_id, second_proposal_id);
     assert!(res.is_ok());
-    assert_eq!(info.funds[0].amount.u128(), res.unwrap().power.u128());
+    assert_eq!(
+        info.funds[0].amount.u128(),
+        res.unwrap().proposal.power.u128()
+    );
 
     // verify that the vote for the first proposal was removed
     let res = query_proposal(deps.as_ref(), round_id, tranche_id, first_proposal_id);
     assert!(res.is_ok());
-    assert_eq!(0, res.unwrap().power.u128());
+    assert_eq!(0, res.unwrap().proposal.power.u128());
 
     // advance the chain by two weeks + 1 nano second to move to the next round and try to unlock tokens
     env.block.time = env.block.time.plus_nanos(TWO_WEEKS_IN_NANO_SECONDS + 1);
@@ -490,7 +496,7 @@ fn multi_tranches_test() {
     // (round 0, tranche 1, show 2 proposals)
     let res = query_top_n_proposals(deps.as_ref(), 0, 1, 2);
     assert!(res.is_ok());
-    let res = res.unwrap();
+    let res = res.unwrap().proposals;
     // check that there are two proposals
     assert_eq!(2, res.len(), "expected 2 proposals, got {:?}", res);
     // check that the voting power of the first proposal is 1000
@@ -502,7 +508,7 @@ fn multi_tranches_test() {
     // (round 0, tranche 2, show 2 proposals)
     let res = query_top_n_proposals(deps.as_ref(), 0, 2, 2);
     assert!(res.is_ok());
-    let res = res.unwrap();
+    let res = res.unwrap().proposals;
     // check that there are two proposals
     assert_eq!(2, res.len(), "expected 2 proposals, got {:?}", res);
     // check that the voting power of the first proposal is 3000
@@ -660,7 +666,7 @@ fn test_round_id_computation() {
         let constants = query_constants(deps.as_ref());
         assert!(constants.is_ok());
 
-        let round_id = compute_current_round_id(&env, &constants.unwrap());
+        let round_id = compute_current_round_id(&env, &constants.unwrap().constants);
         assert_eq!(expected_round_id, round_id);
     }
 }
@@ -769,7 +775,7 @@ fn verify_expected_voting_power(deps: Deps, expected_powers: &[(u64, Option<u128
             Some(total_power) => {
                 assert!(res.is_ok());
                 let res = res.unwrap();
-                assert_eq!(total_power, res.u128());
+                assert_eq!(total_power, res.total_voting_power.u128());
             }
             None => {
                 assert!(res.is_err());
@@ -1016,7 +1022,7 @@ fn contract_pausing_test() {
 
     let constants = query_constants(deps.as_ref());
     assert!(constants.is_ok());
-    assert!(constants.unwrap().paused);
+    assert!(constants.unwrap().constants.paused);
 
     // verify that no action can be executed while the contract is paused
     let msgs = vec![

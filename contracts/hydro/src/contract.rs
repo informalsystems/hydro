@@ -12,11 +12,17 @@ use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
-use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
+use crate::query::{
+    AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
+    ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
+    RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse,
+    TranchesResponse, UserVoteResponse, UserVotingPowerResponse, WhitelistAdminsResponse,
+    WhitelistResponse,
+};
 use crate::state::{
-    Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKED_TOKENS,
-    LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER,
-    TOTAL_VOTED_POWER, TRANCHE_MAP, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
+    Constants, CovenantParams, LockEntry, Proposal, Vote, CONSTANTS, LOCKED_TOKENS, LOCKS_MAP,
+    LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER, TOTAL_VOTED_POWER,
+    TRANCHE_MAP, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
 };
 use cw_utils::must_pay;
 
@@ -27,7 +33,7 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const MAX_LOCK_ENTRIES: usize = 100;
 
-#[entry_point]
+#[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
     env: Env,
@@ -748,14 +754,8 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         } => to_json_binary(&query_round_tranche_proposals(
             deps, round_id, tranche_id, start_from, limit,
         )?),
-        QueryMsg::CurrentRound {} => to_json_binary(&compute_current_round_id(
-            &env,
-            &CONSTANTS.load(deps.storage)?,
-        )?),
-        QueryMsg::RoundEnd { round_id } => to_json_binary(&compute_round_end(
-            &CONSTANTS.load(deps.storage)?,
-            round_id,
-        )?),
+        QueryMsg::CurrentRound {} => to_json_binary(&query_current_round_id(deps, env)?),
+        QueryMsg::RoundEnd { round_id } => to_json_binary(&query_round_end(deps, round_id)?),
         QueryMsg::TopNProposals {
             round_id,
             tranche_id,
@@ -768,16 +768,23 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         )?),
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(deps)?),
         QueryMsg::WhitelistAdmins {} => to_json_binary(&query_whitelist_admins(deps)?),
-        QueryMsg::TotalLockedTokens {} => to_json_binary(&LOCKED_TOKENS.load(deps.storage)?),
+        QueryMsg::TotalLockedTokens {} => to_json_binary(&query_total_locked_tokens(deps)?),
     }
 }
 
-pub fn query_round_total_power(deps: Deps, round_id: u64) -> StdResult<Uint128> {
-    TOTAL_ROUND_POWER.load(deps.storage, round_id)
+pub fn query_round_total_power(
+    deps: Deps,
+    round_id: u64,
+) -> StdResult<RoundTotalVotingPowerResponse> {
+    Ok(RoundTotalVotingPowerResponse {
+        total_voting_power: TOTAL_ROUND_POWER.load(deps.storage, round_id)?,
+    })
 }
 
-pub fn query_constants(deps: Deps) -> StdResult<Constants> {
-    CONSTANTS.load(deps.storage)
+pub fn query_constants(deps: Deps) -> StdResult<ConstantsResponse> {
+    Ok(ConstantsResponse {
+        constants: CONSTANTS.load(deps.storage)?,
+    })
 }
 
 pub fn query_all_user_lockups(
@@ -785,8 +792,8 @@ pub fn query_all_user_lockups(
     address: String,
     start_from: u32,
     limit: u32,
-) -> StdResult<UserLockupsResponse> {
-    Ok(UserLockupsResponse {
+) -> StdResult<AllUserLockupsResponse> {
+    Ok(AllUserLockupsResponse {
         lockups: query_user_lockups(
             deps,
             deps.api.addr_validate(&address)?,
@@ -803,11 +810,11 @@ pub fn query_expired_user_lockups(
     address: String,
     start_from: u32,
     limit: u32,
-) -> StdResult<UserLockupsResponse> {
+) -> StdResult<ExpiredUserLockupsResponse> {
     let user_address = deps.api.addr_validate(&address)?;
     let expired_lockup_predicate = |l: &LockEntry| l.lock_end < env.block.time;
 
-    Ok(UserLockupsResponse {
+    Ok(ExpiredUserLockupsResponse {
         lockups: query_user_lockups(
             deps,
             user_address,
@@ -823,18 +830,24 @@ pub fn query_proposal(
     round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
-) -> StdResult<Proposal> {
-    PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))
+) -> StdResult<ProposalResponse> {
+    Ok(ProposalResponse {
+        proposal: PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?,
+    })
 }
 
-pub fn query_user_voting_power(deps: Deps, env: Env, address: String) -> StdResult<u128> {
+pub fn query_user_voting_power(
+    deps: Deps,
+    env: Env,
+    address: String,
+) -> StdResult<UserVotingPowerResponse> {
     let user_address = deps.api.addr_validate(&address)?;
     let constants = CONSTANTS.load(deps.storage)?;
     let current_round_id = compute_current_round_id(&env, &constants)?;
     let round_end = compute_round_end(&constants, current_round_id)?;
     let lock_epoch_length = constants.lock_epoch_length;
 
-    Ok(LOCKS_MAP
+    let voting_power = LOCKS_MAP
         .prefix(user_address)
         .range(deps.storage, None, None, Order::Ascending)
         .map(|l| l.unwrap().1)
@@ -843,7 +856,9 @@ pub fn query_user_voting_power(deps: Deps, env: Env, address: String) -> StdResu
             let lockup_length = lockup.lock_end.nanos() - round_end.nanos();
             scale_lockup_power(lock_epoch_length, lockup_length, lockup.funds.amount).u128()
         })
-        .sum())
+        .sum();
+
+    Ok(UserVotingPowerResponse { voting_power })
 }
 
 pub fn query_user_vote(
@@ -851,11 +866,13 @@ pub fn query_user_vote(
     round_id: u64,
     tranche_id: u64,
     user_address: String,
-) -> StdResult<Vote> {
-    VOTE_MAP.load(
+) -> StdResult<UserVoteResponse> {
+    let vote = VOTE_MAP.load(
         deps.storage,
         (round_id, tranche_id, deps.api.addr_validate(&user_address)?),
-    )
+    )?;
+
+    Ok(UserVoteResponse { vote })
 }
 
 pub fn query_round_tranche_proposals(
@@ -884,12 +901,26 @@ pub fn query_round_tranche_proposals(
     Ok(RoundProposalsResponse { proposals })
 }
 
+pub fn query_current_round_id(deps: Deps, env: Env) -> StdResult<CurrentRoundResponse> {
+    let constants = &CONSTANTS.load(deps.storage)?;
+    let round_id = compute_round_id_for_timestamp(constants, env.block.time.nanos())?;
+
+    Ok(CurrentRoundResponse { round_id })
+}
+
+pub fn query_round_end(deps: Deps, round_id: u64) -> StdResult<RoundEndResponse> {
+    let constants = &CONSTANTS.load(deps.storage)?;
+    let round_end = compute_round_end(constants, round_id)?;
+
+    Ok(RoundEndResponse { round_end })
+}
+
 pub fn query_top_n_proposals(
     deps: Deps,
     round_id: u64,
     tranche_id: u64,
     num: usize,
-) -> StdResult<Vec<Proposal>> {
+) -> StdResult<TopNProposalsResponse> {
     if TRANCHE_MAP.load(deps.storage, tranche_id).is_err() {
         return Err(StdError::generic_err("Tranche does not exist"));
     }
@@ -929,23 +960,27 @@ pub fn query_top_n_proposals(
     // get total voting power for the round
     let total_voting_power = TOTAL_ROUND_POWER.load(deps.storage, round_id)?;
 
-    // return top props
-    Ok(top_props
+    let top_proposals = top_props
         .into_iter()
         .map(|mut prop| {
             prop.percentage = (prop.power * Uint128::from(100u128)) / total_voting_power;
             prop
         })
-        .collect())
+        .collect();
+
+    // return top props
+    Ok(TopNProposalsResponse {
+        proposals: top_proposals,
+    })
 }
 
-pub fn query_tranches(deps: Deps) -> StdResult<Vec<Tranche>> {
+pub fn query_tranches(deps: Deps) -> StdResult<TranchesResponse> {
     let tranches = TRANCHE_MAP
         .range(deps.storage, None, None, Order::Ascending)
         .map(|t| t.unwrap().1)
         .collect();
 
-    Ok(tranches)
+    Ok(TranchesResponse { tranches })
 }
 
 fn query_user_lockups(
@@ -965,12 +1000,22 @@ fn query_user_lockups(
         .collect()
 }
 
-pub fn query_whitelist(deps: Deps) -> StdResult<Vec<CovenantParams>> {
-    WHITELIST.load(deps.storage)
+pub fn query_whitelist(deps: Deps) -> StdResult<WhitelistResponse> {
+    Ok(WhitelistResponse {
+        whitelist: WHITELIST.load(deps.storage)?,
+    })
 }
 
-pub fn query_whitelist_admins(deps: Deps) -> StdResult<Vec<Addr>> {
-    WHITELIST_ADMINS.load(deps.storage)
+pub fn query_whitelist_admins(deps: Deps) -> StdResult<WhitelistAdminsResponse> {
+    Ok(WhitelistAdminsResponse {
+        admins: WHITELIST_ADMINS.load(deps.storage)?,
+    })
+}
+
+pub fn query_total_locked_tokens(deps: Deps) -> StdResult<TotalLockedTokensResponse> {
+    Ok(TotalLockedTokensResponse {
+        total_locked_tokens: LOCKED_TOKENS.load(deps.storage)?,
+    })
 }
 
 // Computes the current round_id by taking contract_start_time and dividing the time since

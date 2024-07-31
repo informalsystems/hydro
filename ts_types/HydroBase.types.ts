@@ -4,6 +4,36 @@
 * and run the @cosmwasm/ts-codegen generate command to regenerate this file.
 */
 
+export type Uint128 = string;
+export type Timestamp = Uint64;
+export type Uint64 = string;
+export interface AllUserLockupsResponse {
+  lockups: LockEntry[];
+}
+export interface LockEntry {
+  funds: Coin;
+  lock_end: Timestamp;
+  lock_start: Timestamp;
+}
+export interface Coin {
+  amount: Uint128;
+  denom: string;
+  [k: string]: unknown;
+}
+export interface ConstantsResponse {
+  constants: Constants;
+}
+export interface Constants {
+  denom: string;
+  first_round_start: Timestamp;
+  lock_epoch_length: number;
+  max_locked_tokens: number;
+  paused: boolean;
+  round_length: number;
+}
+export interface CurrentRoundResponse {
+  round_id: number;
+}
 export type ExecuteMsg = {
   lock_tokens: {
     lock_duration: number;
@@ -58,8 +88,9 @@ export interface CovenantParams {
   outgoing_channel_id: string;
   pool_id: string;
 }
-export type Timestamp = Uint64;
-export type Uint64 = string;
+export interface ExpiredUserLockupsResponse {
+  lockups: LockEntry[];
+}
 export interface InstantiateMsg {
   denom: string;
   first_round_start: Timestamp;
@@ -73,6 +104,19 @@ export interface InstantiateMsg {
 }
 export interface Tranche {
   metadata: string;
+  tranche_id: number;
+}
+export interface ProposalResponse {
+  proposal: Proposal;
+}
+export interface Proposal {
+  covenant_params: CovenantParams;
+  description: string;
+  percentage: Uint128;
+  power: Uint128;
+  proposal_id: number;
+  round_id: number;
+  title: string;
   tranche_id: number;
 }
 export type QueryMsg = {
@@ -158,3 +202,38 @@ export type QueryMsg = {
     [k: string]: unknown;
   };
 };
+export interface RoundEndResponse {
+  round_end: Timestamp;
+}
+export interface RoundProposalsResponse {
+  proposals: Proposal[];
+}
+export interface RoundTotalVotingPowerResponse {
+  total_voting_power: Uint128;
+}
+export interface TopNProposalsResponse {
+  proposals: Proposal[];
+}
+export interface TotalLockedTokensResponse {
+  total_locked_tokens: number;
+}
+export interface TranchesResponse {
+  tranches: Tranche[];
+}
+export interface UserVoteResponse {
+  vote: Vote;
+}
+export interface Vote {
+  power: Uint128;
+  prop_id: number;
+}
+export interface UserVotingPowerResponse {
+  voting_power: number;
+}
+export type Addr = string;
+export interface WhitelistAdminsResponse {
+  admins: Addr[];
+}
+export interface WhitelistResponse {
+  whitelist: CovenantParams[];
+}

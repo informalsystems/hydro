@@ -9,7 +9,10 @@ use cosmwasm_std::{
     Uint128, WasmQuery,
 };
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
-use hydro::query::QueryMsg as HydroQueryMsg;
+use hydro::query::{
+    CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
+    UserVoteResponse,
+};
 use hydro::state::{CovenantParams, Proposal, Vote};
 
 pub fn get_instantiate_msg(hydro_contract: String) -> InstantiateMsg {
@@ -59,7 +62,9 @@ impl MockWasmQuerier {
                 }
 
                 let response = match from_json(msg).unwrap() {
-                    HydroQueryMsg::CurrentRound {} => to_json_binary(&self.current_round),
+                    HydroQueryMsg::CurrentRound {} => to_json_binary(&CurrentRoundResponse {
+                        round_id: self.current_round,
+                    }),
                     HydroQueryMsg::Proposal {
                         round_id,
                         tranche_id,
@@ -76,7 +81,9 @@ impl MockWasmQuerier {
                                     && prop.tranche_id == tranche_id
                                     && prop.proposal_id == proposal_id
                                 {
-                                    to_json_binary(&prop)
+                                    to_json_binary(&ProposalResponse {
+                                        proposal: prop.clone(),
+                                    })
                                 } else {
                                     return err;
                                 }
@@ -97,7 +104,9 @@ impl MockWasmQuerier {
                         match &self.user_vote {
                             Some(vote) => {
                                 if vote.0 == round_id && vote.1 == tranche_id && vote.2 == address {
-                                    to_json_binary(&vote.3)
+                                    to_json_binary(&UserVoteResponse {
+                                        vote: vote.3.clone(),
+                                    })
                                 } else {
                                     return err;
                                 }
@@ -109,7 +118,9 @@ impl MockWasmQuerier {
                         round_id: _,
                         tranche_id: _,
                         number_of_proposals: _,
-                    } => to_json_binary(&self.top_n_proposals),
+                    } => to_json_binary(&TopNProposalsResponse {
+                        proposals: self.top_n_proposals.clone(),
+                    }),
                     _ => panic!("unsupported query"),
                 };
 
@@ -279,7 +290,9 @@ fn add_tribute_test() {
             test.proposal_info.1,
             0,
             3000,
-        );
+        )
+        .unwrap()
+        .tributes;
         assert_eq!(test.tributes_to_add.len(), res.len());
 
         for (i, tribute) in test.tributes_to_add.iter().enumerate() {
