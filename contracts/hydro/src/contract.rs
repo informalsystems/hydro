@@ -11,7 +11,7 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
     ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
@@ -90,11 +90,9 @@ pub fn instantiate(
     let mut tranches = std::collections::HashSet::new();
     let mut tranche_id = 1;
 
-    for tranche_name in msg
-        .tranches
-        .iter()
-        .map(|tranche_name| tranche_name.trim().to_string())
-    {
+    for tranche_info in msg.tranches {
+        let tranche_name = tranche_info.name.trim().to_string();
+
         if !tranches.insert(tranche_name.clone()) {
             return Err(ContractError::Std(StdError::generic_err(
                 "Duplicate tranche name found in provided tranches, but tranche names must be unique.",
@@ -104,6 +102,7 @@ pub fn instantiate(
         let tranche = Tranche {
             id: tranche_id,
             name: tranche_name,
+            metadata: tranche_info.metadata,
         };
         TRANCHE_MAP.save(deps.storage, tranche_id, &tranche)?;
         tranche_id += 1;
@@ -152,7 +151,7 @@ pub fn execute(
             update_max_locked_tokens(deps, info, max_locked_tokens)
         }
         ExecuteMsg::Pause {} => pause_contract(deps, info),
-        ExecuteMsg::AddTranche { tranche_name } => add_tranche(deps, info, tranche_name),
+        ExecuteMsg::AddTranche { tranche } => add_tranche(deps, info, tranche),
     }
 }
 
@@ -717,14 +716,14 @@ fn pause_contract(deps: DepsMut, info: MessageInfo) -> Result<Response, Contract
 fn add_tranche(
     deps: DepsMut,
     info: MessageInfo,
-    tranche_name: String,
+    tranche: TrancheInfo,
 ) -> Result<Response, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
-    let tranche_name = tranche_name.trim().to_string();
+    let tranche_name = tranche.name.trim().to_string();
 
     for tranche_entry in TRANCHE_MAP.range(deps.storage, None, None, Order::Ascending) {
         let (_, tranche) = tranche_entry?;
@@ -737,6 +736,7 @@ fn add_tranche(
     let tranche = Tranche {
         id: tranche_id,
         name: tranche_name,
+        metadata: tranche.metadata,
     };
 
     TRANCHE_MAP.save(deps.storage, tranche_id, &tranche)?;

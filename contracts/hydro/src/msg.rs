@@ -9,11 +9,18 @@ pub struct InstantiateMsg {
     pub denom: String,
     pub round_length: u64,
     pub lock_epoch_length: u64,
-    pub tranches: Vec<String>,
+    pub tranches: Vec<TrancheInfo>,
     pub first_round_start: Timestamp,
     pub max_locked_tokens: u128,
     pub whitelist_admins: Vec<String>,
     pub initial_whitelist: Vec<CovenantParams>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct TrancheInfo {
+    pub name: String,
+    pub metadata: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -48,7 +55,7 @@ pub enum ExecuteMsg {
     },
     Pause {},
     AddTranche {
-        tranche_name: String,
+        tranche: TrancheInfo,
     },
 }
 

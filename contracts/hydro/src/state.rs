@@ -81,6 +81,7 @@ pub const TRANCHE_MAP: Map<u64, Tranche> = Map::new("tranche_map");
 pub struct Tranche {
     pub id: u64,
     pub name: String,
+    pub metadata: String,
 }
 
 // The initial whitelist is set upon contract instantiation.

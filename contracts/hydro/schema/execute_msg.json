@@ -209,11 +209,11 @@
         "add_tranche": {
           "type": "object",
           "required": [
-            "tranche_name"
+            "tranche"
           ],
           "properties": {
-            "tranche_name": {
-              "type": "string"
+            "tranche": {
+              "$ref": "#/definitions/TrancheInfo"
             }
           }
         }
@@ -241,6 +241,21 @@
         }
       },
       "additionalProperties": false
+    },
+    "TrancheInfo": {
+      "type": "object",
+      "required": [
+        "metadata",
+        "name"
+      ],
+      "properties": {
+        "metadata": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
     }
   }
 }
