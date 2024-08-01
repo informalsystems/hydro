@@ -14,6 +14,7 @@ pub struct InstantiateMsg {
     pub max_locked_tokens: u128,
     pub whitelist_admins: Vec<String>,
     pub initial_whitelist: Vec<CovenantParams>,
+    pub max_validator_shares_participating: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

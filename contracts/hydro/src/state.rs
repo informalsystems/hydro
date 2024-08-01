@@ -12,13 +12,28 @@ pub struct Constants {
     pub first_round_start: Timestamp,
     pub max_locked_tokens: u128,
     pub paused: bool,
+
+    // The number of validators whose LST tokens may vote in Hydro.
+    // When determining voting power, locked tokens, etc, only
+    // LSTs of the top MAX_VALIDATOR_SHARES_PARTICIPATING
+    // validators are considered.
+    //
+    // This is to avoid DoS attacks, where someone could create
+    // a large number of validators with extremely small amounts of shares
+    // and lock/vote with all of them. Hydro must not need to iterate
+    // over all of those different validators when tallying votes,
+    // since that would be very expensive.
+    pub max_validator_shares_participating: u64,
 }
 
-// the total number of tokens locked in the contract
-pub const LOCKED_TOKENS: Item<u128> = Item::new("locked_tokens");
+// the number of tokenized shares of each validator locked in the contract.
+// LOCKED_VALIDATOR_SHARES: key(validator_address) -> u128
+pub const LOCKED_VALIDATOR_SHARES: Map<String, u128> = Map::new("locked_tokens");
 
+// the current lock id, auto-incrementing for each new lock
 pub const LOCK_ID: Item<u64> = Item::new("lock_id");
 
+// the current proposal id, auto-incrementing for each new proposal
 pub const PROP_ID: Item<u64> = Item::new("prop_id");
 
 // LOCKS_MAP: key(sender_address, lock_id) -> LockEntry

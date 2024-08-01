@@ -32,6 +32,7 @@ pub fn get_default_instantiate_msg() -> InstantiateMsg {
         max_locked_tokens: 1000000,
         initial_whitelist: vec![get_default_covenant_params()],
         whitelist_admins: vec![],
+        max_validator_shares_participating: 100,
     }
 }
 

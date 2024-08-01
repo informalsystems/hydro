@@ -11,14 +11,14 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
+use crate::lsm_integration::{compute_total_locked_tokens, validate_denom};
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
 use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
-    Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKED_TOKENS,
-    LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER,
-    TOTAL_VOTED_POWER, TRANCHE_MAP, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
+    Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote, CONSTANTS,
+    LOCKED_VALIDATOR_SHARES, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID,
+    TOTAL_ROUND_POWER, TOTAL_VOTED_POWER, TRANCHE_MAP, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
 };
-use cw_utils::must_pay;
 
 /// Contract name that is used for migration.
 const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -57,10 +57,10 @@ pub fn instantiate(
         first_round_start: msg.first_round_start,
         max_locked_tokens: msg.max_locked_tokens,
         paused: false,
+        max_validator_shares_participating: msg.max_validator_shares_participating,
     };
 
     CONSTANTS.save(deps.storage, &state)?;
-    LOCKED_TOKENS.save(deps.storage, &0)?;
     LOCK_ID.save(deps.storage, &0)?;
     PROP_ID.save(deps.storage, &0)?;
 
@@ -149,11 +149,26 @@ fn lock_tokens(
 
     validate_contract_is_not_paused(&constants)?;
     validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
-    must_pay(&info, &constants.denom)?;
 
-    // validate that this wouldn't cause the contract to have more locked tokens than the limit
-    let amount_to_lock = info.funds[0].amount.u128();
-    let locked_tokens = LOCKED_TOKENS.load(deps.storage)?;
+    if info.funds.len() != 1 {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Must provide exactly one coin to lock",
+        )));
+    }
+
+    let funds = info.funds[0].clone();
+
+    let validator = validate_denom(
+        deps.as_ref(),
+        funds.denom,
+        constants.max_validator_shares_participating,
+    )?;
+
+    // validate that this wouldn't cause the contract to have more locked tokens
+    // of participating validators than the limit
+    let amount_to_lock = funds.amount.u128();
+
+    let locked_tokens = compute_total_locked_tokens(deps.as_ref());
 
     if locked_tokens + amount_to_lock > constants.max_locked_tokens {
         return Err(ContractError::Std(StdError::generic_err(
@@ -179,7 +194,13 @@ fn lock_tokens(
     let lock_id = LOCK_ID.load(deps.storage)?;
     LOCK_ID.save(deps.storage, &(lock_id + 1))?;
     LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
-    LOCKED_TOKENS.save(deps.storage, &(locked_tokens + amount_to_lock))?;
+
+    // increase the shares locked for the validator whose shares are being locked
+    LOCKED_VALIDATOR_SHARES.update(
+        deps.storage,
+        validator,
+        |old| -> Result<u128, ContractError> { Ok(old.unwrap_or(0) + amount_to_lock) },
+    )?;
 
     // Calculate and update the total voting power info for current and all
     // future rounds in which the user will have voting power greather than 0
@@ -302,19 +323,46 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
     validate_previous_round_vote(&deps, &env, info.sender.clone())?;
 
     // Iterate all locks for the caller and unlock them if lock_end < now
-    let locks =
-        LOCKS_MAP
-            .prefix(info.sender.clone())
-            .range(deps.storage, None, None, Order::Ascending);
+    let locks: Vec<_> = LOCKS_MAP
+        .prefix(info.sender.clone())
+        .range(deps.storage, None, None, Order::Ascending)
+        .collect();
 
-    let mut send = Coin::new(0, CONSTANTS.load(deps.storage)?.denom);
     let mut to_delete = vec![];
+
+    let mut response = Response::new().add_attribute("action", "unlock_tokens");
 
     for lock in locks {
         let (lock_id, lock_entry) = lock?;
         if lock_entry.lock_end < env.block.time {
+            let amount = lock_entry.funds.amount;
+
+            let validator = validate_denom(
+                deps.as_ref(),
+                lock_entry.funds.denom.clone(),
+                constants.max_validator_shares_participating,
+            )?;
+
             // Send tokens back to caller
-            send.amount = send.amount.checked_add(lock_entry.funds.amount)?;
+            if !amount.is_zero() {
+                LOCKED_VALIDATOR_SHARES.update(
+                    deps.storage,
+                    validator,
+                    |locked_tokens| -> Result<u128, ContractError> {
+                        match locked_tokens {
+                            Some(old_locked_amount) => Ok(old_locked_amount - amount.u128()),
+                            None => Err(ContractError::Std(StdError::generic_err(
+                                "Validator does not have any locked tokens",
+                            ))),
+                        }
+                    },
+                )?;
+
+                response = response.add_message(BankMsg::Send {
+                    to_address: info.sender.to_string(),
+                    amount: vec![lock_entry.funds],
+                })
+            }
 
             // Delete entry from LocksMap
             to_delete.push((info.sender.clone(), lock_id));
@@ -324,22 +372,6 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
     // Delete unlocked locks
     for (addr, lock_id) in to_delete {
         LOCKS_MAP.remove(deps.storage, (addr, lock_id));
-    }
-
-    let mut response = Response::new().add_attribute("action", "unlock_tokens");
-
-    if !send.amount.is_zero() {
-        LOCKED_TOKENS.update(
-            deps.storage,
-            |locked_tokens| -> Result<u128, ContractError> {
-                Ok(locked_tokens - send.amount.u128())
-            },
-        )?;
-
-        response = response.add_message(BankMsg::Send {
-            to_address: info.sender.to_string(),
-            amount: vec![send],
-        })
     }
 
     Ok(response)
@@ -768,7 +800,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         )?),
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(deps)?),
         QueryMsg::WhitelistAdmins {} => to_json_binary(&query_whitelist_admins(deps)?),
-        QueryMsg::TotalLockedTokens {} => to_json_binary(&LOCKED_TOKENS.load(deps.storage)?),
+        QueryMsg::TotalLockedTokens {} => to_json_binary(&compute_total_locked_tokens(deps)),
     }
 }
 
