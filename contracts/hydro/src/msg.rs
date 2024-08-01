@@ -6,7 +6,6 @@ use crate::state::{CovenantParams, Tranche};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
-    pub denom: String,
     pub round_length: u64,
     pub lock_epoch_length: u64,
     pub tranches: Vec<Tranche>,

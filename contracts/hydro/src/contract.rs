@@ -51,7 +51,6 @@ pub fn instantiate(
     }
 
     let state = Constants {
-        denom: msg.denom.clone(),
         round_length: msg.round_length,
         lock_epoch_length: msg.lock_epoch_length,
         first_round_start: msg.first_round_start,
@@ -94,8 +93,7 @@ pub fn instantiate(
 
     Ok(Response::new()
         .add_attribute("action", "initialisation")
-        .add_attribute("sender", info.sender.clone())
-        .add_attribute("denom", msg.denom))
+        .add_attribute("sender", info.sender.clone()))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]

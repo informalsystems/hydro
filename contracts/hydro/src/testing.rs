@@ -21,7 +21,6 @@ pub const THREE_MONTHS_IN_NANO_SECONDS: u64 = 3 * ONE_MONTH_IN_NANO_SECONDS;
 
 pub fn get_default_instantiate_msg() -> InstantiateMsg {
     InstantiateMsg {
-        denom: STATOM.to_string(),
         round_length: TWO_WEEKS_IN_NANO_SECONDS,
         lock_epoch_length: ONE_MONTH_IN_NANO_SECONDS,
         tranches: vec![Tranche {
@@ -56,7 +55,6 @@ fn instantiate_test() {
     assert!(res.is_ok());
 
     let constants = res.unwrap();
-    assert_eq!(msg.denom, constants.denom);
     assert_eq!(msg.round_length, constants.round_length);
 }
 
