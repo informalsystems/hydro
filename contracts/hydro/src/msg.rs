@@ -2,14 +2,14 @@ use cosmwasm_std::Timestamp;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::state::{CovenantParams, Tranche};
+use crate::state::CovenantParams;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
     pub denom: String,
     pub round_length: u64,
     pub lock_epoch_length: u64,
-    pub tranches: Vec<Tranche>,
+    pub tranches: Vec<String>,
     pub first_round_start: Timestamp,
     pub max_locked_tokens: u128,
     pub whitelist_admins: Vec<String>,
@@ -47,6 +47,9 @@ pub enum ExecuteMsg {
         max_locked_tokens: u128,
     },
     Pause {},
+    AddTranche {
+        tranche_name: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

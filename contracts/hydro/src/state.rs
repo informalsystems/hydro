@@ -73,12 +73,14 @@ pub const TOTAL_VOTED_POWER: Map<(u64, u64), Uint128> = Map::new("total_voted_po
 // TOTAL_ROUND_POWER: key(round_id) -> total_round_voting_power
 pub const TOTAL_ROUND_POWER: Map<u64, Uint128> = Map::new("total_round_power");
 
+pub const TRANCHE_ID: Item<u64> = Item::new("tranche_id");
+
 // TRANCHE_MAP: key(tranche_id) -> Tranche
 pub const TRANCHE_MAP: Map<u64, Tranche> = Map::new("tranche_map");
 #[cw_serde]
 pub struct Tranche {
-    pub tranche_id: u64,
-    pub metadata: String,
+    pub id: u64,
+    pub name: String,
 }
 
 // The initial whitelist is set upon contract instantiation.

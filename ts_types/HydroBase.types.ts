@@ -82,6 +82,11 @@ export type ExecuteMsg = {
   pause: {
     [k: string]: unknown;
   };
+} | {
+  add_tranche: {
+    tranche_name: string;
+    [k: string]: unknown;
+  };
 };
 export interface CovenantParams {
   funding_destination_name: string;
@@ -98,13 +103,9 @@ export interface InstantiateMsg {
   lock_epoch_length: number;
   max_locked_tokens: number;
   round_length: number;
-  tranches: Tranche[];
+  tranches: string[];
   whitelist_admins: string[];
   [k: string]: unknown;
-}
-export interface Tranche {
-  metadata: string;
-  tranche_id: number;
 }
 export interface ProposalResponse {
   proposal: Proposal;
@@ -219,6 +220,10 @@ export interface TotalLockedTokensResponse {
 }
 export interface TranchesResponse {
   tranches: Tranche[];
+}
+export interface Tranche {
+  id: number;
+  name: string;
 }
 export interface UserVoteResponse {
   vote: Vote;

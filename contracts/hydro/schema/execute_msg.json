@@ -199,6 +199,26 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "add_tranche"
+      ],
+      "properties": {
+        "add_tranche": {
+          "type": "object",
+          "required": [
+            "tranche_name"
+          ],
+          "properties": {
+            "tranche_name": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {
