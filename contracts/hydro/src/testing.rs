@@ -611,8 +611,8 @@ fn duplicate_tranche_name_test() {
 }
 
 #[test]
-fn add_tranche_test() {
-    let (mut deps, env, info) = (mock_dependencies(), mock_env(), mock_info("addr0000", &[]));
+fn add_edit_tranche_test() {
+    let (mut deps, env, admin_info) = (mock_dependencies(), mock_env(), mock_info("addr0000", &[]));
     let mut msg = get_default_instantiate_msg();
     msg.tranches = vec![
         TrancheInfo {
@@ -626,14 +626,14 @@ fn add_tranche_test() {
     ];
     msg.whitelist_admins = vec![String::from("addr0000")];
 
-    let res = instantiate(deps.as_mut(), env.clone(), info, msg);
+    let res = instantiate(deps.as_mut(), env.clone(), admin_info.clone(), msg);
     assert!(res.is_ok());
 
     let tranches = query_tranches(deps.as_ref());
     assert_eq!(tranches.unwrap().tranches.len(), 2);
 
     // verify that only whitelist admins can add new tranches
-    let info = mock_info("addr0001", &[]);
+    let non_admin_info = mock_info("addr0001", &[]);
     let msg = ExecuteMsg::AddTranche {
         tranche: TrancheInfo {
             name: "tranche 2".to_string(),
@@ -641,7 +641,7 @@ fn add_tranche_test() {
         },
     };
 
-    let res = execute(deps.as_mut(), env.clone(), info, msg);
+    let res = execute(deps.as_mut(), env.clone(), non_admin_info.clone(), msg);
     assert!(res.is_err());
     assert!(res
         .unwrap_err()
@@ -650,7 +650,6 @@ fn add_tranche_test() {
         .contains("unauthorized"));
 
     // verify that the new tranche name must be unique
-    let info = mock_info("addr0000", &[]);
     let msg = ExecuteMsg::AddTranche {
         tranche: TrancheInfo {
             name: "tranche 2".to_string(),
@@ -658,7 +657,7 @@ fn add_tranche_test() {
         },
     };
 
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    let res = execute(deps.as_mut(), env.clone(), admin_info.clone(), msg);
     assert!(res.is_err());
     assert!(res
         .unwrap_err()
@@ -677,7 +676,7 @@ fn add_tranche_test() {
         },
     };
 
-    let res = execute(deps.as_mut(), env.clone(), info, msg);
+    let res = execute(deps.as_mut(), env.clone(), admin_info.clone(), msg);
     assert!(res.is_ok());
 
     let tranches = query_tranches(deps.as_ref()).unwrap().tranches;
@@ -687,6 +686,41 @@ fn add_tranche_test() {
     assert_eq!(new_tranche.id, 3);
     assert_eq!(new_tranche.name, new_tranche_name);
     assert_eq!(new_tranche.metadata, new_tranche_metadata);
+
+    // verify that only whitelist admins can edit tranches
+    let msg = ExecuteMsg::EditTranche {
+        tranche_id: 3,
+        tranche_name: Some("tranche 3".to_string()),
+        tranche_metadata: Some("tranche 3 metadata".to_string()),
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), non_admin_info, msg.clone());
+    assert!(res.is_err());
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .to_lowercase()
+        .contains("unauthorized"));
+
+    // verify that tranche name and metadata gets updated
+    let updated_tranche_name = "tranche 3 updated".to_string();
+    let updated_tranche_metadata = "tranche 3 metadata updated".to_string();
+    let msg = ExecuteMsg::EditTranche {
+        tranche_id: 3,
+        tranche_name: Some(updated_tranche_name.clone()),
+        tranche_metadata: Some(updated_tranche_metadata.clone()),
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), admin_info.clone(), msg);
+    assert!(res.is_ok());
+
+    let tranches = query_tranches(deps.as_ref()).unwrap().tranches;
+    assert_eq!(tranches.len(), 3);
+
+    let updated_tranche = tranches[2].clone();
+    assert_eq!(updated_tranche.id, 3);
+    assert_eq!(updated_tranche.name, updated_tranche_name);
+    assert_eq!(updated_tranche.metadata, updated_tranche_metadata);
 }
 
 #[test]
@@ -1139,6 +1173,11 @@ fn contract_pausing_test() {
                 name: String::new(),
                 metadata: String::new(),
             },
+        },
+        ExecuteMsg::EditTranche {
+            tranche_id: 1,
+            tranche_name: Some(String::new()),
+            tranche_metadata: Some(String::new()),
         },
     ];
 

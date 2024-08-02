@@ -57,6 +57,11 @@ pub enum ExecuteMsg {
     AddTranche {
         tranche: TrancheInfo,
     },
+    EditTranche {
+        tranche_id: u64,
+        tranche_name: Option<String>,
+        tranche_metadata: Option<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

@@ -152,6 +152,11 @@ pub fn execute(
         }
         ExecuteMsg::Pause {} => pause_contract(deps, info),
         ExecuteMsg::AddTranche { tranche } => add_tranche(deps, info, tranche),
+        ExecuteMsg::EditTranche {
+            tranche_id,
+            tranche_name,
+            tranche_metadata,
+        } => edit_tranche(deps, info, tranche_id, tranche_name, tranche_metadata),
     }
 }
 
@@ -719,18 +724,11 @@ fn add_tranche(
     tranche: TrancheInfo,
 ) -> Result<Response, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
+    let tranche_name = tranche.name.trim().to_string();
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
-
-    let tranche_name = tranche.name.trim().to_string();
-
-    for tranche_entry in TRANCHE_MAP.range(deps.storage, None, None, Order::Ascending) {
-        let (_, tranche) = tranche_entry?;
-        if tranche.name == tranche_name {
-            return Err(ContractError::Std(StdError::generic_err("Tranche with the given name already exists. Duplicate tranche names are not allowed.")));
-        }
-    }
+    validate_tranche_name_uniqueness(&deps, &tranche_name)?;
 
     let tranche_id = TRANCHE_ID.load(deps.storage)?;
     let tranche = Tranche {
@@ -745,8 +743,50 @@ fn add_tranche(
     Ok(Response::new()
         .add_attribute("action", "add_tranche")
         .add_attribute("sender", info.sender.clone())
-        .add_attribute("tranche ID", tranche.id.to_string())
-        .add_attribute("tranche name", tranche.name))
+        .add_attribute("tranche id", tranche.id.to_string())
+        .add_attribute("tranche name", tranche.name)
+        .add_attribute("tranche metadata", tranche.metadata))
+}
+
+// EditTranche:
+//     Validate that the contract isn't paused
+//     Validate sender is whitelist admin
+//     Validate that the tranche with the given id exists
+//     Validate that the tranche with the same name doesn't already exist
+//     Update the tranche in the store
+fn edit_tranche(
+    deps: DepsMut,
+    info: MessageInfo,
+    tranche_id: u64,
+    tranche_name: Option<String>,
+    tranche_metadata: Option<String>,
+) -> Result<Response, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    let mut tranche = TRANCHE_MAP.load(deps.storage, tranche_id)?;
+
+    if let Some(new_tranche_name) = tranche_name {
+        let new_tranche_name = new_tranche_name.trim().to_string();
+        // If a new name is provided, we don't allow for it to be equal with
+        // any of existing tranche names, including the one being updated.
+        // If user wants to update only metadata they should provide None for tranche_name.
+        validate_tranche_name_uniqueness(&deps, &new_tranche_name)?;
+
+        tranche.name = new_tranche_name
+    };
+
+    tranche.metadata = tranche_metadata.unwrap_or(tranche.metadata.clone());
+    TRANCHE_MAP.save(deps.storage, tranche.id, &tranche)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "edit_tranche")
+        .add_attribute("sender", info.sender.clone())
+        .add_attribute("tranche id", tranche.id.to_string())
+        .add_attribute("tranche name", tranche.name)
+        .add_attribute("tranche metadata", tranche.metadata))
 }
 
 fn validate_sender_is_whitelist_admin(
@@ -766,6 +806,22 @@ fn validate_contract_is_not_paused(constants: &Constants) -> Result<(), Contract
         true => Err(ContractError::Paused),
         false => Ok(()),
     }
+}
+
+fn validate_tranche_name_uniqueness(
+    deps: &DepsMut,
+    tranche_name: &String,
+) -> Result<(), ContractError> {
+    for tranche_entry in TRANCHE_MAP.range(deps.storage, None, None, Order::Ascending) {
+        let (_, tranche) = tranche_entry?;
+        if tranche.name == *tranche_name {
+            return Err(ContractError::Std(StdError::generic_err(
+                "Tranche with the given name already exists. Duplicate tranche names are not allowed.",
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]

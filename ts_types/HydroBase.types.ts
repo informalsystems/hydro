@@ -87,6 +87,13 @@ export type ExecuteMsg = {
     tranche: TrancheInfo;
     [k: string]: unknown;
   };
+} | {
+  edit_tranche: {
+    tranche_id: number;
+    tranche_metadata?: string | null;
+    tranche_name?: string | null;
+    [k: string]: unknown;
+  };
 };
 export interface CovenantParams {
   funding_destination_name: string;
