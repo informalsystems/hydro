@@ -1,5 +1,7 @@
-use crate::contract::{query_user_vote, query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES};
-use crate::state::Tranche;
+use crate::contract::{
+    query_tranches, query_user_vote, query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES,
+};
+use crate::msg::TrancheInfo;
 use crate::{
     contract::{
         compute_current_round_id, execute, instantiate, query_all_user_lockups, query_constants,
@@ -24,9 +26,9 @@ pub fn get_default_instantiate_msg() -> InstantiateMsg {
         denom: STATOM.to_string(),
         round_length: TWO_WEEKS_IN_NANO_SECONDS,
         lock_epoch_length: ONE_MONTH_IN_NANO_SECONDS,
-        tranches: vec![Tranche {
-            tranche_id: 1,
-            metadata: "tranche 1".to_string(),
+        tranches: vec![TrancheInfo {
+            name: "tranche 1".to_string(),
+            metadata: "tranche 1 metadata".to_string(),
         }],
         first_round_start: mock_env().block.time,
         max_locked_tokens: 1000000,
@@ -379,13 +381,13 @@ fn multi_tranches_test() {
     );
     let mut msg = get_default_instantiate_msg();
     msg.tranches = vec![
-        Tranche {
-            tranche_id: 1,
-            metadata: "tranche 1".to_string(),
+        TrancheInfo {
+            name: "tranche 1".to_string(),
+            metadata: "tranche 1 metadata".to_string(),
         },
-        Tranche {
-            tranche_id: 2,
-            metadata: "tranche 2".to_string(),
+        TrancheInfo {
+            name: "tranche 2".to_string(),
+            metadata: "tranche 2 metadata".to_string(),
         },
     ];
 
@@ -583,19 +585,19 @@ fn test_query_round_tranche_proposals_pagination() {
 }
 
 #[test]
-fn duplicate_tranche_id_test() {
-    // try to instantiate the contract with two tranches with the same id
+fn duplicate_tranche_name_test() {
+    // try to instantiate the contract with two tranches with the same name
     // this should fail
     let (mut deps, env, info) = (mock_dependencies(), mock_env(), mock_info("addr0000", &[]));
     let mut msg = get_default_instantiate_msg();
     msg.tranches = vec![
-        Tranche {
-            tranche_id: 1,
-            metadata: "tranche 1".to_string(),
+        TrancheInfo {
+            name: "tranche 1".to_string(),
+            metadata: "tranche 1 metadata".to_string(),
         },
-        Tranche {
-            tranche_id: 1,
-            metadata: "tranche 2".to_string(),
+        TrancheInfo {
+            name: "tranche 1".to_string(),
+            metadata: "tranche 2 metadata".to_string(),
         },
     ];
 
@@ -605,8 +607,122 @@ fn duplicate_tranche_id_test() {
         .unwrap_err()
         .to_string()
         .to_lowercase()
-        .contains("duplicate tranche id"));
+        .contains("duplicate tranche name"));
 }
+
+#[test]
+fn add_edit_tranche_test() {
+    let (mut deps, env, admin_info) = (mock_dependencies(), mock_env(), mock_info("addr0000", &[]));
+    let mut msg = get_default_instantiate_msg();
+    msg.tranches = vec![
+        TrancheInfo {
+            name: "tranche 1".to_string(),
+            metadata: "tranche 1 metadata".to_string(),
+        },
+        TrancheInfo {
+            name: "tranche 2".to_string(),
+            metadata: "tranche 2 metadata".to_string(),
+        },
+    ];
+    msg.whitelist_admins = vec![String::from("addr0000")];
+
+    let res = instantiate(deps.as_mut(), env.clone(), admin_info.clone(), msg);
+    assert!(res.is_ok());
+
+    let tranches = query_tranches(deps.as_ref());
+    assert_eq!(tranches.unwrap().tranches.len(), 2);
+
+    // verify that only whitelist admins can add new tranches
+    let non_admin_info = mock_info("addr0001", &[]);
+    let msg = ExecuteMsg::AddTranche {
+        tranche: TrancheInfo {
+            name: "tranche 2".to_string(),
+            metadata: "tranche 2 metadata".to_string(),
+        },
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), non_admin_info.clone(), msg);
+    assert!(res.is_err());
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .to_lowercase()
+        .contains("unauthorized"));
+
+    // verify that the new tranche name must be unique
+    let msg = ExecuteMsg::AddTranche {
+        tranche: TrancheInfo {
+            name: "tranche 2".to_string(),
+            metadata: "tranche 3 metadata".to_string(),
+        },
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), admin_info.clone(), msg);
+    assert!(res.is_err());
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .to_lowercase()
+        .contains("tranche with the given name already exists"));
+
+    // verify that a valid new tranche can be added
+    let new_tranche_name = String::from("tranche 3");
+    let new_tranche_metadata = String::from("tranche 3 metadata");
+
+    let msg = ExecuteMsg::AddTranche {
+        tranche: TrancheInfo {
+            name: new_tranche_name.clone(),
+            metadata: new_tranche_metadata.clone(),
+        },
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), admin_info.clone(), msg);
+    assert!(res.is_ok());
+
+    let tranches = query_tranches(deps.as_ref()).unwrap().tranches;
+    assert_eq!(tranches.len(), 3);
+
+    let new_tranche = tranches[2].clone();
+    assert_eq!(new_tranche.id, 3);
+    assert_eq!(new_tranche.name, new_tranche_name);
+    assert_eq!(new_tranche.metadata, new_tranche_metadata);
+
+    // verify that only whitelist admins can edit tranches
+    let msg = ExecuteMsg::EditTranche {
+        tranche_id: 3,
+        tranche_name: Some("tranche 3".to_string()),
+        tranche_metadata: Some("tranche 3 metadata".to_string()),
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), non_admin_info, msg.clone());
+    assert!(res.is_err());
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .to_lowercase()
+        .contains("unauthorized"));
+
+    // verify that tranche name and metadata gets updated
+    let updated_tranche_name = "tranche 3 updated".to_string();
+    let updated_tranche_metadata = "tranche 3 metadata updated".to_string();
+    let msg = ExecuteMsg::EditTranche {
+        tranche_id: 3,
+        tranche_name: Some(updated_tranche_name.clone()),
+        tranche_metadata: Some(updated_tranche_metadata.clone()),
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), admin_info.clone(), msg);
+    assert!(res.is_ok());
+
+    let tranches = query_tranches(deps.as_ref()).unwrap().tranches;
+    assert_eq!(tranches.len(), 3);
+
+    let updated_tranche = tranches[2].clone();
+    assert_eq!(updated_tranche.id, 3);
+    assert_eq!(updated_tranche.name, updated_tranche_name);
+    assert_eq!(updated_tranche.metadata, updated_tranche_metadata);
+}
+
 #[test]
 fn test_round_id_computation() {
     let test_cases: Vec<(u64, u64, u64, StdResult<u64>)> = vec![
@@ -1052,6 +1168,17 @@ fn contract_pausing_test() {
             max_locked_tokens: 0,
         },
         ExecuteMsg::Pause {},
+        ExecuteMsg::AddTranche {
+            tranche: TrancheInfo {
+                name: String::new(),
+                metadata: String::new(),
+            },
+        },
+        ExecuteMsg::EditTranche {
+            tranche_id: 1,
+            tranche_name: Some(String::new()),
+            tranche_metadata: Some(String::new()),
+        },
     ];
 
     for msg in msgs {

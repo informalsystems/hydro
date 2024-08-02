@@ -82,11 +82,28 @@ export type ExecuteMsg = {
   pause: {
     [k: string]: unknown;
   };
+} | {
+  add_tranche: {
+    tranche: TrancheInfo;
+    [k: string]: unknown;
+  };
+} | {
+  edit_tranche: {
+    tranche_id: number;
+    tranche_metadata?: string | null;
+    tranche_name?: string | null;
+    [k: string]: unknown;
+  };
 };
 export interface CovenantParams {
   funding_destination_name: string;
   outgoing_channel_id: string;
   pool_id: string;
+}
+export interface TrancheInfo {
+  metadata: string;
+  name: string;
+  [k: string]: unknown;
 }
 export interface ExpiredUserLockupsResponse {
   lockups: LockEntry[];
@@ -98,13 +115,9 @@ export interface InstantiateMsg {
   lock_epoch_length: number;
   max_locked_tokens: number;
   round_length: number;
-  tranches: Tranche[];
+  tranches: TrancheInfo[];
   whitelist_admins: string[];
   [k: string]: unknown;
-}
-export interface Tranche {
-  metadata: string;
-  tranche_id: number;
 }
 export interface ProposalResponse {
   proposal: Proposal;
@@ -219,6 +232,11 @@ export interface TotalLockedTokensResponse {
 }
 export interface TranchesResponse {
   tranches: Tranche[];
+}
+export interface Tranche {
+  id: number;
+  metadata: string;
+  name: string;
 }
 export interface UserVoteResponse {
   vote: Vote;

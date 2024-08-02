@@ -7,7 +7,7 @@ clippy:
 	@cargo clippy --all --all-targets -- -D warnings
 
 test:
-	@cargo test
+	@cargo test --lib
 
 coverage:
 	# to install see here: https://crates.io/crates/cargo-tarpaulin

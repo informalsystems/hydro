@@ -11,7 +11,7 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
     ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
@@ -20,9 +20,9 @@ use crate::query::{
     WhitelistResponse,
 };
 use crate::state::{
-    Constants, CovenantParams, LockEntry, Proposal, Vote, CONSTANTS, LOCKED_TOKENS, LOCKS_MAP,
-    LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER, TOTAL_VOTED_POWER,
-    TRANCHE_MAP, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
+    Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKED_TOKENS,
+    LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER,
+    TOTAL_VOTED_POWER, TRANCHE_ID, TRANCHE_MAP, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
 };
 use cw_utils::must_pay;
 
@@ -86,17 +86,30 @@ pub fn instantiate(
     WHITELIST_ADMINS.save(deps.storage, &whitelist_admins)?;
     WHITELIST.save(deps.storage, &whitelist)?;
 
-    // For each tranche, create a tranche in the TRANCHE_MAP and set the total power to 0
-    let mut tranche_ids = std::collections::HashSet::new();
+    // For each tranche, create a tranche in the TRANCHE_MAP
+    let mut tranches = std::collections::HashSet::new();
+    let mut tranche_id = 1;
 
-    for tranche in msg.tranches {
-        if !tranche_ids.insert(tranche.tranche_id) {
+    for tranche_info in msg.tranches {
+        let tranche_name = tranche_info.name.trim().to_string();
+
+        if !tranches.insert(tranche_name.clone()) {
             return Err(ContractError::Std(StdError::generic_err(
-                "Duplicate tranche ID found in provided tranches, but tranche IDs must be unique",
+                "Duplicate tranche name found in provided tranches, but tranche names must be unique.",
             )));
         }
-        TRANCHE_MAP.save(deps.storage, tranche.tranche_id, &tranche)?;
+
+        let tranche = Tranche {
+            id: tranche_id,
+            name: tranche_name,
+            metadata: tranche_info.metadata,
+        };
+        TRANCHE_MAP.save(deps.storage, tranche_id, &tranche)?;
+        tranche_id += 1;
     }
+
+    // Store ID to be used for the next tranche
+    TRANCHE_ID.save(deps.storage, &tranche_id)?;
 
     Ok(Response::new()
         .add_attribute("action", "initialisation")
@@ -138,6 +151,12 @@ pub fn execute(
             update_max_locked_tokens(deps, info, max_locked_tokens)
         }
         ExecuteMsg::Pause {} => pause_contract(deps, info),
+        ExecuteMsg::AddTranche { tranche } => add_tranche(deps, info, tranche),
+        ExecuteMsg::EditTranche {
+            tranche_id,
+            tranche_name,
+            tranche_metadata,
+        } => edit_tranche(deps, info, tranche_id, tranche_name, tranche_metadata),
     }
 }
 
@@ -694,6 +713,86 @@ fn pause_contract(deps: DepsMut, info: MessageInfo) -> Result<Response, Contract
         .add_attribute("paused", "true"))
 }
 
+// AddTranche:
+//     Validate that the contract isn't paused
+//     Validate sender is whitelist admin
+//     Validate that the tranche with the same name doesn't already exist
+//     Add new tranche to the store
+fn add_tranche(
+    deps: DepsMut,
+    info: MessageInfo,
+    tranche: TrancheInfo,
+) -> Result<Response, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+    let tranche_name = tranche.name.trim().to_string();
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+    validate_tranche_name_uniqueness(&deps, &tranche_name)?;
+
+    let tranche_id = TRANCHE_ID.load(deps.storage)?;
+    let tranche = Tranche {
+        id: tranche_id,
+        name: tranche_name,
+        metadata: tranche.metadata,
+    };
+
+    TRANCHE_MAP.save(deps.storage, tranche_id, &tranche)?;
+    TRANCHE_ID.save(deps.storage, &(tranche_id + 1))?;
+
+    Ok(Response::new()
+        .add_attribute("action", "add_tranche")
+        .add_attribute("sender", info.sender.clone())
+        .add_attribute("tranche id", tranche.id.to_string())
+        .add_attribute("tranche name", tranche.name)
+        .add_attribute("tranche metadata", tranche.metadata))
+}
+
+// EditTranche:
+//     Validate that the contract isn't paused
+//     Validate sender is whitelist admin
+//     Validate that the tranche with the given id exists
+//     Validate that the tranche with the same name doesn't already exist
+//     Update the tranche in the store
+fn edit_tranche(
+    deps: DepsMut,
+    info: MessageInfo,
+    tranche_id: u64,
+    tranche_name: Option<String>,
+    tranche_metadata: Option<String>,
+) -> Result<Response, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    let mut tranche = TRANCHE_MAP.load(deps.storage, tranche_id)?;
+    let old_tranche_name = tranche.name.clone();
+    let old_tranche_metadata = tranche.metadata.clone();
+
+    if let Some(new_tranche_name) = tranche_name {
+        let new_tranche_name = new_tranche_name.trim().to_string();
+        // If a new name is provided, we don't allow for it to be equal with
+        // any of existing tranche names, including the one being updated.
+        // If user wants to update only metadata they should provide None for tranche_name.
+        validate_tranche_name_uniqueness(&deps, &new_tranche_name)?;
+
+        tranche.name = new_tranche_name
+    };
+
+    tranche.metadata = tranche_metadata.unwrap_or(tranche.metadata);
+    TRANCHE_MAP.save(deps.storage, tranche.id, &tranche)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "edit_tranche")
+        .add_attribute("sender", info.sender.clone())
+        .add_attribute("tranche id", tranche.id.to_string())
+        .add_attribute("old tranche name", old_tranche_name)
+        .add_attribute("old tranche metadata", old_tranche_metadata)
+        .add_attribute("new tranche name", tranche.name)
+        .add_attribute("new tranche metadata", tranche.metadata))
+}
+
 fn validate_sender_is_whitelist_admin(
     deps: &DepsMut,
     info: &MessageInfo,
@@ -711,6 +810,22 @@ fn validate_contract_is_not_paused(constants: &Constants) -> Result<(), Contract
         true => Err(ContractError::Paused),
         false => Ok(()),
     }
+}
+
+fn validate_tranche_name_uniqueness(
+    deps: &DepsMut,
+    tranche_name: &String,
+) -> Result<(), ContractError> {
+    for tranche_entry in TRANCHE_MAP.range(deps.storage, None, None, Order::Ascending) {
+        let (_, tranche) = tranche_entry?;
+        if tranche.name == *tranche_name {
+            return Err(ContractError::Std(StdError::generic_err(
+                "Tranche with the given name already exists. Duplicate tranche names are not allowed.",
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]

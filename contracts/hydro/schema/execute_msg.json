@@ -199,6 +199,60 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "add_tranche"
+      ],
+      "properties": {
+        "add_tranche": {
+          "type": "object",
+          "required": [
+            "tranche"
+          ],
+          "properties": {
+            "tranche": {
+              "$ref": "#/definitions/TrancheInfo"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "edit_tranche"
+      ],
+      "properties": {
+        "edit_tranche": {
+          "type": "object",
+          "required": [
+            "tranche_id"
+          ],
+          "properties": {
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_metadata": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tranche_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {
@@ -221,6 +275,21 @@
         }
       },
       "additionalProperties": false
+    },
+    "TrancheInfo": {
+      "type": "object",
+      "required": [
+        "metadata",
+        "name"
+      ],
+      "properties": {
+        "metadata": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
     }
   }
 }

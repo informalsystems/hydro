@@ -18,17 +18,21 @@
     "Tranche": {
       "type": "object",
       "required": [
+        "id",
         "metadata",
-        "tranche_id"
+        "name"
       ],
       "properties": {
-        "metadata": {
-          "type": "string"
-        },
-        "tranche_id": {
+        "id": {
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
+        },
+        "metadata": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
         }
       },
       "additionalProperties": false

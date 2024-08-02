@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Uint128, Timestamp, Uint64, AllUserLockupsResponse, LockEntry, Coin, ConstantsResponse, Constants, CurrentRoundResponse, ExecuteMsg, CovenantParams, ExpiredUserLockupsResponse, InstantiateMsg, Tranche, ProposalResponse, Proposal, QueryMsg, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse, UserVoteResponse, Vote, UserVotingPowerResponse, Addr, WhitelistAdminsResponse, WhitelistResponse } from "./HydroBase.types";
+import { Uint128, Timestamp, Uint64, AllUserLockupsResponse, LockEntry, Coin, ConstantsResponse, Constants, CurrentRoundResponse, ExecuteMsg, CovenantParams, TrancheInfo, ExpiredUserLockupsResponse, InstantiateMsg, ProposalResponse, Proposal, QueryMsg, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse, Tranche, UserVoteResponse, Vote, UserVotingPowerResponse, Addr, WhitelistAdminsResponse, WhitelistResponse } from "./HydroBase.types";
 export interface HydroBaseReadOnlyInterface {
   contractAddress: string;
   constants: () => Promise<ConstantsResponse>;
@@ -328,6 +328,20 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
     maxLockedTokens: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   pause: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  addTranche: ({
+    tranche
+  }: {
+    tranche: TrancheInfo;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  editTranche: ({
+    trancheId,
+    trancheMetadata,
+    trancheName
+  }: {
+    trancheId: number;
+    trancheMetadata?: string;
+    trancheName?: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseInterface {
   client: SigningCosmWasmClient;
@@ -347,6 +361,8 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.removeFromWhitelist = this.removeFromWhitelist.bind(this);
     this.updateMaxLockedTokens = this.updateMaxLockedTokens.bind(this);
     this.pause = this.pause.bind(this);
+    this.addTranche = this.addTranche.bind(this);
+    this.editTranche = this.editTranche.bind(this);
   }
   lockTokens = async ({
     lockDuration
@@ -448,6 +464,34 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
   pause = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       pause: {}
+    }, fee, memo, _funds);
+  };
+  addTranche = async ({
+    tranche
+  }: {
+    tranche: TrancheInfo;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      add_tranche: {
+        tranche
+      }
+    }, fee, memo, _funds);
+  };
+  editTranche = async ({
+    trancheId,
+    trancheMetadata,
+    trancheName
+  }: {
+    trancheId: number;
+    trancheMetadata?: string;
+    trancheName?: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      edit_tranche: {
+        tranche_id: trancheId,
+        tranche_metadata: trancheMetadata,
+        tranche_name: trancheName
+      }
     }, fee, memo, _funds);
   };
 }
