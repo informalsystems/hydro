@@ -767,6 +767,8 @@ fn edit_tranche(
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
     let mut tranche = TRANCHE_MAP.load(deps.storage, tranche_id)?;
+    let old_tranche_name = tranche.name.clone();
+    let old_tranche_metadata = tranche.metadata.clone();
 
     if let Some(new_tranche_name) = tranche_name {
         let new_tranche_name = new_tranche_name.trim().to_string();
@@ -778,15 +780,17 @@ fn edit_tranche(
         tranche.name = new_tranche_name
     };
 
-    tranche.metadata = tranche_metadata.unwrap_or(tranche.metadata.clone());
+    tranche.metadata = tranche_metadata.unwrap_or(tranche.metadata);
     TRANCHE_MAP.save(deps.storage, tranche.id, &tranche)?;
 
     Ok(Response::new()
         .add_attribute("action", "edit_tranche")
         .add_attribute("sender", info.sender.clone())
         .add_attribute("tranche id", tranche.id.to_string())
-        .add_attribute("tranche name", tranche.name)
-        .add_attribute("tranche metadata", tranche.metadata))
+        .add_attribute("old tranche name", old_tranche_name)
+        .add_attribute("old tranche metadata", old_tranche_metadata)
+        .add_attribute("new tranche name", tranche.name)
+        .add_attribute("new tranche metadata", tranche.metadata))
 }
 
 fn validate_sender_is_whitelist_admin(
