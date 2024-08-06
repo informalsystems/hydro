@@ -5,8 +5,8 @@
 // - Covenant Question: Can people sandwich this whole thing - covenant system has price limits - but we should allow people to retry executing the prop during the round
 
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
-    Order, Response, StdError, StdResult, Timestamp, Uint128,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
+    MessageInfo, Order, Response, StdError, StdResult, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
 
@@ -16,8 +16,9 @@ use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
 use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
     Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote, CONSTANTS,
-    LOCKED_VALIDATOR_SHARES, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID,
-    TOTAL_ROUND_POWER, TOTAL_VOTED_POWER, TRANCHE_MAP, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
+    LOCKED_VALIDATOR_SHARES, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE,
+    PROPS_BY_VALIDATOR_SHARES, PROP_ID, TOTAL_ROUND_POWER, TOTAL_VOTED_POWER, TRANCHE_MAP,
+    VALIDATOR_SHARE_TO_TOKEN_RATIO, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
 };
 
 /// Contract name that is used for migration.
@@ -166,7 +167,9 @@ fn lock_tokens(
     // of participating validators than the limit
     let amount_to_lock = funds.amount.u128();
 
-    let locked_tokens = compute_total_locked_tokens(deps.as_ref());
+    let current_round_id = compute_current_round_id(&env, &constants)?;
+
+    let locked_tokens = compute_total_locked_tokens(deps.as_ref(), env.clone(), current_round_id)?;
 
     if locked_tokens + amount_to_lock > constants.max_locked_tokens {
         return Err(ContractError::Std(StdError::generic_err(
@@ -499,8 +502,8 @@ fn vote(
     // Get any existing vote for this sender and reverse it- this may be a vote for a different proposal (if they are switching their vote),
     // or it may be a vote for the same proposal (if they have increased their power by locking more and want to update their vote).
     // TODO: this could be made more gas-efficient by using a separate path with fewer writes if the vote is for the same proposal
-    let vote = VOTE_MAP.load(deps.storage, (round_id, tranche_id, info.sender.clone()));
-    if let Ok(vote) = vote {
+    let vote_or_err = VOTE_MAP.load(deps.storage, (round_id, tranche_id, info.sender.clone()));
+    if let Ok(ref vote) = vote_or_err {
         // Load the proposal in the vote
         let mut proposal = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, vote.prop_id))?;
 
@@ -551,11 +554,17 @@ fn vote(
 
     let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
     // Get sender's total locked power
-    let mut power: Uint128 = Uint128::zero();
     let locks =
         LOCKS_MAP
             .prefix(info.sender.clone())
             .range(deps.storage, None, None, Order::Ascending);
+
+    // create a map from validator operator address to the amount of shares of that validator locked,
+    // weighted by their power scale according to remaining lockup time at the end of the round
+    // HashMaps are safe to use, because CosmWasm runs in a sandbox where they are
+    // deterministic
+    let mut weighted_validator_shares: std::collections::HashMap<String, u128> =
+        std::collections::HashMap::new();
 
     for lock in locks {
         let (_, lock_entry) = lock?;
@@ -569,16 +578,84 @@ fn vote(
         // This means that their power will be scaled the same by this function no matter when they vote in the round
         let lockup_length = lock_entry.lock_end.nanos() - round_end.nanos();
 
-        // Scale power. This is what implements the different powers for different lockup times.
-        let scaled_power =
+        // Scale the number of shares. This is what implements the different powers for different lockup times.
+        let scaled_shares =
             scale_lockup_power(lock_epoch_length, lockup_length, lock_entry.funds.amount);
 
-        power += scaled_power;
+        // Get the validator operator address for the denom of the lock
+        let validator_res = validate_denom(
+            deps.as_ref(),
+            lock_entry.funds.denom,
+            constants.max_validator_shares_participating,
+        );
+        // if the validator cannot be resolved from the denom, this is either
+        // not a proper tokenized share denom, or the validator is not in the top max_validators
+        // in either case, we ignore this lock
+        if validator_res.is_err() {
+            // log the error to debug
+            deps.api.debug(&format!(
+                "Error resolving validator from denom: {:?}",
+                validator_res
+            ));
+            continue;
+        }
+
+        // no need to keep en entry for 0 shares
+        if scaled_shares.is_zero() {
+            continue;
+        }
+
+        // add the scaled shares to the total shares of that validator for this user
+        weighted_validator_shares
+            .entry(validator_res.unwrap())
+            .and_modify(|shares| *shares += scaled_shares.u128())
+            .or_insert(scaled_shares.u128());
+    }
+
+    let mut power: Uint128 = Uint128::zero();
+
+    // get the total power that the user voted with by summing the weighted shares
+    // and multiplying by the validator's power scale
+    for (validator, shares) in weighted_validator_shares {
+        let power_ratio = VALIDATOR_SHARE_TO_TOKEN_RATIO
+            .load(deps.storage, (round_id, validator.clone()))
+            .unwrap();
+
+        // add the number of shares multiplied by the power ratio to the total power
+        power += power_ratio
+            .checked_mul(Decimal::new(Uint128::new(shares)))
+            .unwrap()
+            .to_uint_floor();
+
+        // save the amount of shares from this validator that voted
+        // we need to keep this information to be able to recompute
+        // the score appropriately if the power ratios change
+        PROPS_BY_VALIDATOR_SHARES.save(
+            deps.storage,
+            ((round_id, tranche_id), validator.clone(), proposal_id),
+            &shares,
+        )?;
+
+        // if the user also voted before, we need to remove the old shares from the stored number
+        // for this validator
+        if let Ok(ref vote) = vote_or_err {
+            let old_shares = PROPS_BY_VALIDATOR_SHARES
+                .load(
+                    deps.storage,
+                    ((round_id, tranche_id), validator.clone(), vote.prop_id),
+                )
+                .unwrap();
+            PROPS_BY_VALIDATOR_SHARES.save(
+                deps.storage,
+                ((round_id, tranche_id), validator.clone(), vote.prop_id),
+                &(old_shares - shares),
+            )?;
+        }
     }
 
     let response = Response::new().add_attribute("action", "vote");
 
-    // if users voting power is 0 we don't need to update any of the stores
+    // if users total voting power is 0 we don't need to update other stores
     if power == Uint128::zero() {
         return Ok(response);
     }
@@ -798,7 +875,9 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         )?),
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(deps)?),
         QueryMsg::WhitelistAdmins {} => to_json_binary(&query_whitelist_admins(deps)?),
-        QueryMsg::TotalLockedTokens {} => to_json_binary(&compute_total_locked_tokens(deps)),
+        QueryMsg::TotalLockedTokens { round_id } => {
+            to_json_binary(&compute_total_locked_tokens(deps, env, round_id)?)
+        }
     }
 }
 
