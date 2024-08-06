@@ -25,9 +25,8 @@ pub struct Constants {
     pub max_validator_shares_participating: u64,
 }
 
-// the number of tokenized shares of each validator locked in the contract.
-// LOCKED_VALIDATOR_SHARES: key(validator_address) -> u128
-pub const LOCKED_VALIDATOR_SHARES: Map<String, u128> = Map::new("locked_tokens");
+// the total number of tokens locked in the contract
+pub const LOCKED_TOKENS: Item<u128> = Item::new("locked_tokens");
 
 // the current lock id, auto-incrementing for each new lock
 pub const LOCK_ID: Item<u64> = Item::new("lock_id");
@@ -106,6 +105,7 @@ pub const VALIDATOR_SHARE_TO_TOKEN_RATIO: Map<(u64, String), Decimal> =
 // For each round, stores the list of validators whose shares are eligible to vote.
 // We only store the top MAX_VALIDATOR_SHARES_PARTICIPATING validators by delegated tokens,
 // to avoid DoS attacks where someone creates a large number of validators with very small amounts of shares.
+// VALIDATORS_PER_ROUND: key(round_id) -> Vec<validator_address>
 pub const VALIDATORS_PER_ROUND: Map<u64, Vec<String>> = Map::new("validators_per_round");
 
 // TRANCHE_MAP: key(tranche_id) -> Tranche

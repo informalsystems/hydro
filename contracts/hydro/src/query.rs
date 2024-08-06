@@ -50,9 +50,7 @@ pub enum QueryMsg {
     },
     Whitelist {},
     WhitelistAdmins {},
-    TotalLockedTokens {
-        round_id: u64,
-    },
+    TotalLockedTokens {},
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug, Default)]

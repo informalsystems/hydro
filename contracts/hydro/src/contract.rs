@@ -5,20 +5,20 @@
 // - Covenant Question: Can people sandwich this whole thing - covenant system has price limits - but we should allow people to retry executing the prop during the round
 
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
-    MessageInfo, Order, Response, StdError, StdResult, Timestamp, Uint128,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Decimal, Deps, DepsMut, Env, MessageInfo,
+    Order, Response, StdError, StdResult, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::lsm_integration::{compute_total_locked_tokens, validate_denom};
+use crate::lsm_integration::validate_denom;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
 use crate::query::{QueryMsg, RoundProposalsResponse, UserLockupsResponse};
 use crate::state::{
-    Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote, CONSTANTS,
-    LOCKED_VALIDATOR_SHARES, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE,
-    PROPS_BY_VALIDATOR_SHARES, PROP_ID, TOTAL_ROUND_POWER, TOTAL_VOTED_POWER, TRANCHE_MAP,
-    VALIDATOR_SHARE_TO_TOKEN_RATIO, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
+    Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKED_TOKENS,
+    LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROPS_BY_VALIDATOR_SHARES, PROP_ID,
+    TOTAL_ROUND_POWER, TOTAL_VOTED_POWER, TRANCHE_MAP, VALIDATOR_SHARE_TO_TOKEN_RATIO, VOTE_MAP,
+    WHITELIST, WHITELIST_ADMINS,
 };
 
 /// Contract name that is used for migration.
@@ -61,6 +61,7 @@ pub fn instantiate(
     };
 
     CONSTANTS.save(deps.storage, &state)?;
+    LOCKED_TOKENS.save(deps.storage, &0)?;
     LOCK_ID.save(deps.storage, &0)?;
     PROP_ID.save(deps.storage, &0)?;
 
@@ -159,17 +160,14 @@ fn lock_tokens(
 
     let validator = validate_denom(
         deps.as_ref(),
+        env.clone(),
         funds.denom,
         constants.max_validator_shares_participating,
     )?;
 
-    // validate that this wouldn't cause the contract to have more locked tokens
-    // of participating validators than the limit
-    let amount_to_lock = funds.amount.u128();
-
-    let current_round_id = compute_current_round_id(&env, &constants)?;
-
-    let locked_tokens = compute_total_locked_tokens(deps.as_ref(), env.clone(), current_round_id)?;
+    // validate that this wouldn't cause the contract to have more locked tokens than the limit
+    let amount_to_lock = info.funds[0].amount.u128();
+    let locked_tokens = LOCKED_TOKENS.load(deps.storage)?;
 
     if locked_tokens + amount_to_lock > constants.max_locked_tokens {
         return Err(ContractError::Std(StdError::generic_err(
@@ -195,13 +193,7 @@ fn lock_tokens(
     let lock_id = LOCK_ID.load(deps.storage)?;
     LOCK_ID.save(deps.storage, &(lock_id + 1))?;
     LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
-
-    // increase the shares locked for the validator whose shares are being locked
-    LOCKED_VALIDATOR_SHARES.update(
-        deps.storage,
-        validator,
-        |old| -> Result<u128, ContractError> { Ok(old.unwrap_or(0) + amount_to_lock) },
-    )?;
+    LOCKED_TOKENS.save(deps.storage, &(locked_tokens + amount_to_lock))?;
 
     // Calculate and update the total voting power info for current and all
     // future rounds in which the user will have voting power greather than 0
@@ -338,24 +330,12 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
         if lock_entry.lock_end < env.block.time {
             let amount = lock_entry.funds.amount;
 
-            let validator = validate_denom(
-                deps.as_ref(),
-                lock_entry.funds.denom.clone(),
-                constants.max_validator_shares_participating,
-            )?;
-
             // Send tokens back to caller
             if !amount.is_zero() {
-                LOCKED_VALIDATOR_SHARES.update(
+                LOCKED_TOKENS.update(
                     deps.storage,
-                    validator,
                     |locked_tokens| -> Result<u128, ContractError> {
-                        match locked_tokens {
-                            Some(old_locked_amount) => Ok(old_locked_amount - amount.u128()),
-                            None => Err(ContractError::Std(StdError::generic_err(
-                                "Validator does not have any locked tokens",
-                            ))),
-                        }
+                        Ok(locked_tokens - amount.u128())
                     },
                 )?;
 
@@ -494,7 +474,7 @@ fn vote(
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
     // compute the round_id
-    let round_id = compute_current_round_id(&env, &constants)?;
+    let round_id = compute_current_round_id(&env.clone(), &constants)?;
 
     // compute the round end
     let round_end = compute_round_end(&constants, round_id)?;
@@ -585,6 +565,7 @@ fn vote(
         // Get the validator operator address for the denom of the lock
         let validator_res = validate_denom(
             deps.as_ref(),
+            env.clone(),
             lock_entry.funds.denom,
             constants.max_validator_shares_participating,
         );
@@ -875,9 +856,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         )?),
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(deps)?),
         QueryMsg::WhitelistAdmins {} => to_json_binary(&query_whitelist_admins(deps)?),
-        QueryMsg::TotalLockedTokens { round_id } => {
-            to_json_binary(&compute_total_locked_tokens(deps, env, round_id)?)
-        }
+        QueryMsg::TotalLockedTokens {} => to_json_binary(&LOCKED_TOKENS.load(deps.storage)?),
     }
 }
 
