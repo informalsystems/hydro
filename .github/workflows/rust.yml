@@ -8,12 +8,16 @@ on:
       - Cargo.toml
       - Cargo.lock
       - contracts/**
+      - packages/interface/**
+      - test/e2e/**
   pull_request:
     paths:
       - .github/workflows/rust.yml
       - Cargo.toml
       - Cargo.lock
       - contracts/**
+      - packages/interface/**
+      - test/e2e/**
 
 env:
   CARGO_TERM_COLOR: always
@@ -37,9 +41,15 @@ jobs:
     - uses: actions/checkout@v3
     - name: Build
       run: cargo build --verbose
-  test:
+  test-unit:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - name: Run tests
-      run: cargo test --verbose --no-fail-fast
+    - name: Unit tests
+      run: cargo test --workspace --exclude test-e2e --verbose --no-fail-fast
+  test-e2e:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: E2E tests
+      run: 'cargo test e2e --verbose --no-fail-fast -- "mnemonic: [SET_PRIVATE_MNEMONIC]"'

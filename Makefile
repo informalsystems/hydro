@@ -1,4 +1,4 @@
-.PHONY: test fmt clippy compile compile-rust-optimizer coverage schema
+.PHONY: test-unit test-e2e fmt clippy compile compile-rust-optimizer coverage schema
 
 fmt:
 	@cargo fmt --all
@@ -6,8 +6,11 @@ fmt:
 clippy:
 	@cargo clippy --all --all-targets -- -D warnings
 
-test:
-	@cargo test --lib
+test-unit:
+	@cargo test --lib --no-fail-fast --workspace --exclude test-e2e
+
+test-e2e:
+	@cargo test e2e --no-fail-fast -- "mnemonic: [SET_PRIVATE_MNEMONIC]"
 
 coverage:
 	# to install see here: https://crates.io/crates/cargo-tarpaulin

@@ -1,0 +1,9 @@
+[package]
+name = "interface"
+version = "1.0.0"
+edition = "2018"
+
+[dependencies]
+cw-orch = { workspace = true }
+hydro = { path = "../../contracts/hydro" }
+tribute = { path = "../../contracts/tribute" }

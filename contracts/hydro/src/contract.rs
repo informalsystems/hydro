@@ -54,7 +54,7 @@ pub fn instantiate(
         round_length: msg.round_length,
         lock_epoch_length: msg.lock_epoch_length,
         first_round_start: msg.first_round_start,
-        max_locked_tokens: msg.max_locked_tokens,
+        max_locked_tokens: msg.max_locked_tokens.u128(),
         hub_transfer_channel_id: msg.hub_transfer_channel_id,
         paused: false,
         max_validator_shares_participating: msg.max_validator_shares_participating,

@@ -2,10 +2,6 @@
 
 /target/
 
-# Ignore outputs compiled with rust-optimizer
-
-/artifacts
-
 # Ignore project-specific files
 
 Cargo.lock
