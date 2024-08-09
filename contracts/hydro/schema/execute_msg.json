@@ -76,15 +76,11 @@
         "create_proposal": {
           "type": "object",
           "required": [
-            "covenant_params",
             "description",
             "title",
             "tranche_id"
           ],
           "properties": {
-            "covenant_params": {
-              "$ref": "#/definitions/CovenantParams"
-            },
             "description": {
               "type": "string"
             },
@@ -134,17 +130,17 @@
     {
       "type": "object",
       "required": [
-        "add_to_whitelist"
+        "add_account_to_whitelist"
       ],
       "properties": {
-        "add_to_whitelist": {
+        "add_account_to_whitelist": {
           "type": "object",
           "required": [
-            "covenant_params"
+            "address"
           ],
           "properties": {
-            "covenant_params": {
-              "$ref": "#/definitions/CovenantParams"
+            "address": {
+              "type": "string"
             }
           },
           "additionalProperties": false
@@ -155,17 +151,17 @@
     {
       "type": "object",
       "required": [
-        "remove_from_whitelist"
+        "remove_account_from_whitelist"
       ],
       "properties": {
-        "remove_from_whitelist": {
+        "remove_account_from_whitelist": {
           "type": "object",
           "required": [
-            "covenant_params"
+            "address"
           ],
           "properties": {
-            "covenant_params": {
-              "$ref": "#/definitions/CovenantParams"
+            "address": {
+              "type": "string"
             }
           },
           "additionalProperties": false
@@ -267,26 +263,6 @@
     }
   ],
   "definitions": {
-    "CovenantParams": {
-      "type": "object",
-      "required": [
-        "funding_destination_name",
-        "outgoing_channel_id",
-        "pool_id"
-      ],
-      "properties": {
-        "funding_destination_name": {
-          "type": "string"
-        },
-        "outgoing_channel_id": {
-          "type": "string"
-        },
-        "pool_id": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false
-    },
     "TrancheInfo": {
       "type": "object",
       "required": [

@@ -1,9 +1,3 @@
-// MAIN TODOS:
-// - Add real covenant logic
-// - Question: How to handle the case where a proposal is executed but the covenant fails?
-// - Covenant Question: How to deal with someone using MEV to skew the pool ratio right before the liquidity is pulled? Streaming the liquidity pull? You'd have to set up a cron job for that.
-// - Covenant Question: Can people sandwich this whole thing - covenant system has price limits - but we should allow people to retry executing the prop during the round
-
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
     Order, Response, StdError, StdResult, Timestamp, Uint128,
@@ -20,9 +14,9 @@ use crate::query::{
     WhitelistResponse,
 };
 use crate::state::{
-    Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKED_TOKENS,
-    LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER,
-    TOTAL_VOTED_POWER, TRANCHE_ID, TRANCHE_MAP, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
+    Constants, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID,
+    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER, TOTAL_VOTED_POWER, TRANCHE_ID,
+    TRANCHE_MAP, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
 };
 use cw_utils::must_pay;
 
@@ -71,18 +65,20 @@ pub fn instantiate(
     PROP_ID.save(deps.storage, &0)?;
 
     let mut whitelist_admins: Vec<Addr> = vec![];
-    let mut whitelist: Vec<CovenantParams> = vec![];
+    let mut whitelist: Vec<Addr> = vec![];
     for admin in msg.whitelist_admins {
         let admin_addr = deps.api.addr_validate(&admin)?;
         if !whitelist_admins.contains(&admin_addr) {
             whitelist_admins.push(admin_addr.clone());
         }
     }
-    for covenant in msg.initial_whitelist {
-        if !whitelist.contains(&covenant) {
-            whitelist.push(covenant.clone());
+    for whitelist_account in msg.initial_whitelist {
+        let whitelist_account_addr = deps.api.addr_validate(&whitelist_account)?;
+        if !whitelist.contains(&whitelist_account_addr) {
+            whitelist.push(whitelist_account_addr.clone());
         }
     }
+
     WHITELIST_ADMINS.save(deps.storage, &whitelist_admins)?;
     WHITELIST.save(deps.storage, &whitelist)?;
 
@@ -135,17 +131,14 @@ pub fn execute(
             tranche_id,
             title,
             description,
-            covenant_params,
-        } => create_proposal(deps, env, tranche_id, title, description, covenant_params),
+        } => create_proposal(deps, env, info, tranche_id, title, description),
         ExecuteMsg::Vote {
             tranche_id,
             proposal_id,
         } => vote(deps, env, info, tranche_id, proposal_id),
-        ExecuteMsg::AddToWhitelist { covenant_params } => {
-            add_to_whitelist(deps, env, info, covenant_params)
-        }
-        ExecuteMsg::RemoveFromWhitelist { covenant_params } => {
-            remove_from_whitelist(deps, env, info, covenant_params)
+        ExecuteMsg::AddAccountToWhitelist { address } => add_to_whitelist(deps, env, info, address),
+        ExecuteMsg::RemoveAccountFromWhitelist { address } => {
+            remove_from_whitelist(deps, env, info, address)
         }
         ExecuteMsg::UpdateMaxLockedTokens { max_locked_tokens } => {
             update_max_locked_tokens(deps, info, max_locked_tokens)
@@ -397,20 +390,29 @@ fn validate_previous_round_vote(
     Ok(())
 }
 
-// CreateProposal(covenant_params, tribute):
-//     Validate covenant_params
-//     Hold tribute in contract's account
-//     Create in PropMap
+// Creates a new proposal in the store.
+// It will:
+// * validate that the contract is not paused
+// * validate that the creator of the proposal is on the whitelist
+// Then, it will create the proposal in the specified tranche and in the current round.
+// It will also instantiate the total voted power for this round and tranche if it does not exist.
 fn create_proposal(
     deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     tranche_id: u64,
     title: String,
     description: String,
-    covenant_params: CovenantParams,
 ) -> Result<Response, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
+
+    // validate that the sender is on the whitelist
+    let whitelist = WHITELIST.load(deps.storage)?;
+
+    if !whitelist.contains(&info.sender) {
+        return Err(ContractError::Unauthorized);
+    }
 
     // check that the tranche with the given id exists
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
@@ -422,7 +424,6 @@ fn create_proposal(
         round_id,
         tranche_id,
         proposal_id,
-        covenant_params,
         power: Uint128::zero(),
         percentage: Uint128::zero(),
         title: title.trim().to_string(),
@@ -618,58 +619,53 @@ fn vote(
     Ok(response)
 }
 
-fn _do_covenant_stuff(
-    _deps: Deps,
-    _env: Env,
-    _info: MessageInfo,
-    _covenant_params: String,
-) -> Result<Response, ContractError> {
-    // Do covenant stuff
-    Ok(Response::new().add_attribute("action", "do_covenant_stuff"))
-}
-
-// Adds a new covenant target to the whitelist.
+// Adds a new account address to the whitelist.
 fn add_to_whitelist(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
-    covenant_params: CovenantParams,
+    address: String,
 ) -> Result<Response, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
-    // Add covenant_params to whitelist
+    // Add address to whitelist
     let mut whitelist = WHITELIST.load(deps.storage)?;
+    let whitelist_account_addr = deps.api.addr_validate(&address)?;
 
-    // return an error if the covenant_params is already in the whitelist
-    if whitelist.contains(&covenant_params) {
+    // return an error if the account address is already in the whitelist
+    if whitelist.contains(&whitelist_account_addr) {
         return Err(ContractError::Std(StdError::generic_err(
-            "Covenant params already in whitelist",
+            "Address already in whitelist",
         )));
     }
 
-    whitelist.push(covenant_params.clone());
+    whitelist.push(whitelist_account_addr.clone());
     WHITELIST.save(deps.storage, &whitelist)?;
 
     Ok(Response::new().add_attribute("action", "add_to_whitelist"))
 }
 
+// Removes an account address from the whitelist.
 fn remove_from_whitelist(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
-    covenant_params: CovenantParams,
+    address: String,
 ) -> Result<Response, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
-    // Remove covenant_params from whitelist
+    // Remove the account address from the whitelist
     let mut whitelist = WHITELIST.load(deps.storage)?;
-    whitelist.retain(|cp| cp != &covenant_params);
+
+    let whitelist_account_addr = deps.api.addr_validate(&address)?;
+
+    whitelist.retain(|cp| cp != &whitelist_account_addr);
     WHITELIST.save(deps.storage, &whitelist)?;
 
     Ok(Response::new().add_attribute("action", "remove_from_whitelist"))
@@ -1040,24 +1036,10 @@ pub fn query_top_n_proposals(
         return Err(StdError::generic_err("Tranche does not exist"));
     }
 
-    // load the whitelist
-    let whitelist = WHITELIST.load(deps.storage)?;
-
-    // Iterate through PROPS_BY_SCORE to find the top num props, while ignoring
-    // any props that are not on the whitelist
+    // Iterate through PROPS_BY_SCORE to find the top num props
     let top_prop_ids: Vec<u64> = PROPS_BY_SCORE
         .sub_prefix((round_id, tranche_id))
         .range(deps.storage, None, None, Order::Descending)
-        // filter out any props that are not on the whitelist
-        .filter(|x| match x {
-            Ok((_, prop_id)) => {
-                let prop = PROPOSAL_MAP
-                    .load(deps.storage, (round_id, tranche_id, *prop_id))
-                    .unwrap();
-                whitelist.contains(&prop.covenant_params)
-            }
-            Err(_) => false,
-        })
         .take(num)
         .map(|x| match x {
             Ok((_, prop_id)) => prop_id,

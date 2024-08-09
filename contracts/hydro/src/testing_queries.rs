@@ -17,7 +17,7 @@ fn query_expired_user_lockups_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
 
-    let msg = get_default_instantiate_msg();
+    let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
     assert!(res.is_ok());
@@ -83,7 +83,7 @@ fn query_user_voting_power_test() {
     let user_address = "addr0000";
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
-    let msg = get_default_instantiate_msg();
+    let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
     assert!(res.is_ok());

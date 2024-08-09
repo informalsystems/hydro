@@ -1,4 +1,4 @@
-use crate::state::{Constants, CovenantParams, LockEntry, Proposal, Tranche, Vote};
+use crate::state::{Constants, LockEntry, Proposal, Tranche, Vote};
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Timestamp, Uint128};
 use schemars::JsonSchema;
@@ -111,7 +111,7 @@ pub struct TopNProposalsResponse {
 }
 #[cw_serde]
 pub struct WhitelistResponse {
-    pub whitelist: Vec<CovenantParams>,
+    pub whitelist: Vec<Addr>,
 }
 
 #[cw_serde]
