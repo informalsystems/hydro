@@ -540,8 +540,8 @@ fn test_query_round_tranche_proposals_pagination() {
     for i in 0..num_proposals {
         let create_proposal_msg = ExecuteMsg::CreateProposal {
             tranche_id: 1,
-            title: format!("proposal title {}", i + 1),
-            description: format!("proposal description {}", i + 1),
+            title: format!("proposal title {}", i),
+            description: format!("proposal description {}", i),
         };
         let _ = execute(
             deps.as_mut(),
