@@ -1225,3 +1225,75 @@ fn contract_pausing_test() {
         assert!(res.unwrap_err().to_string().contains("Paused"));
     }
 }
+
+// This test verifies that only whitelisted addresses can submit proposals
+#[test]
+pub fn whitelist_proposal_submission_test() {
+    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let mut info = get_message_info(&deps.api, "addr0000", &[]);
+
+    let whitelist_admin = "addr0001";
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.whitelist_admins = vec![get_address_as_str(&deps.api, whitelist_admin)];
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // try to submit a proposal with a non-whitelisted address
+    info = get_message_info(&deps.api, "addr0002", &[]);
+    let proposal_msg = ExecuteMsg::CreateProposal {
+        tranche_id: 1,
+        title: "proposal title".to_string(),
+        description: "proposal description".to_string(),
+    };
+
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        proposal_msg.clone(),
+    );
+    // ensure we get an error
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("Unauthorized"));
+
+    // ensure there is no proposal
+    let res = query_proposal(deps.as_ref(), 0, 1, 0);
+    assert!(res.is_err());
+
+    // try to submit a proposal with a whitelisted address
+    info = get_message_info(&deps.api, "addr0000", &[]);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        proposal_msg.clone(),
+    );
+    assert!(res.is_ok(), "error: {:?}", res);
+
+    // now, the proposal should exist
+    let res = query_proposal(deps.as_ref(), 0, 1, 0);
+    assert!(res.is_ok(), "error: {:?}", res);
+
+    // add the first sender to the whitelist
+    info = get_message_info(&deps.api, whitelist_admin, &[]);
+    let msg = ExecuteMsg::AddAccountToWhitelist {
+        address: get_address_as_str(&deps.api, "addr0002"),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok(), "error: {:?}", res);
+
+    // now, try to submit the proposal again as the first sender
+    info = get_message_info(&deps.api, "addr0002", &[]);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        proposal_msg.clone(),
+    );
+    assert!(res.is_ok(), "error: {:?}", res);
+
+    // now, there should be a second proposal (with id 1)
+    let res = query_proposal(deps.as_ref(), 0, 1, 1);
+    assert!(res.is_ok(), "error: {:?}", res);
+}
