@@ -20,7 +20,7 @@ compile-rust-optimizer:
 	@docker run --rm -v "$(CURDIR)":/code \
 		--mount type=volume,source="$(notdir $(CURDIR))_cache",target=/target \
 		--mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
-		cosmwasm/optimizer:0.15.0
+		cosmwasm/optimizer:0.16.0
 
 schema:
 	# to install ts tooling see here: https://docs.cosmology.zone/ts-codegen

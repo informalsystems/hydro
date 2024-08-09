@@ -32,7 +32,8 @@
         "denom": {
           "type": "string"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "Tribute": {
       "type": "object",

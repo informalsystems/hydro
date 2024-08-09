@@ -16,7 +16,6 @@ export type ExecuteMsg = {
   add_tribute: {
     proposal_id: number;
     tranche_id: number;
-    [k: string]: unknown;
   };
 } | {
   claim_tribute: {
@@ -24,7 +23,6 @@ export type ExecuteMsg = {
     tranche_id: number;
     tribute_id: number;
     voter_address: string;
-    [k: string]: unknown;
   };
 } | {
   refund_tribute: {
@@ -32,13 +30,11 @@ export type ExecuteMsg = {
     round_id: number;
     tranche_id: number;
     tribute_id: number;
-    [k: string]: unknown;
   };
 };
 export interface InstantiateMsg {
   hydro_contract: string;
   top_n_props_count: number;
-  [k: string]: unknown;
 }
 export type Uint128 = string;
 export interface ProposalTributesResponse {
@@ -56,12 +52,9 @@ export interface Tribute {
 export interface Coin {
   amount: Uint128;
   denom: string;
-  [k: string]: unknown;
 }
 export type QueryMsg = {
-  config: {
-    [k: string]: unknown;
-  };
+  config: {};
 } | {
   proposal_tributes: {
     limit: number;
@@ -69,6 +62,5 @@ export type QueryMsg = {
     round_id: number;
     start_from: number;
     tranche_id: number;
-    [k: string]: unknown;
   };
 };

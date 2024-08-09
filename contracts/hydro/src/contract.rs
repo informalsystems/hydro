@@ -332,7 +332,7 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
             .prefix(info.sender.clone())
             .range(deps.storage, None, None, Order::Ascending);
 
-    let mut send = Coin::new(0, CONSTANTS.load(deps.storage)?.denom);
+    let mut send = Coin::new(0u64, CONSTANTS.load(deps.storage)?.denom);
     let mut to_delete = vec![];
 
     for lock in locks {

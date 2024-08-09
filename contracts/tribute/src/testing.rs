@@ -4,9 +4,9 @@ use crate::{
 };
 use cosmwasm_std::{
     from_json,
-    testing::{mock_dependencies, mock_env, mock_info},
-    to_json_binary, Binary, ContractResult, QuerierResult, Response, SystemError, SystemResult,
-    Uint128, WasmQuery,
+    testing::{mock_dependencies, mock_env, MockApi},
+    to_json_binary, Binary, ContractResult, MessageInfo, QuerierResult, Response, SystemError,
+    SystemResult, Uint128, WasmQuery,
 };
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
 use hydro::query::{
@@ -20,6 +20,17 @@ pub fn get_instantiate_msg(hydro_contract: String) -> InstantiateMsg {
         hydro_contract,
         top_n_props_count: 10,
     }
+}
+
+pub fn get_message_info(mock_api: &MockApi, sender: &str, funds: &[Coin]) -> MessageInfo {
+    MessageInfo {
+        sender: mock_api.addr_make(sender),
+        funds: funds.to_vec(),
+    }
+}
+
+pub fn get_address_as_str(mock_api: &MockApi, addr: &str) -> String {
+    mock_api.addr_make(addr).to_string()
 }
 
 const DEFAULT_DENOM: &str = "uatom";
@@ -72,7 +83,7 @@ impl MockWasmQuerier {
                     } => {
                         let err = SystemResult::Err(SystemError::InvalidRequest {
                             error: "proposal couldn't be found".to_string(),
-                            request: Binary(vec![]),
+                            request: Binary::new(vec![]),
                         });
 
                         match &self.proposal {
@@ -98,7 +109,7 @@ impl MockWasmQuerier {
                     } => {
                         let err = SystemResult::Err(SystemError::InvalidRequest {
                             error: "vote couldn't be found".to_string(),
-                            request: Binary(vec![]),
+                            request: Binary::new(vec![]),
                         });
 
                         match &self.user_vote {
@@ -200,8 +211,8 @@ fn add_tribute_test() {
             description: "happy path".to_string(),
             proposal_info: (0, 5),
             tributes_to_add: vec![
-                vec![Coin::new(1000, DEFAULT_DENOM)],
-                vec![Coin::new(5000, DEFAULT_DENOM)],
+                vec![Coin::new(1000u64, DEFAULT_DENOM)],
+                vec![Coin::new(5000u64, DEFAULT_DENOM)],
             ],
             mock_data: (10, Some(mock_proposal.clone())),
             expected_success: true,
@@ -210,7 +221,7 @@ fn add_tribute_test() {
         AddTributeTestCase {
             description: "try adding tribute for non-existing proposal".to_string(),
             proposal_info: (0, 5),
-            tributes_to_add: vec![vec![Coin::new(1000, DEFAULT_DENOM)]],
+            tributes_to_add: vec![vec![Coin::new(1000u64, DEFAULT_DENOM)]],
             mock_data: (10, None),
             expected_success: false,
             expected_error_msg: "proposal couldn't be found".to_string(),
@@ -227,8 +238,8 @@ fn add_tribute_test() {
             description: "try adding tribute by providing more than one token".to_string(),
             proposal_info: (0, 5),
             tributes_to_add: vec![vec![
-                Coin::new(1000, DEFAULT_DENOM),
-                Coin::new(1000, "stake"),
+                Coin::new(1000u64, DEFAULT_DENOM),
+                Coin::new(1000u64, "stake"),
             ]],
             mock_data: (10, Some(mock_proposal.clone())),
             expected_success: false,
@@ -239,14 +250,12 @@ fn add_tribute_test() {
     for test in test_cases {
         println!("running test case: {}", test.description);
 
-        let (mut deps, env, info) = (
-            mock_dependencies(),
-            mock_env(),
-            mock_info(USER_ADDRESS_1, &[]),
-        );
+        let (mut deps, env) = (mock_dependencies(), mock_env());
+        let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
 
+        let hydro_contract_address = get_address_as_str(&deps.api, HYDRO_CONTRACT_ADDRESS);
         let mock_querier = MockWasmQuerier::new(
-            HYDRO_CONTRACT_ADDRESS.to_string(),
+            hydro_contract_address.clone(),
             test.mock_data.0,
             test.mock_data.1,
             None,
@@ -254,14 +263,15 @@ fn add_tribute_test() {
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
-        let msg = get_instantiate_msg(HYDRO_CONTRACT_ADDRESS.to_string());
+        let msg = get_instantiate_msg(hydro_contract_address);
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 
         let tribute_payer = USER_ADDRESS_1;
+        let tribute_payer_addr = get_address_as_str(&deps.api, tribute_payer);
 
         for tribute in &test.tributes_to_add {
-            let info = mock_info(tribute_payer, tribute);
+            let info = get_message_info(&deps.api, tribute_payer, tribute);
             let msg = ExecuteMsg::AddTribute {
                 tranche_id: test.proposal_info.0,
                 proposal_id: test.proposal_info.1,
@@ -297,7 +307,7 @@ fn add_tribute_test() {
 
         for (i, tribute) in test.tributes_to_add.iter().enumerate() {
             assert_eq!(res[i].funds, tribute[0].clone());
-            assert_eq!(res[i].depositor.to_string(), tribute_payer.to_string());
+            assert_eq!(res[i].depositor.to_string(), tribute_payer_addr.clone());
             assert!(!res[i].refunded);
         }
     }
@@ -351,11 +361,12 @@ fn claim_tribute_test() {
         },
     ];
 
+    let deps = mock_dependencies();
     let test_cases: Vec<ClaimTributeTestCase> = vec![
         ClaimTributeTestCase {
             description: "happy path".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
             mock_data: (
                 10,
                 11,
@@ -363,7 +374,7 @@ fn claim_tribute_test() {
                 Some((
                     10,
                     0,
-                    USER_ADDRESS_2.to_string(),
+                    get_address_as_str(&deps.api, USER_ADDRESS_2),
                     Vote {
                         prop_id: 5,
                         power: Uint128::new(70),
@@ -378,7 +389,7 @@ fn claim_tribute_test() {
         ClaimTributeTestCase {
             description: "try claim tribute for proposal in current round".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
             mock_data: (10, 10, Some(mock_proposal.clone()), None, vec![]),
             expected_tribute_claim: 0,
             expected_success: false,
@@ -387,7 +398,7 @@ fn claim_tribute_test() {
         ClaimTributeTestCase {
             description: "try claim tribute if user didn't vote at all".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
             mock_data: (10, 11, Some(mock_proposal.clone()), None, vec![]),
             expected_tribute_claim: 0,
             expected_success: false,
@@ -396,7 +407,7 @@ fn claim_tribute_test() {
         ClaimTributeTestCase {
             description: "try claim tribute if user didn't vote for top N proposal".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
             mock_data: (
                 10,
                 11,
@@ -404,7 +415,7 @@ fn claim_tribute_test() {
                 Some((
                     10,
                     0,
-                    USER_ADDRESS_2.to_string(),
+                    get_address_as_str(&deps.api, USER_ADDRESS_2),
                     Vote {
                         prop_id: 7,
                         power: Uint128::new(70),
@@ -419,7 +430,7 @@ fn claim_tribute_test() {
         ClaimTributeTestCase {
             description: "try claim tribute for non existing tribute id".to_string(),
             tribute_info: (10, 0, 5, 1),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
             mock_data: (
                 10,
                 11,
@@ -427,7 +438,7 @@ fn claim_tribute_test() {
                 Some((
                     10,
                     0,
-                    USER_ADDRESS_2.to_string(),
+                    get_address_as_str(&deps.api, USER_ADDRESS_2),
                     Vote {
                         prop_id: 5,
                         power: Uint128::new(70),
@@ -444,14 +455,12 @@ fn claim_tribute_test() {
     for test in test_cases {
         println!("running test case: {}", test.description);
 
-        let (mut deps, env, info) = (
-            mock_dependencies(),
-            mock_env(),
-            mock_info(USER_ADDRESS_1, &[]),
-        );
+        let (mut deps, env) = (mock_dependencies(), mock_env());
+        let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
 
+        let hydro_contract_address = get_address_as_str(&deps.api, HYDRO_CONTRACT_ADDRESS);
         let mock_querier = MockWasmQuerier::new(
-            HYDRO_CONTRACT_ADDRESS.to_string(),
+            hydro_contract_address.clone(),
             test.mock_data.0,
             test.mock_data.2.clone(),
             None,
@@ -459,12 +468,12 @@ fn claim_tribute_test() {
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
-        let msg = get_instantiate_msg(HYDRO_CONTRACT_ADDRESS.to_string());
+        let msg = get_instantiate_msg(hydro_contract_address.clone());
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 
         let tribute_payer = USER_ADDRESS_1;
-        let info = mock_info(tribute_payer, &test.tribute_to_add);
+        let info = get_message_info(&deps.api, tribute_payer, &test.tribute_to_add);
         let msg = ExecuteMsg::AddTribute {
             tranche_id: test.tribute_info.1,
             proposal_id: test.tribute_info.2,
@@ -475,7 +484,7 @@ fn claim_tribute_test() {
 
         // Update the expected round so that the tribute can be claimed
         let mock_querier = MockWasmQuerier::new(
-            HYDRO_CONTRACT_ADDRESS.to_string(),
+            hydro_contract_address.clone(),
             test.mock_data.1,
             test.mock_data.2.clone(),
             test.mock_data.3.clone(),
@@ -483,13 +492,13 @@ fn claim_tribute_test() {
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
-        let tribute_claimer = USER_ADDRESS_2;
-        let info = mock_info(USER_ADDRESS_1, &[]);
+        let tribute_claimer = get_address_as_str(&deps.api, USER_ADDRESS_2);
+        let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
         let msg = ExecuteMsg::ClaimTribute {
             round_id: test.tribute_info.0,
             tranche_id: test.tribute_info.1,
             tribute_id: test.tribute_info.3,
-            voter_address: tribute_claimer.to_string(),
+            voter_address: tribute_claimer.clone(),
         };
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
 
@@ -507,7 +516,7 @@ fn claim_tribute_test() {
 
         verify_tokens_received(
             res,
-            &tribute_claimer.to_string(),
+            &tribute_claimer.clone(),
             &test.tribute_to_add[0].denom,
             test.expected_tribute_claim,
         );
@@ -557,7 +566,7 @@ fn refund_tribute_test() {
         RefundTributeTestCase {
             description: "happy path".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
             mock_data: (
                 10,
                 11,
@@ -572,7 +581,7 @@ fn refund_tribute_test() {
         RefundTributeTestCase {
             description: "try to get refund for the current round".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
             mock_data: (
                 10,
                 10,
@@ -587,7 +596,7 @@ fn refund_tribute_test() {
         RefundTributeTestCase {
             description: "try to get refund for the top N proposal".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
             mock_data: (
                 10,
                 11,
@@ -602,7 +611,7 @@ fn refund_tribute_test() {
         RefundTributeTestCase {
             description: "try to get refund for non existing tribute".to_string(),
             tribute_info: (10, 0, 5, 1),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
             mock_data: (
                 10,
                 11,
@@ -617,7 +626,7 @@ fn refund_tribute_test() {
         RefundTributeTestCase {
             description: "try to get refund if not the depositor".to_string(),
             tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000, DEFAULT_DENOM)],
+            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
             mock_data: (
                 10,
                 11,
@@ -634,14 +643,12 @@ fn refund_tribute_test() {
     for test in test_cases {
         println!("running test case: {}", test.description);
 
-        let (mut deps, env, info) = (
-            mock_dependencies(),
-            mock_env(),
-            mock_info(USER_ADDRESS_1, &[]),
-        );
+        let (mut deps, env) = (mock_dependencies(), mock_env());
+        let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
 
+        let hydro_contract_address = get_address_as_str(&deps.api, HYDRO_CONTRACT_ADDRESS);
         let mock_querier = MockWasmQuerier::new(
-            HYDRO_CONTRACT_ADDRESS.to_string(),
+            hydro_contract_address.clone(),
             test.mock_data.0,
             test.mock_data.2.clone(),
             None,
@@ -649,12 +656,12 @@ fn refund_tribute_test() {
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
-        let msg = get_instantiate_msg(HYDRO_CONTRACT_ADDRESS.to_string());
+        let msg = get_instantiate_msg(hydro_contract_address.clone());
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 
         let tribute_payer = USER_ADDRESS_1;
-        let info = mock_info(tribute_payer, &test.tribute_to_add);
+        let info = get_message_info(&deps.api, tribute_payer, &test.tribute_to_add);
         let msg = ExecuteMsg::AddTribute {
             tranche_id: test.tribute_info.1,
             proposal_id: test.tribute_info.2,
@@ -665,7 +672,7 @@ fn refund_tribute_test() {
 
         // Update the expected round so that the tribute can be refunded
         let mock_querier = MockWasmQuerier::new(
-            HYDRO_CONTRACT_ADDRESS.to_string(),
+            hydro_contract_address.clone(),
             test.mock_data.1,
             test.mock_data.2.clone(),
             None,
@@ -679,7 +686,7 @@ fn refund_tribute_test() {
             None => tribute_payer.to_string(),
         };
 
-        let info = mock_info(&tribute_refunder, &[]);
+        let info = get_message_info(&deps.api, &tribute_refunder, &[]);
         let msg = ExecuteMsg::RefundTribute {
             round_id: test.tribute_info.0,
             tranche_id: test.tribute_info.1,
@@ -702,7 +709,7 @@ fn refund_tribute_test() {
 
         verify_tokens_received(
             res,
-            &tribute_refunder,
+            &info.sender.to_string(),
             &test.tribute_to_add[0].denom,
             test.expected_tribute_refund,
         );

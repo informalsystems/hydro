@@ -28,7 +28,8 @@
         "denom": {
           "type": "string"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "LockEntry": {
       "type": "object",
