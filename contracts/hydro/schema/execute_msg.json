@@ -19,7 +19,8 @@
               "format": "uint64",
               "minimum": 0.0
             }
-          }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -47,7 +48,8 @@
               "format": "uint64",
               "minimum": 0.0
             }
-          }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -59,7 +61,8 @@
       ],
       "properties": {
         "unlock_tokens": {
-          "type": "object"
+          "type": "object",
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -93,7 +96,8 @@
               "format": "uint64",
               "minimum": 0.0
             }
-          }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -121,7 +125,8 @@
               "format": "uint64",
               "minimum": 0.0
             }
-          }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -141,7 +146,8 @@
             "covenant_params": {
               "$ref": "#/definitions/CovenantParams"
             }
-          }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -161,7 +167,8 @@
             "covenant_params": {
               "$ref": "#/definitions/CovenantParams"
             }
-          }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -183,7 +190,8 @@
               "format": "uint128",
               "minimum": 0.0
             }
-          }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -195,7 +203,8 @@
       ],
       "properties": {
         "pause": {
-          "type": "object"
+          "type": "object",
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -215,7 +224,8 @@
             "tranche": {
               "$ref": "#/definitions/TrancheInfo"
             }
-          }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -249,7 +259,8 @@
                 "null"
               ]
             }
-          }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -289,7 +300,8 @@
         "name": {
           "type": "string"
         }
-      }
+      },
+      "additionalProperties": false
     }
   }
 }
