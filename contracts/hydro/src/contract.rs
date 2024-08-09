@@ -158,12 +158,9 @@ fn lock_tokens(
 
     let funds = info.funds[0].clone();
 
-    let validator = validate_denom(
-        deps.as_ref(),
-        env.clone(),
-        funds.denom,
-        constants.max_validator_shares_participating,
-    )?;
+    validate_denom(deps.as_ref(), env.clone(), funds.denom).map_err(|err| {
+        ContractError::Std(StdError::generic_err(format!("validating denom: {}", err)))
+    })?;
 
     // validate that this wouldn't cause the contract to have more locked tokens than the limit
     let amount_to_lock = info.funds[0].amount.u128();
@@ -563,12 +560,7 @@ fn vote(
             scale_lockup_power(lock_epoch_length, lockup_length, lock_entry.funds.amount);
 
         // Get the validator operator address for the denom of the lock
-        let validator_res = validate_denom(
-            deps.as_ref(),
-            env.clone(),
-            lock_entry.funds.denom,
-            constants.max_validator_shares_participating,
-        );
+        let validator_res = validate_denom(deps.as_ref(), env.clone(), lock_entry.funds.denom);
         // if the validator cannot be resolved from the denom, this is either
         // not a proper tokenized share denom, or the validator is not in the top max_validators
         // in either case, we ignore this lock

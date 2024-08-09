@@ -1,4 +1,5 @@
 use crate::contract::{query_user_vote, query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES};
+use crate::lsm_integration::set_current_validators;
 use crate::state::Tranche;
 use crate::{
     contract::{
@@ -13,7 +14,9 @@ use cosmwasm_std::{BankMsg, CosmosMsg, Deps, Timestamp};
 use cosmwasm_std::{Coin, StdError, StdResult};
 use proptest::prelude::*;
 
-pub const STATOM: &str = "ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA5222815620B3C";
+pub const DEFAULT_VALIDATOR: &str = "cosmosvaloper1y0us8v6k2k2z9e9e5v6l4z3y7r0g3v3x7z0x";
+// default denom is the validator & an arbitrary id
+pub const DEFAULT_DENOM: &str = "cosmosvaloper1y0us8v6k2k2z9e9e5v6l4z3y7r0g3v3x7z0x/1234";
 pub const ONE_DAY_IN_NANO_SECONDS: u64 = 24 * 60 * 60 * 1000000000;
 pub const TWO_WEEKS_IN_NANO_SECONDS: u64 = 14 * 24 * 60 * 60 * 1000000000;
 pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
@@ -98,14 +101,22 @@ fn lock_tokens_basic_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
     assert!(res.is_ok());
 
-    let info1 = mock_info(user_address, &[Coin::new(1000, STATOM.to_string())]);
+    // set the current validators
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec![DEFAULT_VALIDATOR.to_string()],
+    );
+    assert!(res.is_ok());
+
+    let info1 = mock_info(user_address, &[Coin::new(1000, DEFAULT_DENOM.to_string())]);
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
     };
     let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg);
-    assert!(res.is_ok());
+    assert!(res.is_ok(), "error: {:?}", res);
 
-    let info2 = mock_info(user_address, &[Coin::new(3000, STATOM.to_string())]);
+    let info2 = mock_info(user_address, &[Coin::new(3000, DEFAULT_DENOM.to_string())]);
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
     };
@@ -139,7 +150,7 @@ fn lock_tokens_basic_test() {
 #[test]
 fn unlock_tokens_basic_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000, STATOM.to_string());
+    let user_token = Coin::new(1000, DEFAULT_DENOM.to_string());
 
     let (mut deps, mut env, info) = (
         mock_dependencies(),
@@ -149,6 +160,14 @@ fn unlock_tokens_basic_test() {
     let msg = get_default_instantiate_msg();
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // set the current validators
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec![DEFAULT_VALIDATOR.to_string()],
+    );
     assert!(res.is_ok());
 
     // lock 1000 tokens for one month
@@ -185,26 +204,29 @@ fn unlock_tokens_basic_test() {
     assert!(res.is_ok());
 
     let res = res.unwrap();
-    assert_eq!(1, res.messages.len());
+    assert_eq!(2, res.messages.len());
 
-    match &res.messages[0].msg {
-        CosmosMsg::Bank(bank_msg) => match bank_msg {
-            BankMsg::Send { to_address, amount } => {
-                assert_eq!(user_address.to_string(), *to_address);
-                assert_eq!(1, amount.len()); // all lock entries summed-up into one
-                assert_eq!(user_token.denom, amount[0].denom);
-                assert_eq!(user_token.amount.u128() * 2, amount[0].amount.u128());
-            }
-            _ => panic!("expected BankMsg::Send message"),
-        },
-        _ => panic!("expected CosmosMsg::Bank msg"),
-    };
+    // check that all messages are BankMsg::Send
+    for msg in res.messages.iter() {
+        match msg.msg.clone() {
+            CosmosMsg::Bank(bank_msg) => match bank_msg {
+                BankMsg::Send { to_address, amount } => {
+                    assert_eq!(user_address.to_string(), *to_address);
+                    assert_eq!(1, amount.len());
+                    assert_eq!(user_token.denom, amount[0].denom);
+                    assert_eq!(user_token.amount.u128(), amount[0].amount.u128());
+                }
+                _ => panic!("expected BankMsg::Send message"),
+            },
+            _ => panic!("expected CosmosMsg::Bank msg"),
+        }
+    }
 }
 
 #[test]
 fn create_proposal_basic_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000, STATOM.to_string());
+    let user_token = Coin::new(1000, DEFAULT_DENOM.to_string());
 
     let (mut deps, env, info) = (
         mock_dependencies(),
@@ -259,7 +281,7 @@ fn create_proposal_basic_test() {
 #[test]
 fn vote_basic_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000, STATOM.to_string());
+    let user_token = Coin::new(1000, DEFAULT_DENOM.to_string());
 
     let (mut deps, mut env, info) = (
         mock_dependencies(),
@@ -269,6 +291,14 @@ fn vote_basic_test() {
     let msg = get_default_instantiate_msg();
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // set the current validators
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec![DEFAULT_VALIDATOR.to_string()],
+    );
     assert!(res.is_ok());
 
     // lock some tokens to get voting power
@@ -368,7 +398,7 @@ fn multi_tranches_test() {
     let (mut deps, env, info) = (
         mock_dependencies(),
         mock_env(),
-        mock_info("addr0000", &[Coin::new(1000, STATOM.to_string())]),
+        mock_info("addr0000", &[Coin::new(1000, DEFAULT_DENOM.to_string())]),
     );
     let mut msg = get_default_instantiate_msg();
     msg.tranches = vec![
@@ -383,6 +413,14 @@ fn multi_tranches_test() {
     ];
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // set the current validators
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec![DEFAULT_VALIDATOR.to_string()],
+    );
     assert!(res.is_ok());
 
     // create two proposals for tranche 1
@@ -448,7 +486,7 @@ fn multi_tranches_test() {
     assert!(res.is_ok());
 
     // vote for the second proposal of tranche 2 with a different user, who also locks more toekns
-    let info2 = mock_info("addr0001", &[Coin::new(2000, STATOM.to_string())]);
+    let info2 = mock_info("addr0001", &[Coin::new(2000, DEFAULT_DENOM.to_string())]);
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
     };
@@ -463,7 +501,7 @@ fn multi_tranches_test() {
     assert!(res.is_ok());
 
     // vote for the so-far unvoted proposals with a new user with just 1 token
-    let info3 = mock_info("addr0002", &[Coin::new(1, STATOM.to_string())]);
+    let info3 = mock_info("addr0002", &[Coin::new(1, DEFAULT_DENOM.to_string())]);
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
     };
@@ -515,11 +553,19 @@ fn test_query_round_tranche_proposals_pagination() {
     let (mut deps, env, info) = (
         mock_dependencies(),
         mock_env(),
-        mock_info("addr0000", &[Coin::new(1000, STATOM.to_string())]),
+        mock_info("addr0000", &[Coin::new(1000, DEFAULT_DENOM.to_string())]),
     );
     let msg = get_default_instantiate_msg();
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // set the current validators
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec![DEFAULT_VALIDATOR.to_string()],
+    );
     assert!(res.is_ok());
 
     // Create multiple proposals
@@ -681,7 +727,15 @@ fn total_voting_power_tracking_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
     assert!(res.is_ok());
 
-    let info1 = mock_info(user_address, &[Coin::new(10, STATOM.to_string())]);
+    // set the current validators
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec![DEFAULT_VALIDATOR.to_string()],
+    );
+    assert!(res.is_ok());
+
+    let info1 = mock_info(user_address, &[Coin::new(10, DEFAULT_DENOM.to_string())]);
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
     };
@@ -695,7 +749,7 @@ fn total_voting_power_tracking_test() {
     // advance the chain by 10 days and have user lock more tokens
     env.block.time = env.block.time.plus_nanos(10 * ONE_DAY_IN_NANO_SECONDS);
 
-    let info2 = mock_info(user_address, &[Coin::new(20, STATOM.to_string())]);
+    let info2 = mock_info(user_address, &[Coin::new(20, DEFAULT_DENOM.to_string())]);
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
     };
@@ -737,7 +791,7 @@ fn total_voting_power_tracking_test() {
     // advance the chain by 5 more days and have user lock 50 more tokens for three months
     env.block.time = env.block.time.plus_nanos(5 * ONE_DAY_IN_NANO_SECONDS);
 
-    let info2 = mock_info(user_address, &[Coin::new(50, STATOM.to_string())]);
+    let info2 = mock_info(user_address, &[Coin::new(50, DEFAULT_DENOM.to_string())]);
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
     };
@@ -784,11 +838,19 @@ proptest! {
         let (mut deps, mut env, info) = (
             mock_dependencies(),
             mock_env(),
-            mock_info("addr0001", &[Coin::new(1000, STATOM.to_string())]),
+            mock_info("addr0001", &[Coin::new(1000, DEFAULT_DENOM.to_string())]),
         );
         let msg = get_default_instantiate_msg();
 
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_ok());
+
+        // set the current validators
+        let res = set_current_validators(
+            deps.as_mut(),
+            env.clone(),
+            vec![DEFAULT_VALIDATOR.to_string()],
+        );
         assert!(res.is_ok());
 
         // get the new lock duration
@@ -851,11 +913,19 @@ fn test_too_many_locks() {
     let (mut deps, mut env, info) = (
         mock_dependencies(),
         mock_env(),
-        mock_info("addr0000", &[Coin::new(1000, STATOM.to_string())]),
+        mock_info("addr0000", &[Coin::new(1000, DEFAULT_DENOM.to_string())]),
     );
     let msg = get_default_instantiate_msg();
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // set the current validators
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec![DEFAULT_VALIDATOR.to_string()],
+    );
     assert!(res.is_ok());
 
     // lock tokens many times
@@ -865,7 +935,7 @@ fn test_too_many_locks() {
     for i in 0..MAX_LOCK_ENTRIES + 10 {
         let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
         if i < MAX_LOCK_ENTRIES {
-            assert!(res.is_ok());
+            assert!(res.is_ok(), "error: {:?}", res);
         } else {
             assert!(res.is_err());
             assert!(res
@@ -876,11 +946,11 @@ fn test_too_many_locks() {
     }
 
     // now test that another user can still lock tokens
-    let info2 = mock_info("addr0001", &[Coin::new(1000, STATOM.to_string())]);
+    let info2 = mock_info("addr0001", &[Coin::new(1000, DEFAULT_DENOM.to_string())]);
     for i in 0..MAX_LOCK_ENTRIES + 10 {
         let res = execute(deps.as_mut(), env.clone(), info2.clone(), lock_msg.clone());
         if i < MAX_LOCK_ENTRIES {
-            assert!(res.is_ok());
+            assert!(res.is_ok(), "error: {:?}", res);
         } else {
             assert!(res.is_err());
             assert!(res
@@ -900,7 +970,7 @@ fn test_too_many_locks() {
     for i in 0..MAX_LOCK_ENTRIES + 10 {
         let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
         if i < MAX_LOCK_ENTRIES {
-            assert!(res.is_ok());
+            assert!(res.is_ok(), "error: {:?}", res);
         } else {
             assert!(res.is_err());
             assert!(res
@@ -923,8 +993,16 @@ fn max_locked_tokens_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
+    // set the current validators
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec![DEFAULT_VALIDATOR.to_string()],
+    );
+    assert!(res.is_ok());
+
     // total tokens locked after this action will be 1500
-    info = mock_info("addr0000", &[Coin::new(1500, STATOM.to_string())]);
+    info = mock_info("addr0000", &[Coin::new(1500, DEFAULT_DENOM.to_string())]);
     let mut lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
     };
@@ -932,7 +1010,7 @@ fn max_locked_tokens_test() {
     assert!(res.is_ok());
 
     // total tokens locked after this action would be 3000, which is not allowed
-    info = mock_info("addr0000", &[Coin::new(1500, STATOM.to_string())]);
+    info = mock_info("addr0000", &[Coin::new(1500, DEFAULT_DENOM.to_string())]);
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_err());
     assert!(res
@@ -941,7 +1019,7 @@ fn max_locked_tokens_test() {
         .contains("The limit for locking tokens has been reached. No more tokens can be locked."));
 
     // total tokens locked after this action will be 2000, which is the cap
-    info = mock_info("addr0000", &[Coin::new(500, STATOM.to_string())]);
+    info = mock_info("addr0000", &[Coin::new(500, DEFAULT_DENOM.to_string())]);
     lock_msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
     };
@@ -959,7 +1037,7 @@ fn max_locked_tokens_test() {
     assert!(res.is_ok());
 
     // now a user can lock new 1500 tokens
-    info = mock_info("addr0000", &[Coin::new(1500, STATOM.to_string())]);
+    info = mock_info("addr0000", &[Coin::new(1500, DEFAULT_DENOM.to_string())]);
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_ok());
 
@@ -977,12 +1055,12 @@ fn max_locked_tokens_test() {
     assert!(res.is_ok());
 
     // now a user can lock up to additional 1000 tokens
-    info = mock_info("addr0002", &[Coin::new(1000, STATOM.to_string())]);
+    info = mock_info("addr0002", &[Coin::new(1000, DEFAULT_DENOM.to_string())]);
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_ok());
 
     // but no more than the cap of 3000 tokens
-    info = mock_info("addr0002", &[Coin::new(1, STATOM.to_string())]);
+    info = mock_info("addr0002", &[Coin::new(1, DEFAULT_DENOM.to_string())]);
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_err());
     assert!(res

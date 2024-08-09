@@ -3,7 +3,7 @@ use crate::{
     contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
     msg::ExecuteMsg,
     state::LockEntry,
-    testing::{get_default_instantiate_msg, STATOM},
+    testing::{get_default_instantiate_msg, DEFAULT_DENOM},
 };
 use cosmwasm_std::{
     testing::{mock_dependencies, mock_env, mock_info, MockApi, MockQuerier, MockStorage},
@@ -29,7 +29,7 @@ fn query_expired_user_lockups_test() {
     let first_lockup_amount = 1000;
     let info = mock_info(
         user_address,
-        &[Coin::new(first_lockup_amount, STATOM.to_string())],
+        &[Coin::new(first_lockup_amount, DEFAULT_DENOM.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -43,7 +43,7 @@ fn query_expired_user_lockups_test() {
     let second_lockup_amount = 2000;
     let info = mock_info(
         user_address,
-        &[Coin::new(second_lockup_amount, STATOM.to_string())],
+        &[Coin::new(second_lockup_amount, DEFAULT_DENOM.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
@@ -98,7 +98,7 @@ fn query_user_voting_power_test() {
     let first_lockup_amount = 1000;
     let info = mock_info(
         user_address,
-        &[Coin::new(first_lockup_amount, STATOM.to_string())],
+        &[Coin::new(first_lockup_amount, DEFAULT_DENOM.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -112,7 +112,7 @@ fn query_user_voting_power_test() {
     let second_lockup_amount = 2000;
     let info = mock_info(
         user_address,
-        &[Coin::new(second_lockup_amount, STATOM.to_string())],
+        &[Coin::new(second_lockup_amount, DEFAULT_DENOM.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
