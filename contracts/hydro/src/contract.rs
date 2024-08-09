@@ -665,7 +665,7 @@ fn remove_from_whitelist(
 
     let whitelist_account_addr = deps.api.addr_validate(&address)?;
 
-    whitelist.retain(|cp| cp != &whitelist_account_addr);
+    whitelist.retain(|cp| cp != whitelist_account_addr);
     WHITELIST.save(deps.storage, &whitelist)?;
 
     Ok(Response::new().add_attribute("action", "remove_from_whitelist"))
