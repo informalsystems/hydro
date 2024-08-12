@@ -1,5 +1,6 @@
 use crate::contract::{query_user_vote, query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES};
 use crate::lsm_integration::set_current_validators;
+use crate::score_keeper::update_power_ratio;
 use crate::state::Tranche;
 use crate::{
     contract::{
