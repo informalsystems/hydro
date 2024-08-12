@@ -996,9 +996,7 @@ pub fn query_user_vote(
 ) -> StdResult<UserVoteResponse> {
     let vote = VOTE_MAP.load(
         deps.storage,
-        (round_id,
-         tranche_id,
-         deps.api.addr_validate(&user_address)?),
+        (round_id, tranche_id, deps.api.addr_validate(&user_address)?),
     )?;
 
     Ok(UserVoteResponse { vote })
