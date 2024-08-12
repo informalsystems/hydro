@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
-    pub denom: String,
     pub round_length: u64,
     pub lock_epoch_length: u64,
     pub tranches: Vec<TrancheInfo>,
@@ -12,6 +11,7 @@ pub struct InstantiateMsg {
     pub max_locked_tokens: u128,
     pub whitelist_admins: Vec<String>,
     pub initial_whitelist: Vec<String>,
+    pub max_validator_shares_participating: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

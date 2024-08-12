@@ -5,6 +5,7 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
+use crate::lsm_integration::validate_denom;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
@@ -18,7 +19,6 @@ use crate::state::{
     PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER, TOTAL_VOTED_POWER, TRANCHE_ID,
     TRANCHE_MAP, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
 };
-use cw_utils::must_pay;
 
 /// Contract name that is used for migration.
 const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -51,12 +51,12 @@ pub fn instantiate(
     }
 
     let state = Constants {
-        denom: msg.denom.clone(),
         round_length: msg.round_length,
         lock_epoch_length: msg.lock_epoch_length,
         first_round_start: msg.first_round_start,
         max_locked_tokens: msg.max_locked_tokens,
         paused: false,
+        max_validator_shares_participating: msg.max_validator_shares_participating,
     };
 
     CONSTANTS.save(deps.storage, &state)?;
@@ -109,8 +109,7 @@ pub fn instantiate(
 
     Ok(Response::new()
         .add_attribute("action", "initialisation")
-        .add_attribute("sender", info.sender.clone())
-        .add_attribute("denom", msg.denom))
+        .add_attribute("sender", info.sender.clone()))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -167,7 +166,18 @@ fn lock_tokens(
 
     validate_contract_is_not_paused(&constants)?;
     validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
-    must_pay(&info, &constants.denom)?;
+
+    if info.funds.len() != 1 {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Must provide exactly one coin to lock",
+        )));
+    }
+
+    let funds = info.funds[0].clone();
+
+    validate_denom(deps.as_ref(), env.clone(), funds.denom).map_err(|err| {
+        ContractError::Std(StdError::generic_err(format!("validating denom: {}", err)))
+    })?;
 
     // validate that this wouldn't cause the contract to have more locked tokens than the limit
     let amount_to_lock = info.funds[0].amount.u128();
@@ -325,14 +335,26 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
             .prefix(info.sender.clone())
             .range(deps.storage, None, None, Order::Ascending);
 
-    let mut send = Coin::new(0u64, CONSTANTS.load(deps.storage)?.denom);
     let mut to_delete = vec![];
+    let mut total_unlocked_amount = Uint128::zero();
+
+    let mut response = Response::new().add_attribute("action", "unlock_tokens");
 
     for lock in locks {
         let (lock_id, lock_entry) = lock?;
         if lock_entry.lock_end < env.block.time {
             // Send tokens back to caller
-            send.amount = send.amount.checked_add(lock_entry.funds.amount)?;
+            let send = Coin {
+                denom: lock_entry.funds.denom,
+                amount: lock_entry.funds.amount,
+            };
+
+            response = response.add_message(BankMsg::Send {
+                to_address: info.sender.to_string(),
+                amount: vec![send.clone()],
+            });
+
+            total_unlocked_amount += send.amount;
 
             // Delete entry from LocksMap
             to_delete.push((info.sender.clone(), lock_id));
@@ -344,20 +366,13 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
         LOCKS_MAP.remove(deps.storage, (addr, lock_id));
     }
 
-    let mut response = Response::new().add_attribute("action", "unlock_tokens");
-
-    if !send.amount.is_zero() {
+    if !total_unlocked_amount.is_zero() {
         LOCKED_TOKENS.update(
             deps.storage,
             |locked_tokens| -> Result<u128, ContractError> {
-                Ok(locked_tokens - send.amount.u128())
+                Ok(locked_tokens - total_unlocked_amount.u128())
             },
         )?;
-
-        response = response.add_message(BankMsg::Send {
-            to_address: info.sender.to_string(),
-            amount: vec![send],
-        })
     }
 
     Ok(response)

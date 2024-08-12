@@ -6,12 +6,12 @@ pub const CONSTANTS: Item<Constants> = Item::new("constants");
 
 #[cw_serde]
 pub struct Constants {
-    pub denom: String,
     pub round_length: u64,
     pub lock_epoch_length: u64,
     pub first_round_start: Timestamp,
     pub max_locked_tokens: u128,
     pub paused: bool,
+    pub max_validator_shares_participating: u64,
 }
 
 // the total number of tokens locked in the contract

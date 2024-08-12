@@ -1,5 +1,5 @@
 use crate::testing::{
-    get_default_instantiate_msg, get_message_info, ONE_MONTH_IN_NANO_SECONDS, STATOM,
+    get_default_instantiate_msg, get_message_info, DEFAULT_DENOM, ONE_MONTH_IN_NANO_SECONDS,
 };
 use crate::{
     contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
@@ -28,7 +28,7 @@ fn query_expired_user_lockups_test() {
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(first_lockup_amount, STATOM.to_string())],
+        &[Coin::new(first_lockup_amount, DEFAULT_DENOM.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -43,7 +43,7 @@ fn query_expired_user_lockups_test() {
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(second_lockup_amount, STATOM.to_string())],
+        &[Coin::new(second_lockup_amount, DEFAULT_DENOM.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
@@ -95,7 +95,7 @@ fn query_user_voting_power_test() {
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(first_lockup_amount, STATOM.to_string())],
+        &[Coin::new(first_lockup_amount, DEFAULT_DENOM.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -110,7 +110,7 @@ fn query_user_voting_power_test() {
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(second_lockup_amount, STATOM.to_string())],
+        &[Coin::new(second_lockup_amount, DEFAULT_DENOM.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
