@@ -21,7 +21,9 @@ pub const TWO_WEEKS_IN_NANO_SECONDS: u64 = 14 * 24 * 60 * 60 * 1000000000;
 pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
 pub const THREE_MONTHS_IN_NANO_SECONDS: u64 = 3 * ONE_MONTH_IN_NANO_SECONDS;
 
-pub fn get_default_instantiate_msg() -> InstantiateMsg {
+pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
+    let user_address = get_address_as_str(mock_api, "addr0000");
+
     InstantiateMsg {
         denom: STATOM.to_string(),
         round_length: TWO_WEEKS_IN_NANO_SECONDS,
@@ -32,16 +34,8 @@ pub fn get_default_instantiate_msg() -> InstantiateMsg {
         }],
         first_round_start: mock_env().block.time,
         max_locked_tokens: 1000000,
-        initial_whitelist: vec![get_default_covenant_params()],
+        initial_whitelist: vec![user_address],
         whitelist_admins: vec![],
-    }
-}
-
-pub fn get_default_covenant_params() -> crate::state::CovenantParams {
-    crate::state::CovenantParams {
-        pool_id: "pool_id".to_string(),
-        outgoing_channel_id: "outgoing_channel_id".to_string(),
-        funding_destination_name: "funding_destination_name".to_string(),
     }
 }
 
@@ -61,7 +55,7 @@ fn instantiate_test() {
     let (mut deps, env) = (mock_dependencies(), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
 
-    let msg = get_default_instantiate_msg();
+    let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env, info, msg.clone());
     assert!(res.is_ok());
@@ -78,15 +72,16 @@ fn instantiate_test() {
 fn deduplicate_whitelist_admins_test() {
     let (mut deps, env) = (mock_dependencies(), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
-    let mut msg = get_default_instantiate_msg();
-    msg.initial_whitelist = vec![
-        get_default_covenant_params(),
-        get_default_covenant_params(),
-        get_default_covenant_params(),
-    ];
-
+    let mut msg = get_default_instantiate_msg(&deps.api);
     let admin_address_1 = get_address_as_str(&deps.api, "admin3");
     let admin_address_2 = get_address_as_str(&deps.api, "admin2");
+
+    msg.initial_whitelist = vec![
+        admin_address_1.clone(),
+        admin_address_2.clone(),
+        admin_address_1.clone(),
+    ];
+
     msg.whitelist_admins = vec![
         admin_address_1.clone(),
         admin_address_2.clone(),
@@ -97,8 +92,9 @@ fn deduplicate_whitelist_admins_test() {
     let whitelist = query_whitelist(deps.as_ref()).unwrap().whitelist;
     let whitelist_admins = query_whitelist_admins(deps.as_ref()).unwrap().admins;
 
-    assert_eq!(whitelist.len(), 1);
-    assert_eq!(whitelist[0], get_default_covenant_params());
+    assert_eq!(whitelist.len(), 2);
+    assert_eq!(whitelist[0].as_str(), admin_address_1);
+    assert_eq!(whitelist[1].as_str(), admin_address_2);
 
     assert_eq!(whitelist_admins.len(), 2);
     assert_eq!(whitelist_admins[0].as_str(), admin_address_1);
@@ -110,7 +106,7 @@ fn lock_tokens_basic_test() {
     let user_address = "addr0000";
     let (mut deps, env) = (mock_dependencies(), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
-    let msg = get_default_instantiate_msg();
+    let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
@@ -168,7 +164,7 @@ fn unlock_tokens_basic_test() {
 
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
     let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
-    let msg = get_default_instantiate_msg();
+    let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
@@ -230,31 +226,23 @@ fn create_proposal_basic_test() {
 
     let (mut deps, env) = (mock_dependencies(), mock_env());
     let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
-    let msg = get_default_instantiate_msg();
+    let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    let covenant_params_1 = get_default_covenant_params();
     let msg1 = ExecuteMsg::CreateProposal {
         tranche_id: 1,
         title: "proposal title 1".to_string(),
         description: "proposal description 1".to_string(),
-        covenant_params: covenant_params_1.clone(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg1.clone());
     assert!(res.is_ok());
-
-    let mut covenant_params_2 = get_default_covenant_params();
-    covenant_params_2.pool_id = "pool_id_2".to_string();
-    covenant_params_2.outgoing_channel_id = "outgoing_channel_id_2".to_string();
-    covenant_params_2.funding_destination_name = "funding_destination_name_2".to_string();
 
     let msg2 = ExecuteMsg::CreateProposal {
         tranche_id: 1,
         title: "proposal title 2".to_string(),
         description: "proposal description 2".to_string(),
-        covenant_params: covenant_params_2.clone(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg2.clone());
     assert!(res.is_ok());
@@ -268,11 +256,9 @@ fn create_proposal_basic_test() {
 
     let proposal = &res.proposals[0];
     assert_eq!(expected_round_id, proposal.round_id);
-    assert_eq!(covenant_params_1, proposal.covenant_params);
 
     let proposal = &res.proposals[1];
     assert_eq!(expected_round_id, proposal.round_id);
-    assert_eq!(covenant_params_2, proposal.covenant_params);
 }
 
 #[test]
@@ -282,7 +268,7 @@ fn vote_basic_test() {
 
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
     let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
-    let msg = get_default_instantiate_msg();
+    let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
@@ -312,7 +298,6 @@ fn vote_basic_test() {
             tranche_id: prop_info.0,
             title: prop_info.1,
             description: prop_info.2,
-            covenant_params: get_default_covenant_params(),
         };
 
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -393,7 +378,7 @@ fn multi_tranches_test() {
         "addr0000",
         &[Coin::new(1000u64, STATOM.to_string())],
     );
-    let mut msg = get_default_instantiate_msg();
+    let mut msg = get_default_instantiate_msg(&deps.api);
     msg.tranches = vec![
         TrancheInfo {
             name: "tranche 1".to_string(),
@@ -413,7 +398,6 @@ fn multi_tranches_test() {
         tranche_id: 1,
         title: "proposal title 1".to_string(),
         description: "proposal description 1".to_string(),
-        covenant_params: get_default_covenant_params(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg1.clone());
     assert!(res.is_ok());
@@ -422,7 +406,6 @@ fn multi_tranches_test() {
         tranche_id: 1,
         title: "proposal title 2".to_string(),
         description: "proposal description 2".to_string(),
-        covenant_params: get_default_covenant_params(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg2.clone());
     assert!(res.is_ok());
@@ -432,7 +415,6 @@ fn multi_tranches_test() {
         tranche_id: 2,
         title: "proposal title 3".to_string(),
         description: "proposal description 3".to_string(),
-        covenant_params: get_default_covenant_params(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg3.clone());
     assert!(res.is_ok());
@@ -441,7 +423,6 @@ fn multi_tranches_test() {
         tranche_id: 2,
         title: "proposal title 4".to_string(),
         description: "proposal description 4".to_string(),
-        covenant_params: get_default_covenant_params(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg4.clone());
     assert!(res.is_ok());
@@ -549,7 +530,7 @@ fn test_query_round_tranche_proposals_pagination() {
         "addr0000",
         &[Coin::new(1000u64, STATOM.to_string())],
     );
-    let msg = get_default_instantiate_msg();
+    let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
@@ -559,13 +540,8 @@ fn test_query_round_tranche_proposals_pagination() {
     for i in 0..num_proposals {
         let create_proposal_msg = ExecuteMsg::CreateProposal {
             tranche_id: 1,
-            title: format!("proposal title {}", i + 1),
-            description: format!("proposal description {}", i + 1),
-            covenant_params: crate::state::CovenantParams {
-                pool_id: format!("Pool ID {}", i),
-                outgoing_channel_id: format!("Outgoing Channel ID {}", i),
-                funding_destination_name: format!("Funding Destination Name {}", i),
-            },
+            title: format!("proposal title {}", i),
+            description: format!("proposal description {}", i),
         };
         let _ = execute(
             deps.as_mut(),
@@ -600,8 +576,8 @@ fn test_query_round_tranche_proposals_pagination() {
         assert_eq!(proposals.len(), expected_proposals.len());
         for (proposal, expected_proposal) in proposals.iter().zip(expected_proposals.iter()) {
             assert_eq!(
-                proposal.covenant_params.pool_id,
-                format!("Pool ID {}", *expected_proposal)
+                proposal.title,
+                format!("proposal title {}", *expected_proposal)
             );
         }
     }
@@ -613,7 +589,7 @@ fn duplicate_tranche_name_test() {
     // this should fail
     let (mut deps, env) = (mock_dependencies(), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
-    let mut msg = get_default_instantiate_msg();
+    let mut msg = get_default_instantiate_msg(&deps.api);
     msg.tranches = vec![
         TrancheInfo {
             name: "tranche 1".to_string(),
@@ -638,7 +614,7 @@ fn duplicate_tranche_name_test() {
 fn add_edit_tranche_test() {
     let (mut deps, env) = (mock_dependencies(), mock_env());
     let admin_info = get_message_info(&deps.api, "addr0000", &[]);
-    let mut msg = get_default_instantiate_msg();
+    let mut msg = get_default_instantiate_msg(&deps.api);
     msg.tranches = vec![
         TrancheInfo {
             name: "tranche 1".to_string(),
@@ -652,7 +628,7 @@ fn add_edit_tranche_test() {
     msg.whitelist_admins = vec![get_address_as_str(&deps.api, "addr0000")];
 
     let res = instantiate(deps.as_mut(), env.clone(), admin_info.clone(), msg);
-    assert!(res.is_ok());
+    assert!(res.is_ok(), "error: {:?}", res);
 
     let tranches = query_tranches(deps.as_ref());
     assert_eq!(tranches.unwrap().tranches.len(), 2);
@@ -792,7 +768,7 @@ fn test_round_id_computation() {
     for (contract_start_time, round_length, current_time, expected_round_id) in test_cases {
         // instantiate the contract
         let mut deps = mock_dependencies();
-        let mut msg = get_default_instantiate_msg();
+        let mut msg = get_default_instantiate_msg(&deps.api);
         msg.round_length = round_length;
         msg.first_round_start = Timestamp::from_nanos(contract_start_time);
 
@@ -817,7 +793,7 @@ fn total_voting_power_tracking_test() {
     let user_address = "addr0000";
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
-    let mut msg = get_default_instantiate_msg();
+    let mut msg = get_default_instantiate_msg(&deps.api);
 
     // align round length with lock epoch length for easier calculations
     msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
@@ -942,7 +918,7 @@ proptest! {
             mock_env(),
         );
         let info = get_message_info(&deps.api, "addr0001", &[Coin::new(1000u64, STATOM.to_string())]);
-        let msg = get_default_instantiate_msg();
+        let msg = get_default_instantiate_msg(&deps.api);
 
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
@@ -1010,7 +986,7 @@ fn test_too_many_locks() {
         "addr0000",
         &[Coin::new(1000u64, STATOM.to_string())],
     );
-    let msg = get_default_instantiate_msg();
+    let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
@@ -1077,7 +1053,7 @@ fn max_locked_tokens_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
     let mut info = get_message_info(&deps.api, "addr0000", &[]);
 
-    let mut msg = get_default_instantiate_msg();
+    let mut msg = get_default_instantiate_msg(&deps.api);
     msg.max_locked_tokens = 2000;
     msg.whitelist_admins = vec![get_address_as_str(&deps.api, "addr0001")];
 
@@ -1182,7 +1158,7 @@ fn contract_pausing_test() {
     let mut info = get_message_info(&deps.api, "addr0000", &[]);
 
     let whitelist_admin = "addr0001";
-    let mut msg = get_default_instantiate_msg();
+    let mut msg = get_default_instantiate_msg(&deps.api);
     msg.whitelist_admins = vec![get_address_as_str(&deps.api, whitelist_admin)];
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -1215,17 +1191,16 @@ fn contract_pausing_test() {
             tranche_id: 0,
             title: "".to_string(),
             description: "".to_string(),
-            covenant_params: get_default_covenant_params(),
         },
         ExecuteMsg::Vote {
             tranche_id: 0,
             proposal_id: 0,
         },
-        ExecuteMsg::AddToWhitelist {
-            covenant_params: get_default_covenant_params(),
+        ExecuteMsg::AddAccountToWhitelist {
+            address: whitelist_admin.to_string(),
         },
-        ExecuteMsg::RemoveFromWhitelist {
-            covenant_params: get_default_covenant_params(),
+        ExecuteMsg::RemoveAccountFromWhitelist {
+            address: whitelist_admin.to_string(),
         },
         ExecuteMsg::UpdateMaxLockedTokens {
             max_locked_tokens: 0,
@@ -1249,4 +1224,76 @@ fn contract_pausing_test() {
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("Paused"));
     }
+}
+
+// This test verifies that only whitelisted addresses can submit proposals
+#[test]
+pub fn whitelist_proposal_submission_test() {
+    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let mut info = get_message_info(&deps.api, "addr0000", &[]);
+
+    let whitelist_admin = "addr0001";
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.whitelist_admins = vec![get_address_as_str(&deps.api, whitelist_admin)];
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // try to submit a proposal with a non-whitelisted address
+    info = get_message_info(&deps.api, "addr0002", &[]);
+    let proposal_msg = ExecuteMsg::CreateProposal {
+        tranche_id: 1,
+        title: "proposal title".to_string(),
+        description: "proposal description".to_string(),
+    };
+
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        proposal_msg.clone(),
+    );
+    // ensure we get an error
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("Unauthorized"));
+
+    // ensure there is no proposal
+    let res = query_proposal(deps.as_ref(), 0, 1, 0);
+    assert!(res.is_err());
+
+    // try to submit a proposal with a whitelisted address
+    info = get_message_info(&deps.api, "addr0000", &[]);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        proposal_msg.clone(),
+    );
+    assert!(res.is_ok(), "error: {:?}", res);
+
+    // now, the proposal should exist
+    let res = query_proposal(deps.as_ref(), 0, 1, 0);
+    assert!(res.is_ok(), "error: {:?}", res);
+
+    // add the first sender to the whitelist
+    info = get_message_info(&deps.api, whitelist_admin, &[]);
+    let msg = ExecuteMsg::AddAccountToWhitelist {
+        address: get_address_as_str(&deps.api, "addr0002"),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok(), "error: {:?}", res);
+
+    // now, try to submit the proposal again as the first sender
+    info = get_message_info(&deps.api, "addr0002", &[]);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        proposal_msg.clone(),
+    );
+    assert!(res.is_ok(), "error: {:?}", res);
+
+    // now, there should be a second proposal (with id 1)
+    let res = query_proposal(deps.as_ref(), 0, 1, 1);
+    assert!(res.is_ok(), "error: {:?}", res);
 }

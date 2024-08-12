@@ -2,8 +2,6 @@ use cosmwasm_std::Timestamp;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::state::CovenantParams;
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
     pub denom: String,
@@ -13,7 +11,7 @@ pub struct InstantiateMsg {
     pub first_round_start: Timestamp,
     pub max_locked_tokens: u128,
     pub whitelist_admins: Vec<String>,
-    pub initial_whitelist: Vec<CovenantParams>,
+    pub initial_whitelist: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -38,17 +36,16 @@ pub enum ExecuteMsg {
         tranche_id: u64,
         title: String,
         description: String,
-        covenant_params: CovenantParams,
     },
     Vote {
         tranche_id: u64,
         proposal_id: u64,
     },
-    AddToWhitelist {
-        covenant_params: CovenantParams,
+    AddAccountToWhitelist {
+        address: String,
     },
-    RemoveFromWhitelist {
-        covenant_params: CovenantParams,
+    RemoveAccountFromWhitelist {
+        address: String,
     },
     UpdateMaxLockedTokens {
         max_locked_tokens: u128,

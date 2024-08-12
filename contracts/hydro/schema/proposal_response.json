@@ -12,30 +12,9 @@
   },
   "additionalProperties": false,
   "definitions": {
-    "CovenantParams": {
-      "type": "object",
-      "required": [
-        "funding_destination_name",
-        "outgoing_channel_id",
-        "pool_id"
-      ],
-      "properties": {
-        "funding_destination_name": {
-          "type": "string"
-        },
-        "outgoing_channel_id": {
-          "type": "string"
-        },
-        "pool_id": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false
-    },
     "Proposal": {
       "type": "object",
       "required": [
-        "covenant_params",
         "description",
         "percentage",
         "power",
@@ -45,9 +24,6 @@
         "tranche_id"
       ],
       "properties": {
-        "covenant_params": {
-          "$ref": "#/definitions/CovenantParams"
-        },
         "description": {
           "type": "string"
         },
