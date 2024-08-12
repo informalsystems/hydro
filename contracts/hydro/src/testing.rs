@@ -236,7 +236,7 @@ fn unlock_tokens_basic_test() {
         match msg.msg.clone() {
             CosmosMsg::Bank(bank_msg) => match bank_msg {
                 BankMsg::Send { to_address, amount } => {
-                    assert_eq!(user_address.to_string(), *to_address);
+                    assert_eq!(info.sender.to_string(), *to_address);
                     assert_eq!(1, amount.len());
                     assert_eq!(user_token.denom, amount[0].denom);
                     assert_eq!(user_token.amount.u128(), amount[0].amount.u128());
