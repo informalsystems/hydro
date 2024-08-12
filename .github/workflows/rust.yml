@@ -34,24 +34,22 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Clippy
-      run: make clippy
+      run: cargo clippy --all --all-targets -- -D warnings
   build:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
     - name: Build
-      run: make compile-rust-optimizer
+      run: cargo build --verbose
   test-unit:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
     - name: Unit tests
-      run: make test-unit
+      run: cargo test --workspace --exclude test-e2e --verbose --no-fail-fast
   test-e2e:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
     - name: E2E tests
-      run: make test-e2e
-      env:
-        PRIVATE_MNEMONIC: "[SET_PRIVATE_MNEMONIC]"
+      run: 'cargo test e2e --verbose --no-fail-fast -- "mnemonic: [SET_PRIVATE_MNEMONIC]"'
