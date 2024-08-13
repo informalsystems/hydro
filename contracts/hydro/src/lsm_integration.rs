@@ -28,7 +28,7 @@ pub fn get_validators_for_round(deps: Deps, round_id: u64) -> StdResult<Vec<Stri
             }
 
             // get the validators for the previous round
-            let validators = VALIDATORS_PER_ROUND
+            VALIDATORS_PER_ROUND
                 .load(deps.storage, round_id - 1)
                 .map_err(|_| {
                     StdError::generic_err(format!(
@@ -36,8 +36,7 @@ pub fn get_validators_for_round(deps: Deps, round_id: u64) -> StdResult<Vec<Stri
                         round_id,
                         round_id - 1
                     ))
-                })?;
-            validators
+                })?
         }
     };
 

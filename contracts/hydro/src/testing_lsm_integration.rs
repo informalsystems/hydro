@@ -26,10 +26,12 @@ fn get_default_constants() -> crate::state::Constants {
 
 #[test]
 fn test_validate_denom() {
+    type SetupFunc = dyn Fn(&mut dyn Storage, &mut Env);
+
     struct TestCase {
         denom: String,
         expected_result: Result<String, StdError>,
-        setup: Box<dyn Fn(&mut dyn Storage, &mut Env)>,
+        setup: Box<SetupFunc>,
     }
 
     let test_cases = vec![
@@ -181,7 +183,7 @@ fn lock_tokens_with_multiple_denoms() {
                     "for test case {}, expected error message to contain '{}', got '{}'",
                     case.description,
                     msg,
-                    res.as_ref().err().unwrap().to_string(),
+                    res.as_ref().err().unwrap(),
                 ),
             }
         }
