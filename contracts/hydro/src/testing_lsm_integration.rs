@@ -1,6 +1,6 @@
 use cosmwasm_std::{
     testing::{mock_dependencies, mock_env},
-    Coin, Env, StdError, Storage, Timestamp,
+    BankMsg, Coin, CosmosMsg, Env, StdError, Storage, Timestamp,
 };
 
 use crate::{
@@ -185,5 +185,177 @@ fn lock_tokens_with_multiple_denoms() {
                 ),
             }
         }
+    }
+}
+
+#[test]
+fn unlock_tokens_multiple_denoms() {
+    let user_address = "addr0000";
+    let user_token1 = Coin::new(1000u64, "validator1/record_id".to_string());
+    let user_token2 = Coin::new(2000u64, "validator2/record_id".to_string());
+
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+    let mut info = get_message_info(
+        &deps.api,
+        user_address,
+        &[user_token1.clone(), user_token2.clone()],
+    );
+    let msg = get_default_instantiate_msg(&deps.api);
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok(), "instantiating contract: {:?}", res);
+
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec!["validator1".to_string(), "validator2".to_string()],
+    );
+    assert!(res.is_ok(), "setting validators: {:?}", res);
+
+    info.funds = vec![user_token1.clone()];
+
+    // lock tokens from validator1
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok(), "locking tokens: {:?}", res);
+
+    info.funds = vec![user_token2.clone()];
+
+    // lock tokens from validator2
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok(), "locking tokens: {:?}", res);
+
+    // advance the chain by one month + 1 nano second and check that user can unlock tokens
+    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
+
+    // set the validators again for the new round
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec!["validator1".to_string(), "validator2".to_string()],
+    );
+    assert!(res.is_ok(), "setting validators: {:?}", res);
+
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::UnlockTokens {},
+    );
+    assert!(res.is_ok(), "unlocking tokens: {:?}", res);
+
+    let res = res.unwrap();
+    assert_eq!(2, res.messages.len());
+
+    // check that all messages are BankMsg::Send
+    for msg in res.messages.iter() {
+        match msg.msg.clone() {
+            CosmosMsg::Bank(bank_msg) => match bank_msg {
+                BankMsg::Send { to_address, amount } => {
+                    assert_eq!(info.sender.to_string(), *to_address);
+                    assert_eq!(1, amount.len());
+                    if amount[0].denom == user_token1.denom {
+                        assert_eq!(user_token1.amount.u128(), amount[0].amount.u128());
+                    } else if amount[0].denom == user_token2.denom {
+                        assert_eq!(user_token2.amount.u128(), amount[0].amount.u128());
+                    } else {
+                        panic!("unexpected denom");
+                    }
+                }
+                _ => panic!("expected BankMsg::Send message"),
+            },
+            _ => panic!("expected CosmosMsg::Bank msg"),
+        }
+    }
+}
+
+#[test]
+fn unlock_tokens_multiple_users() {
+    let user1_address = "addr0001";
+    let user2_address = "addr0002";
+    let user1_token = Coin::new(1000u64, "validator1/record_id".to_string());
+    let user2_token = Coin::new(2000u64, "validator1/record_id".to_string());
+
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+    let info1 = get_message_info(&deps.api, user1_address, &[user1_token.clone()]);
+    let info2 = get_message_info(&deps.api, user2_address, &[user2_token.clone()]);
+    let msg = get_default_instantiate_msg(&deps.api);
+
+    let res = instantiate(deps.as_mut(), env.clone(), info1.clone(), msg.clone());
+    assert!(res.is_ok(), "instantiating contract: {:?}", res);
+
+    let res = set_current_validators(deps.as_mut(), env.clone(), vec!["validator1".to_string()]);
+    assert!(res.is_ok(), "setting validators: {:?}", res);
+
+    // user1 locks tokens
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg.clone());
+    assert!(res.is_ok(), "locking tokens: {:?}", res);
+
+    // user2 locks tokens
+    let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
+    assert!(res.is_ok(), "locking tokens: {:?}", res);
+
+    // advance the chain by one month + 1 nano second and check that users can unlock tokens
+    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
+
+    // set the validators again for the new round
+    let res = set_current_validators(deps.as_mut(), env.clone(), vec!["validator1".to_string()]);
+    assert!(res.is_ok(), "setting validators: {:?}", res);
+
+    // user1 unlocks tokens
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info1.clone(),
+        ExecuteMsg::UnlockTokens {},
+    );
+    assert!(res.is_ok(), "unlocking tokens: {:?}", res);
+
+    let res = res.unwrap();
+    assert_eq!(1, res.messages.len());
+
+    // check that the message is BankMsg::Send
+    match res.messages[0].msg.clone() {
+        CosmosMsg::Bank(bank_msg) => match bank_msg {
+            BankMsg::Send { to_address, amount } => {
+                assert_eq!(info1.sender.to_string(), *to_address);
+                assert_eq!(1, amount.len());
+                assert_eq!(user1_token.denom, amount[0].denom);
+                assert_eq!(user1_token.amount.u128(), amount[0].amount.u128());
+            }
+            _ => panic!("expected BankMsg::Send message"),
+        },
+        _ => panic!("expected CosmosMsg::Bank msg"),
+    }
+
+    // user2 unlocks tokens
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info2.clone(),
+        ExecuteMsg::UnlockTokens {},
+    );
+    assert!(res.is_ok());
+
+    let res = res.unwrap();
+    assert_eq!(1, res.messages.len());
+
+    // check that the message is BankMsg::Send
+    match res.messages[0].msg.clone() {
+        CosmosMsg::Bank(bank_msg) => match bank_msg {
+            BankMsg::Send { to_address, amount } => {
+                assert_eq!(info2.sender.to_string(), *to_address);
+                assert_eq!(1, amount.len());
+                assert_eq!(user2_token.denom, amount[0].denom);
+                assert_eq!(user2_token.amount.u128(), amount[0].amount.u128());
+            }
+            _ => panic!("expected BankMsg::Send message"),
+        },
+        _ => panic!("expected CosmosMsg::Bank msg"),
     }
 }
