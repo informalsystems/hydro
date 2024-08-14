@@ -15,19 +15,20 @@
     "Constants": {
       "type": "object",
       "required": [
-        "denom",
         "first_round_start",
+        "hub_transfer_channel_id",
         "lock_epoch_length",
         "max_locked_tokens",
+        "max_validator_shares_participating",
         "paused",
         "round_length"
       ],
       "properties": {
-        "denom": {
-          "type": "string"
-        },
         "first_round_start": {
           "$ref": "#/definitions/Timestamp"
+        },
+        "hub_transfer_channel_id": {
+          "type": "string"
         },
         "lock_epoch_length": {
           "type": "integer",
@@ -37,6 +38,11 @@
         "max_locked_tokens": {
           "type": "integer",
           "format": "uint128",
+          "minimum": 0.0
+        },
+        "max_validator_shares_participating": {
+          "type": "integer",
+          "format": "uint64",
           "minimum": 0.0
         },
         "paused": {
