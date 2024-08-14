@@ -1,5 +1,7 @@
+use crate::lsm_integration::set_current_validators;
 use crate::testing::{
-    get_default_instantiate_msg, get_message_info, ONE_MONTH_IN_NANO_SECONDS, STATOM,
+    get_default_instantiate_msg, get_message_info, DEFAULT_DENOM, DEFAULT_VALIDATOR,
+    ONE_MONTH_IN_NANO_SECONDS,
 };
 use crate::{
     contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
@@ -24,11 +26,19 @@ fn query_expired_user_lockups_test() {
 
     // simulate user locking 1000 tokens for 1 month, one day after the round started
     env.block.time = env.block.time.plus_days(1);
+
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec![DEFAULT_VALIDATOR.to_string()],
+    );
+    assert!(res.is_ok());
+
     let first_lockup_amount = 1000;
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(first_lockup_amount, STATOM.to_string())],
+        &[Coin::new(first_lockup_amount, DEFAULT_DENOM.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -39,11 +49,20 @@ fn query_expired_user_lockups_test() {
 
     // simulate user locking 2000 tokens for 3 months, two days after the round started
     env.block.time = env.block.time.plus_days(1);
+
+    // set validators for new round
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec![DEFAULT_VALIDATOR.to_string()],
+    );
+    assert!(res.is_ok());
+
     let second_lockup_amount = 2000;
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(second_lockup_amount, STATOM.to_string())],
+        &[Coin::new(second_lockup_amount, DEFAULT_DENOM.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
@@ -69,6 +88,14 @@ fn query_expired_user_lockups_test() {
     assert_eq!(first_lockup_amount, expired_lockups[0].funds.amount.u128());
     assert_eq!(second_lockup_amount, expired_lockups[1].funds.amount.u128());
 
+    // set validators for this round once again
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec![DEFAULT_VALIDATOR.to_string()],
+    );
+    assert!(res.is_ok());
+
     // unlock the tokens and verify that the user doesn't have any expired lockups after that
     let msg = ExecuteMsg::UnlockTokens {};
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -91,11 +118,19 @@ fn query_user_voting_power_test() {
     // simulate user locking 1000 tokens for 1 month, one day after the round started
     let mut env_new = env.clone();
     env_new.block.time = env_new.block.time.plus_days(1);
+
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec![DEFAULT_VALIDATOR.to_string()],
+    );
+    assert!(res.is_ok());
+
     let first_lockup_amount = 1000;
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(first_lockup_amount, STATOM.to_string())],
+        &[Coin::new(first_lockup_amount, DEFAULT_DENOM.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -106,11 +141,20 @@ fn query_user_voting_power_test() {
 
     // simulate user locking 2000 tokens for 3 months, two days after the round started
     env_new.block.time = env.block.time.plus_days(2);
+
+    // set the validators for the new round
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec![DEFAULT_VALIDATOR.to_string()],
+    );
+    assert!(res.is_ok());
+
     let second_lockup_amount = 2000;
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(second_lockup_amount, STATOM.to_string())],
+        &[Coin::new(second_lockup_amount, DEFAULT_DENOM.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
@@ -129,6 +173,14 @@ fn query_user_voting_power_test() {
 
     // advance the chain for 1 month and start a new round
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
+
+    // set the validators for the new round, again
+    let res = set_current_validators(
+        deps.as_mut(),
+        env.clone(),
+        vec![DEFAULT_VALIDATOR.to_string()],
+    );
+    assert!(res.is_ok());
 
     // first lockup expires 29 days before the round 1 ends, and the second
     // lockup expires 1 month and 2 days after the round 1 ends, so the
