@@ -1,7 +1,7 @@
 use cosmwasm_std::{Deps, DepsMut, Env, StdError, StdResult};
 use cw_storage_plus::Map;
 
-use crate::contract::compute_current_round_id;
+use crate::{contract::compute_current_round_id, state::CONSTANTS};
 
 // For each round, stores the list of validators whose shares are eligible to vote.
 // We only store the top MAX_VALIDATOR_SHARES_PARTICIPATING validators by delegated tokens,
@@ -47,7 +47,7 @@ pub fn get_validators_for_round(deps: Deps, round_id: u64) -> StdResult<Vec<Stri
 // This can be called multiple times in a round, and will overwrite the previous validators
 // for this round.
 pub fn set_current_validators(deps: DepsMut, env: Env, validators: Vec<String>) -> StdResult<()> {
-    let round_id = compute_current_round_id(&env, &crate::state::CONSTANTS.load(deps.storage)?)?;
+    let round_id = compute_current_round_id(&env, &CONSTANTS.load(deps.storage)?)?;
     VALIDATORS_PER_ROUND.save(deps.storage, round_id, &validators)?;
     Ok(())
 }
