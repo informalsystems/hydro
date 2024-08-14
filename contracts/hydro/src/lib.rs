@@ -3,6 +3,8 @@ mod error;
 pub mod lsm_integration;
 pub mod msg;
 pub mod query;
+pub mod score_keeper;
+pub mod score_keeper_state;
 pub mod state;
 
 #[cfg(test)]

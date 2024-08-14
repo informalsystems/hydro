@@ -14,10 +14,15 @@ use crate::query::{
     TranchesResponse, UserVoteResponse, UserVotingPowerResponse, WhitelistAdminsResponse,
     WhitelistResponse,
 };
+use crate::score_keeper::{get_total_power, initialize_if_nil, remove_validator_shares};
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID,
-    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER, TOTAL_VOTED_POWER, TRANCHE_ID,
-    TRANCHE_MAP, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
+    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, VOTE_MAP, WHITELIST,
+    WHITELIST_ADMINS,
+};
+
+use crate::score_keeper_state::{
+    get_prop_power_key, get_total_voted_power_key, TOTAL_ROUND_POWER_KEY, TOTAL_VOTED_POWER_KEY,
 };
 
 /// Contract name that is used for migration.
@@ -449,9 +454,8 @@ fn create_proposal(
     PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, proposal_id), &proposal)?;
 
     // if there is no total voted power for this round and tranche, set it to 0
-    if !TOTAL_VOTED_POWER.has(deps.storage, (round_id, tranche_id)) {
-        TOTAL_VOTED_POWER.save(deps.storage, (round_id, tranche_id), &Uint128::zero())?;
-    }
+    let voted_power_key = get_total_voted_power_key(round_id, tranche_id);
+    initialize_if_nil(deps.storage, &voted_power_key.as_str())?;
 
     Ok(Response::new().add_attribute("action", "create_proposal"))
 }
@@ -525,8 +529,38 @@ fn vote(
             ),
         );
 
-        // Decrement proposal's power
-        proposal.power -= vote.power;
+        // get key for score keeper store of this proposal
+        let prop_power_key = get_prop_power_key(proposal.proposal_id);
+
+        // get key for score keeper store of total voted power in this round and tranche
+        let total_voted_power_key = get_total_voted_power_key(round_id, tranche_id);
+
+        // gro through all the shares that were voted with and subtract them from the proposal's power and the total power that voted
+        // TODO: we need to limit the number of different share types that users can lock; is the existing lock limit good enough?
+        // TODO: do we need to make sure we don't iterate over validators outside of the set here? it seems ok to me, but should double-check
+        for (validator, num_shares) in vote.time_weighted_shares.iter() {
+            // TODO: make more efficient by writing only a single time to the store
+
+            // remove the validator shares from the proposal
+            remove_validator_shares(
+                deps.storage,
+                prop_power_key.as_str(),
+                validator.to_string(),
+                *num_shares,
+            )?;
+
+            // remove the validator shares from the total voted power in this round and tranche
+            remove_validator_shares(
+                deps.storage,
+                total_voted_power_key.as_str(),
+                validator.to_string(),
+                *num_shares,
+            )?;
+        }
+
+        // save the new power into the proposal
+        let total_power = get_total_power(deps.storage, &prop_power_key.as_str())?;
+        proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
 
         // Save the proposal
         PROPOSAL_MAP.save(
@@ -548,19 +582,15 @@ fn vote(
             )?;
         }
 
-        // Decrement total voted power
-        let total_voted_power = TOTAL_VOTED_POWER.load(deps.storage, (round_id, tranche_id))?;
-        TOTAL_VOTED_POWER.save(
-            deps.storage,
-            (round_id, tranche_id),
-            &(total_voted_power - vote.power),
-        )?;
-
         // Delete vote
         VOTE_MAP.remove(deps.storage, (round_id, tranche_id, info.sender.clone()));
     }
 
     let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
+
+    // TODO: continue here. instead of getting a single number as the sender's total locked power,
+    // we need to populate a map of validator -> amount of time-scaled shares
+
     // Get sender's total locked power
     let mut power: Uint128 = Uint128::zero();
     let locks =

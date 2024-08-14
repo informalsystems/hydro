@@ -2,6 +2,11 @@ use cosmwasm_std::{Decimal, StdError, StdResult, Storage};
 use cw_storage_plus::{Item, Map};
 use std::str::FromStr;
 
+// The score keeper is a module that keeps track of amounts of individual validator shares, and power ratios (i.e. how many
+// tokens a share of a validator represents). It stores the shares and power ratios for each validator in separate maps,
+// and keeps those up-to-date with the total power (computed by multiplying the individual shares with the power ratio).
+// The total is updated when either the shares or the power ratio of a validator is updated.
+
 // Constants to define the suffixes for each map
 const SHARES_PREFIX: &str = "shares_";
 const POWER_PREFIX: &str = "power_";
@@ -32,6 +37,18 @@ fn get_power_item(suffix: &str) -> Item<Decimal> {
 
 fn get_power_ratio_map(suffix: &str) -> Map<&str, Decimal> {
     Map::new_dyn(power_ratio_key(suffix))
+}
+
+pub fn get_shares(storage: &dyn Storage, key: &str, validator: String) -> StdResult<Decimal> {
+    let shares_map = get_shares_map(key);
+    Ok(shares_map
+        .may_load(storage, &validator)?
+        .unwrap_or_else(Decimal::zero))
+}
+
+pub fn get_total_power(storage: &dyn Storage, key: &str) -> StdResult<Decimal> {
+    let total_power = get_power_item(key);
+    Ok(total_power.may_load(storage)?.unwrap_or_else(Decimal::zero))
 }
 
 // Initialize the maps for a given prefix
@@ -190,26 +207,16 @@ mod tests {
         Box::new(mock_dependencies().storage)
     }
 
-    // Helper function to retrieve the shares and power values
+    // Helper function to retrieve the shares and power values at once
     fn get_shares_and_power(
         storage: &dyn Storage,
         prefix: &str,
         validator: &str,
     ) -> (Decimal, Decimal) {
-        let shares_map: Map<&str, Decimal> = get_shares_map(prefix);
-        let total_power: Item<Decimal> = get_power_item(prefix);
-
-        let shares = shares_map
-            .may_load(storage, validator)
-            .unwrap()
-            .unwrap_or_else(Decimal::zero);
-
-        let power = total_power
-            .may_load(storage)
-            .unwrap()
-            .unwrap_or_else(Decimal::zero);
-
-        (shares, power)
+        (
+            get_shares(storage, prefix, validator.to_string()).unwrap(),
+            get_total_power(storage, prefix).unwrap(),
+        )
     }
 
     // Table-based tests
