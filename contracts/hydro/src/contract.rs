@@ -16,8 +16,8 @@ use crate::query::{
 };
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID,
-    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER, TOTAL_VOTED_POWER, TRANCHE_ID,
-    TRANCHE_MAP, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
+    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER, TRANCHE_ID, TRANCHE_MAP, VOTE_MAP,
+    WHITELIST, WHITELIST_ADMINS,
 };
 
 /// Contract name that is used for migration.
@@ -411,7 +411,6 @@ fn validate_previous_round_vote(
 // * validate that the contract is not paused
 // * validate that the creator of the proposal is on the whitelist
 // Then, it will create the proposal in the specified tranche and in the current round.
-// It will also instantiate the total voted power for this round and tranche if it does not exist.
 fn create_proposal(
     deps: DepsMut,
     env: Env,
@@ -448,11 +447,6 @@ fn create_proposal(
 
     PROP_ID.save(deps.storage, &(proposal_id + 1))?;
     PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, proposal_id), &proposal)?;
-
-    // if there is no total voted power for this round and tranche, set it to 0
-    if !TOTAL_VOTED_POWER.has(deps.storage, (round_id, tranche_id)) {
-        TOTAL_VOTED_POWER.save(deps.storage, (round_id, tranche_id), &Uint128::zero())?;
-    }
 
     Ok(Response::new().add_attribute("action", "create_proposal"))
 }
@@ -549,14 +543,6 @@ fn vote(
             )?;
         }
 
-        // Decrement total voted power
-        let total_voted_power = TOTAL_VOTED_POWER.load(deps.storage, (round_id, tranche_id))?;
-        TOTAL_VOTED_POWER.save(
-            deps.storage,
-            (round_id, tranche_id),
-            &(total_voted_power - vote.power),
-        )?;
-
         // Delete vote
         VOTE_MAP.remove(deps.storage, (round_id, tranche_id, info.sender.clone()));
     }
@@ -615,14 +601,6 @@ fn vote(
         deps.storage,
         ((round_id, tranche_id), proposal.power.into(), proposal_id),
         &proposal_id,
-    )?;
-
-    // Increment total voted power
-    let total_voted_power = TOTAL_VOTED_POWER.load(deps.storage, (round_id, tranche_id))?;
-    TOTAL_VOTED_POWER.save(
-        deps.storage,
-        (round_id, tranche_id),
-        &(total_voted_power + power),
     )?;
 
     // Create vote in Votemap
