@@ -83,7 +83,10 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
 }
 
 fn get_neutron_testnet_chain_config() -> (ChainInfo, String) {
-    (networks::PION_1.clone(), String::from("neutron1e68032v8dr8rfeg9wuhd3jjsun83vvla2fsrfs"))
+    (
+        networks::PION_1.clone(),
+        String::from("neutron1e68032v8dr8rfeg9wuhd3jjsun83vvla2fsrfs"),
+    )
 }
 
 // fn get_local_chain_config() -> (ChainInfo, String) {
