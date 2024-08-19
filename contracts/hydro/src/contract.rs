@@ -411,7 +411,6 @@ fn validate_previous_round_vote(
 // * validate that the contract is not paused
 // * validate that the creator of the proposal is on the whitelist
 // Then, it will create the proposal in the specified tranche and in the current round.
-// It will also instantiate the total voted power for this round and tranche if it does not exist.
 fn create_proposal(
     deps: DepsMut,
     env: Env,
