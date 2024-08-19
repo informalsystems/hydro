@@ -67,27 +67,6 @@ pub fn set_current_validators(deps: DepsMut, env: Env, validators: Vec<String>) 
     Ok(())
 }
 
-// Returns the validator that this denom
-// represents tokenized shares from.
-// Returns an error if the denom is not
-// an LSM tokenized share.
-pub fn get_validator_from_denom(denom: String) -> StdResult<String> {
-    // if the denom is an LSM tokenized share, its name is of the form
-    // validatoraddress/record_id
-
-    // resolve the denom
-    let parts: Vec<&str> = denom.split('/').collect();
-    if parts.len() != 2 {
-        return Err(StdError::generic_err(format!(
-            "Invalid denom {}: not an LSM tokenized share",
-            denom
-        )));
-    }
-
-    // return the validator address
-    Ok(parts[0].to_string())
-}
-
 // Returns OK if the denom is a valid IBC denom representing LSM
 // tokenized share transferred directly from the Cosmos Hub
 // of a validator that is also currently among the top

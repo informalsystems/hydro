@@ -30,6 +30,11 @@ pub const VALIDATOR_2_LST_DENOM_1: &str =
 pub const VALIDATOR_3_LST_DENOM_1: &str =
     "cosmosvaloper14upntdx8lf0f49t987mj99zksxnluanvu6x4lu/13608";
 
+// To get all IBC denom traces on some chain use:
+//      BINARY q ibc-transfer denom-traces --node NODE_RPC
+// Then find some denom trace whose base_denom is LST token and to obtain IBC denom use:
+//      BINARY q ibc-transfer denom-hash PATH/BASE_DENOM --node NODE_RPC
+// Note: the following IBC denoms do not match specific LST tokens on Neutron. They are just an arbitrary IBC denoms.
 pub const IBC_DENOM_1: &str =
     "ibc/0EA38305D72BE22FD87E7C0D1002D36D59B59BC3C863078A54550F8E50C50EEE";
 pub const IBC_DENOM_2: &str =
