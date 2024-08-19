@@ -6,7 +6,6 @@ use cw_orch::{anyhow, prelude::*};
 
 use hydro::{msg::TrancheInfo, query::QueryMsgFns as HydroQueryMsgFns};
 use interface::{hydro::*, tribute::*};
-use networks::{ChainKind, NetworkInfo};
 use tribute::query::QueryMsgFns as TributeQueryMsgFns;
 
 #[test]
@@ -22,9 +21,9 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
     if mnemonic.is_empty() {
         panic!("mnemonic is required, but it wasn't set");
     }
-    std::env::set_var("LOCAL_MNEMONIC", mnemonic);
+    std::env::set_var("TEST_MNEMONIC", mnemonic);
 
-    let (network, whitelist_admin_address) = get_local_chain_config();
+    let (network, whitelist_admin_address) = get_neutron_testnet_chain_config();
     let chain = DaemonBuilder::new(network).build()?;
     let hydro = Hydro::new(chain.clone());
 
@@ -32,14 +31,13 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
         std::time::SystemTime::now()
             .duration_since(UNIX_EPOCH)?
             .as_nanos() as u64
-            + 10000000000,
+            + 15000000000,
     );
     let round_length = 30000000000;
 
     hydro.upload()?;
     hydro.instantiate(
         &hydro::msg::InstantiateMsg {
-            denom: "untrn".to_string(),
             first_round_start,
             round_length,
             lock_epoch_length: round_length,
@@ -56,6 +54,8 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             ],
             whitelist_admins: vec![whitelist_admin_address.clone()],
             initial_whitelist: vec![whitelist_admin_address.clone()],
+            max_validator_shares_participating: 500,
+            hub_transfer_channel_id: "channel-0".to_string(),
         },
         None,
         None,
@@ -82,28 +82,28 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
     Ok(())
 }
 
-// fn get_neutron_testnet_chain_config() -> (ChainInfo, String) {
-//     (networks::PION_1.clone(), String::from("neutron1r6rv879netg009eh6ty23v57qrq29afecuehlm"))
-// }
-
-fn get_local_chain_config() -> (ChainInfo, String) {
-    let network = ChainInfo {
-        kind: ChainKind::Local,
-        chain_id: "wasm",
-        gas_denom: "stake",
-        gas_price: 0.00001,
-        grpc_urls: &["tcp://localhost:9101"],
-        network_info: NetworkInfo {
-            chain_name: "wasm",
-            pub_address_prefix: "wasm",
-            coin_type: 118u32,
-        },
-        lcd_url: None,
-        fcd_url: None,
-    };
-
-    (
-        network,
-        String::from("wasm1e35997edcs7rc28sttwd436u0e83jw6cpfcyq7"),
-    )
+fn get_neutron_testnet_chain_config() -> (ChainInfo, String) {
+    (networks::PION_1.clone(), String::from("neutron1e68032v8dr8rfeg9wuhd3jjsun83vvla2fsrfs"))
 }
+
+// fn get_local_chain_config() -> (ChainInfo, String) {
+//     let network = ChainInfo {
+//         kind: ChainKind::Local,
+//         chain_id: "neutron",
+//         gas_denom: "stake",
+//         gas_price: 0.005,
+//         grpc_urls: &["tcp://localhost:9101"],
+//         network_info: NetworkInfo {
+//             chain_name: "neutron",
+//             pub_address_prefix: "neutron",
+//             coin_type: 118u32,
+//         },
+//         lcd_url: None,
+//         fcd_url: None,
+//     };
+
+//     (
+//         network,
+//         String::from("neutron1e35997edcs7rc28sttwd436u0e83jw6c02qnnj"),
+//     )
+// }

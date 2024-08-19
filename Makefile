@@ -9,9 +9,9 @@ clippy:
 test-unit:
 	cargo test --workspace --exclude test-e2e --lib --no-fail-fast
 
-# run locally: make test-e2e PRIVATE_MNEMONIC="24 word mnemonic"
+# run locally: make test-e2e E2E_TESTS_MNEMONIC="24 word mnemonic"
 test-e2e:
-	cargo test e2e --no-fail-fast -- "mnemonic: $(PRIVATE_MNEMONIC)"
+	cargo test e2e --no-fail-fast -- "mnemonic: $(E2E_TESTS_MNEMONIC)"
 
 coverage:
 	# to install see here: https://crates.io/crates/cargo-tarpaulin

@@ -52,4 +52,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: E2E tests
-      run: 'cargo test e2e --verbose --no-fail-fast -- "mnemonic: [SET_PRIVATE_MNEMONIC]"'
+      env:
+        E2E_TESTS_MNEMONIC: ${{ secrets.E2E_TESTS_MNEMONIC }}
+      run: 'cargo test e2e --verbose --no-fail-fast -- "mnemonic: $E2E_TESTS_MNEMONIC"'
