@@ -1,15 +1,24 @@
+use std::collections::HashMap;
+
 use cosmwasm_std::{
-    testing::{mock_dependencies, mock_env},
-    BankMsg, Coin, CosmosMsg, Env, StdError, Storage, Timestamp,
+    testing::mock_env, BankMsg, Coin, CosmosMsg, Env, StdError, Storage, SystemError, SystemResult,
+    Timestamp,
 };
+use ibc_proto::ibc::apps::transfer::v1::QueryDenomTraceResponse;
+use prost::Message;
 
 use crate::{
     contract::{execute, instantiate},
     lsm_integration::{set_current_validators, validate_denom, VALIDATORS_PER_ROUND},
     msg::ExecuteMsg,
     testing::{
-        get_default_instantiate_msg, get_message_info, ONE_DAY_IN_NANO_SECONDS,
-        ONE_MONTH_IN_NANO_SECONDS,
+        get_default_instantiate_msg, get_message_info, IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3,
+        ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
+        VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3, VALIDATOR_3_LST_DENOM_1,
+    },
+    testing_mocks::{
+        denom_trace_grpc_query_mock, grpc_query_result_from, mock_dependencies,
+        no_op_grpc_query_mock, GrpcQueryFunc,
     },
 };
 
@@ -21,6 +30,7 @@ fn get_default_constants() -> crate::state::Constants {
         max_locked_tokens: 1,
         paused: false,
         max_validator_shares_participating: 2,
+        hub_transfer_channel_id: "channel-0".to_string(),
     }
 }
 
@@ -29,67 +39,197 @@ fn test_validate_denom() {
     type SetupFunc = dyn Fn(&mut dyn Storage, &mut Env);
 
     struct TestCase {
+        description: String,
         denom: String,
         expected_result: Result<String, StdError>,
         setup: Box<SetupFunc>,
+        grpc_query: Box<GrpcQueryFunc>,
     }
 
     let test_cases = vec![
-            TestCase {
-                denom: "invalid_denom".to_string(),
-                expected_result: Err(StdError::generic_err(
-                    "Invalid denom invalid_denom: not an LSM tokenized share",
-                )),
-                setup: Box::new(|storage, _env| {
-                    let round_id = 0;
-                    VALIDATORS_PER_ROUND
-                        .save(
-                            storage,
-                            round_id,
-                            &vec!["validator2".to_string(), "validator3".to_string()],
-                        )
-                        .unwrap();
-                }),
-            },
-            TestCase {
-                denom: "validator1/record_id".to_string(),
-                expected_result: Err(StdError::generic_err("Validator validator1 is not present; possibly they are not part of the top 2 validators by delegated tokens")),
-                setup: Box::new(|storage, _env| {
-                    let round_id = 0;
-                    VALIDATORS_PER_ROUND.save(storage, round_id, &vec!["validator2".to_string(), "validator3".to_string()]).unwrap();
-                }),
-            },
-            TestCase {
-                denom: "validator1/record_id".to_string(),
-                expected_result: Err(StdError::generic_err("Validator validator1 is not present; possibly they are not part of the top 2 validators by delegated tokens")),
-                setup: Box::new(|storage, env| {
-                    let round_id = 1;
-                    VALIDATORS_PER_ROUND.save(storage, round_id - 1, &vec!["validator1".to_string(), "validator2".to_string()]).unwrap();
-                    VALIDATORS_PER_ROUND.save(storage, round_id, &vec!["validator2".to_string(), "validator3".to_string()]).unwrap();
+        TestCase {
+            description: "non-IBC denom".to_string(),
+            denom: "invalid_denom".to_string(),
+            expected_result: Err(StdError::generic_err(
+                "IBC token expected",
+            )),
+            setup: Box::new(|_storage, _env| { }),
+            grpc_query: no_op_grpc_query_mock(),
+        },
+        TestCase {
+            description: "gRPC query returns error".to_string(),
+            denom: IBC_DENOM_1.to_string(),
+            expected_result: Err(StdError::generic_err("Querier system error: Unknown system error")),
+            setup: Box::new(|_storage, _env| { }),
+            grpc_query: Box::new(|_query| { SystemResult::Err(SystemError::Unknown {}) }),
+        },
+        TestCase {
+            description: "gRPC fails to provide denom trace information".to_string(),
+            denom: IBC_DENOM_1.to_string(),
+            expected_result: Err(StdError::generic_err("Failed to obtain IBC denom trace")),
+            setup: Box::new(|_storage, _env| { }),
+            grpc_query: Box::new(|_query| { grpc_query_result_from(QueryDenomTraceResponse { denom_trace: None }.encode_to_vec()) }),
+        },
+        TestCase {
+            description: "IBC denom received over multiple hops".to_string(),
+            denom: IBC_DENOM_1.to_string(),
+            expected_result: Err(StdError::generic_err(
+                "Only LSTs transferred directly from the Cosmos Hub can be locked.",
+            )),
+            setup: Box::new(|_storage, _env| {}),
+            grpc_query: denom_trace_grpc_query_mock(
+                "transfer/channel-0/transfer/channel-7".to_string(),
+                HashMap::from([
+                    (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+                ]),
+            ),
+        },
+        TestCase {
+            description: "IBC denom received over non-transfer port".to_string(),
+            denom: IBC_DENOM_1.to_string(),
+            expected_result: Err(StdError::generic_err(
+                "Only LSTs transferred directly from the Cosmos Hub can be locked.",
+            )),
+            setup: Box::new(|_storage, _env| {}),
+            grpc_query: denom_trace_grpc_query_mock(
+                "icahost/channel-0".to_string(),
+                HashMap::from([
+                    (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+                ]),
+            ),
+        },
+        TestCase {
+            description: "IBC denom received over unexpected channel ID".to_string(),
+            denom: IBC_DENOM_1.to_string(),
+            expected_result: Err(StdError::generic_err(
+                "Only LSTs transferred directly from the Cosmos Hub can be locked.",
+            )),
+            setup: Box::new(|_storage, _env| {}),
+            grpc_query: denom_trace_grpc_query_mock(
+                "transfer/channel-1".to_string(),
+                HashMap::from([
+                    (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+                ]),
+            ),
+        },
+        TestCase {
+            description: "base denom not LST- has extra parts".to_string(),
+            denom: IBC_DENOM_1.to_string(),
+            expected_result: Err(StdError::generic_err(
+                "Only LSTs from the Cosmos Hub can be locked.",
+            )),
+            setup: Box::new(|_storage, _env| {}),
+            grpc_query: denom_trace_grpc_query_mock(
+                "transfer/channel-0".to_string(),
+                HashMap::from([
+                    (IBC_DENOM_1.to_string(), (VALIDATOR_1_LST_DENOM_1.to_owned() + "/456").to_string()),
+                ]),
+            ),
+        },
+        TestCase {
+            description: "base denom not LST- wrong validator address length".to_string(),
+            denom: IBC_DENOM_1.to_string(),
+            expected_result: Err(StdError::generic_err(
+                "Only LSTs from the Cosmos Hub can be locked.",
+            )),
+            setup: Box::new(|_storage, _env| {}),
+            grpc_query: denom_trace_grpc_query_mock(
+                "transfer/channel-0".to_string(),
+                HashMap::from([
+                    (IBC_DENOM_1.to_string(), "cosmosvaloper157v7tczs40axfgejp2m43kwuzqe0wsy0rv8/789".to_string()),
+                ]),
+            ),
+        },
+        TestCase {
+            description: "base denom not LST- wrong validator address prefix".to_string(),
+            denom: IBC_DENOM_1.to_string(),
+            expected_result: Err(StdError::generic_err(
+                "Only LSTs from the Cosmos Hub can be locked.",
+            )),
+            setup: Box::new(|_storage, _env| {}),
+            grpc_query: denom_trace_grpc_query_mock(
+                "transfer/channel-0".to_string(),
+                HashMap::from([
+                    (IBC_DENOM_1.to_string(), "neutrnvaloper157v7tczs40axfgejp2m43kwuzqe0wsy0rv8puv/789".to_string()),
+                ]),
+            ),
+        },
+        TestCase {
+            description: "base denom not LST- tokenize share record ID not a number".to_string(),
+            denom: IBC_DENOM_1.to_string(),
+            expected_result: Err(StdError::generic_err(
+                "Only LSTs from the Cosmos Hub can be locked.",
+            )),
+            setup: Box::new(|_storage, _env| {}),
+            grpc_query: denom_trace_grpc_query_mock(
+                "transfer/channel-0".to_string(),
+                HashMap::from([
+                    (IBC_DENOM_1.to_string(), (VALIDATOR_1_LST_DENOM_1.to_owned() + "a")),
+                ]),
+            ),
+        },
+        TestCase {
+            description: "validator not in top validators set".to_string(),
+            denom: IBC_DENOM_1.to_string(),
+            expected_result: Err(StdError::generic_err(format!("Validator {} is not present; possibly they are not part of the top 2 validators by delegated tokens", VALIDATOR_1))),
+            setup: Box::new(|storage, _env| {
+                let round_id = 0;
+                VALIDATORS_PER_ROUND.save(storage, round_id, &vec![VALIDATOR_2.to_string(), VALIDATOR_3.to_string()]).unwrap();
+            }),
+            grpc_query: denom_trace_grpc_query_mock(
+                "transfer/channel-0".to_string(),
+                HashMap::from([
+                    (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+                ]),
+            ),
+        },
+        TestCase {
+            description: "validator not in top validators set".to_string(),
+            denom: IBC_DENOM_1.to_string(),
+            expected_result: Err(StdError::generic_err(format!("Validator {} is not present; possibly they are not part of the top 2 validators by delegated tokens", VALIDATOR_1))),
+            setup: Box::new(|storage, env| {
+                VALIDATORS_PER_ROUND.save(storage, 0, &vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()]).unwrap();
+                VALIDATORS_PER_ROUND.save(storage, 1, &vec![VALIDATOR_2.to_string(), VALIDATOR_3.to_string()]).unwrap();
 
-                    env.block.time = Timestamp::from_nanos(ONE_DAY_IN_NANO_SECONDS+1);
-                }),
-            },
-            TestCase {
-                denom: "validator1/record_id".to_string(),
-                expected_result: Ok("validator1".to_string()),
-                setup: Box::new(|storage, _env| {
-                    let constants = get_default_constants();
-                    crate::state::CONSTANTS.save(storage, &constants).unwrap();
-                    let round_id = 0;
-                    VALIDATORS_PER_ROUND
-                        .save(
-                            storage,
-                            round_id,
-                            &vec!["validator1".to_string(), "validator2".to_string()],
-                        )
-                        .unwrap();
-                }),
-            },
-        ];
+                env.block.time = Timestamp::from_nanos(ONE_DAY_IN_NANO_SECONDS+1);
+            }),
+            grpc_query: denom_trace_grpc_query_mock(
+                "transfer/channel-0".to_string(),
+                HashMap::from([
+                    (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+                ]),
+            ),
+        },
+        TestCase {
+            description: "happy path".to_string(),
+            denom: IBC_DENOM_1.to_string(),
+            expected_result: Ok(VALIDATOR_1.to_string()),
+            setup: Box::new(|storage, _env| {
+                let constants = get_default_constants();
+                crate::state::CONSTANTS.save(storage, &constants).unwrap();
+                let round_id = 0;
+                VALIDATORS_PER_ROUND
+                    .save(
+                        storage,
+                        round_id,
+                        &vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
+                    )
+                    .unwrap();
+            }),
+            grpc_query: denom_trace_grpc_query_mock(
+                "transfer/channel-0".to_string(),
+                HashMap::from([
+                    (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+                ]),
+            ),
+        },
+    ];
 
     for (i, test_case) in test_cases.into_iter().enumerate() {
-        let mut deps = mock_dependencies();
+        println!("running test case: {}", test_case.description);
+
+        let mut deps = mock_dependencies(test_case.grpc_query);
+
         let mut env = mock_env();
 
         let constants = get_default_constants();
@@ -101,7 +241,12 @@ fn test_validate_denom() {
 
         (test_case.setup)(&mut deps.storage, &mut env);
 
-        let result = validate_denom(deps.as_ref(), env.clone(), test_case.denom.clone());
+        let result = validate_denom(
+            deps.as_ref(),
+            env.clone(),
+            &constants,
+            test_case.denom.clone(),
+        );
 
         assert_eq!(
             result, test_case.expected_result,
@@ -116,6 +261,7 @@ struct LockMultipleDenomTestCases {
     validators: Vec<&'static str>,
     funds: Vec<Coin>,
     lock_duration: u64,
+    grpc_query: Box<GrpcQueryFunc>,
     expected_error_msg: String,
 }
 
@@ -125,25 +271,36 @@ fn lock_tokens_with_multiple_denoms() {
         LockMultipleDenomTestCases {
             description:
                 "Lock two different denoms, both from validators that are set as validators",
-            validators: vec!["validator1", "validator2"],
+            validators: vec![VALIDATOR_1, VALIDATOR_2],
             funds: vec![
-                Coin::new(1000u64, "validator1/record_id".to_string()),
-                Coin::new(2000u64, "validator2/record_id".to_string()),
+                Coin::new(1000u64, IBC_DENOM_1.to_string()),
+                Coin::new(2000u64, IBC_DENOM_2.to_string()),
             ],
             lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+            grpc_query: denom_trace_grpc_query_mock(
+                "transfer/channel-0".to_string(),
+                HashMap::from([
+                    (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+                    (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+                ]),
+            ),
             expected_error_msg: "".to_string(),
         },
         LockMultipleDenomTestCases {
             description: "Lock a denom that is not from a validator that is currently in the set",
-            validators: vec!["validator1"],
-            funds: vec![Coin::new(1000u64, "validator3/record_id".to_string())],
+            validators: vec![VALIDATOR_1],
+            funds: vec![Coin::new(1000u64, IBC_DENOM_3.to_string())],
             lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+            grpc_query: denom_trace_grpc_query_mock(
+                "transfer/channel-0".to_string(),
+                HashMap::from([(IBC_DENOM_3.to_string(), VALIDATOR_3_LST_DENOM_1.to_string())]),
+            ),
             expected_error_msg: "is not present".to_string(),
         },
     ];
 
     for case in test_cases {
-        let (mut deps, env) = (mock_dependencies(), mock_env());
+        let (mut deps, env) = (mock_dependencies(case.grpc_query), mock_env());
         let info = get_message_info(&deps.api, "addr0001", &[]);
         let msg = get_default_instantiate_msg(&deps.api);
 
@@ -193,10 +350,18 @@ fn lock_tokens_with_multiple_denoms() {
 #[test]
 fn unlock_tokens_multiple_denoms() {
     let user_address = "addr0000";
-    let user_token1 = Coin::new(1000u64, "validator1/record_id".to_string());
-    let user_token2 = Coin::new(2000u64, "validator2/record_id".to_string());
+    let user_token1 = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token2 = Coin::new(2000u64, IBC_DENOM_2.to_string());
 
-    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+        ]),
+    );
+
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let mut info = get_message_info(
         &deps.api,
         user_address,
@@ -210,7 +375,7 @@ fn unlock_tokens_multiple_denoms() {
     let res = set_current_validators(
         deps.as_mut(),
         env.clone(),
-        vec!["validator1".to_string(), "validator2".to_string()],
+        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
     );
     assert!(res.is_ok(), "setting validators: {:?}", res);
 
@@ -236,7 +401,7 @@ fn unlock_tokens_multiple_denoms() {
     let res = set_current_validators(
         deps.as_mut(),
         env.clone(),
-        vec!["validator1".to_string(), "validator2".to_string()],
+        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
     );
     assert!(res.is_ok(), "setting validators: {:?}", res);
 
@@ -277,10 +442,15 @@ fn unlock_tokens_multiple_denoms() {
 fn unlock_tokens_multiple_users() {
     let user1_address = "addr0001";
     let user2_address = "addr0002";
-    let user1_token = Coin::new(1000u64, "validator1/record_id".to_string());
-    let user2_token = Coin::new(2000u64, "validator1/record_id".to_string());
+    let user1_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user2_token = Coin::new(2000u64, IBC_DENOM_1.to_string());
 
-    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info1 = get_message_info(&deps.api, user1_address, &[user1_token.clone()]);
     let info2 = get_message_info(&deps.api, user2_address, &[user2_token.clone()]);
     let msg = get_default_instantiate_msg(&deps.api);
@@ -288,7 +458,7 @@ fn unlock_tokens_multiple_users() {
     let res = instantiate(deps.as_mut(), env.clone(), info1.clone(), msg.clone());
     assert!(res.is_ok(), "instantiating contract: {:?}", res);
 
-    let res = set_current_validators(deps.as_mut(), env.clone(), vec!["validator1".to_string()]);
+    let res = set_current_validators(deps.as_mut(), env.clone(), vec![VALIDATOR_1.to_string()]);
     assert!(res.is_ok(), "setting validators: {:?}", res);
 
     // user1 locks tokens
@@ -306,7 +476,7 @@ fn unlock_tokens_multiple_users() {
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
 
     // set the validators again for the new round
-    let res = set_current_validators(deps.as_mut(), env.clone(), vec!["validator1".to_string()]);
+    let res = set_current_validators(deps.as_mut(), env.clone(), vec![VALIDATOR_1.to_string()]);
     assert!(res.is_ok(), "setting validators: {:?}", res);
 
     // user1 unlocks tokens

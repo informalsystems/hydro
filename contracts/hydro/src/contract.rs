@@ -55,6 +55,7 @@ pub fn instantiate(
         lock_epoch_length: msg.lock_epoch_length,
         first_round_start: msg.first_round_start,
         max_locked_tokens: msg.max_locked_tokens,
+        hub_transfer_channel_id: msg.hub_transfer_channel_id,
         paused: false,
         max_validator_shares_participating: msg.max_validator_shares_participating,
     };
@@ -175,7 +176,7 @@ fn lock_tokens(
 
     let funds = info.funds[0].clone();
 
-    validate_denom(deps.as_ref(), env.clone(), funds.denom).map_err(|err| {
+    validate_denom(deps.as_ref(), env.clone(), &constants, funds.denom).map_err(|err| {
         ContractError::Std(StdError::generic_err(format!("validating denom: {}", err)))
     })?;
 

@@ -12,6 +12,7 @@ pub struct InstantiateMsg {
     pub whitelist_admins: Vec<String>,
     pub initial_whitelist: Vec<String>,
     pub max_validator_shares_participating: u64,
+    pub hub_transfer_channel_id: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
