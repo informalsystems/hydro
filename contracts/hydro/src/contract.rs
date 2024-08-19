@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
     Order, Response, StdError, StdResult, Timestamp, Uint128,
@@ -591,8 +593,8 @@ fn vote(
     // TODO: continue here. instead of getting a single number as the sender's total locked power,
     // we need to populate a map of validator -> amount of time-scaled shares
 
-    // Get sender's total locked power
-    let mut power: Uint128 = Uint128::zero();
+    // Get sender's locked shares for each validator
+    let mut shares_map: HashMap<String, uint128> = HashMap::new();
     let locks =
         LOCKS_MAP
             .prefix(info.sender.clone())
@@ -601,7 +603,7 @@ fn vote(
     for lock in locks {
         let (_, lock_entry) = lock?;
 
-        // user gets 0 voting power for lockups that expire before the current round ends
+        // shares from locks that expire before the current round ends don't need to be counted
         if round_end.nanos() > lock_entry.lock_end.nanos() {
             continue;
         }
