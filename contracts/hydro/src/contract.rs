@@ -185,7 +185,7 @@ fn lock_tokens(
 
     let funds = info.funds[0].clone();
 
-    validate_denom(deps.as_ref(), env.clone(), funds.denom).map_err(|err| {
+    let validator = validate_denom(deps.as_ref(), env.clone(), funds.denom).map_err(|err| {
         ContractError::Std(StdError::generic_err(format!("validating denom: {}", err)))
     })?;
 
@@ -230,6 +230,7 @@ fn lock_tokens(
         current_round,
         last_round_with_power,
         lock_end,
+        validator,
         lock_entry.funds.amount,
         |_, _, _| Uint128::zero(),
     )?;
@@ -279,6 +280,9 @@ fn refresh_lock_duration(
     // save the updated lock entry
     LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
 
+    // get the validator whose shares are in this lock
+    let validator = get_validator_from_denom(lock_entry.funds.denom)?;
+
     // Calculate and update the total voting power info for current and all
     // future rounds in which the user will have voting power greather than 0.
     // The voting power originated from the old lockup is subtracted from the
@@ -294,11 +298,14 @@ fn refresh_lock_duration(
         current_round,
         new_last_round_with_power,
         new_lock_end,
+        validator,
         lock_entry.funds.amount,
         |round, round_end, locked_amount| {
             if round > old_last_round_with_power {
                 return Uint128::zero();
             }
+
+            // TODO: adjust the function to check per share type
 
             let old_lockup_length = old_lock_end - round_end.nanos();
             scale_lockup_power(
@@ -1219,7 +1226,8 @@ fn update_total_time_weighted_shares<T>(
     start_round_id: u64,
     end_round_id: u64,
     lock_end: u64,
-    funds: Uint128,
+    shares_validator: String,
+    amount: Uint128,
     get_old_voting_power: T,
 ) -> StdResult<()>
 where
@@ -1228,21 +1236,25 @@ where
     for round in start_round_id..=end_round_id {
         let round_end = compute_round_end(constants, round)?;
         let lockup_length = lock_end - round_end.nanos();
-        let voting_power_change =
-            scale_lockup_power(constants.lock_epoch_length, lockup_length, funds)
-                - get_old_voting_power(round, round_end, funds);
+        let scaled_shares = Decimal::new(scale_lockup_power(
+            constants.lock_epoch_length,
+            lockup_length,
+            amount,
+        )) - Decimal::new(get_old_voting_power(round, round_end, amount));
 
         // save some gas if there was no power change
-        if voting_power_change == Uint128::zero() {
+        if scaled_shares.is_zero() {
             continue;
         }
 
-        TOTAL_ROUND_POWER.update(deps.storage, round, |power| -> Result<Uint128, StdError> {
-            match power {
-                Some(power) => Ok(power + voting_power_change),
-                None => Ok(voting_power_change),
-            }
-        })?;
+        // add the shares to the total power in the round
+        let total_round_power_key = get_total_round_power_key(round);
+        add_validator_shares(
+            deps.storage,
+            total_round_power_key.as_str(),
+            shares_validator.clone(),
+            scaled_shares,
+        )?;
     }
 
     Ok(())
