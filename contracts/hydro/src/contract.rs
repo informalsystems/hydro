@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
-    Order, Response, StdError, StdResult, Timestamp, Uint128,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
+    MessageInfo, Order, Response, StdError, StdResult, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::lsm_integration::validate_denom;
+use crate::lsm_integration::{get_validator_from_denom, validate_denom};
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
@@ -16,7 +16,9 @@ use crate::query::{
     TranchesResponse, UserVoteResponse, UserVotingPowerResponse, WhitelistAdminsResponse,
     WhitelistResponse,
 };
-use crate::score_keeper::{get_total_power, initialize_if_nil, remove_validator_shares};
+use crate::score_keeper::{
+    add_validator_shares, get_total_power, initialize_if_nil, remove_validator_shares,
+};
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID,
     PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, VOTE_MAP, WHITELIST,
@@ -24,7 +26,8 @@ use crate::state::{
 };
 
 use crate::score_keeper_state::{
-    get_prop_power_key, get_total_voted_power_key, TOTAL_ROUND_POWER_KEY, TOTAL_VOTED_POWER_KEY,
+    get_prop_power_key, get_total_round_power_key, get_total_voted_power_key,
+    get_total_voted_power_total, TOTAL_ROUND_POWER_KEY, TOTAL_VOTED_POWER_KEY,
 };
 
 /// Contract name that is used for migration.
@@ -221,7 +224,7 @@ fn lock_tokens(
     let current_round = compute_current_round_id(&env, &constants)?;
     let last_round_with_power = compute_round_id_for_timestamp(&constants, lock_end)? - 1;
 
-    update_total_voting_power(
+    update_total_time_weighted_shares(
         deps,
         &constants,
         current_round,
@@ -285,7 +288,7 @@ fn refresh_lock_duration(
     let old_last_round_with_power = compute_round_id_for_timestamp(&constants, old_lock_end)? - 1;
     let new_last_round_with_power = compute_round_id_for_timestamp(&constants, new_lock_end)? - 1;
 
-    update_total_voting_power(
+    update_total_time_weighted_shares(
         deps,
         &constants,
         current_round,
@@ -590,11 +593,8 @@ fn vote(
 
     let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
 
-    // TODO: continue here. instead of getting a single number as the sender's total locked power,
-    // we need to populate a map of validator -> amount of time-scaled shares
-
     // Get sender's locked shares for each validator
-    let mut shares_map: HashMap<String, uint128> = HashMap::new();
+    let mut time_weighted_shares_map: HashMap<String, Decimal> = HashMap::new();
     let locks =
         LOCKS_MAP
             .prefix(info.sender.clone())
@@ -612,17 +612,24 @@ fn vote(
         // This means that their power will be scaled the same by this function no matter when they vote in the round
         let lockup_length = lock_entry.lock_end.nanos() - round_end.nanos();
 
-        // Scale power. This is what implements the different powers for different lockup times.
-        let scaled_power =
+        // Scale the number of shares. This is what implements the different powers for different lockup times.
+        let scaled_shares =
             scale_lockup_power(lock_epoch_length, lockup_length, lock_entry.funds.amount);
 
-        power += scaled_power;
+        // get the validator from the denom
+        let validator = get_validator_from_denom(lock_entry.funds.denom)?;
+
+        // add the shares to the map
+        let shares = time_weighted_shares_map
+            .entry(validator)
+            .or_insert(Decimal::zero());
+        shares.checked_add(Decimal::new(scaled_shares))?; // TODO: check if the checked_add correctly modifies the shares here
     }
 
     let response = Response::new().add_attribute("action", "vote");
 
-    // if users voting power is 0 we don't need to update any of the stores
-    if power == Uint128::zero() {
+    // if the user doesn't have any shares that give voting power, we don't need to do anything
+    if time_weighted_shares_map.is_empty() {
         return Ok(response);
     }
 
@@ -635,8 +642,32 @@ fn vote(
         ((round_id, tranche_id), proposal.power.into(), proposal_id),
     );
 
-    // Update proposal's power
-    proposal.power += power;
+    // update the proposal's power with the new shares
+    let prop_power_key = get_prop_power_key(proposal_id);
+    let total_voted_power_key = get_total_voted_power_key(round_id, tranche_id);
+    for (validator, num_shares) in time_weighted_shares_map.iter() {
+        // add the validator shares to the proposal
+        add_validator_shares(
+            deps.storage,
+            prop_power_key.as_str(),
+            validator.to_string(),
+            *num_shares,
+        )?;
+
+        // add the validator shares to the total voted power in this round and tranche
+        add_validator_shares(
+            deps.storage,
+            total_voted_power_key.as_str(),
+            validator.to_string(),
+            *num_shares,
+        )?;
+    }
+
+    // get the new total power of the proposal
+    let total_power = get_total_power(deps.storage, &prop_power_key.as_str())?;
+
+    // save the new power into the proposal
+    proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
 
     // Save the proposal
     PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, proposal_id), &proposal)?;
@@ -648,18 +679,10 @@ fn vote(
         &proposal_id,
     )?;
 
-    // Increment total voted power
-    let total_voted_power = TOTAL_VOTED_POWER.load(deps.storage, (round_id, tranche_id))?;
-    TOTAL_VOTED_POWER.save(
-        deps.storage,
-        (round_id, tranche_id),
-        &(total_voted_power + power),
-    )?;
-
     // Create vote in Votemap
     let vote = Vote {
         prop_id: proposal_id,
-        power,
+        time_weighted_shares: time_weighted_shares_map,
     };
     VOTE_MAP.save(deps.storage, (round_id, tranche_id, info.sender), &vote)?;
 
@@ -934,8 +957,10 @@ pub fn query_round_total_power(
     deps: Deps,
     round_id: u64,
 ) -> StdResult<RoundTotalVotingPowerResponse> {
+    let total_round_power_key = get_total_round_power_key(round_id);
+    let total_round_power = get_total_power(deps.storage, total_round_power_key.as_str())?;
     Ok(RoundTotalVotingPowerResponse {
-        total_voting_power: TOTAL_ROUND_POWER.load(deps.storage, round_id)?,
+        total_voting_power: total_round_power.to_uint_ceil(), // TODO: decide on rounding
     })
 }
 
@@ -1102,7 +1127,8 @@ pub fn query_top_n_proposals(
     }
 
     // get total voting power for the round
-    let total_voting_power = TOTAL_ROUND_POWER.load(deps.storage, round_id)?;
+    let total_voting_power =
+        get_total_voted_power_total(deps, round_id, tranche_id)?.to_uint_ceil(); // TODO: decide on rounding
 
     let top_proposals = top_props
         .into_iter()
@@ -1187,7 +1213,7 @@ fn compute_round_end(constants: &Constants, round_id: u64) -> StdResult<Timestam
     Ok(round_end)
 }
 
-fn update_total_voting_power<T>(
+fn update_total_time_weighted_shares<T>(
     deps: DepsMut,
     constants: &Constants,
     start_round_id: u64,
