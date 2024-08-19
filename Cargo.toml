@@ -25,4 +25,4 @@ cw-utils = "2.0.0"
 ibc-proto = { version = "0.47.0", default-features = false }
 prost = "0.13.1"
 prost-types = "0.13.1"
-cw-orch = { version = "0.24.1" }
+cw-orch = { git = "https://github.com/AbstractSDK/cw-orchestrator", rev = "388dc29" }

@@ -4,7 +4,7 @@ use cosmwasm_std::{Timestamp, Uint128};
 
 use cw_orch::{anyhow, prelude::*};
 
-use hydro::{msg::TrancheInfo, query::QueryMsgFns as HydroQueryMsgFns, state::CovenantParams};
+use hydro::{msg::TrancheInfo, query::QueryMsgFns as HydroQueryMsgFns};
 use interface::{hydro::*, tribute::*};
 use networks::{ChainKind, NetworkInfo};
 use tribute::query::QueryMsgFns as TributeQueryMsgFns;
@@ -55,11 +55,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
                 },
             ],
             whitelist_admins: vec![whitelist_admin_address.clone()],
-            initial_whitelist: vec![CovenantParams {
-                outgoing_channel_id: "channel-1".to_string(),
-                funding_destination_name: "Osmosis".to_string(),
-                pool_id: "pool 1".to_string(),
-            }],
+            initial_whitelist: vec![whitelist_admin_address.clone()],
         },
         None,
         None,
