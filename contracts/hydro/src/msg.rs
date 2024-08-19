@@ -1,4 +1,4 @@
-use cosmwasm_std::Timestamp;
+use cosmwasm_std::{Timestamp, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +8,7 @@ pub struct InstantiateMsg {
     pub lock_epoch_length: u64,
     pub tranches: Vec<TrancheInfo>,
     pub first_round_start: Timestamp,
-    pub max_locked_tokens: u128,
+    pub max_locked_tokens: Uint128,
     pub whitelist_admins: Vec<String>,
     pub initial_whitelist: Vec<String>,
     pub max_validator_shares_participating: u64,
@@ -22,9 +22,10 @@ pub struct TrancheInfo {
     pub metadata: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, cw_orch::ExecuteFns)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
+    #[cw_orch(payable)]
     LockTokens {
         lock_duration: u64,
     },

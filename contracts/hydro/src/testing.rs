@@ -15,7 +15,7 @@ use crate::{
     msg::{ExecuteMsg, InstantiateMsg},
 };
 use cosmwasm_std::testing::{mock_env, MockApi};
-use cosmwasm_std::{BankMsg, CosmosMsg, Deps, MessageInfo, Timestamp};
+use cosmwasm_std::{BankMsg, CosmosMsg, Deps, MessageInfo, Timestamp, Uint128};
 use cosmwasm_std::{Coin, StdError, StdResult};
 use proptest::prelude::*;
 
@@ -58,7 +58,7 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
             metadata: "tranche 1 metadata".to_string(),
         }],
         first_round_start: mock_env().block.time,
-        max_locked_tokens: 1000000,
+        max_locked_tokens: Uint128::new(1000000),
         initial_whitelist: vec![user_address],
         whitelist_admins: vec![],
         max_validator_shares_participating: 100,
@@ -1160,7 +1160,7 @@ fn max_locked_tokens_test() {
     let mut info = get_message_info(&deps.api, "addr0000", &[]);
 
     let mut msg = get_default_instantiate_msg(&deps.api);
-    msg.max_locked_tokens = 2000;
+    msg.max_locked_tokens = Uint128::new(2000);
     msg.whitelist_admins = vec![get_address_as_str(&deps.api, "addr0001")];
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
