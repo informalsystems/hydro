@@ -16,19 +16,14 @@ use crate::query::{
     TranchesResponse, UserVoteResponse, UserVotingPowerResponse, WhitelistAdminsResponse,
     WhitelistResponse,
 };
-use crate::score_keeper::{
-    add_validator_shares, get_total_power, initialize_if_nil, remove_validator_shares,
-};
+use crate::score_keeper::{add_validator_shares, get_total_power, remove_validator_shares};
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, Vote, VoteWithPower, CONSTANTS, LOCKED_TOKENS,
     LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, VOTE_MAP,
     WHITELIST, WHITELIST_ADMINS,
 };
 
-use crate::score_keeper_state::{
-    get_prop_power_key, get_total_round_power_key, get_total_voted_power_key,
-    get_total_voted_power_total, TOTAL_ROUND_POWER_KEY, TOTAL_VOTED_POWER_KEY,
-};
+use crate::score_keeper_state::{get_prop_power_key, get_total_round_power_key};
 
 /// Contract name that is used for migration.
 const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -463,10 +458,6 @@ fn create_proposal(
     PROP_ID.save(deps.storage, &(proposal_id + 1))?;
     PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, proposal_id), &proposal)?;
 
-    // if there is no total voted power for this round and tranche, set it to 0
-    let voted_power_key = get_total_voted_power_key(round_id, tranche_id);
-    initialize_if_nil(deps.storage, &voted_power_key.as_str())?;
-
     Ok(Response::new().add_attribute("action", "create_proposal"))
 }
 
@@ -542,9 +533,6 @@ fn vote(
         // get key for score keeper store of this proposal
         let prop_power_key = get_prop_power_key(proposal.proposal_id);
 
-        // get key for score keeper store of total voted power in this round and tranche
-        let total_voted_power_key = get_total_voted_power_key(round_id, tranche_id);
-
         // gro through all the shares that were voted with and subtract them from the proposal's power and the total power that voted
         // TODO: we need to limit the number of different share types that users can lock; is the existing lock limit good enough?
         // TODO: do we need to make sure we don't iterate over validators outside of the set here? it seems ok to me, but should double-check
@@ -555,14 +543,6 @@ fn vote(
             remove_validator_shares(
                 deps.storage,
                 prop_power_key.as_str(),
-                validator.to_string(),
-                *num_shares,
-            )?;
-
-            // remove the validator shares from the total voted power in this round and tranche
-            remove_validator_shares(
-                deps.storage,
-                total_voted_power_key.as_str(),
                 validator.to_string(),
                 *num_shares,
             )?;
@@ -649,20 +629,11 @@ fn vote(
 
     // update the proposal's power with the new shares
     let prop_power_key = get_prop_power_key(proposal_id);
-    let total_voted_power_key = get_total_voted_power_key(round_id, tranche_id);
     for (validator, num_shares) in time_weighted_shares_map.iter() {
         // add the validator shares to the proposal
         add_validator_shares(
             deps.storage,
             prop_power_key.as_str(),
-            validator.to_string(),
-            *num_shares,
-        )?;
-
-        // add the validator shares to the total voted power in this round and tranche
-        add_validator_shares(
-            deps.storage,
-            total_voted_power_key.as_str(),
             validator.to_string(),
             *num_shares,
         )?;
@@ -1139,8 +1110,8 @@ pub fn query_top_n_proposals(
     }
 
     // get total voting power for the round
-    let total_voting_power =
-        get_total_voted_power_total(deps, round_id, tranche_id)?.to_uint_ceil(); // TODO: decide on rounding
+    let total_voting_power_key = get_total_round_power_key(round_id);
+    let total_voting_power = get_total_power(deps.storage, &total_voting_power_key)?.to_uint_ceil(); // TODO: decide on rounding
 
     let top_proposals = top_props
         .into_iter()
