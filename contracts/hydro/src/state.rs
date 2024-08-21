@@ -57,6 +57,14 @@ pub struct Vote {
     pub time_weighted_shares: HashMap<String, Decimal>,
 }
 
+#[cw_serde]
+// VoteWithPower is used to store a vote, where the time_weighted_shares
+// have been resolved to compute the total power of the vote.
+pub struct VoteWithPower {
+    pub prop_id: u64,
+    pub power: Decimal,
+}
+
 // PROPS_BY_SCORE: key((round_id, tranche_id), score, prop_id) -> prop_id
 pub const PROPS_BY_SCORE: Map<((u64, u64), u128, u64), u64> = Map::new("props_by_score");
 

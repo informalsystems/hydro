@@ -20,9 +20,9 @@ use crate::score_keeper::{
     add_validator_shares, get_total_power, initialize_if_nil, remove_validator_shares,
 };
 use crate::state::{
-    Constants, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID,
-    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, VOTE_MAP, WHITELIST,
-    WHITELIST_ADMINS,
+    Constants, LockEntry, Proposal, Tranche, Vote, VoteWithPower, CONSTANTS, LOCKED_TOKENS,
+    LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, VOTE_MAP,
+    WHITELIST, WHITELIST_ADMINS,
 };
 
 use crate::score_keeper_state::{
@@ -304,8 +304,6 @@ fn refresh_lock_duration(
             if round > old_last_round_with_power {
                 return Uint128::zero();
             }
-
-            // TODO: adjust the function to check per share type
 
             let old_lockup_length = old_lock_end - round_end.nanos();
             scale_lockup_power(
@@ -1062,7 +1060,14 @@ pub fn query_user_vote(
         (round_id, tranche_id, deps.api.addr_validate(&user_address)?),
     )?;
 
-    Ok(UserVoteResponse { vote })
+    let vote_with_power = VoteWithPower {
+        prop_id: vote.prop_id,
+        power: vote.time_weighted_shares.values().sum(),
+    };
+
+    Ok(UserVoteResponse {
+        vote: vote_with_power,
+    })
 }
 
 pub fn query_round_tranche_proposals(

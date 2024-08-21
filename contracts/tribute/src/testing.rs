@@ -5,15 +5,18 @@ use crate::{
 use cosmwasm_std::{
     from_json,
     testing::{mock_dependencies, mock_env, MockApi},
-    to_json_binary, Binary, ContractResult, MessageInfo, QuerierResult, Response, SystemError,
-    SystemResult, Uint128, WasmQuery,
+    to_json_binary, Binary, ContractResult, Decimal, MessageInfo, QuerierResult, Response,
+    SystemError, SystemResult, Uint128, WasmQuery,
 };
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
-use hydro::query::{
-    CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
-    UserVoteResponse,
-};
 use hydro::state::{Proposal, Vote};
+use hydro::{
+    query::{
+        CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
+        UserVoteResponse,
+    },
+    state::VoteWithPower,
+};
 
 pub fn get_instantiate_msg(hydro_contract: String) -> InstantiateMsg {
     InstantiateMsg {
@@ -42,7 +45,7 @@ pub struct MockWasmQuerier {
     hydro_contract: String,
     current_round: u64,
     proposal: Option<Proposal>,
-    user_vote: Option<(u64, u64, String, Vote)>,
+    user_vote: Option<(u64, u64, String, VoteWithPower)>,
     top_n_proposals: Vec<Proposal>,
 }
 
@@ -51,7 +54,7 @@ impl MockWasmQuerier {
         hydro_contract: String,
         current_round: u64,
         proposal: Option<Proposal>,
-        user_vote: Option<(u64, u64, String, Vote)>,
+        user_vote: Option<(u64, u64, String, VoteWithPower)>,
         top_n_proposals: Vec<Proposal>,
     ) -> Self {
         Self {
@@ -172,7 +175,7 @@ type ClaimTributeMockData = (
     u64,
     u64,
     Option<Proposal>,
-    Option<(u64, u64, String, Vote)>,
+    Option<(u64, u64, String, VoteWithPower)>,
     Vec<Proposal>,
 );
 
@@ -355,9 +358,9 @@ fn claim_tribute_test() {
                     10,
                     0,
                     get_address_as_str(&deps.api, USER_ADDRESS_2),
-                    Vote {
+                    VoteWithPower {
                         prop_id: 5,
-                        power: Uint128::new(70),
+                        power: Decimal::new(Uint128::new(70)),
                     },
                 )),
                 mock_top_n_proposals.clone(),
@@ -396,9 +399,9 @@ fn claim_tribute_test() {
                     10,
                     0,
                     get_address_as_str(&deps.api, USER_ADDRESS_2),
-                    Vote {
+                    VoteWithPower {
                         prop_id: 7,
-                        power: Uint128::new(70),
+                        power: Decimal::new(Uint128::new(70)),
                     },
                 )),
                 mock_top_n_proposals.clone(),
@@ -419,9 +422,9 @@ fn claim_tribute_test() {
                     10,
                     0,
                     get_address_as_str(&deps.api, USER_ADDRESS_2),
-                    Vote {
+                    VoteWithPower {
                         prop_id: 5,
-                        power: Uint128::new(70),
+                        power: Decimal::new(Uint128::new(70)),
                     },
                 )),
                 mock_top_n_proposals.clone(),
