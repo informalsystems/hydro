@@ -1,6 +1,11 @@
-use cosmwasm_std::{Decimal, StdError, StdResult, Storage};
+use cosmwasm_std::{Decimal, Deps, DepsMut, StdError, StdResult, Storage};
 use cw_storage_plus::{Item, Map};
 use std::str::FromStr;
+
+use crate::{
+    lsm_integration::get_validator_power_ratio_for_round,
+    score_keeper_state::{get_prop_power_key, get_total_round_power_key},
+};
 
 // The score keeper is a module that keeps track of amounts of individual validator shares, and power ratios (i.e. how many
 // tokens a share of a validator represents). It stores the shares and power ratios for each validator in separate maps,
@@ -68,28 +73,13 @@ pub fn initialize_if_nil(storage: &mut dyn Storage, prefix: &str) -> StdResult<(
     Ok(())
 }
 
-pub fn get_power_ratio_for_validator(
-    storage: &dyn Storage,
-    key: &str,
-    validator: String,
-) -> StdResult<Decimal> {
-    let power_ratio_key = power_ratio_key(key);
-    let power_ratio_map: Map<&str, Decimal> = Map::new_dyn(power_ratio_key);
-
-    // Load the power ratio for the validator
-    let power_ratio = power_ratio_map
-        .may_load(storage, &validator)?
-        .unwrap_or_else(Decimal::zero);
-
-    Ok(power_ratio)
-}
-
 // Add validator shares and update the total power
 pub fn add_validator_shares(
     storage: &mut dyn Storage,
     key: &str,
     validator: String,
     num_shares: Decimal,
+    power_ratio: Decimal,
 ) -> StdResult<()> {
     let shares_map: Map<&str, Decimal> = get_shares_map(key);
     let total_power: Item<Decimal> = get_power_item(key);
@@ -106,12 +96,47 @@ pub fn add_validator_shares(
 
     // Update the total power
     let mut current_power = total_power.load(storage)?;
-    let added_power = num_shares * get_power_ratio_for_validator(storage, key, validator.clone())?;
+    let added_power = num_shares * power_ratio;
 
     current_power += added_power;
     total_power.save(storage, &current_power)?;
 
     Ok(())
+}
+
+pub fn add_validator_shares_to_round_total(
+    storage: &mut dyn Storage,
+    round_id: u64,
+    validator: String,
+    num_shares: Decimal,
+) -> StdResult<()> {
+    let power_ratio = get_validator_power_ratio_for_round(storage, round_id, validator.clone())?;
+    let total_round_power_key = get_total_round_power_key(round_id);
+    add_validator_shares(
+        storage,
+        total_round_power_key.as_str(),
+        validator,
+        num_shares,
+        power_ratio,
+    )
+}
+
+pub fn add_validator_shares_to_proposal(
+    storage: &mut dyn Storage,
+    round_id: u64,
+    prop_id: u64,
+    validator: String,
+    num_shares: Decimal,
+) -> StdResult<()> {
+    let power_ratio = get_validator_power_ratio_for_round(storage, round_id, validator.clone())?;
+    let prop_power_key = get_prop_power_key(prop_id);
+    add_validator_shares(
+        storage,
+        prop_power_key.as_str(),
+        validator,
+        num_shares,
+        power_ratio,
+    )
 }
 
 // Remove validator shares and update the total power
@@ -120,6 +145,7 @@ pub fn remove_validator_shares(
     key: &str,
     validator: String,
     num_shares: Decimal,
+    power_ratio: Decimal,
 ) -> StdResult<()> {
     let shares_map = get_shares_map(key);
     let total_power = get_power_item(key);
@@ -145,12 +171,46 @@ pub fn remove_validator_shares(
 
     // Update the total power
     let mut current_power = total_power.load(storage)?;
-    let removed_power =
-        num_shares * get_power_ratio_for_validator(storage, key, validator.clone())?;
+    let removed_power = num_shares * power_ratio;
     current_power -= removed_power;
     total_power.save(storage, &current_power)?;
 
     Ok(())
+}
+
+pub fn remove_validator_shares_from_round_total(
+    storage: &mut dyn Storage,
+    round_id: u64,
+    validator: String,
+    num_shares: Decimal,
+) -> StdResult<()> {
+    let power_ratio = get_validator_power_ratio_for_round(storage, round_id, validator.clone())?;
+    let total_round_power_key = get_total_round_power_key(round_id);
+    remove_validator_shares(
+        storage,
+        total_round_power_key.as_str(),
+        validator,
+        num_shares,
+        power_ratio,
+    )
+}
+
+pub fn remove_validator_shares_from_proposal(
+    storage: &mut dyn Storage,
+    round_id: u64,
+    prop_id: u64,
+    validator: String,
+    num_shares: Decimal,
+) -> StdResult<()> {
+    let power_ratio = get_validator_power_ratio_for_round(storage, round_id, validator.clone())?;
+    let prop_power_key = get_prop_power_key(prop_id);
+    remove_validator_shares(
+        storage,
+        prop_power_key.as_str(),
+        validator,
+        num_shares,
+        power_ratio,
+    )
 }
 
 // Update the power ratio for a validator and recomputes
@@ -159,6 +219,7 @@ pub fn update_power_ratio(
     storage: &mut dyn Storage,
     key: &str,
     validator: String,
+    old_power_ratio: Decimal,
     new_power_ratio: Decimal,
 ) -> StdResult<()> {
     let shares_map = get_shares_map(key);
@@ -167,12 +228,6 @@ pub fn update_power_ratio(
 
     // Initialize if needed
     let _ = initialize_if_nil(storage, key);
-
-    // Load the old power ratio
-    let old_power_ratio = get_power_ratio_for_validator(storage, key, validator.clone())?;
-
-    // Update the power ratio map
-    power_ratio_map.save(storage, &validator, &new_power_ratio)?;
 
     // Load current shares
     let current_shares = shares_map
@@ -243,11 +298,9 @@ mod tests {
         let num_shares = Decimal::from_ratio(100u128, 1u128);
         let power_ratio = Decimal::from_ratio(2u128, 1u128);
 
-        // set the power ratio
-        let res = update_power_ratio(storage, key, validator.to_string(), power_ratio);
-        assert!(res.is_ok());
-
-        let result = add_validator_shares(storage, key, validator.to_string(), num_shares);
+        // add validator shares with the specified power ratio
+        let result =
+            add_validator_shares(storage, key, validator.to_string(), num_shares, power_ratio);
         assert!(result.is_ok());
 
         let (shares, total_power) = get_shares_and_power(storage, key, validator);
@@ -265,15 +318,12 @@ mod tests {
         let num_shares = Decimal::from_ratio(100u128, 1u128);
         let power_ratio = Decimal::from_ratio(2u128, 1u128);
 
-        // set the power ratio
-        let res = update_power_ratio(storage, key, validator.to_string(), power_ratio);
-        assert!(res.is_ok());
-
         // Add shares first
-        let _ = add_validator_shares(storage, key, validator.to_string(), num_shares);
+        let _ = add_validator_shares(storage, key, validator.to_string(), num_shares, power_ratio);
 
         // Now remove shares
-        let result = remove_validator_shares(storage, key, validator.to_string(), num_shares);
+        let result =
+            remove_validator_shares(storage, key, validator.to_string(), num_shares, power_ratio);
         assert!(result.is_ok());
 
         let (shares, total_power) = get_shares_and_power(storage, key, validator);
@@ -291,20 +341,18 @@ mod tests {
         let num_shares = Decimal::from_ratio(100u128, 1u128);
         let power_ratio = Decimal::from_ratio(2u128, 1u128);
 
-        // set the power ratio
-        let res = update_power_ratio(storage, key, validator.to_string(), power_ratio);
-        assert!(res.is_ok());
-
         // Add a smaller amount of shares
         let _ = add_validator_shares(
             storage,
             key,
             validator.to_string(),
             Decimal::from_ratio(50u128, 1u128),
+            power_ratio,
         );
 
         // Attempt to remove more shares than exist
-        let result = remove_validator_shares(storage, key, validator.to_string(), num_shares);
+        let result =
+            remove_validator_shares(storage, key, validator.to_string(), num_shares, power_ratio);
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
@@ -323,15 +371,23 @@ mod tests {
         let old_power_ratio = Decimal::from_ratio(2u128, 1u128);
         let new_power_ratio = Decimal::from_ratio(3u128, 1u128);
 
-        // set the power ratio
-        let res = update_power_ratio(storage, key, validator.to_string(), old_power_ratio);
-        assert!(res.is_ok());
-
         // Add shares
-        let _ = add_validator_shares(storage, key, validator.to_string(), num_shares);
+        let _ = add_validator_shares(
+            storage,
+            key,
+            validator.to_string(),
+            num_shares,
+            old_power_ratio,
+        );
 
         // update the power ratio
-        let res = update_power_ratio(storage, key, validator.to_string(), new_power_ratio);
+        let res = update_power_ratio(
+            storage,
+            key,
+            validator.to_string(),
+            old_power_ratio,
+            new_power_ratio,
+        );
 
         assert!(res.is_ok());
 
@@ -353,11 +409,7 @@ mod tests {
             let num_shares2 = Decimal::from_ratio(num_shares2, 1u128);
             let power_ratio2 = Decimal::from_ratio(power_ratio2, 1u128);
 
-            // set the power ratio
-            let res = update_power_ratio(storage, key, validator.to_string(), power_ratio);
-            assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
-
-            let res = add_validator_shares(storage, key, validator.to_string(), num_shares);
+            let res = add_validator_shares(storage, key, validator.to_string(), num_shares, power_ratio);
             assert!(res.is_ok(), "Error adding validator shares: {:?}", res);
             let (shares, total_power) = get_shares_and_power(storage, key, validator);
 
@@ -366,11 +418,11 @@ mod tests {
             assert_eq!(total_power, num_shares * power_ratio);
 
             // set the power ratio
-            let res = update_power_ratio(storage, key, validator.to_string(), power_ratio2);
+            let res = update_power_ratio(storage, key, validator.to_string(), power_ratio, power_ratio2);
             assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
 
             // add the second shares
-            let res = add_validator_shares(storage, key, validator.to_string(), num_shares2);
+            let res = add_validator_shares(storage, key, validator.to_string(), num_shares2, power_ratio2);
             assert!(res.is_ok(), "Error adding validator shares: {:?}", res);
             let (shares, total_power) = get_shares_and_power(storage, key, validator);
 
@@ -379,7 +431,7 @@ mod tests {
             assert_eq!(total_power, num_shares * power_ratio2 + num_shares2 * power_ratio2);
 
             // successively remove the shares
-            let res = remove_validator_shares(storage, key, validator.to_string(), num_shares2);
+            let res = remove_validator_shares(storage, key, validator.to_string(), num_shares2, power_ratio2);
             assert!(res.is_ok(), "Error removing validator shares: {:?}", res);
             let (shares, total_power) = get_shares_and_power(storage, key, validator);
 
@@ -388,7 +440,7 @@ mod tests {
             assert_eq!(total_power, num_shares * power_ratio2);
 
             // set the power ratio
-            let res = update_power_ratio(storage, key, validator.to_string(), power_ratio);
+            let res = update_power_ratio(storage, key, validator.to_string(), power_ratio2, power_ratio);
             assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
 
             let (_, total_power) = get_shares_and_power(storage, key, validator);
@@ -396,7 +448,7 @@ mod tests {
             // Check that the power ratio is updated correctly
             assert_eq!(total_power, num_shares * power_ratio);
 
-            let res = remove_validator_shares(storage, key, validator.to_string(), num_shares);
+            let res = remove_validator_shares(storage, key, validator.to_string(), num_shares, power_ratio);
             assert!(res.is_ok(), "Error removing validator shares: {:?}", res);
             let (shares, total_power) = get_shares_and_power(storage, key, validator);
 
@@ -417,14 +469,14 @@ mod tests {
             let new_power_ratio = Decimal::from_ratio(new_power_ratio, 1u128);
 
             // set the power ratio
-            let res = update_power_ratio(storage, key, validator.to_string(), old_power_ratio);
+            let res = update_power_ratio(storage, key, validator.to_string(), Decimal::zero(), old_power_ratio);
             assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
 
-            let res = add_validator_shares(storage, key, validator.to_string(), num_shares);
+            let res = add_validator_shares(storage, key, validator.to_string(), num_shares, old_power_ratio);
             assert!(res.is_ok(), "Error adding validator shares: {:?}", res);
 
             // set the power ratio
-            let res = update_power_ratio(storage, key, validator.to_string(), new_power_ratio);
+            let res = update_power_ratio(storage, key, validator.to_string(), old_power_ratio, new_power_ratio);
             assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
 
             let (_, total_power) = get_shares_and_power(storage, key, validator);

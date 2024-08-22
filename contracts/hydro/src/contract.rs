@@ -16,7 +16,10 @@ use crate::query::{
     TranchesResponse, UserVoteResponse, UserVotingPowerResponse, WhitelistAdminsResponse,
     WhitelistResponse,
 };
-use crate::score_keeper::{add_validator_shares, get_total_power, remove_validator_shares};
+use crate::score_keeper::{
+    add_validator_shares_to_proposal, add_validator_shares_to_round_total, get_total_power,
+    remove_validator_shares, remove_validator_shares_from_proposal,
+};
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, Vote, VoteWithPower, CONSTANTS, LOCKED_TOKENS,
     LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, VOTE_MAP,
@@ -540,9 +543,10 @@ fn vote(
             // TODO: make more efficient by writing only a single time to the store
 
             // remove the validator shares from the proposal
-            remove_validator_shares(
+            remove_validator_shares_from_proposal(
                 deps.storage,
-                prop_power_key.as_str(),
+                round_id,
+                proposal_id,
                 validator.to_string(),
                 *num_shares,
             )?;
@@ -628,18 +632,19 @@ fn vote(
     );
 
     // update the proposal's power with the new shares
-    let prop_power_key = get_prop_power_key(proposal_id);
     for (validator, num_shares) in time_weighted_shares_map.iter() {
         // add the validator shares to the proposal
-        add_validator_shares(
+        add_validator_shares_to_proposal(
             deps.storage,
-            prop_power_key.as_str(),
+            round_id,
+            proposal_id,
             validator.to_string(),
             *num_shares,
         )?;
     }
 
     // get the new total power of the proposal
+    let prop_power_key = get_prop_power_key(proposal.proposal_id);
     let total_power = get_total_power(deps.storage, &prop_power_key.as_str())?;
 
     // save the new power into the proposal
@@ -1224,10 +1229,9 @@ where
         }
 
         // add the shares to the total power in the round
-        let total_round_power_key = get_total_round_power_key(round);
-        add_validator_shares(
+        add_validator_shares_to_round_total(
             deps.storage,
-            total_round_power_key.as_str(),
+            round,
             shares_validator.clone(),
             scaled_shares,
         )?;

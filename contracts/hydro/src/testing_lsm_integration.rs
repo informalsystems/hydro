@@ -8,8 +8,8 @@ use crate::{
     lsm_integration::{set_current_validators, validate_denom, VALIDATORS_PER_ROUND},
     msg::ExecuteMsg,
     testing::{
-        get_default_instantiate_msg, get_message_info, ONE_DAY_IN_NANO_SECONDS,
-        ONE_MONTH_IN_NANO_SECONDS,
+        get_default_instantiate_msg, get_message_info, set_default_validator_for_current_round,
+        ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS,
     },
 };
 
@@ -154,16 +154,7 @@ fn lock_tokens_with_multiple_denoms() {
             case.description
         );
 
-        let res = set_current_validators(
-            deps.as_mut(),
-            env.clone(),
-            case.validators.iter().map(|&v| v.to_string()).collect(),
-        );
-        assert!(
-            res.is_ok(),
-            "Failed to set validators for case: {}",
-            case.description
-        );
+        set_default_validator_for_current_round(deps.as_mut(), env.clone());
 
         for fund in case.funds.iter() {
             let info = get_message_info(&deps.api, "addr0001", &[fund.clone()]);
@@ -207,12 +198,7 @@ fn unlock_tokens_multiple_denoms() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok(), "instantiating contract: {:?}", res);
 
-    let res = set_current_validators(
-        deps.as_mut(),
-        env.clone(),
-        vec!["validator1".to_string(), "validator2".to_string()],
-    );
-    assert!(res.is_ok(), "setting validators: {:?}", res);
+    set_default_validator_for_current_round(deps.as_mut(), env.clone());
 
     info.funds = vec![user_token1.clone()];
 
@@ -232,13 +218,7 @@ fn unlock_tokens_multiple_denoms() {
     // advance the chain by one month + 1 nano second and check that user can unlock tokens
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
 
-    // set the validators again for the new round
-    let res = set_current_validators(
-        deps.as_mut(),
-        env.clone(),
-        vec!["validator1".to_string(), "validator2".to_string()],
-    );
-    assert!(res.is_ok(), "setting validators: {:?}", res);
+    set_default_validator_for_current_round(deps.as_mut(), env.clone());
 
     let res = execute(
         deps.as_mut(),
@@ -288,8 +268,7 @@ fn unlock_tokens_multiple_users() {
     let res = instantiate(deps.as_mut(), env.clone(), info1.clone(), msg.clone());
     assert!(res.is_ok(), "instantiating contract: {:?}", res);
 
-    let res = set_current_validators(deps.as_mut(), env.clone(), vec!["validator1".to_string()]);
-    assert!(res.is_ok(), "setting validators: {:?}", res);
+    set_default_validator_for_current_round(deps.as_mut(), env.clone());
 
     // user1 locks tokens
     let msg = ExecuteMsg::LockTokens {
@@ -306,8 +285,7 @@ fn unlock_tokens_multiple_users() {
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
 
     // set the validators again for the new round
-    let res = set_current_validators(deps.as_mut(), env.clone(), vec!["validator1".to_string()]);
-    assert!(res.is_ok(), "setting validators: {:?}", res);
+    set_default_validator_for_current_round(deps.as_mut(), env.clone());
 
     // user1 unlocks tokens
     let res = execute(

@@ -1,4 +1,4 @@
-use cosmwasm_std::{Deps, DepsMut, Env, StdError, StdResult};
+use cosmwasm_std::{Decimal, Deps, DepsMut, Env, StdError, StdResult, Storage};
 use cw_storage_plus::Map;
 
 use crate::{contract::compute_current_round_id, state::CONSTANTS};
@@ -8,6 +8,10 @@ use crate::{contract::compute_current_round_id, state::CONSTANTS};
 // to avoid DoS attacks where someone creates a large number of validators with very small amounts of shares.
 // VALIDATORS_PER_ROUND: key(round_id) -> Vec<validator_address>
 pub const VALIDATORS_PER_ROUND: Map<u64, Vec<String>> = Map::new("validators_per_round");
+
+// VALIDATOR_POWER_PER_ROUND: key(round_id, validator_address) -> power_ratio
+pub const VALIDATOR_POWER_PER_ROUND: Map<(u64, String), Decimal> =
+    Map::new("validator_power_per_round");
 
 // Returns the validators from the store for the round.
 // If the validators have not been set for the round
@@ -46,9 +50,13 @@ pub fn get_validators_for_round(deps: Deps, round_id: u64) -> StdResult<Vec<Stri
 // Sets the validators for the current round.
 // This can be called multiple times in a round, and will overwrite the previous validators
 // for this round.
-pub fn set_current_validators(deps: DepsMut, env: Env, validators: Vec<String>) -> StdResult<()> {
-    let round_id = compute_current_round_id(&env, &CONSTANTS.load(deps.storage)?)?;
-    VALIDATORS_PER_ROUND.save(deps.storage, round_id, &validators)?;
+pub fn set_current_validators(
+    storage: &mut dyn Storage,
+    env: Env,
+    validators: Vec<String>,
+) -> StdResult<()> {
+    let round_id = compute_current_round_id(&env, &CONSTANTS.load(storage)?)?;
+    VALIDATORS_PER_ROUND.save(storage, round_id, &validators)?;
     Ok(())
 }
 
@@ -93,4 +101,24 @@ pub fn validate_denom(deps: Deps, env: Env, denom: String) -> StdResult<String> 
             max_validators
         )))
     }
+}
+
+// TODO: make this fall back to the round before
+// TODO: docstring
+pub fn get_validator_power_ratio_for_round(
+    storage: &dyn Storage,
+    round_id: u64,
+    validator: String,
+) -> StdResult<Decimal> {
+    VALIDATOR_POWER_PER_ROUND.load(storage, (round_id, validator))
+}
+
+pub fn set_new_validator_power_ratio_for_round(
+    storage: &mut dyn Storage,
+    round_id: u64,
+    validator: String,
+    new_power_ratio: Decimal,
+) -> StdResult<()> {
+    // TODO: go through proposals and update the power, as well as the total power for the round
+    VALIDATOR_POWER_PER_ROUND.save(storage, (round_id, validator), &new_power_ratio)
 }
