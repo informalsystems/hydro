@@ -62,7 +62,8 @@ pub fn instantiate(
         round_length: msg.round_length,
         lock_epoch_length: msg.lock_epoch_length,
         first_round_start: msg.first_round_start,
-        max_locked_tokens: msg.max_locked_tokens,
+        max_locked_tokens: msg.max_locked_tokens.u128(),
+        hub_transfer_channel_id: msg.hub_transfer_channel_id,
         paused: false,
         max_validator_shares_participating: msg.max_validator_shares_participating,
     };
@@ -183,9 +184,10 @@ fn lock_tokens(
 
     let funds = info.funds[0].clone();
 
-    let validator = validate_denom(deps.as_ref(), env.clone(), funds.denom).map_err(|err| {
-        ContractError::Std(StdError::generic_err(format!("validating denom: {}", err)))
-    })?;
+    let validator =
+        validate_denom(deps.as_ref(), env.clone(), &constants, funds.denom).map_err(|err| {
+            ContractError::Std(StdError::generic_err(format!("validating denom: {}", err)))
+        })?;
 
     // validate that this wouldn't cause the contract to have more locked tokens than the limit
     let amount_to_lock = info.funds[0].amount.u128();
@@ -423,7 +425,6 @@ fn validate_previous_round_vote(
 // * validate that the contract is not paused
 // * validate that the creator of the proposal is on the whitelist
 // Then, it will create the proposal in the specified tranche and in the current round.
-// It will also instantiate the total voted power for this round and tranche if it does not exist.
 fn create_proposal(
     deps: DepsMut,
     env: Env,
@@ -460,6 +461,12 @@ fn create_proposal(
 
     PROP_ID.save(deps.storage, &(proposal_id + 1))?;
     PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, proposal_id), &proposal)?;
+
+    PROPS_BY_SCORE.save(
+        deps.storage,
+        ((round_id, tranche_id), proposal.power.into(), proposal_id),
+        &proposal_id,
+    )?;
 
     Ok(Response::new().add_attribute("action", "create_proposal"))
 }
@@ -1126,7 +1133,13 @@ pub fn query_top_n_proposals(
     let top_proposals = top_props
         .into_iter()
         .map(|mut prop| {
-            prop.percentage = (prop.power * Uint128::from(100u128)) / total_voting_power;
+            prop.percentage = if total_voting_power.is_zero() {
+                // if total voting power is zero, each proposal must necessarily have 0 score
+                // avoid division by zero and set percentage to 0
+                Uint128::zero()
+            } else {
+                (prop.power * Uint128::new(100)) / total_voting_power
+            };
             prop
         })
         .collect();

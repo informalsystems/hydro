@@ -1,13 +1,18 @@
-use cosmwasm_schema::cw_serde;
+use cosmwasm_schema::{cw_serde, QueryResponses};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::state::{Config, Tribute};
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[derive(
+    Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, QueryResponses, cw_orch::QueryFns,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
+    #[returns(ConfigResponse)]
     Config {},
+
+    #[returns(ProposalTributesResponse)]
     ProposalTributes {
         round_id: u64,
         tranche_id: u64,

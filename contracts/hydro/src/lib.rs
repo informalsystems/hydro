@@ -11,6 +11,9 @@ pub mod state;
 mod testing;
 
 #[cfg(test)]
+mod testing_mocks;
+
+#[cfg(test)]
 mod testing_queries;
 
 #[cfg(test)]

@@ -27,6 +27,7 @@ thiserror = { workspace = true }
 cw-storage-plus = { workspace = true }
 cw2 = { workspace = true }
 cosmwasm-schema = { workspace = true }
+cw-orch = { workspace = true }
 hydro = { path = "../hydro" }
 
 [dev-dependencies]

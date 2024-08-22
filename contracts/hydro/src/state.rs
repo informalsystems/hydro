@@ -12,6 +12,7 @@ pub struct Constants {
     pub lock_epoch_length: u64,
     pub first_round_start: Timestamp,
     pub max_locked_tokens: u128,
+    pub hub_transfer_channel_id: String,
     pub paused: bool,
     pub max_validator_shares_participating: u64,
 }

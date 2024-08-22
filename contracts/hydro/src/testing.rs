@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::contract::{
     query_tranches, query_user_vote, query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES,
 };
@@ -6,6 +8,7 @@ use crate::lsm_integration::{
 };
 use crate::msg::TrancheInfo;
 use crate::score_keeper::update_power_ratio;
+use crate::testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock};
 use crate::{
     contract::{
         compute_current_round_id, execute, instantiate, query_all_user_lockups, query_constants,
@@ -14,14 +17,35 @@ use crate::{
     },
     msg::{ExecuteMsg, InstantiateMsg},
 };
-use cosmwasm_std::testing::{mock_dependencies, mock_env, MockApi};
-use cosmwasm_std::{BankMsg, CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo, Timestamp};
+use cosmwasm_std::testing::{mock_env, MockApi};
+use cosmwasm_std::{
+    BankMsg, CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo, Timestamp, Uint128,
+};
 use cosmwasm_std::{Coin, StdError, StdResult};
 use proptest::prelude::*;
 
-pub const DEFAULT_VALIDATOR: &str = "cosmosvaloper1y0us8v6k2k2z9e9e5v6l4z3y7r0g3v3x7z0x";
-// default denom is the validator followed by an arbitrary id
-pub const DEFAULT_DENOM: &str = "cosmosvaloper1y0us8v6k2k2z9e9e5v6l4z3y7r0g3v3x7z0x/1234";
+pub const VALIDATOR_1: &str = "cosmosvaloper157v7tczs40axfgejp2m43kwuzqe0wsy0rv8puv";
+pub const VALIDATOR_2: &str = "cosmosvaloper140l6y2gp3gxvay6qtn70re7z2s0gn57zfd832j";
+pub const VALIDATOR_3: &str = "cosmosvaloper14upntdx8lf0f49t987mj99zksxnluanvu6x4lu";
+
+pub const VALIDATOR_1_LST_DENOM_1: &str =
+    "cosmosvaloper157v7tczs40axfgejp2m43kwuzqe0wsy0rv8puv/789";
+pub const VALIDATOR_2_LST_DENOM_1: &str =
+    "cosmosvaloper140l6y2gp3gxvay6qtn70re7z2s0gn57zfd832j/34205";
+pub const VALIDATOR_3_LST_DENOM_1: &str =
+    "cosmosvaloper14upntdx8lf0f49t987mj99zksxnluanvu6x4lu/13608";
+
+// To get all IBC denom traces on some chain use:
+//      BINARY q ibc-transfer denom-traces --node NODE_RPC
+// Then find some denom trace whose base_denom is LST token and to obtain IBC denom use:
+//      BINARY q ibc-transfer denom-hash PATH/BASE_DENOM --node NODE_RPC
+// Note: the following IBC denoms do not match specific LST tokens on Neutron. They are just an arbitrary IBC denoms.
+pub const IBC_DENOM_1: &str =
+    "ibc/0EA38305D72BE22FD87E7C0D1002D36D59B59BC3C863078A54550F8E50C50EEE";
+pub const IBC_DENOM_2: &str =
+    "ibc/0BADD323A0FE849BCF0034BA8329771737EB54F2B6EA6F314A80520366338CFC";
+pub const IBC_DENOM_3: &str =
+    "ibc/0A5935F2493A9B8DE23899C4D30842B3E3DD69A147388D010F3C9BAA6D6C6D37";
 
 pub const ONE_DAY_IN_NANO_SECONDS: u64 = 24 * 60 * 60 * 1000000000;
 pub const TWO_WEEKS_IN_NANO_SECONDS: u64 = 14 * 24 * 60 * 60 * 1000000000;
@@ -30,14 +54,14 @@ pub const THREE_MONTHS_IN_NANO_SECONDS: u64 = 3 * ONE_MONTH_IN_NANO_SECONDS;
 
 pub fn set_default_validator_for_rounds(deps: DepsMut, start_round: u64, end_round: u64) {
     for round_id in start_round..end_round {
-        let res = set_round_validators(deps.storage, vec![DEFAULT_VALIDATOR.to_string()], round_id);
+        let res = set_round_validators(deps.storage, vec![VALIDATOR_1.to_string()], round_id);
         assert!(res.is_ok());
 
         // set power ratio to 1.0
         let res = set_new_validator_power_ratio_for_round(
             deps.storage,
             round_id,
-            DEFAULT_VALIDATOR.to_string(),
+            VALIDATOR_1.to_string(),
             Decimal::one(),
         );
 
@@ -84,10 +108,11 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
             metadata: "tranche 1 metadata".to_string(),
         }],
         first_round_start: mock_env().block.time,
-        max_locked_tokens: 1000000,
+        max_locked_tokens: Uint128::new(1000000),
         initial_whitelist: vec![user_address],
         whitelist_admins: vec![],
         max_validator_shares_participating: 100,
+        hub_transfer_channel_id: "channel-0".to_string(),
     }
 }
 
@@ -104,7 +129,7 @@ pub fn get_address_as_str(mock_api: &MockApi, addr: &str) -> String {
 
 #[test]
 fn instantiate_test() {
-    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
 
     let msg = get_default_instantiate_msg(&deps.api);
@@ -121,7 +146,7 @@ fn instantiate_test() {
 
 #[test]
 fn deduplicate_whitelist_admins_test() {
-    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
     let mut msg = get_default_instantiate_msg(&deps.api);
     let admin_address_1 = get_address_as_str(&deps.api, "admin3");
@@ -154,8 +179,13 @@ fn deduplicate_whitelist_admins_test() {
 
 #[test]
 fn lock_tokens_basic_test() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+
     let user_address = "addr0000";
-    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
     let msg = get_default_instantiate_msg(&deps.api);
 
@@ -167,7 +197,7 @@ fn lock_tokens_basic_test() {
     let info1 = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(1000u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -178,7 +208,7 @@ fn lock_tokens_basic_test() {
     let info2 = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(3000u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(3000u64, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
@@ -213,9 +243,13 @@ fn lock_tokens_basic_test() {
 #[test]
 fn unlock_tokens_basic_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000u64, DEFAULT_DENOM.to_string());
+    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
 
-    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
     let msg = get_default_instantiate_msg(&deps.api);
 
@@ -281,9 +315,9 @@ fn unlock_tokens_basic_test() {
 #[test]
 fn create_proposal_basic_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000u64, DEFAULT_DENOM.to_string());
+    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
 
-    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
     let msg = get_default_instantiate_msg(&deps.api);
 
@@ -318,14 +352,29 @@ fn create_proposal_basic_test() {
 
     let proposal = &res.proposals[1];
     assert_eq!(expected_round_id, proposal.round_id);
+
+    let res = query_top_n_proposals(deps.as_ref(), expected_round_id, 1, 2);
+    assert!(res.is_ok(), "error: {:?}", res);
+
+    let res = res.unwrap();
+    assert_eq!(2, res.proposals.len());
+
+    // check that both proposals have power 0
+    for proposal in res.proposals.iter() {
+        assert_eq!(0, proposal.power.u128());
+    }
 }
 
 #[test]
 fn vote_basic_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000u64, DEFAULT_DENOM.to_string());
+    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
 
-    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
     let msg = get_default_instantiate_msg(&deps.api);
 
@@ -433,11 +482,15 @@ fn vote_basic_test() {
 
 #[test]
 fn multi_tranches_test() {
-    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(1000u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
     );
     let mut msg = get_default_instantiate_msg(&deps.api);
     msg.tranches = vec![
@@ -518,7 +571,7 @@ fn multi_tranches_test() {
     let info2 = get_message_info(
         &deps.api,
         "addr0001",
-        &[Coin::new(2000u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(2000u64, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -537,7 +590,7 @@ fn multi_tranches_test() {
     let info3 = get_message_info(
         &deps.api,
         "addr0002",
-        &[Coin::new(1u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(1u64, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -587,11 +640,11 @@ fn multi_tranches_test() {
 
 #[test]
 fn test_query_round_tranche_proposals_pagination() {
-    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(1000u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
     );
     let msg = get_default_instantiate_msg(&deps.api);
 
@@ -650,7 +703,7 @@ fn test_query_round_tranche_proposals_pagination() {
 fn duplicate_tranche_name_test() {
     // try to instantiate the contract with two tranches with the same name
     // this should fail
-    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
     let mut msg = get_default_instantiate_msg(&deps.api);
     msg.tranches = vec![
@@ -675,7 +728,7 @@ fn duplicate_tranche_name_test() {
 
 #[test]
 fn add_edit_tranche_test() {
-    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let admin_info = get_message_info(&deps.api, "addr0000", &[]);
     let mut msg = get_default_instantiate_msg(&deps.api);
     msg.tranches = vec![
@@ -830,7 +883,7 @@ fn test_round_id_computation() {
 
     for (contract_start_time, round_length, current_time, expected_round_id) in test_cases {
         // instantiate the contract
-        let mut deps = mock_dependencies();
+        let mut deps = mock_dependencies(no_op_grpc_query_mock());
         let mut msg = get_default_instantiate_msg(&deps.api);
         msg.round_length = round_length;
         msg.first_round_start = Timestamp::from_nanos(contract_start_time);
@@ -854,7 +907,12 @@ fn test_round_id_computation() {
 #[test]
 fn total_voting_power_tracking_test() {
     let user_address = "addr0000";
-    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
     let mut msg = get_default_instantiate_msg(&deps.api);
 
@@ -869,7 +927,7 @@ fn total_voting_power_tracking_test() {
     let info1 = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(10u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(10u64, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -887,7 +945,7 @@ fn total_voting_power_tracking_test() {
     let info2 = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(20u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(20u64, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
@@ -933,7 +991,7 @@ fn total_voting_power_tracking_test() {
     let info2 = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(50u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(50u64, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
@@ -971,11 +1029,16 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(10000))] // set the number of test cases to run
     #[test]
     fn relock_proptest(old_lock_remaining_time: u64, new_lock_duration: u8) {
+        let grpc_query = denom_trace_grpc_query_mock(
+            "transfer/channel-0".to_string(),
+            HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        );
+
         let (mut deps, mut env) = (
-            mock_dependencies(),
+            mock_dependencies(grpc_query),
             mock_env(),
         );
-        let info = get_message_info(&deps.api, "addr0001", &[Coin::new(1000u64, DEFAULT_DENOM.to_string())]);
+        let info = get_message_info(&deps.api, "addr0001", &[Coin::new(1000u64, IBC_DENOM_1.to_string())]);
         let msg = get_default_instantiate_msg(&deps.api);
 
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -1040,11 +1103,15 @@ proptest! {
 
 #[test]
 fn test_too_many_locks() {
-    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(1000u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
     );
     let msg = get_default_instantiate_msg(&deps.api);
 
@@ -1074,7 +1141,7 @@ fn test_too_many_locks() {
     let info2 = get_message_info(
         &deps.api,
         "addr0001",
-        &[Coin::new(1000u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
     );
     for i in 0..MAX_LOCK_ENTRIES + 10 {
         let res = execute(deps.as_mut(), env.clone(), info2.clone(), lock_msg.clone());
@@ -1112,11 +1179,15 @@ fn test_too_many_locks() {
 
 #[test]
 fn max_locked_tokens_test() {
-    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let mut info = get_message_info(&deps.api, "addr0000", &[]);
 
     let mut msg = get_default_instantiate_msg(&deps.api);
-    msg.max_locked_tokens = 2000;
+    msg.max_locked_tokens = Uint128::new(2000);
     msg.whitelist_admins = vec![get_address_as_str(&deps.api, "addr0001")];
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -1128,7 +1199,7 @@ fn max_locked_tokens_test() {
     info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(1500u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(1500u64, IBC_DENOM_1.to_string())],
     );
     let mut lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -1140,7 +1211,7 @@ fn max_locked_tokens_test() {
     info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(1500u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(1500u64, IBC_DENOM_1.to_string())],
     );
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_err());
@@ -1153,7 +1224,7 @@ fn max_locked_tokens_test() {
     info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(500u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(500u64, IBC_DENOM_1.to_string())],
     );
     lock_msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
@@ -1175,7 +1246,7 @@ fn max_locked_tokens_test() {
     info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(1500u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(1500u64, IBC_DENOM_1.to_string())],
     );
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_ok());
@@ -1197,7 +1268,7 @@ fn max_locked_tokens_test() {
     info = get_message_info(
         &deps.api,
         "addr0002",
-        &[Coin::new(1000u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
     );
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_ok());
@@ -1206,7 +1277,7 @@ fn max_locked_tokens_test() {
     info = get_message_info(
         &deps.api,
         "addr0002",
-        &[Coin::new(1u64, DEFAULT_DENOM.to_string())],
+        &[Coin::new(1u64, IBC_DENOM_1.to_string())],
     );
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_err());
@@ -1218,7 +1289,7 @@ fn max_locked_tokens_test() {
 
 #[test]
 fn contract_pausing_test() {
-    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let mut info = get_message_info(&deps.api, "addr0000", &[]);
 
     let whitelist_admin = "addr0001";
@@ -1293,7 +1364,7 @@ fn contract_pausing_test() {
 // This test verifies that only whitelisted addresses can submit proposals
 #[test]
 pub fn whitelist_proposal_submission_test() {
-    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let mut info = get_message_info(&deps.api, "addr0000", &[]);
 
     let whitelist_admin = "addr0001";

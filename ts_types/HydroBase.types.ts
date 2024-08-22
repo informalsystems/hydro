@@ -23,10 +23,11 @@ export interface ConstantsResponse {
   constants: Constants;
 }
 export interface Constants {
-  denom: string;
   first_round_start: Timestamp;
+  hub_transfer_channel_id: string;
   lock_epoch_length: number;
   max_locked_tokens: number;
+  max_validator_shares_participating: number;
   paused: boolean;
   round_length: number;
 }
@@ -46,7 +47,6 @@ export type ExecuteMsg = {
   unlock_tokens: {};
 } | {
   create_proposal: {
-    covenant_params: CovenantParams;
     description: string;
     title: string;
     tranche_id: number;
@@ -57,12 +57,12 @@ export type ExecuteMsg = {
     tranche_id: number;
   };
 } | {
-  add_to_whitelist: {
-    covenant_params: CovenantParams;
+  add_account_to_whitelist: {
+    address: string;
   };
 } | {
-  remove_from_whitelist: {
-    covenant_params: CovenantParams;
+  remove_account_from_whitelist: {
+    address: string;
   };
 } | {
   update_max_locked_tokens: {
@@ -81,11 +81,6 @@ export type ExecuteMsg = {
     tranche_name?: string | null;
   };
 };
-export interface CovenantParams {
-  funding_destination_name: string;
-  outgoing_channel_id: string;
-  pool_id: string;
-}
 export interface TrancheInfo {
   metadata: string;
   name: string;
@@ -94,11 +89,12 @@ export interface ExpiredUserLockupsResponse {
   lockups: LockEntry[];
 }
 export interface InstantiateMsg {
-  denom: string;
   first_round_start: Timestamp;
-  initial_whitelist: CovenantParams[];
+  hub_transfer_channel_id: string;
+  initial_whitelist: string[];
   lock_epoch_length: number;
   max_locked_tokens: number;
+  max_validator_shares_participating: number;
   round_length: number;
   tranches: TrancheInfo[];
   whitelist_admins: string[];
@@ -107,7 +103,6 @@ export interface ProposalResponse {
   proposal: Proposal;
 }
 export interface Proposal {
-  covenant_params: CovenantParams;
   description: string;
   percentage: Uint128;
   power: Uint128;
@@ -216,5 +211,5 @@ export interface WhitelistAdminsResponse {
   admins: Addr[];
 }
 export interface WhitelistResponse {
-  whitelist: CovenantParams[];
+  whitelist: Addr[];
 }

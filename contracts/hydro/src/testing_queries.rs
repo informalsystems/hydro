@@ -1,22 +1,29 @@
+use std::collections::HashMap;
+
 use crate::lsm_integration::set_current_validators;
 use crate::testing::{
-    get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds, DEFAULT_DENOM,
-    DEFAULT_VALIDATOR, ONE_MONTH_IN_NANO_SECONDS,
+    get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds, IBC_DENOM_1,
+    ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1_LST_DENOM_1,
 };
+use crate::testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, MockQuerier};
 use crate::{
     contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
     msg::ExecuteMsg,
     state::LockEntry,
 };
 use cosmwasm_std::{
-    testing::{mock_dependencies, mock_env, MockApi, MockQuerier, MockStorage},
+    testing::{mock_env, MockApi, MockStorage},
     Coin, Empty, Env, OwnedDeps,
 };
 
 #[test]
 fn query_expired_user_lockups_test() {
     let user_address = "addr0000";
-    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
 
     let msg = get_default_instantiate_msg(&deps.api);
@@ -33,7 +40,7 @@ fn query_expired_user_lockups_test() {
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(first_lockup_amount, DEFAULT_DENOM.to_string())],
+        &[Coin::new(first_lockup_amount, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -52,7 +59,7 @@ fn query_expired_user_lockups_test() {
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(second_lockup_amount, DEFAULT_DENOM.to_string())],
+        &[Coin::new(second_lockup_amount, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
@@ -93,7 +100,11 @@ fn query_expired_user_lockups_test() {
 #[test]
 fn query_user_voting_power_test() {
     let user_address = "addr0000";
-    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
     let msg = get_default_instantiate_msg(&deps.api);
 
@@ -110,7 +121,7 @@ fn query_user_voting_power_test() {
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(first_lockup_amount, DEFAULT_DENOM.to_string())],
+        &[Coin::new(first_lockup_amount, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -129,7 +140,7 @@ fn query_user_voting_power_test() {
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(second_lockup_amount, DEFAULT_DENOM.to_string())],
+        &[Coin::new(second_lockup_amount, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,

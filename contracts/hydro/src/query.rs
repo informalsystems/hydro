@@ -1,57 +1,82 @@
 use crate::state::{Constants, LockEntry, Proposal, Tranche, Vote, VoteWithPower};
-use cosmwasm_schema::cw_serde;
+use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Timestamp, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[derive(
+    Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, QueryResponses, cw_orch::QueryFns,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
+    #[returns(ConstantsResponse)]
     Constants {},
+
+    #[returns(TranchesResponse)]
     Tranches {},
+
+    #[returns(AllUserLockupsResponse)]
     AllUserLockups {
         address: String,
         start_from: u32,
         limit: u32,
     },
+
+    #[returns(ExpiredUserLockupsResponse)]
     ExpiredUserLockups {
         address: String,
         start_from: u32,
         limit: u32,
     },
-    UserVotingPower {
-        address: String,
-    },
+
+    #[returns(UserVotingPowerResponse)]
+    UserVotingPower { address: String },
+
+    #[returns(UserVoteResponse)]
     UserVote {
         round_id: u64,
         tranche_id: u64,
         address: String,
     },
+
+    #[returns(CurrentRoundResponse)]
     CurrentRound {},
-    RoundEnd {
-        round_id: u64,
-    },
-    RoundTotalVotingPower {
-        round_id: u64,
-    },
+
+    #[returns(RoundEndResponse)]
+    RoundEnd { round_id: u64 },
+
+    #[returns(RoundTotalVotingPowerResponse)]
+    RoundTotalVotingPower { round_id: u64 },
+
+    #[returns(RoundProposalsResponse)]
     RoundProposals {
         round_id: u64,
         tranche_id: u64,
         start_from: u32,
         limit: u32,
     },
+
+    #[returns(ProposalResponse)]
     Proposal {
         round_id: u64,
         tranche_id: u64,
         proposal_id: u64,
     },
+
+    #[returns(TopNProposalsResponse)]
     TopNProposals {
         round_id: u64,
         tranche_id: u64,
         number_of_proposals: usize,
     },
+
+    #[returns(WhitelistResponse)]
     Whitelist {},
+
+    #[returns(WhitelistAdminsResponse)]
     WhitelistAdmins {},
+
+    #[returns(TotalLockedTokensResponse)]
     TotalLockedTokens {},
 }
 
