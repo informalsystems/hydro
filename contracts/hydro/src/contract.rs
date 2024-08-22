@@ -448,6 +448,12 @@ fn create_proposal(
     PROP_ID.save(deps.storage, &(proposal_id + 1))?;
     PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, proposal_id), &proposal)?;
 
+    PROPS_BY_SCORE.save(
+        deps.storage,
+        ((round_id, tranche_id), proposal.power.into(), proposal_id),
+        &proposal_id,
+    )?;
+
     Ok(Response::new().add_attribute("action", "create_proposal"))
 }
 
@@ -1049,12 +1055,21 @@ pub fn query_top_n_proposals(
     }
 
     // get total voting power for the round
-    let total_voting_power = TOTAL_ROUND_POWER.load(deps.storage, round_id)?;
+    let total_voting_power = match TOTAL_ROUND_POWER.may_load(deps.storage, round_id)? {
+        Some(power) => power,
+        None => Uint128::zero(),
+    };
 
     let top_proposals = top_props
         .into_iter()
         .map(|mut prop| {
-            prop.percentage = (prop.power * Uint128::from(100u128)) / total_voting_power;
+            prop.percentage = if total_voting_power.is_zero() {
+                // if total voting power is zero, each proposal must necessarily have 0 score
+                // avoid division by zero and set percentage to 0
+                Uint128::zero()
+            } else {
+                (prop.power * Uint128::new(100)) / total_voting_power
+            };
             prop
         })
         .collect();
