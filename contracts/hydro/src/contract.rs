@@ -18,7 +18,8 @@ use crate::query::{
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, add_validator_shares_to_round_total, get_total_power,
-    get_total_power_for_proposal, get_total_power_for_round, remove_validator_shares,
+    get_total_power_for_proposal, get_total_power_for_round,
+    remove_many_validator_shares_from_proposal, remove_validator_shares,
     remove_validator_shares_from_proposal,
 };
 use crate::state::{
@@ -552,21 +553,15 @@ fn vote(
             ),
         );
 
-        // gro through all the shares that were voted with and subtract them from the proposal's power and the total power that voted
-        // TODO: we need to limit the number of different share types that users can lock; is the existing lock limit good enough?
-        // TODO: do we need to make sure we don't iterate over validators outside of the set here? it seems ok to me, but should double-check
-        for (validator, num_shares) in vote.time_weighted_shares.iter() {
-            // TODO: make more efficient by writing only a single time to the store
-
-            // remove the validator shares from the previous proposal
-            remove_validator_shares_from_proposal(
-                deps.storage,
-                round_id,
-                vote.prop_id,
-                validator.to_string(),
-                *num_shares,
-            )?;
-        }
+        remove_many_validator_shares_from_proposal(
+            deps.storage,
+            round_id,
+            vote.prop_id,
+            vote.time_weighted_shares
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect::<Vec<_>>(),
+        )?;
 
         // save the new power into the proposal
         let total_power = get_prop_power_total(deps.as_ref(), vote.prop_id)?;

@@ -205,6 +205,8 @@ pub fn remove_validator_shares_from_round_total(
     )
 }
 
+// Removes the given number of validator shares from the given proposal,
+// which must be a proposal for the given round_id.
 pub fn remove_validator_shares_from_proposal(
     storage: &mut dyn Storage,
     round_id: u64,
@@ -221,6 +223,48 @@ pub fn remove_validator_shares_from_proposal(
         num_shares,
         power_ratio,
     )
+}
+
+// A more gas efficient version of remove_validator_shares_from_proposal
+// when removing shares from multiple validators
+pub fn remove_many_validator_shares_from_proposal(
+    storage: &mut dyn Storage,
+    round_id: u64,
+    prop_id: u64,
+    vals_and_shares: Vec<(String, Decimal)>,
+) -> StdResult<()> {
+    // do not reuse remove_validator_shares_from_proposal
+    // instead, we will directly update the shares and power
+    // to be more gas efficient
+    let prop_power_key = get_prop_power_key(prop_id);
+    let mut total_power = get_total_power(storage, prop_power_key.as_str())?;
+
+    for (validator, num_shares) in vals_and_shares {
+        let power_ratio =
+            get_validator_power_ratio_for_round(storage, round_id, validator.clone())?;
+        let shares_map = get_shares_map(prop_power_key.as_str());
+        let current_shares = shares_map
+            .may_load(storage, &validator)?
+            .unwrap_or_else(Decimal::zero);
+
+        // Ensure the validator has enough shares
+        if current_shares < num_shares {
+            return Err(StdError::generic_err(
+                "Insufficient shares for the validator",
+            ));
+        }
+
+        // Update the shares map
+        let updated_shares = current_shares - num_shares;
+        shares_map.save(storage, &validator, &updated_shares)?;
+
+        // Update the total power
+        let removed_power = num_shares * power_ratio;
+        total_power -= removed_power;
+    }
+
+    let total_power_item = get_power_item(prop_power_key.as_str());
+    total_power_item.save(storage, &total_power)
 }
 
 // Update the power ratio for a validator and recomputes
@@ -262,6 +306,8 @@ pub fn update_power_ratio(
 
 #[cfg(test)]
 mod tests {
+    use crate::lsm_integration::set_new_validator_power_ratio_for_round;
+
     use super::*;
     use cosmwasm_std::testing::mock_dependencies;
     use cosmwasm_std::{Decimal, StdError, Storage};
@@ -493,6 +539,117 @@ mod tests {
 
             // Check if total power is updated correctly
             assert_eq!(total_power, num_shares * new_power_ratio);
+        }
+    }
+
+    #[test]
+    fn test_remove_many_validator_shares_from_proposal() {
+        let mut deps = mock_dependencies();
+        let storage = &mut deps.storage;
+        let round_id = 1;
+        let prop_id = 1;
+
+        // Setup initial state
+        let validator1 = "validator1".to_string();
+        let validator2 = "validator2".to_string();
+        let initial_shares1 = Decimal::percent(50);
+        let initial_shares2 = Decimal::percent(30);
+        let power_ratio1 = Decimal::percent(10);
+        let power_ratio2 = Decimal::percent(20);
+
+        // Mock the initial shares and power ratios
+        let prop_power_key = get_prop_power_key(prop_id);
+        let shares_map = get_shares_map(prop_power_key.as_str());
+        shares_map
+            .save(storage, &validator1, &initial_shares1)
+            .unwrap();
+        shares_map
+            .save(storage, &validator2, &initial_shares2)
+            .unwrap();
+        set_new_validator_power_ratio_for_round(
+            storage,
+            round_id,
+            validator1.clone(),
+            power_ratio1,
+        )
+        .unwrap();
+        set_new_validator_power_ratio_for_round(
+            storage,
+            round_id,
+            validator2.clone(),
+            power_ratio2,
+        )
+        .unwrap();
+
+        // Mock the total power
+        let total_power = Decimal::percent(100);
+        let total_power_item = get_power_item(prop_power_key.as_str());
+        total_power_item.save(storage, &total_power).unwrap();
+
+        // Remove shares
+        let vals_and_shares = vec![
+            (validator1.clone(), Decimal::percent(10)),
+            (validator2.clone(), Decimal::percent(10)),
+        ];
+        remove_many_validator_shares_from_proposal(storage, round_id, prop_id, vals_and_shares)
+            .unwrap();
+
+        // Check the updated shares
+        let updated_shares1 = shares_map.load(storage, &validator1).unwrap();
+        let updated_shares2 = shares_map.load(storage, &validator2).unwrap();
+        assert_eq!(updated_shares1, Decimal::percent(40));
+        assert_eq!(updated_shares2, Decimal::percent(20));
+
+        // Check the updated total power
+        let updated_total_power = total_power_item.load(storage).unwrap();
+        let expected_total_power = total_power
+            - (Decimal::percent(10) * power_ratio1)
+            - (Decimal::percent(10) * power_ratio2);
+        assert_eq!(updated_total_power, expected_total_power);
+    }
+
+    #[test]
+    fn test_remove_many_validator_shares_from_proposal_insufficient_shares() {
+        let mut deps = mock_dependencies();
+        let storage = &mut deps.storage;
+        let round_id = 1;
+        let prop_id = 1;
+
+        // Setup initial state
+        let validator1 = "validator1".to_string();
+        let initial_shares1 = Decimal::percent(5);
+        let power_ratio1 = Decimal::percent(10);
+
+        // Mock the initial shares and power ratios
+        let prop_power_key = get_prop_power_key(prop_id);
+        let shares_map = get_shares_map(prop_power_key.as_str());
+        shares_map
+            .save(storage, &validator1, &initial_shares1)
+            .unwrap();
+        set_new_validator_power_ratio_for_round(
+            storage,
+            round_id,
+            validator1.clone(),
+            power_ratio1,
+        )
+        .unwrap();
+
+        // Mock the total power
+        let total_power = Decimal::percent(100);
+        let total_power_item = get_power_item(prop_power_key.as_str());
+        total_power_item.save(storage, &total_power).unwrap();
+
+        // Attempt to remove more shares than available
+        let vals_and_shares = vec![(validator1.clone(), Decimal::percent(10))];
+        let result =
+            remove_many_validator_shares_from_proposal(storage, round_id, prop_id, vals_and_shares);
+
+        // Check for error
+        match result {
+            Err(StdError::GenericErr { msg, .. }) => {
+                assert_eq!(msg, "Insufficient shares for the validator")
+            }
+            _ => panic!("Expected error, but got {:?}", result),
         }
     }
 }
