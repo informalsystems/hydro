@@ -1064,6 +1064,8 @@ pub fn query_top_n_proposals(
         .into_iter()
         .map(|mut prop| {
             prop.percentage = if total_voting_power.is_zero() {
+                // if total voting power is zero, each proposal must necessarily have 0 score
+                // avoid division by zero and set percentage to 0
                 Uint128::zero()
             } else {
                 (prop.power * Uint128::new(100)) / total_voting_power
