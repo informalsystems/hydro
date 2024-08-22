@@ -45,26 +45,30 @@ pub fn set_default_validator_for_rounds(deps: DepsMut, start_round: u64, end_rou
     }
 }
 
-pub fn set_validators_for_rounds(
+pub fn set_validators_constant_power_ratios_for_rounds(
     deps: DepsMut,
     start_round: u64,
     end_round: u64,
     validators: Vec<String>,
+    power_ratios: Vec<Decimal>,
 ) {
     for round_id in start_round..end_round {
         let res = set_round_validators(deps.storage, validators.clone(), round_id);
         assert!(res.is_ok());
 
         // set the power ratio for each validator to 1 for that round
+        let mut i = 0;
         for validator in validators.iter() {
             let res = set_new_validator_power_ratio_for_round(
                 deps.storage,
                 round_id,
                 validator.to_string(),
-                Decimal::one(),
+                power_ratios[i],
             );
 
             assert!(res.is_ok());
+
+            i += 1;
         }
     }
 }
