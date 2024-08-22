@@ -56,6 +56,16 @@ pub fn get_total_power(storage: &dyn Storage, key: &str) -> StdResult<Decimal> {
     Ok(total_power.may_load(storage)?.unwrap_or_else(Decimal::zero))
 }
 
+pub fn get_total_power_for_round(storage: &dyn Storage, round_id: u64) -> StdResult<Decimal> {
+    let total_round_power_key = get_total_round_power_key(round_id);
+    get_total_power(storage, total_round_power_key.as_str())
+}
+
+pub fn get_total_power_for_proposal(storage: &dyn Storage, prop_id: u64) -> StdResult<Decimal> {
+    let prop_power_key = get_prop_power_key(prop_id);
+    get_total_power(storage, prop_power_key.as_str())
+}
+
 // Initialize the maps for a given prefix
 pub fn initialize_if_nil(storage: &mut dyn Storage, prefix: &str) -> StdResult<()> {
     let power_key = power_key(prefix);
@@ -87,17 +97,12 @@ pub fn add_validator_shares(
     // Initialize if needed
     initialize_if_nil(storage, key)?;
 
-    println!("key {:?}", key);
-
     // Update the shares map
     let current_shares = shares_map
         .may_load(storage, &validator)?
         .unwrap_or_else(Decimal::zero);
     let updated_shares = current_shares + num_shares;
     shares_map.save(storage, &validator, &updated_shares)?;
-
-    println!("updated shares {:?}", updated_shares);
-    println!("current shares {:?}", current_shares);
 
     // Update the total power
     let mut current_power = total_power.load(storage)?;
@@ -158,16 +163,10 @@ pub fn remove_validator_shares(
     // Initialize if needed
     initialize_if_nil(storage, key)?;
 
-    println!("key {:?}", key);
-
-    println!("shares map {:?}", shares_map.may_load(storage, &validator)?);
-
     // Load current shares
     let current_shares = shares_map
         .may_load(storage, &validator)?
         .unwrap_or_else(Decimal::zero);
-
-    println!("current shares {:?}", current_shares);
 
     // Ensure the validator has enough shares
     if current_shares < num_shares {

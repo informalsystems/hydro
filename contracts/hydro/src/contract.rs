@@ -18,7 +18,8 @@ use crate::query::{
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, add_validator_shares_to_round_total, get_total_power,
-    remove_validator_shares, remove_validator_shares_from_proposal,
+    get_total_power_for_proposal, get_total_power_for_round, remove_validator_shares,
+    remove_validator_shares_from_proposal,
 };
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, Vote, VoteWithPower, CONSTANTS, LOCKED_TOKENS,
@@ -26,7 +27,7 @@ use crate::state::{
     WHITELIST, WHITELIST_ADMINS,
 };
 
-use crate::score_keeper_state::{get_prop_power_key, get_total_round_power_key};
+use crate::score_keeper_state::get_prop_power_total;
 
 /// Contract name that is used for migration.
 const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -289,7 +290,7 @@ fn refresh_lock_duration(
     );
     if validator_result.is_err() {
         return Err(ContractError::Std(StdError::generic_err(
-            "Denom is for a validator who is currently not in the set",
+            "Lock denom is for a validator who is currently not in the set, try refreshing when the validator has enoug delegation",
         )));
     }
     let validator = validator_result.unwrap();
@@ -551,9 +552,6 @@ fn vote(
             ),
         );
 
-        // get key for score keeper store of this proposal
-        let prop_power_key = get_prop_power_key(proposal.proposal_id);
-
         // gro through all the shares that were voted with and subtract them from the proposal's power and the total power that voted
         // TODO: we need to limit the number of different share types that users can lock; is the existing lock limit good enough?
         // TODO: do we need to make sure we don't iterate over validators outside of the set here? it seems ok to me, but should double-check
@@ -571,7 +569,7 @@ fn vote(
         }
 
         // save the new power into the proposal
-        let total_power = get_total_power(deps.storage, &prop_power_key.as_str())?;
+        let total_power = get_prop_power_total(deps.as_ref(), vote.prop_id)?;
         proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
 
         // Save the proposal
@@ -670,7 +668,6 @@ fn vote(
 
     // update the proposal's power with the new shares
     for (validator, num_shares) in time_weighted_shares_map.iter() {
-        println!("validator: {}, num_shares: {}", validator, num_shares);
         // add the validator shares to the proposal
         add_validator_shares_to_proposal(
             deps.storage,
@@ -682,8 +679,7 @@ fn vote(
     }
 
     // get the new total power of the proposal
-    let prop_power_key = get_prop_power_key(proposal.proposal_id);
-    let total_power = get_total_power(deps.storage, &prop_power_key.as_str())?;
+    let total_power = get_total_power_for_proposal(deps.storage, proposal.proposal_id)?;
 
     // save the new power into the proposal
     proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
@@ -976,8 +972,7 @@ pub fn query_round_total_power(
     deps: Deps,
     round_id: u64,
 ) -> StdResult<RoundTotalVotingPowerResponse> {
-    let total_round_power_key = get_total_round_power_key(round_id);
-    let total_round_power = get_total_power(deps.storage, total_round_power_key.as_str())?;
+    let total_round_power = get_total_power_for_round(deps.storage, round_id)?;
     Ok(RoundTotalVotingPowerResponse {
         total_voting_power: total_round_power.to_uint_ceil(), // TODO: decide on rounding
     })
@@ -1153,8 +1148,7 @@ pub fn query_top_n_proposals(
     }
 
     // get total voting power for the round
-    let total_voting_power_key = get_total_round_power_key(round_id);
-    let total_voting_power = get_total_power(deps.storage, &total_voting_power_key)?.to_uint_ceil(); // TODO: decide on rounding
+    let total_voting_power = get_total_power_for_round(deps.storage, round_id)?.to_uint_ceil(); // TODO: decide on rounding
 
     let top_proposals = top_props
         .into_iter()
