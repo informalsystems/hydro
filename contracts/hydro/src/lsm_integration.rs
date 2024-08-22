@@ -60,6 +60,14 @@ pub fn set_current_validators(
     Ok(())
 }
 
+pub fn set_round_validators(
+    storage: &mut dyn Storage,
+    validators: Vec<String>,
+    round_id: u64,
+) -> StdResult<()> {
+    VALIDATORS_PER_ROUND.save(storage, round_id, &validators)
+}
+
 // Returns the validator that this denom
 // represents tokenized shares from.
 // Returns an error if the denom is not
@@ -103,7 +111,10 @@ pub fn validate_denom(deps: Deps, env: Env, denom: String) -> StdResult<String> 
     }
 }
 
-// TODO: make this fall back to the round before
+// TODO: if round is in the future, use current powers (needed to compute the total power for the round, which
+// accesses future rounds)
+// TODO: if currrent round is not fully initialized, use previous round's powers
+// TODO: if previous round is not fully initialized, return an error (should only happen if relaying breaks)
 // TODO: docstring
 pub fn get_validator_power_ratio_for_round(
     storage: &dyn Storage,

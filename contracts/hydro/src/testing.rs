@@ -1,7 +1,9 @@
 use crate::contract::{
     query_tranches, query_user_vote, query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES,
 };
-use crate::lsm_integration::{set_current_validators, set_new_validator_power_ratio_for_round};
+use crate::lsm_integration::{
+    set_current_validators, set_new_validator_power_ratio_for_round, set_round_validators,
+};
 use crate::msg::TrancheInfo;
 use crate::score_keeper::update_power_ratio;
 use crate::{
@@ -26,25 +28,45 @@ pub const TWO_WEEKS_IN_NANO_SECONDS: u64 = 14 * 24 * 60 * 60 * 1000000000;
 pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
 pub const THREE_MONTHS_IN_NANO_SECONDS: u64 = 3 * ONE_MONTH_IN_NANO_SECONDS;
 
-pub fn set_default_validator_for_current_round(deps: DepsMut, env: Env) {
-    let res = set_current_validators(
-        deps.storage,
-        env.clone(),
-        vec![DEFAULT_VALIDATOR.to_string()],
-    );
-    assert!(res.is_ok());
+pub fn set_default_validator_for_rounds(deps: DepsMut, start_round: u64, end_round: u64) {
+    for round_id in start_round..end_round {
+        let res = set_round_validators(deps.storage, vec![DEFAULT_VALIDATOR.to_string()], round_id);
+        assert!(res.is_ok());
 
-    let round_id =
-        compute_current_round_id(&env, &query_constants(deps.as_ref()).unwrap().constants).unwrap();
+        // set power ratio to 1.0
+        let res = set_new_validator_power_ratio_for_round(
+            deps.storage,
+            round_id,
+            DEFAULT_VALIDATOR.to_string(),
+            Decimal::one(),
+        );
 
-    // set power ratio to 1.0
-    let res = set_new_validator_power_ratio_for_round(
-        deps.storage,
-        round_id,
-        DEFAULT_VALIDATOR.to_string(),
-        Decimal::one(),
-    );
-    assert!(res.is_ok());
+        assert!(res.is_ok());
+    }
+}
+
+pub fn set_validators_for_rounds(
+    deps: DepsMut,
+    start_round: u64,
+    end_round: u64,
+    validators: Vec<String>,
+) {
+    for round_id in start_round..end_round {
+        let res = set_round_validators(deps.storage, validators.clone(), round_id);
+        assert!(res.is_ok());
+
+        // set the power ratio for each validator to 1 for that round
+        for validator in validators.iter() {
+            let res = set_new_validator_power_ratio_for_round(
+                deps.storage,
+                round_id,
+                validator.to_string(),
+                Decimal::one(),
+            );
+
+            assert!(res.is_ok());
+        }
+    }
 }
 
 pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
@@ -136,7 +158,7 @@ fn lock_tokens_basic_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    set_default_validator_for_current_round(deps.as_mut(), env.clone());
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     let info1 = get_message_info(
         &deps.api,
@@ -196,7 +218,7 @@ fn unlock_tokens_basic_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    set_default_validator_for_current_round(deps.as_mut(), env.clone());
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     // lock 1000 tokens for one month
     let msg = ExecuteMsg::LockTokens {
@@ -223,9 +245,6 @@ fn unlock_tokens_basic_test() {
 
     // advance the chain by one month + 1 nano second and check that user can unlock tokens
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
-
-    // set the validators again for the new round
-    set_default_validator_for_current_round(deps.as_mut(), env.clone());
 
     let res = execute(
         deps.as_mut(),
@@ -309,7 +328,7 @@ fn vote_basic_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    set_default_validator_for_current_round(deps.as_mut(), env.clone());
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     // lock some tokens to get voting power
     let msg = ExecuteMsg::LockTokens {
@@ -373,7 +392,7 @@ fn vote_basic_test() {
         proposal_id: second_proposal_id,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok());
+    assert!(res.is_ok(), "error: {:?}", res);
 
     // verify users vote for the second proposal
     let res = query_user_vote(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
@@ -431,7 +450,7 @@ fn multi_tranches_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    set_default_validator_for_current_round(deps.as_mut(), env.clone());
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     // create two proposals for tranche 1
     let msg1 = ExecuteMsg::CreateProposal {
@@ -841,7 +860,7 @@ fn total_voting_power_tracking_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
     assert!(res.is_ok());
 
-    set_default_validator_for_current_round(deps.as_mut(), env.clone());
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     let info1 = get_message_info(
         &deps.api,
@@ -855,7 +874,7 @@ fn total_voting_power_tracking_test() {
     assert!(res.is_ok());
 
     // user locks 10 tokens for one month, so it will have 1x voting power in the first round only
-    let expected_total_voting_powers = [(0, Some(10)), (1, None)];
+    let expected_total_voting_powers = [(0, 10), (1, 0)];
     verify_expected_voting_power(deps.as_ref(), &expected_total_voting_powers);
 
     // advance the chain by 10 days and have user lock more tokens
@@ -875,7 +894,7 @@ fn total_voting_power_tracking_test() {
     // user locks 20 additional tokens for three months, so the expectation is:
     // round:         0      1       2       3
     // power:       10+30   0+30    0+20    0+0
-    let expected_total_voting_powers = [(0, Some(40)), (1, Some(30)), (2, Some(20)), (3, None)];
+    let expected_total_voting_powers = [(0, 40), (1, 30), (2, 20), (3, 0)];
     verify_expected_voting_power(deps.as_ref(), &expected_total_voting_powers);
 
     // advance the chain by 25 more days to move to round 1 and have user refresh second lockup to 6 months
@@ -893,14 +912,14 @@ fn total_voting_power_tracking_test() {
     // round:         0       1       2       3       4       5       6       7
     // power:       10+30    0+40    0+40    0+40    0+30    0+30    0+20    0+0
     let expected_total_voting_powers = [
-        (0, Some(40)),
-        (1, Some(40)),
-        (2, Some(40)),
-        (3, Some(40)),
-        (4, Some(30)),
-        (5, Some(30)),
-        (6, Some(20)),
-        (7, None),
+        (0, 40),
+        (1, 40),
+        (2, 40),
+        (3, 40),
+        (4, 30),
+        (5, 30),
+        (6, 20),
+        (7, 0),
     ];
     verify_expected_voting_power(deps.as_ref(), &expected_total_voting_powers);
 
@@ -922,32 +941,25 @@ fn total_voting_power_tracking_test() {
     // round:         0        1          2          3          4         5         6         7
     // power:       10+30    0+40+75    0+40+75    0+40+50    0+30+0    0+30+0    0+20+0    0+0+0
     let expected_total_voting_powers = [
-        (0, Some(40)),
-        (1, Some(115)),
-        (2, Some(115)),
-        (3, Some(90)),
-        (4, Some(30)),
-        (5, Some(30)),
-        (6, Some(20)),
-        (7, None),
+        (0, 40),
+        (1, 115),
+        (2, 115),
+        (3, 90),
+        (4, 30),
+        (5, 30),
+        (6, 20),
+        (7, 0),
     ];
     verify_expected_voting_power(deps.as_ref(), &expected_total_voting_powers);
 }
 
-fn verify_expected_voting_power(deps: Deps, expected_powers: &[(u64, Option<u128>)]) {
+fn verify_expected_voting_power(deps: Deps, expected_powers: &[(u64, u128)]) {
     for expected_power in expected_powers {
         let res = query_round_total_power(deps, expected_power.0);
 
-        match expected_power.1 {
-            Some(total_power) => {
-                assert!(res.is_ok());
-                let res = res.unwrap();
-                assert_eq!(total_power, res.total_voting_power.u128());
-            }
-            None => {
-                assert!(res.is_err());
-            }
-        }
+        assert!(res.is_ok());
+        let res = res.unwrap();
+        assert_eq!(expected_power.1, res.total_voting_power.u128());
     }
 }
 
@@ -965,7 +977,7 @@ proptest! {
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 
-        set_default_validator_for_current_round(deps.as_mut(), env.clone());
+        set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
         // get the new lock duration
         // list of plausible values, plus a value that should give an error every time (0)
@@ -985,9 +997,6 @@ proptest! {
 
         // set the time so that old_lock_remaining_time remains on the old lock
         env.block.time = env.block.time.plus_nanos(12 * ONE_MONTH_IN_NANO_SECONDS - old_lock_remaining_time);
-
-        // set the validators again for the new round
-        set_default_validator_for_current_round(deps.as_mut(), env.clone());
 
         // try to refresh the lock duration as a different user
         let info2 = get_message_info(&deps.api, "addr0002", &[]);
@@ -1038,7 +1047,7 @@ fn test_too_many_locks() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    set_default_validator_for_current_round(deps.as_mut(), env.clone());
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     // lock tokens many times
     let lock_msg = ExecuteMsg::LockTokens {
@@ -1082,9 +1091,6 @@ fn test_too_many_locks() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), unlock_msg.clone());
     assert!(res.is_ok());
 
-    // set the validators again for the new round
-    set_default_validator_for_current_round(deps.as_mut(), env.clone());
-
     // now the first user can lock tokens again
     for i in 0..MAX_LOCK_ENTRIES + 10 {
         let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
@@ -1112,7 +1118,7 @@ fn max_locked_tokens_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    set_default_validator_for_current_round(deps.as_mut(), env.clone());
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     // total tokens locked after this action will be 1500
     info = get_message_info(
@@ -1160,9 +1166,6 @@ fn max_locked_tokens_test() {
         ExecuteMsg::UnlockTokens {},
     );
     assert!(res.is_ok());
-
-    // set the validators again for the new round
-    set_default_validator_for_current_round(deps.as_mut(), env.clone());
 
     // now a user can lock new 1500 tokens
     info = get_message_info(

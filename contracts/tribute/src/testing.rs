@@ -360,7 +360,7 @@ fn claim_tribute_test() {
                     get_address_as_str(&deps.api, USER_ADDRESS_2),
                     VoteWithPower {
                         prop_id: 5,
-                        power: Decimal::new(Uint128::new(70)),
+                        power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
                     },
                 )),
                 mock_top_n_proposals.clone(),
@@ -401,7 +401,7 @@ fn claim_tribute_test() {
                     get_address_as_str(&deps.api, USER_ADDRESS_2),
                     VoteWithPower {
                         prop_id: 7,
-                        power: Decimal::new(Uint128::new(70)),
+                        power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
                     },
                 )),
                 mock_top_n_proposals.clone(),
@@ -424,7 +424,7 @@ fn claim_tribute_test() {
                     get_address_as_str(&deps.api, USER_ADDRESS_2),
                     VoteWithPower {
                         prop_id: 5,
-                        power: Decimal::new(Uint128::new(70)),
+                        power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
                     },
                 )),
                 mock_top_n_proposals.clone(),

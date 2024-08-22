@@ -1,6 +1,6 @@
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
-    MessageInfo, Order, Response, StdError, StdResult,
+    MessageInfo, Order, Response, StdError, StdResult, Uint128,
 };
 use cw2::set_contract_version;
 
@@ -188,7 +188,10 @@ fn claim_tribute(
         ((round_id, tranche_id), vote.prop_id, tribute_id),
     )?;
 
-    let percentage_fraction = match vote.power.checked_div(Decimal::new(proposal.power)) {
+    let percentage_fraction = match vote
+        .power
+        .checked_div(Decimal::from_ratio(proposal.power, Uint128::one()))
+    {
         Ok(percentage_fraction) => percentage_fraction,
         Err(_) => {
             return Err(ContractError::Std(StdError::generic_err(
@@ -197,7 +200,9 @@ fn claim_tribute(
         }
     };
 
-    let amount = match Decimal::new(tribute.funds.amount).checked_mul(percentage_fraction) {
+    let amount = match Decimal::from_ratio(tribute.funds.amount, Uint128::one())
+        .checked_mul(percentage_fraction)
+    {
         Ok(amount) => amount,
         Err(_) => {
             return Err(ContractError::Std(StdError::generic_err(

@@ -542,11 +542,11 @@ fn vote(
         for (validator, num_shares) in vote.time_weighted_shares.iter() {
             // TODO: make more efficient by writing only a single time to the store
 
-            // remove the validator shares from the proposal
+            // remove the validator shares from the previous proposal
             remove_validator_shares_from_proposal(
                 deps.storage,
                 round_id,
-                proposal_id,
+                vote.prop_id,
                 validator.to_string(),
                 *num_shares,
             )?;
@@ -609,10 +609,15 @@ fn vote(
         let validator = get_validator_from_denom(lock_entry.funds.denom)?;
 
         // add the shares to the map
-        let shares = time_weighted_shares_map
-            .entry(validator)
-            .or_insert(Decimal::zero());
-        shares.checked_add(Decimal::new(scaled_shares))?; // TODO: check if the checked_add correctly modifies the shares here
+        let shares = time_weighted_shares_map.get(&validator);
+        let shares = match shares {
+            Some(shares) => shares,
+            None => &Decimal::zero(),
+        };
+        let new_shares = shares.checked_add(Decimal::from_ratio(scaled_shares, Uint128::one()))?;
+
+        // insert the shares into the time_weigted_shares_map
+        time_weighted_shares_map.insert(validator.clone(), new_shares);
     }
 
     let response = Response::new().add_attribute("action", "vote");
@@ -1217,11 +1222,10 @@ where
     for round in start_round_id..=end_round_id {
         let round_end = compute_round_end(constants, round)?;
         let lockup_length = lock_end - round_end.nanos();
-        let scaled_shares = Decimal::new(scale_lockup_power(
-            constants.lock_epoch_length,
-            lockup_length,
-            amount,
-        )) - Decimal::new(get_old_voting_power(round, round_end, amount));
+        let scaled_amount = scale_lockup_power(constants.lock_epoch_length, lockup_length, amount);
+        let old_voting_power = get_old_voting_power(round, round_end, amount);
+        let scaled_shares = Decimal::from_ratio(scaled_amount, Uint128::one())
+            - Decimal::from_ratio(old_voting_power, Uint128::one());
 
         // save some gas if there was no power change
         if scaled_shares.is_zero() {
