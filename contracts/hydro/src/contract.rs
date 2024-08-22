@@ -1055,20 +1055,18 @@ pub fn query_top_n_proposals(
     }
 
     // get total voting power for the round
-    let total_voting_power = TOTAL_ROUND_POWER.may_load(deps.storage, round_id)?;
+    let total_voting_power = match TOTAL_ROUND_POWER.may_load(deps.storage, round_id)? {
+        Some(power) => power,
+        None => Uint128::zero(),
+    };
 
     let top_proposals = top_props
         .into_iter()
         .map(|mut prop| {
-            prop.percentage = match total_voting_power {
-                Some(total_power) => {
-                    if total_power > Uint128::zero() {
-                        (prop.power * Uint128::new(100)) / total_power
-                    } else {
-                        Uint128::zero()
-                    }
-                }
-                None => Uint128::zero(),
+            prop.percentage = if total_voting_power.is_zero() {
+                Uint128::zero()
+            } else {
+                (prop.power * Uint128::new(100)) / total_voting_power
             };
             prop
         })
