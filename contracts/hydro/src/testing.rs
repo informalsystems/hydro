@@ -308,6 +308,17 @@ fn create_proposal_basic_test() {
 
     let proposal = &res.proposals[1];
     assert_eq!(expected_round_id, proposal.round_id);
+
+    let res = query_top_n_proposals(deps.as_ref(), expected_round_id, 1, 2);
+    assert!(res.is_ok(), "error: {:?}", res);
+
+    let res = res.unwrap();
+    assert_eq!(2, res.proposals.len());
+
+    // check that both proposals have power 0
+    for proposal in res.proposals.iter() {
+        assert_eq!(0, proposal.power.u128());
+    }
 }
 
 #[test]
