@@ -7,7 +7,7 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::lsm_integration::{get_validator_from_denom, validate_denom};
+use crate::lsm_integration::validate_denom;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
@@ -281,7 +281,18 @@ fn refresh_lock_duration(
     LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
 
     // get the validator whose shares are in this lock
-    let validator = get_validator_from_denom(lock_entry.funds.denom)?;
+    let validator_result = validate_denom(
+        deps.as_ref(),
+        env.clone(),
+        &constants,
+        lock_entry.funds.denom,
+    );
+    if validator_result.is_err() {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Denom is for a validator who is currently not in the set",
+        )));
+    }
+    let validator = validator_result.unwrap();
 
     // Calculate and update the total voting power info for current and all
     // future rounds in which the user will have voting power greather than 0.
@@ -613,7 +624,21 @@ fn vote(
             scale_lockup_power(lock_epoch_length, lockup_length, lock_entry.funds.amount);
 
         // get the validator from the denom
-        let validator = get_validator_from_denom(lock_entry.funds.denom)?;
+        let validator_result = validate_denom(
+            deps.as_ref(),
+            env.clone(),
+            &constants,
+            lock_entry.clone().funds.denom,
+        );
+        if validator_result.is_err() {
+            deps.api.debug(&format!(
+                "Denom {} is not a valid validator denom; validator might not be in the current set of top validators by delegation",
+                lock_entry.funds.denom
+            ));
+            // skip this lock entry, since the locked shares do not belong to a validator that we want to take into account
+            continue;
+        }
+        let validator = validator_result.unwrap();
 
         // add the shares to the map
         let shares = time_weighted_shares_map.get(&validator);
@@ -645,6 +670,7 @@ fn vote(
 
     // update the proposal's power with the new shares
     for (validator, num_shares) in time_weighted_shares_map.iter() {
+        println!("validator: {}, num_shares: {}", validator, num_shares);
         // add the validator shares to the proposal
         add_validator_shares_to_proposal(
             deps.storage,

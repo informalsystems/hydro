@@ -376,7 +376,7 @@ fn unlock_tokens_multiple_denoms() {
         deps.as_mut(),
         0,
         100,
-        vec!["validator1".to_string(), "validator2".to_string()],
+        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
         vec![Decimal::one(), Decimal::one()],
     );
 
@@ -457,7 +457,7 @@ fn unlock_tokens_multiple_users() {
         deps.as_mut(),
         0,
         100,
-        vec!["validator1".to_string()],
+        vec![VALIDATOR_1.to_string()],
         vec![Decimal::one()],
     );
 
@@ -564,9 +564,9 @@ fn lock_tokens_multiple_validators_and_vote() {
         0,
         100,
         vec![
-            "validator1".to_string(),
-            "validator2".to_string(),
-            "validator3".to_string(),
+            VALIDATOR_1.to_string(),
+            VALIDATOR_2.to_string(),
+            VALIDATOR_3.to_string(),
         ],
         vec![Decimal::one(), Decimal::percent(95), Decimal::percent(60)],
     );
@@ -621,13 +621,13 @@ fn lock_tokens_multiple_validators_and_vote() {
     let proposals = proposals.unwrap();
 
     // check that the first proposal is proposal 0, and that it has
-    // power 100 * 1 + 200 * 0.95 + 300 * 0.6 = 590
+    // power 1000 * 1 + 2000 * 0.95 + 3000 * 0.6 = 4700
     assert_eq!(2, proposals.proposals.len());
     let first_prop = &proposals.proposals[0];
     let second_prop = &proposals.proposals[1];
 
     assert_eq!(0, first_prop.proposal_id);
-    assert_eq!(590, first_prop.power.u128());
+    assert_eq!(4700, first_prop.power.u128());
 
     assert_eq!(1, second_prop.proposal_id);
     assert_eq!(0, second_prop.power.u128());
