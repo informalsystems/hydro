@@ -26,6 +26,7 @@ pub const PROP_ID: Item<u64> = Item::new("prop_id");
 pub const LOCKS_MAP: Map<(Addr, u64), LockEntry> = Map::new("locks_map");
 #[cw_serde]
 pub struct LockEntry {
+    pub lock_id: u64,
     pub funds: Coin,
     pub lock_start: Timestamp,
     pub lock_end: Timestamp,
