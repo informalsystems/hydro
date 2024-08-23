@@ -10,10 +10,12 @@ pub fn get_total_round_power_key(round_id: u64) -> String {
     key.push_str(
         &round_id
             .to_be_bytes()
-            .to_vec()
             .iter()
-            .map(|b| format!("{:02X}", b))
-            .collect::<String>(),
+            .fold(String::new(), |mut acc, b| {
+                use std::fmt::Write;
+                write!(&mut acc, "{:02X}", b).unwrap();
+                acc
+            }),
     );
     key
 }
@@ -34,10 +36,12 @@ pub fn get_prop_power_key(prop_id: u64) -> String {
     key.push_str(
         &prop_id
             .to_be_bytes()
-            .to_vec()
             .iter()
-            .map(|b| format!("{:02X}", b))
-            .collect::<String>(),
+            .fold(String::new(), |mut acc, b| {
+                use std::fmt::Write;
+                write!(&mut acc, "{:02X}", b).unwrap();
+                acc
+            }),
     );
     key
 }

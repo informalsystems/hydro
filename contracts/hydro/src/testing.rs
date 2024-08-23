@@ -76,8 +76,7 @@ pub fn set_validators_constant_power_ratios_for_rounds(
         assert!(res.is_ok());
 
         // set the power ratio for each validator to 1 for that round
-        let mut i = 0;
-        for validator in validators.iter() {
+        for (i, validator) in validators.iter().enumerate() {
             let res = set_new_validator_power_ratio_for_round(
                 deps.storage,
                 round_id,
@@ -86,8 +85,6 @@ pub fn set_validators_constant_power_ratios_for_rounds(
             );
 
             assert!(res.is_ok());
-
-            i += 1;
         }
     }
 }
