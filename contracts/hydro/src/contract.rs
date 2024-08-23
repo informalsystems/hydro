@@ -201,7 +201,7 @@ fn lock_tokens(
     let lock_id = LOCK_ID.load(deps.storage)?;
     LOCK_ID.save(deps.storage, &(lock_id + 1))?;
     let lock_entry = LockEntry {
-        lock_id: lock_id,
+        lock_id,
         funds: info.funds[0].clone(),
         lock_start: env.block.time,
         lock_end: env.block.time.plus_nanos(lock_duration),
