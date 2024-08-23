@@ -1,6 +1,5 @@
-use cosmwasm_std::{Decimal, Deps, DepsMut, StdError, StdResult, Storage};
+use cosmwasm_std::{Decimal, StdError, StdResult, Storage};
 use cw_storage_plus::{Item, Map};
-use std::str::FromStr;
 
 use crate::{
     lsm_integration::get_validator_power_ratio_for_round,
@@ -15,7 +14,6 @@ use crate::{
 // Constants to define the suffixes for each map
 const SHARES_PREFIX: &str = "shares_";
 const POWER_PREFIX: &str = "power_";
-const POWER_RATIO_PREFIX: &str = "power_ratio_";
 
 // Function to create a storage key for the `shares` storage
 fn shares_key(suffix: &str) -> String {
@@ -27,21 +25,12 @@ fn power_key(suffix: &str) -> String {
     format!("{}{}", POWER_PREFIX, suffix)
 }
 
-// Function to create a storage key for the `power ratio` map
-fn power_ratio_key(suffix: &str) -> String {
-    format!("{}{}", POWER_RATIO_PREFIX, suffix)
-}
-
 fn get_shares_map(suffix: &str) -> Map<&str, Decimal> {
     Map::new_dyn(shares_key(suffix))
 }
 
 fn get_power_item(suffix: &str) -> Item<Decimal> {
     Item::new_dyn(power_key(suffix))
-}
-
-fn get_power_ratio_map(suffix: &str) -> Map<&str, Decimal> {
-    Map::new_dyn(power_ratio_key(suffix))
 }
 
 pub fn get_shares(storage: &dyn Storage, key: &str, validator: String) -> StdResult<Decimal> {
@@ -278,7 +267,6 @@ pub fn update_power_ratio(
 ) -> StdResult<()> {
     let shares_map = get_shares_map(key);
     let total_power = get_power_item(key);
-    let power_ratio_map: Map<&str, Decimal> = get_power_ratio_map(key);
 
     // Initialize if needed
     let _ = initialize_if_nil(storage, key);

@@ -12,7 +12,7 @@ use hydro::query::{
     CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
     UserVoteResponse,
 };
-use hydro::state::{Proposal, Vote, VoteWithPower};
+use hydro::state::{Proposal, VoteWithPower};
 
 /// Contract name that is used for migration.
 const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");

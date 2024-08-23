@@ -1,4 +1,4 @@
-use crate::state::{Constants, LockEntry, Proposal, Tranche, Vote, VoteWithPower};
+use crate::state::{Constants, LockEntry, Proposal, Tranche, VoteWithPower};
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Timestamp, Uint128};
 use schemars::JsonSchema;

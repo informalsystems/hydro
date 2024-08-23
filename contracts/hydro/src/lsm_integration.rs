@@ -1,4 +1,4 @@
-use cosmwasm_std::{Binary, Decimal, Deps, DepsMut, Env, StdError, StdResult, Storage};
+use cosmwasm_std::{Binary, Decimal, Deps, Env, StdError, StdResult, Storage};
 use cw_storage_plus::Map;
 
 use ibc_proto::ibc::{

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::lsm_integration::set_current_validators;
 use crate::testing::{
     get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds, IBC_DENOM_1,
     ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1_LST_DENOM_1,

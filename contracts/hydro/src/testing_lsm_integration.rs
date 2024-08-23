@@ -9,7 +9,7 @@ use prost::Message;
 
 use crate::{
     contract::{execute, instantiate, query_top_n_proposals},
-    lsm_integration::{set_current_validators, validate_denom, VALIDATORS_PER_ROUND},
+    lsm_integration::{validate_denom, VALIDATORS_PER_ROUND},
     msg::ExecuteMsg,
     testing::{
         get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
@@ -544,7 +544,7 @@ fn lock_tokens_multiple_validators_and_vote() {
         ]),
     );
 
-    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let mut info = get_message_info(
         &deps.api,
         user_address,

@@ -9,7 +9,7 @@ use cosmwasm_std::{
     SystemError, SystemResult, Uint128, WasmQuery,
 };
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
-use hydro::state::{Proposal, Vote};
+use hydro::state::Proposal;
 use hydro::{
     query::{
         CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,

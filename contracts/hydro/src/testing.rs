@@ -3,11 +3,8 @@ use std::collections::HashMap;
 use crate::contract::{
     query_tranches, query_user_vote, query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES,
 };
-use crate::lsm_integration::{
-    set_current_validators, set_new_validator_power_ratio_for_round, set_round_validators,
-};
+use crate::lsm_integration::{set_new_validator_power_ratio_for_round, set_round_validators};
 use crate::msg::TrancheInfo;
-use crate::score_keeper::update_power_ratio;
 use crate::testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock};
 use crate::{
     contract::{
@@ -18,9 +15,7 @@ use crate::{
     msg::{ExecuteMsg, InstantiateMsg},
 };
 use cosmwasm_std::testing::{mock_env, MockApi};
-use cosmwasm_std::{
-    BankMsg, CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo, Timestamp, Uint128,
-};
+use cosmwasm_std::{BankMsg, CosmosMsg, Decimal, Deps, DepsMut, MessageInfo, Timestamp, Uint128};
 use cosmwasm_std::{Coin, StdError, StdResult};
 use proptest::prelude::*;
 

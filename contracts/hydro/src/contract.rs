@@ -17,10 +17,9 @@ use crate::query::{
     WhitelistResponse,
 };
 use crate::score_keeper::{
-    add_validator_shares_to_proposal, add_validator_shares_to_round_total, get_total_power,
+    add_validator_shares_to_proposal, add_validator_shares_to_round_total,
     get_total_power_for_proposal, get_total_power_for_round,
-    remove_many_validator_shares_from_proposal, remove_validator_shares,
-    remove_validator_shares_from_proposal,
+    remove_many_validator_shares_from_proposal,
 };
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, Vote, VoteWithPower, CONSTANTS, LOCKED_TOKENS,
@@ -559,7 +558,7 @@ fn vote(
             vote.prop_id,
             vote.time_weighted_shares
                 .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
+                .map(|(k, v)| (k.clone(), *v))
                 .collect::<Vec<_>>(),
         )?;
 
