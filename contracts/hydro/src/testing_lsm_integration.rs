@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use cosmwasm_std::{
     testing::mock_env, BankMsg, Coin, CosmosMsg, Decimal, Env, StdError, Storage, SystemError,
-    SystemResult, Timestamp,
+    SystemResult, Timestamp, Uint128,
 };
 use ibc_proto::ibc::apps::transfer::v1::QueryDenomTraceResponse;
 use prost::Message;
@@ -13,6 +13,7 @@ use crate::{
         update_scores_due_to_power_ratio_change, validate_denom, VALIDATORS_PER_ROUND,
     },
     msg::ExecuteMsg,
+    score_keeper_state::get_total_round_power_total,
     testing::{
         get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
         set_validators_constant_power_ratios_for_rounds, IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3,
@@ -637,6 +638,13 @@ fn lock_tokens_multiple_validators_and_vote() {
         assert_eq!(0, second_prop.power.u128());
     }
 
+    // check the total round power
+    {
+        let total_power = get_total_round_power_total(deps.as_ref(), 0);
+        assert!(total_power.is_ok());
+        assert_eq!(Uint128::new(4700), total_power.unwrap().to_uint_floor());
+    }
+
     // update the power ratio for validator 1 to become 0.5
     let res = update_scores_due_to_power_ratio_change(
         deps.as_mut().storage,
@@ -665,5 +673,12 @@ fn lock_tokens_multiple_validators_and_vote() {
         let second_prop = &proposals.proposals[1];
         assert_eq!(1, second_prop.proposal_id);
         assert_eq!(0, second_prop.power.u128());
+    }
+
+    // check the new total power
+    {
+        let total_power = get_total_round_power_total(deps.as_ref(), 0);
+        assert!(total_power.is_ok());
+        assert_eq!(Uint128::new(4200), total_power.unwrap().to_uint_floor());
     }
 }
