@@ -9,7 +9,7 @@ use crate::lsm_integration::validate_denom;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
+    LockEntryWithPower, ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
     RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse,
     TranchesResponse, UserVoteResponse, UserVotingPowerResponse, WhitelistAdminsResponse,
     WhitelistResponse,
@@ -833,7 +833,9 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
             address,
             start_from,
             limit,
-        } => to_json_binary(&query_all_user_lockups(deps, address, start_from, limit)?),
+        } => to_json_binary(&query_all_user_lockups(
+            deps, env, address, start_from, limit,
+        )?),
         QueryMsg::ExpiredUserLockups {
             address,
             start_from,
@@ -900,18 +902,43 @@ pub fn query_constants(deps: Deps) -> StdResult<ConstantsResponse> {
 
 pub fn query_all_user_lockups(
     deps: Deps,
+    env: Env,
     address: String,
     start_from: u32,
     limit: u32,
 ) -> StdResult<AllUserLockupsResponse> {
+    let raw_lockups = query_user_lockups(
+        deps,
+        deps.api.addr_validate(&address)?,
+        |_| true,
+        start_from,
+        limit,
+    );
+
+    let constants = CONSTANTS.load(deps.storage)?;
+    let current_round_id = compute_current_round_id(&env, &constants)?;
+    let round_end = compute_round_end(&constants, current_round_id)?;
+
+    // enrich the lockups by computing the voting power for each lockup
+    let enriched_lockups = raw_lockups
+        .iter()
+        .map(|lock| {
+            // compute the lockup power scaling due to remaining lockup length
+            let lock_epoch_length = constants.lock_epoch_length;
+            let lockup_length = lock.lock_end.nanos() - round_end.nanos();
+            let scaled_lockup_power =
+                scale_lockup_power(lock_epoch_length, lockup_length, lock.funds.amount);
+
+            // TODO: scale based on validator power ratio
+            LockEntryWithPower {
+                lock_entry: lock.clone(),
+                current_voting_power: scaled_lockup_power,
+            }
+        })
+        .collect();
+
     Ok(AllUserLockupsResponse {
-        lockups: query_user_lockups(
-            deps,
-            deps.api.addr_validate(&address)?,
-            |_| true,
-            start_from,
-            limit,
-        ),
+        lockups: enriched_lockups,
     })
 }
 

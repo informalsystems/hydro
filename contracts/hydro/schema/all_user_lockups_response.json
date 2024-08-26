@@ -9,7 +9,7 @@
     "lockups": {
       "type": "array",
       "items": {
-        "$ref": "#/definitions/LockEntry"
+        "$ref": "#/definitions/LockEntryWithPower"
       }
     }
   },
@@ -53,6 +53,22 @@
         },
         "lock_start": {
           "$ref": "#/definitions/Timestamp"
+        }
+      },
+      "additionalProperties": false
+    },
+    "LockEntryWithPower": {
+      "type": "object",
+      "required": [
+        "current_voting_power",
+        "lock_entry"
+      ],
+      "properties": {
+        "current_voting_power": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "lock_entry": {
+          "$ref": "#/definitions/LockEntry"
         }
       },
       "additionalProperties": false
