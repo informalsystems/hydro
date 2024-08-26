@@ -214,6 +214,8 @@ fn lock_tokens_basic_test() {
     assert_eq!(2, res.lockups.len());
 
     let lockup = &res.lockups[0];
+    // check that the id is 0
+    assert_eq!(0, lockup.lock_id);
     assert_eq!(info1.funds[0].amount.u128(), lockup.funds.amount.u128());
     assert_eq!(info1.funds[0].denom, lockup.funds.denom);
     assert_eq!(env.block.time, lockup.lock_start);
@@ -223,6 +225,8 @@ fn lock_tokens_basic_test() {
     );
 
     let lockup = &res.lockups[1];
+    // check that the id is 1
+    assert_eq!(1, lockup.lock_id);
     assert_eq!(info2.funds[0].amount.u128(), lockup.funds.amount.u128());
     assert_eq!(info2.funds[0].denom, lockup.funds.denom);
     assert_eq!(env.block.time, lockup.lock_start);
