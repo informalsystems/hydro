@@ -1233,6 +1233,7 @@ fn compute_round_end(constants: &Constants, round_id: u64) -> StdResult<Timestam
     Ok(round_end)
 }
 
+#[allow(clippy::too_many_arguments)] // complex function that needs a lot of arguments
 fn update_total_time_weighted_shares<T>(
     deps: DepsMut,
     constants: &Constants,
