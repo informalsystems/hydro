@@ -9,7 +9,9 @@ use prost::Message;
 
 use crate::{
     contract::{execute, instantiate, query_top_n_proposals},
-    lsm_integration::{validate_denom, VALIDATORS_PER_ROUND},
+    lsm_integration::{
+        update_scores_due_to_power_ratio_change, validate_denom, VALIDATORS_PER_ROUND,
+    },
     msg::ExecuteMsg,
     testing::{
         get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
@@ -614,21 +616,54 @@ fn lock_tokens_multiple_validators_and_vote() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
+    // check proposals
+    {
+        // Check the proposal scores
+        let proposals = query_top_n_proposals(deps.as_ref(), 0, 1, 2);
+
+        // unwrap the proposals
+        let proposals = proposals.unwrap();
+
+        // check that the first proposal is proposal 0, and that it has
+        // power 1000 * 1 + 2000 * 0.95 + 3000 * 0.6 = 4700
+        assert_eq!(2, proposals.proposals.len());
+        let first_prop = &proposals.proposals[0];
+        let second_prop = &proposals.proposals[1];
+
+        assert_eq!(0, first_prop.proposal_id);
+        assert_eq!(4700, first_prop.power.u128());
+
+        assert_eq!(1, second_prop.proposal_id);
+        assert_eq!(0, second_prop.power.u128());
+    }
+
+    // update the power ratio for validator 1 to become 0.5
+    let res = update_scores_due_to_power_ratio_change(
+        deps.as_mut().storage,
+        VALIDATOR_1,
+        0,
+        Decimal::percent(100),
+        Decimal::percent(50),
+    );
+    assert!(res.is_ok());
+
     // Check the proposal scores
-    let proposals = query_top_n_proposals(deps.as_ref(), 0, 1, 2);
+    {
+        let proposals = query_top_n_proposals(deps.as_ref(), 0, 1, 2);
 
-    // unwrap the proposals
-    let proposals = proposals.unwrap();
+        // unwrap the proposals
+        let proposals = proposals.unwrap();
 
-    // check that the first proposal is proposal 0, and that it has
-    // power 1000 * 1 + 2000 * 0.95 + 3000 * 0.6 = 4700
-    assert_eq!(2, proposals.proposals.len());
-    let first_prop = &proposals.proposals[0];
-    let second_prop = &proposals.proposals[1];
+        // check that the first proposal is proposal 0, and that it has
+        // power 1000 * 0.5 + 2000 * 0.95 + 3000 * 0.6 = 4200
+        assert_eq!(2, proposals.proposals.len());
+        let first_prop = &proposals.proposals[0];
 
-    assert_eq!(0, first_prop.proposal_id);
-    assert_eq!(4700, first_prop.power.u128());
+        assert_eq!(0, first_prop.proposal_id);
+        assert_eq!(4200, first_prop.power.u128());
 
-    assert_eq!(1, second_prop.proposal_id);
-    assert_eq!(0, second_prop.power.u128());
+        let second_prop = &proposals.proposals[1];
+        assert_eq!(1, second_prop.proposal_id);
+        assert_eq!(0, second_prop.power.u128());
+    }
 }

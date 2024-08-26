@@ -292,6 +292,40 @@ pub fn update_power_ratio(
     Ok(())
 }
 
+pub fn update_power_ratio_for_proposal(
+    storage: &mut dyn Storage,
+    prop_id: u64,
+    validator: String,
+    old_power_ratio: Decimal,
+    new_power_ratio: Decimal,
+) -> StdResult<()> {
+    let prop_power_key = get_prop_power_key(prop_id);
+    update_power_ratio(
+        storage,
+        prop_power_key.as_str(),
+        validator,
+        old_power_ratio,
+        new_power_ratio,
+    )
+}
+
+pub fn update_power_ratio_for_round_total(
+    storage: &mut dyn Storage,
+    round_id: u64,
+    validator: String,
+    old_power_ratio: Decimal,
+    new_power_ratio: Decimal,
+) -> StdResult<()> {
+    let total_round_power_key = get_total_round_power_key(round_id);
+    update_power_ratio(
+        storage,
+        total_round_power_key.as_str(),
+        validator,
+        old_power_ratio,
+        new_power_ratio,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use crate::lsm_integration::set_new_validator_power_ratio_for_round;

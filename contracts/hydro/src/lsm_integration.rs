@@ -1,4 +1,4 @@
-use cosmwasm_std::{Binary, Decimal, Deps, Env, StdError, StdResult, Storage};
+use cosmwasm_std::{Binary, Decimal, Deps, Env, Order, StdError, StdResult, Storage};
 use cw_storage_plus::Map;
 
 use ibc_proto::ibc::{
@@ -9,7 +9,11 @@ use prost::Message;
 
 use crate::{
     contract::compute_current_round_id,
-    state::{Constants, CONSTANTS},
+    score_keeper::{
+        get_total_power_for_proposal, update_power_ratio, update_power_ratio_for_proposal,
+        update_power_ratio_for_round_total,
+    },
+    state::{Constants, Proposal, CONSTANTS, PROPOSAL_MAP, PROPS_BY_SCORE, TRANCHE_MAP},
 };
 
 pub const IBC_TOKEN_PREFIX: &str = "ibc/";
@@ -171,4 +175,96 @@ pub fn query_ibc_denom_trace(deps: Deps, denom: String) -> StdResult<DenomTrace>
         .map_err(|err| StdError::generic_err(format!("Failed to obtain IBC denom trace: {}", err)))?
         .denom_trace
         .ok_or(StdError::generic_err("Failed to obtain IBC denom trace"))
+}
+
+// Applies the new power ratio for the validator to score keepers.
+// It updates:
+// * all proposals of that round
+// * the total power for the round
+// For each proposal and for the total power,
+// it will recompute the new sum by subtracting the old power ratio*that validators shares and
+// adding the new power ratio*that validators shares.
+pub fn update_scores_due_to_power_ratio_change(
+    storage: &mut dyn Storage,
+    validator: &str,
+    round_id: u64,
+    old_power_ratio: Decimal,
+    new_power_ratio: Decimal,
+) -> StdResult<()> {
+    // go through each tranche in the TRANCHE_MAP and collect its tranche_id
+    let tranche_ids: Vec<u64> = TRANCHE_MAP
+        .range(storage, None, None, Order::Ascending)
+        .map(|tranche_res| {
+            let tranche = tranche_res.unwrap();
+            tranche.0
+        })
+        .collect();
+    for tranche_id in tranche_ids {
+        // go through each proposal in the PROPOSAL_MAP for this round and tranche
+
+        // collect all proposal ids
+        let proposals: Vec<Proposal> = PROPOSAL_MAP
+            .prefix((round_id, tranche_id))
+            .range(storage, None, None, Order::Ascending)
+            .map(|prop_res| {
+                let prop = prop_res.unwrap();
+                prop.1
+            })
+            .collect();
+
+        for proposal in proposals {
+            // update the power ratio for the proposal
+            update_power_ratio_for_proposal(
+                storage,
+                proposal.proposal_id,
+                validator.to_string(),
+                old_power_ratio,
+                new_power_ratio,
+            )?;
+
+            // create a mutable copy of the proposal that we can safely manipulate in this loop
+            let mut proposal_copy = proposal.clone();
+
+            // save the new power for the proposal in the store
+            proposal_copy.power =
+                get_total_power_for_proposal(storage, proposal_copy.proposal_id)?.to_uint_ceil();
+
+            PROPOSAL_MAP.save(
+                storage,
+                (round_id, tranche_id, proposal.proposal_id),
+                &proposal_copy,
+            )?;
+
+            // remove proposals old score
+            PROPS_BY_SCORE.remove(
+                storage,
+                (
+                    (round_id, tranche_id),
+                    proposal.power.into(),
+                    proposal.proposal_id,
+                ),
+            );
+
+            PROPS_BY_SCORE.save(
+                storage,
+                (
+                    (round_id, tranche_id),
+                    proposal_copy.power.into(),
+                    proposal_copy.proposal_id,
+                ),
+                &proposal_copy.proposal_id,
+            )?;
+        }
+    }
+
+    // update the total power in the round
+    update_power_ratio_for_round_total(
+        storage,
+        round_id,
+        validator.to_string(),
+        old_power_ratio,
+        new_power_ratio,
+    )?;
+
+    Ok(())
 }
