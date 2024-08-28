@@ -13,7 +13,7 @@ use crate::{
         get_total_power_for_proposal, update_power_ratio_for_proposal,
         update_power_ratio_for_round_total,
     },
-    state::{Constants, Proposal, CONSTANTS, PROPOSAL_MAP, PROPS_BY_SCORE, TRANCHE_MAP},
+    state::{Constants, Proposal, PROPOSAL_MAP, PROPS_BY_SCORE, TRANCHE_MAP},
 };
 
 pub const IBC_TOKEN_PREFIX: &str = "ibc/";
