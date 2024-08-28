@@ -1,5 +1,3 @@
-use std::ops::ControlFlow;
-
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
     Order, Response, StdError, StdResult, Timestamp, Uint128,
