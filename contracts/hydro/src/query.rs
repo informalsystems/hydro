@@ -90,9 +90,18 @@ pub struct TranchesResponse {
     pub tranches: Vec<Tranche>,
 }
 
+// LockEntryWithPower is a LockEntry with the current voting power of the sender
+// attached. It is used to enrich query responses where the
+// lockups are returned with the current voting power of the lockup.
+#[cw_serde]
+pub struct LockEntryWithPower {
+    pub lock_entry: LockEntry,
+    pub current_voting_power: Uint128,
+}
+
 #[cw_serde]
 pub struct AllUserLockupsResponse {
-    pub lockups: Vec<LockEntry>,
+    pub lockups: Vec<LockEntryWithPower>,
 }
 
 #[cw_serde]
