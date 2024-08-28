@@ -66,19 +66,7 @@ pub fn get_validators_for_round(deps: Deps, round_id: u64) -> StdResult<Vec<Stri
     Ok(validators)
 }
 
-// Sets the validators for the current round.
-// This can be called multiple times in a round, and will overwrite the previous validators
-// for this round.
-pub fn set_current_validators(
-    storage: &mut dyn Storage,
-    env: Env,
-    validators: Vec<String>,
-) -> StdResult<()> {
-    let round_id = compute_current_round_id(&env, &CONSTANTS.load(storage)?)?;
-    VALIDATORS_PER_ROUND.save(storage, round_id, &validators)?;
-    Ok(())
-}
-
+// Sets the validators for the given round in the store.
 pub fn set_round_validators(
     storage: &mut dyn Storage,
     validators: Vec<String>,
