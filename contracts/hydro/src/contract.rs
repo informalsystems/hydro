@@ -11,7 +11,7 @@ use crate::lsm_integration::validate_denom;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
+    LockEntryWithPower, ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
     RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse,
     TranchesResponse, UserVoteResponse, UserVotingPowerResponse, WhitelistAdminsResponse,
     WhitelistResponse,
@@ -483,7 +483,7 @@ fn create_proposal(
     Ok(Response::new().add_attribute("action", "create_proposal"))
 }
 
-fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: Uint128) -> Uint128 {
+pub fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: Uint128) -> Uint128 {
     let two: Uint128 = 2u16.into();
 
     // Scale lockup power
@@ -602,19 +602,6 @@ fn vote(
     for lock in locks {
         let (_, lock_entry) = lock?;
 
-        // shares from locks that expire before the current round ends don't need to be counted
-        if round_end.nanos() > lock_entry.lock_end.nanos() {
-            continue;
-        }
-
-        // Get the remaining lockup length at the end of this round.
-        // This means that their power will be scaled the same by this function no matter when they vote in the round
-        let lockup_length = lock_entry.lock_end.nanos() - round_end.nanos();
-
-        // Scale the number of shares. This is what implements the different powers for different lockup times.
-        let scaled_shares =
-            scale_lockup_power(lock_epoch_length, lockup_length, lock_entry.funds.amount);
-
         // get the validator from the denom
         let validator_result = validate_denom(
             deps.as_ref(),
@@ -641,7 +628,10 @@ fn vote(
         let new_shares = shares.checked_add(Decimal::from_ratio(scaled_shares, Uint128::one()))?;
 
         // insert the shares into the time_weigted_shares_map
-        time_weighted_shares_map.insert(validator.clone(), new_shares);
+        time_weighted_shares_map.insert(
+            validator.clone(),
+            get_lock_time_weighted_shares(round_end, lock_entry, lock_epoch_length),
+        );
     }
 
     let response = Response::new().add_attribute("action", "vote");
@@ -696,6 +686,20 @@ fn vote(
     VOTE_MAP.save(deps.storage, (round_id, tranche_id, info.sender), &vote)?;
 
     Ok(response)
+}
+
+// Returns the time-weighted amount of shares locked in the given lock entry in a round with the given end time,
+// and using the given lock epoch length.
+fn get_lock_time_weighted_shares(
+    round_end: Timestamp,
+    lock_entry: LockEntry,
+    lock_epoch_length: u64,
+) -> Uint128 {
+    if round_end.nanos() > lock_entry.lock_end.nanos() {
+        return Uint128::zero();
+    }
+    let lockup_length = lock_entry.lock_end.nanos() - round_end.nanos();
+    scale_lockup_power(lock_epoch_length, lockup_length, lock_entry.funds.amount)
 }
 
 // Adds a new account address to the whitelist.
@@ -912,7 +916,9 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
             address,
             start_from,
             limit,
-        } => to_json_binary(&query_all_user_lockups(deps, address, start_from, limit)?),
+        } => to_json_binary(&query_all_user_lockups(
+            deps, env, address, start_from, limit,
+        )?),
         QueryMsg::ExpiredUserLockups {
             address,
             start_from,
@@ -980,18 +986,55 @@ pub fn query_constants(deps: Deps) -> StdResult<ConstantsResponse> {
 
 pub fn query_all_user_lockups(
     deps: Deps,
+    env: Env,
     address: String,
     start_from: u32,
     limit: u32,
 ) -> StdResult<AllUserLockupsResponse> {
+    let raw_lockups = query_user_lockups(
+        deps,
+        deps.api.addr_validate(&address)?,
+        |_| true,
+        start_from,
+        limit,
+    );
+
+    let constants = CONSTANTS.load(deps.storage)?;
+    let current_round_id = compute_current_round_id(&env, &constants)?;
+    let round_end = compute_round_end(&constants, current_round_id)?;
+
+    // enrich the lockups by computing the voting power for each lockup
+    let enriched_lockups = raw_lockups
+        .iter()
+        .map(|lock| {
+            // compute the lockup power scaling due to remaining lockup length
+            let lock_epoch_length = constants.lock_epoch_length;
+
+            // TODO: scale based on validator power ratio
+            let validator_res =
+                validate_denom(deps.as_ref(), env.clone(), &constants, lock.funds.denom);
+
+            if validator_res.is_err() {
+                // lockup has no power if validator is not in the current set
+                return LockEntryWithPower {
+                    lock_entry: lock.clone(),
+                    current_voting_power: Uint128::zero(),
+                };
+            }
+
+            LockEntryWithPower {
+                lock_entry: lock.clone(),
+                current_voting_power: get_lock_time_weighted_shares(
+                    round_end,
+                    lock.clone(),
+                    lock_epoch_length,
+                ),
+            }
+        })
+        .collect();
+
     Ok(AllUserLockupsResponse {
-        lockups: query_user_lockups(
-            deps,
-            deps.api.addr_validate(&address)?,
-            |_| true,
-            start_from,
-            limit,
-        ),
+        lockups: enriched_lockups,
     })
 }
 

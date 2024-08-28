@@ -208,32 +208,44 @@ fn lock_tokens_basic_test() {
     let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
     assert!(res.is_ok());
 
-    let res = query_all_user_lockups(deps.as_ref(), info.sender.to_string(), 0, 2000);
+    let res = query_all_user_lockups(deps.as_ref(), env.clone(), info.sender.to_string(), 0, 2000);
     assert!(res.is_ok());
     let res = res.unwrap();
     assert_eq!(2, res.lockups.len());
 
     let lockup = &res.lockups[0];
     // check that the id is 0
-    assert_eq!(0, lockup.lock_id);
-    assert_eq!(info1.funds[0].amount.u128(), lockup.funds.amount.u128());
-    assert_eq!(info1.funds[0].denom, lockup.funds.denom);
-    assert_eq!(env.block.time, lockup.lock_start);
+    assert_eq!(0, lockup.lock_entry.lock_id);
+    assert_eq!(
+        info1.funds[0].amount.u128(),
+        lockup.lock_entry.funds.amount.u128()
+    );
+    assert_eq!(info1.funds[0].denom, lockup.lock_entry.funds.denom);
+    assert_eq!(env.block.time, lockup.lock_entry.lock_start);
     assert_eq!(
         env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS),
-        lockup.lock_end
+        lockup.lock_entry.lock_end
     );
+    // check that the power is correct: 1000 tokens locked for one epoch
+    // so power is 1000 * 1
+    assert_eq!(1000, lockup.current_voting_power.u128());
 
     let lockup = &res.lockups[1];
     // check that the id is 1
-    assert_eq!(1, lockup.lock_id);
-    assert_eq!(info2.funds[0].amount.u128(), lockup.funds.amount.u128());
-    assert_eq!(info2.funds[0].denom, lockup.funds.denom);
-    assert_eq!(env.block.time, lockup.lock_start);
+    assert_eq!(1, lockup.lock_entry.lock_id);
+    assert_eq!(
+        info2.funds[0].amount.u128(),
+        lockup.lock_entry.funds.amount.u128()
+    );
+    assert_eq!(info2.funds[0].denom, lockup.lock_entry.funds.denom);
+    assert_eq!(env.block.time, lockup.lock_entry.lock_start);
     assert_eq!(
         env.block.time.plus_nanos(THREE_MONTHS_IN_NANO_SECONDS),
-        lockup.lock_end
+        lockup.lock_entry.lock_end
     );
+    // check that the power is correct: 3000 tokens locked for three epochs
+    // so power is 3000 * 1.5 = 4500
+    assert_eq!(4500, lockup.current_voting_power.u128());
 }
 
 #[test]
