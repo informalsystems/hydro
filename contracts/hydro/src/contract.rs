@@ -1,3 +1,5 @@
+use std::ops::ControlFlow;
+
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
     Order, Response, StdError, StdResult, Timestamp, Uint128,
@@ -457,7 +459,7 @@ fn create_proposal(
     Ok(Response::new().add_attribute("action", "create_proposal"))
 }
 
-fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: Uint128) -> Uint128 {
+pub fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: Uint128) -> Uint128 {
     let two: Uint128 = 2u16.into();
 
     // Scale lockup power
@@ -564,20 +566,7 @@ fn vote(
     for lock in locks {
         let (_, lock_entry) = lock?;
 
-        // user gets 0 voting power for lockups that expire before the current round ends
-        if round_end.nanos() > lock_entry.lock_end.nanos() {
-            continue;
-        }
-
-        // Get the remaining lockup length at the end of this round.
-        // This means that their power will be scaled the same by this function no matter when they vote in the round
-        let lockup_length = lock_entry.lock_end.nanos() - round_end.nanos();
-
-        // Scale power. This is what implements the different powers for different lockup times.
-        let scaled_power =
-            scale_lockup_power(lock_epoch_length, lockup_length, lock_entry.funds.amount);
-
-        power += scaled_power;
+        power += get_lock_voting_power(round_end, lock_entry, lock_epoch_length);
     }
 
     let response = Response::new().add_attribute("action", "vote");
@@ -617,6 +606,20 @@ fn vote(
     VOTE_MAP.save(deps.storage, (round_id, tranche_id, info.sender), &vote)?;
 
     Ok(response)
+}
+
+// Returns the voting power of the given lock entry in a round with the given end time,
+// and using the given lock epoch length.
+fn get_lock_voting_power(
+    round_end: Timestamp,
+    lock_entry: LockEntry,
+    lock_epoch_length: u64,
+) -> Uint128 {
+    if round_end.nanos() > lock_entry.lock_end.nanos() {
+        return Uint128::zero();
+    }
+    let lockup_length = lock_entry.lock_end.nanos() - round_end.nanos();
+    scale_lockup_power(lock_epoch_length, lockup_length, lock_entry.funds.amount)
 }
 
 // Adds a new account address to the whitelist.
@@ -925,14 +928,15 @@ pub fn query_all_user_lockups(
         .map(|lock| {
             // compute the lockup power scaling due to remaining lockup length
             let lock_epoch_length = constants.lock_epoch_length;
-            let lockup_length = lock.lock_end.nanos() - round_end.nanos();
-            let scaled_lockup_power =
-                scale_lockup_power(lock_epoch_length, lockup_length, lock.funds.amount);
 
             // TODO: scale based on validator power ratio
             LockEntryWithPower {
                 lock_entry: lock.clone(),
-                current_voting_power: scaled_lockup_power,
+                current_voting_power: get_lock_voting_power(
+                    round_end,
+                    lock.clone(),
+                    lock_epoch_length,
+                ),
             }
         })
         .collect();
