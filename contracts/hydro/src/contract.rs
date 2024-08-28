@@ -619,6 +619,8 @@ fn vote(
         }
         let validator = validator_result.unwrap();
 
+        let scaled_shares = get_lock_time_weighted_shares(round_end, lock_entry, lock_epoch_length);
+
         // add the shares to the map
         let shares = time_weighted_shares_map.get(&validator);
         let shares = match shares {
@@ -628,10 +630,7 @@ fn vote(
         let new_shares = shares.checked_add(Decimal::from_ratio(scaled_shares, Uint128::one()))?;
 
         // insert the shares into the time_weigted_shares_map
-        time_weighted_shares_map.insert(
-            validator.clone(),
-            get_lock_time_weighted_shares(round_end, lock_entry, lock_epoch_length),
-        );
+        time_weighted_shares_map.insert(validator.clone(), new_shares);
     }
 
     let response = Response::new().add_attribute("action", "vote");
