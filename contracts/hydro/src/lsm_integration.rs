@@ -161,8 +161,18 @@ pub fn set_new_validator_power_ratio_for_round(
     validator: String,
     new_power_ratio: Decimal,
 ) -> StdResult<()> {
-    // TODO: go through proposals and update the power, as well as the total power for the round
-    VALIDATOR_POWER_PER_ROUND.save(storage, (round_id, validator), &new_power_ratio)
+    let old_power_ratio = VALIDATOR_POWER_PER_ROUND.load(storage, (round_id, validator.clone()))?;
+
+    VALIDATOR_POWER_PER_ROUND.save(storage, (round_id, validator.clone()), &new_power_ratio)?;
+
+    // update the power ratio for the validator in the score keepers
+    update_scores_due_to_power_ratio_change(
+        storage,
+        &validator,
+        round_id,
+        old_power_ratio,
+        new_power_ratio,
+    )
 }
 
 pub fn query_ibc_denom_trace(deps: Deps, denom: String) -> StdResult<DenomTrace> {
