@@ -1011,7 +1011,7 @@ pub fn query_all_user_lockups(
 
             // TODO: scale based on validator power ratio
             let validator_res =
-                validate_denom(deps.as_ref(), env.clone(), &constants, lock.funds.denom);
+                validate_denom(deps, env.clone(), &constants, lock.funds.denom.clone());
 
             if validator_res.is_err() {
                 // lockup has no power if validator is not in the current set
