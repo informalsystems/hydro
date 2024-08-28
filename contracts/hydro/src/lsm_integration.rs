@@ -10,7 +10,7 @@ use prost::Message;
 use crate::{
     contract::compute_current_round_id,
     score_keeper::{
-        get_total_power_for_proposal, update_power_ratio, update_power_ratio_for_proposal,
+        get_total_power_for_proposal, update_power_ratio_for_proposal,
         update_power_ratio_for_round_total,
     },
     state::{Constants, Proposal, CONSTANTS, PROPOSAL_MAP, PROPS_BY_SCORE, TRANCHE_MAP},
@@ -161,7 +161,9 @@ pub fn set_new_validator_power_ratio_for_round(
     validator: String,
     new_power_ratio: Decimal,
 ) -> StdResult<()> {
-    let old_power_ratio = VALIDATOR_POWER_PER_ROUND.load(storage, (round_id, validator.clone()))?;
+    let old_power_ratio = VALIDATOR_POWER_PER_ROUND
+        .load(storage, (round_id, validator.clone()))
+        .unwrap_or(Decimal::zero());
 
     VALIDATOR_POWER_PER_ROUND.save(storage, (round_id, validator.clone()), &new_power_ratio)?;
 
