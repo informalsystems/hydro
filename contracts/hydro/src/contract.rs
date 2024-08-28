@@ -7,7 +7,7 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::lsm_integration::validate_denom;
+use crate::lsm_integration::{get_validator_power_ratio_for_round, validate_denom};
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
@@ -1021,13 +1021,33 @@ pub fn query_all_user_lockups(
                 };
             }
 
+            // get the validators power ratio
+            let validator = validator_res.unwrap();
+            let validator_power_ratio =
+                get_validator_power_ratio_for_round(deps.storage, current_round_id, validator)
+                    .unwrap_or(Decimal::zero());
+
+            let time_weighted_shares =
+                get_lock_time_weighted_shares(round_end, lock.clone(), lock_epoch_length);
+
+            let current_voting_power = validator_power_ratio
+                .checked_mul(Decimal::from_ratio(time_weighted_shares, Uint128::one()));
+
+            if current_voting_power.is_err() {
+                // if there was an overflow error, log this but return 0
+                deps.api.debug(&format!(
+                    "Overflow error when computing voting power for lock: {:?}",
+                    lock
+                ));
+                return LockEntryWithPower {
+                    lock_entry: lock.clone(),
+                    current_voting_power: Uint128::zero(),
+                };
+            }
+
             LockEntryWithPower {
                 lock_entry: lock.clone(),
-                current_voting_power: get_lock_time_weighted_shares(
-                    round_end,
-                    lock.clone(),
-                    lock_epoch_length,
-                ),
+                current_voting_power: current_voting_power.unwrap().to_uint_ceil(),
             }
         })
         .collect();
