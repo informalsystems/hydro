@@ -28,7 +28,6 @@ cw2 = { workspace = true }
 cosmwasm-schema = { workspace = true }
 cw-utils = { workspace = true }
 cosmos-sdk-proto = { workspace = true }
-ibc-proto = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
 cw-orch = { workspace = true }

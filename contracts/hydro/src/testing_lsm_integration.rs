@@ -4,7 +4,7 @@ use cosmwasm_std::{
     testing::mock_env, BankMsg, Coin, CosmosMsg, Decimal, Env, StdError, Storage, SystemError,
     SystemResult, Timestamp, Uint128,
 };
-use ibc_proto::ibc::apps::transfer::v1::QueryDenomTraceResponse;
+use neutron_sdk::proto_types::ibc::applications::transfer::v1::QueryDenomTraceResponse;
 use prost::Message;
 
 use crate::{
@@ -65,7 +65,7 @@ fn test_validate_denom() {
         TestCase {
             description: "gRPC query returns error".to_string(),
             denom: IBC_DENOM_1.to_string(),
-            expected_result: Err(StdError::generic_err("Querier system error: Unknown system error")),
+            expected_result: Err(StdError::generic_err("Failed to obtain IBC denom trace: Generic error: Querier system error: Unknown system error")),
             setup: Box::new(|_storage, _env| { }),
             grpc_query: Box::new(|_query| { SystemResult::Err(SystemError::Unknown {}) }),
         },

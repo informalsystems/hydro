@@ -1,12 +1,10 @@
 use cosmwasm_std::{Binary, Decimal, Deps, Env, Order, StdError, StdResult, Storage};
 use cw_storage_plus::Map;
 
-use ibc_proto::ibc::{
-    applications::transfer::v1::{QueryDenomTraceRequest, QueryDenomTraceResponse},
-    apps::transfer::v1::DenomTrace,
+use neutron_sdk::proto_types::ibc::applications::transfer::v1::TransferQuerier;
+use neutron_sdk::{
+    bindings::query::NeutronQuery, proto_types::ibc::applications::transfer::v1::DenomTrace,
 };
-use neutron_sdk::bindings::query::NeutronQuery;
-use prost::Message;
 
 use crate::{
     contract::compute_current_round_id,
@@ -19,6 +17,7 @@ use crate::{
 
 pub const IBC_TOKEN_PREFIX: &str = "ibc/";
 pub const DENOM_TRACE_GRPC: &str = "/ibc.applications.transfer.v1.Query/DenomTrace";
+pub const INTERCHAINQUERIES_PARAMS_GRPC: &str = "/neutron.interchainqueries.Query/Params";
 pub const TRANSFER_PORT: &str = "transfer";
 pub const COSMOS_VALIDATOR_PREFIX: &str = "cosmosvaloper";
 pub const COSMOS_VALIDATOR_ADDR_LENGTH: usize = 52; // e.g. cosmosvaloper15w6ra6m68c63t0sv2hzmkngwr9t88e23r8vtg5
@@ -167,12 +166,8 @@ pub fn set_new_validator_power_ratio_for_round(
 }
 
 pub fn query_ibc_denom_trace(deps: Deps<NeutronQuery>, denom: String) -> StdResult<DenomTrace> {
-    let query_denom_trace_resp = deps.querier.query_grpc(
-        String::from(DENOM_TRACE_GRPC),
-        Binary::new(QueryDenomTraceRequest { hash: denom }.encode_to_vec()),
-    )?;
-
-    QueryDenomTraceResponse::decode(query_denom_trace_resp.as_slice())
+    TransferQuerier::new(&deps.querier)
+        .denom_trace(denom)
         .map_err(|err| StdError::generic_err(format!("Failed to obtain IBC denom trace: {}", err)))?
         .denom_trace
         .ok_or(StdError::generic_err("Failed to obtain IBC denom trace"))

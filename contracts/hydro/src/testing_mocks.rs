@@ -5,11 +5,8 @@ use cosmwasm_std::{
     testing::{
         MockApi, MockQuerier as BaseMockQuerier, MockQuerierCustomHandlerResult, MockStorage,
     },
-    Binary, ContractResult, GrpcQuery, OwnedDeps, Querier, QuerierResult, QueryRequest,
+    Binary, Coin, ContractResult, GrpcQuery, OwnedDeps, Querier, QuerierResult, QueryRequest,
     SystemError, SystemResult,
-};
-use ibc_proto::ibc::apps::transfer::v1::{
-    DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
 };
 use neutron_sdk::{
     bindings::{
@@ -17,11 +14,18 @@ use neutron_sdk::{
         types::{Height, InterchainQueryResult, RegisteredQuery, StorageValue},
     },
     interchain_queries::types::QueryType,
+    proto_types::{
+        cosmos::base::v1beta1::Coin as NeutronCoin,
+        ibc::applications::transfer::v1::{
+            DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
+        },
+        neutron::interchainqueries::{Params, QueryParamsResponse},
+    },
 };
 use prost::Message;
 use serde_json_wasm::to_string;
 
-use crate::lsm_integration::DENOM_TRACE_GRPC;
+use crate::lsm_integration::{DENOM_TRACE_GRPC, INTERCHAINQUERIES_PARAMS_GRPC};
 
 pub type GrpcQueryFunc = dyn Fn(GrpcQuery) -> QuerierResult;
 pub type CustomQueryFunc = dyn Fn(&NeutronQuery) -> QuerierResult;
@@ -108,6 +112,28 @@ pub fn denom_trace_grpc_query_mock(
                 denom_trace: Some(DenomTrace {
                     path: denom_trace_path.clone(),
                     base_denom: resolved_denom,
+                }),
+            }
+            .encode_to_vec(),
+        )
+    })
+}
+
+pub fn min_query_deposit_grpc_query_mock(mock_min_deposit: Coin) -> Box<GrpcQueryFunc> {
+    Box::new(move |query: GrpcQuery| {
+        if query.path != INTERCHAINQUERIES_PARAMS_GRPC {
+            panic!("unexpected gRPC query path");
+        }
+
+        system_result_ok_from(
+            QueryParamsResponse {
+                params: Some(Params {
+                    query_submit_timeout: 0,
+                    query_deposit: vec![NeutronCoin {
+                        denom: mock_min_deposit.denom.clone(),
+                        amount: mock_min_deposit.amount.to_string(),
+                    }],
+                    tx_query_removal_limit: 0,
                 }),
             }
             .encode_to_vec(),

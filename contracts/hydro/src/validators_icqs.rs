@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use cosmwasm_std::{
-    from_json, to_json_vec, Decimal, Deps, DepsMut, Env, Order, Reply, Response, StdError,
+    from_json, to_json_vec, Coin, Decimal, Deps, DepsMut, Env, Order, Reply, Response, StdError,
     StdResult, SubMsg, Uint128,
 };
 
@@ -10,14 +10,15 @@ use neutron_sdk::{
     interchain_queries::v047::{queries::query_staking_validators, types::Validator},
     interchain_txs::helpers::decode_message_response,
     proto_types::neutron::interchainqueries::{
-        MsgRegisterInterchainQueryResponse, MsgRemoveInterchainQueryResponse,
+        InterchainqueriesQuerier, MsgRegisterInterchainQueryResponse,
+        MsgRemoveInterchainQueryResponse,
     },
     NeutronError,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    contract::compute_current_round_id,
+    contract::{compute_current_round_id, NATIVE_TOKEN_DENOM},
     error::ContractError,
     state::{
         Constants, ValidatorInfo, CONSTANTS, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO,
@@ -327,6 +328,32 @@ fn get_interchain_query_result(
     }
 
     Ok(staking_validator.validators[0].clone())
+}
+
+pub fn query_min_interchain_query_deposit(deps: &Deps<NeutronQuery>) -> StdResult<Coin> {
+    match InterchainqueriesQuerier::new(&deps.querier)
+        .params()?
+        .params
+    {
+        Some(params) => {
+            match params
+                .query_deposit
+                .iter()
+                .find(|coin| coin.denom.eq(NATIVE_TOKEN_DENOM))
+            {
+                None => Err(StdError::generic_err(
+                    "Failed to obtain interchain query creation deposit.",
+                )),
+                Some(coin) => Ok(Coin::new(
+                    Uint128::from_str(coin.amount.as_str())?,
+                    coin.denom.clone(),
+                )),
+            }
+        }
+        None => Err(StdError::generic_err(
+            "Failed to obtain interchain query creation deposit.",
+        )),
+    }
 }
 
 fn update_power_ratio(

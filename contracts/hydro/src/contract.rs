@@ -30,7 +30,7 @@ use crate::state::{
 };
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
-    handle_submsg_reply,
+    handle_submsg_reply, query_min_interchain_query_deposit,
 };
 
 /// Contract name that is used for migration.
@@ -41,7 +41,6 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const MAX_LOCK_ENTRIES: usize = 100;
 
 pub const NATIVE_TOKEN_DENOM: &str = "untrn";
-pub const MIN_ICQ_DEPOSIT: u128 = 1_000_000;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -920,8 +919,9 @@ fn create_icqs_for_validators(
         }
     }
 
-    let sent_token = must_pay(&info, NATIVE_TOKEN_DENOM)?;
-    let min_icqs_deposit = MIN_ICQ_DEPOSIT * (valid_addresses.len() as u128);
+    let min_icq_deposit = query_min_interchain_query_deposit(&deps.as_ref())?;
+    let sent_token = must_pay(&info, &min_icq_deposit.denom)?;
+    let min_icqs_deposit = min_icq_deposit.amount.u128() * (valid_addresses.len() as u128);
     if min_icqs_deposit > sent_token.u128() {
         return Err(ContractError::Std(
             StdError::generic_err(format!("Insufficient tokens sent to pay for interchain queries deposits. Sent: {}, Required: {}", Coin::new(sent_token, NATIVE_TOKEN_DENOM), Coin::new(min_icqs_deposit, NATIVE_TOKEN_DENOM)))));

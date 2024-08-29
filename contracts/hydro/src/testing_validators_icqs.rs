@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 
 use cosmos_sdk_proto::cosmos::staking::v1beta1::Validator as CosmosValidator;
+use cosmos_sdk_proto::prost::Message;
 use cosmwasm_std::{testing::mock_env, Binary, Coin, Decimal, Uint128};
 use neutron_sdk::{
     bindings::types::StorageValue,
     interchain_queries::{types::QueryType, v047::types::STAKING_STORE_KEY},
     sudo::msg::SudoMsg,
 };
-use prost::Message;
 
 use crate::{
     contract::{
         execute, instantiate, query_validators_info, query_validators_per_round, sudo,
-        MIN_ICQ_DEPOSIT, NATIVE_TOKEN_DENOM,
+        NATIVE_TOKEN_DENOM,
     },
     msg::ExecuteMsg,
     state::{
@@ -23,7 +23,8 @@ use crate::{
         get_default_instantiate_msg, get_message_info, VALIDATOR_1, VALIDATOR_2, VALIDATOR_3,
     },
     testing_mocks::{
-        custom_interchain_query_mock, mock_dependencies, no_op_grpc_query_mock, ICQMockData,
+        custom_interchain_query_mock, min_query_deposit_grpc_query_mock, mock_dependencies,
+        no_op_grpc_query_mock, ICQMockData,
     },
     validators_icqs::TOKENS_TO_SHARES_MULTIPLIER,
 };
@@ -37,7 +38,11 @@ struct ICQResultsParseTestCase {
 
 #[test]
 fn create_interchain_queries_test() {
-    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    let min_deposit = Coin::new(1000000u64, NATIVE_TOKEN_DENOM);
+    let (mut deps, env) = (
+        mock_dependencies(min_query_deposit_grpc_query_mock(min_deposit.clone())),
+        mock_env(),
+    );
     let info = get_message_info(&deps.api, "addr0000", &[]);
 
     let msg = get_default_instantiate_msg(&deps.api);
@@ -64,8 +69,8 @@ fn create_interchain_queries_test() {
     assert!(res.to_string().to_lowercase().contains("no funds sent"));
 
     let user_token = Coin::new(1000u128, NATIVE_TOKEN_DENOM);
-    // in the msg above there are 2 valid addresses, hence 2 * MIN_ICQ_DEPOSIT
-    let min_deposit_required = Coin::new(2 * MIN_ICQ_DEPOSIT, NATIVE_TOKEN_DENOM);
+    // in the msg above there are 2 valid addresses, hence 2 * min_deposit
+    let min_deposit_required = Coin::new(2 * min_deposit.amount.u128(), min_deposit.denom.clone());
 
     let info = get_message_info(&deps.api, "addr0000", &[user_token.clone()]);
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone()).unwrap_err();
