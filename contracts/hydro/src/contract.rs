@@ -1,13 +1,17 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
-    MessageInfo, Order, Response, StdError, StdResult, Timestamp, Uint128,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, MessageInfo, Order, Reply, Response, StdError, StdResult, Timestamp, Uint128
 };
 use cw2::set_contract_version;
+use cw_utils::must_pay;
+use neutron_sdk::bindings::msg::NeutronMsg;
+use neutron_sdk::bindings::query::NeutronQuery;
+use neutron_sdk::interchain_queries::v047::register_queries::new_register_staking_validators_query_msg;
+use neutron_sdk::sudo::msg::SudoMsg;
 
 use crate::error::ContractError;
-use crate::lsm_integration::{get_validator_power_ratio_for_round, validate_denom};
+use crate::lsm_integration::{get_validator_power_ratio_for_round, validate_denom, COSMOS_VALIDATOR_PREFIX};
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
@@ -22,9 +26,11 @@ use crate::score_keeper::{
     remove_many_validator_shares_from_proposal,
 };
 use crate::state::{
-    Constants, LockEntry, Proposal, Tranche, Vote, VoteWithPower, CONSTANTS, LOCKED_TOKENS,
-    LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, VOTE_MAP,
-    WHITELIST, WHITELIST_ADMINS,
+    Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND_NEW, VALIDATOR_TO_QUERY_ID, VOTE_MAP, WHITELIST, WHITELIST_ADMINS
+};
+use crate::validators_icqs::{
+    build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
+    handle_submsg_reply,
 };
 
 /// Contract name that is used for migration.
@@ -34,13 +40,16 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const MAX_LOCK_ENTRIES: usize = 100;
 
+pub const NATIVE_TOKEN_DENOM: &str = "untrn";
+pub const MIN_ICQ_DEPOSIT: u128 = 1_000_000;
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     // validate that the first round starts in the future
@@ -62,9 +71,11 @@ pub fn instantiate(
         lock_epoch_length: msg.lock_epoch_length,
         first_round_start: msg.first_round_start,
         max_locked_tokens: msg.max_locked_tokens.u128(),
-        hub_transfer_channel_id: msg.hub_transfer_channel_id,
-        paused: false,
         max_validator_shares_participating: msg.max_validator_shares_participating,
+        hub_connection_id: msg.hub_connection_id,
+        hub_transfer_channel_id: msg.hub_transfer_channel_id,
+        icq_update_period: msg.icq_update_period,
+        paused: false,
     };
 
     CONSTANTS.save(deps.storage, &state)?;
@@ -122,11 +133,11 @@ pub fn instantiate(
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     match msg {
         ExecuteMsg::LockTokens { lock_duration } => lock_tokens(deps, env, info, lock_duration),
         ExecuteMsg::RefreshLockDuration {
@@ -157,6 +168,9 @@ pub fn execute(
             tranche_name,
             tranche_metadata,
         } => edit_tranche(deps, info, tranche_id, tranche_name, tranche_metadata),
+        ExecuteMsg::CreateICQsForValidators { validators } => {
+            create_icqs_for_validators(deps, env, info, validators)
+        }
     }
 }
 
@@ -165,11 +179,11 @@ pub fn execute(
 //     Validate against the accepted denom
 //     Create entry in LocksMap
 fn lock_tokens(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     lock_duration: u64,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -243,12 +257,12 @@ fn lock_tokens(
 // This should essentially have the same effect as removing the old lock and immediately re-locking all
 // the same funds for the new lock duration.
 fn refresh_lock_duration(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     lock_id: u64,
     lock_duration: u64,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -348,7 +362,11 @@ fn validate_lock_duration(lock_epoch_length: u64, lock_duration: u64) -> Result<
 //     Validate `lock_end` < now
 //     Send `amount` tokens back to caller
 //     Delete entry from LocksMap
-fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
+fn unlock_tokens(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -404,7 +422,7 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
 }
 
 fn validate_previous_round_vote(
-    deps: &DepsMut,
+    deps: &DepsMut<NeutronQuery>,
     env: &Env,
     sender: Addr,
 ) -> Result<(), ContractError> {
@@ -436,13 +454,13 @@ fn validate_previous_round_vote(
 // * validate that the creator of the proposal is on the whitelist
 // Then, it will create the proposal in the specified tranche and in the current round.
 fn create_proposal(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     tranche_id: u64,
     title: String,
     description: String,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
@@ -503,12 +521,12 @@ pub fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: U
 }
 
 fn vote(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     tranche_id: u64,
     proposal_id: u64,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     // This voting system is designed to allow for an unlimited number of proposals and an unlimited number of votes
     // to be created, without being vulnerable to DOS. A naive implementation, where all votes or all proposals were iterated
     // at the end of the round could be DOSed by creating a large number of votes or proposals. This is not a problem
@@ -701,11 +719,11 @@ fn get_lock_time_weighted_shares(
 
 // Adds a new account address to the whitelist.
 fn add_to_whitelist(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     _env: Env,
     info: MessageInfo,
     address: String,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -730,11 +748,11 @@ fn add_to_whitelist(
 
 // Removes an account address from the whitelist.
 fn remove_from_whitelist(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     _env: Env,
     info: MessageInfo,
     address: String,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -752,10 +770,10 @@ fn remove_from_whitelist(
 }
 
 fn update_max_locked_tokens(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
     max_locked_tokens: u128,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let mut constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -774,7 +792,10 @@ fn update_max_locked_tokens(
 //     Validate that the contract isn't already paused
 //     Validate sender is whitelist admin
 //     Set paused to true and save the changes
-fn pause_contract(deps: DepsMut, info: MessageInfo) -> Result<Response, ContractError> {
+fn pause_contract(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+) -> Result<Response<NeutronMsg>, ContractError> {
     let mut constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -795,10 +816,10 @@ fn pause_contract(deps: DepsMut, info: MessageInfo) -> Result<Response, Contract
 //     Validate that the tranche with the same name doesn't already exist
 //     Add new tranche to the store
 fn add_tranche(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
     tranche: TrancheInfo,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
     let tranche_name = tranche.name.trim().to_string();
 
@@ -831,12 +852,12 @@ fn add_tranche(
 //     Validate that the tranche with the same name doesn't already exist
 //     Update the tranche in the store
 fn edit_tranche(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
     tranche_id: u64,
     tranche_name: Option<String>,
     tranche_metadata: Option<String>,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -869,8 +890,71 @@ fn edit_tranche(
         .add_attribute("new tranche metadata", tranche.metadata))
 }
 
+// CreateICQsForValidators:
+//     Validate that the contract isn't paused
+//     Validate that the first round has started, since handling the results of the interchain queries relies on it
+//     Validate received validator addresses
+//     Validate that the sender paid enough deposit for ICQs creation
+//     Create ICQ for each of the valid addresses
+fn create_icqs_for_validators(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    validators: Vec<String>,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+    compute_current_round_id(&env, &constants)?;
+
+    let mut valid_addresses = HashSet::new();
+    for validator in validators
+        .iter()
+        .map(|validator| validator.trim().to_owned())
+    {
+        if !valid_addresses.contains(&validator)
+            && validator.starts_with(COSMOS_VALIDATOR_PREFIX)
+            && bech32::decode(&validator).is_ok()
+            && !VALIDATOR_TO_QUERY_ID.has(deps.storage, validator.clone())
+        {
+            valid_addresses.insert(validator);
+        }
+    }
+
+    let sent_token = must_pay(&info, NATIVE_TOKEN_DENOM)?;
+    let min_icqs_deposit = MIN_ICQ_DEPOSIT * (valid_addresses.len() as u128);
+    if min_icqs_deposit > sent_token.u128() {
+        return Err(ContractError::Std(
+            StdError::generic_err(format!("Insufficient tokens sent to pay for interchain queries deposits. Sent: {}, Required: {}", Coin::new(sent_token, NATIVE_TOKEN_DENOM), Coin::new(min_icqs_deposit, NATIVE_TOKEN_DENOM)))));
+    }
+
+    let mut register_icqs_submsgs = vec![];
+    for validator_address in valid_addresses {
+        let msg = new_register_staking_validators_query_msg(
+            constants.hub_connection_id.clone(),
+            vec![validator_address.clone()],
+            constants.icq_update_period,
+        )
+        .map_err(|err| {
+            StdError::generic_err(format!(
+                "Failed to create staking validators interchain query. Error: {}",
+                err
+            ))
+        })?;
+
+        register_icqs_submsgs.push(build_create_interchain_query_submsg(
+            msg,
+            validator_address,
+        )?);
+    }
+
+    Ok(Response::new()
+        .add_attribute("action", "create_icqs_for_validators")
+        .add_attribute("sender", info.sender.clone())
+        .add_submessages(register_icqs_submsgs))
+}
+
 fn validate_sender_is_whitelist_admin(
-    deps: &DepsMut,
+    deps: &DepsMut<NeutronQuery>,
     info: &MessageInfo,
 ) -> Result<(), ContractError> {
     let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
@@ -889,7 +973,7 @@ fn validate_contract_is_not_paused(constants: &Constants) -> Result<(), Contract
 }
 
 fn validate_tranche_name_uniqueness(
-    deps: &DepsMut,
+    deps: &DepsMut<NeutronQuery>,
     tranche_name: &String,
 ) -> Result<(), ContractError> {
     for tranche_entry in TRANCHE_MAP.range(deps.storage, None, None, Order::Ascending) {
@@ -905,7 +989,7 @@ fn validate_tranche_name_uniqueness(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Constants {} => to_json_binary(&query_constants(deps)?),
         QueryMsg::Tranches {} => to_json_binary(&query_tranches(deps)?),
@@ -966,7 +1050,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
 }
 
 pub fn query_round_total_power(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     round_id: u64,
 ) -> StdResult<RoundTotalVotingPowerResponse> {
     let total_round_power = get_total_power_for_round(deps.storage, round_id)?;
@@ -975,14 +1059,14 @@ pub fn query_round_total_power(
     })
 }
 
-pub fn query_constants(deps: Deps) -> StdResult<ConstantsResponse> {
+pub fn query_constants(deps: Deps<NeutronQuery>) -> StdResult<ConstantsResponse> {
     Ok(ConstantsResponse {
         constants: CONSTANTS.load(deps.storage)?,
     })
 }
 
 pub fn query_all_user_lockups(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     env: Env,
     address: String,
     start_from: u32,
@@ -1055,7 +1139,7 @@ pub fn query_all_user_lockups(
 }
 
 pub fn query_expired_user_lockups(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     env: Env,
     address: String,
     start_from: u32,
@@ -1076,7 +1160,7 @@ pub fn query_expired_user_lockups(
 }
 
 pub fn query_proposal(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
@@ -1087,7 +1171,7 @@ pub fn query_proposal(
 }
 
 pub fn query_user_voting_power(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     env: Env,
     address: String,
 ) -> StdResult<UserVotingPowerResponse> {
@@ -1112,7 +1196,7 @@ pub fn query_user_voting_power(
 }
 
 pub fn query_user_vote(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     round_id: u64,
     tranche_id: u64,
     user_address: String,
@@ -1133,7 +1217,7 @@ pub fn query_user_vote(
 }
 
 pub fn query_round_tranche_proposals(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     round_id: u64,
     tranche_id: u64,
     start_from: u32,
@@ -1158,14 +1242,17 @@ pub fn query_round_tranche_proposals(
     Ok(RoundProposalsResponse { proposals })
 }
 
-pub fn query_current_round_id(deps: Deps, env: Env) -> StdResult<CurrentRoundResponse> {
+pub fn query_current_round_id(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+) -> StdResult<CurrentRoundResponse> {
     let constants = &CONSTANTS.load(deps.storage)?;
     let round_id = compute_round_id_for_timestamp(constants, env.block.time.nanos())?;
 
     Ok(CurrentRoundResponse { round_id })
 }
 
-pub fn query_round_end(deps: Deps, round_id: u64) -> StdResult<RoundEndResponse> {
+pub fn query_round_end(deps: Deps<NeutronQuery>, round_id: u64) -> StdResult<RoundEndResponse> {
     let constants = &CONSTANTS.load(deps.storage)?;
     let round_end = compute_round_end(constants, round_id)?;
 
@@ -1173,7 +1260,7 @@ pub fn query_round_end(deps: Deps, round_id: u64) -> StdResult<RoundEndResponse>
 }
 
 pub fn query_top_n_proposals(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     round_id: u64,
     tranche_id: u64,
     num: usize,
@@ -1223,7 +1310,7 @@ pub fn query_top_n_proposals(
     })
 }
 
-pub fn query_tranches(deps: Deps) -> StdResult<TranchesResponse> {
+pub fn query_tranches(deps: Deps<NeutronQuery>) -> StdResult<TranchesResponse> {
     let tranches = TRANCHE_MAP
         .range(deps.storage, None, None, Order::Ascending)
         .map(|t| t.unwrap().1)
@@ -1233,7 +1320,7 @@ pub fn query_tranches(deps: Deps) -> StdResult<TranchesResponse> {
 }
 
 fn query_user_lockups(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     user_address: Addr,
     predicate: impl FnMut(&LockEntry) -> bool,
     start_from: u32,
@@ -1249,22 +1336,44 @@ fn query_user_lockups(
         .collect()
 }
 
-pub fn query_whitelist(deps: Deps) -> StdResult<WhitelistResponse> {
+pub fn query_whitelist(deps: Deps<NeutronQuery>) -> StdResult<WhitelistResponse> {
     Ok(WhitelistResponse {
         whitelist: WHITELIST.load(deps.storage)?,
     })
 }
 
-pub fn query_whitelist_admins(deps: Deps) -> StdResult<WhitelistAdminsResponse> {
+pub fn query_whitelist_admins(deps: Deps<NeutronQuery>) -> StdResult<WhitelistAdminsResponse> {
     Ok(WhitelistAdminsResponse {
         admins: WHITELIST_ADMINS.load(deps.storage)?,
     })
 }
 
-pub fn query_total_locked_tokens(deps: Deps) -> StdResult<TotalLockedTokensResponse> {
+pub fn query_total_locked_tokens(deps: Deps<NeutronQuery>) -> StdResult<TotalLockedTokensResponse> {
     Ok(TotalLockedTokensResponse {
         total_locked_tokens: LOCKED_TOKENS.load(deps.storage)?,
     })
+}
+
+pub fn query_validators_info(
+    deps: Deps<NeutronQuery>,
+    round_id: u64,
+) -> StdResult<Vec<ValidatorInfo>> {
+    Ok(VALIDATORS_INFO
+        .prefix(round_id)
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|l| l.unwrap().1)
+        .collect())
+}
+
+pub fn query_validators_per_round(
+    deps: Deps<NeutronQuery>,
+    round_id: u64,
+) -> StdResult<Vec<(u128, String)>> {
+    Ok(VALIDATORS_PER_ROUND_NEW
+        .sub_prefix(round_id)
+        .range(deps.storage, None, None, Order::Descending)
+        .map(|l| l.unwrap().0)
+        .collect())
 }
 
 // Computes the current round_id by taking contract_start_time and dividing the time since
@@ -1294,7 +1403,7 @@ fn compute_round_end(constants: &Constants, round_id: u64) -> StdResult<Timestam
 
 #[allow(clippy::too_many_arguments)] // complex function that needs a lot of arguments
 fn update_total_time_weighted_shares<T>(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     constants: &Constants,
     start_round_id: u64,
     end_round_id: u64,
@@ -1332,7 +1441,7 @@ where
 }
 
 // Returns the number of locks for a given user
-fn get_lock_count(deps: Deps, user_address: Addr) -> usize {
+fn get_lock_count(deps: Deps<NeutronQuery>, user_address: Addr) -> usize {
     LOCKS_MAP
         .prefix(user_address)
         .range(deps.storage, None, None, Order::Ascending)
@@ -1346,7 +1455,11 @@ fn get_lock_count(deps: Deps, user_address: Addr) -> usize {
 /// perform any state changes needed. It should also handle the un-pausing of the contract, depending if
 /// it was previously paused or not.
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+pub fn migrate(
+    deps: DepsMut<NeutronQuery>,
+    _env: Env,
+    _msg: MigrateMsg,
+) -> Result<Response<NeutronMsg>, ContractError> {
     CONSTANTS.update(
         deps.storage,
         |mut constants| -> Result<Constants, ContractError> {
@@ -1356,4 +1469,29 @@ pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, C
     )?;
 
     Ok(Response::default())
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn reply(
+    deps: DepsMut<NeutronQuery>,
+    _env: Env,
+    msg: Reply,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    handle_submsg_reply(deps, msg)
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn sudo(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    msg: SudoMsg,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    match msg {
+        SudoMsg::KVQueryResult { query_id } => {
+            handle_delivered_interchain_query_result(deps, env, query_id)
+        }
+        _ => Err(ContractError::Std(StdError::generic_err(
+            "Unexpected sudo message received",
+        ))),
+    }
 }

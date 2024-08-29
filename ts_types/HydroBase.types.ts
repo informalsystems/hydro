@@ -24,7 +24,9 @@ export interface ConstantsResponse {
 }
 export interface Constants {
   first_round_start: Timestamp;
+  hub_connection_id: string;
   hub_transfer_channel_id: string;
+  icq_update_period: number;
   lock_epoch_length: number;
   max_locked_tokens: number;
   max_validator_shares_participating: number;
@@ -80,6 +82,10 @@ export type ExecuteMsg = {
     tranche_metadata?: string | null;
     tranche_name?: string | null;
   };
+} | {
+  create_icqs_for_validators: {
+    validators: string[];
+  };
 };
 export interface TrancheInfo {
   metadata: string;
@@ -90,10 +96,12 @@ export interface ExpiredUserLockupsResponse {
 }
 export interface InstantiateMsg {
   first_round_start: Timestamp;
+  hub_connection_id: string;
   hub_transfer_channel_id: string;
+  icq_update_period: number;
   initial_whitelist: string[];
   lock_epoch_length: number;
-  max_locked_tokens: number;
+  max_locked_tokens: Uint128;
   max_validator_shares_participating: number;
   round_length: number;
   tranches: TrancheInfo[];

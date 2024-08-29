@@ -340,6 +340,11 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
     trancheMetadata?: string;
     trancheName?: string;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  createIcqsForValidators: ({
+    validators
+  }: {
+    validators: string[];
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseInterface {
   client: SigningCosmWasmClient;
@@ -361,6 +366,7 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.pause = this.pause.bind(this);
     this.addTranche = this.addTranche.bind(this);
     this.editTranche = this.editTranche.bind(this);
+    this.createIcqsForValidators = this.createIcqsForValidators.bind(this);
   }
   lockTokens = async ({
     lockDuration
@@ -486,6 +492,17 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
         tranche_id: trancheId,
         tranche_metadata: trancheMetadata,
         tranche_name: trancheName
+      }
+    }, fee, memo, _funds);
+  };
+  createIcqsForValidators = async ({
+    validators
+  }: {
+    validators: string[];
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      create_icqs_for_validators: {
+        validators
       }
     }, fee, memo, _funds);
   };

@@ -17,6 +17,7 @@ use crate::{
 use cosmwasm_std::testing::{mock_env, MockApi};
 use cosmwasm_std::{BankMsg, CosmosMsg, Decimal, Deps, DepsMut, MessageInfo, Timestamp, Uint128};
 use cosmwasm_std::{Coin, StdError, StdResult};
+use neutron_sdk::bindings::query::NeutronQuery;
 use proptest::prelude::*;
 
 pub const VALIDATOR_1: &str = "cosmosvaloper157v7tczs40axfgejp2m43kwuzqe0wsy0rv8puv";
@@ -104,7 +105,9 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         initial_whitelist: vec![user_address],
         whitelist_admins: vec![],
         max_validator_shares_participating: 100,
+        hub_connection_id: "connection-0".to_string(),
         hub_transfer_channel_id: "channel-0".to_string(),
+        icq_update_period: 100,
     }
 }
 
@@ -1023,7 +1026,7 @@ fn total_voting_power_tracking_test() {
     verify_expected_voting_power(deps.as_ref(), &expected_total_voting_powers);
 }
 
-fn verify_expected_voting_power(deps: Deps, expected_powers: &[(u64, u128)]) {
+fn verify_expected_voting_power(deps: Deps<NeutronQuery>, expected_powers: &[(u64, u128)]) {
     for expected_power in expected_powers {
         let res = query_round_total_power(deps, expected_power.0);
 
@@ -1360,6 +1363,7 @@ fn contract_pausing_test() {
             tranche_name: Some(String::new()),
             tranche_metadata: Some(String::new()),
         },
+        ExecuteMsg::CreateICQsForValidators { validators: vec![] },
     ];
 
     for msg in msgs {
