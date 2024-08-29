@@ -1,6 +1,8 @@
+use std::time::Duration;
+
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
-    Order, Response, StdError, StdResult,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, IbcMsg,
+    IbcTimeout, MessageInfo, Order, Response, StdError, StdResult, Uint128,
 };
 use cw2::set_contract_version;
 
@@ -21,6 +23,9 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const DEFAULT_MAX_ENTRIES: usize = 100;
 
+// Use 1 week as IBC timeout by default
+pub const IBC_TIMEOUT_DURATION_IN_SECONDS: u64 = 60 * 60 * 24 * 7;
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
@@ -32,6 +37,7 @@ pub fn instantiate(
     let config = Config {
         hydro_contract: deps.api.addr_validate(&msg.hydro_contract)?,
         top_n_props_count: msg.top_n_props_count,
+        community_pool_config: msg.community_pool_config,
     };
 
     CONFIG.save(deps.storage, &config)?;
@@ -66,6 +72,10 @@ pub fn execute(
             proposal_id,
             tribute_id,
         } => refund_tribute(deps, info, round_id, proposal_id, tranche_id, tribute_id),
+        ExecuteMsg::ClaimCommunityPoolTribute {
+            round_id,
+            tranche_id,
+        } => claim_tribute_for_community_pool(deps, _env, round_id, tranche_id),
     }
 }
 
@@ -173,14 +183,15 @@ fn claim_tribute(
     )?;
 
     // Check that the voter voted for one of the top N proposals
-    let proposal = match get_top_n_proposal(&deps, &config, round_id, tranche_id, vote.prop_id)? {
-        Some(prop) => prop,
-        None => {
-            return Err(ContractError::Std(StdError::generic_err(
-                "User voted for proposal outside of top N proposals",
-            )))
-        }
-    };
+    let proposal =
+        match get_top_n_proposal(&deps.as_ref(), &config, round_id, tranche_id, vote.prop_id)? {
+            Some(prop) => prop,
+            None => {
+                return Err(ContractError::Std(StdError::generic_err(
+                    "User voted for proposal outside of top N proposals",
+                )))
+            }
+        };
 
     // Load the tribute and use the percentage to figure out how much of the tribute to send them
     let tribute = TRIBUTE_MAP.load(
@@ -218,6 +229,61 @@ fn claim_tribute(
         }))
 }
 
+// For each proposal in the top N proposals for the given round and tranche:
+// Trigger a send of the community pool tax share to the community pool address
+fn claim_tribute_for_community_pool(
+    deps: DepsMut,
+    env: Env,
+    round_id: u64,
+    tranche_id: u64,
+) -> Result<Response, ContractError> {
+    // Load the config
+    let config = CONFIG.load(deps.storage).unwrap();
+
+    // Load the top N proposals
+    let proposals_resp: Vec<Proposal> =
+        get_top_n_proposals(&deps.as_ref(), &config, round_id, tranche_id).unwrap();
+
+    // For each proposal in the top N proposals, send the community pool tax share to the community pool address
+    let mut res = Response::new();
+
+    for proposal in proposals_resp {
+        // Load the tribute
+        let tribute = TRIBUTE_MAP
+            .load(
+                deps.storage,
+                ((round_id, tranche_id), proposal.proposal_id, 0),
+            )
+            .unwrap();
+
+        // Calculate the community pool share
+        let community_pool_share =
+            get_community_pool_tribute_share(&config, tribute.clone().funds).unwrap();
+
+        let send_coin = Coin {
+            denom: tribute.funds.denom,
+            amount: community_pool_share,
+        };
+
+        // Send the community pool share to the community pool address
+        res = res
+            .add_attribute("action", "claim_tribute_for_community_pool")
+            .add_message(IbcMsg::Transfer {
+                channel_id: config.community_pool_config.clone().channel_id,
+                to_address: config.community_pool_config.clone().community_pool_address,
+                amount: send_coin,
+                timeout: IbcTimeout::with_timestamp(
+                    env.block.time.plus_seconds(IBC_TIMEOUT_DURATION_IN_SECONDS),
+                ),
+                memo: None,
+            });
+    }
+    Ok(res
+        .add_attribute("round_id", round_id.to_string())
+        .add_attribute("tranche_id", tranche_id.to_string())
+        .add_attribute("action", "claim_tribute_for_community_pool"))
+}
+
 // RefundTribute(round_id, tranche_id, prop_id, tribute_id):
 //     Check that the round is ended
 //     Check that the prop lost
@@ -242,7 +308,7 @@ fn refund_tribute(
         )));
     }
 
-    if get_top_n_proposal(&deps, &config, round_id, tranche_id, proposal_id)?.is_some() {
+    if get_top_n_proposal(&deps.as_ref(), &config, round_id, tranche_id, proposal_id)?.is_some() {
         return Err(ContractError::Std(StdError::generic_err(
             "Can't refund top N proposal",
         )));
@@ -378,7 +444,7 @@ fn query_user_vote(
 }
 
 fn get_top_n_proposal(
-    deps: &DepsMut,
+    deps: &Deps,
     config: &Config,
     round_id: u64,
     tranche_id: u64,
@@ -400,6 +466,59 @@ fn get_top_n_proposal(
     }
 
     Ok(None)
+}
+
+fn get_top_n_proposals(
+    deps: &Deps,
+    config: &Config,
+    round_id: u64,
+    tranche_id: u64,
+) -> Result<Vec<Proposal>, ContractError> {
+    let proposals_resp: TopNProposalsResponse = deps.querier.query_wasm_smart(
+        &config.hydro_contract,
+        &HydroQueryMsg::TopNProposals {
+            round_id,
+            tranche_id,
+            number_of_proposals: config.top_n_props_count as usize,
+        },
+    )?;
+
+    Ok(proposals_resp.proposals)
+}
+
+// Given a funds amount, calculate how much of it should go to the community pool
+pub fn get_community_pool_tribute_share(
+    config: &Config,
+    funds: Coin,
+) -> Result<Uint128, ContractError> {
+    // Calculate the community pool share
+    let mul_res = Decimal::from_ratio(funds.amount, Uint128::one())
+        .checked_mul(config.community_pool_config.tax_percent);
+    if mul_res.is_err() {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Failed to calculate community pool share due to overflow",
+        )));
+    }
+
+    // round down here to avoid claiming more than the tax amount
+    let community_pool_share = mul_res.unwrap().to_uint_floor();
+    Ok(community_pool_share)
+}
+
+// Given a funds amount, calculate how much of it should go to the voters
+pub fn get_voters_tribute_share(config: &Config, funds: Coin) -> Result<Uint128, ContractError> {
+    // Calculate the voters share
+    let voters_share_res = funds
+        .amount
+        .checked_sub(get_community_pool_tribute_share(config, funds)?);
+
+    if voters_share_res.is_err() {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Failed to calculate voters share due to overflow",
+        )));
+    }
+
+    Ok(voters_share_res.unwrap())
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]

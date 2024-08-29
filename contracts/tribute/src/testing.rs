@@ -1,12 +1,13 @@
 use crate::{
     contract::{execute, instantiate, query_proposal_tributes},
     msg::{ExecuteMsg, InstantiateMsg},
+    state::CommunityPoolConfig,
 };
 use cosmwasm_std::{
     from_json,
     testing::{mock_dependencies, mock_env, MockApi},
-    to_json_binary, Binary, ContractResult, MessageInfo, QuerierResult, Response, SystemError,
-    SystemResult, Uint128, WasmQuery,
+    to_json_binary, Binary, ContractResult, Decimal, MessageInfo, QuerierResult, Response,
+    SystemError, SystemResult, Uint128, WasmQuery,
 };
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
 use hydro::query::{
@@ -19,6 +20,11 @@ pub fn get_instantiate_msg(hydro_contract: String) -> InstantiateMsg {
     InstantiateMsg {
         hydro_contract,
         top_n_props_count: 10,
+        community_pool_config: CommunityPoolConfig {
+            tax_percent: Decimal::zero(),
+            channel_id: "channel_id".to_string(),
+            community_pool_address: "community_pool_address".to_string(),
+        },
     }
 }
 
