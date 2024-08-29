@@ -718,3 +718,12 @@ fn verify_tokens_received(
         _ => panic!("expected CosmosMsg::Bank msg"),
     };
 }
+
+// TODO: add tests
+// property-based test that voters share + community pool shares = the total tribute (make sure no rounding errors)
+
+// test where community pool is claimed; check that it is correctly sent to the community pool address
+
+// test that voters tribute share is reduced by the community pool
+
+// maybe proptest to check that no matter who claims, the tribute never runs out of money

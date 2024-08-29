@@ -199,13 +199,17 @@ fn claim_tribute(
         ((round_id, tranche_id), vote.prop_id, tribute_id),
     )?;
 
+    // adjust the tribute to get only the portion that should be distributed
+    // to the voters
+    let voters_share = get_voters_tribute_share(&config, tribute.clone().funds)?;
+
     // Divide voter's vote power by the prop's power to figure out their percentage
     let percentage_fraction = (vote.power, proposal.power);
     // checked_mul_floor() is used so that, due to the precision, contract doesn't transfer by 1 token more
     // to some users, which would leave the last users trying to claim the tribute unable to do so
     // This also implies that some dust amount of tokens could be left on the contract after everyone
     // claiming their portion of the tribute
-    let amount = match tribute.funds.amount.checked_mul_floor(percentage_fraction) {
+    let amount = match voters_share.checked_mul_floor(percentage_fraction) {
         Ok(amount) => amount,
         Err(_) => {
             return Err(ContractError::Std(StdError::generic_err(
