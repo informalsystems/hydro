@@ -891,7 +891,7 @@ fn edit_tranche(
 
 // CreateICQsForValidators:
 //     Validate that the contract isn't paused
-//     Validate that the first round has started, since handling the results of the interchain queries relies on it
+//     Validate that the first round has started
 //     Validate received validator addresses
 //     Validate that the sender paid enough deposit for ICQs creation
 //     Create ICQ for each of the valid addresses
@@ -903,6 +903,8 @@ fn create_icqs_for_validators(
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
+    // This function will return error if the first round hasn't started yet. It is necessarry
+    // that it has started, since handling the results of the interchain queries relies on this.
     compute_current_round_id(&env, &constants)?;
 
     let mut valid_addresses = HashSet::new();
