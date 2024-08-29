@@ -11,12 +11,13 @@ import (
 
 const (
 	//hub params
-	HubImageName    = "ghcr.io/hyphacoop/gaia"
-	HubImageVersion = "v19.0.0"
-	HubBin          = "gaiad"
-	HubBech32Prefix = "cosmos"
-	HubChainID      = "gaia"
-	Uatom           = "uatom"
+	HubImageName     = "ghcr.io/hyphacoop/gaia"
+	HubImageVersion  = "v19.0.0"
+	HubBin           = "gaiad"
+	HubBech32Prefix  = "cosmos"
+	HubValOperPrefix = "cosmosvaloper"
+	HubChainID       = "gaia"
+	Uatom            = "uatom"
 	//neutron params
 	NeutronImageName    = "ghcr.io/strangelove-ventures/heighliner/neutron"
 	NeutronVersion      = "v4.2.0"
@@ -27,6 +28,16 @@ const (
 	// relayer params
 	RelayerImageName    = "ghcr.io/informalsystems/hermes"
 	RelayerImageVersion = "v1.8.0"
+	// icq relayer params
+	IcqRelayerImageName   = "neutron-org/neutron-query-relayer" //todo: add cmd in makefile to build the docker image for icq relayer or target published img
+	IcqRelayerVersion     = "latest"
+	IcqRelayerBin         = "neutron_query_relayer"
+	IcqRelayerPort        = 9999
+	IcqRelayerHome        = "/home/icq_relayer"
+	IcqRelayerMoniker     = "icq_relayer"
+	IcqRelayerKeyFile     = "icq_relayer.info"
+	IcqRelayerKeyAddrFile = "76eb3077f2292f283d05154bb1f3d037ff366a81.address"
+	IcqRelayerAddress     = "neutron1wm4nqalj9yhjs0g9z49mru7sxllnv65pqg88xu"
 	// common params
 	GovMinDepositAmount    = 1000
 	GovDepositPeriod       = 60 * time.Second

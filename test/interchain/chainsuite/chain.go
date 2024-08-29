@@ -127,7 +127,7 @@ func (p *Chain) AddConsumerChain(ctx context.Context, relayer *Relayer, chainId 
 			return nil, err
 		}
 	}
-	walletAmounts := make([]ibc.WalletAmount, len(wallets))
+	walletAmounts := make([]ibc.WalletAmount, len(wallets)+1)
 	for i, wallet := range wallets {
 		walletAmounts[i] = ibc.WalletAmount{
 			Address: wallet.FormattedAddress(),
@@ -135,6 +135,14 @@ func (p *Chain) AddConsumerChain(ctx context.Context, relayer *Relayer, chainId 
 			Amount:  sdkmath.NewInt(TotalValidatorFunds),
 		}
 	}
+
+	// fund icq relayer
+	walletAmounts[len(wallets)] = ibc.WalletAmount{
+		Address: IcqRelayerAddress,
+		Denom:   cosmosConsumer.Config().Denom,
+		Amount:  sdkmath.NewInt(TotalValidatorFunds),
+	}
+
 	ic := interchaintest.NewInterchain().
 		AddChain(cosmosConsumer, walletAmounts...).
 		AddRelayer(relayer, "relayer")
