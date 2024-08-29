@@ -8,11 +8,16 @@ export type Uint128 = string;
 export type Timestamp = Uint64;
 export type Uint64 = string;
 export interface AllUserLockupsResponse {
-  lockups: LockEntry[];
+  lockups: LockEntryWithPower[];
+}
+export interface LockEntryWithPower {
+  current_voting_power: Uint128;
+  lock_entry: LockEntry;
 }
 export interface LockEntry {
   funds: Coin;
   lock_end: Timestamp;
+  lock_id: number;
   lock_start: Timestamp;
 }
 export interface Coin {

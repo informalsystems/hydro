@@ -30,7 +30,7 @@ use crate::{
 // and was never slashed, 1 Token = TOKEN_TO_SHARES_MULTIPLIER * Shares.
 pub const TOKENS_TO_SHARES_MULTIPLIER: Uint128 = Uint128::new(1_000_000_000_000_000_000);
 
-// SubMsg ID is used so that we can differentiate submessages sent by the smart contract when the Wasm SDK module 
+// SubMsg ID is used so that we can differentiate submessages sent by the smart contract when the Wasm SDK module
 // calls back the reply() function on the smart contract. Since we are using the payload to populate all the data
 // that we need when reply() is called, we don't need to set a unique SubMsg ID and can use 0 for all SubMsgs.
 const UNUSED_MSG_ID: u64 = 0;
