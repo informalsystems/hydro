@@ -21,15 +21,15 @@ const PROPOSAL_SHARES_MAP: Map<(u64, String), Decimal> = Map::new("proposal_powe
 const PROPOSAL_TOTAL_MAP: Map<u64, Decimal> = Map::new("proposal_power_total");
 
 pub fn get_total_power_for_round(storage: &dyn Storage, round_id: u64) -> StdResult<Decimal> {
-    ROUND_POWER_TOTAL_MAP
+    Ok(ROUND_POWER_TOTAL_MAP
         .may_load(storage, round_id)?
-        .ok_or_else(|| StdError::generic_err("Total power not set"))
+        .unwrap_or(Decimal::zero()))
 }
 
 pub fn get_total_power_for_proposal(storage: &dyn Storage, prop_id: u64) -> StdResult<Decimal> {
-    PROPOSAL_TOTAL_MAP
+    Ok(PROPOSAL_TOTAL_MAP
         .may_load(storage, prop_id)?
-        .ok_or_else(|| StdError::generic_err("Total power not set"))
+        .unwrap_or(Decimal::zero()))
 }
 
 pub fn get_validator_shares_for_round(
@@ -37,9 +37,9 @@ pub fn get_validator_shares_for_round(
     round_id: u64,
     validator: String,
 ) -> StdResult<Decimal> {
-    ROUND_POWER_SHARES_MAP
+    Ok(ROUND_POWER_SHARES_MAP
         .may_load(storage, (round_id, validator))?
-        .ok_or_else(|| StdError::generic_err("Validator shares not set"))
+        .unwrap_or(Decimal::zero()))
 }
 
 pub fn get_validator_shares_for_proposal(
@@ -47,9 +47,9 @@ pub fn get_validator_shares_for_proposal(
     prop_id: u64,
     validator: String,
 ) -> StdResult<Decimal> {
-    PROPOSAL_SHARES_MAP
+    Ok(PROPOSAL_SHARES_MAP
         .may_load(storage, (prop_id, validator))?
-        .ok_or_else(|| StdError::generic_err("Validator shares not set"))
+        .unwrap_or(Decimal::zero()))
 }
 
 // Initialize the total power map for a given index key
@@ -127,8 +127,8 @@ pub fn add_validator_shares_to_proposal(
     add_validator_shares(
         storage,
         prop_id,
-        ROUND_POWER_SHARES_MAP,
-        ROUND_POWER_TOTAL_MAP,
+        PROPOSAL_SHARES_MAP,
+        PROPOSAL_TOTAL_MAP,
         validator,
         num_shares,
         power_ratio,
@@ -206,8 +206,8 @@ pub fn remove_validator_shares_from_proposal(
     remove_validator_shares(
         storage,
         prop_id,
-        ROUND_POWER_SHARES_MAP,
-        ROUND_POWER_TOTAL_MAP,
+        PROPOSAL_SHARES_MAP,
+        PROPOSAL_TOTAL_MAP,
         validator,
         num_shares,
         power_ratio,
