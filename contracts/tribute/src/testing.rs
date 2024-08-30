@@ -1,11 +1,15 @@
 use crate::{
-    contract::{execute, instantiate, query_proposal_tributes},
+    contract::{
+        execute, get_community_pool_tribute_share, get_voters_tribute_share, instantiate,
+        query_proposal_tributes,
+    },
     msg::{CommunityPoolConfig, ExecuteMsg, InstantiateMsg},
+    state::Config,
 };
 use cosmwasm_std::{
     from_json,
     testing::{mock_dependencies, mock_env, MockApi},
-    to_json_binary, Binary, ContractResult, Decimal, MessageInfo, QuerierResult, Response,
+    to_json_binary, Addr, Binary, ContractResult, Decimal, MessageInfo, QuerierResult, Response,
     SystemError, SystemResult, Uint128, WasmQuery,
 };
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
@@ -14,6 +18,7 @@ use hydro::query::{
     UserVoteResponse,
 };
 use hydro::state::{Proposal, Vote};
+use proptest::prelude::*;
 
 pub fn get_instantiate_msg(hydro_contract: String) -> InstantiateMsg {
     InstantiateMsg {
@@ -716,6 +721,46 @@ fn verify_tokens_received(
         },
         _ => panic!("expected CosmosMsg::Bank msg"),
     };
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1000000))] // set the number of test cases to run
+    #[test]
+    fn test_tribute_shares(total_amount in 0u128..=1_000_000_000u128, tax_percent in 0u64..=100u64) {
+        let funds = Coin {
+            denom: "token".to_string(),
+            amount: Uint128::new(total_amount),
+        };
+
+        let config = Config {
+            community_pool_config: CommunityPoolConfig {
+                tax_percent: Decimal::percent(tax_percent),
+                channel_id: "channel_id".to_string(),
+                community_pool_address: "community_pool_address".to_string(),
+            },
+            top_n_props_count: 10,
+            hydro_contract: Addr::unchecked("hydro_contract".to_string()),
+        };
+
+        let community_pool_share = get_community_pool_tribute_share(&config, funds.clone()).unwrap();
+        let voters_share = get_voters_tribute_share(&config, funds.clone()).unwrap();
+
+        assert_eq!(community_pool_share + voters_share, funds.amount);
+
+        // if the tax percent is 100, the voter share should be 0
+        if tax_percent == 100 {
+            assert!(voters_share.is_zero());
+            // community pool amount should be equal to the total tribute
+            assert_eq!(community_pool_share, funds.amount);
+        }
+
+        // if the tax percent is 0, the community pool share should be 0
+        if tax_percent == 0 {
+            assert!(community_pool_share.is_zero());
+            // voters share should be equal to the total tribute
+            assert_eq!(voters_share, funds.amount);
+        }
+    }
 }
 
 // TODO: add tests
