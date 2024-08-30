@@ -27,8 +27,6 @@ use crate::state::{
     WHITELIST, WHITELIST_ADMINS,
 };
 
-use crate::score_keeper_state::get_prop_power_total;
-
 /// Contract name that is used for migration.
 const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
 /// Contract version that is used for migration.
@@ -563,7 +561,7 @@ fn vote(
         )?;
 
         // save the new power into the proposal
-        let total_power = get_prop_power_total(deps.as_ref(), vote.prop_id)?;
+        let total_power = get_total_power_for_proposal(deps.as_ref().storage, vote.prop_id)?;
         proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
 
         // Save the proposal

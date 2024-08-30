@@ -13,7 +13,7 @@ use crate::{
         update_scores_due_to_power_ratio_change, validate_denom, VALIDATORS_PER_ROUND,
     },
     msg::ExecuteMsg,
-    score_keeper_state::get_total_round_power_total,
+    score_keeper::get_total_power_for_round,
     testing::{
         get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
         set_validators_constant_power_ratios_for_rounds, IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3,
@@ -640,7 +640,7 @@ fn lock_tokens_multiple_validators_and_vote() {
 
     // check the total round power
     {
-        let total_power = get_total_round_power_total(deps.as_ref(), 0);
+        let total_power = get_total_power_for_round(deps.as_ref().storage, 0);
         assert!(total_power.is_ok());
         assert_eq!(Uint128::new(4700), total_power.unwrap().to_uint_floor());
     }
@@ -677,7 +677,7 @@ fn lock_tokens_multiple_validators_and_vote() {
 
     // check the new total power
     {
-        let total_power = get_total_round_power_total(deps.as_ref(), 0);
+        let total_power = get_total_power_for_round(deps.as_ref().storage, 0);
         assert!(total_power.is_ok());
         assert_eq!(Uint128::new(4200), total_power.unwrap().to_uint_floor());
     }
