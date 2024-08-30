@@ -1,6 +1,6 @@
 use std::time::UNIX_EPOCH;
 
-use cosmwasm_std::{Timestamp, Uint128};
+use cosmwasm_std::{Decimal, Timestamp, Uint128};
 
 use cw_orch::{anyhow, prelude::*};
 
@@ -71,6 +71,11 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
         &tribute::msg::InstantiateMsg {
             hydro_contract: hydro.addr_str()?,
             top_n_props_count: 10,
+            community_pool_config: tribute::msg::CommunityPoolConfig {
+                tax_percent: Decimal::percent(10),
+                channel_id: "channel-1".to_string(),
+                community_pool_address: "community-pool-address".to_string(), // TODO: fill this in
+            },
         },
         None,
         None,

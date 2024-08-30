@@ -1,7 +1,19 @@
+use cosmwasm_schema::cw_serde;
+use cosmwasm_std::Decimal;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::state::CommunityPoolConfig;
+#[cw_serde]
+pub struct CommunityPoolConfig {
+    // The percentage of the tribute that goes to the community pool.
+    // The rest is distributed among voters.
+    // Should be a number between 0 and 1.
+    pub tax_percent: Decimal,
+    // The channel ID to send the tokens to the community pool over.
+    pub channel_id: String,
+    // The address of the community pool *on the remote chain*.
+    pub community_pool_address: String,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {

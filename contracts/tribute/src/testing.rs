@@ -1,7 +1,6 @@
 use crate::{
     contract::{execute, instantiate, query_proposal_tributes},
-    msg::{ExecuteMsg, InstantiateMsg},
-    state::CommunityPoolConfig,
+    msg::{CommunityPoolConfig, ExecuteMsg, InstantiateMsg},
 };
 use cosmwasm_std::{
     from_json,
