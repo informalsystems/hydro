@@ -48,7 +48,7 @@ pub const TWO_WEEKS_IN_NANO_SECONDS: u64 = 14 * 24 * 60 * 60 * 1000000000;
 pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
 pub const THREE_MONTHS_IN_NANO_SECONDS: u64 = 3 * ONE_MONTH_IN_NANO_SECONDS;
 
-pub fn set_default_validator_for_rounds(deps: DepsMut, start_round: u64, end_round: u64) {
+pub fn set_default_validator_for_rounds(deps: DepsMut<NeutronQuery>, start_round: u64, end_round: u64) {
     for round_id in start_round..end_round {
         let res = set_round_validators(deps.storage, vec![VALIDATOR_1.to_string()], round_id);
         assert!(res.is_ok());
@@ -66,7 +66,7 @@ pub fn set_default_validator_for_rounds(deps: DepsMut, start_round: u64, end_rou
 }
 
 pub fn set_validators_constant_power_ratios_for_rounds(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     start_round: u64,
     end_round: u64,
     validators: Vec<String>,
