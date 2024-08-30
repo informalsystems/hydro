@@ -30,3 +30,6 @@ pub struct Tribute {
 
 // TRIBUTE_CLAIMS: key(voter_addr, tribute_id) -> bool
 pub const TRIBUTE_CLAIMS: Map<(Addr, u64), bool> = Map::new("tribute_claims");
+
+// COMMUNITY_POOL_CLAIMS: tribute_id -> bool
+pub const COMMUNITY_POOL_CLAIMS: Map<u64, bool> = Map::new("community_pool_claims");

@@ -1,16 +1,13 @@
 use crate::{
     contract::{
-        execute, get_community_pool_tribute_share, get_voters_tribute_share, instantiate,
-        query_proposal_tributes,
+        claim_tribute_for_community_pool, execute, get_community_pool_tribute_share,
+        get_voters_tribute_share, instantiate, query_proposal_tributes,
     },
     msg::{CommunityPoolConfig, ExecuteMsg, InstantiateMsg},
-    state::Config,
+    state::{Config, Tribute, TRIBUTE_MAP},
 };
 use cosmwasm_std::{
-    from_json,
-    testing::{mock_dependencies, mock_env, MockApi},
-    to_json_binary, Addr, Binary, ContractResult, Decimal, MessageInfo, QuerierResult, Response,
-    SystemError, SystemResult, Uint128, WasmQuery,
+    from_json, testing::{mock_dependencies, mock_env, MockApi}, to_json_binary, Addr, Binary, ContractResult, Decimal, IbcMsg, MessageInfo, QuerierResult, Response, SystemError, SystemResult, Uint128, WasmQuery
 };
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
 use hydro::query::{
@@ -723,6 +720,24 @@ fn verify_tokens_received(
     };
 }
 
+fn verify_ibc_tokens_received(
+    res: Response,
+    expected_receiver: &String,
+    expected_channel_id: &String,
+    expected_denom: &String,
+    expected_amount: u128,
+) {
+    match &res.messages[0].msg {
+        CosmosMsg::Ibc(IbcMsg::Transfer { channel_id, to_address, amount, timeout, memo }) => {
+            assert_eq!(*expected_channel_id, *channel_id);
+            assert_eq!(*expected_receiver, *to_address);
+            assert_eq!(*expected_denom, amount[0].denom);
+            assert_eq!(expected_amount, amount[0].amount.u128());
+        }
+        _ => panic!("expected CosmosMsg::Bank msg"),
+    };
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(1000000))] // set the number of test cases to run
     #[test]
@@ -763,9 +778,153 @@ proptest! {
     }
 }
 
-// TODO: add tests
-// property-based test that voters share + community pool shares = the total tribute (make sure no rounding errors)
+struct ClaimTributeForCommunityPoolTestCase {
+    description: String,
+    round_id: u64,
+    tranche_id: u64,
+    mock_data: (u64, Vec<Proposal>, Vec<Tribute>),
+    expected_success: bool,
+    expected_error_msg: String,
+}
 
+#[test]
+fn claim_tribute_for_community_pool_test() {
+    let mock_proposal = Proposal {
+        round_id: 10,
+        tranche_id: 0,
+        proposal_id: 5,
+        title: "proposal title 1".to_string(),
+        description: "proposal description 1".to_string(),
+        power: Uint128::new(10000),
+        percentage: Uint128::zero(),
+    };
+
+    let mock_top_n_proposals = vec![
+        Proposal {
+            round_id: 10,
+            tranche_id: 0,
+            proposal_id: 5,
+            title: "proposal title 1".to_string(),
+            description: "proposal description 1".to_string(),
+            power: Uint128::new(10000),
+            percentage: Uint128::zero(),
+        },
+        Proposal {
+            round_id: 10,
+            tranche_id: 0,
+            proposal_id: 6,
+            title: "proposal title 2".to_string(),
+            description: "proposal description 2".to_string(),
+            power: Uint128::new(10000),
+            percentage: Uint128::zero(),
+        },
+    ];
+
+    let mock_tributes = vec![
+        Tribute {
+            tribute_id: 1,
+            proposal_id: 5,
+            funds: Coin::new(1000u64, "uusd"),
+            round_id: todo!(),
+            tranche_id: todo!(),
+            depositor: todo!(),
+            refunded: todo!(),
+        },
+        Tribute {
+            tribute_id: 2,
+            proposal_id: 6,
+            funds: Coin::new(2000u64, "uusd"),
+            round_id: todo!(),
+            tranche_id: todo!(),
+            depositor: todo!(),
+            refunded: todo!(),
+        },
+    ];
+
+    let test_cases: Vec<ClaimTributeForCommunityPoolTestCase> = vec![
+        ClaimTributeForCommunityPoolTestCase {
+            description: "happy path".to_string(),
+            round_id: 10,
+            tranche_id: 0,
+            mock_data: (11, mock_top_n_proposals.clone(), mock_tributes.clone()),
+            expected_success: true,
+            expected_error_msg: String::new(),
+        },
+        ClaimTributeForCommunityPoolTestCase {
+            description: "round has not ended yet".to_string(),
+            round_id: 10,
+            tranche_id: 0,
+            mock_data: (10, mock_top_n_proposals.clone(), mock_tributes.clone()),
+            expected_success: false,
+            expected_error_msg: "Round has not ended yet".to_string(),
+        },
+    ];
+
+    for test in test_cases {
+        println!("running test case: {}", test.description);
+
+        let (mut deps, env) = (mock_dependencies(), mock_env());
+        let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
+
+        let hydro_contract_address = get_address_as_str(&deps.api, HYDRO_CONTRACT_ADDRESS);
+        let mock_querier = MockWasmQuerier::new(
+            hydro_contract_address.clone(),
+            test.mock_data.0,
+            Some(mock_proposal.clone()),
+            None,
+            test.mock_data.1.clone(),
+        );
+        deps.querier.update_wasm(move |q| mock_querier.handler(q));
+
+        let msg = get_instantiate_msg(hydro_contract_address.clone());
+        let expected_community_pool_rcvr =
+            Addr::unchecked(msg.community_pool_config.community_pool_address);
+        let expected_channel = msg.community_pool_config.channel_id;
+
+        let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_ok());
+
+        // Mock the tributes in the storage
+        for tribute in &test.mock_data.2 {
+            TRIBUTE_MAP
+                .save(
+                    deps.as_mut().storage,
+                    (
+                        (test.round_id, test.tranche_id),
+                        tribute.proposal_id,
+                        tribute.tribute_id,
+                    ),
+                    tribute,
+                )
+                .unwrap();
+        }
+
+        let res = claim_tribute_for_community_pool(
+            deps.as_mut(),
+            env.clone(),
+            test.round_id,
+            test.tranche_id,
+        );
+
+        if !test.expected_success {
+            assert!(res
+                .unwrap_err()
+                .to_string()
+                .contains(&test.expected_error_msg));
+            continue;
+        }
+
+        assert!(res.is_ok());
+        let res = res.unwrap();
+        assert_eq!(test.mock_data.2.len(), res.messages.len());
+
+        for (i, tribute) in test.mock_data.2.iter().enumerate() {
+            res.
+        }
+    }
+}
+
+// TODO: add tests
 // test where community pool is claimed; check that it is correctly sent to the community pool address
 
 // test that voters tribute share is reduced by the community pool

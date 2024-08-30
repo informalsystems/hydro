@@ -9,7 +9,9 @@ use cw2::set_contract_version;
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
 use crate::query::{ConfigResponse, ProposalTributesResponse, QueryMsg};
-use crate::state::{Config, Tribute, CONFIG, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP};
+use crate::state::{
+    Config, Tribute, COMMUNITY_POOL_CLAIMS, CONFIG, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP,
+};
 use hydro::query::{
     CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
     UserVoteResponse,
@@ -235,7 +237,7 @@ fn claim_tribute(
 
 // For each proposal in the top N proposals for the given round and tranche:
 // Trigger a send of the community pool tax share to the community pool address
-fn claim_tribute_for_community_pool(
+pub fn claim_tribute_for_community_pool(
     deps: DepsMut,
     env: Env,
     round_id: u64,
@@ -243,6 +245,13 @@ fn claim_tribute_for_community_pool(
 ) -> Result<Response, ContractError> {
     // Load the config
     let config = CONFIG.load(deps.storage).unwrap();
+
+    let current_round_id = query_current_round_id(&deps, &config.hydro_contract)?;
+    if round_id >= current_round_id {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Round has not ended yet",
+        )));
+    }
 
     // Load the top N proposals
     let proposals_resp: Vec<Proposal> =
@@ -252,27 +261,33 @@ fn claim_tribute_for_community_pool(
     let mut res = Response::new();
 
     for proposal in proposals_resp {
-        // Load the tribute
-        let tribute = TRIBUTE_MAP
-            .load(
-                deps.storage,
-                ((round_id, tranche_id), proposal.proposal_id, 0),
-            )
-            .unwrap();
+        // iterate over all tributes for this proposal
+        let tributes = TRIBUTE_MAP
+            .prefix(((round_id, tranche_id), proposal.proposal_id))
+            .range(deps.storage, None, None, Order::Ascending)
+            .map(|l| l.unwrap().1)
+            .collect::<Vec<Tribute>>();
 
-        // Calculate the community pool share
-        let community_pool_share =
-            get_community_pool_tribute_share(&config, tribute.clone().funds).unwrap();
+        for tribute in tributes {
+            // continue if this tribute was already claimed for the community pool
+            if COMMUNITY_POOL_CLAIMS
+                .may_load(deps.storage, tribute.tribute_id)?
+                .unwrap_or(false)
+            {
+                continue;
+            }
 
-        let send_coin = Coin {
-            denom: tribute.funds.denom,
-            amount: community_pool_share,
-        };
+            // Calculate the community pool share
+            let community_pool_share =
+                get_community_pool_tribute_share(&config, tribute.clone().funds).unwrap();
 
-        // Send the community pool share to the community pool address
-        res = res
-            .add_attribute("action", "claim_tribute_for_community_pool")
-            .add_message(IbcMsg::Transfer {
+            let send_coin = Coin {
+                denom: tribute.funds.denom,
+                amount: community_pool_share,
+            };
+
+            // Send the community pool share to the community pool address
+            res = res.add_message(IbcMsg::Transfer {
                 channel_id: config.community_pool_config.clone().channel_id,
                 to_address: config.community_pool_config.clone().community_pool_address,
                 amount: send_coin,
@@ -281,11 +296,15 @@ fn claim_tribute_for_community_pool(
                 ),
                 memo: None,
             });
+
+            // mark the tribute as claimed by the community pool
+            COMMUNITY_POOL_CLAIMS.save(deps.storage, tribute.tribute_id, &true)?;
+        }
     }
     Ok(res
+        .add_attribute("action", "claim_tribute_for_community_pool")
         .add_attribute("round_id", round_id.to_string())
-        .add_attribute("tranche_id", tranche_id.to_string())
-        .add_attribute("action", "claim_tribute_for_community_pool"))
+        .add_attribute("tranche_id", tranche_id.to_string()))
 }
 
 // RefundTribute(round_id, tranche_id, prop_id, tribute_id):
