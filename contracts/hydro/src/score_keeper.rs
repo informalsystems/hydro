@@ -175,45 +175,6 @@ pub fn remove_validator_shares(
     Ok(())
 }
 
-pub fn remove_validator_shares_from_round_total(
-    storage: &mut dyn Storage,
-    round_id: u64,
-    validator: String,
-    num_shares: Decimal,
-) -> StdResult<()> {
-    let power_ratio = get_validator_power_ratio_for_round(storage, round_id, validator.clone())?;
-    remove_validator_shares(
-        storage,
-        round_id,
-        ROUND_POWER_SHARES_MAP,
-        ROUND_POWER_TOTAL_MAP,
-        validator,
-        num_shares,
-        power_ratio,
-    )
-}
-
-// Removes the given number of validator shares from the given proposal,
-// which must be a proposal for the given round_id.
-pub fn remove_validator_shares_from_proposal(
-    storage: &mut dyn Storage,
-    round_id: u64,
-    prop_id: u64,
-    validator: String,
-    num_shares: Decimal,
-) -> StdResult<()> {
-    let power_ratio = get_validator_power_ratio_for_round(storage, round_id, validator.clone())?;
-    remove_validator_shares(
-        storage,
-        prop_id,
-        PROPOSAL_SHARES_MAP,
-        PROPOSAL_TOTAL_MAP,
-        validator,
-        num_shares,
-        power_ratio,
-    )
-}
-
 // A more gas efficient version of remove_validator_shares_from_proposal
 // when removing shares from multiple validators
 pub fn remove_many_validator_shares_from_proposal(
