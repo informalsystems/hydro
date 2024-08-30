@@ -1007,7 +1007,6 @@ pub fn query_all_user_lockups(
             // compute the lockup power scaling due to remaining lockup length
             let lock_epoch_length = constants.lock_epoch_length;
 
-            // TODO: scale based on validator power ratio
             let validator_res =
                 validate_denom(deps, env.clone(), &constants, lock.funds.denom.clone());
 

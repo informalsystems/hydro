@@ -52,20 +52,6 @@ pub fn get_validator_shares_for_proposal(
         .unwrap_or(Decimal::zero()))
 }
 
-// Initialize the total power map for a given index key
-pub fn initialize_if_nil(
-    storage: &mut dyn Storage,
-    total_power_map: &Map<u64, Decimal>,
-    index_key: u64,
-) -> StdResult<()> {
-    // Initialize if the total power has not been set
-    if total_power_map.may_load(storage, index_key)?.is_none() {
-        total_power_map.save(storage, index_key, &Decimal::zero())?;
-    }
-
-    Ok(())
-}
-
 // Add validator shares and update the total power
 pub fn add_validator_shares(
     storage: &mut dyn Storage,
@@ -76,9 +62,6 @@ pub fn add_validator_shares(
     num_shares: Decimal,
     power_ratio: Decimal,
 ) -> StdResult<()> {
-    // Initialize if needed
-    initialize_if_nil(storage, &total_map, index_key)?;
-
     let key = (index_key, validator.clone());
 
     // Update the shares map
@@ -89,7 +72,9 @@ pub fn add_validator_shares(
     shares_map.save(storage, key, &updated_shares)?;
 
     // Update the total power
-    let mut current_power = total_map.load(storage, index_key)?;
+    let mut current_power = total_map
+        .load(storage, index_key)
+        .unwrap_or(Decimal::zero());
     let added_power = num_shares * power_ratio;
 
     current_power += added_power;
@@ -145,9 +130,6 @@ pub fn remove_validator_shares(
     num_shares: Decimal,
     power_ratio: Decimal,
 ) -> StdResult<()> {
-    // Initialize if needed
-    initialize_if_nil(storage, &total_map, index_key)?;
-
     let key = (index_key, validator.clone());
 
     // Load current shares
@@ -208,6 +190,11 @@ pub fn remove_many_validator_shares_from_proposal(
 
         // Update the total power
         let removed_power = num_shares * power_ratio;
+
+        if total_power < removed_power {
+            return Err(StdError::generic_err("Insufficient total power"));
+        }
+
         total_power -= removed_power;
     }
 
@@ -225,9 +212,6 @@ pub fn update_power_ratio(
     old_power_ratio: Decimal,
     new_power_ratio: Decimal,
 ) -> StdResult<()> {
-    // Initialize if needed
-    let _ = initialize_if_nil(storage, &total_map, index_key);
-
     // Load current shares
     let current_shares = shares_map
         .may_load(storage, (index_key, validator))?
@@ -240,7 +224,9 @@ pub fn update_power_ratio(
     let old_power = current_shares * old_power_ratio;
 
     // Update the total power
-    let mut current_power = total_map.load(storage, index_key)?;
+    let mut current_power = total_map
+        .load(storage, index_key)
+        .unwrap_or(Decimal::zero());
     let new_power = current_shares * new_power_ratio;
 
     current_power = current_power - old_power + new_power;
@@ -311,16 +297,10 @@ mod tests {
 
     // Table-based tests
     #[test]
-    fn test_initialize() {
+    fn test_uninitialized() {
         let mut binding = initialize_storage();
         let storage = binding.as_mut();
-
         let index_key = 5;
-        let result = initialize_if_nil(storage, &ROUND_POWER_TOTAL_MAP, index_key);
-        assert!(result.is_ok());
-
-        let result = initialize_if_nil(storage, &PROPOSAL_TOTAL_MAP, index_key);
-        assert!(result.is_ok());
 
         let total_power = get_total_power_for_round(storage, index_key).unwrap();
         assert_eq!(total_power, Decimal::zero());
