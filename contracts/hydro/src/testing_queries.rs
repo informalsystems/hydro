@@ -15,9 +15,10 @@ use crate::{
 };
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
-    Coin, Empty, Env, OwnedDeps,
+    Coin, Env, OwnedDeps,
 };
 use cosmwasm_std::{Decimal, Uint128};
+use neutron_sdk::bindings::query::NeutronQuery;
 
 #[test]
 fn query_user_lockups_test() {
@@ -272,7 +273,7 @@ fn query_user_voting_power_test() {
 }
 
 fn get_expired_user_lockups(
-    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, Empty>,
+    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
     env: Env,
     user_address: String,
 ) -> Vec<LockEntry> {
@@ -290,7 +291,7 @@ fn get_expired_user_lockups(
 }
 
 fn get_user_voting_power(
-    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, Empty>,
+    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
     env: Env,
     user_address: String,
 ) -> u128 {

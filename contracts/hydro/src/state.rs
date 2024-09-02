@@ -12,9 +12,11 @@ pub struct Constants {
     pub lock_epoch_length: u64,
     pub first_round_start: Timestamp,
     pub max_locked_tokens: u128,
-    pub hub_transfer_channel_id: String,
-    pub paused: bool,
     pub max_validator_shares_participating: u64,
+    pub hub_connection_id: String,
+    pub hub_transfer_channel_id: String,
+    pub icq_update_period: u64,
+    pub paused: bool,
 }
 
 // the total number of tokens locked in the contract
@@ -90,3 +92,34 @@ pub const WHITELIST: Item<Vec<Addr>> = Item::new("whitelist");
 
 // Every address in this list can manage the whitelist.
 pub const WHITELIST_ADMINS: Item<Vec<Addr>> = Item::new("whitelist_admins");
+
+// VALIDATOR_TO_QUERY_ID: key(validator address) -> interchain query ID
+pub const VALIDATOR_TO_QUERY_ID: Map<String, u64> = Map::new("validator_to_query_id");
+
+// QUERY_ID_TO_VALIDATOR: key(interchain query ID) -> validator_address
+pub const QUERY_ID_TO_VALIDATOR: Map<u64, String> = Map::new("query_id_to_validator");
+
+// TODO: this will become VALIDATORS_PER_ROUND once the integration is finished
+// VALIDATORS_PER_ROUND_NEW: key(round_id, delegated_tokens, validator_address) -> validator_address
+pub const VALIDATORS_PER_ROUND_NEW: Map<(u64, u128, String), String> =
+    Map::new("validators_per_round_new");
+
+// VALIDATORS_INFO: key(round_id, validator_address) -> ValidatorInfo
+pub const VALIDATORS_INFO: Map<(u64, String), ValidatorInfo> = Map::new("validators_info");
+
+#[cw_serde]
+pub struct ValidatorInfo {
+    pub address: String,
+    pub delegated_tokens: Uint128,
+    pub power_ratio: Decimal,
+}
+
+impl ValidatorInfo {
+    pub fn new(address: String, delegated_tokens: Uint128, power_ratio: Decimal) -> Self {
+        Self {
+            address,
+            delegated_tokens,
+            power_ratio,
+        }
+    }
+}

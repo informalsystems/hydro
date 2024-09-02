@@ -260,6 +260,30 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "create_icqs_for_validators"
+      ],
+      "properties": {
+        "create_icqs_for_validators": {
+          "type": "object",
+          "required": [
+            "validators"
+          ],
+          "properties": {
+            "validators": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {
