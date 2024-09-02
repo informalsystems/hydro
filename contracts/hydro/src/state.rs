@@ -108,6 +108,7 @@ pub const VALIDATORS_PER_ROUND_NEW: Map<(u64, u128, String), String> =
 pub const VALIDATORS_INFO: Map<(u64, String), ValidatorInfo> = Map::new("validators_info");
 
 #[cw_serde]
+#[derive(Default)]
 pub struct ValidatorInfo {
     pub address: String,
     pub delegated_tokens: Uint128,
