@@ -269,6 +269,8 @@ pub fn claim_tribute_for_community_pool(
     // For each proposal in the top N proposals, send the community pool tax share to the community pool address
     let mut res = Response::new();
 
+    // count how many tributes were claimed for the community pool to add to the response
+    let mut claimed_tributes_count = 0;
     for proposal in proposals_resp {
         // iterate over all tributes for this proposal
         let tributes = TRIBUTE_MAP
@@ -308,12 +310,14 @@ pub fn claim_tribute_for_community_pool(
 
             // mark the tribute as claimed by the community pool
             COMMUNITY_POOL_CLAIMS.save(deps.storage, tribute.tribute_id, &true)?;
+            claimed_tributes_count += 1;
         }
     }
     Ok(res
         .add_attribute("action", "claim_tribute_for_community_pool")
         .add_attribute("round_id", round_id.to_string())
-        .add_attribute("tranche_id", tranche_id.to_string()))
+        .add_attribute("tranche_id", tranche_id.to_string())
+        .add_attribute("claimed_tributes_count", claimed_tributes_count.to_string()))
 }
 
 // RefundTribute(round_id, tranche_id, prop_id, tribute_id):
