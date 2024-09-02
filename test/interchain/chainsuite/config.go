@@ -29,7 +29,8 @@ const (
 	RelayerImageName    = "ghcr.io/informalsystems/hermes"
 	RelayerImageVersion = "v1.8.0"
 	// icq relayer params
-	IcqRelayerImageName   = "neutron-org/neutron-query-relayer" //todo: add cmd in makefile to build the docker image for icq relayer or target published img
+	// The neutron-org/neutron-query-relayer docker image can be built locally by running 'make build-docker-relayer' command
+	IcqRelayerImageName   = "neutron-org/neutron-query-relayer"
 	IcqRelayerVersion     = "latest"
 	IcqRelayerBin         = "neutron_query_relayer"
 	IcqRelayerPort        = 9999
