@@ -1,18 +1,22 @@
 use std::collections::HashMap;
 
 use cosmwasm_std::{
-    testing::mock_env, BankMsg, Coin, CosmosMsg, Env, StdError, Storage, SystemError, SystemResult,
-    Timestamp,
+    testing::mock_env, BankMsg, Coin, CosmosMsg, Decimal, Env, StdError, Storage, SystemError,
+    SystemResult, Timestamp, Uint128,
 };
 use ibc_proto::ibc::apps::transfer::v1::QueryDenomTraceResponse;
 use prost::Message;
 
 use crate::{
-    contract::{execute, instantiate},
-    lsm_integration::{set_current_validators, validate_denom, VALIDATORS_PER_ROUND},
+    contract::{execute, instantiate, query_top_n_proposals},
+    lsm_integration::{
+        update_scores_due_to_power_ratio_change, validate_denom, VALIDATORS_PER_ROUND,
+    },
     msg::ExecuteMsg,
+    score_keeper::get_total_power_for_round,
     testing::{
-        get_default_instantiate_msg, get_message_info, IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3,
+        get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
+        set_validators_constant_power_ratios_for_rounds, IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3,
         ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
         VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3, VALIDATOR_3_LST_DENOM_1,
     },
@@ -311,15 +315,14 @@ fn lock_tokens_with_multiple_denoms() {
             case.description
         );
 
-        let res = set_current_validators(
+        set_validators_constant_power_ratios_for_rounds(
             deps.as_mut(),
-            env.clone(),
+            0,
+            100,
+            // convert to String
             case.validators.iter().map(|&v| v.to_string()).collect(),
-        );
-        assert!(
-            res.is_ok(),
-            "Failed to set validators for case: {}",
-            case.description
+            // each validator gets power ratio 1
+            case.validators.iter().map(|_| Decimal::one()).collect(),
         );
 
         for fund in case.funds.iter() {
@@ -372,12 +375,13 @@ fn unlock_tokens_multiple_denoms() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok(), "instantiating contract: {:?}", res);
 
-    let res = set_current_validators(
+    set_validators_constant_power_ratios_for_rounds(
         deps.as_mut(),
-        env.clone(),
+        0,
+        100,
         vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
+        vec![Decimal::one(), Decimal::one()],
     );
-    assert!(res.is_ok(), "setting validators: {:?}", res);
 
     info.funds = vec![user_token1.clone()];
 
@@ -397,13 +401,7 @@ fn unlock_tokens_multiple_denoms() {
     // advance the chain by one month + 1 nano second and check that user can unlock tokens
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
 
-    // set the validators again for the new round
-    let res = set_current_validators(
-        deps.as_mut(),
-        env.clone(),
-        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
-    );
-    assert!(res.is_ok(), "setting validators: {:?}", res);
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     let res = execute(
         deps.as_mut(),
@@ -458,8 +456,13 @@ fn unlock_tokens_multiple_users() {
     let res = instantiate(deps.as_mut(), env.clone(), info1.clone(), msg.clone());
     assert!(res.is_ok(), "instantiating contract: {:?}", res);
 
-    let res = set_current_validators(deps.as_mut(), env.clone(), vec![VALIDATOR_1.to_string()]);
-    assert!(res.is_ok(), "setting validators: {:?}", res);
+    set_validators_constant_power_ratios_for_rounds(
+        deps.as_mut(),
+        0,
+        100,
+        vec![VALIDATOR_1.to_string()],
+        vec![Decimal::one()],
+    );
 
     // user1 locks tokens
     let msg = ExecuteMsg::LockTokens {
@@ -474,10 +477,6 @@ fn unlock_tokens_multiple_users() {
 
     // advance the chain by one month + 1 nano second and check that users can unlock tokens
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
-
-    // set the validators again for the new round
-    let res = set_current_validators(deps.as_mut(), env.clone(), vec![VALIDATOR_1.to_string()]);
-    assert!(res.is_ok(), "setting validators: {:?}", res);
 
     // user1 unlocks tokens
     let res = execute(
@@ -529,5 +528,157 @@ fn unlock_tokens_multiple_users() {
             _ => panic!("expected BankMsg::Send message"),
         },
         _ => panic!("expected CosmosMsg::Bank msg"),
+    }
+}
+
+#[test]
+fn lock_tokens_multiple_validators_and_vote() {
+    let user_address = "addr0000";
+    let user_token1 = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token2 = Coin::new(2000u64, IBC_DENOM_2.to_string());
+    let user_token3 = Coin::new(3000u64, IBC_DENOM_3.to_string());
+
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+            (IBC_DENOM_3.to_string(), VALIDATOR_3_LST_DENOM_1.to_string()),
+        ]),
+    );
+
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+    let mut info = get_message_info(
+        &deps.api,
+        user_address,
+        &[
+            user_token1.clone(),
+            user_token2.clone(),
+            user_token3.clone(),
+        ],
+    );
+    let msg = get_default_instantiate_msg(&deps.api);
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok(), "instantiating contract: {:?}", res);
+
+    set_validators_constant_power_ratios_for_rounds(
+        deps.as_mut(),
+        0,
+        100,
+        vec![
+            VALIDATOR_1.to_string(),
+            VALIDATOR_2.to_string(),
+            VALIDATOR_3.to_string(),
+        ],
+        vec![Decimal::one(), Decimal::percent(95), Decimal::percent(60)],
+    );
+
+    // Lock tokens from validator1
+    info.funds = vec![user_token1.clone()];
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok(), "locking tokens: {:?}", res);
+
+    // Lock tokens from validator2
+    info.funds = vec![user_token2.clone()];
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok(), "locking tokens: {:?}", res);
+
+    // Lock tokens from validator3
+    info.funds = vec![user_token3.clone()];
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok(), "locking tokens: {:?}", res);
+
+    // create two proposals
+    let msg1 = ExecuteMsg::CreateProposal {
+        tranche_id: 1,
+        title: "proposal title 1".to_string(),
+        description: "proposal description 1".to_string(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg1.clone());
+    assert!(res.is_ok());
+
+    let msg2 = ExecuteMsg::CreateProposal {
+        tranche_id: 1,
+        title: "proposal title 2".to_string(),
+        description: "proposal description 2".to_string(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg2.clone());
+    assert!(res.is_ok());
+
+    // User votes on the first proposal
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposal_id: 0,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    // check proposals
+    {
+        // Check the proposal scores
+        let proposals = query_top_n_proposals(deps.as_ref(), 0, 1, 2);
+
+        // unwrap the proposals
+        let proposals = proposals.unwrap();
+
+        // check that the first proposal is proposal 0, and that it has
+        // power 1000 * 1 + 2000 * 0.95 + 3000 * 0.6 = 4700
+        assert_eq!(2, proposals.proposals.len());
+        let first_prop = &proposals.proposals[0];
+        let second_prop = &proposals.proposals[1];
+
+        assert_eq!(0, first_prop.proposal_id);
+        assert_eq!(4700, first_prop.power.u128());
+
+        assert_eq!(1, second_prop.proposal_id);
+        assert_eq!(0, second_prop.power.u128());
+    }
+
+    // check the total round power
+    {
+        let total_power = get_total_power_for_round(deps.as_ref().storage, 0);
+        assert!(total_power.is_ok());
+        assert_eq!(Uint128::new(4700), total_power.unwrap().to_uint_floor());
+    }
+
+    // update the power ratio for validator 1 to become 0.5
+    let res = update_scores_due_to_power_ratio_change(
+        deps.as_mut().storage,
+        VALIDATOR_1,
+        0,
+        Decimal::percent(100),
+        Decimal::percent(50),
+    );
+    assert!(res.is_ok());
+
+    // Check the proposal scores
+    {
+        let proposals = query_top_n_proposals(deps.as_ref(), 0, 1, 2);
+
+        // unwrap the proposals
+        let proposals = proposals.unwrap();
+
+        // check that the first proposal is proposal 0, and that it has
+        // power 1000 * 0.5 + 2000 * 0.95 + 3000 * 0.6 = 4200
+        assert_eq!(2, proposals.proposals.len());
+        let first_prop = &proposals.proposals[0];
+
+        assert_eq!(0, first_prop.proposal_id);
+        assert_eq!(4200, first_prop.power.u128());
+
+        let second_prop = &proposals.proposals[1];
+        assert_eq!(1, second_prop.proposal_id);
+        assert_eq!(0, second_prop.power.u128());
+    }
+
+    // check the new total power
+    {
+        let total_power = get_total_power_for_round(deps.as_ref().storage, 0);
+        assert!(total_power.is_ok());
+        assert_eq!(Uint128::new(4200), total_power.unwrap().to_uint_floor());
     }
 }

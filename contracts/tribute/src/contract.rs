@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, IbcMsg,
     IbcTimeout, MessageInfo, Order, Response, StdError, StdResult, Uint128,
@@ -16,7 +14,7 @@ use hydro::query::{
     CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
     UserVoteResponse,
 };
-use hydro::state::{Proposal, Vote};
+use hydro::state::{Proposal, VoteWithPower};
 
 /// Contract name that is used for migration.
 const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -205,20 +203,27 @@ fn claim_tribute(
     // to the voters
     let voters_share = get_voters_tribute_share(&config, tribute.clone().funds)?;
 
-    // Divide voter's vote power by the prop's power to figure out their percentage
-    let percentage_fraction = (vote.power, proposal.power);
-    // checked_mul_floor() is used so that, due to the precision, contract doesn't transfer by 1 token more
-    // to some users, which would leave the last users trying to claim the tribute unable to do so
-    // This also implies that some dust amount of tokens could be left on the contract after everyone
-    // claiming their portion of the tribute
-    let amount = match voters_share.checked_mul_floor(percentage_fraction) {
-        Ok(amount) => amount,
+    let percentage_fraction = match vote
+        .power
+        .checked_div(Decimal::from_ratio(proposal.power, Uint128::one()))
+    {
+        Ok(percentage_fraction) => percentage_fraction,
         Err(_) => {
             return Err(ContractError::Std(StdError::generic_err(
-                "Failed to compute users tribute share",
+                "Failed to compute users voting power percentage",
             )));
         }
     };
+
+    let amount =
+        match Decimal::from_ratio(voters_share, Uint128::one()).checked_mul(percentage_fraction) {
+            Ok(amount) => amount,
+            Err(_) => {
+                return Err(ContractError::Std(StdError::generic_err(
+                    "Failed to compute users tribute share",
+                )));
+            }
+        };
 
     // Mark in the TRIBUTE_CLAIMS that the voter has claimed this tribute
     TRIBUTE_CLAIMS.save(deps.storage, (voter.clone(), tribute_id), &true)?;
@@ -230,7 +235,11 @@ fn claim_tribute(
             to_address: voter.to_string(),
             amount: vec![Coin {
                 denom: tribute.funds.denom,
-                amount,
+                // to_uint_floor() is used so that, due to the precision, contract doesn't transfer by 1 token more
+                // to some users, which would leave the last users trying to claim the tribute unable to do so
+                // This also implies that some dust amount of tokens could be left on the contract after everyone
+                // claiming their portion of the tribute
+                amount: amount.to_uint_floor(),
             }],
         }))
 }
@@ -453,7 +462,7 @@ fn query_user_vote(
     round_id: u64,
     tranche_id: u64,
     address: String,
-) -> Result<Vote, ContractError> {
+) -> Result<VoteWithPower, ContractError> {
     let user_vote_resp: UserVoteResponse = deps.querier.query_wasm_smart(
         hydro_contract,
         &HydroQueryMsg::UserVote {
@@ -463,7 +472,9 @@ fn query_user_vote(
         },
     )?;
 
-    Ok(user_vote_resp.vote)
+    let vote = user_vote_resp.vote;
+
+    Ok(vote)
 }
 
 fn get_top_n_proposal(
