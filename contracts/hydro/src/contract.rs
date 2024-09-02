@@ -1,11 +1,13 @@
+use std::collections::HashMap;
+
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
-    Order, Response, StdError, StdResult, Timestamp, Uint128,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
+    MessageInfo, Order, Response, StdError, StdResult, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::lsm_integration::validate_denom;
+use crate::lsm_integration::{get_validator_power_ratio_for_round, validate_denom};
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
@@ -14,9 +16,14 @@ use crate::query::{
     TranchesResponse, UserVoteResponse, UserVotingPowerResponse, WhitelistAdminsResponse,
     WhitelistResponse,
 };
+use crate::score_keeper::{
+    add_validator_shares_to_proposal, add_validator_shares_to_round_total,
+    get_total_power_for_proposal, get_total_power_for_round,
+    remove_many_validator_shares_from_proposal,
+};
 use crate::state::{
-    Constants, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID,
-    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER, TRANCHE_ID, TRANCHE_MAP, VOTE_MAP,
+    Constants, LockEntry, Proposal, Tranche, Vote, VoteWithPower, CONSTANTS, LOCKED_TOKENS,
+    LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, VOTE_MAP,
     WHITELIST, WHITELIST_ADMINS,
 };
 
@@ -176,9 +183,10 @@ fn lock_tokens(
 
     let funds = info.funds[0].clone();
 
-    validate_denom(deps.as_ref(), env.clone(), &constants, funds.denom).map_err(|err| {
-        ContractError::Std(StdError::generic_err(format!("validating denom: {}", err)))
-    })?;
+    let validator =
+        validate_denom(deps.as_ref(), env.clone(), &constants, funds.denom).map_err(|err| {
+            ContractError::Std(StdError::generic_err(format!("validating denom: {}", err)))
+        })?;
 
     // validate that this wouldn't cause the contract to have more locked tokens than the limit
     let amount_to_lock = info.funds[0].amount.u128();
@@ -215,12 +223,13 @@ fn lock_tokens(
     let current_round = compute_current_round_id(&env, &constants)?;
     let last_round_with_power = compute_round_id_for_timestamp(&constants, lock_end)? - 1;
 
-    update_total_voting_power(
+    update_total_time_weighted_shares(
         deps,
         &constants,
         current_round,
         last_round_with_power,
         lock_end,
+        validator,
         lock_entry.funds.amount,
         |_, _, _| Uint128::zero(),
     )?;
@@ -270,6 +279,20 @@ fn refresh_lock_duration(
     // save the updated lock entry
     LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
 
+    // get the validator whose shares are in this lock
+    let validator_result = validate_denom(
+        deps.as_ref(),
+        env.clone(),
+        &constants,
+        lock_entry.funds.denom,
+    );
+    if validator_result.is_err() {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Lock denom is for a validator who is currently not in the set, try refreshing when the validator has enoug delegation",
+        )));
+    }
+    let validator = validator_result.unwrap();
+
     // Calculate and update the total voting power info for current and all
     // future rounds in which the user will have voting power greather than 0.
     // The voting power originated from the old lockup is subtracted from the
@@ -279,12 +302,13 @@ fn refresh_lock_duration(
     let old_last_round_with_power = compute_round_id_for_timestamp(&constants, old_lock_end)? - 1;
     let new_last_round_with_power = compute_round_id_for_timestamp(&constants, new_lock_end)? - 1;
 
-    update_total_voting_power(
+    update_total_time_weighted_shares(
         deps,
         &constants,
         current_round,
         new_last_round_with_power,
         new_lock_end,
+        validator,
         lock_entry.funds.amount,
         |round, round_end, locked_amount| {
             if round > old_last_round_with_power {
@@ -526,8 +550,19 @@ fn vote(
             ),
         );
 
-        // Decrement proposal's power
-        proposal.power -= vote.power;
+        remove_many_validator_shares_from_proposal(
+            deps.storage,
+            round_id,
+            vote.prop_id,
+            vote.time_weighted_shares
+                .iter()
+                .map(|(k, v)| (k.clone(), *v))
+                .collect::<Vec<_>>(),
+        )?;
+
+        // save the new power into the proposal
+        let total_power = get_total_power_for_proposal(deps.as_ref().storage, vote.prop_id)?;
+        proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
 
         // Save the proposal
         PROPOSAL_MAP.save(
@@ -554,8 +589,9 @@ fn vote(
     }
 
     let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
-    // Get sender's total locked power
-    let mut power: Uint128 = Uint128::zero();
+
+    // Get sender's locked shares for each validator
+    let mut time_weighted_shares_map: HashMap<String, Decimal> = HashMap::new();
     let locks =
         LOCKS_MAP
             .prefix(info.sender.clone())
@@ -564,13 +600,41 @@ fn vote(
     for lock in locks {
         let (_, lock_entry) = lock?;
 
-        power += get_lock_voting_power(round_end, lock_entry, lock_epoch_length);
+        // get the validator from the denom
+        let validator_result = validate_denom(
+            deps.as_ref(),
+            env.clone(),
+            &constants,
+            lock_entry.clone().funds.denom,
+        );
+        if validator_result.is_err() {
+            deps.api.debug(&format!(
+                "Denom {} is not a valid validator denom; validator might not be in the current set of top validators by delegation",
+                lock_entry.funds.denom
+            ));
+            // skip this lock entry, since the locked shares do not belong to a validator that we want to take into account
+            continue;
+        }
+        let validator = validator_result.unwrap();
+
+        let scaled_shares = get_lock_time_weighted_shares(round_end, lock_entry, lock_epoch_length);
+
+        // add the shares to the map
+        let shares = time_weighted_shares_map.get(&validator);
+        let shares = match shares {
+            Some(shares) => shares,
+            None => &Decimal::zero(),
+        };
+        let new_shares = shares.checked_add(Decimal::from_ratio(scaled_shares, Uint128::one()))?;
+
+        // insert the shares into the time_weigted_shares_map
+        time_weighted_shares_map.insert(validator.clone(), new_shares);
     }
 
     let response = Response::new().add_attribute("action", "vote");
 
-    // if users voting power is 0 we don't need to update any of the stores
-    if power == Uint128::zero() {
+    // if the user doesn't have any shares that give voting power, we don't need to do anything
+    if time_weighted_shares_map.is_empty() {
         return Ok(response);
     }
 
@@ -583,8 +647,23 @@ fn vote(
         ((round_id, tranche_id), proposal.power.into(), proposal_id),
     );
 
-    // Update proposal's power
-    proposal.power += power;
+    // update the proposal's power with the new shares
+    for (validator, num_shares) in time_weighted_shares_map.iter() {
+        // add the validator shares to the proposal
+        add_validator_shares_to_proposal(
+            deps.storage,
+            round_id,
+            proposal_id,
+            validator.to_string(),
+            *num_shares,
+        )?;
+    }
+
+    // get the new total power of the proposal
+    let total_power = get_total_power_for_proposal(deps.storage, proposal.proposal_id)?;
+
+    // save the new power into the proposal
+    proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
 
     // Save the proposal
     PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, proposal_id), &proposal)?;
@@ -599,16 +678,16 @@ fn vote(
     // Create vote in Votemap
     let vote = Vote {
         prop_id: proposal_id,
-        power,
+        time_weighted_shares: time_weighted_shares_map,
     };
     VOTE_MAP.save(deps.storage, (round_id, tranche_id, info.sender), &vote)?;
 
     Ok(response)
 }
 
-// Returns the voting power of the given lock entry in a round with the given end time,
+// Returns the time-weighted amount of shares locked in the given lock entry in a round with the given end time,
 // and using the given lock epoch length.
-fn get_lock_voting_power(
+fn get_lock_time_weighted_shares(
     round_end: Timestamp,
     lock_entry: LockEntry,
     lock_epoch_length: u64,
@@ -890,8 +969,9 @@ pub fn query_round_total_power(
     deps: Deps,
     round_id: u64,
 ) -> StdResult<RoundTotalVotingPowerResponse> {
+    let total_round_power = get_total_power_for_round(deps.storage, round_id)?;
     Ok(RoundTotalVotingPowerResponse {
-        total_voting_power: TOTAL_ROUND_POWER.load(deps.storage, round_id)?,
+        total_voting_power: total_round_power.to_uint_ceil(), // TODO: decide on rounding
     })
 }
 
@@ -927,14 +1007,44 @@ pub fn query_all_user_lockups(
             // compute the lockup power scaling due to remaining lockup length
             let lock_epoch_length = constants.lock_epoch_length;
 
-            // TODO: scale based on validator power ratio
+            let validator_res =
+                validate_denom(deps, env.clone(), &constants, lock.funds.denom.clone());
+
+            if validator_res.is_err() {
+                // lockup has no power if validator is not in the current set
+                return LockEntryWithPower {
+                    lock_entry: lock.clone(),
+                    current_voting_power: Uint128::zero(),
+                };
+            }
+
+            // get the validators power ratio
+            let validator = validator_res.unwrap();
+            let validator_power_ratio =
+                get_validator_power_ratio_for_round(deps.storage, current_round_id, validator)
+                    .unwrap_or(Decimal::zero());
+
+            let time_weighted_shares =
+                get_lock_time_weighted_shares(round_end, lock.clone(), lock_epoch_length);
+
+            let current_voting_power = validator_power_ratio
+                .checked_mul(Decimal::from_ratio(time_weighted_shares, Uint128::one()));
+
+            if current_voting_power.is_err() {
+                // if there was an overflow error, log this but return 0
+                deps.api.debug(&format!(
+                    "Overflow error when computing voting power for lock: {:?}",
+                    lock
+                ));
+                return LockEntryWithPower {
+                    lock_entry: lock.clone(),
+                    current_voting_power: Uint128::zero(),
+                };
+            }
+
             LockEntryWithPower {
                 lock_entry: lock.clone(),
-                current_voting_power: get_lock_voting_power(
-                    round_end,
-                    lock.clone(),
-                    lock_epoch_length,
-                ),
+                current_voting_power: current_voting_power.unwrap().to_uint_ceil(),
             }
         })
         .collect();
@@ -1012,7 +1122,14 @@ pub fn query_user_vote(
         (round_id, tranche_id, deps.api.addr_validate(&user_address)?),
     )?;
 
-    Ok(UserVoteResponse { vote })
+    let vote_with_power = VoteWithPower {
+        prop_id: vote.prop_id,
+        power: vote.time_weighted_shares.values().sum(),
+    };
+
+    Ok(UserVoteResponse {
+        vote: vote_with_power,
+    })
 }
 
 pub fn query_round_tranche_proposals(
@@ -1084,10 +1201,7 @@ pub fn query_top_n_proposals(
     }
 
     // get total voting power for the round
-    let total_voting_power = match TOTAL_ROUND_POWER.may_load(deps.storage, round_id)? {
-        Some(power) => power,
-        None => Uint128::zero(),
-    };
+    let total_voting_power = get_total_power_for_round(deps.storage, round_id)?.to_uint_ceil(); // TODO: decide on rounding
 
     let top_proposals = top_props
         .into_iter()
@@ -1178,13 +1292,15 @@ fn compute_round_end(constants: &Constants, round_id: u64) -> StdResult<Timestam
     Ok(round_end)
 }
 
-fn update_total_voting_power<T>(
+#[allow(clippy::too_many_arguments)] // complex function that needs a lot of arguments
+fn update_total_time_weighted_shares<T>(
     deps: DepsMut,
     constants: &Constants,
     start_round_id: u64,
     end_round_id: u64,
     lock_end: u64,
-    funds: Uint128,
+    shares_validator: String,
+    amount: Uint128,
     get_old_voting_power: T,
 ) -> StdResult<()>
 where
@@ -1193,21 +1309,23 @@ where
     for round in start_round_id..=end_round_id {
         let round_end = compute_round_end(constants, round)?;
         let lockup_length = lock_end - round_end.nanos();
-        let voting_power_change =
-            scale_lockup_power(constants.lock_epoch_length, lockup_length, funds)
-                - get_old_voting_power(round, round_end, funds);
+        let scaled_amount = scale_lockup_power(constants.lock_epoch_length, lockup_length, amount);
+        let old_voting_power = get_old_voting_power(round, round_end, amount);
+        let scaled_shares = Decimal::from_ratio(scaled_amount, Uint128::one())
+            - Decimal::from_ratio(old_voting_power, Uint128::one());
 
         // save some gas if there was no power change
-        if voting_power_change == Uint128::zero() {
+        if scaled_shares.is_zero() {
             continue;
         }
 
-        TOTAL_ROUND_POWER.update(deps.storage, round, |power| -> Result<Uint128, StdError> {
-            match power {
-                Some(power) => Ok(power + voting_power_change),
-                None => Ok(voting_power_change),
-            }
-        })?;
+        // add the shares to the total power in the round
+        add_validator_shares_to_round_total(
+            deps.storage,
+            round,
+            shares_validator.clone(),
+            scaled_shares,
+        )?;
     }
 
     Ok(())

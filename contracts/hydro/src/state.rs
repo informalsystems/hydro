@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Coin, Timestamp, Uint128};
+use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
 use cw_storage_plus::{Item, Map};
 
 pub const CONSTANTS: Item<Constants> = Item::new("constants");
@@ -20,6 +22,8 @@ pub const LOCKED_TOKENS: Item<u128> = Item::new("locked_tokens");
 
 pub const LOCK_ID: Item<u64> = Item::new("lock_id");
 
+// stores the current PROP_ID, in order to ensure that each proposal has a unique ID
+// this is incremented every time a new proposal is created
 pub const PROP_ID: Item<u64> = Item::new("prop_id");
 
 // LOCKS_MAP: key(sender_address, lock_id) -> LockEntry
@@ -50,14 +54,21 @@ pub const VOTE_MAP: Map<(u64, u64, Addr), Vote> = Map::new("vote_map");
 #[cw_serde]
 pub struct Vote {
     pub prop_id: u64,
-    pub power: Uint128,
+    // for each validator, stores the amount of shares of that validator the user voted with
+    // (already scaled according to lockup scaling)
+    pub time_weighted_shares: HashMap<String, Decimal>,
+}
+
+#[cw_serde]
+// VoteWithPower is used to store a vote, where the time_weighted_shares
+// have been resolved to compute the total power of the vote.
+pub struct VoteWithPower {
+    pub prop_id: u64,
+    pub power: Decimal,
 }
 
 // PROPS_BY_SCORE: key((round_id, tranche_id), score, prop_id) -> prop_id
 pub const PROPS_BY_SCORE: Map<((u64, u64), u128, u64), u64> = Map::new("props_by_score");
-
-// TOTAL_ROUND_POWER: key(round_id) -> total_round_voting_power
-pub const TOTAL_ROUND_POWER: Map<u64, Uint128> = Map::new("total_round_power");
 
 pub const TRANCHE_ID: Item<u64> = Item::new("tranche_id");
 
