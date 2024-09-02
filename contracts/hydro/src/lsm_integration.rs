@@ -6,6 +6,7 @@ use neutron_sdk::{
     bindings::query::NeutronQuery, proto_types::ibc::applications::transfer::v1::DenomTrace,
 };
 
+use crate::state::VALIDATORS_INFO;
 use crate::{
     contract::compute_current_round_id,
     score_keeper::{
@@ -22,58 +23,9 @@ pub const TRANSFER_PORT: &str = "transfer";
 pub const COSMOS_VALIDATOR_PREFIX: &str = "cosmosvaloper";
 pub const COSMOS_VALIDATOR_ADDR_LENGTH: usize = 52; // e.g. cosmosvaloper15w6ra6m68c63t0sv2hzmkngwr9t88e23r8vtg5
 
-// For each round, stores the list of validators whose shares are eligible to vote.
-// We only store the top MAX_VALIDATOR_SHARES_PARTICIPATING validators by delegated tokens,
-// to avoid DoS attacks where someone creates a large number of validators with very small amounts of shares.
-// VALIDATORS_PER_ROUND: key(round_id) -> Vec<validator_address>
-pub const VALIDATORS_PER_ROUND: Map<u64, Vec<String>> = Map::new("validators_per_round");
-
 // VALIDATOR_POWER_PER_ROUND: key(round_id, validator_address) -> power_ratio
 pub const VALIDATOR_POWER_PER_ROUND: Map<(u64, String), Decimal> =
     Map::new("validator_power_per_round");
-
-// Returns the validators from the store for the round.
-// If the validators have not been set for the round
-// (presumably because the round has not gone for long enough for them to be updated)
-// it will fall back to getting the validators for the previous round.
-// If those are also not set, it will return an error.
-pub fn get_validators_for_round(deps: Deps<NeutronQuery>, round_id: u64) -> StdResult<Vec<String>> {
-    // try to get the validators for the round id
-    let validators = VALIDATORS_PER_ROUND.may_load(deps.storage, round_id)?;
-
-    // if the validators are not set for this round, try to get the validators for the previous round
-    let validators = match validators {
-        Some(validators) => validators,
-        None => {
-            // if the round id is 0, we can't get the validators for the previous round
-            if round_id == 0 {
-                return Err(StdError::generic_err("Validators are not set"));
-            }
-
-            // get the validators for the previous round
-            VALIDATORS_PER_ROUND
-                .load(deps.storage, round_id - 1)
-                .map_err(|_| {
-                    StdError::generic_err(format!(
-                        "Failed to load validators for rounds {} and {}",
-                        round_id,
-                        round_id - 1
-                    ))
-                })?
-        }
-    };
-
-    Ok(validators)
-}
-
-// Sets the validators for the given round in the store.
-pub fn set_round_validators(
-    storage: &mut dyn Storage,
-    validators: Vec<String>,
-    round_id: u64,
-) -> StdResult<()> {
-    VALIDATORS_PER_ROUND.save(storage, round_id, &validators)
-}
 
 // Returns OK if the denom is a valid IBC denom representing LSM
 // tokenized share transferred directly from the Cosmos Hub
@@ -118,8 +70,7 @@ pub fn validate_denom(
     let round_id = compute_current_round_id(&env, constants)?;
     let max_validators = constants.max_validator_shares_participating;
 
-    let validators = get_validators_for_round(deps, round_id)?;
-    if validators.contains(&validator) {
+    if is_active_round_validator(deps.storage, round_id, &validator) {
         Ok(validator)
     } else {
         Err(StdError::generic_err(format!(
@@ -128,6 +79,10 @@ pub fn validate_denom(
             max_validators
         )))
     }
+}
+
+pub fn is_active_round_validator(storage: &dyn Storage, round_id: u64, validator: &str) -> bool {
+    VALIDATORS_INFO.has(storage, (round_id, validator.to_string()))
 }
 
 // TODO: if round is in the future, use current powers (needed to compute the total power for the round, which

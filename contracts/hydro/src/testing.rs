@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use crate::contract::{
     query_tranches, query_user_vote, query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES,
 };
-use crate::lsm_integration::{set_new_validator_power_ratio_for_round, set_round_validators};
+use crate::lsm_integration::set_new_validator_power_ratio_for_round;
 use crate::msg::TrancheInfo;
+use crate::testing_lsm_integration::set_validator_infos_for_round;
 use crate::testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock};
 use crate::{
     contract::{
@@ -54,7 +55,15 @@ pub fn set_default_validator_for_rounds(
     end_round: u64,
 ) {
     for round_id in start_round..end_round {
-        let res = set_round_validators(deps.storage, vec![VALIDATOR_1.to_string()], round_id);
+        let res = set_validator_infos_for_round(
+            deps.storage,
+            round_id,
+            vec![
+                VALIDATOR_1.to_string(),
+                VALIDATOR_2.to_string(),
+                VALIDATOR_3.to_string(),
+            ],
+        );
         assert!(res.is_ok());
 
         // set power ratio to 1.0
@@ -77,7 +86,7 @@ pub fn set_validators_constant_power_ratios_for_rounds(
     power_ratios: Vec<Decimal>,
 ) {
     for round_id in start_round..end_round {
-        let res = set_round_validators(deps.storage, validators.clone(), round_id);
+        let res = set_validator_infos_for_round(deps.storage, round_id, validators.clone());
         assert!(res.is_ok());
 
         // set the power ratio for each validator to 1 for that round
