@@ -1,10 +1,10 @@
 use crate::{
     contract::{
-        claim_tribute_for_community_pool, execute, get_community_pool_tribute_share,
-        get_voters_tribute_share, instantiate, query_proposal_tributes,
+        execute, get_community_pool_tribute_share, get_voters_tribute_share, instantiate,
+        query_proposal_tributes,
     },
     msg::{CommunityPoolConfig, ExecuteMsg, InstantiateMsg},
-    state::{Config, Tribute, TRIBUTE_MAP},
+    state::Config,
 };
 use cosmwasm_std::{
     from_json,
@@ -13,13 +13,12 @@ use cosmwasm_std::{
     Response, SystemError, SystemResult, Uint128, WasmQuery,
 };
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
-use hydro::state::{Proposal, Vote};
 use hydro::{
     query::{
         CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
         UserVoteResponse,
     },
-    state::VoteWithPower,
+    state::{Proposal, VoteWithPower},
 };
 use proptest::prelude::*;
 
@@ -734,8 +733,8 @@ fn verify_ibc_tokens_received(
             channel_id,
             to_address,
             amount,
-            timeout,
-            memo,
+            timeout: _,
+            memo: _,
         }) => {
             assert_eq!(*expected_channel_id, *channel_id);
             assert_eq!(*expected_receiver, *to_address);
@@ -842,7 +841,7 @@ proptest! {
         let info = get_message_info(
             &deps.api,
             tribute_payer,
-            &vec![Coin::new(tribute_amount, DEFAULT_DENOM)],
+            &[Coin::new(tribute_amount, DEFAULT_DENOM)],
         );
         let msg = ExecuteMsg::AddTribute {
             tranche_id: 0,
