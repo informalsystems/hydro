@@ -10,6 +10,7 @@ pub struct Hydro;
 
 #[cfg(not(target_arch = "wasm32"))]
 use cw_orch::prelude::*;
+use neutron_sdk::bindings::msg::NeutronMsg;
 
 #[cfg(not(target_arch = "wasm32"))]
 impl<Chain: CwEnv> Uploadable for Hydro<Chain> {
@@ -20,7 +21,7 @@ impl<Chain: CwEnv> Uploadable for Hydro<Chain> {
             .unwrap()
     }
     // Return a CosmWasm contract wrapper
-    fn wrapper() -> Box<dyn MockContract<Empty>> {
+    fn wrapper() -> Box<dyn MockContract<NeutronMsg>> {
         Box::new(
             ContractWrapper::new_with_empty(
                 hydro::contract::execute,

@@ -17,6 +17,7 @@ use crate::{
 use cosmwasm_std::testing::{mock_env, MockApi};
 use cosmwasm_std::{BankMsg, CosmosMsg, Decimal, Deps, DepsMut, MessageInfo, Timestamp, Uint128};
 use cosmwasm_std::{Coin, StdError, StdResult};
+use neutron_sdk::bindings::query::NeutronQuery;
 use proptest::prelude::*;
 
 pub const VALIDATOR_1: &str = "cosmosvaloper157v7tczs40axfgejp2m43kwuzqe0wsy0rv8puv";
@@ -47,7 +48,11 @@ pub const TWO_WEEKS_IN_NANO_SECONDS: u64 = 14 * 24 * 60 * 60 * 1000000000;
 pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
 pub const THREE_MONTHS_IN_NANO_SECONDS: u64 = 3 * ONE_MONTH_IN_NANO_SECONDS;
 
-pub fn set_default_validator_for_rounds(deps: DepsMut, start_round: u64, end_round: u64) {
+pub fn set_default_validator_for_rounds(
+    deps: DepsMut<NeutronQuery>,
+    start_round: u64,
+    end_round: u64,
+) {
     for round_id in start_round..end_round {
         let res = set_round_validators(deps.storage, vec![VALIDATOR_1.to_string()], round_id);
         assert!(res.is_ok());
@@ -65,7 +70,7 @@ pub fn set_default_validator_for_rounds(deps: DepsMut, start_round: u64, end_rou
 }
 
 pub fn set_validators_constant_power_ratios_for_rounds(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     start_round: u64,
     end_round: u64,
     validators: Vec<String>,
@@ -104,7 +109,9 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         initial_whitelist: vec![user_address],
         whitelist_admins: vec![],
         max_validator_shares_participating: 100,
+        hub_connection_id: "connection-0".to_string(),
         hub_transfer_channel_id: "channel-0".to_string(),
+        icq_update_period: 100,
     }
 }
 
@@ -1023,7 +1030,7 @@ fn total_voting_power_tracking_test() {
     verify_expected_voting_power(deps.as_ref(), &expected_total_voting_powers);
 }
 
-fn verify_expected_voting_power(deps: Deps, expected_powers: &[(u64, u128)]) {
+fn verify_expected_voting_power(deps: Deps<NeutronQuery>, expected_powers: &[(u64, u128)]) {
     for expected_power in expected_powers {
         let res = query_round_total_power(deps, expected_power.0);
 
@@ -1360,6 +1367,7 @@ fn contract_pausing_test() {
             tranche_name: Some(String::new()),
             tranche_metadata: Some(String::new()),
         },
+        ExecuteMsg::CreateICQsForValidators { validators: vec![] },
     ];
 
     for msg in msgs {

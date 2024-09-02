@@ -4,7 +4,7 @@ use cosmwasm_std::{
     testing::mock_env, BankMsg, Coin, CosmosMsg, Decimal, Env, StdError, Storage, SystemError,
     SystemResult, Timestamp, Uint128,
 };
-use ibc_proto::ibc::apps::transfer::v1::QueryDenomTraceResponse;
+use neutron_sdk::proto_types::ibc::applications::transfer::v1::QueryDenomTraceResponse;
 use prost::Message;
 
 use crate::{
@@ -21,8 +21,8 @@ use crate::{
         VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3, VALIDATOR_3_LST_DENOM_1,
     },
     testing_mocks::{
-        denom_trace_grpc_query_mock, grpc_query_result_from, mock_dependencies,
-        no_op_grpc_query_mock, GrpcQueryFunc,
+        denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock,
+        system_result_ok_from, GrpcQueryFunc,
     },
 };
 
@@ -34,7 +34,9 @@ fn get_default_constants() -> crate::state::Constants {
         max_locked_tokens: 1,
         paused: false,
         max_validator_shares_participating: 2,
+        hub_connection_id: "connection-0".to_string(),
         hub_transfer_channel_id: "channel-0".to_string(),
+        icq_update_period: 100,
     }
 }
 
@@ -63,7 +65,7 @@ fn test_validate_denom() {
         TestCase {
             description: "gRPC query returns error".to_string(),
             denom: IBC_DENOM_1.to_string(),
-            expected_result: Err(StdError::generic_err("Querier system error: Unknown system error")),
+            expected_result: Err(StdError::generic_err("Failed to obtain IBC denom trace: Generic error: Querier system error: Unknown system error")),
             setup: Box::new(|_storage, _env| { }),
             grpc_query: Box::new(|_query| { SystemResult::Err(SystemError::Unknown {}) }),
         },
@@ -72,7 +74,7 @@ fn test_validate_denom() {
             denom: IBC_DENOM_1.to_string(),
             expected_result: Err(StdError::generic_err("Failed to obtain IBC denom trace")),
             setup: Box::new(|_storage, _env| { }),
-            grpc_query: Box::new(|_query| { grpc_query_result_from(QueryDenomTraceResponse { denom_trace: None }.encode_to_vec()) }),
+            grpc_query: Box::new(|_query| { system_result_ok_from(QueryDenomTraceResponse { denom_trace: None }.encode_to_vec()) }),
         },
         TestCase {
             description: "IBC denom received over multiple hops".to_string(),

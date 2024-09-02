@@ -1,11 +1,10 @@
-use cosmwasm_std::{Binary, Decimal, Deps, Env, Order, StdError, StdResult, Storage};
+use cosmwasm_std::{Decimal, Deps, Env, Order, StdError, StdResult, Storage};
 use cw_storage_plus::Map;
 
-use ibc_proto::ibc::{
-    applications::transfer::v1::{QueryDenomTraceRequest, QueryDenomTraceResponse},
-    apps::transfer::v1::DenomTrace,
+use neutron_sdk::proto_types::ibc::applications::transfer::v1::TransferQuerier;
+use neutron_sdk::{
+    bindings::query::NeutronQuery, proto_types::ibc::applications::transfer::v1::DenomTrace,
 };
-use prost::Message;
 
 use crate::{
     contract::compute_current_round_id,
@@ -18,6 +17,7 @@ use crate::{
 
 pub const IBC_TOKEN_PREFIX: &str = "ibc/";
 pub const DENOM_TRACE_GRPC: &str = "/ibc.applications.transfer.v1.Query/DenomTrace";
+pub const INTERCHAINQUERIES_PARAMS_GRPC: &str = "/neutron.interchainqueries.Query/Params";
 pub const TRANSFER_PORT: &str = "transfer";
 pub const COSMOS_VALIDATOR_PREFIX: &str = "cosmosvaloper";
 pub const COSMOS_VALIDATOR_ADDR_LENGTH: usize = 52; // e.g. cosmosvaloper15w6ra6m68c63t0sv2hzmkngwr9t88e23r8vtg5
@@ -37,7 +37,7 @@ pub const VALIDATOR_POWER_PER_ROUND: Map<(u64, String), Decimal> =
 // (presumably because the round has not gone for long enough for them to be updated)
 // it will fall back to getting the validators for the previous round.
 // If those are also not set, it will return an error.
-pub fn get_validators_for_round(deps: Deps, round_id: u64) -> StdResult<Vec<String>> {
+pub fn get_validators_for_round(deps: Deps<NeutronQuery>, round_id: u64) -> StdResult<Vec<String>> {
     // try to get the validators for the round id
     let validators = VALIDATORS_PER_ROUND.may_load(deps.storage, round_id)?;
 
@@ -80,7 +80,7 @@ pub fn set_round_validators(
 // of a validator that is also currently among the top
 // max_validators validators, and returns the address of that validator.
 pub fn validate_denom(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     env: Env,
     constants: &Constants,
     denom: String,
@@ -165,13 +165,9 @@ pub fn set_new_validator_power_ratio_for_round(
     )
 }
 
-pub fn query_ibc_denom_trace(deps: Deps, denom: String) -> StdResult<DenomTrace> {
-    let query_denom_trace_resp = deps.querier.query_grpc(
-        String::from(DENOM_TRACE_GRPC),
-        Binary::new(QueryDenomTraceRequest { hash: denom }.encode_to_vec()),
-    )?;
-
-    QueryDenomTraceResponse::decode(query_denom_trace_resp.as_slice())
+pub fn query_ibc_denom_trace(deps: Deps<NeutronQuery>, denom: String) -> StdResult<DenomTrace> {
+    TransferQuerier::new(&deps.querier)
+        .denom_trace(denom)
         .map_err(|err| StdError::generic_err(format!("Failed to obtain IBC denom trace: {}", err)))?
         .denom_trace
         .ok_or(StdError::generic_err("Failed to obtain IBC denom trace"))

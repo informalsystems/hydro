@@ -8,11 +8,16 @@ export type Uint128 = string;
 export type Timestamp = Uint64;
 export type Uint64 = string;
 export interface AllUserLockupsResponse {
-  lockups: LockEntry[];
+  lockups: LockEntryWithPower[];
+}
+export interface LockEntryWithPower {
+  current_voting_power: Uint128;
+  lock_entry: LockEntry;
 }
 export interface LockEntry {
   funds: Coin;
   lock_end: Timestamp;
+  lock_id: number;
   lock_start: Timestamp;
 }
 export interface Coin {
@@ -24,7 +29,9 @@ export interface ConstantsResponse {
 }
 export interface Constants {
   first_round_start: Timestamp;
+  hub_connection_id: string;
   hub_transfer_channel_id: string;
+  icq_update_period: number;
   lock_epoch_length: number;
   max_locked_tokens: number;
   max_validator_shares_participating: number;
@@ -80,6 +87,10 @@ export type ExecuteMsg = {
     tranche_metadata?: string | null;
     tranche_name?: string | null;
   };
+} | {
+  create_icqs_for_validators: {
+    validators: string[];
+  };
 };
 export interface TrancheInfo {
   metadata: string;
@@ -90,10 +101,12 @@ export interface ExpiredUserLockupsResponse {
 }
 export interface InstantiateMsg {
   first_round_start: Timestamp;
+  hub_connection_id: string;
   hub_transfer_channel_id: string;
+  icq_update_period: number;
   initial_whitelist: string[];
   lock_epoch_length: number;
-  max_locked_tokens: number;
+  max_locked_tokens: Uint128;
   max_validator_shares_participating: number;
   round_length: number;
   tranches: TrancheInfo[];
@@ -196,11 +209,12 @@ export interface Tranche {
   metadata: string;
   name: string;
 }
+export type Decimal = string;
 export interface UserVoteResponse {
-  vote: Vote;
+  vote: VoteWithPower;
 }
-export interface Vote {
-  power: Uint128;
+export interface VoteWithPower {
+  power: Decimal;
   prop_id: number;
 }
 export interface UserVotingPowerResponse {
