@@ -277,9 +277,6 @@ fn refresh_lock_duration(
     // note that this is already indexed by the caller, so if it is successful, the sender owns this lock
     let mut lock_entry = LOCKS_MAP.load(deps.storage, (info.sender.clone(), lock_id))?;
 
-    // log the lock entry
-    deps.api.debug(&format!("lock_entry: {:?}", lock_entry));
-
     // compute the new lock_end_time
     let new_lock_end = env.block.time.plus_nanos(lock_duration).nanos();
 
