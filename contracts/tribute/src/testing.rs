@@ -165,7 +165,7 @@ impl MockWasmQuerier {
                 return res;
             }
         }
-        return StdResult::Err(StdError::generic_err("proposal couldn't be found"));
+        StdResult::Err(StdError::generic_err("proposal couldn't be found"))
     }
 }
 
@@ -997,8 +997,8 @@ fn add_tribute_helper(
         &[Coin::new(tribute_amount, denom)],
     );
     let msg = ExecuteMsg::AddTribute {
-        tranche_id: tranche_id,
-        proposal_id: proposal_id,
+        tranche_id,
+        proposal_id,
     };
     execute(deps.as_mut(), env, info, msg)
 }
