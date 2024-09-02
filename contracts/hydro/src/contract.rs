@@ -31,8 +31,8 @@ use crate::score_keeper::{
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS,
     LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID,
-    TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND_NEW, VALIDATOR_TO_QUERY_ID, VOTE_MAP,
-    WHITELIST, WHITELIST_ADMINS,
+    TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATOR_TO_QUERY_ID, VOTE_MAP, WHITELIST,
+    WHITELIST_ADMINS,
 };
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
@@ -1376,7 +1376,7 @@ pub fn query_validators_per_round(
     deps: Deps<NeutronQuery>,
     round_id: u64,
 ) -> StdResult<Vec<(u128, String)>> {
-    Ok(VALIDATORS_PER_ROUND_NEW
+    Ok(VALIDATORS_PER_ROUND
         .sub_prefix(round_id)
         .range(deps.storage, None, None, Order::Descending)
         .map(|l| l.unwrap().0)

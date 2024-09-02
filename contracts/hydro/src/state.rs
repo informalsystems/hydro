@@ -99,9 +99,10 @@ pub const VALIDATOR_TO_QUERY_ID: Map<String, u64> = Map::new("validator_to_query
 // QUERY_ID_TO_VALIDATOR: key(interchain query ID) -> validator_address
 pub const QUERY_ID_TO_VALIDATOR: Map<u64, String> = Map::new("query_id_to_validator");
 
-// TODO: this will become VALIDATORS_PER_ROUND once the integration is finished
-// VALIDATORS_PER_ROUND_NEW: key(round_id, delegated_tokens, validator_address) -> validator_address
-pub const VALIDATORS_PER_ROUND_NEW: Map<(u64, u128, String), String> =
+// Duplicates some information from VALIDATORS_INFO to have the validators easily accessible by number of delegated tokens
+// to compute the top N
+// VALIDATORS_PER_ROUND: key(round_id, delegated_tokens, validator_address) -> validator_address
+pub const VALIDATORS_PER_ROUND: Map<(u64, u128, String), String> =
     Map::new("validators_per_round_new");
 
 // VALIDATORS_INFO: key(round_id, validator_address) -> ValidatorInfo

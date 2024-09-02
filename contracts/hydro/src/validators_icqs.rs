@@ -22,7 +22,7 @@ use crate::{
     error::ContractError,
     state::{
         Constants, ValidatorInfo, CONSTANTS, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO,
-        VALIDATORS_PER_ROUND_NEW, VALIDATOR_TO_QUERY_ID,
+        VALIDATORS_PER_ROUND, VALIDATOR_TO_QUERY_ID,
     },
 };
 
@@ -201,7 +201,7 @@ fn top_n_validator_add(
         (current_round, validator_info.address.clone()),
         &validator_info,
     )?;
-    VALIDATORS_PER_ROUND_NEW.save(
+    VALIDATORS_PER_ROUND.save(
         deps.storage,
         (
             current_round,
@@ -222,7 +222,7 @@ fn top_n_validator_update(
 ) -> Result<(), NeutronError> {
     let mut should_update_info = false;
     if validator_info.delegated_tokens != new_tokens {
-        VALIDATORS_PER_ROUND_NEW.remove(
+        VALIDATORS_PER_ROUND.remove(
             deps.storage,
             (
                 current_round,
@@ -230,7 +230,7 @@ fn top_n_validator_update(
                 validator_info.address.clone(),
             ),
         );
-        VALIDATORS_PER_ROUND_NEW.save(
+        VALIDATORS_PER_ROUND.save(
             deps.storage,
             (
                 current_round,
@@ -282,7 +282,7 @@ fn top_n_validator_remove(
         deps.storage,
         (current_round, validator_info.address.clone()),
     );
-    VALIDATORS_PER_ROUND_NEW.remove(
+    VALIDATORS_PER_ROUND.remove(
         deps.storage,
         (
             current_round,
@@ -299,7 +299,7 @@ fn get_last_validator(
     current_round: u64,
     constants: &Constants,
 ) -> Option<(u128, String)> {
-    let last_validator: Vec<(u128, String)> = VALIDATORS_PER_ROUND_NEW
+    let last_validator: Vec<(u128, String)> = VALIDATORS_PER_ROUND
         .sub_prefix(current_round)
         .range(deps.storage, None, None, Order::Descending)
         .skip((constants.max_validator_shares_participating - 1) as usize)
