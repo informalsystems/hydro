@@ -110,6 +110,35 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "claim_community_pool_tribute"
+      ],
+      "properties": {
+        "claim_community_pool_tribute": {
+          "type": "object",
+          "required": [
+            "round_id",
+            "tranche_id"
+          ],
+          "properties": {
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ]
 }
