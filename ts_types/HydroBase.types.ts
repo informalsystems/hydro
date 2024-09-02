@@ -209,11 +209,12 @@ export interface Tranche {
   metadata: string;
   name: string;
 }
+export type Decimal = string;
 export interface UserVoteResponse {
-  vote: Vote;
+  vote: VoteWithPower;
 }
-export interface Vote {
-  power: Uint128;
+export interface VoteWithPower {
+  power: Decimal;
   prop_id: number;
 }
 export interface UserVotingPowerResponse {

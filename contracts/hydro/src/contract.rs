@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, MessageInfo, Order, Reply, Response, StdError, StdResult, Timestamp, Uint128
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
+    MessageInfo, Order, Reply, Response, StdError, StdResult, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
 use cw_utils::must_pay;
@@ -11,7 +12,9 @@ use neutron_sdk::interchain_queries::v047::register_queries::new_register_stakin
 use neutron_sdk::sudo::msg::SudoMsg;
 
 use crate::error::ContractError;
-use crate::lsm_integration::{get_validator_power_ratio_for_round, validate_denom, COSMOS_VALIDATOR_PREFIX};
+use crate::lsm_integration::{
+    get_validator_power_ratio_for_round, validate_denom, COSMOS_VALIDATOR_PREFIX,
+};
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
@@ -26,7 +29,10 @@ use crate::score_keeper::{
     remove_many_validator_shares_from_proposal,
 };
 use crate::state::{
-    Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND_NEW, VALIDATOR_TO_QUERY_ID, VOTE_MAP, WHITELIST, WHITELIST_ADMINS
+    Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS,
+    LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID,
+    TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND_NEW, VALIDATOR_TO_QUERY_ID, VOTE_MAP,
+    WHITELIST, WHITELIST_ADMINS,
 };
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
@@ -637,10 +643,9 @@ fn vote(
         let scaled_shares = get_lock_time_weighted_shares(round_end, lock_entry, lock_epoch_length);
 
         // add the shares to the map
-        let shares = time_weighted_shares_map.get(&validator);
-        let shares = match shares {
-            Some(shares) => shares,
-            None => &Decimal::zero(),
+        let shares = match time_weighted_shares_map.get(&validator) {
+            Some(shares) => *shares,
+            None => Decimal::zero(),
         };
         let new_shares = shares.checked_add(Decimal::from_ratio(scaled_shares, Uint128::one()))?;
 
