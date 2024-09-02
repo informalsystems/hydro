@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use cosmwasm_std::{
     from_json, to_json_vec, Coin, Decimal, Deps, DepsMut, Env, Order, Reply, Response, StdError,
-    StdResult, SubMsg, Uint128,
+    StdResult, Storage, SubMsg, Uint128,
 };
 
 use neutron_sdk::{
@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     contract::{compute_current_round_id, NATIVE_TOKEN_DENOM},
     error::ContractError,
+    lsm_integration::set_new_validator_power_ratio_for_round,
     state::{
         Constants, ValidatorInfo, CONSTANTS, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO,
         VALIDATORS_PER_ROUND, VALIDATOR_TO_QUERY_ID,
@@ -190,12 +191,12 @@ fn top_n_validator_add(
 ) -> Result<(), NeutronError> {
     // this call only makes difference if some validator was in the top N,
     // then was droped out, and then got back in the top N again
-    update_power_ratio(
-        validator_info.address.clone(),
+    set_new_validator_power_ratio_for_round(
+        deps.storage,
         current_round,
-        Decimal::zero(),
+        validator_info.address.clone(),
         validator_info.power_ratio,
-    );
+    )?;
     VALIDATORS_INFO.save(
         deps.storage,
         (current_round, validator_info.address.clone()),
@@ -245,12 +246,12 @@ fn top_n_validator_update(
     }
 
     if validator_info.power_ratio != new_power_ratio {
-        update_power_ratio(
-            validator_info.address.clone(),
+        set_new_validator_power_ratio_for_round(
+            deps.storage,
             current_round,
-            validator_info.power_ratio,
+            validator_info.address.clone(),
             new_power_ratio,
-        );
+        )?;
 
         validator_info.power_ratio = new_power_ratio;
         should_update_info = true;
@@ -272,12 +273,13 @@ fn top_n_validator_remove(
     current_round: u64,
     validator_info: ValidatorInfo,
 ) -> Result<(), NeutronError> {
-    update_power_ratio(
-        validator_info.address.clone(),
+    set_new_validator_power_ratio_for_round(
+        deps.storage,
         current_round,
-        validator_info.power_ratio,
+        validator_info.address.clone(),
         Decimal::zero(),
-    );
+    )?;
+
     VALIDATORS_INFO.remove(
         deps.storage,
         (current_round, validator_info.address.clone()),
@@ -360,12 +362,4 @@ pub fn query_min_interchain_query_deposit(deps: &Deps<NeutronQuery>) -> StdResul
             "Failed to obtain interchain query creation deposit.",
         )),
     }
-}
-
-fn update_power_ratio(
-    _validator_address: String,
-    _round_id: u64,
-    _old_power_ratio: Decimal,
-    _new_power_ratio: Decimal,
-) {
 }
