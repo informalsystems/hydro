@@ -34,7 +34,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
         std::time::SystemTime::now()
             .duration_since(UNIX_EPOCH)?
             .as_nanos() as u64
-            + 5000000000,
+            + 15000000000,
     );
     let round_length = 30000000000;
 
@@ -76,7 +76,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
     assert_eq!(constants_response.constants.round_length, round_length);
 
     // wait for the first round to start
-    thread::sleep(Duration::from_secs(5));
+    thread::sleep(Duration::from_secs(15));
 
     let tribute = Tribute::new(chain.clone());
     tribute.upload()?;
