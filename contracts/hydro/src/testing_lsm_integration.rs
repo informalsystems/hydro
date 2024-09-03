@@ -194,7 +194,7 @@ fn test_validate_denom() {
             denom: IBC_DENOM_1.to_string(),
             expected_result: Err(StdError::generic_err(format!("Validator {} is not present; possibly they are not part of the top 2 validators by delegated tokens", VALIDATOR_1))),
             setup: Box::new(|storage, _env| {
-                let validators = vec![VALIDATOR_2.to_string(), VALIDATOR_2.to_string()];
+                let validators = vec![VALIDATOR_2.to_string(), VALIDATOR_3.to_string()];
                 let res = set_validator_infos_for_round(storage, 0, validators);
                 assert!(res.is_ok());
             }),

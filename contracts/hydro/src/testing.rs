@@ -55,15 +55,8 @@ pub fn set_default_validator_for_rounds(
     end_round: u64,
 ) {
     for round_id in start_round..end_round {
-        let res = set_validator_infos_for_round(
-            deps.storage,
-            round_id,
-            vec![
-                VALIDATOR_1.to_string(),
-                VALIDATOR_2.to_string(),
-                VALIDATOR_3.to_string(),
-            ],
-        );
+        let res =
+            set_validator_infos_for_round(deps.storage, round_id, vec![VALIDATOR_1.to_string()]);
         assert!(res.is_ok());
 
         // set power ratio to 1.0
