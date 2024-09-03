@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cosmossdk.io/math"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	abci "github.com/cometbft/cometbft/abci/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	transfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
@@ -105,7 +106,7 @@ func (s *HydroSuite) TestLockTokens() {
 	s.Require().NoError(err)
 	response, err = s.NeutronChain.Validators[0].TxHashToResponse(s.GetContext(), txHash)
 	s.Require().NoError(err)
-	codeId, found := getEvtAttribute(response.Events, "store_code", "code_id")
+	codeId, found := getEvtAttribute(response.Events, wasmtypes.EventTypeStoreCode, wasmtypes.AttributeKeyCodeID)
 	s.Require().True(found)
 
 	// instantiate code
@@ -139,10 +140,30 @@ func (s *HydroSuite) TestLockTokens() {
 	initHydroJson, err := json.Marshal(initHydro)
 	s.Require().NoError(err)
 
-	_, err = s.NeutronChain.Validators[0].ExecTx(
+	txHash, err = s.NeutronChain.Validators[0].ExecTx(
 		s.GetContext(),
 		s.NeutronChain.ValidatorWallets[0].Moniker,
 		"wasm", "instantiate", codeId, string(initHydroJson), "--admin", neutronWallet1Address, "--label", "Hydro Smart Contract", "--gas", "auto",
+	)
+	s.Require().NoError(err)
+	response, err = s.NeutronChain.Validators[0].TxHashToResponse(s.GetContext(), txHash)
+	s.Require().NoError(err)
+	contractAddr, found := getEvtAttribute(response.Events, wasmtypes.EventTypeInstantiate, wasmtypes.AttributeKeyContractAddr)
+	s.Require().True(found)
+
+	// register interchain query
+	icqs := map[string]interface{}{
+		"create_icqs_for_validators": map[string]interface{}{
+			"validators": []string{s.HubChain.ValidatorWallets[0].ValoperAddress},
+		},
+	}
+	icqsJson, err := json.Marshal(icqs)
+	s.Require().NoError(err)
+
+	_, err = s.NeutronChain.Validators[0].ExecTx(
+		s.GetContext(),
+		s.NeutronChain.ValidatorWallets[0].Moniker,
+		"wasm", "execute", contractAddr, string(icqsJson), "--amount", "2000000untrn", "--gas", "auto",
 	)
 	s.Require().NoError(err)
 }
