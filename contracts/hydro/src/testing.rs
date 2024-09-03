@@ -1454,3 +1454,7 @@ pub fn whitelist_proposal_submission_test() {
     let res = query_proposal(deps.as_ref(), 0, 1, 1);
     assert!(res.is_ok(), "error: {:?}", res);
 }
+
+// TODO: test the validator initialization store
+// test queries in particular
+// what happens when the store is not initialized yet - are the queries ok? (probably not)
