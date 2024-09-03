@@ -13,6 +13,7 @@ use neutron_sdk::sudo::msg::SudoMsg;
 
 use crate::error::ContractError;
 use crate::lsm_integration::{
+    add_validator_shares_to_round_total, get_total_power_for_round,
     get_validator_power_ratio_for_round, validate_denom, COSMOS_VALIDATOR_PREFIX,
 };
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
@@ -24,8 +25,7 @@ use crate::query::{
     WhitelistResponse,
 };
 use crate::score_keeper::{
-    add_validator_shares_to_proposal, add_validator_shares_to_round_total,
-    get_total_power_for_proposal, get_total_power_for_round,
+    add_validator_shares_to_proposal, get_total_power_for_proposal,
     remove_many_validator_shares_from_proposal,
 };
 use crate::state::{
@@ -1112,8 +1112,19 @@ pub fn query_all_user_lockups(
             // get the validators power ratio
             let validator = validator_res.unwrap();
             let validator_power_ratio =
-                get_validator_power_ratio_for_round(deps.storage, current_round_id, validator)
-                    .unwrap_or(Decimal::zero());
+                get_validator_power_ratio_for_round(deps.storage, current_round_id, validator);
+            if validator_power_ratio.is_err() {
+                // if there was an error, log this but return 0
+                deps.api.debug(&format!(
+                    "Error when computing voting power for lock: {:?}",
+                    lock
+                ));
+                return LockEntryWithPower {
+                    lock_entry: lock.clone(),
+                    current_voting_power: Uint128::zero(),
+                };
+            }
+            let validator_power_ratio = validator_power_ratio.unwrap();
 
             let time_weighted_shares =
                 get_lock_time_weighted_shares(round_end, lock.clone(), lock_epoch_length);

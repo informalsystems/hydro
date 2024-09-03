@@ -108,6 +108,9 @@ pub const VALIDATORS_PER_ROUND: Map<(u64, u128, String), String> =
 // VALIDATORS_INFO: key(round_id, validator_address) -> ValidatorInfo
 pub const VALIDATORS_INFO: Map<(u64, String), ValidatorInfo> = Map::new("validators_info");
 
+// ROUND_POWER_SHARES_MAP: key(round_id, validator_address) -> number_of_shares
+pub const ROUND_POWER_SHARES_MAP: Map<(u64, String), Decimal> = Map::new("round_power_shares");
+
 #[cw_serde]
 #[derive(Default)]
 pub struct ValidatorInfo {

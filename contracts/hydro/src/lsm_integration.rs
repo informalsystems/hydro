@@ -6,13 +6,10 @@ use neutron_sdk::{
     bindings::query::NeutronQuery, proto_types::ibc::applications::transfer::v1::DenomTrace,
 };
 
-use crate::state::VALIDATORS_INFO;
+use crate::state::{ROUND_POWER_SHARES_MAP, VALIDATORS_INFO};
 use crate::{
     contract::compute_current_round_id,
-    score_keeper::{
-        get_total_power_for_proposal, update_power_ratio_for_proposal,
-        update_power_ratio_for_round_total,
-    },
+    score_keeper::{get_total_power_for_proposal, update_power_ratio_for_proposal},
     state::{Constants, Proposal, PROPOSAL_MAP, PROPS_BY_SCORE, TRANCHE_MAP},
 };
 
@@ -85,6 +82,18 @@ pub fn is_active_round_validator(storage: &dyn Storage, round_id: u64, validator
     VALIDATORS_INFO.has(storage, (round_id, validator.to_string()))
 }
 
+// Gets the current list of active validators for the given round
+pub fn get_round_validators(storage: &dyn Storage, round_id: u64) -> Vec<String> {
+    VALIDATORS_INFO
+        .prefix(round_id)
+        .range(storage, None, None, Order::Ascending)
+        .map(|val_res| {
+            let val = val_res.unwrap();
+            val.0
+        })
+        .collect()
+}
+
 // TODO: if round is in the future, use current powers (needed to compute the total power for the round, which
 // accesses future rounds)
 // TODO: if currrent round is not fully initialized, use previous round's powers
@@ -95,7 +104,9 @@ pub fn get_validator_power_ratio_for_round(
     round_id: u64,
     validator: String,
 ) -> StdResult<Decimal> {
-    VALIDATOR_POWER_PER_ROUND.load(storage, (round_id, validator))
+    Ok(VALIDATOR_POWER_PER_ROUND
+        .may_load(storage, (round_id, validator))?
+        .unwrap_or(Decimal::zero()))
 }
 
 pub fn set_new_validator_power_ratio_for_round(
@@ -207,15 +218,44 @@ pub fn update_scores_due_to_power_ratio_change(
             )?;
         }
     }
-
-    // update the total power in the round
-    update_power_ratio_for_round_total(
-        storage,
-        round_id,
-        validator.to_string(),
-        old_power_ratio,
-        new_power_ratio,
-    )?;
-
     Ok(())
+}
+
+pub fn get_total_power_for_round(storage: &dyn Storage, round_id: u64) -> StdResult<Decimal> {
+    // get the current validators for that round
+    let validators = get_round_validators(storage, round_id);
+
+    // compute the total power
+    let mut total = Decimal::zero();
+    for validator in validators {
+        let power_ratio =
+            get_validator_power_ratio_for_round(storage, round_id, validator.clone())?;
+        let shares = ROUND_POWER_SHARES_MAP
+            .may_load(storage, (round_id, validator.clone()))?
+            .unwrap_or(Decimal::zero());
+        total += shares * power_ratio;
+    }
+
+    Ok(total)
+}
+
+pub fn add_validator_shares_to_round_total(
+    storage: &mut dyn Storage,
+    round_id: u64,
+    validator: String,
+    num_shares: Decimal,
+) -> StdResult<()> {
+    let current_shares = get_validator_shares_for_round(storage, round_id, validator.clone())?;
+    let new_shares = current_shares + num_shares;
+    ROUND_POWER_SHARES_MAP.save(storage, (round_id, validator), &new_shares)
+}
+
+pub fn get_validator_shares_for_round(
+    storage: &dyn Storage,
+    round_id: u64,
+    validator: String,
+) -> StdResult<Decimal> {
+    Ok(ROUND_POWER_SHARES_MAP
+        .may_load(storage, (round_id, validator))?
+        .unwrap_or(Decimal::zero()))
 }

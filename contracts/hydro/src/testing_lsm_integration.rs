@@ -9,9 +9,10 @@ use prost::Message;
 
 use crate::{
     contract::{execute, instantiate, query_top_n_proposals},
-    lsm_integration::{update_scores_due_to_power_ratio_change, validate_denom},
+    lsm_integration::{
+        get_total_power_for_round, set_new_validator_power_ratio_for_round, validate_denom,
+    },
     msg::ExecuteMsg,
-    score_keeper::get_total_power_for_round,
     state::ValidatorInfo,
     testing::{
         get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
@@ -664,11 +665,10 @@ fn lock_tokens_multiple_validators_and_vote() {
     }
 
     // update the power ratio for validator 1 to become 0.5
-    let res = update_scores_due_to_power_ratio_change(
+    let res = set_new_validator_power_ratio_for_round(
         deps.as_mut().storage,
-        VALIDATOR_1,
         0,
-        Decimal::percent(100),
+        VALIDATOR_1.to_string(),
         Decimal::percent(50),
     );
     assert!(res.is_ok());

@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use cosmwasm_std::{
     from_json, to_json_vec, Coin, Decimal, Deps, DepsMut, Env, Order, Reply, Response, StdError,
-    StdResult, Storage, SubMsg, Uint128,
+    StdResult, SubMsg, Uint128,
 };
 
 use neutron_sdk::{

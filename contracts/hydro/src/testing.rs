@@ -640,7 +640,11 @@ fn multi_tranches_test() {
     // top proposals for tranche 1
     // (round 0, tranche 1, show 2 proposals)
     let res = query_top_n_proposals(deps.as_ref(), 0, 1, 2);
-    assert!(res.is_ok());
+    assert!(
+        res.is_ok(),
+        "error when querying top n proposals: {:?}",
+        res
+    );
     let res = res.unwrap().proposals;
     // check that there are two proposals
     assert_eq!(2, res.len(), "expected 2 proposals, got {:?}", res);
