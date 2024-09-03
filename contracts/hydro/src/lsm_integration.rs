@@ -1,12 +1,14 @@
 use cosmwasm_std::{Decimal, Deps, Env, Order, StdError, StdResult, Storage};
-use cw_storage_plus::Map;
 
 use neutron_sdk::proto_types::ibc::applications::transfer::v1::TransferQuerier;
 use neutron_sdk::{
     bindings::query::NeutronQuery, proto_types::ibc::applications::transfer::v1::DenomTrace,
 };
 
-use crate::state::{ROUND_POWER_SHARES_MAP, VALIDATORS_INFO, VALIDATOR_POWER_PER_ROUND};
+use crate::state::{
+    ROUND_POWER_SHARES_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
+    VALIDATOR_POWER_PER_ROUND,
+};
 use crate::{
     contract::compute_current_round_id,
     score_keeper::{get_total_power_for_proposal, update_power_ratio_for_proposal},
@@ -19,6 +21,61 @@ pub const INTERCHAINQUERIES_PARAMS_GRPC: &str = "/neutron.interchainqueries.Quer
 pub const TRANSFER_PORT: &str = "transfer";
 pub const COSMOS_VALIDATOR_PREFIX: &str = "cosmosvaloper";
 pub const COSMOS_VALIDATOR_ADDR_LENGTH: usize = 52; // e.g. cosmosvaloper15w6ra6m68c63t0sv2hzmkngwr9t88e23r8vtg5
+
+// Checks whether the store for this round has already been initialized by copying over the information from the last round.
+pub fn is_validator_store_initialized(storage: &dyn Storage, round_id: u64) -> bool {
+    VALIDATORS_STORE_INITIALIZED
+        .load(storage, round_id)
+        .unwrap_or(false)
+}
+
+// If the store for this round has not been initialized yet, initialize_validator_store copies the information from the last round
+// to seed the store. This is only done starting in the second round.
+// Explicitly, it initializes the VALIDATORS_INFO, the VALIDATORS_PER_ROUND, and the VALIDATOR_POWER_PER_ROUND
+// for this round by copying the information from the previous round.
+// If the store of the previous round has not been initialized yet, it returns an error.
+// If the store for this round has already been initialized, or the round_id is for the first round, this function does nothing.
+pub fn initialize_validator_store(storage: &mut dyn Storage, round_id: u64) -> StdResult<()> {
+    if round_id == 0 || is_validator_store_initialized(storage, round_id) {
+        return Ok(());
+    }
+
+    // check that the previous round has been initialized
+    if !is_validator_store_initialized(storage, round_id - 1) {
+        return Err(StdError::generic_err(format!(
+            "Cannot initialize store for round {} because store for round {} has not been initialized yet",
+            round_id,
+            round_id - 1
+        )));
+    }
+
+    // copy the information from the previous round
+    let validators = get_round_validators(storage, round_id - 1);
+    for validator in validators {
+        let validator_info = VALIDATORS_INFO.load(storage, (round_id - 1, validator.clone()))?;
+        VALIDATORS_INFO.save(storage, (round_id, validator.clone()), &validator_info)?;
+
+        let power_ratio = VALIDATOR_POWER_PER_ROUND
+            .load(storage, (round_id - 1, validator.clone()))
+            .unwrap_or(Decimal::zero());
+        VALIDATOR_POWER_PER_ROUND.save(storage, (round_id, validator.clone()), &power_ratio)?;
+
+        VALIDATORS_PER_ROUND.save(
+            storage,
+            (
+                round_id,
+                validator_info.delegated_tokens.into(),
+                validator.clone(),
+            ),
+            &validator.clone(),
+        )?;
+    }
+
+    // store that we have initialized the store for this round
+    VALIDATORS_STORE_INITIALIZED.save(storage, round_id, &true)?;
+
+    Ok(())
+}
 
 // Returns OK if the denom is a valid IBC denom representing LSM
 // tokenized share transferred directly from the Cosmos Hub

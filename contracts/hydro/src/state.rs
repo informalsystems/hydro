@@ -102,6 +102,15 @@ pub const QUERY_ID_TO_VALIDATOR: Map<u64, String> = Map::new("query_id_to_valida
 // ROUND_POWER_SHARES_MAP: key(round_id, validator_address) -> number_of_shares
 pub const ROUND_POWER_SHARES_MAP: Map<(u64, String), Decimal> = Map::new("round_power_shares");
 
+// The following maps are used to store information about the validators in each round.
+// The concept behind these maps is as follows:
+// * The maps for the current round get updated when results from the interchain query are received.
+// * When a new round starts, all transactions that depend on validator information will first check if the
+//   information for the new round has been initialized yet. If not, the information from the previous round
+//   will be copied over to the new round, to "seed" the info.
+// * The information for the new round will then be updated as the interchain query results come in.
+// The fact that the maps have been initialized for a round is stored in the VALIDATORS_STORE_INITIALIZED map.
+
 // Duplicates some information from VALIDATORS_INFO to have the validators easily accessible by number of delegated tokens
 // to compute the top N
 // VALIDATORS_PER_ROUND: key(round_id, delegated_tokens, validator_address) -> validator_address

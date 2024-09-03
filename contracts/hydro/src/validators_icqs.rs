@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     contract::{compute_current_round_id, NATIVE_TOKEN_DENOM},
     error::ContractError,
-    lsm_integration::set_new_validator_power_ratio_for_round,
+    lsm_integration::{initialize_validator_store, set_new_validator_power_ratio_for_round},
     state::{
         Constants, ValidatorInfo, CONSTANTS, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO,
         VALIDATORS_PER_ROUND, VALIDATOR_TO_QUERY_ID,
@@ -129,6 +129,8 @@ pub fn handle_delivered_interchain_query_result(
 
     let constants = CONSTANTS.load(deps.storage)?;
     let current_round = compute_current_round_id(&env, &constants)?;
+    initialize_validator_store(deps.storage, current_round)?;
+
     let mut submsgs = vec![];
 
     let current_validator_info =
