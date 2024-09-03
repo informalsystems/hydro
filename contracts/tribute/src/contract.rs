@@ -488,16 +488,9 @@ fn get_top_n_proposal(
     tranche_id: u64,
     proposal_id: u64,
 ) -> Result<Option<Proposal>, ContractError> {
-    let proposals_resp: TopNProposalsResponse = deps.querier.query_wasm_smart(
-        &config.hydro_contract,
-        &HydroQueryMsg::TopNProposals {
-            round_id,
-            tranche_id,
-            number_of_proposals: config.top_n_props_count as usize,
-        },
-    )?;
+    let top_n_proposals = get_top_n_proposals(deps, config, round_id, tranche_id)?;
 
-    for proposal in proposals_resp.proposals {
+    for proposal in top_n_proposals {
         if proposal.proposal_id == proposal_id {
             return Ok(Some(proposal));
         }
