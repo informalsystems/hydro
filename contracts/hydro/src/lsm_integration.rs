@@ -6,7 +6,7 @@ use neutron_sdk::{
     bindings::query::NeutronQuery, proto_types::ibc::applications::transfer::v1::DenomTrace,
 };
 
-use crate::state::{ROUND_POWER_SHARES_MAP, VALIDATORS_INFO};
+use crate::state::{ROUND_POWER_SHARES_MAP, VALIDATORS_INFO, VALIDATOR_POWER_PER_ROUND};
 use crate::{
     contract::compute_current_round_id,
     score_keeper::{get_total_power_for_proposal, update_power_ratio_for_proposal},
@@ -19,10 +19,6 @@ pub const INTERCHAINQUERIES_PARAMS_GRPC: &str = "/neutron.interchainqueries.Quer
 pub const TRANSFER_PORT: &str = "transfer";
 pub const COSMOS_VALIDATOR_PREFIX: &str = "cosmosvaloper";
 pub const COSMOS_VALIDATOR_ADDR_LENGTH: usize = 52; // e.g. cosmosvaloper15w6ra6m68c63t0sv2hzmkngwr9t88e23r8vtg5
-
-// VALIDATOR_POWER_PER_ROUND: key(round_id, validator_address) -> power_ratio
-pub const VALIDATOR_POWER_PER_ROUND: Map<(u64, String), Decimal> =
-    Map::new("validator_power_per_round");
 
 // Returns OK if the denom is a valid IBC denom representing LSM
 // tokenized share transferred directly from the Cosmos Hub

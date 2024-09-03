@@ -99,6 +99,9 @@ pub const VALIDATOR_TO_QUERY_ID: Map<String, u64> = Map::new("validator_to_query
 // QUERY_ID_TO_VALIDATOR: key(interchain query ID) -> validator_address
 pub const QUERY_ID_TO_VALIDATOR: Map<u64, String> = Map::new("query_id_to_validator");
 
+// ROUND_POWER_SHARES_MAP: key(round_id, validator_address) -> number_of_shares
+pub const ROUND_POWER_SHARES_MAP: Map<(u64, String), Decimal> = Map::new("round_power_shares");
+
 // Duplicates some information from VALIDATORS_INFO to have the validators easily accessible by number of delegated tokens
 // to compute the top N
 // VALIDATORS_PER_ROUND: key(round_id, delegated_tokens, validator_address) -> validator_address
@@ -108,8 +111,15 @@ pub const VALIDATORS_PER_ROUND: Map<(u64, u128, String), String> =
 // VALIDATORS_INFO: key(round_id, validator_address) -> ValidatorInfo
 pub const VALIDATORS_INFO: Map<(u64, String), ValidatorInfo> = Map::new("validators_info");
 
-// ROUND_POWER_SHARES_MAP: key(round_id, validator_address) -> number_of_shares
-pub const ROUND_POWER_SHARES_MAP: Map<(u64, String), Decimal> = Map::new("round_power_shares");
+// VALIDATOR_POWER_PER_ROUND: key(round_id, validator_address) -> power_ratio
+pub const VALIDATOR_POWER_PER_ROUND: Map<(u64, String), Decimal> =
+    Map::new("validator_power_per_round");
+
+// For each round, stores whether the VALIDATORS_INFO, the VALIDATORS_PER_ROUND, and the VALIDATOR_POWER_PER_ROUND
+// have been initialized for this round yet by copying the information from the previous round.
+// This is only done starting in the first round.
+// VALIDATORS_STORE_INITIALIZED: key(round_id) -> bool
+pub const VALIDATORS_STORE_INITIALIZED: Map<u64, bool> = Map::new("round_store_initialized");
 
 #[cw_serde]
 #[derive(Default)]
