@@ -4,22 +4,24 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[cw_serde]
-pub struct CommunityPoolConfig {
-    // The percentage of the tribute that goes to the community pool.
+pub struct CommunityPoolTaxConfig {
+    // The percentage of the tribute that goes to the community pool,
+    // sent to a liquidity bucket under control of the Hydro multisig for reinvestment.
     // The rest is distributed among voters.
     // Should be a number between 0 and 1.
     pub tax_percent: Decimal,
     // The channel ID to send the tokens to the community pool over.
     pub channel_id: String,
-    // The address of the community pool *on the remote chain*.
-    pub community_pool_address: String,
+    // The address of the liquidity bucket *on the remote chain* that should receive the funds.
+    // This should be the address under control of the Hydro committee multisig.
+    pub bucket_address: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
     pub hydro_contract: String,
     pub top_n_props_count: u64,
-    pub community_pool_config: CommunityPoolConfig,
+    pub community_pool_config: CommunityPoolTaxConfig,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, cw_orch::ExecuteFns)]

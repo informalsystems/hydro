@@ -300,7 +300,7 @@ pub fn claim_tribute_for_community_pool(
             // Send the community pool share to the community pool address
             res = res.add_message(IbcMsg::Transfer {
                 channel_id: config.community_pool_config.clone().channel_id,
-                to_address: config.community_pool_config.clone().community_pool_address,
+                to_address: config.community_pool_config.clone().bucket_address,
                 amount: send_coin,
                 timeout: IbcTimeout::with_timestamp(
                     env.block.time.plus_seconds(IBC_TIMEOUT_DURATION_IN_SECONDS),

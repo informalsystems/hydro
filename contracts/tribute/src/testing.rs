@@ -4,7 +4,7 @@ use crate::{
         query_proposal_tributes,
     },
     error::ContractError,
-    msg::{CommunityPoolConfig, ExecuteMsg, InstantiateMsg},
+    msg::{CommunityPoolTaxConfig, ExecuteMsg, InstantiateMsg},
     state::Config,
 };
 use cosmwasm_std::{
@@ -28,10 +28,10 @@ pub fn get_instantiate_msg(hydro_contract: String) -> InstantiateMsg {
     InstantiateMsg {
         hydro_contract,
         top_n_props_count: 10,
-        community_pool_config: CommunityPoolConfig {
+        community_pool_config: CommunityPoolTaxConfig {
             tax_percent: Decimal::zero(),
             channel_id: "channel_id".to_string(),
-            community_pool_address: "community_pool_address".to_string(),
+            bucket_address: "community_pool_address".to_string(),
         },
     }
 }
@@ -744,10 +744,10 @@ proptest! {
         };
 
         let config = Config {
-            community_pool_config: CommunityPoolConfig {
+            community_pool_config: CommunityPoolTaxConfig {
                 tax_percent: Decimal::percent(tax_percent),
                 channel_id: "channel_id".to_string(),
-                community_pool_address: "community_pool_address".to_string(),
+                bucket_address: "community_pool_address".to_string(),
             },
             top_n_props_count: 10,
             hydro_contract: Addr::unchecked("hydro_contract".to_string()),

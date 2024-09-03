@@ -9,7 +9,7 @@
   ],
   "properties": {
     "community_pool_config": {
-      "$ref": "#/definitions/CommunityPoolConfig"
+      "$ref": "#/definitions/CommunityPoolTaxConfig"
     },
     "hydro_contract": {
       "type": "string"
@@ -22,18 +22,18 @@
   },
   "additionalProperties": false,
   "definitions": {
-    "CommunityPoolConfig": {
+    "CommunityPoolTaxConfig": {
       "type": "object",
       "required": [
+        "bucket_address",
         "channel_id",
-        "community_pool_address",
         "tax_percent"
       ],
       "properties": {
-        "channel_id": {
+        "bucket_address": {
           "type": "string"
         },
-        "community_pool_address": {
+        "channel_id": {
           "type": "string"
         },
         "tax_percent": {

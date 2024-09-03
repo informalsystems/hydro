@@ -2,7 +2,7 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin};
 use cw_storage_plus::{Item, Map};
 
-use crate::msg::CommunityPoolConfig;
+use crate::msg::CommunityPoolTaxConfig;
 
 pub const CONFIG: Item<Config> = Item::new("config");
 
@@ -10,7 +10,7 @@ pub const CONFIG: Item<Config> = Item::new("config");
 pub struct Config {
     pub hydro_contract: Addr,
     pub top_n_props_count: u64,
-    pub community_pool_config: CommunityPoolConfig,
+    pub community_pool_config: CommunityPoolTaxConfig,
 }
 
 pub const TRIBUTE_ID: Item<u64> = Item::new("tribute_id");
