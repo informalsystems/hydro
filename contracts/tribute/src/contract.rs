@@ -253,7 +253,7 @@ pub fn claim_tribute_for_community_pool(
     tranche_id: u64,
 ) -> Result<Response, ContractError> {
     // Load the config
-    let config = CONFIG.load(deps.storage).unwrap();
+    let config = CONFIG.load(deps.storage)?;
 
     let current_round_id = query_current_round_id(&deps, &config.hydro_contract)?;
     if round_id >= current_round_id {
@@ -264,7 +264,7 @@ pub fn claim_tribute_for_community_pool(
 
     // Load the top N proposals
     let proposals_resp: Vec<Proposal> =
-        get_top_n_proposals(&deps.as_ref(), &config, round_id, tranche_id).unwrap();
+        get_top_n_proposals(&deps.as_ref(), &config, round_id, tranche_id)?;
 
     // For each proposal in the top N proposals, send the community pool tax share to the community pool address
     let mut res = Response::new();
