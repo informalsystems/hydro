@@ -530,33 +530,32 @@ pub fn get_community_pool_tribute_share(
     funds: Coin,
 ) -> Result<Uint128, ContractError> {
     // Calculate the community pool share
-    let mul_res = Decimal::from_ratio(funds.amount, Uint128::one())
-        .checked_mul(config.community_pool_config.tax_percent);
-    if mul_res.is_err() {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Failed to calculate community pool share due to overflow",
-        )));
-    }
+    let community_pool_share = Decimal::from_ratio(funds.amount, Uint128::one())
+        .checked_mul(config.community_pool_config.tax_percent)
+        .map_err(|_| {
+            ContractError::Std(StdError::generic_err(
+                "Failed to calculate community pool share due to overflow",
+            ))
+        })?
+        // round down here to avoid claiming more than the tax amount
+        .to_uint_floor();
 
-    // round down here to avoid claiming more than the tax amount
-    let community_pool_share = mul_res.unwrap().to_uint_floor();
     Ok(community_pool_share)
 }
 
 // Given a funds amount, calculate how much of it should go to the voters
 pub fn get_voters_tribute_share(config: &Config, funds: Coin) -> Result<Uint128, ContractError> {
     // Calculate the voters share
-    let voters_share_res = funds
+    let voters_share = funds
         .amount
-        .checked_sub(get_community_pool_tribute_share(config, funds)?);
+        .checked_sub(get_community_pool_tribute_share(config, funds)?)
+        .map_err(|_| {
+            ContractError::Std(StdError::generic_err(
+                "Failed to calculate voters share due to overflow",
+            ))
+        })?;
 
-    if voters_share_res.is_err() {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Failed to calculate voters share due to overflow",
-        )));
-    }
-
-    Ok(voters_share_res.unwrap())
+    Ok(voters_share)
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
