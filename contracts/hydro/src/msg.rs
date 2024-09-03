@@ -64,6 +64,7 @@ pub enum ExecuteMsg {
         tranche_metadata: Option<String>,
     },
     #[serde(rename = "create_icqs_for_validators")]
+    #[cw_orch(payable)]
     CreateICQsForValidators {
         validators: Vec<String>,
     },
