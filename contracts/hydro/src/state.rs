@@ -102,14 +102,18 @@ pub const QUERY_ID_TO_VALIDATOR: Map<u64, String> = Map::new("query_id_to_valida
 // Duplicates some information from VALIDATORS_INFO to have the validators easily accessible by number of delegated tokens
 // to compute the top N
 // VALIDATORS_PER_ROUND: key(round_id, delegated_tokens, validator_address) -> validator_address
-pub const VALIDATORS_PER_ROUND: Map<(u64, u128, String), String> =
-    Map::new("validators_per_round_new");
+pub const VALIDATORS_PER_ROUND: Map<(u64, u128, String), String> = Map::new("validators_per_round");
 
 // VALIDATORS_INFO: key(round_id, validator_address) -> ValidatorInfo
 pub const VALIDATORS_INFO: Map<(u64, String), ValidatorInfo> = Map::new("validators_info");
 
+// For each round and validator, it stores the time-scaled number of shares of that validator
+// that are locked in Hydro.
+// Concretely, the time weighted shares for each round are scaled by the lockup scaling factor,
+// see scale_lockup_power in contract.rs
 // ROUND_POWER_SHARES_MAP: key(round_id, validator_address) -> number_of_shares
-pub const ROUND_POWER_SHARES_MAP: Map<(u64, String), Decimal> = Map::new("round_power_shares");
+pub const SCALED_ROUND_POWER_SHARES_MAP: Map<(u64, String), Decimal> =
+    Map::new("scaled_round_power_shares");
 
 #[cw_serde]
 #[derive(Default)]

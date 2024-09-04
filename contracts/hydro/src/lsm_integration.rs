@@ -5,7 +5,7 @@ use neutron_sdk::{
     bindings::query::NeutronQuery, proto_types::ibc::applications::transfer::v1::DenomTrace,
 };
 
-use crate::state::{ROUND_POWER_SHARES_MAP, VALIDATORS_INFO};
+use crate::state::{SCALED_ROUND_POWER_SHARES_MAP, VALIDATORS_INFO};
 use crate::{
     contract::compute_current_round_id,
     score_keeper::{get_total_power_for_proposal, update_power_ratio_for_proposal},
@@ -204,7 +204,7 @@ pub fn get_total_power_for_round(storage: &dyn Storage, round_id: u64) -> StdRes
     for validator in validators {
         let power_ratio =
             get_validator_power_ratio_for_round(storage, round_id, validator.clone())?;
-        let shares = ROUND_POWER_SHARES_MAP
+        let shares = SCALED_ROUND_POWER_SHARES_MAP
             .may_load(storage, (round_id, validator.clone()))?
             .unwrap_or(Decimal::zero());
         total += shares * power_ratio;
@@ -221,7 +221,7 @@ pub fn add_validator_shares_to_round_total(
 ) -> StdResult<()> {
     let current_shares = get_validator_shares_for_round(storage, round_id, validator.clone())?;
     let new_shares = current_shares + num_shares;
-    ROUND_POWER_SHARES_MAP.save(storage, (round_id, validator), &new_shares)
+    SCALED_ROUND_POWER_SHARES_MAP.save(storage, (round_id, validator), &new_shares)
 }
 
 pub fn get_validator_shares_for_round(
@@ -229,7 +229,7 @@ pub fn get_validator_shares_for_round(
     round_id: u64,
     validator: String,
 ) -> StdResult<Decimal> {
-    Ok(ROUND_POWER_SHARES_MAP
+    Ok(SCALED_ROUND_POWER_SHARES_MAP
         .may_load(storage, (round_id, validator))?
         .unwrap_or(Decimal::zero()))
 }
