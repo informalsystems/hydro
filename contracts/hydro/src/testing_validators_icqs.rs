@@ -485,7 +485,7 @@ fn icq_results_state_update_test() {
     }
 }
 
-fn get_mock_validator(address: &str, tokens: Uint128, shares: Uint128) -> CosmosValidator {
+pub fn get_mock_validator(address: &str, tokens: Uint128, shares: Uint128) -> CosmosValidator {
     CosmosValidator {
         operator_address: address.to_string(),
         tokens: tokens.to_string(),
