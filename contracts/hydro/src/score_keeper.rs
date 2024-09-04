@@ -1,19 +1,10 @@
 use cosmwasm_std::{Decimal, StdError, StdResult, Storage};
 use cw_storage_plus::Map;
 
-use crate::lsm_integration::get_validator_power_ratio_for_round;
-
-// The score keeper is a module that keeps track of amounts of individual validator shares, and power ratios (i.e. how many
-// tokens a share of a validator represents). It stores the shares and power ratios for each validator in separate maps,
-// and keeps those up-to-date with the total power (computed by multiplying the individual shares with the power ratio).
-// The total is updated when either the shares or the power ratio of a validator is updated.
-
-// SCALED_PROPOSAL_SHARES_MAP: key(proposal_id, validator_address) -> number_of_shares
-const SCALED_PROPOSAL_SHARES_MAP: Map<(u64, String), Decimal> =
-    Map::new("scaled_proposal_power_shares");
-
-// PROPOSAL_TOTAL_MAP: key(proposal_id) -> total_power
-const PROPOSAL_TOTAL_MAP: Map<u64, Decimal> = Map::new("proposal_power_total");
+use crate::{
+    lsm_integration::get_validator_power_ratio_for_round,
+    state::{PROPOSAL_TOTAL_MAP, SCALED_PROPOSAL_SHARES_MAP},
+};
 
 pub fn get_total_power_for_proposal(storage: &dyn Storage, prop_id: u64) -> StdResult<Decimal> {
     Ok(PROPOSAL_TOTAL_MAP

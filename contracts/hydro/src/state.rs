@@ -115,6 +115,19 @@ pub const VALIDATORS_INFO: Map<(u64, String), ValidatorInfo> = Map::new("validat
 pub const SCALED_ROUND_POWER_SHARES_MAP: Map<(u64, String), Decimal> =
     Map::new("scaled_round_power_shares");
 
+// The following two store fields are supposed to be kept in sync,
+// i.e. whenever the shares of a proposal (or the power ratio of a validator)
+// get updated, the total power of the proposal should be updated as well.
+// For each proposal and validator, it stores the time-scaled number of shares of that validator
+// that voted for the proposal.
+// SCALED_PROPOSAL_SHARES_MAP: key(proposal_id, validator_address) -> number_of_shares
+pub const SCALED_PROPOSAL_SHARES_MAP: Map<(u64, String), Decimal> =
+    Map::new("scaled_proposal_power_shares");
+
+// Stores the total power for each proposal.
+// PROPOSAL_TOTAL_MAP: key(proposal_id) -> total_power
+pub const PROPOSAL_TOTAL_MAP: Map<u64, Decimal> = Map::new("proposal_power_total");
+
 #[cw_serde]
 #[derive(Default)]
 pub struct ValidatorInfo {

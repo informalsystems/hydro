@@ -82,6 +82,7 @@ pub fn get_round_validators(storage: &dyn Storage, round_id: u64) -> Vec<String>
     VALIDATORS_INFO
         .prefix(round_id)
         .range(storage, None, None, Order::Ascending)
+        .filter(|val_res| val_res.is_ok())
         .map(|val_res| {
             let val = val_res.unwrap();
             val.0
