@@ -1,12 +1,15 @@
 use std::collections::HashMap;
 
 use cosmos_sdk_proto::prost::Message;
-use prost::Message as prostmsg;
 use cosmwasm_std::{
-    testing::mock_env, BankMsg, Coin, CosmosMsg, Decimal, DepsMut, Env, StdError, StdResult,
-    Storage, SystemError, SystemResult, Timestamp, Uint128,
+    testing::mock_env, BankMsg, Binary, Coin, CosmosMsg, Decimal, DepsMut, Env, StdError,
+    StdResult, Storage, SystemError, SystemResult, Timestamp, Uint128,
 };
-use neutron_sdk::bindings::query::NeutronQuery;
+use neutron_sdk::{
+    bindings::{query::NeutronQuery, types::StorageValue},
+    interchain_queries::{types::QueryType, v047::types::STAKING_STORE_KEY},
+    sudo::msg::SudoMsg,
+};
 use neutron_std::types::ibc::applications::transfer::v1::QueryDenomTraceResponse;
 
 use crate::{
@@ -29,16 +32,6 @@ use crate::{
     },
     testing_validators_icqs::get_mock_validator,
     validators_icqs::TOKENS_TO_SHARES_MULTIPLIER,
-};
-use cosmwasm_std::{
-    testing::mock_env, BankMsg, Binary, Coin, CosmosMsg, Decimal, DepsMut, Env, StdError,
-    StdResult, Storage, SystemError, SystemResult, Timestamp, Uint128,
-};
-use neutron_sdk::{
-    bindings::{query::NeutronQuery, types::StorageValue},
-    interchain_queries::{types::QueryType, v047::types::STAKING_STORE_KEY},
-    proto_types::ibc::applications::transfer::v1::QueryDenomTraceResponse,
-    sudo::msg::SudoMsg,
 };
 
 fn get_default_constants() -> crate::state::Constants {
