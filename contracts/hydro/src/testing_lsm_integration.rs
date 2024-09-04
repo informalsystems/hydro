@@ -6,7 +6,6 @@ use cosmwasm_std::{
 };
 use neutron_sdk::bindings::query::NeutronQuery;
 use neutron_std::types::ibc::applications::transfer::v1::QueryDenomTraceResponse;
-// proto_types::ibc::applications::transfer::v1::QueryDenomTraceResponse,
 use prost::Message;
 
 use crate::{
