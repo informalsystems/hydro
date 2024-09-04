@@ -110,7 +110,7 @@ func (s *HydroSuite) TestLockTokens() {
 	s.Require().True(found)
 
 	// instantiate code
-	firstRoundStartTime := time.Now().UnixNano() + 10000000000
+	firstRoundStartTime := time.Now().UnixNano() + 10000000000 // 10sec from now
 	neutronWallet1Address := s.NeutronChain.ValidatorWallets[0].Address
 	neutronTransferChannel, err := s.Relayer.GetTransferChannel(s.GetContext(), s.NeutronChain, s.HubChain)
 	s.Require().NoError(err)
@@ -135,7 +135,7 @@ func (s *HydroSuite) TestLockTokens() {
 		"max_validator_shares_participating": 180,
 		"hub_connection_id":                  neutronTransferChannel.ConnectionHops[0],
 		"hub_transfer_channel_id":            neutronTransferChannel.ChannelID,
-		"icq_update_period":                  100,
+		"icq_update_period":                  50,
 	}
 	initHydroJson, err := json.Marshal(initHydro)
 	s.Require().NoError(err)
@@ -150,11 +150,12 @@ func (s *HydroSuite) TestLockTokens() {
 	s.Require().NoError(err)
 	contractAddr, found := getEvtAttribute(response.Events, wasmtypes.EventTypeInstantiate, wasmtypes.AttributeKeyContractAddr)
 	s.Require().True(found)
+	time.Sleep(time.Second * 10) // wait for the first round to start
 
 	// register interchain query
 	icqs := map[string]interface{}{
 		"create_icqs_for_validators": map[string]interface{}{
-			"validators": []string{s.HubChain.ValidatorWallets[0].ValoperAddress},
+			"validators": []string{s.HubChain.ValidatorWallets[0].ValoperAddress, s.HubChain.ValidatorWallets[1].ValoperAddress},
 		},
 	}
 	icqsJson, err := json.Marshal(icqs)
@@ -163,9 +164,74 @@ func (s *HydroSuite) TestLockTokens() {
 	_, err = s.NeutronChain.Validators[0].ExecTx(
 		s.GetContext(),
 		s.NeutronChain.ValidatorWallets[0].Moniker,
-		"wasm", "execute", contractAddr, string(icqsJson), "--amount", "2000000untrn", "--gas", "auto",
+		"wasm", "execute", contractAddr, string(icqsJson), "--amount", strconv.Itoa(2*chainsuite.NeutronMinQueryDeposit)+"untrn", "--gas", "auto",
 	)
 	s.Require().NoError(err)
+	// Wait for the relayer to retrieve the initial query data before proceeding with locking
+	tCtx, cancelFn := context.WithTimeout(s.GetContext(), 30*chainsuite.CommitTimeout)
+	defer cancelFn()
+
+	dataSubmitted := false
+	for tCtx.Err() == nil {
+		time.Sleep(chainsuite.CommitTimeout)
+		queryRes, _, err := s.NeutronChain.Validators[0].ExecQuery(
+			s.GetContext(),
+			"interchainqueries", "registered-queries",
+		)
+		if err != nil {
+			continue
+		}
+
+		var queryResponse chainsuite.QueryResponse
+		err = json.Unmarshal([]byte(queryRes), &queryResponse)
+		s.Require().NoError(err)
+		s.Require().NotNil(queryResponse)
+		if len(queryResponse.RegisteredQueries) > 0 && queryResponse.RegisteredQueries[0].LastSubmittedResultLocalHeight != "0" {
+			dataSubmitted = true
+			break
+		}
+
+	}
+	s.Require().True(dataSubmitted)
+
+	//lockTxData tokens
+	lockTxData := map[string]interface{}{
+		"lock_tokens": map[string]interface{}{
+			"lock_duration": 86400000000000,
+		},
+	}
+	lockTxJson, err := json.Marshal(lockTxData)
+	s.Require().NoError(err)
+
+	lockAmt := "10"
+	_, err = s.NeutronChain.Validators[0].ExecTx(
+		s.GetContext(),
+		s.NeutronChain.ValidatorWallets[0].Moniker,
+		"wasm", "execute", contractAddr, string(lockTxJson), "--amount", lockAmt+dstIbcDenom1, "--gas", "auto",
+	)
+	s.Require().NoError(err)
+
+	lockQueryData := map[string]interface{}{
+		"all_user_lockups": map[string]interface{}{
+			"address":    s.NeutronChain.ValidatorWallets[0].Address,
+			"start_from": 0,
+			"limit":      100,
+		},
+	}
+	lockQueryJson, err := json.Marshal(lockQueryData)
+	s.Require().NoError(err)
+
+	lockQueryResp, _, err := s.NeutronChain.Validators[0].ExecQuery(
+		s.GetContext(),
+		"wasm", "contract-state", "smart", contractAddr, string(lockQueryJson),
+	)
+	s.Require().NoError(err)
+
+	var lockResponse chainsuite.LockResponse
+	err = json.Unmarshal([]byte(lockQueryResp), &lockResponse)
+	s.Require().NoError(err)
+	amount := lockResponse.Data.Lockups[0].LockEntry.Funds.Amount
+	s.Require().Equal(lockAmt, amount)
 }
 
 func getEvtAttribute(events []abci.Event, evtType string, key string) (string, bool) {

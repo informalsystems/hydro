@@ -82,5 +82,11 @@ func neutronModifiedGenesis() []cosmos.GenesisKV {
 		cosmos.NewGenesisKV("app_state.feemarket.params.min_base_gas_price", GasPrices),
 		cosmos.NewGenesisKV("app_state.feemarket.state.base_gas_price", GasPrices),
 		cosmos.NewGenesisKV("app_state.feemarket.params.fee_denom", Untrn),
+		cosmos.NewGenesisKV("app_state.interchainqueries.params.query_deposit", []interface{}{
+			map[string]interface{}{
+				"amount": strconv.Itoa(NeutronMinQueryDeposit),
+				"denom":  Untrn,
+			},
+		}),
 	}
 }

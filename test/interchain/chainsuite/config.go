@@ -19,12 +19,13 @@ const (
 	HubChainID       = "gaia"
 	Uatom            = "uatom"
 	//neutron params
-	NeutronImageName    = "ghcr.io/strangelove-ventures/heighliner/neutron"
-	NeutronVersion      = "v4.2.0"
-	NeutronBin          = "neutrond"
-	NeutronBech32Prefix = "neutron"
-	NeutronChainID      = "neutron"
-	Untrn               = "untrn"
+	NeutronImageName       = "ghcr.io/strangelove-ventures/heighliner/neutron"
+	NeutronVersion         = "v4.2.0"
+	NeutronBin             = "neutrond"
+	NeutronBech32Prefix    = "neutron"
+	NeutronChainID         = "neutron"
+	NeutronMinQueryDeposit = 1000000
+	Untrn                  = "untrn"
 	// relayer params
 	RelayerImageName    = "ghcr.io/informalsystems/hermes"
 	RelayerImageVersion = "v1.8.0"
