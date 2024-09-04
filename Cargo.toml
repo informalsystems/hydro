@@ -22,10 +22,11 @@ cw2 = "2.0.0"
 cosmwasm-schema = "2.1.2"
 proptest = "1.0.0"
 cw-utils = "2.0.0"
-cosmos-sdk-proto = { version = "0.24.0", default-features = false }
+cosmos-sdk-proto = { version = "0.20.0", default-features = false }
 prost = "0.12.6"
 prost-types = "0.12.6"
 cw-orch = "0.25.0"
-neutron-sdk = { package = "neutron-sdk", git = "https://github.com/neutron-org/neutron-sdk", rev = "8ef5964" }
+neutron-sdk = "0.11.0"
+neutron-std = "4.2.2-rc"
 bech32 = "0.9.1"
 serde-json-wasm = "1.0.1"
