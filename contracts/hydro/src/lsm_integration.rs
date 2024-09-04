@@ -259,13 +259,13 @@ pub fn is_validator_store_initialized(storage: &dyn Storage, round_id: u64) -> b
 // for this round by copying the information from the previous round.
 // If the store of the previous round has not been initialized yet, it returns an error.
 // If the store for this round has already been initialized, or the round_id is for the first round, this function does nothing.
-pub fn initialize_validator_store(deps: DepsMut<NeutronQuery>, round_id: u64) -> StdResult<()> {
-    if round_id == 0 || is_validator_store_initialized(deps.storage, round_id) {
+pub fn initialize_validator_store(storage: &mut dyn Storage, round_id: u64) -> StdResult<()> {
+    if round_id == 0 || is_validator_store_initialized(storage, round_id) {
         return Ok(());
     }
 
     // check that the previous round has been initialized
-    if !is_validator_store_initialized(deps.storage, round_id - 1) {
+    if !is_validator_store_initialized(storage, round_id - 1) {
         return Err(StdError::generic_err(format!(
             "Cannot initialize store for round {} because store for round {} has not been initialized yet",
             round_id,
@@ -274,28 +274,34 @@ pub fn initialize_validator_store(deps: DepsMut<NeutronQuery>, round_id: u64) ->
     }
 
     // copy the information from the previous round
-    let validators = get_round_validators(deps.as_ref(), round_id - 1);
-    for validator_info in validators {
-        let val_address = validator_info.clone().address;
-        VALIDATORS_INFO.save(
-            deps.storage,
-            (round_id, val_address.clone()),
-            &validator_info,
-        )?;
+    let val_infos = load_validators_infos(storage, round_id)?;
 
-        VALIDATORS_PER_ROUND.save(
-            deps.storage,
-            (
-                round_id,
-                validator_info.delegated_tokens.into(),
-                val_address.clone(),
-            ),
-            &val_address,
-        )?;
+    for val_info in val_infos {
+        let address = val_info.clone().address;
+        VALIDATORS_INFO
+            .save(storage, (round_id, address.clone()), &val_info)
+            .unwrap();
+
+        VALIDATORS_PER_ROUND
+            .save(
+                storage,
+                (round_id, val_info.delegated_tokens.u128(), address.clone()),
+                &address,
+            )
+            .unwrap();
     }
 
     // store that we have initialized the store for this round
-    VALIDATORS_STORE_INITIALIZED.save(deps.storage, round_id, &true)?;
+    VALIDATORS_STORE_INITIALIZED.save(storage, round_id, &true)?;
 
     Ok(())
+}
+
+// load_validators_infos needs to be its own function to borrow the storage
+fn load_validators_infos(storage: &dyn Storage, round_id: u64) -> StdResult<Vec<ValidatorInfo>> {
+    VALIDATORS_INFO
+        .prefix(round_id)
+        .range(storage, None, None, Order::Ascending)
+        .map(|val_info_res| val_info_res.map(|val_info| val_info.1))
+        .collect()
 }
