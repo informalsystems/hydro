@@ -99,6 +99,15 @@ pub const VALIDATOR_TO_QUERY_ID: Map<String, u64> = Map::new("validator_to_query
 // QUERY_ID_TO_VALIDATOR: key(interchain query ID) -> validator_address
 pub const QUERY_ID_TO_VALIDATOR: Map<u64, String> = Map::new("query_id_to_validator");
 
+// The following two store entries are used to store information about the validators in each round.
+// The concept behind these maps is as follows:
+// * The maps for the current round get updated when results from the interchain query are received.
+// * When a new round starts, all transactions that depend on validator information will first check if the
+//   information for the new round has been initialized yet. If not, the information from the previous round
+//   will be copied over to the new round, to "seed" the info.
+// * The information for the new round will then be updated as the interchain query results come in.
+// The fact that the maps have been initialized for a round is stored in the VALIDATORS_STORE_INITIALIZED map.
+
 // Duplicates some information from VALIDATORS_INFO to have the validators easily accessible by number of delegated tokens
 // to compute the top N
 // VALIDATORS_PER_ROUND: key(round_id, delegated_tokens, validator_address) -> validator_address
@@ -106,6 +115,12 @@ pub const VALIDATORS_PER_ROUND: Map<(u64, u128, String), String> = Map::new("val
 
 // VALIDATORS_INFO: key(round_id, validator_address) -> ValidatorInfo
 pub const VALIDATORS_INFO: Map<(u64, String), ValidatorInfo> = Map::new("validators_info");
+
+// For each round, stores whether the VALIDATORS_INFO and the VALIDATORS_PER_ROUND
+// have been initialized for this round yet by copying the information from the previous round.
+// This is only done starting in the first round.
+// VALIDATORS_STORE_INITIALIZED: key(round_id) -> bool
+pub const VALIDATORS_STORE_INITIALIZED: Map<u64, bool> = Map::new("round_store_initialized");
 
 // For each round and validator, it stores the time-scaled number of shares of that validator
 // that are locked in Hydro.
