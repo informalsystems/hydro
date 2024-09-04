@@ -1,9 +1,7 @@
 use cosmwasm_std::{Decimal, Deps, Env, Order, StdError, StdResult, Storage};
 
-use neutron_sdk::proto_types::ibc::applications::transfer::v1::TransferQuerier;
-use neutron_sdk::{
-    bindings::query::NeutronQuery, proto_types::ibc::applications::transfer::v1::DenomTrace,
-};
+use neutron_sdk::bindings::query::NeutronQuery;
+use neutron_std::types::ibc::applications::transfer::v1::{DenomTrace, TransferQuerier};
 
 use crate::state::{
     ValidatorInfo, SCALED_ROUND_POWER_SHARES_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND,

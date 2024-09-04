@@ -10,11 +10,11 @@ use neutron_sdk::{
     interchain_queries::v047::{queries::query_staking_validators, types::Validator},
     interchain_txs::helpers::decode_message_response,
     proto_types::neutron::interchainqueries::{
-        InterchainqueriesQuerier, MsgRegisterInterchainQueryResponse,
-        MsgRemoveInterchainQueryResponse,
+        MsgRegisterInterchainQueryResponse, MsgRemoveInterchainQueryResponse,
     },
     NeutronError,
 };
+use neutron_std::types::neutron::interchainqueries::InterchainqueriesQuerier;
 use serde::{Deserialize, Serialize};
 
 use crate::{
