@@ -274,7 +274,7 @@ pub fn initialize_validator_store(storage: &mut dyn Storage, round_id: u64) -> S
     }
 
     // copy the information from the previous round
-    let val_infos = load_validators_infos(storage, round_id)?;
+    let val_infos = load_validators_infos(storage, round_id - 1)?;
 
     for val_info in val_infos {
         let address = val_info.clone().address;
