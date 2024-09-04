@@ -5,7 +5,7 @@ use neutron_sdk::{
     bindings::query::NeutronQuery, proto_types::ibc::applications::transfer::v1::DenomTrace,
 };
 
-use crate::state::{SCALED_ROUND_POWER_SHARES_MAP, VALIDATORS_INFO};
+use crate::state::{ValidatorInfo, SCALED_ROUND_POWER_SHARES_MAP, VALIDATORS_INFO};
 use crate::{
     contract::compute_current_round_id,
     score_keeper::{get_total_power_for_proposal, update_power_ratio_for_proposal},
@@ -78,7 +78,7 @@ pub fn is_active_round_validator(storage: &dyn Storage, round_id: u64, validator
 }
 
 // Gets the current list of active validators for the given round
-pub fn get_round_validators(deps: Deps<NeutronQuery>, round_id: u64) -> Vec<String> {
+pub fn get_round_validators(deps: Deps<NeutronQuery>, round_id: u64) -> Vec<ValidatorInfo> {
     VALIDATORS_INFO
         .prefix(round_id)
         .range(deps.storage, None, None, Order::Ascending)
@@ -95,7 +95,7 @@ pub fn get_round_validators(deps: Deps<NeutronQuery>, round_id: u64) -> Vec<Stri
         })
         .map(|val_res| {
             let val = val_res.unwrap();
-            val.0
+            val.1
         })
         .collect()
 }
@@ -213,12 +213,10 @@ pub fn get_total_power_for_round(deps: Deps<NeutronQuery>, round_id: u64) -> Std
     // compute the total power
     let mut total = Decimal::zero();
     for validator in validators {
-        let power_ratio =
-            get_validator_power_ratio_for_round(deps.storage, round_id, validator.clone())?;
         let shares = SCALED_ROUND_POWER_SHARES_MAP
-            .may_load(deps.storage, (round_id, validator.clone()))?
+            .may_load(deps.storage, (round_id, validator.address.clone()))?
             .unwrap_or(Decimal::zero());
-        total += shares * power_ratio;
+        total += shares * validator.power_ratio;
     }
 
     Ok(total)
