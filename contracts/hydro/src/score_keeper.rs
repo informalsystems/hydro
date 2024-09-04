@@ -9,7 +9,8 @@ use crate::lsm_integration::get_validator_power_ratio_for_round;
 // The total is updated when either the shares or the power ratio of a validator is updated.
 
 // SCALED_PROPOSAL_SHARES_MAP: key(proposal_id, validator_address) -> number_of_shares
-const SCALED_PROPOSAL_SHARES_MAP: Map<(u64, String), Decimal> = Map::new("proposal_power_shares");
+const SCALED_PROPOSAL_SHARES_MAP: Map<(u64, String), Decimal> =
+    Map::new("scaled_proposal_power_shares");
 
 // PROPOSAL_TOTAL_MAP: key(proposal_id) -> total_power
 const PROPOSAL_TOTAL_MAP: Map<u64, Decimal> = Map::new("proposal_power_total");
