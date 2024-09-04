@@ -111,7 +111,7 @@ pub const VALIDATORS_INFO: Map<(u64, String), ValidatorInfo> = Map::new("validat
 // that are locked in Hydro.
 // Concretely, the time weighted shares for each round are scaled by the lockup scaling factor,
 // see scale_lockup_power in contract.rs
-// ROUND_POWER_SHARES_MAP: key(round_id, validator_address) -> number_of_shares
+// SCALED_ROUND_POWER_SHARES_MAP: key(round_id, validator_address) -> number_of_shares
 pub const SCALED_ROUND_POWER_SHARES_MAP: Map<(u64, String), Decimal> =
     Map::new("scaled_round_power_shares");
 
