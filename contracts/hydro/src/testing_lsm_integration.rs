@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use cosmos_sdk_proto::cosmos::staking::v1beta1::Validator as CosmosValidator;
 use cosmos_sdk_proto::prost::Message;
 use prost::Message as prostmsg;
 
