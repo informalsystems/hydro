@@ -310,6 +310,17 @@ fn get_last_validator(
         .sub_prefix(current_round)
         .range(deps.storage, None, None, Order::Descending)
         .skip((constants.max_validator_shares_participating - 1) as usize)
+        .filter(|f| {
+            let ok = f.is_ok();
+            if !ok {
+                // log an error
+                deps.api.debug(&format!(
+                    "failed to obtain validator info: {}",
+                    f.as_ref().err().unwrap()
+                ));
+            }
+            ok
+        })
         .take(1)
         .map(|f| f.unwrap().0)
         .collect();

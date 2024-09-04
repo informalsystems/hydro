@@ -207,19 +207,13 @@ pub fn update_power_ratio_for_proposal(
 
 #[cfg(test)]
 mod tests {
-    use crate::lsm_integration::get_total_power_for_round;
     use crate::testing_lsm_integration::set_validator_power_ratio;
+    use crate::testing_mocks::no_op_grpc_query_mock;
+    use crate::{lsm_integration::get_total_power_for_round, testing_mocks::mock_dependencies};
 
     use super::*;
-    use cosmwasm_std::testing::mock_dependencies;
     use cosmwasm_std::{Decimal, StdError, Storage};
     use proptest::prelude::*;
-
-    // Utility function to initialize a mock storage
-    fn initialize_storage() -> Box<dyn Storage> {
-        Box::new(mock_dependencies().storage)
-    }
-
     fn get_shares_and_power_for_proposal(
         storage: &dyn Storage,
         prop_id: u64,
@@ -233,21 +227,20 @@ mod tests {
     // Table-based tests
     #[test]
     fn test_uninitialized() {
-        let mut binding = initialize_storage();
-        let storage = binding.as_mut();
+        let deps = mock_dependencies(no_op_grpc_query_mock());
         let index_key = 5;
 
-        let total_power = get_total_power_for_round(storage, index_key).unwrap();
+        let total_power = get_total_power_for_round(deps.as_ref(), index_key).unwrap();
         assert_eq!(total_power, Decimal::zero());
 
-        let total_power = get_total_power_for_proposal(storage, index_key).unwrap();
+        let total_power = get_total_power_for_proposal(deps.as_ref().storage, index_key).unwrap();
         assert_eq!(total_power, Decimal::zero());
     }
 
     #[test]
     fn test_add_validator_shares() {
-        let mut binding = initialize_storage();
-        let storage = binding.as_mut();
+        let mut deps = mock_dependencies(no_op_grpc_query_mock());
+        let storage = deps.as_mut().storage;
 
         let index_key = 5;
         let validator = "validator1";
@@ -274,8 +267,8 @@ mod tests {
 
     #[test]
     fn test_remove_validator_shares() {
-        let mut binding = initialize_storage();
-        let storage = binding.as_mut();
+        let mut deps = mock_dependencies(no_op_grpc_query_mock());
+        let storage = deps.as_mut().storage;
 
         let index_key = 5;
         let validator = "validator1";
@@ -313,8 +306,8 @@ mod tests {
 
     #[test]
     fn test_remove_validator_shares_insufficient_shares() {
-        let mut binding = initialize_storage();
-        let storage = binding.as_mut();
+        let mut deps = mock_dependencies(no_op_grpc_query_mock());
+        let storage = deps.as_mut().storage;
 
         let index_key = 10;
         let validator = "validator1";
@@ -351,8 +344,8 @@ mod tests {
 
     #[test]
     fn test_update_power_ratio() {
-        let mut binding = initialize_storage();
-        let storage = binding.as_mut();
+        let mut deps = mock_dependencies(no_op_grpc_query_mock());
+        let storage = deps.as_mut().storage;
 
         let key = 5;
         let validator = "validator1";
@@ -393,8 +386,8 @@ mod tests {
     proptest! {
         #[test]
         fn proptest_multi_add_remove_validator_shares(num_shares in 1u128..1_000_000u128, num_shares2 in 1u128..1_000_000u128, power_ratio in 1u128..1_000u128, power_ratio2 in 1u128..1_000u128) {
-            let mut binding = initialize_storage();
-            let storage = binding.as_mut();
+            let mut deps = mock_dependencies(no_op_grpc_query_mock());
+        let storage = deps.as_mut().storage;
 
             let key = 5;
             let validator = "validator1";
@@ -476,8 +469,8 @@ mod tests {
 
         #[test]
         fn proptest_update_power_ratio(num_shares in 1u128..1_000_000u128, old_power_ratio in 1u128..1_000u128, new_power_ratio in 1u128..1_000u128) {
-            let mut binding = initialize_storage();
-        let storage = binding.as_mut();
+            let mut deps = mock_dependencies(no_op_grpc_query_mock());
+            let storage = deps.as_mut().storage;
 
             let key = 8;
             let validator = "validator1";
@@ -514,8 +507,8 @@ mod tests {
 
     #[test]
     fn test_remove_many_validator_shares_from_proposal() {
-        let mut deps = mock_dependencies();
-        let storage = &mut deps.storage;
+        let mut deps = mock_dependencies(no_op_grpc_query_mock());
+        let storage = deps.as_mut().storage;
         let round_id = 1;
         let prop_id = 1;
 
@@ -571,8 +564,8 @@ mod tests {
 
     #[test]
     fn test_remove_many_validator_shares_from_proposal_insufficient_shares() {
-        let mut deps = mock_dependencies();
-        let storage = &mut deps.storage;
+        let mut deps = mock_dependencies(no_op_grpc_query_mock());
+        let storage = deps.as_mut().storage;
         let round_id = 1;
         let prop_id = 1;
 

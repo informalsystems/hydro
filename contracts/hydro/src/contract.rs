@@ -1060,7 +1060,7 @@ pub fn query_round_total_power(
     deps: Deps<NeutronQuery>,
     round_id: u64,
 ) -> StdResult<RoundTotalVotingPowerResponse> {
-    let total_round_power = get_total_power_for_round(deps.storage, round_id)?;
+    let total_round_power = get_total_power_for_round(deps, round_id)?;
     Ok(RoundTotalVotingPowerResponse {
         total_voting_power: total_round_power.to_uint_ceil(), // TODO: decide on rounding
     })
@@ -1306,7 +1306,7 @@ pub fn query_top_n_proposals(
     }
 
     // get total voting power for the round
-    let total_voting_power = get_total_power_for_round(deps.storage, round_id)?.to_uint_ceil(); // TODO: decide on rounding
+    let total_voting_power = get_total_power_for_round(deps, round_id)?.to_uint_ceil(); // TODO: decide on rounding
 
     let top_proposals = top_props
         .into_iter()

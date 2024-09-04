@@ -78,11 +78,21 @@ pub fn is_active_round_validator(storage: &dyn Storage, round_id: u64, validator
 }
 
 // Gets the current list of active validators for the given round
-pub fn get_round_validators(storage: &dyn Storage, round_id: u64) -> Vec<String> {
+pub fn get_round_validators(deps: Deps<NeutronQuery>, round_id: u64) -> Vec<String> {
     VALIDATORS_INFO
         .prefix(round_id)
-        .range(storage, None, None, Order::Ascending)
-        .filter(|val_res| val_res.is_ok())
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter(|f| {
+            let ok = f.is_ok();
+            if !ok {
+                // log an error
+                deps.api.debug(&format!(
+                    "failed to obtain validator info: {}",
+                    f.as_ref().err().unwrap()
+                ));
+            }
+            ok
+        })
         .map(|val_res| {
             let val = val_res.unwrap();
             val.0
@@ -196,17 +206,17 @@ pub fn update_scores_due_to_power_ratio_change(
     Ok(())
 }
 
-pub fn get_total_power_for_round(storage: &dyn Storage, round_id: u64) -> StdResult<Decimal> {
+pub fn get_total_power_for_round(deps: Deps<NeutronQuery>, round_id: u64) -> StdResult<Decimal> {
     // get the current validators for that round
-    let validators = get_round_validators(storage, round_id);
+    let validators = get_round_validators(deps, round_id);
 
     // compute the total power
     let mut total = Decimal::zero();
     for validator in validators {
         let power_ratio =
-            get_validator_power_ratio_for_round(storage, round_id, validator.clone())?;
+            get_validator_power_ratio_for_round(deps.storage, round_id, validator.clone())?;
         let shares = SCALED_ROUND_POWER_SHARES_MAP
-            .may_load(storage, (round_id, validator.clone()))?
+            .may_load(deps.storage, (round_id, validator.clone()))?
             .unwrap_or(Decimal::zero());
         total += shares * power_ratio;
     }

@@ -703,7 +703,7 @@ fn lock_tokens_multiple_validators_and_vote() {
 
     // check the total round power
     {
-        let total_power = get_total_power_for_round(deps.as_ref().storage, 0);
+        let total_power = get_total_power_for_round(deps.as_ref(), 0);
         assert!(total_power.is_ok());
         assert_eq!(Uint128::new(4700), total_power.unwrap().to_uint_floor());
     }
@@ -733,7 +733,7 @@ fn lock_tokens_multiple_validators_and_vote() {
 
     // check the new total power
     {
-        let total_power = get_total_power_for_round(deps.as_ref().storage, 0);
+        let total_power = get_total_power_for_round(deps.as_ref(), 0);
         assert!(total_power.is_ok());
         assert_eq!(Uint128::new(4200), total_power.unwrap().to_uint_floor());
     }
