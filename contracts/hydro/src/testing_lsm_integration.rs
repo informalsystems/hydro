@@ -1,24 +1,28 @@
 use std::collections::HashMap;
 
 use cosmwasm_std::{
-    testing::mock_env, BankMsg, Coin, CosmosMsg, Decimal, Env, StdError, Storage, SystemError,
-    SystemResult, Timestamp, Uint128,
+    testing::mock_env, BankMsg, Coin, CosmosMsg, Decimal, DepsMut, Env, StdError, StdResult,
+    Storage, SystemError, SystemResult, Timestamp, Uint128,
 };
-use neutron_sdk::proto_types::ibc::applications::transfer::v1::QueryDenomTraceResponse;
+use neutron_sdk::{
+    bindings::query::NeutronQuery,
+    proto_types::ibc::applications::transfer::v1::QueryDenomTraceResponse,
+};
 use prost::Message;
 
 use crate::{
     contract::{execute, instantiate, query_top_n_proposals},
     lsm_integration::{
-        update_scores_due_to_power_ratio_change, validate_denom, VALIDATORS_PER_ROUND,
+        get_total_power_for_round, get_validator_power_ratio_for_round,
+        update_scores_due_to_power_ratio_change, validate_denom,
     },
     msg::ExecuteMsg,
-    score_keeper::get_total_power_for_round,
+    state::{ValidatorInfo, VALIDATORS_INFO},
     testing::{
         get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
-        set_validators_constant_power_ratios_for_rounds, IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3,
-        ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
-        VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3, VALIDATOR_3_LST_DENOM_1,
+        IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3, ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS,
+        VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3,
+        VALIDATOR_3_LST_DENOM_1,
     },
     testing_mocks::{
         denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock,
@@ -38,6 +42,62 @@ fn get_default_constants() -> crate::state::Constants {
         hub_transfer_channel_id: "channel-0".to_string(),
         icq_update_period: 100,
     }
+}
+
+pub fn set_validator_infos_for_round(
+    storage: &mut dyn Storage,
+    round_id: u64,
+    validators: Vec<String>,
+) -> StdResult<()> {
+    for validator in validators.iter() {
+        set_validator_power_ratio(storage, round_id, validator, Decimal::one());
+    }
+    Ok(())
+}
+
+pub fn set_validators_constant_power_ratios_for_rounds(
+    deps: DepsMut<NeutronQuery>,
+    start_round: u64,
+    end_round: u64,
+    validators: Vec<String>,
+    power_ratios: Vec<Decimal>,
+) {
+    for round_id in start_round..end_round {
+        // set the power ratio for each validator to 1 for that round
+        for (i, validator) in validators.iter().enumerate() {
+            set_validator_power_ratio(deps.storage, round_id, validator, power_ratios[i]);
+        }
+    }
+}
+
+pub fn set_validator_power_ratio(
+    storage: &mut dyn Storage,
+    round_id: u64,
+    validator: &str,
+    power_ratio: Decimal,
+) {
+    let old_power_ratio =
+        get_validator_power_ratio_for_round(storage, round_id, validator.to_string()).unwrap();
+    if old_power_ratio != power_ratio {
+        let res = update_scores_due_to_power_ratio_change(
+            storage,
+            validator,
+            round_id,
+            old_power_ratio,
+            power_ratio,
+        );
+        assert!(res.is_ok());
+    }
+    let res = VALIDATORS_INFO.save(
+        storage,
+        (round_id, validator.to_string()),
+        &ValidatorInfo {
+            power_ratio,
+            address: validator.to_string(),
+            ..ValidatorInfo::default()
+        },
+    );
+    assert!(res.is_ok());
 }
 
 #[test]
@@ -179,8 +239,9 @@ fn test_validate_denom() {
             denom: IBC_DENOM_1.to_string(),
             expected_result: Err(StdError::generic_err(format!("Validator {} is not present; possibly they are not part of the top 2 validators by delegated tokens", VALIDATOR_1))),
             setup: Box::new(|storage, _env| {
-                let round_id = 0;
-                VALIDATORS_PER_ROUND.save(storage, round_id, &vec![VALIDATOR_2.to_string(), VALIDATOR_3.to_string()]).unwrap();
+                let validators = vec![VALIDATOR_2.to_string(), VALIDATOR_3.to_string()];
+                let res = set_validator_infos_for_round(storage, 0, validators);
+                assert!(res.is_ok());
             }),
             grpc_query: denom_trace_grpc_query_mock(
                 "transfer/channel-0".to_string(),
@@ -194,8 +255,10 @@ fn test_validate_denom() {
             denom: IBC_DENOM_1.to_string(),
             expected_result: Err(StdError::generic_err(format!("Validator {} is not present; possibly they are not part of the top 2 validators by delegated tokens", VALIDATOR_1))),
             setup: Box::new(|storage, env| {
-                VALIDATORS_PER_ROUND.save(storage, 0, &vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()]).unwrap();
-                VALIDATORS_PER_ROUND.save(storage, 1, &vec![VALIDATOR_2.to_string(), VALIDATOR_3.to_string()]).unwrap();
+                let res = set_validator_infos_for_round(storage, 0, vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()]);
+                assert!(res.is_ok());
+                let res = set_validator_infos_for_round(storage, 1, vec![VALIDATOR_2.to_string(), VALIDATOR_3.to_string()]);
+                assert!(res.is_ok());
 
                 env.block.time = Timestamp::from_nanos(ONE_DAY_IN_NANO_SECONDS+1);
             }),
@@ -214,13 +277,12 @@ fn test_validate_denom() {
                 let constants = get_default_constants();
                 crate::state::CONSTANTS.save(storage, &constants).unwrap();
                 let round_id = 0;
-                VALIDATORS_PER_ROUND
-                    .save(
+                let res = set_validator_infos_for_round(
                         storage,
                         round_id,
-                        &vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
-                    )
-                    .unwrap();
+                        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
+                    );
+                assert!(res.is_ok());
             }),
             grpc_query: denom_trace_grpc_query_mock(
                 "transfer/channel-0".to_string(),
@@ -642,20 +704,13 @@ fn lock_tokens_multiple_validators_and_vote() {
 
     // check the total round power
     {
-        let total_power = get_total_power_for_round(deps.as_ref().storage, 0);
+        let total_power = get_total_power_for_round(deps.as_ref(), 0);
         assert!(total_power.is_ok());
         assert_eq!(Uint128::new(4700), total_power.unwrap().to_uint_floor());
     }
 
     // update the power ratio for validator 1 to become 0.5
-    let res = update_scores_due_to_power_ratio_change(
-        deps.as_mut().storage,
-        VALIDATOR_1,
-        0,
-        Decimal::percent(100),
-        Decimal::percent(50),
-    );
-    assert!(res.is_ok());
+    set_validator_power_ratio(deps.as_mut().storage, 0, VALIDATOR_1, Decimal::percent(50));
 
     // Check the proposal scores
     {
@@ -679,7 +734,7 @@ fn lock_tokens_multiple_validators_and_vote() {
 
     // check the new total power
     {
-        let total_power = get_total_power_for_round(deps.as_ref().storage, 0);
+        let total_power = get_total_power_for_round(deps.as_ref(), 0);
         assert!(total_power.is_ok());
         assert_eq!(Uint128::new(4200), total_power.unwrap().to_uint_floor());
     }

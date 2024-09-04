@@ -20,9 +20,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     contract::{compute_current_round_id, NATIVE_TOKEN_DENOM},
     error::ContractError,
+    lsm_integration::update_scores_due_to_power_ratio_change,
     state::{
         Constants, ValidatorInfo, CONSTANTS, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO,
-        VALIDATORS_PER_ROUND_NEW, VALIDATOR_TO_QUERY_ID,
+        VALIDATORS_PER_ROUND, VALIDATOR_TO_QUERY_ID,
     },
 };
 
@@ -190,18 +191,21 @@ fn top_n_validator_add(
 ) -> Result<(), NeutronError> {
     // this call only makes difference if some validator was in the top N,
     // then was droped out, and then got back in the top N again
-    update_power_ratio(
-        validator_info.address.clone(),
+
+    // update the power ratio for the validator in the scores of proposals
+    update_scores_due_to_power_ratio_change(
+        deps.storage,
+        &validator_info.address.clone(),
         current_round,
         Decimal::zero(),
         validator_info.power_ratio,
-    );
+    )?;
     VALIDATORS_INFO.save(
         deps.storage,
         (current_round, validator_info.address.clone()),
         &validator_info,
     )?;
-    VALIDATORS_PER_ROUND_NEW.save(
+    VALIDATORS_PER_ROUND.save(
         deps.storage,
         (
             current_round,
@@ -222,7 +226,7 @@ fn top_n_validator_update(
 ) -> Result<(), NeutronError> {
     let mut should_update_info = false;
     if validator_info.delegated_tokens != new_tokens {
-        VALIDATORS_PER_ROUND_NEW.remove(
+        VALIDATORS_PER_ROUND.remove(
             deps.storage,
             (
                 current_round,
@@ -230,7 +234,7 @@ fn top_n_validator_update(
                 validator_info.address.clone(),
             ),
         );
-        VALIDATORS_PER_ROUND_NEW.save(
+        VALIDATORS_PER_ROUND.save(
             deps.storage,
             (
                 current_round,
@@ -245,12 +249,13 @@ fn top_n_validator_update(
     }
 
     if validator_info.power_ratio != new_power_ratio {
-        update_power_ratio(
-            validator_info.address.clone(),
+        update_scores_due_to_power_ratio_change(
+            deps.storage,
+            &validator_info.address.clone(),
             current_round,
             validator_info.power_ratio,
             new_power_ratio,
-        );
+        )?;
 
         validator_info.power_ratio = new_power_ratio;
         should_update_info = true;
@@ -272,17 +277,19 @@ fn top_n_validator_remove(
     current_round: u64,
     validator_info: ValidatorInfo,
 ) -> Result<(), NeutronError> {
-    update_power_ratio(
-        validator_info.address.clone(),
+    update_scores_due_to_power_ratio_change(
+        deps.storage,
+        &validator_info.address.clone(),
         current_round,
         validator_info.power_ratio,
         Decimal::zero(),
-    );
+    )?;
+
     VALIDATORS_INFO.remove(
         deps.storage,
         (current_round, validator_info.address.clone()),
     );
-    VALIDATORS_PER_ROUND_NEW.remove(
+    VALIDATORS_PER_ROUND.remove(
         deps.storage,
         (
             current_round,
@@ -299,10 +306,21 @@ fn get_last_validator(
     current_round: u64,
     constants: &Constants,
 ) -> Option<(u128, String)> {
-    let last_validator: Vec<(u128, String)> = VALIDATORS_PER_ROUND_NEW
+    let last_validator: Vec<(u128, String)> = VALIDATORS_PER_ROUND
         .sub_prefix(current_round)
         .range(deps.storage, None, None, Order::Descending)
         .skip((constants.max_validator_shares_participating - 1) as usize)
+        .filter(|f| {
+            let ok = f.is_ok();
+            if !ok {
+                // log an error
+                deps.api.debug(&format!(
+                    "failed to obtain validator info: {}",
+                    f.as_ref().err().unwrap()
+                ));
+            }
+            ok
+        })
         .take(1)
         .map(|f| f.unwrap().0)
         .collect();
@@ -360,12 +378,4 @@ pub fn query_min_interchain_query_deposit(deps: &Deps<NeutronQuery>) -> StdResul
             "Failed to obtain interchain query creation deposit.",
         )),
     }
-}
-
-fn update_power_ratio(
-    _validator_address: String,
-    _round_id: u64,
-    _old_power_ratio: Decimal,
-    _new_power_ratio: Decimal,
-) {
 }

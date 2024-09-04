@@ -69,7 +69,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             icq_update_period: 10000,
         },
         Some(&Addr::unchecked(whitelist_admin_address.clone())),
-        None,
+        &[],
     )?;
 
     let constants_response = hydro.constants()?;
@@ -92,7 +92,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             },
         },
         None,
-        None,
+        &[],
     )?;
 
     let config_response = tribute.config()?;

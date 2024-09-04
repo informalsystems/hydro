@@ -99,15 +99,37 @@ pub const VALIDATOR_TO_QUERY_ID: Map<String, u64> = Map::new("validator_to_query
 // QUERY_ID_TO_VALIDATOR: key(interchain query ID) -> validator_address
 pub const QUERY_ID_TO_VALIDATOR: Map<u64, String> = Map::new("query_id_to_validator");
 
-// TODO: this will become VALIDATORS_PER_ROUND once the integration is finished
-// VALIDATORS_PER_ROUND_NEW: key(round_id, delegated_tokens, validator_address) -> validator_address
-pub const VALIDATORS_PER_ROUND_NEW: Map<(u64, u128, String), String> =
-    Map::new("validators_per_round_new");
+// Duplicates some information from VALIDATORS_INFO to have the validators easily accessible by number of delegated tokens
+// to compute the top N
+// VALIDATORS_PER_ROUND: key(round_id, delegated_tokens, validator_address) -> validator_address
+pub const VALIDATORS_PER_ROUND: Map<(u64, u128, String), String> = Map::new("validators_per_round");
 
 // VALIDATORS_INFO: key(round_id, validator_address) -> ValidatorInfo
 pub const VALIDATORS_INFO: Map<(u64, String), ValidatorInfo> = Map::new("validators_info");
 
+// For each round and validator, it stores the time-scaled number of shares of that validator
+// that are locked in Hydro.
+// Concretely, the time weighted shares for each round are scaled by the lockup scaling factor,
+// see scale_lockup_power in contract.rs
+// SCALED_ROUND_POWER_SHARES_MAP: key(round_id, validator_address) -> number_of_shares
+pub const SCALED_ROUND_POWER_SHARES_MAP: Map<(u64, String), Decimal> =
+    Map::new("scaled_round_power_shares");
+
+// The following two store fields are supposed to be kept in sync,
+// i.e. whenever the shares of a proposal (or the power ratio of a validator)
+// get updated, the total power of the proposal should be updated as well.
+// For each proposal and validator, it stores the time-scaled number of shares of that validator
+// that voted for the proposal.
+// SCALED_PROPOSAL_SHARES_MAP: key(proposal_id, validator_address) -> number_of_shares
+pub const SCALED_PROPOSAL_SHARES_MAP: Map<(u64, String), Decimal> =
+    Map::new("scaled_proposal_power_shares");
+
+// Stores the total power for each proposal.
+// PROPOSAL_TOTAL_MAP: key(proposal_id) -> total_power
+pub const PROPOSAL_TOTAL_MAP: Map<u64, Decimal> = Map::new("proposal_power_total");
+
 #[cw_serde]
+#[derive(Default)]
 pub struct ValidatorInfo {
     pub address: String,
     pub delegated_tokens: Uint128,

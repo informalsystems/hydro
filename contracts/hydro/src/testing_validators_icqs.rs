@@ -16,7 +16,7 @@ use crate::{
     },
     msg::ExecuteMsg,
     state::{
-        ValidatorInfo, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO, VALIDATORS_PER_ROUND_NEW,
+        ValidatorInfo, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
         VALIDATOR_TO_QUERY_ID,
     },
     testing::{
@@ -410,7 +410,7 @@ fn icq_results_state_update_test() {
                 &validator,
             );
             assert!(res.is_ok());
-            let res = VALIDATORS_PER_ROUND_NEW.save(
+            let res = VALIDATORS_PER_ROUND.save(
                 deps.as_mut().storage,
                 (
                     current_round,

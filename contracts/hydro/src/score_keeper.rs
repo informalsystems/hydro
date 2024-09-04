@@ -1,44 +1,14 @@
 use cosmwasm_std::{Decimal, StdError, StdResult, Storage};
 use cw_storage_plus::Map;
 
-use crate::lsm_integration::get_validator_power_ratio_for_round;
-
-// The score keeper is a module that keeps track of amounts of individual validator shares, and power ratios (i.e. how many
-// tokens a share of a validator represents). It stores the shares and power ratios for each validator in separate maps,
-// and keeps those up-to-date with the total power (computed by multiplying the individual shares with the power ratio).
-// The total is updated when either the shares or the power ratio of a validator is updated.
-
-// ROUND_POWER_SHARES_MAP: key(round_id, validator_address) -> number_of_shares
-const ROUND_POWER_SHARES_MAP: Map<(u64, String), Decimal> = Map::new("round_power_shares");
-
-// ROUND_POWER_TOTAL_MAP: key(round_id) -> total_power
-const ROUND_POWER_TOTAL_MAP: Map<u64, Decimal> = Map::new("round_power_total");
-
-// PROPOSAL_SHARES_MAP: key(proposal_id, validator_address) -> number_of_shares
-const PROPOSAL_SHARES_MAP: Map<(u64, String), Decimal> = Map::new("proposal_power_shares");
-
-// PROPOSAL_TOTAL_MAP: key(proposal_id) -> total_power
-const PROPOSAL_TOTAL_MAP: Map<u64, Decimal> = Map::new("proposal_power_total");
-
-pub fn get_total_power_for_round(storage: &dyn Storage, round_id: u64) -> StdResult<Decimal> {
-    Ok(ROUND_POWER_TOTAL_MAP
-        .may_load(storage, round_id)?
-        .unwrap_or(Decimal::zero()))
-}
+use crate::{
+    lsm_integration::get_validator_power_ratio_for_round,
+    state::{PROPOSAL_TOTAL_MAP, SCALED_PROPOSAL_SHARES_MAP},
+};
 
 pub fn get_total_power_for_proposal(storage: &dyn Storage, prop_id: u64) -> StdResult<Decimal> {
     Ok(PROPOSAL_TOTAL_MAP
         .may_load(storage, prop_id)?
-        .unwrap_or(Decimal::zero()))
-}
-
-pub fn get_validator_shares_for_round(
-    storage: &dyn Storage,
-    round_id: u64,
-    validator: String,
-) -> StdResult<Decimal> {
-    Ok(ROUND_POWER_SHARES_MAP
-        .may_load(storage, (round_id, validator))?
         .unwrap_or(Decimal::zero()))
 }
 
@@ -47,7 +17,7 @@ pub fn get_validator_shares_for_proposal(
     prop_id: u64,
     validator: String,
 ) -> StdResult<Decimal> {
-    Ok(PROPOSAL_SHARES_MAP
+    Ok(SCALED_PROPOSAL_SHARES_MAP
         .may_load(storage, (prop_id, validator))?
         .unwrap_or(Decimal::zero()))
 }
@@ -83,24 +53,6 @@ pub fn add_validator_shares(
     Ok(())
 }
 
-pub fn add_validator_shares_to_round_total(
-    storage: &mut dyn Storage,
-    round_id: u64,
-    validator: String,
-    num_shares: Decimal,
-) -> StdResult<()> {
-    let power_ratio = get_validator_power_ratio_for_round(storage, round_id, validator.clone())?;
-    add_validator_shares(
-        storage,
-        round_id,
-        ROUND_POWER_SHARES_MAP,
-        ROUND_POWER_TOTAL_MAP,
-        validator,
-        num_shares,
-        power_ratio,
-    )
-}
-
 pub fn add_validator_shares_to_proposal(
     storage: &mut dyn Storage,
     round_id: u64,
@@ -112,7 +64,7 @@ pub fn add_validator_shares_to_proposal(
     add_validator_shares(
         storage,
         prop_id,
-        PROPOSAL_SHARES_MAP,
+        SCALED_PROPOSAL_SHARES_MAP,
         PROPOSAL_TOTAL_MAP,
         validator,
         num_shares,
@@ -173,7 +125,7 @@ pub fn remove_many_validator_shares_from_proposal(
     for (validator, num_shares) in vals_and_shares {
         let power_ratio =
             get_validator_power_ratio_for_round(storage, round_id, validator.clone())?;
-        let current_shares = PROPOSAL_SHARES_MAP
+        let current_shares = SCALED_PROPOSAL_SHARES_MAP
             .may_load(storage, (prop_id, validator.clone()))?
             .unwrap_or_else(Decimal::zero);
 
@@ -186,7 +138,7 @@ pub fn remove_many_validator_shares_from_proposal(
 
         // Update the shares map
         let updated_shares = current_shares - num_shares;
-        PROPOSAL_SHARES_MAP.save(storage, (prop_id, validator), &updated_shares)?;
+        SCALED_PROPOSAL_SHARES_MAP.save(storage, (prop_id, validator), &updated_shares)?;
 
         // Update the total power
         let removed_power = num_shares * power_ratio;
@@ -245,26 +197,8 @@ pub fn update_power_ratio_for_proposal(
     update_power_ratio(
         storage,
         prop_id,
-        PROPOSAL_SHARES_MAP,
+        SCALED_PROPOSAL_SHARES_MAP,
         PROPOSAL_TOTAL_MAP,
-        validator,
-        old_power_ratio,
-        new_power_ratio,
-    )
-}
-
-pub fn update_power_ratio_for_round_total(
-    storage: &mut dyn Storage,
-    round_id: u64,
-    validator: String,
-    old_power_ratio: Decimal,
-    new_power_ratio: Decimal,
-) -> StdResult<()> {
-    update_power_ratio(
-        storage,
-        round_id,
-        ROUND_POWER_SHARES_MAP,
-        ROUND_POWER_TOTAL_MAP,
         validator,
         old_power_ratio,
         new_power_ratio,
@@ -273,46 +207,40 @@ pub fn update_power_ratio_for_round_total(
 
 #[cfg(test)]
 mod tests {
-    use crate::lsm_integration::set_new_validator_power_ratio_for_round;
+    use crate::testing_lsm_integration::set_validator_power_ratio;
+    use crate::testing_mocks::no_op_grpc_query_mock;
+    use crate::{lsm_integration::get_total_power_for_round, testing_mocks::mock_dependencies};
 
     use super::*;
-    use cosmwasm_std::testing::mock_dependencies;
     use cosmwasm_std::{Decimal, StdError, Storage};
     use proptest::prelude::*;
-
-    // Utility function to initialize a mock storage
-    fn initialize_storage() -> Box<dyn Storage> {
-        Box::new(mock_dependencies().storage)
-    }
-
-    fn get_shares_and_power_for_round(
+    fn get_shares_and_power_for_proposal(
         storage: &dyn Storage,
-        round_id: u64,
+        prop_id: u64,
         validator: String,
     ) -> (Decimal, Decimal) {
-        let shares = get_validator_shares_for_round(storage, round_id, validator).unwrap();
-        let total_power = get_total_power_for_round(storage, round_id).unwrap();
+        let shares = get_validator_shares_for_proposal(storage, prop_id, validator).unwrap();
+        let total_power = get_total_power_for_proposal(storage, prop_id).unwrap();
         (shares, total_power)
     }
 
     // Table-based tests
     #[test]
     fn test_uninitialized() {
-        let mut binding = initialize_storage();
-        let storage = binding.as_mut();
+        let deps = mock_dependencies(no_op_grpc_query_mock());
         let index_key = 5;
 
-        let total_power = get_total_power_for_round(storage, index_key).unwrap();
+        let total_power = get_total_power_for_round(deps.as_ref(), index_key).unwrap();
         assert_eq!(total_power, Decimal::zero());
 
-        let total_power = get_total_power_for_proposal(storage, index_key).unwrap();
+        let total_power = get_total_power_for_proposal(deps.as_ref().storage, index_key).unwrap();
         assert_eq!(total_power, Decimal::zero());
     }
 
     #[test]
     fn test_add_validator_shares() {
-        let mut binding = initialize_storage();
-        let storage = binding.as_mut();
+        let mut deps = mock_dependencies(no_op_grpc_query_mock());
+        let storage = deps.as_mut().storage;
 
         let index_key = 5;
         let validator = "validator1";
@@ -323,8 +251,8 @@ mod tests {
         let result = add_validator_shares(
             storage,
             index_key,
-            ROUND_POWER_SHARES_MAP,
-            ROUND_POWER_TOTAL_MAP,
+            SCALED_PROPOSAL_SHARES_MAP,
+            PROPOSAL_TOTAL_MAP,
             validator.to_string(),
             num_shares,
             power_ratio,
@@ -332,15 +260,15 @@ mod tests {
         assert!(result.is_ok());
 
         let (shares, total_power) =
-            get_shares_and_power_for_round(storage, index_key, validator.to_string());
+            get_shares_and_power_for_proposal(storage, index_key, validator.to_string());
         assert_eq!(shares, num_shares);
         assert_eq!(total_power, num_shares * power_ratio);
     }
 
     #[test]
     fn test_remove_validator_shares() {
-        let mut binding = initialize_storage();
-        let storage = binding.as_mut();
+        let mut deps = mock_dependencies(no_op_grpc_query_mock());
+        let storage = deps.as_mut().storage;
 
         let index_key = 5;
         let validator = "validator1";
@@ -351,8 +279,8 @@ mod tests {
         let _ = add_validator_shares(
             storage,
             index_key,
-            ROUND_POWER_SHARES_MAP,
-            ROUND_POWER_TOTAL_MAP,
+            SCALED_PROPOSAL_SHARES_MAP,
+            PROPOSAL_TOTAL_MAP,
             validator.to_string(),
             num_shares,
             power_ratio,
@@ -362,8 +290,8 @@ mod tests {
         let result = remove_validator_shares(
             storage,
             index_key,
-            ROUND_POWER_SHARES_MAP,
-            ROUND_POWER_TOTAL_MAP,
+            SCALED_PROPOSAL_SHARES_MAP,
+            PROPOSAL_TOTAL_MAP,
             validator.to_string(),
             num_shares,
             power_ratio,
@@ -371,15 +299,15 @@ mod tests {
         assert!(result.is_ok());
 
         let (shares, total_power) =
-            get_shares_and_power_for_round(storage, index_key, validator.to_string());
+            get_shares_and_power_for_proposal(storage, index_key, validator.to_string());
         assert_eq!(shares, Decimal::zero());
         assert_eq!(total_power, Decimal::zero());
     }
 
     #[test]
     fn test_remove_validator_shares_insufficient_shares() {
-        let mut binding = initialize_storage();
-        let storage = binding.as_mut();
+        let mut deps = mock_dependencies(no_op_grpc_query_mock());
+        let storage = deps.as_mut().storage;
 
         let index_key = 10;
         let validator = "validator1";
@@ -390,8 +318,8 @@ mod tests {
         let _ = add_validator_shares(
             storage,
             index_key,
-            ROUND_POWER_SHARES_MAP,
-            ROUND_POWER_TOTAL_MAP,
+            SCALED_PROPOSAL_SHARES_MAP,
+            PROPOSAL_TOTAL_MAP,
             validator.to_string(),
             Decimal::from_ratio(50u128, 1u128),
             power_ratio,
@@ -401,8 +329,8 @@ mod tests {
         let result = remove_validator_shares(
             storage,
             index_key,
-            ROUND_POWER_SHARES_MAP,
-            ROUND_POWER_TOTAL_MAP,
+            SCALED_PROPOSAL_SHARES_MAP,
+            PROPOSAL_TOTAL_MAP,
             validator.to_string(),
             num_shares,
             power_ratio,
@@ -416,8 +344,8 @@ mod tests {
 
     #[test]
     fn test_update_power_ratio() {
-        let mut binding = initialize_storage();
-        let storage = binding.as_mut();
+        let mut deps = mock_dependencies(no_op_grpc_query_mock());
+        let storage = deps.as_mut().storage;
 
         let key = 5;
         let validator = "validator1";
@@ -429,8 +357,8 @@ mod tests {
         let _ = add_validator_shares(
             storage,
             key,
-            ROUND_POWER_SHARES_MAP,
-            ROUND_POWER_TOTAL_MAP,
+            SCALED_PROPOSAL_SHARES_MAP,
+            PROPOSAL_TOTAL_MAP,
             validator.to_string(),
             num_shares,
             old_power_ratio,
@@ -440,8 +368,8 @@ mod tests {
         let res = update_power_ratio(
             storage,
             key,
-            ROUND_POWER_SHARES_MAP,
-            ROUND_POWER_TOTAL_MAP,
+            SCALED_PROPOSAL_SHARES_MAP,
+            PROPOSAL_TOTAL_MAP,
             validator.to_string(),
             old_power_ratio,
             new_power_ratio,
@@ -449,7 +377,8 @@ mod tests {
 
         assert!(res.is_ok());
 
-        let (_, total_power) = get_shares_and_power_for_round(storage, key, validator.to_string());
+        let (_, total_power) =
+            get_shares_and_power_for_proposal(storage, key, validator.to_string());
         assert_eq!(total_power, num_shares * new_power_ratio);
     }
 
@@ -457,8 +386,8 @@ mod tests {
     proptest! {
         #[test]
         fn proptest_multi_add_remove_validator_shares(num_shares in 1u128..1_000_000u128, num_shares2 in 1u128..1_000_000u128, power_ratio in 1u128..1_000u128, power_ratio2 in 1u128..1_000u128) {
-            let mut binding = initialize_storage();
-            let storage = binding.as_mut();
+            let mut deps = mock_dependencies(no_op_grpc_query_mock());
+        let storage = deps.as_mut().storage;
 
             let key = 5;
             let validator = "validator1";
@@ -469,11 +398,11 @@ mod tests {
 
             let res = add_validator_shares(storage,
                 key,
-                ROUND_POWER_SHARES_MAP,
-                ROUND_POWER_TOTAL_MAP,
+                SCALED_PROPOSAL_SHARES_MAP,
+                PROPOSAL_TOTAL_MAP,
                 validator.to_string(), num_shares, power_ratio);
             assert!(res.is_ok(), "Error adding validator shares: {:?}", res);
-            let (shares, total_power) = get_shares_and_power_for_round(storage, key, validator.to_string());
+            let (shares, total_power) = get_shares_and_power_for_proposal(storage, key, validator.to_string());
 
             // Check if shares and power are correct after adding
             assert_eq!(shares, num_shares);
@@ -483,8 +412,8 @@ mod tests {
             let res = update_power_ratio(
                 storage,
                 key,
-                ROUND_POWER_SHARES_MAP,
-                ROUND_POWER_TOTAL_MAP,
+                SCALED_PROPOSAL_SHARES_MAP,
+                PROPOSAL_TOTAL_MAP,
                 validator.to_string(), power_ratio, power_ratio2);
             assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
 
@@ -492,11 +421,11 @@ mod tests {
             let res = add_validator_shares(
                 storage,
                 key,
-                ROUND_POWER_SHARES_MAP,
-                ROUND_POWER_TOTAL_MAP,
+                SCALED_PROPOSAL_SHARES_MAP,
+                PROPOSAL_TOTAL_MAP,
                 validator.to_string(), num_shares2, power_ratio2);
             assert!(res.is_ok(), "Error adding validator shares: {:?}", res);
-            let (shares, total_power) = get_shares_and_power_for_round(storage, key, validator.to_string());
+            let (shares, total_power) = get_shares_and_power_for_proposal(storage, key, validator.to_string());
 
             // Check if shares and power are correct after the second addition
             assert_eq!(shares, num_shares + num_shares2);
@@ -504,11 +433,11 @@ mod tests {
 
             // successively remove the shares
             let res = remove_validator_shares(storage, key,
-                ROUND_POWER_SHARES_MAP,
-                ROUND_POWER_TOTAL_MAP,
+                SCALED_PROPOSAL_SHARES_MAP,
+                PROPOSAL_TOTAL_MAP,
                 validator.to_string(), num_shares2, power_ratio2);
             assert!(res.is_ok(), "Error removing validator shares: {:?}", res);
-            let (shares, total_power) = get_shares_and_power_for_round(storage, key, validator.to_string());
+            let (shares, total_power) = get_shares_and_power_for_proposal(storage, key, validator.to_string());
 
             // Check if shares and power are correct after removing
             assert_eq!(shares, num_shares);
@@ -516,22 +445,22 @@ mod tests {
 
             // set the power ratio
             let res = update_power_ratio(storage, key,
-                ROUND_POWER_SHARES_MAP,
-                ROUND_POWER_TOTAL_MAP,
+                SCALED_PROPOSAL_SHARES_MAP,
+                PROPOSAL_TOTAL_MAP,
                 validator.to_string(), power_ratio2, power_ratio);
             assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
 
-            let (_, total_power) = get_shares_and_power_for_round(storage, key, validator.to_string());
+            let (_, total_power) = get_shares_and_power_for_proposal(storage, key, validator.to_string());
 
             // Check that the power ratio is updated correctly
             assert_eq!(total_power, num_shares * power_ratio);
 
             let res = remove_validator_shares(storage, key,
-                ROUND_POWER_SHARES_MAP,
-                ROUND_POWER_TOTAL_MAP,
+                SCALED_PROPOSAL_SHARES_MAP,
+                PROPOSAL_TOTAL_MAP,
                 validator.to_string(), num_shares, power_ratio);
             assert!(res.is_ok(), "Error removing validator shares: {:?}", res);
-            let (shares, total_power) = get_shares_and_power_for_round(storage, key, validator.to_string());
+            let (shares, total_power) = get_shares_and_power_for_proposal(storage, key, validator.to_string());
 
             // Check if shares and power are zero after removing the second batch of shares
             assert_eq!(shares, Decimal::zero());
@@ -540,8 +469,8 @@ mod tests {
 
         #[test]
         fn proptest_update_power_ratio(num_shares in 1u128..1_000_000u128, old_power_ratio in 1u128..1_000u128, new_power_ratio in 1u128..1_000u128) {
-            let mut binding = initialize_storage();
-        let storage = binding.as_mut();
+            let mut deps = mock_dependencies(no_op_grpc_query_mock());
+            let storage = deps.as_mut().storage;
 
             let key = 8;
             let validator = "validator1";
@@ -551,25 +480,25 @@ mod tests {
 
             // set the power ratio
             let res = update_power_ratio(storage, key,
-                ROUND_POWER_SHARES_MAP,
-                ROUND_POWER_TOTAL_MAP,
+                SCALED_PROPOSAL_SHARES_MAP,
+                PROPOSAL_TOTAL_MAP,
                 validator.to_string(), Decimal::zero(), old_power_ratio);
             assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
 
             let res = add_validator_shares(storage, key,
-                ROUND_POWER_SHARES_MAP,
-                ROUND_POWER_TOTAL_MAP,
+                SCALED_PROPOSAL_SHARES_MAP,
+                PROPOSAL_TOTAL_MAP,
                 validator.to_string(), num_shares, old_power_ratio);
             assert!(res.is_ok(), "Error adding validator shares: {:?}", res);
 
             // set the power ratio
             let res = update_power_ratio(storage, key,
-                ROUND_POWER_SHARES_MAP,
-                ROUND_POWER_TOTAL_MAP,
+                SCALED_PROPOSAL_SHARES_MAP,
+                PROPOSAL_TOTAL_MAP,
                 validator.to_string(), old_power_ratio, new_power_ratio);
             assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
 
-            let (_, total_power) = get_shares_and_power_for_round(storage, key, validator.to_string());
+            let (_, total_power) = get_shares_and_power_for_proposal(storage, key, validator.to_string());
 
             // Check if total power is updated correctly
             assert_eq!(total_power, num_shares * new_power_ratio);
@@ -578,8 +507,8 @@ mod tests {
 
     #[test]
     fn test_remove_many_validator_shares_from_proposal() {
-        let mut deps = mock_dependencies();
-        let storage = &mut deps.storage;
+        let mut deps = mock_dependencies(no_op_grpc_query_mock());
+        let storage = deps.as_mut().storage;
         let round_id = 1;
         let prop_id = 1;
 
@@ -592,26 +521,14 @@ mod tests {
         let power_ratio2 = Decimal::percent(20);
 
         // Mock the initial shares and power ratios
-        PROPOSAL_SHARES_MAP
+        SCALED_PROPOSAL_SHARES_MAP
             .save(storage, (prop_id, validator1.clone()), &initial_shares1)
             .unwrap();
-        PROPOSAL_SHARES_MAP
+        SCALED_PROPOSAL_SHARES_MAP
             .save(storage, (prop_id, validator2.clone()), &initial_shares2)
             .unwrap();
-        set_new_validator_power_ratio_for_round(
-            storage,
-            round_id,
-            validator1.clone(),
-            power_ratio1,
-        )
-        .unwrap();
-        set_new_validator_power_ratio_for_round(
-            storage,
-            round_id,
-            validator2.clone(),
-            power_ratio2,
-        )
-        .unwrap();
+        set_validator_power_ratio(storage, round_id, validator1.as_str(), power_ratio1);
+        set_validator_power_ratio(storage, round_id, validator2.as_str(), power_ratio2);
 
         // Mock the total power
         let total_power = Decimal::percent(100);
@@ -628,10 +545,10 @@ mod tests {
             .unwrap();
 
         // Check the updated shares
-        let updated_shares1 = PROPOSAL_SHARES_MAP
+        let updated_shares1 = SCALED_PROPOSAL_SHARES_MAP
             .load(storage, (prop_id, validator1))
             .unwrap();
-        let updated_shares2 = PROPOSAL_SHARES_MAP
+        let updated_shares2 = SCALED_PROPOSAL_SHARES_MAP
             .load(storage, (prop_id, validator2))
             .unwrap();
         assert_eq!(updated_shares1, Decimal::percent(40));
@@ -647,8 +564,8 @@ mod tests {
 
     #[test]
     fn test_remove_many_validator_shares_from_proposal_insufficient_shares() {
-        let mut deps = mock_dependencies();
-        let storage = &mut deps.storage;
+        let mut deps = mock_dependencies(no_op_grpc_query_mock());
+        let storage = deps.as_mut().storage;
         let round_id = 1;
         let prop_id = 1;
 
@@ -658,16 +575,10 @@ mod tests {
         let power_ratio1 = Decimal::percent(10);
 
         // Mock the initial shares and power ratios
-        PROPOSAL_SHARES_MAP
+        SCALED_PROPOSAL_SHARES_MAP
             .save(storage, (prop_id, validator1.clone()), &initial_shares1)
             .unwrap();
-        set_new_validator_power_ratio_for_round(
-            storage,
-            round_id,
-            validator1.clone(),
-            power_ratio1,
-        )
-        .unwrap();
+        set_validator_power_ratio(storage, round_id, validator1.as_str(), power_ratio1);
 
         // Mock the total power
         let total_power = Decimal::percent(100);

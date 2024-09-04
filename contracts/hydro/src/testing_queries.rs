@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
 use crate::contract::{compute_current_round_id, query_all_user_lockups, scale_lockup_power};
-use crate::lsm_integration::set_new_validator_power_ratio_for_round;
 use crate::state::CONSTANTS;
 use crate::testing::{
     get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds, IBC_DENOM_1,
     ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
 };
+use crate::testing_lsm_integration::set_validator_power_ratio;
 use crate::testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, MockQuerier};
 use crate::{
     contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
@@ -116,13 +116,12 @@ fn query_user_lockups_test() {
     // adjust the validator power ratios to check that they are reflected properly in the result
     let constants = CONSTANTS.load(deps.as_ref().storage).unwrap();
     let current_round_id = compute_current_round_id(&env, &constants).unwrap();
-    let res = set_new_validator_power_ratio_for_round(
+    set_validator_power_ratio(
         deps.as_mut().storage,
         current_round_id,
-        VALIDATOR_1.to_string(),
+        VALIDATOR_1,
         Decimal::percent(50),
     );
-    assert!(res.is_ok());
 
     let all_lockups =
         query_all_user_lockups(deps.as_ref(), env.clone(), info.sender.to_string(), 0, 2000);
