@@ -557,6 +557,8 @@ fn vote(
     validate_contract_is_not_paused(&constants)?;
 
     let round_id = compute_current_round_id(&env, &constants)?;
+    // voting can never be the first action in a round (since one can only vote on proposals in the current round, and a proposal must be created first)
+    // however, to be safe, we initialize the validator store here, since this is more robust in case we change something about voting later
     initialize_validator_store(deps.storage, round_id)?;
 
     // check that the tranche with the given id exists
