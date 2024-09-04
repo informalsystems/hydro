@@ -25,7 +25,7 @@ cw-utils = "2.0.0"
 cosmos-sdk-proto = { version = "0.24.0", default-features = false }
 prost = "0.12.6"
 prost-types = "0.12.6"
-cw-orch = { git = "https://github.com/AbstractSDK/cw-orchestrator", rev = "388dc29" }
-neutron-sdk = { package = "neutron-sdk", git = "https://github.com/neutron-org/neutron-sdk", branch = "main" }
+cw-orch = "0.25.0"
+neutron-sdk = { package = "neutron-sdk", git = "https://github.com/neutron-org/neutron-sdk", rev = "8ef5964" }
 bech32 = "0.9.1"
 serde-json-wasm = "1.0.1"
