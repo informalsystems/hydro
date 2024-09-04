@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     contract::{compute_current_round_id, NATIVE_TOKEN_DENOM},
     error::ContractError,
-    lsm_integration::set_new_validator_power_ratio_for_round,
+    lsm_integration::update_scores_due_to_power_ratio_change,
     state::{
         Constants, ValidatorInfo, CONSTANTS, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO,
         VALIDATORS_PER_ROUND, VALIDATOR_TO_QUERY_ID,
@@ -191,10 +191,13 @@ fn top_n_validator_add(
 ) -> Result<(), NeutronError> {
     // this call only makes difference if some validator was in the top N,
     // then was droped out, and then got back in the top N again
-    set_new_validator_power_ratio_for_round(
+
+    // update the power ratio for the validator in the scores of proposals
+    update_scores_due_to_power_ratio_change(
         deps.storage,
+        &validator_info.address.clone(),
         current_round,
-        validator_info.address.clone(),
+        Decimal::zero(),
         validator_info.power_ratio,
     )?;
     VALIDATORS_INFO.save(
@@ -246,10 +249,11 @@ fn top_n_validator_update(
     }
 
     if validator_info.power_ratio != new_power_ratio {
-        set_new_validator_power_ratio_for_round(
+        update_scores_due_to_power_ratio_change(
             deps.storage,
+            &validator_info.address.clone(),
             current_round,
-            validator_info.address.clone(),
+            validator_info.power_ratio,
             new_power_ratio,
         )?;
 
@@ -273,10 +277,11 @@ fn top_n_validator_remove(
     current_round: u64,
     validator_info: ValidatorInfo,
 ) -> Result<(), NeutronError> {
-    set_new_validator_power_ratio_for_round(
+    update_scores_due_to_power_ratio_change(
         deps.storage,
+        &validator_info.address.clone(),
         current_round,
-        validator_info.address.clone(),
+        validator_info.power_ratio,
         Decimal::zero(),
     )?;
 

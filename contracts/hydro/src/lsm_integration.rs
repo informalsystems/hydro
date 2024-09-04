@@ -1,5 +1,4 @@
 use cosmwasm_std::{Decimal, Deps, Env, Order, StdError, StdResult, Storage};
-use cw_storage_plus::Map;
 
 use neutron_sdk::proto_types::ibc::applications::transfer::v1::TransferQuerier;
 use neutron_sdk::{
@@ -19,10 +18,6 @@ pub const INTERCHAINQUERIES_PARAMS_GRPC: &str = "/neutron.interchainqueries.Quer
 pub const TRANSFER_PORT: &str = "transfer";
 pub const COSMOS_VALIDATOR_PREFIX: &str = "cosmosvaloper";
 pub const COSMOS_VALIDATOR_ADDR_LENGTH: usize = 52; // e.g. cosmosvaloper15w6ra6m68c63t0sv2hzmkngwr9t88e23r8vtg5
-
-// VALIDATOR_POWER_PER_ROUND: key(round_id, validator_address) -> power_ratio
-pub const VALIDATOR_POWER_PER_ROUND: Map<(u64, String), Decimal> =
-    Map::new("validator_power_per_round");
 
 // Returns OK if the denom is a valid IBC denom representing LSM
 // tokenized share transferred directly from the Cosmos Hub
@@ -94,41 +89,20 @@ pub fn get_round_validators(storage: &dyn Storage, round_id: u64) -> Vec<String>
         .collect()
 }
 
-// TODO: if round is in the future, use current powers (needed to compute the total power for the round, which
-// accesses future rounds)
-// TODO: if currrent round is not fully initialized, use previous round's powers
-// TODO: if previous round is not fully initialized, return an error (should only happen if relaying breaks)
-// TODO: docstring
+// Gets the power of the given validator for the given round.
+// This will return an error if there is an issue with parsing the store.
+// Otherwise, it will return 0 if the validator is not an active validator in the round,
+// and if the validator is active in the round, it will return its power ratio.
 pub fn get_validator_power_ratio_for_round(
     storage: &dyn Storage,
     round_id: u64,
     validator: String,
 ) -> StdResult<Decimal> {
-    Ok(VALIDATOR_POWER_PER_ROUND
-        .may_load(storage, (round_id, validator))?
-        .unwrap_or(Decimal::zero()))
-}
-
-pub fn set_new_validator_power_ratio_for_round(
-    storage: &mut dyn Storage,
-    round_id: u64,
-    validator: String,
-    new_power_ratio: Decimal,
-) -> StdResult<()> {
-    let old_power_ratio = VALIDATOR_POWER_PER_ROUND
-        .load(storage, (round_id, validator.clone()))
-        .unwrap_or(Decimal::zero());
-
-    VALIDATOR_POWER_PER_ROUND.save(storage, (round_id, validator.clone()), &new_power_ratio)?;
-
-    // update the power ratio for the validator in the score keepers
-    update_scores_due_to_power_ratio_change(
-        storage,
-        &validator,
-        round_id,
-        old_power_ratio,
-        new_power_ratio,
-    )
+    let validator_info = VALIDATORS_INFO.may_load(storage, (round_id, validator))?;
+    match validator_info {
+        Some(info) => Ok(info.power_ratio),
+        None => Ok(Decimal::zero()),
+    }
 }
 
 pub fn query_ibc_denom_trace(deps: Deps<NeutronQuery>, denom: String) -> StdResult<DenomTrace> {

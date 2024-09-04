@@ -215,9 +215,8 @@ pub fn update_power_ratio_for_proposal(
 
 #[cfg(test)]
 mod tests {
-    use crate::lsm_integration::{
-        get_total_power_for_round, set_new_validator_power_ratio_for_round,
-    };
+    use crate::lsm_integration::get_total_power_for_round;
+    use crate::testing_lsm_integration::set_validator_power_ratio;
 
     use super::*;
     use cosmwasm_std::testing::mock_dependencies;
@@ -543,20 +542,8 @@ mod tests {
         PROPOSAL_SHARES_MAP
             .save(storage, (prop_id, validator2.clone()), &initial_shares2)
             .unwrap();
-        set_new_validator_power_ratio_for_round(
-            storage,
-            round_id,
-            validator1.clone(),
-            power_ratio1,
-        )
-        .unwrap();
-        set_new_validator_power_ratio_for_round(
-            storage,
-            round_id,
-            validator2.clone(),
-            power_ratio2,
-        )
-        .unwrap();
+        set_validator_power_ratio(storage, round_id, validator1.as_str(), power_ratio1);
+        set_validator_power_ratio(storage, round_id, validator2.as_str(), power_ratio2);
 
         // Mock the total power
         let total_power = Decimal::percent(100);
@@ -606,13 +593,7 @@ mod tests {
         PROPOSAL_SHARES_MAP
             .save(storage, (prop_id, validator1.clone()), &initial_shares1)
             .unwrap();
-        set_new_validator_power_ratio_for_round(
-            storage,
-            round_id,
-            validator1.clone(),
-            power_ratio1,
-        )
-        .unwrap();
+        set_validator_power_ratio(storage, round_id, validator1.as_str(), power_ratio1);
 
         // Mock the total power
         let total_power = Decimal::percent(100);
