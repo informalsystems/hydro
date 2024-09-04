@@ -1,4 +1,4 @@
-use cosmwasm_std::{Decimal, Deps, DepsMut, Env, Order, StdError, StdResult, Storage};
+use cosmwasm_std::{Decimal, Deps, Env, Order, StdError, StdResult, Storage};
 
 use neutron_sdk::proto_types::ibc::applications::transfer::v1::TransferQuerier;
 use neutron_sdk::{
