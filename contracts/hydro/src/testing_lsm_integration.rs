@@ -1,21 +1,25 @@
 use std::collections::HashMap;
 
+use cosmos_sdk_proto::prost::Message;
 use cosmwasm_std::{
-    testing::mock_env, BankMsg, Coin, CosmosMsg, Decimal, DepsMut, Env, StdError, StdResult,
-    Storage, SystemError, SystemResult, Timestamp, Uint128,
+    testing::mock_env, BankMsg, Binary, Coin, CosmosMsg, Decimal, DepsMut, Env, StdError,
+    StdResult, Storage, SystemError, SystemResult, Timestamp, Uint128,
 };
-use neutron_sdk::bindings::query::NeutronQuery;
+use neutron_sdk::{
+    bindings::{query::NeutronQuery, types::StorageValue},
+    interchain_queries::{types::QueryType, v047::types::STAKING_STORE_KEY},
+    sudo::msg::SudoMsg,
+};
 use neutron_std::types::ibc::applications::transfer::v1::QueryDenomTraceResponse;
-use prost::Message;
 
 use crate::{
-    contract::{execute, instantiate, query_top_n_proposals},
+    contract::{execute, instantiate, query_top_n_proposals, sudo},
     lsm_integration::{
         get_total_power_for_round, get_validator_power_ratio_for_round,
         update_scores_due_to_power_ratio_change, validate_denom,
     },
     msg::ExecuteMsg,
-    state::{ValidatorInfo, VALIDATORS_INFO},
+    state::{ValidatorInfo, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED},
     testing::{
         get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
         IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3, ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS,
@@ -23,9 +27,11 @@ use crate::{
         VALIDATOR_3_LST_DENOM_1,
     },
     testing_mocks::{
-        denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock,
-        system_result_ok_from, GrpcQueryFunc,
+        custom_interchain_query_mock, denom_trace_grpc_query_mock, mock_dependencies,
+        no_op_grpc_query_mock, system_result_ok_from, GrpcQueryFunc, ICQMockData,
     },
+    testing_validators_icqs::get_mock_validator,
+    validators_icqs::TOKENS_TO_SHARES_MULTIPLIER,
 };
 
 fn get_default_constants() -> crate::state::Constants {
@@ -95,6 +101,17 @@ pub fn set_validator_power_ratio(
             ..ValidatorInfo::default()
         },
     );
+    assert!(res.is_ok());
+
+    let res = VALIDATORS_PER_ROUND.save(
+        storage,
+        (round_id, 100, validator.to_string()),
+        &validator.to_string(),
+    );
+    assert!(res.is_ok());
+
+    // mark the round as having its store initialized
+    let res = VALIDATORS_STORE_INITIALIZED.save(storage, round_id, &true);
     assert!(res.is_ok());
 }
 
@@ -735,5 +752,282 @@ fn lock_tokens_multiple_validators_and_vote() {
         let total_power = get_total_power_for_round(deps.as_ref(), 0);
         assert!(total_power.is_ok());
         assert_eq!(Uint128::new(4200), total_power.unwrap().to_uint_floor());
+    }
+}
+
+struct ValidatorSetInitializationTestCase {
+    description: String,
+    message: ExecuteMsg,
+}
+
+#[test]
+fn validator_set_initialization_test() {
+    let test_cases = vec![
+        ValidatorSetInitializationTestCase {
+            description: "Lock tokens".to_string(),
+            message: ExecuteMsg::LockTokens {
+                lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+            },
+        },
+        ValidatorSetInitializationTestCase {
+            description: "Create proposal".to_string(),
+            message: ExecuteMsg::CreateProposal {
+                tranche_id: 1,
+                title: "proposal title".to_string(),
+                description: "proposal description".to_string(),
+            },
+        },
+        ValidatorSetInitializationTestCase {
+            description: "Refresh lock".to_string(),
+            message: ExecuteMsg::RefreshLockDuration {
+                lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+                lock_id: 0,
+            },
+        },
+    ];
+
+    for test_case in test_cases {
+        println!("Running test case: {}", test_case.description);
+
+        let grpc_query = denom_trace_grpc_query_mock(
+            "transfer/channel-0".to_string(),
+            HashMap::from([
+                (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+                (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+                (IBC_DENOM_3.to_string(), VALIDATOR_3_LST_DENOM_1.to_string()),
+            ]),
+        );
+
+        let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+        let info = get_message_info(
+            &deps.api,
+            "addr0000",
+            &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        );
+        let instantiate_msg = get_default_instantiate_msg(&deps.api);
+
+        // Initialize the contract
+        let res = instantiate(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            instantiate_msg.clone(),
+        );
+        assert!(res.is_ok());
+
+        // Set the validator set storage for round 0
+        let validators = vec![
+            ValidatorInfo {
+                address: VALIDATOR_1.to_string(),
+                delegated_tokens: Uint128::new(1000),
+                power_ratio: Decimal::percent(50),
+            },
+            ValidatorInfo {
+                address: VALIDATOR_2.to_string(),
+                delegated_tokens: Uint128::new(2000),
+                power_ratio: Decimal::percent(95),
+            },
+        ];
+
+        for validator in validators.clone() {
+            VALIDATORS_INFO
+                .save(
+                    deps.as_mut().storage,
+                    (0, validator.address.clone()),
+                    &validator,
+                )
+                .unwrap();
+            VALIDATORS_PER_ROUND
+                .save(
+                    deps.as_mut().storage,
+                    (
+                        0,
+                        validator.delegated_tokens.u128(),
+                        validator.address.clone(),
+                    ),
+                    &validator.address,
+                )
+                .unwrap();
+        }
+
+        // create a proposal that can be voted on
+        let msg = ExecuteMsg::CreateProposal {
+            tranche_id: 1,
+            title: "proposal title".to_string(),
+            description: "proposal description".to_string(),
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+
+        // Check that the proposal was created successfully
+        assert!(res.is_ok());
+
+        // lock tokens in round 1 so that we can refresh a lock with a message
+        let msg = ExecuteMsg::LockTokens {
+            lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        };
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+
+        // Check that the lock was successful
+        assert!(res.is_ok());
+
+        // Advance the time to round 1
+        env.block.time = env.block.time.plus_nanos(instantiate_msg.round_length + 1);
+
+        // Execute the message
+        let res = execute(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            test_case.message.clone(),
+        );
+        assert!(res.is_ok(), "Failed to execute message: {:?}", res);
+
+        // Check that the validator set storage is correctly initialized for round 1
+        let is_initialized = VALIDATORS_STORE_INITIALIZED
+            .load(deps.as_ref().storage, 1)
+            .unwrap();
+        assert!(is_initialized);
+
+        for validator in validators.clone() {
+            let stored_validator_info = VALIDATORS_INFO
+                .load(deps.as_ref().storage, (1, validator.address.clone()))
+                .unwrap();
+            assert_eq!(validator, stored_validator_info);
+
+            let stored_validator_address = VALIDATORS_PER_ROUND
+                .load(
+                    deps.as_ref().storage,
+                    (
+                        1,
+                        validator.delegated_tokens.u128(),
+                        validator.address.clone(),
+                    ),
+                )
+                .unwrap();
+            assert_eq!(validator.address, stored_validator_address);
+        }
+    }
+}
+
+// An extra test case to make sure that the validator store is initialized correctly
+// when the result of an interchain query comes in.
+// Since this is not an execute msg, it is a bit simpler to do this in a separate test case.
+#[test]
+fn icq_validator_set_initialization_test() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+            (IBC_DENOM_3.to_string(), VALIDATOR_3_LST_DENOM_1.to_string()),
+        ]),
+    );
+
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(
+        &deps.api,
+        "addr0000",
+        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+    );
+    let instantiate_msg = get_default_instantiate_msg(&deps.api);
+
+    // Initialize the contract
+    let res = instantiate(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        instantiate_msg.clone(),
+    );
+    assert!(res.is_ok());
+
+    // Set the validator set storage for round 0
+    let validators = vec![
+        ValidatorInfo {
+            address: VALIDATOR_1.to_string(),
+            delegated_tokens: Uint128::new(1000),
+            power_ratio: Decimal::percent(50),
+        },
+        ValidatorInfo {
+            address: VALIDATOR_2.to_string(),
+            delegated_tokens: Uint128::new(2000),
+            power_ratio: Decimal::percent(95),
+        },
+    ];
+
+    for validator in validators.clone() {
+        VALIDATORS_INFO
+            .save(
+                deps.as_mut().storage,
+                (0, validator.address.clone()),
+                &validator,
+            )
+            .unwrap();
+        VALIDATORS_PER_ROUND
+            .save(
+                deps.as_mut().storage,
+                (
+                    0,
+                    validator.delegated_tokens.u128(),
+                    validator.address.clone(),
+                ),
+                &validator.address,
+            )
+            .unwrap();
+    }
+
+    // Mock data for the interchain query result
+    let mock_tokens = Uint128::new(1000);
+    let mock_shares = Uint128::new(2000) * TOKENS_TO_SHARES_MULTIPLIER;
+    let mock_validator = get_mock_validator(VALIDATOR_1, mock_tokens, mock_shares);
+    let mock_data = HashMap::from([(
+        1,
+        ICQMockData {
+            query_type: QueryType::KV,
+            should_query_return_error: false,
+            should_query_result_return_error: false,
+            kv_results: vec![StorageValue {
+                storage_prefix: STAKING_STORE_KEY.to_string(),
+                key: Binary::default(),
+                value: Binary::from(mock_validator.encode_to_vec()),
+            }],
+        },
+    )]);
+
+    deps.querier = deps
+        .querier
+        .with_custom_handler(custom_interchain_query_mock(mock_data));
+
+    // Advance the time to round 1
+    env.block.time = env.block.time.plus_nanos(instantiate_msg.round_length + 1);
+
+    // Send the SudoMsg as a result of the interchain query
+    let msg = SudoMsg::KVQueryResult { query_id: 1 };
+    let res = sudo(deps.as_mut(), env.clone(), msg);
+    assert!(res.is_ok(), "Failed to execute message: {:?}", res);
+
+    // Check that the validator set storage is correctly initialized for round 1
+    let is_initialized = VALIDATORS_STORE_INITIALIZED
+        .load(deps.as_ref().storage, 1)
+        .unwrap();
+    assert!(is_initialized);
+
+    for validator in validators.clone() {
+        let stored_validator_info = VALIDATORS_INFO
+            .load(deps.as_ref().storage, (1, validator.address.clone()))
+            .unwrap();
+        assert_eq!(validator, stored_validator_info);
+
+        let stored_validator_address = VALIDATORS_PER_ROUND
+            .load(
+                deps.as_ref().storage,
+                (
+                    1,
+                    validator.delegated_tokens.u128(),
+                    validator.address.clone(),
+                ),
+            )
+            .unwrap();
+        assert_eq!(validator.address, stored_validator_address);
     }
 }

@@ -14,7 +14,8 @@ use neutron_sdk::sudo::msg::SudoMsg;
 use crate::error::ContractError;
 use crate::lsm_integration::{
     add_validator_shares_to_round_total, get_total_power_for_round,
-    get_validator_power_ratio_for_round, validate_denom, COSMOS_VALIDATOR_PREFIX,
+    get_validator_power_ratio_for_round, initialize_validator_store, validate_denom,
+    COSMOS_VALIDATOR_PREFIX,
 };
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
@@ -31,8 +32,8 @@ use crate::score_keeper::{
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS,
     LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID,
-    TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATOR_TO_QUERY_ID, VOTE_MAP, WHITELIST,
-    WHITELIST_ADMINS,
+    TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
+    VALIDATOR_TO_QUERY_ID, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
@@ -131,6 +132,9 @@ pub fn instantiate(
     // Store ID to be used for the next tranche
     TRANCHE_ID.save(deps.storage, &tranche_id)?;
 
+    // the store for the first round is already initialized, since there is no previous round to copy information over from.
+    VALIDATORS_STORE_INITIALIZED.save(deps.storage, 0, &true)?;
+
     Ok(Response::new()
         .add_attribute("action", "initialisation")
         .add_attribute("sender", info.sender.clone()))
@@ -194,6 +198,9 @@ fn lock_tokens(
     validate_contract_is_not_paused(&constants)?;
     validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
 
+    let current_round = compute_current_round_id(&env, &constants)?;
+    initialize_validator_store(deps.storage, current_round)?;
+
     if info.funds.len() != 1 {
         return Err(ContractError::Std(StdError::generic_err(
             "Must provide exactly one coin to lock",
@@ -239,7 +246,6 @@ fn lock_tokens(
 
     // Calculate and update the total voting power info for current and all
     // future rounds in which the user will have voting power greather than 0
-    let current_round = compute_current_round_id(&env, &constants)?;
     let last_round_with_power = compute_round_id_for_timestamp(&constants, lock_end)? - 1;
 
     update_total_time_weighted_shares(
@@ -272,6 +278,9 @@ fn refresh_lock_duration(
 
     validate_contract_is_not_paused(&constants)?;
     validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
+
+    let current_round = compute_current_round_id(&env, &constants)?;
+    initialize_validator_store(deps.storage, current_round)?;
 
     // try to get the lock with the given id
     // note that this is already indexed by the caller, so if it is successful, the sender owns this lock
@@ -317,7 +326,6 @@ fn refresh_lock_duration(
     // The voting power originated from the old lockup is subtracted from the
     // total voting power, and the voting power gained with the new lockup is
     // added to the total voting power for each applicable round.
-    let current_round = compute_current_round_id(&env, &constants)?;
     let old_last_round_with_power = compute_round_id_for_timestamp(&constants, old_lock_end)? - 1;
     let new_last_round_with_power = compute_round_id_for_timestamp(&constants, new_lock_end)? - 1;
 
@@ -469,6 +477,9 @@ fn create_proposal(
     let constants = CONSTANTS.load(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
+    let round_id = compute_current_round_id(&env, &constants)?;
+    initialize_validator_store(deps.storage, round_id)?;
+
     // validate that the sender is on the whitelist
     let whitelist = WHITELIST.load(deps.storage)?;
 
@@ -479,7 +490,6 @@ fn create_proposal(
     // check that the tranche with the given id exists
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
-    let round_id = compute_current_round_id(&env, &constants)?;
     let proposal_id = PROP_ID.load(deps.storage)?;
 
     let proposal = Proposal {
@@ -546,11 +556,13 @@ fn vote(
     let constants = CONSTANTS.load(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
+    let round_id = compute_current_round_id(&env, &constants)?;
+    // voting can never be the first action in a round (since one can only vote on proposals in the current round, and a proposal must be created first)
+    // however, to be safe, we initialize the validator store here, since this is more robust in case we change something about voting later
+    initialize_validator_store(deps.storage, round_id)?;
+
     // check that the tranche with the given id exists
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
-
-    // compute the round_id
-    let round_id = compute_current_round_id(&env, &constants)?;
 
     // compute the round end
     let round_end = compute_round_end(&constants, round_id)?;
@@ -910,7 +922,8 @@ fn create_icqs_for_validators(
     validate_contract_is_not_paused(&constants)?;
     // This function will return error if the first round hasn't started yet. It is necessarry
     // that it has started, since handling the results of the interchain queries relies on this.
-    compute_current_round_id(&env, &constants)?;
+    let round_id = compute_current_round_id(&env, &constants)?;
+    initialize_validator_store(deps.storage, round_id)?;
 
     let mut valid_addresses = HashSet::new();
     for validator in validators

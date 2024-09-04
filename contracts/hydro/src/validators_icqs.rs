@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     contract::{compute_current_round_id, NATIVE_TOKEN_DENOM},
     error::ContractError,
-    lsm_integration::update_scores_due_to_power_ratio_change,
+    lsm_integration::{initialize_validator_store, update_scores_due_to_power_ratio_change},
     state::{
         Constants, ValidatorInfo, CONSTANTS, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO,
         VALIDATORS_PER_ROUND, VALIDATOR_TO_QUERY_ID,
@@ -121,14 +121,15 @@ pub fn handle_delivered_interchain_query_result(
             );
         }
     };
+    let constants = CONSTANTS.load(deps.storage)?;
+    let current_round = compute_current_round_id(&env, &constants)?;
+    initialize_validator_store(deps.storage, current_round)?;
 
     let validator_address = validator.operator_address.clone();
     let new_tokens = Uint128::from_str(&validator.tokens)?;
     let new_shares = Uint128::from_str(&validator.delegator_shares)?;
     let new_power_ratio = Decimal::from_ratio(new_tokens * TOKENS_TO_SHARES_MULTIPLIER, new_shares);
 
-    let constants = CONSTANTS.load(deps.storage)?;
-    let current_round = compute_current_round_id(&env, &constants)?;
     let mut submsgs = vec![];
 
     let current_validator_info =

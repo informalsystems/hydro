@@ -3,7 +3,10 @@ use cosmwasm_std::{Decimal, Deps, Env, Order, StdError, StdResult, Storage};
 use neutron_sdk::bindings::query::NeutronQuery;
 use neutron_std::types::ibc::applications::transfer::v1::{DenomTrace, TransferQuerier};
 
-use crate::state::{ValidatorInfo, SCALED_ROUND_POWER_SHARES_MAP, VALIDATORS_INFO};
+use crate::state::{
+    ValidatorInfo, SCALED_ROUND_POWER_SHARES_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
+    VALIDATORS_STORE_INITIALIZED,
+};
 use crate::{
     contract::compute_current_round_id,
     score_keeper::{get_total_power_for_proposal, update_power_ratio_for_proposal},
@@ -239,4 +242,64 @@ pub fn get_validator_shares_for_round(
     Ok(SCALED_ROUND_POWER_SHARES_MAP
         .may_load(storage, (round_id, validator))?
         .unwrap_or(Decimal::zero()))
+}
+
+// Checks whether the store for this round has already been initialized by copying over the information from the last round.
+pub fn is_validator_store_initialized(storage: &dyn Storage, round_id: u64) -> bool {
+    VALIDATORS_STORE_INITIALIZED
+        .load(storage, round_id)
+        .unwrap_or(false)
+}
+
+// If the store for this round has not been initialized yet, initialize_validator_store copies the information from the last round
+// to seed the store. This is only done starting in the second round.
+// Explicitly, it initializes the VALIDATORS_INFO and the VALIDATORS_PER_ROUND
+// for this round by copying the information from the previous round.
+// If the store of the previous round has not been initialized yet, it returns an error.
+// If the store for this round has already been initialized, or the round_id is for the first round, this function does nothing.
+pub fn initialize_validator_store(storage: &mut dyn Storage, round_id: u64) -> StdResult<()> {
+    if round_id == 0 || is_validator_store_initialized(storage, round_id) {
+        return Ok(());
+    }
+
+    // check that the previous round has been initialized
+    if !is_validator_store_initialized(storage, round_id - 1) {
+        return Err(StdError::generic_err(format!(
+            "Cannot initialize store for round {} because store for round {} has not been initialized yet",
+            round_id,
+            round_id - 1
+        )));
+    }
+
+    // copy the information from the previous round
+    let val_infos = load_validators_infos(storage, round_id - 1)?;
+
+    for val_info in val_infos {
+        let address = val_info.clone().address;
+        VALIDATORS_INFO
+            .save(storage, (round_id, address.clone()), &val_info)
+            .unwrap();
+
+        VALIDATORS_PER_ROUND
+            .save(
+                storage,
+                (round_id, val_info.delegated_tokens.u128(), address.clone()),
+                &address,
+            )
+            .unwrap();
+    }
+
+    // store that we have initialized the store for this round
+    VALIDATORS_STORE_INITIALIZED.save(storage, round_id, &true)?;
+
+    Ok(())
+}
+
+// load_validators_infos needs to be its own function to borrow the storage
+fn load_validators_infos(storage: &dyn Storage, round_id: u64) -> StdResult<Vec<ValidatorInfo>> {
+    VALIDATORS_INFO
+        .prefix(round_id)
+        .range(storage, None, None, Order::Ascending)
+        .map(|val_info_res| val_info_res.map(|val_info| val_info.1))
+        .collect()
 }
