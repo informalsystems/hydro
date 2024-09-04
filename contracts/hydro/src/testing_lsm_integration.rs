@@ -17,7 +17,7 @@ use crate::{
         update_scores_due_to_power_ratio_change, validate_denom,
     },
     msg::ExecuteMsg,
-    state::{ValidatorInfo, VALIDATORS_INFO},
+    state::{ValidatorInfo, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED},
     testing::{
         get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
         IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3, ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS,
@@ -97,6 +97,17 @@ pub fn set_validator_power_ratio(
             ..ValidatorInfo::default()
         },
     );
+    assert!(res.is_ok());
+
+    let res = VALIDATORS_PER_ROUND.save(
+        storage,
+        (round_id, 100, validator.to_string()),
+        &validator.to_string(),
+    );
+    assert!(res.is_ok());
+
+    // mark the round as having its store initialized
+    let res = VALIDATORS_STORE_INITIALIZED.save(storage, round_id, &true);
     assert!(res.is_ok());
 }
 
