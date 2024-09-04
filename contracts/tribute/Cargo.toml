@@ -32,3 +32,4 @@ hydro = { path = "../hydro" }
 
 [dev-dependencies]
 cosmwasm-schema = { workspace = true }
+proptest = { workspace = true }
