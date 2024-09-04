@@ -118,7 +118,7 @@ pub const VALIDATORS_INFO: Map<(u64, String), ValidatorInfo> = Map::new("validat
 
 // For each round, stores whether the VALIDATORS_INFO and the VALIDATORS_PER_ROUND
 // have been initialized for this round yet by copying the information from the previous round.
-// This is only done starting in the first round.
+// This is only done starting in the second round.
 // VALIDATORS_STORE_INITIALIZED: key(round_id) -> bool
 pub const VALIDATORS_STORE_INITIALIZED: Map<u64, bool> = Map::new("round_store_initialized");
 

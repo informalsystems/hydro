@@ -255,7 +255,7 @@ pub fn is_validator_store_initialized(storage: &dyn Storage, round_id: u64) -> b
 
 // If the store for this round has not been initialized yet, initialize_validator_store copies the information from the last round
 // to seed the store. This is only done starting in the second round.
-// Explicitly, it initializes the VALIDATORS_INFO, the VALIDATORS_PER_ROUND, and the VALIDATOR_POWER_PER_ROUND
+// Explicitly, it initializes the VALIDATORS_INFO and the VALIDATORS_PER_ROUND
 // for this round by copying the information from the previous round.
 // If the store of the previous round has not been initialized yet, it returns an error.
 // If the store for this round has already been initialized, or the round_id is for the first round, this function does nothing.
