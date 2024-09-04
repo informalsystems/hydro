@@ -50,11 +50,7 @@ pub fn set_validator_infos_for_round(
     validators: Vec<String>,
 ) -> StdResult<()> {
     for validator in validators.iter() {
-        VALIDATORS_INFO.save(
-            storage,
-            (round_id, validator.to_string()),
-            &ValidatorInfo::default(),
-        )?;
+        set_validator_power_ratio(storage, round_id, validator, Decimal::one());
     }
     Ok(())
 }
@@ -92,7 +88,14 @@ pub fn set_validator_power_ratio(
         );
         assert!(res.is_ok());
     }
-    let res = set_validator_infos_for_round(storage, round_id, vec![validator.to_string()]);
+    let res = VALIDATORS_INFO.save(
+        storage,
+        (round_id, validator.to_string()),
+        &ValidatorInfo {
+            power_ratio,
+            ..ValidatorInfo::default()
+        },
+    );
     assert!(res.is_ok());
 }
 
