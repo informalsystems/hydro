@@ -93,6 +93,7 @@ pub fn set_validator_power_ratio(
         (round_id, validator.to_string()),
         &ValidatorInfo {
             power_ratio,
+            address: validator.to_string(),
             ..ValidatorInfo::default()
         },
     );
