@@ -1,5 +1,6 @@
 use std::{collections::HashMap, marker::PhantomData};
 
+use cosmos_sdk_proto::cosmos::base::v1beta1::Coin as CosmosCoin;
 use cosmwasm_std::{
     from_json,
     testing::{
@@ -14,13 +15,10 @@ use neutron_sdk::{
         types::{Height, InterchainQueryResult, RegisteredQuery, StorageValue},
     },
     interchain_queries::types::QueryType,
-    proto_types::{
-        cosmos::base::v1beta1::Coin as NeutronCoin,
-        ibc::applications::transfer::v1::{
-            DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
-        },
-        neutron::interchainqueries::{Params, QueryParamsResponse},
-    },
+    proto_types::neutron::interchainqueries::{Params, QueryParamsResponse},
+};
+use neutron_std::types::ibc::applications::transfer::v1::{
+    DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
 };
 use prost::Message;
 use serde_json_wasm::to_string;
@@ -129,7 +127,7 @@ pub fn min_query_deposit_grpc_query_mock(mock_min_deposit: Coin) -> Box<GrpcQuer
             QueryParamsResponse {
                 params: Some(Params {
                     query_submit_timeout: 0,
-                    query_deposit: vec![NeutronCoin {
+                    query_deposit: vec![CosmosCoin {
                         denom: mock_min_deposit.denom.clone(),
                         amount: mock_min_deposit.amount.to_string(),
                     }],

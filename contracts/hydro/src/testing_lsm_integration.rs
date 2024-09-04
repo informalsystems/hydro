@@ -4,10 +4,9 @@ use cosmwasm_std::{
     testing::mock_env, BankMsg, Coin, CosmosMsg, Decimal, DepsMut, Env, StdError, StdResult,
     Storage, SystemError, SystemResult, Timestamp, Uint128,
 };
-use neutron_sdk::{
-    bindings::query::NeutronQuery,
-    proto_types::ibc::applications::transfer::v1::QueryDenomTraceResponse,
-};
+use neutron_sdk::bindings::query::NeutronQuery;
+use neutron_std::types::ibc::applications::transfer::v1::QueryDenomTraceResponse;
+// proto_types::ibc::applications::transfer::v1::QueryDenomTraceResponse,
 use prost::Message;
 
 use crate::{
