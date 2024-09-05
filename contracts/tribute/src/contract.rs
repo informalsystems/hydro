@@ -512,7 +512,7 @@ pub fn query_historical_tribute_claims(
         .range(deps.storage, None, None, Order::Ascending)
         .skip(start_from as usize)
         .take(limit as usize)
-        .map(|l| {
+        .filter_map(|l| {
             if l.is_err() {
                 // log an error and skip this entry
                 deps.api.debug("Error reading tribute claim");
@@ -532,8 +532,6 @@ pub fn query_historical_tribute_claims(
                 amount,
             })
         })
-        .filter(|x| x.is_some())
-        .map(|x| x.unwrap())
         .collect())
 }
 
