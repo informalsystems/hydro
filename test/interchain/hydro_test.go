@@ -17,6 +17,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	transfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
+	"github.com/strangelove-ventures/interchaintest/v8/chain/cosmos"
 	"github.com/strangelove-ventures/interchaintest/v8/ibc"
 	"github.com/stretchr/testify/suite"
 )
@@ -34,40 +35,91 @@ func txAmountUatom(txAmount uint64) string {
 	return fmt.Sprintf("%d%s", txAmount, chainsuite.Uatom)
 }
 
-func (s *HydroSuite) TestLockTokens() {
+func (s *HydroSuite) TestHappyPath() {
+	hubNode := s.HubChain.Validators[0]
+	neutronNode := s.NeutronChain.Validators[0]
+
 	// delegate tokens
-	_, err := s.HubChain.Validators[0].ExecTx(
-		s.GetContext(),
-		s.HubChain.ValidatorWallets[0].Moniker,
-		"staking", "delegate", s.HubChain.ValidatorWallets[0].ValoperAddress, txAmountUatom(1000),
-	)
-	s.Require().NoError(err)
+	s.DelegateTokens(hubNode, s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[0].ValoperAddress, txAmountUatom(1000))
+	s.DelegateTokens(hubNode, s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[1].ValoperAddress, txAmountUatom(1000))
 
 	// liquid stake tokens
-	txHash, err := s.HubChain.Validators[0].ExecTx(
-		s.GetContext(),
-		s.HubChain.ValidatorWallets[0].Moniker,
-		"staking", "tokenize-share",
-		s.HubChain.ValidatorWallets[0].ValoperAddress, txAmountUatom(500), s.HubChain.ValidatorWallets[0].Address,
-	)
-	s.Require().NoError(err)
-	response, err := s.HubChain.Validators[0].TxHashToResponse(s.GetContext(), txHash)
-	s.Require().NoError(err)
-	recordId1, found := getEvtAttribute(response.Events, stakingtypes.EventTypeTokenizeShares, stakingtypes.AttributeKeyShareRecordID)
-	s.Require().True(found)
+	recordId1 := s.LiquidStakeTokens(hubNode, s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[0].ValoperAddress,
+		s.HubChain.ValidatorWallets[0].Address, txAmountUatom(500))
+	recordId2 := s.LiquidStakeTokens(hubNode, s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[1].ValoperAddress,
+		s.HubChain.ValidatorWallets[0].Address, txAmountUatom(500))
 
 	// transfer share tokens to neutron chain
+	sourceIbcDenom1 := fmt.Sprintf("%s/%s", strings.ToLower(s.HubChain.ValidatorWallets[0].ValoperAddress), recordId1)
+	dstIbcDenom1 := s.HubToNeutronShareTokenTransfer(s.HubChain.ValidatorWallets[0].Moniker, math.NewInt(400), sourceIbcDenom1, s.NeutronChain.ValidatorWallets[0].Address)
+	sourceIbcDenom2 := fmt.Sprintf("%s/%s", strings.ToLower(s.HubChain.ValidatorWallets[1].ValoperAddress), recordId2)
+	dstIbcDenom2 := s.HubToNeutronShareTokenTransfer(s.HubChain.ValidatorWallets[0].Moniker, math.NewInt(400), sourceIbcDenom2, s.NeutronChain.ValidatorWallets[0].Address)
+
+	// deploy hydro contract
+	// store code
+	hydroContract, err := os.ReadFile("testdata/hydro.wasm")
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), hydroContract, "hydro.wasm"))
+	contractPath := path.Join(s.NeutronChain.GetNode().HomeDir(), "hydro.wasm")
+
+	codeId := s.StoreCode(neutronNode, s.HubChain.ValidatorWallets[0].Moniker, contractPath)
+
+	// instantiate code
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, codeId, s.NeutronChain.ValidatorWallets[0].Address, 2)
+
+	// register interchain query
+	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[0].ValoperAddress, s.HubChain.ValidatorWallets[1].ValoperAddress},
+		contractAddr, s.NeutronChain.ValidatorWallets[0].Moniker)
+
+	//lockTxData tokens
+	s.LockTokens(s.NeutronChain.ValidatorWallets[0].Moniker, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, "10", dstIbcDenom1, contractAddr)
+	s.LockTokens(s.NeutronChain.ValidatorWallets[0].Moniker, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, "10", dstIbcDenom2, contractAddr)
+}
+
+func (s *HydroSuite) DelegateTokens(node *cosmos.ChainNode, keyMoniker string, valoperAddr string, amount string) {
+	_, err := node.ExecTx(
+		s.GetContext(),
+		keyMoniker,
+		"staking", "delegate", valoperAddr, amount,
+	)
+	s.Require().NoError(err)
+}
+
+func (s *HydroSuite) LiquidStakeTokens(node *cosmos.ChainNode, keyMoniker string, valoperAddr string, delegatorAddr string, amount string) string {
+	txHash, err := node.ExecTx(
+		s.GetContext(),
+		keyMoniker,
+		"staking", "tokenize-share",
+		valoperAddr,
+		amount,
+		delegatorAddr,
+	)
+	s.Require().NoError(err)
+
+	response, err := node.TxHashToResponse(s.GetContext(), txHash)
+	s.Require().NoError(err)
+
+	recordId, found := getEvtAttribute(response.Events, stakingtypes.EventTypeTokenizeShares, stakingtypes.AttributeKeyShareRecordID)
+	s.Require().True(found)
+
+	return recordId
+}
+
+func (s *HydroSuite) HubToNeutronShareTokenTransfer(
+	keyMoniker string,
+	amount math.Int,
+	sourceIbcDenom string,
+	dstAddress string,
+) string {
 	hubTransferChannel, err := s.Relayer.GetTransferChannel(s.GetContext(), s.HubChain, s.NeutronChain)
 	s.Require().NoError(err)
-	amountToSend := math.NewInt(400)
 
-	sourceIbcDenom1 := fmt.Sprintf("%s/%s", strings.ToLower(s.HubChain.ValidatorWallets[0].ValoperAddress), recordId1)
-	srcDenomTrace1 := transfertypes.ParseDenomTrace(transfertypes.GetPrefixedDenom("transfer", hubTransferChannel.Counterparty.ChannelID, sourceIbcDenom1))
-	dstIbcDenom1 := srcDenomTrace1.IBCDenom()
-	_, err = s.HubChain.Validators[0].SendIBCTransfer(s.GetContext(), hubTransferChannel.ChannelID, s.HubChain.ValidatorWallets[0].Moniker, ibc.WalletAmount{
-		Denom:   sourceIbcDenom1,
-		Amount:  amountToSend,
-		Address: s.NeutronChain.ValidatorWallets[0].Address,
+	dstIbcDenom := transfertypes.ParseDenomTrace(transfertypes.GetPrefixedDenom("transfer", hubTransferChannel.Counterparty.ChannelID, sourceIbcDenom)).IBCDenom()
+	_, err = s.HubChain.Validators[0].SendIBCTransfer(s.GetContext(), hubTransferChannel.ChannelID, keyMoniker, ibc.WalletAmount{
+		Denom:   sourceIbcDenom,
+		Amount:  amount,
+		Address: dstAddress,
 	}, ibc.TransferOptions{})
 	s.Require().NoError(err)
 
@@ -78,40 +130,42 @@ func (s *HydroSuite) TestLockTokens() {
 	ibcTokensReceived := false
 	for tCtx.Err() == nil {
 		time.Sleep(chainsuite.CommitTimeout)
-		receivedAmt1, err := s.NeutronChain.GetBalance(s.GetContext(), s.NeutronChain.ValidatorWallets[0].Address, dstIbcDenom1)
+		receivedAmt, err := s.NeutronChain.GetBalance(s.GetContext(), dstAddress, dstIbcDenom)
 		if err != nil {
 			continue
 		}
 
-		if receivedAmt1.Equal(amountToSend) {
+		if receivedAmt.Equal(amount) {
 			ibcTokensReceived = true
 			break
 		}
 	}
 	s.Require().True(ibcTokensReceived)
 
-	// deploy hydro contract
-	// store code
-	hydroContract, err := os.ReadFile("testdata/hydro.wasm")
+	return dstIbcDenom
+}
+
+func (s *HydroSuite) StoreCode(node *cosmos.ChainNode, keyMoniker string, contractPath string) string {
+	txHash, err := node.ExecTx(s.GetContext(), keyMoniker, "wasm", "store", contractPath, "--gas", "auto")
 	s.Require().NoError(err)
 
-	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), hydroContract, "hydro.wasm"))
-	contractPath := path.Join(s.NeutronChain.GetNode().HomeDir(), "hydro.wasm")
+	response, err := node.TxHashToResponse(s.GetContext(), txHash)
+	s.Require().NoError(err)
 
-	txHash, err = s.NeutronChain.Validators[0].ExecTx(
-		s.GetContext(),
-		s.HubChain.ValidatorWallets[0].Moniker,
-		"wasm", "store", contractPath, "--gas", "auto",
-	)
-	s.Require().NoError(err)
-	response, err = s.NeutronChain.Validators[0].TxHashToResponse(s.GetContext(), txHash)
-	s.Require().NoError(err)
 	codeId, found := getEvtAttribute(response.Events, wasmtypes.EventTypeStoreCode, wasmtypes.AttributeKeyCodeID)
 	s.Require().True(found)
 
-	// instantiate code
-	firstRoundStartTime := time.Now().UnixNano() + 10000000000 // 10sec from now
-	neutronWallet1Address := s.NeutronChain.ValidatorWallets[0].Address
+	return codeId
+}
+
+func (s *HydroSuite) InstantiateHydroContract(
+	keyMoniker string,
+	codeId string,
+	adminAddr string,
+	maxValParticipating int,
+) string {
+	firstRoundStartBuffer := int64(10000000000)
+	firstRoundStartTime := time.Now().UnixNano() + firstRoundStartBuffer // 10sec from now
 	neutronTransferChannel, err := s.Relayer.GetTransferChannel(s.GetContext(), s.NeutronChain, s.HubChain)
 	s.Require().NoError(err)
 
@@ -130,9 +184,9 @@ func (s *HydroSuite) TestLockTokens() {
 		},
 		"first_round_start":                  strconv.FormatInt(firstRoundStartTime, 10),
 		"max_locked_tokens":                  "1000000000",
-		"whitelist_admins":                   []string{neutronWallet1Address},
-		"initial_whitelist":                  []string{neutronWallet1Address},
-		"max_validator_shares_participating": 180,
+		"whitelist_admins":                   []string{adminAddr},
+		"initial_whitelist":                  []string{adminAddr},
+		"max_validator_shares_participating": maxValParticipating,
 		"hub_connection_id":                  neutronTransferChannel.ConnectionHops[0],
 		"hub_transfer_channel_id":            neutronTransferChannel.ChannelID,
 		"icq_update_period":                  50,
@@ -140,31 +194,39 @@ func (s *HydroSuite) TestLockTokens() {
 	initHydroJson, err := json.Marshal(initHydro)
 	s.Require().NoError(err)
 
-	txHash, err = s.NeutronChain.Validators[0].ExecTx(
+	txHash, err := s.NeutronChain.Validators[0].ExecTx(
 		s.GetContext(),
 		s.NeutronChain.ValidatorWallets[0].Moniker,
-		"wasm", "instantiate", codeId, string(initHydroJson), "--admin", neutronWallet1Address, "--label", "Hydro Smart Contract", "--gas", "auto",
+		"wasm", "instantiate", codeId, string(initHydroJson), "--admin", adminAddr, "--label", "Hydro Smart Contract", "--gas", "auto",
 	)
 	s.Require().NoError(err)
-	response, err = s.NeutronChain.Validators[0].TxHashToResponse(s.GetContext(), txHash)
+	response, err := s.NeutronChain.Validators[0].TxHashToResponse(s.GetContext(), txHash)
 	s.Require().NoError(err)
 	contractAddr, found := getEvtAttribute(response.Events, wasmtypes.EventTypeInstantiate, wasmtypes.AttributeKeyContractAddr)
 	s.Require().True(found)
-	time.Sleep(time.Second * 10) // wait for the first round to start
+	time.Sleep(time.Nanosecond * time.Duration(firstRoundStartBuffer)) // wait for the first round to start
 
-	// register interchain query
+	return contractAddr
+}
+
+func (s *HydroSuite) RegisterInterchainQueries(
+	validators []string,
+	contractAddr string,
+	keyMoniker string,
+) {
 	icqs := map[string]interface{}{
 		"create_icqs_for_validators": map[string]interface{}{
-			"validators": []string{s.HubChain.ValidatorWallets[0].ValoperAddress, s.HubChain.ValidatorWallets[1].ValoperAddress},
+			"validators": validators,
 		},
 	}
 	icqsJson, err := json.Marshal(icqs)
 	s.Require().NoError(err)
 
+	queryDeposit := len(validators) * chainsuite.NeutronMinQueryDeposit
 	_, err = s.NeutronChain.Validators[0].ExecTx(
 		s.GetContext(),
-		s.NeutronChain.ValidatorWallets[0].Moniker,
-		"wasm", "execute", contractAddr, string(icqsJson), "--amount", strconv.Itoa(2*chainsuite.NeutronMinQueryDeposit)+"untrn", "--gas", "auto",
+		keyMoniker,
+		"wasm", "execute", contractAddr, string(icqsJson), "--amount", strconv.Itoa(queryDeposit)+"untrn", "--gas", "auto",
 	)
 	s.Require().NoError(err)
 	// Wait for the relayer to retrieve the initial query data before proceeding with locking
@@ -176,7 +238,7 @@ func (s *HydroSuite) TestLockTokens() {
 		time.Sleep(chainsuite.CommitTimeout)
 		queryRes, _, err := s.NeutronChain.Validators[0].ExecQuery(
 			s.GetContext(),
-			"interchainqueries", "registered-queries",
+			"interchainqueries", "registered-queries", "--owners", contractAddr,
 		)
 		if err != nil {
 			continue
@@ -186,34 +248,42 @@ func (s *HydroSuite) TestLockTokens() {
 		err = json.Unmarshal([]byte(queryRes), &queryResponse)
 		s.Require().NoError(err)
 		s.Require().NotNil(queryResponse)
-		if len(queryResponse.RegisteredQueries) > 0 && queryResponse.RegisteredQueries[0].LastSubmittedResultLocalHeight != "0" {
-			dataSubmitted = true
+
+		dataSubmitted = true
+		for _, query := range queryResponse.RegisteredQueries {
+			if query.LastSubmittedResultLocalHeight == "0" {
+				dataSubmitted = false
+				break
+			}
+		}
+
+		if dataSubmitted == true {
 			break
 		}
 
 	}
 	s.Require().True(dataSubmitted)
+}
 
-	//lockTxData tokens
+func (s *HydroSuite) LockTokens(keyMoniker string, address string, lockDuration int64, lockAmount string, lockDenom string, contractAddr string) {
 	lockTxData := map[string]interface{}{
 		"lock_tokens": map[string]interface{}{
-			"lock_duration": 86400000000000,
+			"lock_duration": lockDuration,
 		},
 	}
 	lockTxJson, err := json.Marshal(lockTxData)
 	s.Require().NoError(err)
 
-	lockAmt := "10"
 	_, err = s.NeutronChain.Validators[0].ExecTx(
 		s.GetContext(),
-		s.NeutronChain.ValidatorWallets[0].Moniker,
-		"wasm", "execute", contractAddr, string(lockTxJson), "--amount", lockAmt+dstIbcDenom1, "--gas", "auto",
+		keyMoniker,
+		"wasm", "execute", contractAddr, string(lockTxJson), "--amount", lockAmount+lockDenom, "--gas", "auto",
 	)
 	s.Require().NoError(err)
 
 	lockQueryData := map[string]interface{}{
 		"all_user_lockups": map[string]interface{}{
-			"address":    s.NeutronChain.ValidatorWallets[0].Address,
+			"address":    address,
 			"start_from": 0,
 			"limit":      100,
 		},
@@ -230,8 +300,16 @@ func (s *HydroSuite) TestLockTokens() {
 	var lockResponse chainsuite.LockResponse
 	err = json.Unmarshal([]byte(lockQueryResp), &lockResponse)
 	s.Require().NoError(err)
-	amount := lockResponse.Data.Lockups[0].LockEntry.Funds.Amount
-	s.Require().Equal(lockAmt, amount)
+	s.Require().True(len(lockResponse.Data.Lockups) > 0)
+
+	lockFound := false
+	for _, lock := range lockResponse.Data.Lockups {
+		if lock.LockEntry.Funds.Denom == lockDenom {
+			s.Require().Equal(lockAmount, lock.LockEntry.Funds.Amount)
+			lockFound = true
+		}
+	}
+	s.Require().True(lockFound)
 }
 
 func getEvtAttribute(events []abci.Event, evtType string, key string) (string, bool) {
