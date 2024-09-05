@@ -12,7 +12,7 @@ use cosmwasm_std::{
     testing::{mock_dependencies, mock_env, MockApi, MockQuerier},
     to_json_binary, Addr, Binary, ContractResult, Decimal, Env, IbcMsg, MemoryStorage, MessageInfo,
     OwnedDeps, QuerierResult, Response, StdError, StdResult, SubMsg, SystemError, SystemResult,
-    Uint128, WasmQuery,
+    Timestamp, Uint128, WasmQuery,
 };
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
 use hydro::{
@@ -89,6 +89,7 @@ impl MockWasmQuerier {
                 let response = match from_json(msg).unwrap() {
                     HydroQueryMsg::CurrentRound {} => to_json_binary(&CurrentRoundResponse {
                         round_id: self.current_round,
+                        round_end: Timestamp::from_seconds(1),
                     }),
                     HydroQueryMsg::Proposal {
                         round_id,
