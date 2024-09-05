@@ -28,8 +28,13 @@ pub struct Tribute {
     pub refunded: bool,
 }
 
-// TRIBUTE_CLAIMS: key(voter_addr, tribute_id) -> bool
-pub const TRIBUTE_CLAIMS: Map<(Addr, u64), bool> = Map::new("tribute_claims");
+// For ease of accessing, maps each tribute_id to its Tribute struct
+// This should always be in sync with the TRIBUTE_MAP above,
+// and is used to quickly access a tribute by its ID.
+pub const ID_TO_TRIBUTE_MAP: Map<u64, Tribute> = Map::new("id_to_tribute_map");
+
+// TRIBUTE_CLAIMS: key(voter_addr, tribute_id) -> claimed, amount
+pub const TRIBUTE_CLAIMS: Map<(Addr, u64), (bool, Coin)> = Map::new("tribute_claims");
 
 // COMMUNITY_POOL_CLAIMS: tribute_id -> bool
 pub const COMMUNITY_POOL_CLAIMS: Map<u64, bool> = Map::new("community_pool_claims");

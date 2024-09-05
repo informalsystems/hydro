@@ -1,3 +1,5 @@
+use std::vec;
+
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, IbcMsg,
     IbcTimeout, MessageInfo, Order, Reply, Response, StdError, StdResult, Uint128,
@@ -6,9 +8,10 @@ use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
-use crate::query::{ConfigResponse, ProposalTributesResponse, QueryMsg};
+use crate::query::{ConfigResponse, ProposalTributesResponse, QueryMsg, TributeClaim};
 use crate::state::{
-    Config, Tribute, COMMUNITY_POOL_CLAIMS, CONFIG, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP,
+    Config, Tribute, COMMUNITY_POOL_CLAIMS, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_ID,
+    TRIBUTE_MAP,
 };
 use hydro::query::{
     CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
@@ -128,6 +131,7 @@ fn add_tribute(
         ((current_round_id, tranche_id), proposal_id, tribute_id),
         &tribute,
     )?;
+    ID_TO_TRIBUTE_MAP.save(deps.storage, tribute_id, &tribute)?;
 
     Ok(Response::new()
         .add_attribute("action", "add_tribute")
@@ -157,7 +161,8 @@ fn claim_tribute(
     let voter = deps.api.addr_validate(&voter_address)?;
 
     // Check that the voter has not already claimed the tribute using the TRIBUTE_CLAIMS map
-    if TRIBUTE_CLAIMS.may_load(deps.storage, (voter.clone(), tribute_id))? == Some(true) {
+    let claim = TRIBUTE_CLAIMS.may_load(deps.storage, (voter.clone(), tribute_id))?;
+    if claim.is_some() && claim.unwrap().0 {
         return Err(ContractError::Std(StdError::generic_err(
             "User has already claimed the tribute",
         )));
@@ -223,24 +228,27 @@ fn claim_tribute(
                     "Failed to compute users tribute share",
                 )));
             }
-        };
+        }
+        .to_uint_floor();
+
+    let sent_coin = Coin {
+        denom: tribute.funds.denom,
+        amount,
+    };
 
     // Mark in the TRIBUTE_CLAIMS that the voter has claimed this tribute
-    TRIBUTE_CLAIMS.save(deps.storage, (voter.clone(), tribute_id), &true)?;
+    TRIBUTE_CLAIMS.save(
+        deps.storage,
+        (voter.clone(), tribute_id),
+        &(true, sent_coin.clone()),
+    )?;
 
     // Send the tribute to the voter
     Ok(Response::new()
         .add_attribute("action", "claim_tribute")
         .add_message(BankMsg::Send {
             to_address: voter.to_string(),
-            amount: vec![Coin {
-                denom: tribute.funds.denom,
-                // to_uint_floor() is used so that, due to the precision, contract doesn't transfer by 1 token more
-                // to some users, which would leave the last users trying to claim the tribute unable to do so
-                // This also implies that some dust amount of tokens could be left on the contract after everyone
-                // claiming their portion of the tribute
-                amount: amount.to_uint_floor(),
-            }],
+            amount: vec![sent_coin],
         }))
 }
 
@@ -405,6 +413,16 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             start_from,
             limit,
         )?),
+        QueryMsg::HistoricalTributeClaims {
+            user_address,
+            start_from,
+            limit,
+        } => to_json_binary(&query_historical_tribute_claims(
+            &deps,
+            user_address,
+            start_from,
+            limit,
+        )?),
     }
 }
 
@@ -479,6 +497,44 @@ fn query_user_vote(
     let vote = user_vote_resp.vote;
 
     Ok(vote)
+}
+
+pub fn query_historical_tribute_claims(
+    deps: &Deps,
+    address: String,
+    start_from: u32,
+    limit: u32,
+) -> StdResult<Vec<TributeClaim>> {
+    // go through all TRIBUTE_CLAIMS for the address
+    let address = deps.api.addr_validate(&address)?;
+    Ok(TRIBUTE_CLAIMS
+        .prefix(address)
+        .range(deps.storage, None, None, Order::Ascending)
+        .skip(start_from as usize)
+        .take(limit as usize)
+        .map(|l| {
+            if l.is_err() {
+                // log an error and skip this entry
+                deps.api.debug("Error reading tribute claim");
+                return None;
+            }
+            let (tribute_id, (claimed, amount)) = l.unwrap();
+            if !claimed {
+                deps.api.debug("Unclaimed tribute in the claims database");
+                return None;
+            }
+            let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap();
+            Some(TributeClaim {
+                round_id: tribute.round_id,
+                tranche_id: tribute.tranche_id,
+                proposal_id: tribute.proposal_id,
+                tribute_id,
+                amount,
+            })
+        })
+        .filter(|x| x.is_some())
+        .map(|x| x.unwrap())
+        .collect())
 }
 
 fn get_top_n_proposal(

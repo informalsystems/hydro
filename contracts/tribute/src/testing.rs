@@ -1,11 +1,12 @@
 use crate::{
     contract::{
         execute, get_community_pool_tribute_share, get_voters_tribute_share, instantiate,
-        query_proposal_tributes,
+        query_historical_tribute_claims, query_proposal_tributes,
     },
     error::ContractError,
     msg::{CommunityPoolTaxConfig, ExecuteMsg, InstantiateMsg},
-    state::Config,
+    query::TributeClaim,
+    state::{Config, Tribute, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS},
 };
 use cosmwasm_std::{
     from_json,
@@ -1018,4 +1019,110 @@ fn verify_claimed_tributes_count(res: Response, expected_num_of_tributes: u128) 
         expected_num_of_tributes,
         claimed_tribute_count.parse::<u128>().unwrap()
     );
+}
+
+struct HistoricalTributeClaimsTestCase {
+    description: String,
+    user_address: Addr,
+    start_from: u32,
+    limit: u32,
+    expected_claims: Vec<TributeClaim>,
+    expected_error: Option<StdError>,
+}
+
+#[test]
+fn test_query_historical_tribute_claims() {
+    let deps = mock_dependencies();
+
+    let test_cases = vec![
+        HistoricalTributeClaimsTestCase {
+            description: "User with claimed tributes".to_string(),
+            user_address: deps.api.addr_make("user1"),
+            start_from: 0,
+            limit: 10,
+            expected_claims: vec![
+                TributeClaim {
+                    round_id: 1,
+                    tranche_id: 1,
+                    proposal_id: 1,
+                    tribute_id: 0,
+                    amount: Coin::new(Uint128::new(100), "token"),
+                },
+                TributeClaim {
+                    round_id: 1,
+                    tranche_id: 1,
+                    proposal_id: 2,
+                    tribute_id: 1,
+                    amount: Coin::new(Uint128::new(200), "token"),
+                },
+            ],
+            expected_error: None,
+        },
+        HistoricalTributeClaimsTestCase {
+            description: "User with no claimed tributes".to_string(),
+            user_address: deps.api.addr_make("user2"),
+            start_from: 0,
+            limit: 10,
+            expected_claims: vec![],
+            expected_error: None,
+        },
+    ];
+
+    for test_case in test_cases {
+        println!("Running test case: {}", test_case.description);
+
+        let (mut deps, _env) = (mock_dependencies(), mock_env());
+
+        // Mock the database
+        let tributes = vec![
+            Tribute {
+                tribute_id: 0,
+                round_id: 1,
+                tranche_id: 1,
+                proposal_id: 1,
+                depositor: Addr::unchecked("user1"),
+                funds: Coin::new(Uint128::new(100), "token"),
+                refunded: false,
+            },
+            Tribute {
+                tribute_id: 1,
+                round_id: 1,
+                tranche_id: 1,
+                proposal_id: 2,
+                depositor: Addr::unchecked("user1"),
+                funds: Coin::new(Uint128::new(200), "token"),
+                refunded: false,
+            },
+        ];
+
+        for (i, tribute) in tributes.iter().enumerate() {
+            ID_TO_TRIBUTE_MAP
+                .save(&mut deps.storage, i as u64, tribute)
+                .unwrap();
+            TRIBUTE_CLAIMS
+                .save(
+                    &mut deps.storage,
+                    (deps.api.addr_make("user1"), i as u64),
+                    &(true, tribute.funds.clone()),
+                )
+                .unwrap();
+        }
+
+        // Query historical tribute claims
+        let result = query_historical_tribute_claims(
+            &deps.as_ref(),
+            test_case.user_address.to_string(),
+            test_case.start_from,
+            test_case.limit,
+        );
+
+        match result {
+            Ok(claims) => {
+                assert_eq!(claims, test_case.expected_claims);
+            }
+            Err(err) => {
+                assert_eq!(Some(err), test_case.expected_error);
+            }
+        }
+    }
 }
