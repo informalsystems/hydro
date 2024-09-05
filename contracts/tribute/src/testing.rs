@@ -89,6 +89,7 @@ impl MockWasmQuerier {
                 let response = match from_json(msg).unwrap() {
                     HydroQueryMsg::CurrentRound {} => to_json_binary(&CurrentRoundResponse {
                         round_id: self.current_round,
+                        // use an arbitrary timestamp here
                         round_end: Timestamp::from_seconds(1),
                     }),
                     HydroQueryMsg::Proposal {
