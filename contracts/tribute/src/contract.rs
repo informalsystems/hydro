@@ -226,6 +226,10 @@ fn claim_tribute(
                 )));
             }
         }
+        // to_uint_floor() is used so that, due to the precision, contract doesn't transfer by 1 token more
+        // to some users, which would leave the last users trying to claim the tribute unable to do so
+        // This also implies that some dust amount of tokens could be left on the contract after everyone
+        // claiming their portion of the tribute
         .to_uint_floor();
 
     let sent_coin = Coin {
