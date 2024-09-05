@@ -162,7 +162,7 @@ fn claim_tribute(
 
     // Check that the voter has not already claimed the tribute using the TRIBUTE_CLAIMS map
     let claim = TRIBUTE_CLAIMS.may_load(deps.storage, (voter.clone(), tribute_id))?;
-    if claim.is_some() && claim.unwrap().0 {
+    if claim.is_some() {
         return Err(ContractError::Std(StdError::generic_err(
             "User has already claimed the tribute",
         )));
@@ -240,7 +240,7 @@ fn claim_tribute(
     TRIBUTE_CLAIMS.save(
         deps.storage,
         (voter.clone(), tribute_id),
-        &(true, sent_coin.clone()),
+        &sent_coin.clone(),
     )?;
 
     // Send the tribute to the voter
@@ -518,11 +518,7 @@ pub fn query_historical_tribute_claims(
                 deps.api.debug("Error reading tribute claim");
                 return None;
             }
-            let (tribute_id, (claimed, amount)) = l.unwrap();
-            if !claimed {
-                deps.api.debug("Unclaimed tribute in the claims database");
-                return None;
-            }
+            let (tribute_id, amount) = l.unwrap();
             let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap();
             Some(TributeClaim {
                 round_id: tribute.round_id,

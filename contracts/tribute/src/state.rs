@@ -33,8 +33,9 @@ pub struct Tribute {
 // and is used to quickly access a tribute by its ID.
 pub const ID_TO_TRIBUTE_MAP: Map<u64, Tribute> = Map::new("id_to_tribute_map");
 
-// TRIBUTE_CLAIMS: key(voter_addr, tribute_id) -> claimed, amount
-pub const TRIBUTE_CLAIMS: Map<(Addr, u64), (bool, Coin)> = Map::new("tribute_claims");
+// Importantly, the TRIBUTE_CLAIMS for a voter_addr and tribute_id being present at all means the user has claimed that tribute.
+// TRIBUTE_CLAIMS: key(voter_addr, tribute_id) -> amount_claimed
+pub const TRIBUTE_CLAIMS: Map<(Addr, u64), Coin> = Map::new("tribute_claims");
 
 // COMMUNITY_POOL_CLAIMS: tribute_id -> bool
 pub const COMMUNITY_POOL_CLAIMS: Map<u64, bool> = Map::new("community_pool_claims");
