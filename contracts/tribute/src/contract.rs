@@ -416,6 +416,11 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             start_from,
             limit,
         )?),
+        QueryMsg::RoundTributes {
+            round_id,
+            start_from,
+            limit,
+        } => to_json_binary(&query_round_tributes(&deps, round_id, start_from, limit)?),
     }
 }
 
@@ -520,6 +525,31 @@ pub fn query_historical_tribute_claims(
                 tribute_id,
                 amount,
             })
+        })
+        .collect())
+}
+
+pub fn query_round_tributes(
+    deps: &Deps,
+    round_id: u64,
+    start_from: u32,
+    limit: u32,
+) -> StdResult<Vec<Tribute>> {
+    Ok(TRIBUTE_MAP
+        .sub_prefix(round_id)
+        .range(deps.storage, None, None, Order::Ascending)
+        .skip(start_from as usize)
+        .take(limit as usize)
+        .filter_map(|l| {
+            if l.is_err() {
+                // log an error and skip this entry
+                deps.api
+                    .debug(format!("Error reading tribute: {:?}", l).as_str());
+                return None;
+            }
+            let (_, tribute_id) = l.unwrap();
+            let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap();
+            Some(tribute)
         })
         .collect())
 }

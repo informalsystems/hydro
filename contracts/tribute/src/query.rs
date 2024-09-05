@@ -27,6 +27,13 @@ pub enum QueryMsg {
         start_from: u32,
         limit: u32,
     },
+
+    #[returns(RoundTributesResponse)]
+    RoundTributes {
+        round_id: u64,
+        start_from: u32,
+        limit: u32,
+    },
 }
 
 #[cw_serde]
@@ -51,4 +58,9 @@ pub struct TributeClaim {
 #[cw_serde]
 pub struct HistoricalTributeClaimsResponse {
     pub claims: Vec<TributeClaim>,
+}
+
+#[cw_serde]
+pub struct RoundTributesResponse {
+    pub tributes: Vec<Tribute>,
 }

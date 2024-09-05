@@ -1,12 +1,12 @@
 use crate::{
     contract::{
         execute, get_community_pool_tribute_share, get_voters_tribute_share, instantiate,
-        query_historical_tribute_claims, query_proposal_tributes,
+        query_historical_tribute_claims, query_proposal_tributes, query_round_tributes,
     },
     error::ContractError,
     msg::{CommunityPoolTaxConfig, ExecuteMsg, InstantiateMsg},
     query::TributeClaim,
-    state::{Config, Tribute, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS},
+    state::{Config, Tribute, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_MAP},
 };
 use cosmwasm_std::{
     from_json,
@@ -1120,6 +1120,159 @@ fn test_query_historical_tribute_claims() {
         match result {
             Ok(claims) => {
                 assert_eq!(claims, test_case.expected_claims);
+            }
+            Err(err) => {
+                assert_eq!(Some(err), test_case.expected_error);
+            }
+        }
+    }
+}
+
+struct RoundTributesTestCase {
+    description: String,
+    round_id: u64,
+    start_from: u32,
+    limit: u32,
+    expected_tributes: Vec<Tribute>,
+    expected_error: Option<StdError>,
+}
+
+#[test]
+fn test_query_round_tributes() {
+    let test_cases = vec![
+        RoundTributesTestCase {
+            description: "Query first 2 tributes".to_string(),
+            round_id: 1,
+            start_from: 0,
+            limit: 2,
+            expected_tributes: vec![
+                Tribute {
+                    tribute_id: 1,
+                    round_id: 1,
+                    tranche_id: 1,
+                    proposal_id: 1,
+                    depositor: Addr::unchecked("user1"),
+                    funds: Coin::new(Uint128::new(100), "token"),
+                    refunded: false,
+                },
+                Tribute {
+                    tribute_id: 2,
+                    round_id: 1,
+                    tranche_id: 1,
+                    proposal_id: 2,
+                    depositor: Addr::unchecked("user2"),
+                    funds: Coin::new(Uint128::new(200), "token"),
+                    refunded: false,
+                },
+            ],
+            expected_error: None,
+        },
+        RoundTributesTestCase {
+            description: "Query next 2 tributes".to_string(),
+            round_id: 1,
+            start_from: 2,
+            limit: 2,
+            expected_tributes: vec![
+                Tribute {
+                    tribute_id: 3,
+                    round_id: 1,
+                    tranche_id: 1,
+                    proposal_id: 3,
+                    depositor: Addr::unchecked("user3"),
+                    funds: Coin::new(Uint128::new(300), "token"),
+                    refunded: false,
+                },
+                Tribute {
+                    tribute_id: 4,
+                    round_id: 1,
+                    tranche_id: 1,
+                    proposal_id: 4,
+                    depositor: Addr::unchecked("user4"),
+                    funds: Coin::new(Uint128::new(400), "token"),
+                    refunded: false,
+                },
+            ],
+            expected_error: None,
+        },
+        RoundTributesTestCase {
+            description: "Query with start_from beyond range".to_string(),
+            round_id: 1,
+            start_from: 10,
+            limit: 2,
+            expected_tributes: vec![],
+            expected_error: None,
+        },
+    ];
+
+    for test_case in test_cases {
+        println!("Running test case: {}", test_case.description);
+
+        let (mut deps, _env) = (mock_dependencies(), mock_env());
+
+        // Mock the database
+        let tributes = vec![
+            Tribute {
+                tribute_id: 1,
+                round_id: 1,
+                tranche_id: 1,
+                proposal_id: 1,
+                depositor: Addr::unchecked("user1"),
+                funds: Coin::new(Uint128::new(100), "token"),
+                refunded: false,
+            },
+            Tribute {
+                tribute_id: 2,
+                round_id: 1,
+                tranche_id: 1,
+                proposal_id: 2,
+                depositor: Addr::unchecked("user2"),
+                funds: Coin::new(Uint128::new(200), "token"),
+                refunded: false,
+            },
+            Tribute {
+                tribute_id: 3,
+                round_id: 1,
+                tranche_id: 1,
+                proposal_id: 3,
+                depositor: Addr::unchecked("user3"),
+                funds: Coin::new(Uint128::new(300), "token"),
+                refunded: false,
+            },
+            Tribute {
+                tribute_id: 4,
+                round_id: 1,
+                tranche_id: 1,
+                proposal_id: 4,
+                depositor: Addr::unchecked("user4"),
+                funds: Coin::new(Uint128::new(400), "token"),
+                refunded: false,
+            },
+        ];
+
+        for (i, tribute) in tributes.iter().enumerate() {
+            ID_TO_TRIBUTE_MAP
+                .save(&mut deps.storage, i as u64, tribute)
+                .unwrap();
+            TRIBUTE_MAP
+                .save(
+                    &mut deps.storage,
+                    (1, tribute.proposal_id, i as u64),
+                    &(i as u64),
+                )
+                .unwrap();
+        }
+
+        // Query round tributes
+        let result = query_round_tributes(
+            &deps.as_ref(),
+            test_case.round_id,
+            test_case.start_from,
+            test_case.limit,
+        );
+
+        match result {
+            Ok(tributes) => {
+                assert_eq!(tributes, test_case.expected_tributes);
             }
             Err(err) => {
                 assert_eq!(Some(err), test_case.expected_error);
