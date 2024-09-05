@@ -15,8 +15,9 @@ pub struct Config {
 
 pub const TRIBUTE_ID: Item<u64> = Item::new("tribute_id");
 
-// TRIBUTE_MAP: key((round_id, tranche_id), prop_id, tribute_id) -> Tribute
-pub const TRIBUTE_MAP: Map<((u64, u64), u64, u64), Tribute> = Map::new("tribute_map");
+// tribute_id is part of the key and value to be able to store multiple tributes for the same proposal
+// TRIBUTE_MAP: key((round_id, tranche_id), prop_id, tribute_id) -> tribute_id
+pub const TRIBUTE_MAP: Map<((u64, u64), u64, u64), u64> = Map::new("tribute_map");
 #[cw_serde]
 pub struct Tribute {
     pub round_id: u64,

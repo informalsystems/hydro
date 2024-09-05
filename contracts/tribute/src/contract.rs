@@ -129,7 +129,7 @@ fn add_tribute(
     TRIBUTE_MAP.save(
         deps.storage,
         ((current_round_id, tranche_id), proposal_id, tribute_id),
-        &tribute,
+        &tribute_id,
     )?;
     ID_TO_TRIBUTE_MAP.save(deps.storage, tribute_id, &tribute)?;
 
@@ -199,10 +199,7 @@ fn claim_tribute(
         };
 
     // Load the tribute and use the percentage to figure out how much of the tribute to send them
-    let tribute = TRIBUTE_MAP.load(
-        deps.storage,
-        ((round_id, tranche_id), vote.prop_id, tribute_id),
-    )?;
+    let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
 
     // adjust the tribute to get only the portion that should be distributed
     // to the voters
@@ -285,6 +282,7 @@ pub fn claim_tribute_for_community_pool(
             .prefix(((round_id, tranche_id), proposal.proposal_id))
             .range(deps.storage, None, None, Order::Ascending)
             .map(|l| l.unwrap().1)
+            .map(|tribute_id| ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap())
             .collect::<Vec<Tribute>>();
 
         for tribute in tributes {
@@ -359,10 +357,7 @@ fn refund_tribute(
     }
 
     // Load the tribute
-    let mut tribute = TRIBUTE_MAP.load(
-        deps.storage,
-        ((round_id, tranche_id), proposal_id, tribute_id),
-    )?;
+    let mut tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
 
     // Check that the sender is the depositor of the tribute
     if tribute.depositor != info.sender {
@@ -380,11 +375,7 @@ fn refund_tribute(
 
     // Mark the tribute as refunded
     tribute.refunded = true;
-    TRIBUTE_MAP.save(
-        deps.storage,
-        ((round_id, tranche_id), proposal_id, tribute_id),
-        &tribute,
-    )?;
+    ID_TO_TRIBUTE_MAP.save(deps.storage, tribute_id, &tribute)?;
 
     // Send the tribute back to the sender
     Ok(Response::new()
@@ -446,6 +437,7 @@ pub fn query_proposal_tributes(
         .map(|l| l.unwrap().1)
         .skip(start_from as usize)
         .take(limit as usize)
+        .map(|tribute_id| ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap())
         .collect();
 
     Ok(ProposalTributesResponse { tributes })
