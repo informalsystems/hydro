@@ -825,6 +825,8 @@ fn claim_community_pool_tribute_test() {
             percentage: Uint128::zero(),
         },
     ];
+    // we will query for the top props of tranche 0, so don't return prop with id 2
+    let top_n_proposals = mock_top_n_proposals[0..=1].to_vec();
 
     let (mut deps, env) = (mock_dependencies(), mock_env());
     let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
@@ -835,7 +837,7 @@ fn claim_community_pool_tribute_test() {
         0,
         mock_top_n_proposals.clone(),
         None,
-        mock_top_n_proposals.clone(),
+        top_n_proposals.clone(),
     );
     deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
@@ -911,7 +913,7 @@ fn claim_community_pool_tribute_test() {
         1,
         mock_top_n_proposals.clone(),
         user_vote,
-        mock_top_n_proposals.clone(),
+        top_n_proposals,
     );
     deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
