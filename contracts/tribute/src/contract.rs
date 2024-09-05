@@ -1,3 +1,5 @@
+use std::vec;
+
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, IbcMsg,
     IbcTimeout, MessageInfo, Order, Reply, Response, StdError, StdResult, Uint128,
@@ -6,9 +8,10 @@ use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
-use crate::query::{ConfigResponse, ProposalTributesResponse, QueryMsg};
+use crate::query::{ConfigResponse, ProposalTributesResponse, QueryMsg, TributeClaim};
 use crate::state::{
-    Config, Tribute, COMMUNITY_POOL_CLAIMS, CONFIG, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP,
+    Config, Tribute, COMMUNITY_POOL_CLAIMS, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_ID,
+    TRIBUTE_MAP,
 };
 use hydro::query::{
     CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
@@ -126,8 +129,9 @@ fn add_tribute(
     TRIBUTE_MAP.save(
         deps.storage,
         ((current_round_id, tranche_id), proposal_id, tribute_id),
-        &tribute,
+        &tribute_id,
     )?;
+    ID_TO_TRIBUTE_MAP.save(deps.storage, tribute_id, &tribute)?;
 
     Ok(Response::new()
         .add_attribute("action", "add_tribute")
@@ -157,7 +161,8 @@ fn claim_tribute(
     let voter = deps.api.addr_validate(&voter_address)?;
 
     // Check that the voter has not already claimed the tribute using the TRIBUTE_CLAIMS map
-    if TRIBUTE_CLAIMS.may_load(deps.storage, (voter.clone(), tribute_id))? == Some(true) {
+    let claim = TRIBUTE_CLAIMS.may_load(deps.storage, (voter.clone(), tribute_id))?;
+    if claim.is_some() {
         return Err(ContractError::Std(StdError::generic_err(
             "User has already claimed the tribute",
         )));
@@ -194,10 +199,7 @@ fn claim_tribute(
         };
 
     // Load the tribute and use the percentage to figure out how much of the tribute to send them
-    let tribute = TRIBUTE_MAP.load(
-        deps.storage,
-        ((round_id, tranche_id), vote.prop_id, tribute_id),
-    )?;
+    let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
 
     // adjust the tribute to get only the portion that should be distributed
     // to the voters
@@ -223,24 +225,31 @@ fn claim_tribute(
                     "Failed to compute users tribute share",
                 )));
             }
-        };
+        }
+        // to_uint_floor() is used so that, due to the precision, contract doesn't transfer by 1 token more
+        // to some users, which would leave the last users trying to claim the tribute unable to do so
+        // This also implies that some dust amount of tokens could be left on the contract after everyone
+        // claiming their portion of the tribute
+        .to_uint_floor();
+
+    let sent_coin = Coin {
+        denom: tribute.funds.denom,
+        amount,
+    };
 
     // Mark in the TRIBUTE_CLAIMS that the voter has claimed this tribute
-    TRIBUTE_CLAIMS.save(deps.storage, (voter.clone(), tribute_id), &true)?;
+    TRIBUTE_CLAIMS.save(
+        deps.storage,
+        (voter.clone(), tribute_id),
+        &sent_coin.clone(),
+    )?;
 
     // Send the tribute to the voter
     Ok(Response::new()
         .add_attribute("action", "claim_tribute")
         .add_message(BankMsg::Send {
             to_address: voter.to_string(),
-            amount: vec![Coin {
-                denom: tribute.funds.denom,
-                // to_uint_floor() is used so that, due to the precision, contract doesn't transfer by 1 token more
-                // to some users, which would leave the last users trying to claim the tribute unable to do so
-                // This also implies that some dust amount of tokens could be left on the contract after everyone
-                // claiming their portion of the tribute
-                amount: amount.to_uint_floor(),
-            }],
+            amount: vec![sent_coin],
         }))
 }
 
@@ -277,6 +286,7 @@ pub fn claim_tribute_for_community_pool(
             .prefix(((round_id, tranche_id), proposal.proposal_id))
             .range(deps.storage, None, None, Order::Ascending)
             .map(|l| l.unwrap().1)
+            .map(|tribute_id| ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap())
             .collect::<Vec<Tribute>>();
 
         for tribute in tributes {
@@ -351,10 +361,7 @@ fn refund_tribute(
     }
 
     // Load the tribute
-    let mut tribute = TRIBUTE_MAP.load(
-        deps.storage,
-        ((round_id, tranche_id), proposal_id, tribute_id),
-    )?;
+    let mut tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
 
     // Check that the sender is the depositor of the tribute
     if tribute.depositor != info.sender {
@@ -372,11 +379,7 @@ fn refund_tribute(
 
     // Mark the tribute as refunded
     tribute.refunded = true;
-    TRIBUTE_MAP.save(
-        deps.storage,
-        ((round_id, tranche_id), proposal_id, tribute_id),
-        &tribute,
-    )?;
+    ID_TO_TRIBUTE_MAP.save(deps.storage, tribute_id, &tribute)?;
 
     // Send the tribute back to the sender
     Ok(Response::new()
@@ -405,6 +408,16 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             start_from,
             limit,
         )?),
+        QueryMsg::HistoricalTributeClaims {
+            user_address,
+            start_from,
+            limit,
+        } => to_json_binary(&query_historical_tribute_claims(
+            &deps,
+            user_address,
+            start_from,
+            limit,
+        )?),
     }
 }
 
@@ -428,6 +441,7 @@ pub fn query_proposal_tributes(
         .map(|l| l.unwrap().1)
         .skip(start_from as usize)
         .take(limit as usize)
+        .map(|tribute_id| ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap())
         .collect();
 
     Ok(ProposalTributesResponse { tributes })
@@ -479,6 +493,38 @@ fn query_user_vote(
     let vote = user_vote_resp.vote;
 
     Ok(vote)
+}
+
+pub fn query_historical_tribute_claims(
+    deps: &Deps,
+    address: String,
+    start_from: u32,
+    limit: u32,
+) -> StdResult<Vec<TributeClaim>> {
+    // go through all TRIBUTE_CLAIMS for the address
+    let address = deps.api.addr_validate(&address)?;
+    Ok(TRIBUTE_CLAIMS
+        .prefix(address)
+        .range(deps.storage, None, None, Order::Ascending)
+        .skip(start_from as usize)
+        .take(limit as usize)
+        .filter_map(|l| {
+            if l.is_err() {
+                // log an error and skip this entry
+                deps.api.debug("Error reading tribute claim");
+                return None;
+            }
+            let (tribute_id, amount) = l.unwrap();
+            let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap();
+            Some(TributeClaim {
+                round_id: tribute.round_id,
+                tranche_id: tribute.tranche_id,
+                proposal_id: tribute.proposal_id,
+                tribute_id,
+                amount,
+            })
+        })
+        .collect())
 }
 
 fn get_top_n_proposal(
