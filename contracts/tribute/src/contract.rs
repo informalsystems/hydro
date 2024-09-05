@@ -128,7 +128,7 @@ fn add_tribute(
     };
     TRIBUTE_MAP.save(
         deps.storage,
-        ((current_round_id, tranche_id), proposal_id, tribute_id),
+        (current_round_id, proposal_id, tribute_id),
         &tribute_id,
     )?;
     ID_TO_TRIBUTE_MAP.save(deps.storage, tribute_id, &tribute)?;
@@ -283,7 +283,7 @@ pub fn claim_tribute_for_community_pool(
     for proposal in proposals_resp {
         // iterate over all tributes for this proposal
         let tributes = TRIBUTE_MAP
-            .prefix(((round_id, tranche_id), proposal.proposal_id))
+            .prefix((round_id, proposal.proposal_id))
             .range(deps.storage, None, None, Order::Ascending)
             .map(|l| l.unwrap().1)
             .map(|tribute_id| ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap())
@@ -396,14 +396,12 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::Config {} => to_json_binary(&query_config(deps)?),
         QueryMsg::ProposalTributes {
             round_id,
-            tranche_id,
             proposal_id,
             start_from,
             limit,
         } => to_json_binary(&query_proposal_tributes(
             deps,
             round_id,
-            tranche_id,
             proposal_id,
             start_from,
             limit,
@@ -430,13 +428,12 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
 pub fn query_proposal_tributes(
     deps: Deps,
     round_id: u64,
-    tranche_id: u64,
     proposal_id: u64,
     start_from: u32,
     limit: u32,
 ) -> StdResult<ProposalTributesResponse> {
     let tributes = TRIBUTE_MAP
-        .prefix(((round_id, tranche_id), proposal_id))
+        .prefix((round_id, proposal_id))
         .range(deps.storage, None, None, Order::Ascending)
         .map(|l| l.unwrap().1)
         .skip(start_from as usize)

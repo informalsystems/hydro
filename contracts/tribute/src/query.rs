@@ -16,7 +16,6 @@ pub enum QueryMsg {
     #[returns(ProposalTributesResponse)]
     ProposalTributes {
         round_id: u64,
-        tranche_id: u64,
         proposal_id: u64,
         start_from: u32,
         limit: u32,

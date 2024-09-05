@@ -313,7 +313,6 @@ fn add_tribute_test() {
         let res = query_proposal_tributes(
             deps.as_ref(),
             test.mock_data.0,
-            test.proposal_info.0,
             test.proposal_info.1,
             0,
             3000,
