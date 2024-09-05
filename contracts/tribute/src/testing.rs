@@ -1103,7 +1103,7 @@ fn test_query_historical_tribute_claims() {
                 .save(
                     &mut deps.storage,
                     (deps.api.addr_make("user1"), i as u64),
-                    &(true, tribute.funds.clone()),
+                    &tribute.funds.clone(),
                 )
                 .unwrap();
         }
