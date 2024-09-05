@@ -36,10 +36,10 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             .as_nanos() as u64
             + 15000000000,
     );
-    let round_length = 30000000000;
+    let round_length = 3_600_000_000_000; // 1 hour
 
     // neutrond q ibc channel channels --node https://rpc-falcron.pion-1.ntrn.tech
-    // find the provider-consumer channel and use its connection-id in nex command
+    // find the provider-consumer channel and use its connection-id in next command
     // neutrond q ibc channel connections [CONNECTION-ID] --node https://rpc-falcron.pion-1.ntrn.tech
     let hub_connection_id = "connection-42".to_string();
     let hub_transfer_channel_id = "channel-96".to_string();
