@@ -632,7 +632,7 @@ pub fn query_outstanding_tribute_claims(
         })
         .filter(
             // make sure that the user has not claimed the tribute already
-            |tribute_id| TRIBUTE_CLAIMS.has(deps.storage, (address.clone(), *tribute_id)),
+            |tribute_id| !TRIBUTE_CLAIMS.has(deps.storage, (address.clone(), *tribute_id)),
         )
         .skip(start_from as usize)
         .take(limit as usize)
