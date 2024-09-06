@@ -1139,59 +1139,70 @@ struct RoundTributesTestCase {
 
 #[test]
 fn test_query_round_tributes() {
+    // Mock the database
+    let tributes = vec![
+        Tribute {
+            tribute_id: 1,
+            round_id: 1,
+            tranche_id: 1,
+            proposal_id: 1,
+            depositor: Addr::unchecked("user1"),
+            funds: Coin::new(Uint128::new(100), "token"),
+            refunded: false,
+        },
+        Tribute {
+            tribute_id: 2,
+            round_id: 1,
+            tranche_id: 1,
+            proposal_id: 2,
+            depositor: Addr::unchecked("user2"),
+            funds: Coin::new(Uint128::new(200), "token"),
+            refunded: false,
+        },
+        Tribute {
+            tribute_id: 3,
+            round_id: 1,
+            tranche_id: 2, // different tranche
+            proposal_id: 3,
+            depositor: Addr::unchecked("user3"),
+            funds: Coin::new(Uint128::new(300), "token"),
+            refunded: false,
+        },
+        Tribute {
+            tribute_id: 4,
+            round_id: 1,
+            tranche_id: 3, // also different tranche
+            proposal_id: 4,
+            depositor: Addr::unchecked("user4"),
+            funds: Coin::new(Uint128::new(400), "token"),
+            refunded: false,
+        },
+        Tribute {
+            tribute_id: 5,
+            round_id: 2, // different round
+            tranche_id: 1,
+            proposal_id: 5,
+            depositor: Addr::unchecked("user5"),
+            funds: Coin::new(Uint128::new(500), "token"),
+            refunded: false,
+        },
+    ];
+
     let test_cases = vec![
         RoundTributesTestCase {
             description: "Query first 2 tributes".to_string(),
             round_id: 1,
             start_from: 0,
             limit: 2,
-            expected_tributes: vec![
-                Tribute {
-                    tribute_id: 1,
-                    round_id: 1,
-                    tranche_id: 1,
-                    proposal_id: 1,
-                    depositor: Addr::unchecked("user1"),
-                    funds: Coin::new(Uint128::new(100), "token"),
-                    refunded: false,
-                },
-                Tribute {
-                    tribute_id: 2,
-                    round_id: 1,
-                    tranche_id: 1,
-                    proposal_id: 2,
-                    depositor: Addr::unchecked("user2"),
-                    funds: Coin::new(Uint128::new(200), "token"),
-                    refunded: false,
-                },
-            ],
+            expected_tributes: vec![tributes[0].clone(), tributes[1].clone()],
             expected_error: None,
         },
         RoundTributesTestCase {
-            description: "Query next 2 tributes".to_string(),
+            description: "Query other tributes".to_string(),
             round_id: 1,
             start_from: 2,
-            limit: 2,
-            expected_tributes: vec![
-                Tribute {
-                    tribute_id: 3,
-                    round_id: 1,
-                    tranche_id: 1,
-                    proposal_id: 3,
-                    depositor: Addr::unchecked("user3"),
-                    funds: Coin::new(Uint128::new(300), "token"),
-                    refunded: false,
-                },
-                Tribute {
-                    tribute_id: 4,
-                    round_id: 1,
-                    tranche_id: 1,
-                    proposal_id: 4,
-                    depositor: Addr::unchecked("user4"),
-                    funds: Coin::new(Uint128::new(400), "token"),
-                    refunded: false,
-                },
-            ],
+            limit: 3,
+            expected_tributes: vec![tributes[2].clone(), tributes[3].clone()],
             expected_error: None,
         },
         RoundTributesTestCase {
@@ -1202,6 +1213,14 @@ fn test_query_round_tributes() {
             expected_tributes: vec![],
             expected_error: None,
         },
+        RoundTributesTestCase {
+            description: "Query different round tributes".to_string(),
+            round_id: 2,
+            start_from: 0,
+            limit: 2,
+            expected_tributes: vec![tributes[4].clone()],
+            expected_error: None,
+        },
     ];
 
     for test_case in test_cases {
@@ -1209,55 +1228,15 @@ fn test_query_round_tributes() {
 
         let (mut deps, _env) = (mock_dependencies(), mock_env());
 
-        // Mock the database
-        let tributes = vec![
-            Tribute {
-                tribute_id: 1,
-                round_id: 1,
-                tranche_id: 1,
-                proposal_id: 1,
-                depositor: Addr::unchecked("user1"),
-                funds: Coin::new(Uint128::new(100), "token"),
-                refunded: false,
-            },
-            Tribute {
-                tribute_id: 2,
-                round_id: 1,
-                tranche_id: 1,
-                proposal_id: 2,
-                depositor: Addr::unchecked("user2"),
-                funds: Coin::new(Uint128::new(200), "token"),
-                refunded: false,
-            },
-            Tribute {
-                tribute_id: 3,
-                round_id: 1,
-                tranche_id: 1,
-                proposal_id: 3,
-                depositor: Addr::unchecked("user3"),
-                funds: Coin::new(Uint128::new(300), "token"),
-                refunded: false,
-            },
-            Tribute {
-                tribute_id: 4,
-                round_id: 1,
-                tranche_id: 1,
-                proposal_id: 4,
-                depositor: Addr::unchecked("user4"),
-                funds: Coin::new(Uint128::new(400), "token"),
-                refunded: false,
-            },
-        ];
-
-        for (i, tribute) in tributes.iter().enumerate() {
+        for (_, tribute) in tributes.iter().enumerate() {
             ID_TO_TRIBUTE_MAP
-                .save(&mut deps.storage, i as u64, tribute)
+                .save(&mut deps.storage, tribute.tribute_id, tribute)
                 .unwrap();
             TRIBUTE_MAP
                 .save(
                     &mut deps.storage,
-                    (1, tribute.proposal_id, i as u64),
-                    &(i as u64),
+                    (tribute.round_id, tribute.proposal_id, tribute.tribute_id),
+                    &(tribute.tribute_id),
                 )
                 .unwrap();
         }
