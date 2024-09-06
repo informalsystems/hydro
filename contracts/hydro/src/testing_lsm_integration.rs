@@ -1005,36 +1005,41 @@ fn icq_validator_set_initialization_test() {
         .querier
         .with_custom_handler(custom_interchain_query_mock(mock_data));
 
-    // Advance the time to round 1
-    env.block.time = env.block.time.plus_nanos(instantiate_msg.round_length + 1);
+    // Advance the time to round 3
+    env.block.time = env
+        .block
+        .time
+        .plus_nanos(instantiate_msg.round_length * 2 + 1);
 
     // Send the SudoMsg as a result of the interchain query
     let msg = SudoMsg::KVQueryResult { query_id: 1 };
     let res = sudo(deps.as_mut(), env.clone(), msg);
     assert!(res.is_ok(), "Failed to execute message: {:?}", res);
 
-    // Check that the validator set storage is correctly initialized for round 1
-    let is_initialized = VALIDATORS_STORE_INITIALIZED
-        .load(deps.as_ref().storage, 1)
-        .unwrap();
-    assert!(is_initialized);
-
-    for validator in validators.clone() {
-        let stored_validator_info = VALIDATORS_INFO
-            .load(deps.as_ref().storage, (1, validator.address.clone()))
+    // Check that the validator set storage is correctly initialized for rounds 0, 1, and 2
+    for round in 0..=2 {
+        let is_initialized = VALIDATORS_STORE_INITIALIZED
+            .load(deps.as_ref().storage, round)
             .unwrap();
-        assert_eq!(validator, stored_validator_info);
+        assert!(is_initialized);
 
-        let stored_validator_address = VALIDATORS_PER_ROUND
-            .load(
-                deps.as_ref().storage,
-                (
-                    1,
-                    validator.delegated_tokens.u128(),
-                    validator.address.clone(),
-                ),
-            )
-            .unwrap();
-        assert_eq!(validator.address, stored_validator_address);
+        for validator in validators.clone() {
+            let stored_validator_info = VALIDATORS_INFO
+                .load(deps.as_ref().storage, (round, validator.address.clone()))
+                .unwrap();
+            assert_eq!(validator, stored_validator_info);
+
+            let stored_validator_address = VALIDATORS_PER_ROUND
+                .load(
+                    deps.as_ref().storage,
+                    (
+                        round,
+                        validator.delegated_tokens.u128(),
+                        validator.address.clone(),
+                    ),
+                )
+                .unwrap();
+            assert_eq!(validator.address, stored_validator_address);
+        }
     }
 }
