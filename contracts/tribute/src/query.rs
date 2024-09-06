@@ -34,6 +34,17 @@ pub enum QueryMsg {
         start_from: u32,
         limit: u32,
     },
+
+    // Returns all tributes for a certain round and tranche
+    //  that a certain user address is able to claim, but has not claimed yet.
+    #[returns(OutstandingTributeClaimsResponse)]
+    OutstandingTributeClaims {
+        user_address: String,
+        round_id: u64,
+        tranche_id: u64,
+        start_from: u32,
+        limit: u32,
+    },
 }
 
 #[cw_serde]
@@ -63,4 +74,9 @@ pub struct HistoricalTributeClaimsResponse {
 #[cw_serde]
 pub struct RoundTributesResponse {
     pub tributes: Vec<Tribute>,
+}
+
+#[cw_serde]
+pub struct OutstandingTributeClaimsResponse {
+    pub claims: Vec<TributeClaim>,
 }

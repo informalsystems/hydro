@@ -1,13 +1,15 @@
 use crate::{
     contract::{
-        execute, get_community_pool_tribute_share, get_voters_tribute_share, instantiate,
-        query_historical_tribute_claims, query_proposal_tributes, query_round_tributes,
+        calculate_voter_claim_amount, execute, get_community_pool_tribute_share,
+        get_voters_tribute_share, instantiate, query_historical_tribute_claims,
+        query_proposal_tributes, query_round_tributes,
     },
     error::ContractError,
     msg::{CommunityPoolTaxConfig, ExecuteMsg, InstantiateMsg},
     query::TributeClaim,
     state::{Config, Tribute, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_MAP},
 };
+use cosmwasm_std::{coin, BankMsg, Coin, CosmosMsg};
 use cosmwasm_std::{
     from_json,
     testing::{mock_dependencies, mock_env, MockApi, MockQuerier},
@@ -15,7 +17,6 @@ use cosmwasm_std::{
     OwnedDeps, QuerierResult, Response, StdError, StdResult, SubMsg, SystemError, SystemResult,
     Uint128, WasmQuery,
 };
-use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
 use hydro::{
     query::{
         CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
@@ -1256,6 +1257,101 @@ fn test_query_round_tributes() {
             Err(err) => {
                 assert_eq!(Some(err), test_case.expected_error);
             }
+        }
+    }
+}
+
+fn get_config_with_community_pool_tax(tax_percent: u64) -> Config {
+    Config {
+        hydro_contract: Addr::unchecked("hydro_contract".to_string()),
+        top_n_props_count: 1,
+        community_pool_config: CommunityPoolTaxConfig {
+            tax_percent: Decimal::percent(tax_percent),
+            channel_id: "".to_string(),
+            bucket_address: "".to_string(),
+        },
+    }
+}
+
+fn decimal(value: u128) -> Decimal {
+    Decimal::from_ratio(Uint128::new(value), Uint128::one())
+}
+
+#[test]
+fn test_calculate_voter_claim_amount() {
+    struct TestCase {
+        description: &'static str,
+        config: Config,
+        tribute_funds: Coin,
+        user_voting_power: Decimal,
+        total_proposal_power: Uint128,
+        expected_result: Result<Coin, ContractError>,
+    }
+
+    let test_cases = vec![
+        TestCase {
+            description: "Happy path with 0% community pool tax",
+            config: get_config_with_community_pool_tax(0),
+            tribute_funds: coin(1000, "token"),
+            user_voting_power: decimal(100),
+            total_proposal_power: Uint128::new(1000),
+            expected_result: Ok(coin(100, "token")),
+        },
+        TestCase {
+            description: "Happy path with 10% community pool tax",
+            config: get_config_with_community_pool_tax(10),
+            tribute_funds: coin(1000, "token"),
+            user_voting_power: decimal(100),
+            total_proposal_power: Uint128::new(1000),
+            expected_result: Ok(coin(90, "token")),
+        },
+        TestCase {
+            description: "Edge case with 0 voting power",
+            config: get_config_with_community_pool_tax(10),
+            tribute_funds: coin(1000, "token"),
+            user_voting_power: Decimal::zero(),
+            total_proposal_power: Uint128::new(1000),
+            expected_result: Ok(coin(0, "token")),
+        },
+        TestCase {
+            description: "Edge case with 0 total proposal power",
+            config: get_config_with_community_pool_tax(10),
+            tribute_funds: coin(1000, "token"),
+            user_voting_power: decimal(100),
+            total_proposal_power: Uint128::zero(),
+            expected_result: Err(ContractError::Std(StdError::generic_err(
+                "Failed to compute users voting power percentage",
+            ))),
+        },
+        TestCase {
+            description: "Edge case with 100% community pool tax",
+            config: get_config_with_community_pool_tax(100),
+            tribute_funds: coin(1000, "token"),
+            user_voting_power: decimal(10),
+            total_proposal_power: Uint128::new(1000),
+            expected_result: Ok(coin(0, "token")),
+        },
+    ];
+
+    for test_case in test_cases {
+        println!("Running test case: {}", test_case.description);
+
+        let result = calculate_voter_claim_amount(
+            test_case.config,
+            test_case.tribute_funds.clone(),
+            test_case.user_voting_power,
+            test_case.total_proposal_power,
+        );
+
+        match (result, test_case.expected_result) {
+            (Ok(result_coin), Ok(expected_coin)) => assert_eq!(result_coin, expected_coin),
+            (Err(result_err), Err(expected_err)) => {
+                assert_eq!(result_err.to_string(), expected_err.to_string())
+            }
+            _ => panic!(
+                "Test case '{}' failed: result and expected result do not match",
+                test_case.description
+            ),
         }
     }
 }

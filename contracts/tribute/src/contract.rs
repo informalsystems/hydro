@@ -180,7 +180,7 @@ fn claim_tribute(
 
     // Look up voter's vote for the round, error if it cannot be found
     let vote = query_user_vote(
-        &deps,
+        &deps.as_ref(),
         &config.hydro_contract,
         round_id,
         tranche_id,
@@ -201,41 +201,8 @@ fn claim_tribute(
     // Load the tribute and use the percentage to figure out how much of the tribute to send them
     let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
 
-    // adjust the tribute to get only the portion that should be distributed
-    // to the voters
-    let voters_share = get_voters_tribute_share(&config, tribute.clone().funds)?;
-
-    let percentage_fraction = match vote
-        .power
-        .checked_div(Decimal::from_ratio(proposal.power, Uint128::one()))
-    {
-        Ok(percentage_fraction) => percentage_fraction,
-        Err(_) => {
-            return Err(ContractError::Std(StdError::generic_err(
-                "Failed to compute users voting power percentage",
-            )));
-        }
-    };
-
-    let amount =
-        match Decimal::from_ratio(voters_share, Uint128::one()).checked_mul(percentage_fraction) {
-            Ok(amount) => amount,
-            Err(_) => {
-                return Err(ContractError::Std(StdError::generic_err(
-                    "Failed to compute users tribute share",
-                )));
-            }
-        }
-        // to_uint_floor() is used so that, due to the precision, contract doesn't transfer by 1 token more
-        // to some users, which would leave the last users trying to claim the tribute unable to do so
-        // This also implies that some dust amount of tokens could be left on the contract after everyone
-        // claiming their portion of the tribute
-        .to_uint_floor();
-
-    let sent_coin = Coin {
-        denom: tribute.funds.denom,
-        amount,
-    };
+    let sent_coin =
+        calculate_voter_claim_amount(config, tribute.funds, vote.power, proposal.power)?;
 
     // Mark in the TRIBUTE_CLAIMS that the voter has claimed this tribute
     TRIBUTE_CLAIMS.save(
@@ -251,6 +218,44 @@ fn claim_tribute(
             to_address: voter.to_string(),
             amount: vec![sent_coin],
         }))
+}
+
+pub fn calculate_voter_claim_amount(
+    config: Config,
+    tribute_funds: Coin,
+    user_voting_power: Decimal,
+    total_proposal_power: Uint128,
+) -> Result<Coin, ContractError> {
+    let voters_share = get_voters_tribute_share(&config, tribute_funds.clone())?;
+    let percentage_fraction = match user_voting_power
+        .checked_div(Decimal::from_ratio(total_proposal_power, Uint128::one()))
+    {
+        Ok(percentage_fraction) => percentage_fraction,
+        Err(_) => {
+            return Err(ContractError::Std(StdError::generic_err(
+                "Failed to compute users voting power percentage",
+            )));
+        }
+    };
+    let amount =
+        match Decimal::from_ratio(voters_share, Uint128::one()).checked_mul(percentage_fraction) {
+            Ok(amount) => amount,
+            Err(_) => {
+                return Err(ContractError::Std(StdError::generic_err(
+                    "Failed to compute users tribute share",
+                )));
+            }
+        }
+        // to_uint_floor() is used so that, due to the precision, contract doesn't transfer by 1 token more
+        // to some users, which would leave the last users trying to claim the tribute unable to do so
+        // This also implies that some dust amount of tokens could be left on the contract after everyone
+        // claiming their portion of the tribute
+        .to_uint_floor();
+    let sent_coin = Coin {
+        denom: tribute_funds.denom,
+        amount,
+    };
+    Ok(sent_coin)
 }
 
 // For each proposal in the top N proposals for the given round and tranche:
@@ -421,6 +426,20 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             start_from,
             limit,
         } => to_json_binary(&query_round_tributes(&deps, round_id, start_from, limit)?),
+        QueryMsg::OutstandingTributeClaims {
+            user_address,
+            round_id,
+            tranche_id,
+            start_from,
+            limit,
+        } => to_json_binary(&query_outstanding_tribute_claims(
+            &deps,
+            user_address,
+            round_id,
+            tranche_id,
+            start_from,
+            limit,
+        )?),
     }
 }
 
@@ -477,7 +496,7 @@ fn query_proposal(
 }
 
 fn query_user_vote(
-    deps: &DepsMut,
+    deps: &Deps,
     hydro_contract: &Addr,
     round_id: u64,
     tranche_id: u64,
@@ -552,6 +571,89 @@ pub fn query_round_tributes(
             Some(tribute)
         })
         .collect())
+}
+
+// This goes through all the tributes for a certain round and tranche,
+// then checks whether the given user address can claim them.
+// If the user has not claimed the tribute yet, the amount that the user would receive when claiming is
+// computed, and the tribute is added to the list of tributes that the user can claim.
+pub fn query_outstanding_tribute_claims(
+    deps: &Deps,
+    address: String,
+    round_id: u64,
+    tranche_id: u64,
+    start_from: u32,
+    limit: u32,
+) -> StdResult<Vec<TributeClaim>> {
+    // get the user vote for this tranche
+    let user_vote = query_user_vote(
+        deps,
+        &CONFIG.load(deps.storage)?.hydro_contract,
+        round_id,
+        tranche_id,
+        address.clone(),
+    )
+    .ok();
+
+    let config = CONFIG.load(deps.storage)?;
+
+    if user_vote.is_none() {
+        return Ok(vec![]);
+    }
+
+    // check which proposal the user voted for
+    let user_vote = user_vote.unwrap();
+
+    // check that this proposal is one of the top N in this tranche/round
+    let proposal = get_top_n_proposal(deps, &config, round_id, tranche_id, user_vote.prop_id)
+        .map_err(|err| StdError::generic_err(format!("Failed to get top N proposal: {}", err)))?
+        .ok_or_else(|| {
+            StdError::generic_err("User voted for proposal outside of top N proposals")
+        })?;
+
+    // get all tributes for this proposal
+    let tributes = query_proposal_tributes(*deps, round_id, user_vote.prop_id, start_from, limit)?;
+
+    // filter out the tributes that the user has already claimed
+    let tributes = tributes
+        .tributes
+        .into_iter()
+        .filter(|tribute| {
+            TRIBUTE_CLAIMS
+                .may_load(
+                    deps.storage,
+                    (
+                        deps.api.addr_validate(&address).unwrap(),
+                        tribute.tribute_id,
+                    ),
+                )
+                // filter out parsing error, as well as already claimed tributes
+                .unwrap_or(Some(Coin::default()))
+                .is_none()
+        })
+        .collect::<Vec<Tribute>>();
+
+    // for each tribute, compute the amount that the user would receive when claiming
+    Ok(tributes
+        .iter()
+        .map(|tribute| {
+            let sent_coin = calculate_voter_claim_amount(
+                config.clone(),
+                tribute.funds.clone(),
+                user_vote.power,
+                proposal.power,
+            )
+            .unwrap();
+
+            TributeClaim {
+                round_id: tribute.round_id,
+                tranche_id: tribute.tranche_id,
+                proposal_id: tribute.proposal_id,
+                tribute_id: tribute.tribute_id,
+                amount: sent_coin,
+            }
+        })
+        .collect::<Vec<TributeClaim>>())
 }
 
 fn get_top_n_proposal(
