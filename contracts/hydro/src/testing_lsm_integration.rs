@@ -760,6 +760,8 @@ struct ValidatorSetInitializationTestCase {
     message: ExecuteMsg,
 }
 
+// Checks that the validator stores for rounds are initialized correctly
+// when the contract is instantiated and when certain messages are executed.
 #[test]
 fn validator_set_initialization_test() {
     let test_cases = vec![
@@ -871,8 +873,11 @@ fn validator_set_initialization_test() {
         // Check that the lock was successful
         assert!(res.is_ok());
 
-        // Advance the time to round 1
-        env.block.time = env.block.time.plus_nanos(instantiate_msg.round_length + 1);
+        // Advance the time to round 3
+        env.block.time = env
+            .block
+            .time
+            .plus_nanos(instantiate_msg.round_length * 2 + 1);
 
         // Execute the message
         let res = execute(
@@ -884,28 +889,30 @@ fn validator_set_initialization_test() {
         assert!(res.is_ok(), "Failed to execute message: {:?}", res);
 
         // Check that the validator set storage is correctly initialized for round 1
-        let is_initialized = VALIDATORS_STORE_INITIALIZED
-            .load(deps.as_ref().storage, 1)
-            .unwrap();
-        assert!(is_initialized);
-
-        for validator in validators.clone() {
-            let stored_validator_info = VALIDATORS_INFO
-                .load(deps.as_ref().storage, (1, validator.address.clone()))
+        for round in 0..=2 {
+            let is_initialized = VALIDATORS_STORE_INITIALIZED
+                .load(deps.as_ref().storage, round)
                 .unwrap();
-            assert_eq!(validator, stored_validator_info);
+            assert!(is_initialized);
 
-            let stored_validator_address = VALIDATORS_PER_ROUND
-                .load(
-                    deps.as_ref().storage,
-                    (
-                        1,
-                        validator.delegated_tokens.u128(),
-                        validator.address.clone(),
-                    ),
-                )
-                .unwrap();
-            assert_eq!(validator.address, stored_validator_address);
+            for validator in validators.clone() {
+                let stored_validator_info = VALIDATORS_INFO
+                    .load(deps.as_ref().storage, (round, validator.address.clone()))
+                    .unwrap();
+                assert_eq!(validator, stored_validator_info);
+
+                let stored_validator_address = VALIDATORS_PER_ROUND
+                    .load(
+                        deps.as_ref().storage,
+                        (
+                            round,
+                            validator.delegated_tokens.u128(),
+                            validator.address.clone(),
+                        ),
+                    )
+                    .unwrap();
+                assert_eq!(validator.address, stored_validator_address);
+            }
         }
     }
 }
