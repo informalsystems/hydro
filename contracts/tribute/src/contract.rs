@@ -585,13 +585,15 @@ pub fn query_outstanding_tribute_claims(
     start_from: u32,
     limit: u32,
 ) -> StdResult<Vec<TributeClaim>> {
+    let address = deps.api.addr_validate(&address)?;
+
     // get the user vote for this tranche
     let user_vote = query_user_vote(
         deps,
         &CONFIG.load(deps.storage)?.hydro_contract,
         round_id,
         tranche_id,
-        address.clone(),
+        address.to_string(),
     )
     .ok();
 
@@ -612,25 +614,29 @@ pub fn query_outstanding_tribute_claims(
         })?;
 
     // get all tributes for this proposal
-    let tributes = query_proposal_tributes(*deps, round_id, user_vote.prop_id, start_from, limit)?;
-
-    // filter out the tributes that the user has already claimed
-    let tributes = tributes
-        .tributes
-        .into_iter()
-        .filter(|tribute| {
-            TRIBUTE_CLAIMS
-                .may_load(
-                    deps.storage,
-                    (
-                        deps.api.addr_validate(&address).unwrap(),
-                        tribute.tribute_id,
-                    ),
-                )
-                // filter out parsing error, as well as already claimed tributes
-                .unwrap_or(Some(Coin::default()))
-                .is_none()
+    let tributes = TRIBUTE_MAP
+        .prefix((round_id, proposal.proposal_id))
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter(|l| {
+            if l.is_err() {
+                // log an error and filter out this entry
+                deps.api.debug("Error reading tribute");
+            }
+            l.is_ok()
         })
+        .map(|l| l.unwrap().1)
+        .filter(
+            // make sure that the user has not claimed the tribute already
+            |tribute_id| {
+                TRIBUTE_CLAIMS
+                    .may_load(deps.storage, (address.clone(), *tribute_id))
+                    .unwrap_or(Some(Coin::default())) // use a default coin to filter out parse errors
+                    .is_none()
+            },
+        )
+        .skip(start_from as usize)
+        .take(limit as usize)
+        .map(|tribute_id| ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap())
         .collect::<Vec<Tribute>>();
 
     // for each tribute, compute the amount that the user would receive when claiming
