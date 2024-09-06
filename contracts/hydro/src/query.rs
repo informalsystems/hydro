@@ -122,6 +122,7 @@ pub struct UserVoteResponse {
 #[cw_serde]
 pub struct CurrentRoundResponse {
     pub round_id: u64,
+    pub round_end: Timestamp,
 }
 
 #[cw_serde]
