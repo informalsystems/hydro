@@ -644,35 +644,38 @@ pub fn query_outstanding_tribute_claims(
         .collect::<Vec<Tribute>>();
 
     // for each tribute, compute the amount that the user would receive when claiming
-    Ok(tributes
-        .iter()
-        .filter_map(|tribute| {
-            let sent_coin_res = calculate_voter_claim_amount(
-                config.clone(),
-                tribute.funds.clone(),
-                user_vote.power,
-                proposal.power,
-            );
-
-            if sent_coin_res.is_err() {
-                // log an error and skip this entry
-                deps.api.debug(
-                    format!("Error calculating voter claim amount: {:?}", sent_coin_res).as_str(),
+    Ok(OutstandingTributeClaimsResponse {
+        claims: tributes
+            .iter()
+            .filter_map(|tribute| {
+                let sent_coin_res = calculate_voter_claim_amount(
+                    config.clone(),
+                    tribute.funds.clone(),
+                    user_vote.power,
+                    proposal.power,
                 );
-                return None;
-            }
 
-            let sent_coin = sent_coin_res.unwrap();
+                if sent_coin_res.is_err() {
+                    // log an error and skip this entry
+                    deps.api.debug(
+                        format!("Error calculating voter claim amount: {:?}", sent_coin_res)
+                            .as_str(),
+                    );
+                    return None;
+                }
 
-            Some(TributeClaim {
-                round_id: tribute.round_id,
-                tranche_id: tribute.tranche_id,
-                proposal_id: tribute.proposal_id,
-                tribute_id: tribute.tribute_id,
-                amount: sent_coin,
+                let sent_coin = sent_coin_res.unwrap();
+
+                Some(TributeClaim {
+                    round_id: tribute.round_id,
+                    tranche_id: tribute.tranche_id,
+                    proposal_id: tribute.proposal_id,
+                    tribute_id: tribute.tribute_id,
+                    amount: sent_coin,
+                })
             })
-        })
-        .collect::<Vec<TributeClaim>>())
+            .collect::<Vec<TributeClaim>>(),
+    })
 }
 
 fn get_top_n_proposal(

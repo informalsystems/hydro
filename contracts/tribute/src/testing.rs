@@ -1558,7 +1558,7 @@ fn test_query_outstanding_tribute_claims() {
 
         match result {
             Ok(claims) => {
-                assert_eq!(claims, test_case.expected_claims);
+                assert_eq!(claims.claims, test_case.expected_claims);
             }
             Err(err) => {
                 assert_eq!(Some(err), test_case.expected_error);
