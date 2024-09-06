@@ -1,12 +1,12 @@
 use crate::{
     contract::{
         execute, get_community_pool_tribute_share, get_voters_tribute_share, instantiate,
-        query_historical_tribute_claims, query_proposal_tributes,
+        query_historical_tribute_claims, query_proposal_tributes, query_round_tributes,
     },
     error::ContractError,
     msg::{CommunityPoolTaxConfig, ExecuteMsg, InstantiateMsg},
     query::TributeClaim,
-    state::{Config, Tribute, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS},
+    state::{Config, Tribute, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_MAP},
 };
 use cosmwasm_std::{
     from_json,
@@ -315,7 +315,6 @@ fn add_tribute_test() {
         let res = query_proposal_tributes(
             deps.as_ref(),
             test.mock_data.0,
-            test.proposal_info.0,
             test.proposal_info.1,
             0,
             3000,
@@ -828,6 +827,8 @@ fn claim_community_pool_tribute_test() {
             percentage: Uint128::zero(),
         },
     ];
+    // we will query for the top props of tranche 0, so don't return prop with id 2
+    let top_n_proposals = mock_top_n_proposals[0..=1].to_vec();
 
     let (mut deps, env) = (mock_dependencies(), mock_env());
     let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
@@ -838,7 +839,7 @@ fn claim_community_pool_tribute_test() {
         0,
         mock_top_n_proposals.clone(),
         None,
-        mock_top_n_proposals.clone(),
+        top_n_proposals.clone(),
     );
     deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
@@ -914,7 +915,7 @@ fn claim_community_pool_tribute_test() {
         1,
         mock_top_n_proposals.clone(),
         user_vote,
-        mock_top_n_proposals.clone(),
+        top_n_proposals,
     );
     deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
@@ -1121,6 +1122,138 @@ fn test_query_historical_tribute_claims() {
         match result {
             Ok(claims) => {
                 assert_eq!(claims, test_case.expected_claims);
+            }
+            Err(err) => {
+                assert_eq!(Some(err), test_case.expected_error);
+            }
+        }
+    }
+}
+
+struct RoundTributesTestCase {
+    description: String,
+    round_id: u64,
+    start_from: u32,
+    limit: u32,
+    expected_tributes: Vec<Tribute>,
+    expected_error: Option<StdError>,
+}
+
+#[test]
+fn test_query_round_tributes() {
+    // Mock the database
+    let tributes = vec![
+        Tribute {
+            tribute_id: 1,
+            round_id: 1,
+            tranche_id: 1,
+            proposal_id: 1,
+            depositor: Addr::unchecked("user1"),
+            funds: Coin::new(Uint128::new(100), "token"),
+            refunded: false,
+        },
+        Tribute {
+            tribute_id: 2,
+            round_id: 1,
+            tranche_id: 1,
+            proposal_id: 2,
+            depositor: Addr::unchecked("user2"),
+            funds: Coin::new(Uint128::new(200), "token"),
+            refunded: false,
+        },
+        Tribute {
+            tribute_id: 3,
+            round_id: 1,
+            tranche_id: 2, // different tranche
+            proposal_id: 3,
+            depositor: Addr::unchecked("user3"),
+            funds: Coin::new(Uint128::new(300), "token"),
+            refunded: false,
+        },
+        Tribute {
+            tribute_id: 4,
+            round_id: 1,
+            tranche_id: 3, // also different tranche
+            proposal_id: 4,
+            depositor: Addr::unchecked("user4"),
+            funds: Coin::new(Uint128::new(400), "token"),
+            refunded: false,
+        },
+        Tribute {
+            tribute_id: 5,
+            round_id: 2, // different round
+            tranche_id: 1,
+            proposal_id: 5,
+            depositor: Addr::unchecked("user5"),
+            funds: Coin::new(Uint128::new(500), "token"),
+            refunded: false,
+        },
+    ];
+
+    let test_cases = vec![
+        RoundTributesTestCase {
+            description: "Query first 2 tributes".to_string(),
+            round_id: 1,
+            start_from: 0,
+            limit: 2,
+            expected_tributes: vec![tributes[0].clone(), tributes[1].clone()],
+            expected_error: None,
+        },
+        RoundTributesTestCase {
+            description: "Query other tributes".to_string(),
+            round_id: 1,
+            start_from: 2,
+            limit: 3,
+            expected_tributes: vec![tributes[2].clone(), tributes[3].clone()],
+            expected_error: None,
+        },
+        RoundTributesTestCase {
+            description: "Query with start_from beyond range".to_string(),
+            round_id: 1,
+            start_from: 10,
+            limit: 2,
+            expected_tributes: vec![],
+            expected_error: None,
+        },
+        RoundTributesTestCase {
+            description: "Query different round tributes".to_string(),
+            round_id: 2,
+            start_from: 0,
+            limit: 2,
+            expected_tributes: vec![tributes[4].clone()],
+            expected_error: None,
+        },
+    ];
+
+    for test_case in test_cases {
+        println!("Running test case: {}", test_case.description);
+
+        let (mut deps, _env) = (mock_dependencies(), mock_env());
+
+        for tribute in tributes.iter() {
+            ID_TO_TRIBUTE_MAP
+                .save(&mut deps.storage, tribute.tribute_id, tribute)
+                .unwrap();
+            TRIBUTE_MAP
+                .save(
+                    &mut deps.storage,
+                    (tribute.round_id, tribute.proposal_id, tribute.tribute_id),
+                    &(tribute.tribute_id),
+                )
+                .unwrap();
+        }
+
+        // Query round tributes
+        let result = query_round_tributes(
+            &deps.as_ref(),
+            test_case.round_id,
+            test_case.start_from,
+            test_case.limit,
+        );
+
+        match result {
+            Ok(tributes) => {
+                assert_eq!(tributes.tributes, test_case.expected_tributes);
             }
             Err(err) => {
                 assert_eq!(Some(err), test_case.expected_error);
