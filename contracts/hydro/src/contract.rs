@@ -1280,7 +1280,12 @@ pub fn query_current_round_id(
     let constants = &CONSTANTS.load(deps.storage)?;
     let round_id = compute_round_id_for_timestamp(constants, env.block.time.nanos())?;
 
-    Ok(CurrentRoundResponse { round_id })
+    let round_end = compute_round_end(constants, round_id)?;
+
+    Ok(CurrentRoundResponse {
+        round_id,
+        round_end,
+    })
 }
 
 pub fn query_round_end(deps: Deps<NeutronQuery>, round_id: u64) -> StdResult<RoundEndResponse> {
