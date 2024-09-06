@@ -9,7 +9,8 @@ use cw2::set_contract_version;
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
 use crate::query::{
-    ConfigResponse, ProposalTributesResponse, QueryMsg, RoundTributesResponse, TributeClaim,
+    ConfigResponse, OutstandingTributeClaimsResponse, ProposalTributesResponse, QueryMsg,
+    RoundTributesResponse, TributeClaim,
 };
 use crate::state::{
     Config, Tribute, COMMUNITY_POOL_CLAIMS, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_ID,
@@ -588,7 +589,7 @@ pub fn query_outstanding_tribute_claims(
     tranche_id: u64,
     start_from: u32,
     limit: u32,
-) -> StdResult<Vec<TributeClaim>> {
+) -> StdResult<OutstandingTributeClaimsResponse> {
     let address = deps.api.addr_validate(&address)?;
 
     // get the user vote for this tranche
