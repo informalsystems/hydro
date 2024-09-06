@@ -1228,7 +1228,7 @@ fn test_query_round_tributes() {
 
         let (mut deps, _env) = (mock_dependencies(), mock_env());
 
-        for (_, tribute) in tributes.iter().enumerate() {
+        for tribute in tributes.iter() {
             ID_TO_TRIBUTE_MAP
                 .save(&mut deps.storage, tribute.tribute_id, tribute)
                 .unwrap();
