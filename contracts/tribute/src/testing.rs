@@ -1251,7 +1251,7 @@ fn test_query_round_tributes() {
 
         match result {
             Ok(tributes) => {
-                assert_eq!(tributes, test_case.expected_tributes);
+                assert_eq!(tributes.tributes, test_case.expected_tributes);
             }
             Err(err) => {
                 assert_eq!(Some(err), test_case.expected_error);

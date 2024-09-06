@@ -8,7 +8,9 @@ use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
-use crate::query::{ConfigResponse, ProposalTributesResponse, QueryMsg, TributeClaim};
+use crate::query::{
+    ConfigResponse, ProposalTributesResponse, QueryMsg, RoundTributesResponse, TributeClaim,
+};
 use crate::state::{
     Config, Tribute, COMMUNITY_POOL_CLAIMS, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_ID,
     TRIBUTE_MAP,
@@ -534,24 +536,26 @@ pub fn query_round_tributes(
     round_id: u64,
     start_from: u32,
     limit: u32,
-) -> StdResult<Vec<Tribute>> {
-    Ok(TRIBUTE_MAP
-        .sub_prefix(round_id)
-        .range(deps.storage, None, None, Order::Ascending)
-        .skip(start_from as usize)
-        .take(limit as usize)
-        .filter_map(|l| {
-            if l.is_err() {
-                // log an error and skip this entry
-                deps.api
-                    .debug(format!("Error reading tribute: {:?}", l).as_str());
-                return None;
-            }
-            let (_, tribute_id) = l.unwrap();
-            let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap();
-            Some(tribute)
-        })
-        .collect())
+) -> StdResult<RoundTributesResponse> {
+    Ok(RoundTributesResponse {
+        tributes: TRIBUTE_MAP
+            .sub_prefix(round_id)
+            .range(deps.storage, None, None, Order::Ascending)
+            .skip(start_from as usize)
+            .take(limit as usize)
+            .filter_map(|l| {
+                if l.is_err() {
+                    // log an error and skip this entry
+                    deps.api
+                        .debug(format!("Error reading tribute: {:?}", l).as_str());
+                    return None;
+                }
+                let (_, tribute_id) = l.unwrap();
+                let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap();
+                Some(tribute)
+            })
+            .collect(),
+    })
 }
 
 fn get_top_n_proposal(
