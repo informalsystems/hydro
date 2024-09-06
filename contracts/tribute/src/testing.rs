@@ -1487,12 +1487,29 @@ fn test_query_outstanding_tribute_claims() {
                 .unwrap();
         }
 
-        // Mock claimed tributes
+        // Mock claimed tributes - exact amounts do not matter
+        // user 1 claimed tribute 1
         TRIBUTE_CLAIMS
             .save(
                 &mut deps.storage,
                 (deps.api.addr_make("user1"), 1),
                 &Coin::new(Uint128::new(100), "token"),
+            )
+            .unwrap();
+
+        // user 2 claimed both tributes
+        TRIBUTE_CLAIMS
+            .save(
+                &mut deps.storage,
+                (deps.api.addr_make("user2"), 1),
+                &Coin::new(Uint128::new(100), "token"),
+            )
+            .unwrap();
+        TRIBUTE_CLAIMS
+            .save(
+                &mut deps.storage,
+                (deps.api.addr_make("user2"), 2),
+                &Coin::new(Uint128::new(200), "token"),
             )
             .unwrap();
 
@@ -1530,12 +1547,22 @@ fn test_query_outstanding_tribute_claims() {
             "hydro_contract_address".to_string(),
             1,
             mock_proposals.clone(),
-            vec![(
-                1,
-                1,
-                get_address_as_str(&deps.api, "user1"),
-                user_vote.clone(),
-            )],
+            vec![
+                (
+                    // user 1 voted on prop 1
+                    1,
+                    1,
+                    get_address_as_str(&deps.api, "user1"),
+                    user_vote.clone(),
+                ),
+                (
+                    // user 2 voted on prop 1, too
+                    1,
+                    1,
+                    get_address_as_str(&deps.api, "user2"),
+                    user_vote.clone(),
+                ),
+            ],
             mock_proposals.clone(),
         );
 
