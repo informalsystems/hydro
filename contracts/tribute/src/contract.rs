@@ -599,16 +599,9 @@ pub fn query_outstanding_tribute_claims(
         tranche_id,
         address.to_string(),
     )
-    .ok();
+    .map_err(|err| StdError::generic_err(format!("Failed to get user vote: {}", err)))?;
 
     let config = CONFIG.load(deps.storage)?;
-
-    if user_vote.is_none() {
-        return Ok(vec![]);
-    }
-
-    // check which proposal the user voted for
-    let user_vote = user_vote.unwrap();
 
     // check that this proposal is one of the top N in this tranche/round
     let proposal = get_top_n_proposal(deps, &config, round_id, tranche_id, user_vote.prop_id)
@@ -628,40 +621,55 @@ pub fn query_outstanding_tribute_claims(
             }
             l.is_ok()
         })
-        .map(|l| l.unwrap().1)
+        .filter_map(|l| {
+            if l.is_ok() {
+                let (_, tribute_id) = l.unwrap();
+                Some(tribute_id)
+            } else {
+                None
+            }
+        })
         .filter(
             // make sure that the user has not claimed the tribute already
-            |tribute_id| {
-                TRIBUTE_CLAIMS
-                    .may_load(deps.storage, (address.clone(), *tribute_id))
-                    .unwrap_or(Some(Coin::default())) // use a default coin to filter out parse errors
-                    .is_none()
-            },
+            |tribute_id| TRIBUTE_CLAIMS.has(deps.storage, (address.clone(), *tribute_id)),
         )
         .skip(start_from as usize)
         .take(limit as usize)
-        .map(|tribute_id| ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap())
+        .filter_map(|tribute_id| {
+            ID_TO_TRIBUTE_MAP
+                .may_load(deps.storage, tribute_id)
+                .unwrap_or(None)
+        })
         .collect::<Vec<Tribute>>();
 
     // for each tribute, compute the amount that the user would receive when claiming
     Ok(tributes
         .iter()
-        .map(|tribute| {
-            let sent_coin = calculate_voter_claim_amount(
+        .filter_map(|tribute| {
+            let sent_coin_res = calculate_voter_claim_amount(
                 config.clone(),
                 tribute.funds.clone(),
                 user_vote.power,
                 proposal.power,
-            )
-            .unwrap();
+            );
 
-            TributeClaim {
+            if sent_coin_res.is_err() {
+                // log an error and skip this entry
+                deps.api.debug(
+                    format!("Error calculating voter claim amount: {:?}", sent_coin_res).as_str(),
+                );
+                return None;
+            }
+
+            let sent_coin = sent_coin_res.unwrap();
+
+            Some(TributeClaim {
                 round_id: tribute.round_id,
                 tranche_id: tribute.tranche_id,
                 proposal_id: tribute.proposal_id,
                 tribute_id: tribute.tribute_id,
                 amount: sent_coin,
-            }
+            })
         })
         .collect::<Vec<TributeClaim>>())
 }
