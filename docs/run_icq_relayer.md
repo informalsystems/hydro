@@ -31,6 +31,7 @@ RELAYER_ALLOW_TX_QUERIES=false
 \# ***Essential** for Hydro to work is to set this param to true*  
 RELAYER_ALLOW_KV_CALLBACKS=true  
 RELAYER_STORAGE_PATH=$HOME/.neutron_queries_relayer/leveldb  
+LOGGER_LEVEL=debug  
 \# *For other (optional) parameters description see the github repository at the top*  
 
 Then, execute the following command to load the previously defined environment:  
@@ -38,3 +39,10 @@ Then, execute the following command to load the previously defined environment:
 
 Finally, start the Relayer:  
 >neutron_query_relayer start
+
+## Notes
+- After executing start command, any misconfiguration will be seen in the logs and the relayer will fail to start. This only applies to misconfigurations such as providing invalid RPC/REST addreses, an absence of the signer key, etc. If, for example, a wrong smart contract address (or no address at all) is provided for *RELAYER_REGISTRY_ADDRESSES*, or a wrong connection ID is provided for *RELAYER_NEUTRON_CHAIN_CONNECTION_ID* parameter, then the relayer will start with whatever values it was provdied with.
+- To verify if the relayer started relaying ICQ results for the Hydro smart contract, make the smart contract create at least one ICQ and run the following query against the Neutron:
+    >neutrond q interchainqueries registered-queries --owners $HYDRO_CONTRACT_ADDR
+
+    The given ICQ should have non-zero and non-null values for *last_submitted_result_local_height* and *last_submitted_result_remote_height*.
