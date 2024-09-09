@@ -52,3 +52,25 @@ type RegisteredQuery struct {
 type QueryResponse struct {
 	RegisteredQueries []RegisteredQuery `json:"registered_queries"`
 }
+
+type Proposal struct {
+	RoundID     int    `json:"round_id"`
+	TrancheID   int    `json:"tranche_id"`
+	ProposalID  int    `json:"proposal_id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Power       string `json:"power"`
+	Percentage  string `json:"percentage"`
+}
+
+type ProposalData struct {
+	Data struct {
+		Proposals []Proposal `json:"proposals"`
+	} `json:"data"`
+}
+
+type RoundData struct {
+	Data struct {
+		RoundID int `json:"round_id"`
+	} `json:"data"`
+}

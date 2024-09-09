@@ -35,6 +35,12 @@ func txAmountUatom(txAmount uint64) string {
 	return fmt.Sprintf("%d%s", txAmount, chainsuite.Uatom)
 }
 
+// TestHappyPath tests:
+// deployment of hydro contract
+// registering of interchain queries for validators
+// locking of liquid staked tokens on hydro contract
+// creating and voting/revoting for hydro proposals
+// pausing/disabling contract
 func (s *HydroSuite) TestHappyPath() {
 	hubNode := s.HubChain.Validators[0]
 	neutronNode := s.NeutronChain.Validators[0]
@@ -55,8 +61,7 @@ func (s *HydroSuite) TestHappyPath() {
 	sourceIbcDenom2 := fmt.Sprintf("%s/%s", strings.ToLower(s.HubChain.ValidatorWallets[1].ValoperAddress), recordId2)
 	dstIbcDenom2 := s.HubToNeutronShareTokenTransfer(s.HubChain.ValidatorWallets[0].Moniker, math.NewInt(400), sourceIbcDenom2, s.NeutronChain.ValidatorWallets[0].Address)
 
-	// deploy hydro contract
-	// store code
+	// deploy hydro contract - store code
 	hydroContract, err := os.ReadFile("testdata/hydro.wasm")
 	s.Require().NoError(err)
 
@@ -65,16 +70,105 @@ func (s *HydroSuite) TestHappyPath() {
 
 	codeId := s.StoreCode(neutronNode, s.HubChain.ValidatorWallets[0].Moniker, contractPath)
 
-	// instantiate code
+	// deploy hydro contract - instantiate code
 	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, codeId, s.NeutronChain.ValidatorWallets[0].Address, 2)
 
 	// register interchain query
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[0].ValoperAddress, s.HubChain.ValidatorWallets[1].ValoperAddress},
 		contractAddr, s.NeutronChain.ValidatorWallets[0].Moniker)
 
-	//lockTxData tokens
-	s.LockTokens(s.NeutronChain.ValidatorWallets[0].Moniker, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, "10", dstIbcDenom1, contractAddr)
-	s.LockTokens(s.NeutronChain.ValidatorWallets[0].Moniker, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, "10", dstIbcDenom2, contractAddr)
+	// lockTxData tokens
+	err = s.LockTokens(s.NeutronChain.ValidatorWallets[0].Moniker, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, "10", dstIbcDenom1, contractAddr)
+	s.Require().NoError(err)
+	err = s.LockTokens(s.NeutronChain.ValidatorWallets[0].Moniker, s.NeutronChain.ValidatorWallets[0].Address, 3*86400000000000, "10", dstIbcDenom2, contractAddr)
+	s.Require().NoError(err)
+	err = s.LockTokens(s.NeutronChain.ValidatorWallets[0].Moniker, s.NeutronChain.ValidatorWallets[0].Address, 6*86400000000000, "10", dstIbcDenom1, contractAddr)
+	s.Require().NoError(err)
+	err = s.LockTokens(s.NeutronChain.ValidatorWallets[0].Moniker, s.NeutronChain.ValidatorWallets[0].Address, 12*86400000000000, "10", dstIbcDenom2, contractAddr)
+	s.Require().NoError(err)
+
+	// Scale lockup power
+	// 1x if lockup is between 0 and 1 epochs
+	// 1.5x if lockup is between 1 and 3 epochs
+	// 2x if lockup is between 3 and 6 epochs
+	// 4x if lockup is between 6 and 12 epochs
+	votingPower := "85" // 10*1+10*1.5+10*2+10*4
+
+	// create hydro proposals
+	err = s.SubmitHydroProposal(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 1 prop 1", 1)
+	s.Require().NoError(err)
+	err = s.SubmitHydroProposal(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 1 prop 2", 1)
+	s.Require().NoError(err)
+	err = s.SubmitHydroProposal(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 2 prop 1", 2)
+	s.Require().NoError(err)
+
+	// vote for trenche 1 proposal 1
+	proposal, err := s.GetProposalByTitle(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 1 prop 1", 1)
+	s.Require().NoError(err)
+	s.Require().Equal("0", proposal.Power)
+
+	err = s.VoteForHydroProposal(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, proposal.ProposalID, 1)
+	s.Require().NoError(err)
+	proposal, err = s.GetProposalByTitle(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 1 prop 1", 1)
+	s.Require().NoError(err)
+	s.Require().Equal(votingPower, proposal.Power)
+
+	// vote for trenche 2 proposal
+	proposal, err = s.GetProposalByTitle(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 2 prop 1", 2)
+	s.Require().NoError(err)
+	s.Require().Equal("0", proposal.Power)
+
+	err = s.VoteForHydroProposal(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, proposal.ProposalID, 2)
+	s.Require().NoError(err)
+	proposal, err = s.GetProposalByTitle(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 2 prop 1", 2)
+	s.Require().NoError(err)
+	s.Require().Equal(votingPower, proposal.Power)
+
+	// power of trenche 1 proposal 1 is not changed after voting for proposal from different trenche
+	proposal, err = s.GetProposalByTitle(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 1 prop 1", 1)
+	s.Require().NoError(err)
+	s.Require().Equal(votingPower, proposal.Power)
+
+	// revote for trenche 1 proposal 2
+	proposal, err = s.GetProposalByTitle(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 1 prop 2", 1)
+	s.Require().NoError(err)
+	s.Require().Equal("0", proposal.Power)
+
+	err = s.VoteForHydroProposal(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, proposal.ProposalID, 1)
+	s.Require().NoError(err)
+	proposal, err = s.GetProposalByTitle(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 1 prop 2", 1)
+	s.Require().NoError(err)
+	s.Require().Equal(votingPower, proposal.Power)
+
+	// power of trenche 1 proposal 1 is now 0, since we revoted for the proposal 2 from the first trenche
+	proposal, err = s.GetProposalByTitle(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 1 prop 1", 1)
+	s.Require().NoError(err)
+	s.Require().Equal("0", proposal.Power)
+
+	// pausing the contract
+	s.PauseTheHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr)
+	// confirm that calling contract returns an error
+	err = s.LockTokens(s.NeutronChain.ValidatorWallets[0].Moniker, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, "10", dstIbcDenom1, contractAddr)
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "Paused")
+	err = s.SubmitHydroProposal(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 2 prop 2", 2)
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "Paused")
+	err = s.VoteForHydroProposal(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, proposal.ProposalID, 1)
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "Paused")
+	err = s.WhitelistAccount(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, s.NeutronChain.ValidatorWallets[1].Address)
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "Paused")
+	err = s.RemoveFromWhitelist(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, s.NeutronChain.ValidatorWallets[0].Address)
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "Paused")
+	err = s.AddTranche(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "test", "test")
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "Paused")
+	err = s.EditTranche(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "test", "test", 1)
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "Paused")
 }
 
 func (s *HydroSuite) DelegateTokens(node *cosmos.ChainNode, keyMoniker string, valoperAddr string, amount string) {
@@ -265,21 +359,25 @@ func (s *HydroSuite) RegisterInterchainQueries(
 	s.Require().True(dataSubmitted)
 }
 
-func (s *HydroSuite) LockTokens(keyMoniker string, address string, lockDuration int64, lockAmount string, lockDenom string, contractAddr string) {
+func (s *HydroSuite) LockTokens(keyMoniker string, address string, lockDuration int64, lockAmount string, lockDenom string, contractAddr string) error {
 	lockTxData := map[string]interface{}{
 		"lock_tokens": map[string]interface{}{
 			"lock_duration": lockDuration,
 		},
 	}
 	lockTxJson, err := json.Marshal(lockTxData)
-	s.Require().NoError(err)
+	if err != nil {
+		return err
+	}
 
 	_, err = s.NeutronChain.Validators[0].ExecTx(
 		s.GetContext(),
 		keyMoniker,
 		"wasm", "execute", contractAddr, string(lockTxJson), "--amount", lockAmount+lockDenom, "--gas", "auto",
 	)
-	s.Require().NoError(err)
+	if err != nil {
+		return err
+	}
 
 	lockQueryData := map[string]interface{}{
 		"all_user_lockups": map[string]interface{}{
@@ -289,18 +387,22 @@ func (s *HydroSuite) LockTokens(keyMoniker string, address string, lockDuration 
 		},
 	}
 	lockQueryJson, err := json.Marshal(lockQueryData)
-	s.Require().NoError(err)
+	if err != nil {
+		return err
+	}
 
 	lockQueryResp, _, err := s.NeutronChain.Validators[0].ExecQuery(
 		s.GetContext(),
 		"wasm", "contract-state", "smart", contractAddr, string(lockQueryJson),
 	)
-	s.Require().NoError(err)
-
+	if err != nil {
+		return err
+	}
 	var lockResponse chainsuite.LockResponse
 	err = json.Unmarshal([]byte(lockQueryResp), &lockResponse)
-	s.Require().NoError(err)
-	s.Require().True(len(lockResponse.Data.Lockups) > 0)
+	if err != nil {
+		return err
+	}
 
 	lockFound := false
 	for _, lock := range lockResponse.Data.Lockups {
@@ -309,7 +411,246 @@ func (s *HydroSuite) LockTokens(keyMoniker string, address string, lockDuration 
 			lockFound = true
 		}
 	}
-	s.Require().True(lockFound)
+	if !lockFound {
+		return fmt.Errorf("error locking tokens")
+	}
+
+	return nil
+}
+
+func (s *HydroSuite) SubmitHydroProposal(keyMoniker, contractAddr, proposalTitle string, trancheId int64) error {
+	proposalTxData := map[string]interface{}{
+		"create_proposal": map[string]interface{}{
+			"tranche_id":  trancheId,
+			"title":       proposalTitle,
+			"description": "Proposal Description",
+		},
+	}
+	proposalTxJson, err := json.Marshal(proposalTxData)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.NeutronChain.Validators[0].ExecTx(
+		s.GetContext(),
+		keyMoniker,
+		"wasm", "execute", contractAddr, string(proposalTxJson), "--gas", "auto",
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *HydroSuite) VoteForHydroProposal(keyMoniker string, contractAddr string, proposalId int, trancheId int64) error {
+	voteTxData := map[string]interface{}{
+		"vote": map[string]interface{}{
+			"tranche_id":  trancheId,
+			"proposal_id": proposalId,
+		},
+	}
+	voteTxJson, err := json.Marshal(voteTxData)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.NeutronChain.Validators[0].ExecTx(
+		s.GetContext(),
+		keyMoniker,
+		"wasm", "execute", contractAddr, string(voteTxJson), "--gas", "auto",
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *HydroSuite) GetProposalByTitle(keyMoniker string, contractAddr string, proposalTitle string, trancheId int64) (chainsuite.Proposal, error) {
+	roundId := s.GetCurrentRound(keyMoniker, contractAddr)
+	// query proposal to get id
+	proposalQueryData := map[string]interface{}{
+		"round_proposals": map[string]interface{}{
+			"round_id":   roundId,
+			"tranche_id": trancheId,
+			"start_from": 0,
+			"limit":      100,
+		},
+	}
+	proposalQueryJson, err := json.Marshal(proposalQueryData)
+	s.Require().NoError(err)
+
+	proposalsResponse, _, err := s.NeutronChain.Validators[0].ExecQuery(
+		s.GetContext(),
+		"wasm", "contract-state", "smart", contractAddr, string(proposalQueryJson),
+	)
+	s.Require().NoError(err)
+
+	var proposals chainsuite.ProposalData
+	err = json.Unmarshal([]byte(proposalsResponse), &proposals)
+	s.Require().NoError(err)
+
+	for _, proposal := range proposals.Data.Proposals {
+		if proposal.Title == proposalTitle {
+			return proposal, nil
+		}
+	}
+
+	return chainsuite.Proposal{}, fmt.Errorf("proposal is not found")
+}
+
+func (s *HydroSuite) GetCurrentRound(keyMoniker string, contractAddr string) int64 {
+	roundQueryData := map[string]interface{}{
+		"current_round": map[string]interface{}{},
+	}
+	roundQueryJson, err := json.Marshal(roundQueryData)
+	s.Require().NoError(err)
+
+	response, _, err := s.NeutronChain.Validators[0].ExecQuery(
+		s.GetContext(),
+		"wasm", "contract-state", "smart", contractAddr, string(roundQueryJson),
+	)
+	s.Require().NoError(err)
+
+	var roundData chainsuite.RoundData
+	err = json.Unmarshal([]byte(response), &roundData)
+	s.Require().NoError(err)
+
+	return int64(roundData.Data.RoundID)
+}
+
+func (s *HydroSuite) PauseTheHydroContract(keyMoniker string, contractAddr string) {
+	pauseTxData := map[string]interface{}{
+		"pause": map[string]interface{}{},
+	}
+	pauseTxJson, err := json.Marshal(pauseTxData)
+	s.Require().NoError(err)
+
+	_, err = s.NeutronChain.Validators[0].ExecTx(
+		s.GetContext(),
+		keyMoniker,
+		"wasm", "execute", contractAddr, string(pauseTxJson), "--gas", "auto",
+	)
+	s.Require().NoError(err)
+}
+
+func (s *HydroSuite) UnlockTokens(keyMoniker string, contractAddr string) error {
+	unlockTxData := map[string]interface{}{
+		"unlock_tokens": map[string]interface{}{},
+	}
+	unlockTxJson, err := json.Marshal(unlockTxData)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.NeutronChain.Validators[0].ExecTx(
+		s.GetContext(),
+		keyMoniker,
+		"wasm", "execute", contractAddr, string(unlockTxJson), "--gas", "auto",
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *HydroSuite) WhitelistAccount(keyMoniker string, contractAddr string, address string) error {
+	whiteListTxData := map[string]interface{}{
+		"add_account_to_whitelist": map[string]interface{}{
+			"address": address,
+		},
+	}
+	whiteListTxJson, err := json.Marshal(whiteListTxData)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.NeutronChain.Validators[0].ExecTx(
+		s.GetContext(),
+		keyMoniker,
+		"wasm", "execute", contractAddr, string(whiteListTxJson), "--gas", "auto",
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *HydroSuite) RemoveFromWhitelist(keyMoniker string, contractAddr string, address string) error {
+	whiteListTxData := map[string]interface{}{
+		"remove_account_from_whitelist": map[string]interface{}{
+			"address": address,
+		},
+	}
+	whiteListTxJson, err := json.Marshal(whiteListTxData)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.NeutronChain.Validators[0].ExecTx(
+		s.GetContext(),
+		keyMoniker,
+		"wasm", "execute", contractAddr, string(whiteListTxJson), "--gas", "auto",
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *HydroSuite) AddTranche(keyMoniker, contractAddr, name, metadata string) error {
+	trancheTxData := map[string]interface{}{
+		"add_tranche": map[string]interface{}{
+			"tranche": map[string]interface{}{
+				"name":     name,
+				"metadata": metadata,
+			},
+		},
+	}
+	trancheTxJson, err := json.Marshal(trancheTxData)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.NeutronChain.Validators[0].ExecTx(
+		s.GetContext(),
+		keyMoniker,
+		"wasm", "execute", contractAddr, string(trancheTxJson), "--gas", "auto",
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *HydroSuite) EditTranche(keyMoniker, contractAddr, name, metadata string, trancheId int) error {
+	trancheTxData := map[string]interface{}{
+		"edit_tranche": map[string]interface{}{
+			"tranche_id": trancheId,
+			"name":       name,
+			"metadata":   metadata,
+		},
+	}
+	trancheTxJson, err := json.Marshal(trancheTxData)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.NeutronChain.Validators[0].ExecTx(
+		s.GetContext(),
+		keyMoniker,
+		"wasm", "execute", contractAddr, string(trancheTxJson), "--gas", "auto",
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func getEvtAttribute(events []abci.Event, evtType string, key string) (string, bool) {
