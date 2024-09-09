@@ -9,7 +9,8 @@ use cw2::set_contract_version;
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
 use crate::query::{
-    ConfigResponse, ProposalTributesResponse, QueryMsg, RoundTributesResponse, TributeClaim,
+    ConfigResponse, OutstandingTributeClaimsResponse, ProposalTributesResponse, QueryMsg,
+    RoundTributesResponse, TributeClaim,
 };
 use crate::state::{
     Config, Tribute, COMMUNITY_POOL_CLAIMS, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_ID,
@@ -182,7 +183,7 @@ fn claim_tribute(
 
     // Look up voter's vote for the round, error if it cannot be found
     let vote = query_user_vote(
-        &deps,
+        &deps.as_ref(),
         &config.hydro_contract,
         round_id,
         tranche_id,
@@ -203,41 +204,8 @@ fn claim_tribute(
     // Load the tribute and use the percentage to figure out how much of the tribute to send them
     let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
 
-    // adjust the tribute to get only the portion that should be distributed
-    // to the voters
-    let voters_share = get_voters_tribute_share(&config, tribute.clone().funds)?;
-
-    let percentage_fraction = match vote
-        .power
-        .checked_div(Decimal::from_ratio(proposal.power, Uint128::one()))
-    {
-        Ok(percentage_fraction) => percentage_fraction,
-        Err(_) => {
-            return Err(ContractError::Std(StdError::generic_err(
-                "Failed to compute users voting power percentage",
-            )));
-        }
-    };
-
-    let amount =
-        match Decimal::from_ratio(voters_share, Uint128::one()).checked_mul(percentage_fraction) {
-            Ok(amount) => amount,
-            Err(_) => {
-                return Err(ContractError::Std(StdError::generic_err(
-                    "Failed to compute users tribute share",
-                )));
-            }
-        }
-        // to_uint_floor() is used so that, due to the precision, contract doesn't transfer by 1 token more
-        // to some users, which would leave the last users trying to claim the tribute unable to do so
-        // This also implies that some dust amount of tokens could be left on the contract after everyone
-        // claiming their portion of the tribute
-        .to_uint_floor();
-
-    let sent_coin = Coin {
-        denom: tribute.funds.denom,
-        amount,
-    };
+    let sent_coin =
+        calculate_voter_claim_amount(config, tribute.funds, vote.power, proposal.power)?;
 
     // Mark in the TRIBUTE_CLAIMS that the voter has claimed this tribute
     TRIBUTE_CLAIMS.save(
@@ -253,6 +221,44 @@ fn claim_tribute(
             to_address: voter.to_string(),
             amount: vec![sent_coin],
         }))
+}
+
+pub fn calculate_voter_claim_amount(
+    config: Config,
+    tribute_funds: Coin,
+    user_voting_power: Decimal,
+    total_proposal_power: Uint128,
+) -> Result<Coin, ContractError> {
+    let voters_share = get_voters_tribute_share(&config, tribute_funds.clone())?;
+    let percentage_fraction = match user_voting_power
+        .checked_div(Decimal::from_ratio(total_proposal_power, Uint128::one()))
+    {
+        Ok(percentage_fraction) => percentage_fraction,
+        Err(_) => {
+            return Err(ContractError::Std(StdError::generic_err(
+                "Failed to compute users voting power percentage",
+            )));
+        }
+    };
+    let amount =
+        match Decimal::from_ratio(voters_share, Uint128::one()).checked_mul(percentage_fraction) {
+            Ok(amount) => amount,
+            Err(_) => {
+                return Err(ContractError::Std(StdError::generic_err(
+                    "Failed to compute users tribute share",
+                )));
+            }
+        }
+        // to_uint_floor() is used so that, due to the precision, contract doesn't transfer by 1 token more
+        // to some users, which would leave the last users trying to claim the tribute unable to do so
+        // This also implies that some dust amount of tokens could be left on the contract after everyone
+        // claiming their portion of the tribute
+        .to_uint_floor();
+    let sent_coin = Coin {
+        denom: tribute_funds.denom,
+        amount,
+    };
+    Ok(sent_coin)
 }
 
 // For each proposal in the top N proposals for the given round and tranche:
@@ -423,6 +429,20 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             start_from,
             limit,
         } => to_json_binary(&query_round_tributes(&deps, round_id, start_from, limit)?),
+        QueryMsg::OutstandingTributeClaims {
+            user_address,
+            round_id,
+            tranche_id,
+            start_from,
+            limit,
+        } => to_json_binary(&query_outstanding_tribute_claims(
+            &deps,
+            user_address,
+            round_id,
+            tranche_id,
+            start_from,
+            limit,
+        )?),
     }
 }
 
@@ -479,7 +499,7 @@ fn query_proposal(
 }
 
 fn query_user_vote(
-    deps: &DepsMut,
+    deps: &Deps,
     hydro_contract: &Addr,
     round_id: u64,
     tranche_id: u64,
@@ -555,6 +575,102 @@ pub fn query_round_tributes(
                 Some(tribute)
             })
             .collect(),
+    })
+}
+
+// This goes through all the tributes for a certain round and tranche,
+// then checks whether the given user address can claim them.
+// If the user has not claimed the tribute yet, the amount that the user would receive when claiming is
+// computed, and the tribute is added to the list of tributes that the user can claim.
+pub fn query_outstanding_tribute_claims(
+    deps: &Deps,
+    address: String,
+    round_id: u64,
+    tranche_id: u64,
+    start_from: u32,
+    limit: u32,
+) -> StdResult<OutstandingTributeClaimsResponse> {
+    let address = deps.api.addr_validate(&address)?;
+
+    // get the user vote for this tranche
+    let user_vote = query_user_vote(
+        deps,
+        &CONFIG.load(deps.storage)?.hydro_contract,
+        round_id,
+        tranche_id,
+        address.to_string(),
+    )
+    .map_err(|err| StdError::generic_err(format!("Failed to get user vote: {}", err)))?;
+
+    let config = CONFIG.load(deps.storage)?;
+
+    // check that this proposal is one of the top N in this tranche/round
+    let proposal = get_top_n_proposal(deps, &config, round_id, tranche_id, user_vote.prop_id)
+        .map_err(|err| StdError::generic_err(format!("Failed to get top N proposal: {}", err)))?
+        .ok_or_else(|| {
+            StdError::generic_err("User voted for proposal outside of top N proposals")
+        })?;
+
+    // get all tributes for this proposal
+    let tributes = TRIBUTE_MAP
+        .prefix((round_id, proposal.proposal_id))
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter(|l| {
+            if l.is_err() {
+                // log an error and filter out this entry
+                deps.api.debug("Error reading tribute");
+            }
+            l.is_ok()
+        })
+        .filter_map(|l| {
+            if l.is_ok() {
+                let (_, tribute_id) = l.unwrap();
+                Some(tribute_id)
+            } else {
+                None
+            }
+        })
+        .filter(
+            // make sure that the user has not claimed the tribute already
+            |tribute_id| !TRIBUTE_CLAIMS.has(deps.storage, (address.clone(), *tribute_id)),
+        )
+        .skip(start_from as usize)
+        .take(limit as usize)
+        .filter_map(|tribute_id| {
+            ID_TO_TRIBUTE_MAP
+                .may_load(deps.storage, tribute_id)
+                .unwrap_or(None)
+        })
+        .collect::<Vec<Tribute>>();
+
+    // for each tribute, compute the amount that the user would receive when claiming
+    Ok(OutstandingTributeClaimsResponse {
+        claims: tributes
+            .iter()
+            .filter_map(|tribute| {
+                match calculate_voter_claim_amount(
+                    config.clone(),
+                    tribute.funds.clone(),
+                    user_vote.power,
+                    proposal.power,
+                ) {
+                    Ok(sent_coin) => Some(TributeClaim {
+                        round_id: tribute.round_id,
+                        tranche_id: tribute.tranche_id,
+                        proposal_id: tribute.proposal_id,
+                        tribute_id: tribute.tribute_id,
+                        amount: sent_coin,
+                    }),
+                    Err(err) => {
+                        // log an error and skip this entry
+                        deps.api.debug(
+                            format!("Error calculating voter claim amount: {:?}", err).as_str(),
+                        );
+                        None
+                    }
+                }
+            })
+            .collect::<Vec<TributeClaim>>(),
     })
 }
 
