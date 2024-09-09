@@ -71,7 +71,7 @@ pub fn execute(
             tranche_id,
             tribute_id,
             voter_address,
-        } => claim_tribute(deps, round_id, tranche_id, tribute_id, voter_address),
+        } => claim_tribute(deps, info, round_id, tranche_id, tribute_id, voter_address),
         ExecuteMsg::RefundTribute {
             round_id,
             tranche_id,
@@ -156,6 +156,7 @@ fn add_tribute(
 //     Mark on the voter's vote that they claimed the tribute
 fn claim_tribute(
     deps: DepsMut,
+    info: MessageInfo,
     round_id: u64,
     tranche_id: u64,
     tribute_id: u64,
@@ -217,6 +218,13 @@ fn claim_tribute(
     // Send the tribute to the voter
     Ok(Response::new()
         .add_attribute("action", "claim_tribute")
+        .add_attribute("sender", info.sender)
+        .add_attribute("round_id", round_id.to_string())
+        .add_attribute("tranche_id", tranche_id.to_string())
+        .add_attribute("proposal_id", proposal.proposal_id.to_string())
+        .add_attribute("tribute_id", tribute_id.to_string())
+        .add_attribute("tribute_receiver", voter.clone())
+        .add_attribute("tribute_amount", sent_coin.to_string())
         .add_message(BankMsg::Send {
             to_address: voter.to_string(),
             amount: vec![sent_coin],
@@ -392,6 +400,12 @@ fn refund_tribute(
     // Send the tribute back to the sender
     Ok(Response::new()
         .add_attribute("action", "refund_tribute")
+        .add_attribute("sender", info.sender.to_string())
+        .add_attribute("round_id", round_id.to_string())
+        .add_attribute("tranche_id", tranche_id.to_string())
+        .add_attribute("proposal_id", proposal_id.to_string())
+        .add_attribute("tribute_id", tribute_id.to_string())
+        .add_attribute("refunded_amount", tribute.funds.to_string())
         .add_message(BankMsg::Send {
             to_address: info.sender.to_string(),
             amount: vec![tribute.funds],

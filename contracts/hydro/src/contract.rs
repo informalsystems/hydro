@@ -241,7 +241,7 @@ fn lock_tokens(
         lock_end: env.block.time.plus_nanos(lock_duration),
     };
     let lock_end = lock_entry.lock_end.nanos();
-    LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
+    LOCKS_MAP.save(deps.storage, (info.sender.clone(), lock_id), &lock_entry)?;
     LOCKED_TOKENS.save(deps.storage, &(locked_tokens + amount_to_lock))?;
 
     // Calculate and update the total voting power info for current and all
@@ -259,7 +259,13 @@ fn lock_tokens(
         |_, _, _| Uint128::zero(),
     )?;
 
-    Ok(Response::new().add_attribute("action", "lock_tokens"))
+    Ok(Response::new()
+        .add_attribute("action", "lock_tokens")
+        .add_attribute("sender", info.sender)
+        .add_attribute("lock_id", lock_entry.lock_id.to_string())
+        .add_attribute("locked_tokens", info.funds[0].clone().to_string())
+        .add_attribute("lock_start", lock_entry.lock_start.to_string())
+        .add_attribute("lock_end", lock_entry.lock_end.to_string()))
 }
 
 // Extends the lock duration of a lock entry to be current_block_time + lock_duration,
@@ -305,7 +311,7 @@ fn refresh_lock_duration(
     lock_entry.lock_end = Timestamp::from_nanos(new_lock_end);
 
     // save the updated lock entry
-    LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
+    LOCKS_MAP.save(deps.storage, (info.sender.clone(), lock_id), &lock_entry)?;
 
     // get the validator whose shares are in this lock
     let validator_result = validate_denom(
@@ -351,7 +357,11 @@ fn refresh_lock_duration(
         },
     )?;
 
-    Ok(Response::new().add_attribute("action", "refresh_lock_duration"))
+    Ok(Response::new()
+        .add_attribute("action", "refresh_lock_duration")
+        .add_attribute("sender", info.sender)
+        .add_attribute("old_lock_end", old_lock_end.to_string())
+        .add_attribute("new_lock_end", new_lock_end.to_string()))
 }
 
 // Validate that the lock duration (given in nanos) is either 1, 3, 6, or 12 epochs
@@ -394,8 +404,12 @@ fn unlock_tokens(
     let mut to_delete = vec![];
     let mut total_unlocked_amount = Uint128::zero();
 
-    let mut response = Response::new().add_attribute("action", "unlock_tokens");
+    let mut response = Response::new()
+        .add_attribute("action", "unlock_tokens")
+        .add_attribute("sender", info.sender.to_string());
 
+    let mut unlocked_lock_ids = vec![];
+    let mut unlocked_tokens = vec![];
     for lock in locks {
         let (lock_id, lock_entry) = lock?;
         if lock_entry.lock_end < env.block.time {
@@ -414,6 +428,9 @@ fn unlock_tokens(
 
             // Delete entry from LocksMap
             to_delete.push((info.sender.clone(), lock_id));
+
+            unlocked_lock_ids.push(lock_id.to_string());
+            unlocked_tokens.push(send.to_string());
         }
     }
 
@@ -431,7 +448,9 @@ fn unlock_tokens(
         )?;
     }
 
-    Ok(response)
+    Ok(response
+        .add_attribute("unlocked_lock_ids", unlocked_lock_ids.join(", "))
+        .add_attribute("unlocked_tokens", unlocked_tokens.join(", ")))
 }
 
 fn validate_previous_round_vote(
@@ -511,7 +530,14 @@ fn create_proposal(
         &proposal_id,
     )?;
 
-    Ok(Response::new().add_attribute("action", "create_proposal"))
+    Ok(Response::new()
+        .add_attribute("action", "create_proposal")
+        .add_attribute("sender", info.sender)
+        .add_attribute("round_id", round_id.to_string())
+        .add_attribute("tranche_id", tranche_id.to_string())
+        .add_attribute("proposal_id", proposal_id.to_string())
+        .add_attribute("proposal_title", proposal.title)
+        .add_attribute("proposal_description", proposal.description))
 }
 
 pub fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: Uint128) -> Uint128 {
@@ -567,6 +593,10 @@ fn vote(
     // compute the round end
     let round_end = compute_round_end(&constants, round_id)?;
 
+    let mut response = Response::new()
+        .add_attribute("action", "vote")
+        .add_attribute("sender", info.sender.to_string());
+
     // Get any existing vote for this sender and reverse it- this may be a vote for a different proposal (if they are switching their vote),
     // or it may be a vote for the same proposal (if they have increased their power by locking more and want to update their vote).
     // TODO: this could be made more gas-efficient by using a separate path with fewer writes if the vote is for the same proposal
@@ -621,6 +651,8 @@ fn vote(
 
         // Delete vote
         VOTE_MAP.remove(deps.storage, (round_id, tranche_id, info.sender.clone()));
+
+        response = response.add_attribute("old_proposal_id", vote.prop_id.to_string());
     }
 
     let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
@@ -664,8 +696,6 @@ fn vote(
         // insert the shares into the time_weigted_shares_map
         time_weighted_shares_map.insert(validator.clone(), new_shares);
     }
-
-    let response = Response::new().add_attribute("action", "vote");
 
     // if the user doesn't have any shares that give voting power, we don't need to do anything
     if time_weighted_shares_map.is_empty() {
@@ -716,7 +746,7 @@ fn vote(
     };
     VOTE_MAP.save(deps.storage, (round_id, tranche_id, info.sender), &vote)?;
 
-    Ok(response)
+    Ok(response.add_attribute("proposal_id", vote.prop_id.to_string()))
 }
 
 // Returns the time-weighted amount of shares locked in the given lock entry in a round with the given end time,
@@ -759,7 +789,10 @@ fn add_to_whitelist(
     whitelist.push(whitelist_account_addr.clone());
     WHITELIST.save(deps.storage, &whitelist)?;
 
-    Ok(Response::new().add_attribute("action", "add_to_whitelist"))
+    Ok(Response::new()
+        .add_attribute("action", "add_to_whitelist")
+        .add_attribute("sender", info.sender)
+        .add_attribute("added_whitelist_address", whitelist_account_addr))
 }
 
 // Removes an account address from the whitelist.
@@ -782,7 +815,10 @@ fn remove_from_whitelist(
     whitelist.retain(|cp| cp != whitelist_account_addr);
     WHITELIST.save(deps.storage, &whitelist)?;
 
-    Ok(Response::new().add_attribute("action", "remove_from_whitelist"))
+    Ok(Response::new()
+        .add_attribute("action", "remove_from_whitelist")
+        .add_attribute("sender", info.sender)
+        .add_attribute("removed_whitelist_address", whitelist_account_addr))
 }
 
 fn update_max_locked_tokens(
@@ -800,7 +836,7 @@ fn update_max_locked_tokens(
 
     Ok(Response::new()
         .add_attribute("action", "update_max_locked_tokens")
-        .add_attribute("sender", info.sender.clone())
+        .add_attribute("sender", info.sender)
         .add_attribute("max_locked_tokens", max_locked_tokens.to_string()))
 }
 
@@ -822,7 +858,7 @@ fn pause_contract(
 
     Ok(Response::new()
         .add_attribute("action", "pause_contract")
-        .add_attribute("sender", info.sender.clone())
+        .add_attribute("sender", info.sender)
         .add_attribute("paused", "true"))
 }
 
@@ -855,7 +891,7 @@ fn add_tranche(
 
     Ok(Response::new()
         .add_attribute("action", "add_tranche")
-        .add_attribute("sender", info.sender.clone())
+        .add_attribute("sender", info.sender)
         .add_attribute("tranche id", tranche.id.to_string())
         .add_attribute("tranche name", tranche.name)
         .add_attribute("tranche metadata", tranche.metadata))
@@ -898,7 +934,7 @@ fn edit_tranche(
 
     Ok(Response::new()
         .add_attribute("action", "edit_tranche")
-        .add_attribute("sender", info.sender.clone())
+        .add_attribute("sender", info.sender)
         .add_attribute("tranche id", tranche.id.to_string())
         .add_attribute("old tranche name", old_tranche_name)
         .add_attribute("old tranche metadata", old_tranche_metadata)
@@ -948,7 +984,7 @@ fn create_icqs_for_validators(
     }
 
     let mut register_icqs_submsgs = vec![];
-    for validator_address in valid_addresses {
+    for validator_address in valid_addresses.clone() {
         let msg = new_register_staking_validators_query_msg(
             constants.hub_connection_id.clone(),
             vec![validator_address.clone()],
@@ -969,7 +1005,14 @@ fn create_icqs_for_validators(
 
     Ok(Response::new()
         .add_attribute("action", "create_icqs_for_validators")
-        .add_attribute("sender", info.sender.clone())
+        .add_attribute("sender", info.sender)
+        .add_attribute(
+            "validator_addresses",
+            valid_addresses
+                .into_iter()
+                .collect::<Vec<String>>()
+                .join(", "),
+        )
         .add_submessages(register_icqs_submsgs))
 }
 
