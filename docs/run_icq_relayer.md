@@ -14,9 +14,10 @@ RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=wallet1
 RELAYER_NEUTRON_CHAIN_KEYRING_BACKEND=test  
 RELAYER_NEUTRON_CHAIN_DENOM=untrn  
 RELAYER_NEUTRON_CHAIN_GAS_PRICES=0.0055untrn  
-RELAYER_NEUTRON_CHAIN_MAX_GAS_PRICE=0.011  
-\# *Not sure what this is, docs doesn’t mention it, but the process fails to start if it is not specified*  
+\# Since Neutron is using dynamic gas prices with feemarket, the queried gas price will be multiplied by this multiplier  
 RELAYER_NEUTRON_CHAIN_GAS_PRICE_MULTIPLIER=2  
+\# If the multiplied value goes above the maximum gas price, then the maximum gas price is used  
+RELAYER_NEUTRON_CHAIN_MAX_GAS_PRICE=0.011  
 \# *Gas adjustment used after transaction gas estimation*  
 RELAYER_NEUTRON_CHAIN_GAS_ADJUSTMENT=1.5  
 \# *Connection ID (Neutron end) of IBC connection between Neutron and target chain (Gaia)*  
