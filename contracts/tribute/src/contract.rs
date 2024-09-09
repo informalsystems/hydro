@@ -648,31 +648,27 @@ pub fn query_outstanding_tribute_claims(
         claims: tributes
             .iter()
             .filter_map(|tribute| {
-                let sent_coin_res = calculate_voter_claim_amount(
+                match calculate_voter_claim_amount(
                     config.clone(),
                     tribute.funds.clone(),
                     user_vote.power,
                     proposal.power,
-                );
-
-                if sent_coin_res.is_err() {
-                    // log an error and skip this entry
-                    deps.api.debug(
-                        format!("Error calculating voter claim amount: {:?}", sent_coin_res)
-                            .as_str(),
-                    );
-                    return None;
+                ) {
+                    Ok(sent_coin) => Some(TributeClaim {
+                        round_id: tribute.round_id,
+                        tranche_id: tribute.tranche_id,
+                        proposal_id: tribute.proposal_id,
+                        tribute_id: tribute.tribute_id,
+                        amount: sent_coin,
+                    }),
+                    Err(err) => {
+                        // log an error and skip this entry
+                        deps.api.debug(
+                            format!("Error calculating voter claim amount: {:?}", err).as_str(),
+                        );
+                        None
+                    }
                 }
-
-                let sent_coin = sent_coin_res.unwrap();
-
-                Some(TributeClaim {
-                    round_id: tribute.round_id,
-                    tranche_id: tribute.tranche_id,
-                    proposal_id: tribute.proposal_id,
-                    tribute_id: tribute.tribute_id,
-                    amount: sent_coin,
-                })
             })
             .collect::<Vec<TributeClaim>>(),
     })
