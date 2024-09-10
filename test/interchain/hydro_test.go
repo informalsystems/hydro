@@ -62,7 +62,7 @@ func (s *HydroSuite) TestHappyPath() {
 	dstIbcDenom2 := s.HubToNeutronShareTokenTransfer(s.HubChain.ValidatorWallets[0].Moniker, math.NewInt(400), sourceIbcDenom2, s.NeutronChain.ValidatorWallets[0].Address)
 
 	// deploy hydro contract - store code
-	hydroContract, err := os.ReadFile("testdata/hydro.wasm")
+	hydroContract, err := os.ReadFile("../../artifacts/hydro.wasm")
 	s.Require().NoError(err)
 
 	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), hydroContract, "hydro.wasm"))
