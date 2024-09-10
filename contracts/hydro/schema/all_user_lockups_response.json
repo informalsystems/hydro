@@ -9,7 +9,7 @@
     "lockups": {
       "type": "array",
       "items": {
-        "$ref": "#/definitions/LockEntry"
+        "$ref": "#/definitions/LockEntryWithPower"
       }
     }
   },
@@ -36,6 +36,7 @@
       "required": [
         "funds",
         "lock_end",
+        "lock_id",
         "lock_start"
       ],
       "properties": {
@@ -45,8 +46,29 @@
         "lock_end": {
           "$ref": "#/definitions/Timestamp"
         },
+        "lock_id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
         "lock_start": {
           "$ref": "#/definitions/Timestamp"
+        }
+      },
+      "additionalProperties": false
+    },
+    "LockEntryWithPower": {
+      "type": "object",
+      "required": [
+        "current_voting_power",
+        "lock_entry"
+      ],
+      "properties": {
+        "current_voting_power": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "lock_entry": {
+          "$ref": "#/definitions/LockEntry"
         }
       },
       "additionalProperties": false

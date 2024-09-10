@@ -1,23 +1,43 @@
+use std::collections::{HashMap, HashSet};
+
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
-    Order, Response, StdError, StdResult, Timestamp, Uint128,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
+    MessageInfo, Order, Reply, Response, StdError, StdResult, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
+use cw_utils::must_pay;
+use neutron_sdk::bindings::msg::NeutronMsg;
+use neutron_sdk::bindings::query::NeutronQuery;
+use neutron_sdk::interchain_queries::v047::register_queries::new_register_staking_validators_query_msg;
+use neutron_sdk::sudo::msg::SudoMsg;
 
 use crate::error::ContractError;
-use crate::lsm_integration::validate_denom;
+use crate::lsm_integration::{
+    add_validator_shares_to_round_total, get_total_power_for_round,
+    get_validator_power_ratio_for_round, initialize_validator_store, validate_denom,
+    COSMOS_VALIDATOR_PREFIX,
+};
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
+    LockEntryWithPower, ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
     RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse,
     TranchesResponse, UserVoteResponse, UserVotingPowerResponse, WhitelistAdminsResponse,
     WhitelistResponse,
 };
+use crate::score_keeper::{
+    add_validator_shares_to_proposal, get_total_power_for_proposal,
+    remove_many_validator_shares_from_proposal,
+};
 use crate::state::{
-    Constants, LockEntry, Proposal, Tranche, Vote, CONSTANTS, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID,
-    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TOTAL_ROUND_POWER, TRANCHE_ID, TRANCHE_MAP, VOTE_MAP,
-    WHITELIST, WHITELIST_ADMINS,
+    Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS,
+    LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID,
+    TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
+    VALIDATOR_TO_QUERY_ID, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
+};
+use crate::validators_icqs::{
+    build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
+    handle_submsg_reply, query_min_interchain_query_deposit,
 };
 
 /// Contract name that is used for migration.
@@ -27,13 +47,15 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const MAX_LOCK_ENTRIES: usize = 100;
 
+pub const NATIVE_TOKEN_DENOM: &str = "untrn";
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     // validate that the first round starts in the future
@@ -55,9 +77,11 @@ pub fn instantiate(
         lock_epoch_length: msg.lock_epoch_length,
         first_round_start: msg.first_round_start,
         max_locked_tokens: msg.max_locked_tokens.u128(),
-        hub_transfer_channel_id: msg.hub_transfer_channel_id,
-        paused: false,
         max_validator_shares_participating: msg.max_validator_shares_participating,
+        hub_connection_id: msg.hub_connection_id,
+        hub_transfer_channel_id: msg.hub_transfer_channel_id,
+        icq_update_period: msg.icq_update_period,
+        paused: false,
     };
 
     CONSTANTS.save(deps.storage, &state)?;
@@ -108,6 +132,9 @@ pub fn instantiate(
     // Store ID to be used for the next tranche
     TRANCHE_ID.save(deps.storage, &tranche_id)?;
 
+    // the store for the first round is already initialized, since there is no previous round to copy information over from.
+    VALIDATORS_STORE_INITIALIZED.save(deps.storage, 0, &true)?;
+
     Ok(Response::new()
         .add_attribute("action", "initialisation")
         .add_attribute("sender", info.sender.clone()))
@@ -115,11 +142,11 @@ pub fn instantiate(
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     match msg {
         ExecuteMsg::LockTokens { lock_duration } => lock_tokens(deps, env, info, lock_duration),
         ExecuteMsg::RefreshLockDuration {
@@ -150,6 +177,9 @@ pub fn execute(
             tranche_name,
             tranche_metadata,
         } => edit_tranche(deps, info, tranche_id, tranche_name, tranche_metadata),
+        ExecuteMsg::CreateICQsForValidators { validators } => {
+            create_icqs_for_validators(deps, env, info, validators)
+        }
     }
 }
 
@@ -158,15 +188,18 @@ pub fn execute(
 //     Validate against the accepted denom
 //     Create entry in LocksMap
 fn lock_tokens(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     lock_duration: u64,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
+
+    let current_round = compute_current_round_id(&env, &constants)?;
+    initialize_validator_store(deps.storage, current_round)?;
 
     if info.funds.len() != 1 {
         return Err(ContractError::Std(StdError::generic_err(
@@ -176,9 +209,10 @@ fn lock_tokens(
 
     let funds = info.funds[0].clone();
 
-    validate_denom(deps.as_ref(), env.clone(), &constants, funds.denom).map_err(|err| {
-        ContractError::Std(StdError::generic_err(format!("validating denom: {}", err)))
-    })?;
+    let validator =
+        validate_denom(deps.as_ref(), env.clone(), &constants, funds.denom).map_err(|err| {
+            ContractError::Std(StdError::generic_err(format!("validating denom: {}", err)))
+        })?;
 
     // validate that this wouldn't cause the contract to have more locked tokens than the limit
     let amount_to_lock = info.funds[0].amount.u128();
@@ -198,29 +232,29 @@ fn lock_tokens(
         ))));
     }
 
+    let lock_id = LOCK_ID.load(deps.storage)?;
+    LOCK_ID.save(deps.storage, &(lock_id + 1))?;
     let lock_entry = LockEntry {
+        lock_id,
         funds: info.funds[0].clone(),
         lock_start: env.block.time,
         lock_end: env.block.time.plus_nanos(lock_duration),
     };
     let lock_end = lock_entry.lock_end.nanos();
-
-    let lock_id = LOCK_ID.load(deps.storage)?;
-    LOCK_ID.save(deps.storage, &(lock_id + 1))?;
     LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
     LOCKED_TOKENS.save(deps.storage, &(locked_tokens + amount_to_lock))?;
 
     // Calculate and update the total voting power info for current and all
     // future rounds in which the user will have voting power greather than 0
-    let current_round = compute_current_round_id(&env, &constants)?;
     let last_round_with_power = compute_round_id_for_timestamp(&constants, lock_end)? - 1;
 
-    update_total_voting_power(
+    update_total_time_weighted_shares(
         deps,
         &constants,
         current_round,
         last_round_with_power,
         lock_end,
+        validator,
         lock_entry.funds.amount,
         |_, _, _| Uint128::zero(),
     )?;
@@ -234,16 +268,19 @@ fn lock_tokens(
 // This should essentially have the same effect as removing the old lock and immediately re-locking all
 // the same funds for the new lock duration.
 fn refresh_lock_duration(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     lock_id: u64,
     lock_duration: u64,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
+
+    let current_round = compute_current_round_id(&env, &constants)?;
+    initialize_validator_store(deps.storage, current_round)?;
 
     // try to get the lock with the given id
     // note that this is already indexed by the caller, so if it is successful, the sender owns this lock
@@ -270,21 +307,35 @@ fn refresh_lock_duration(
     // save the updated lock entry
     LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
 
+    // get the validator whose shares are in this lock
+    let validator_result = validate_denom(
+        deps.as_ref(),
+        env.clone(),
+        &constants,
+        lock_entry.funds.denom,
+    );
+    if validator_result.is_err() {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Lock denom is for a validator who is currently not in the set, try refreshing when the validator has enoug delegation",
+        )));
+    }
+    let validator = validator_result.unwrap();
+
     // Calculate and update the total voting power info for current and all
     // future rounds in which the user will have voting power greather than 0.
     // The voting power originated from the old lockup is subtracted from the
     // total voting power, and the voting power gained with the new lockup is
     // added to the total voting power for each applicable round.
-    let current_round = compute_current_round_id(&env, &constants)?;
     let old_last_round_with_power = compute_round_id_for_timestamp(&constants, old_lock_end)? - 1;
     let new_last_round_with_power = compute_round_id_for_timestamp(&constants, new_lock_end)? - 1;
 
-    update_total_voting_power(
+    update_total_time_weighted_shares(
         deps,
         &constants,
         current_round,
         new_last_round_with_power,
         new_lock_end,
+        validator,
         lock_entry.funds.amount,
         |round, round_end, locked_amount| {
             if round > old_last_round_with_power {
@@ -324,7 +375,11 @@ fn validate_lock_duration(lock_epoch_length: u64, lock_duration: u64) -> Result<
 //     Validate `lock_end` < now
 //     Send `amount` tokens back to caller
 //     Delete entry from LocksMap
-fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
+fn unlock_tokens(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -380,7 +435,7 @@ fn unlock_tokens(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
 }
 
 fn validate_previous_round_vote(
-    deps: &DepsMut,
+    deps: &DepsMut<NeutronQuery>,
     env: &Env,
     sender: Addr,
 ) -> Result<(), ContractError> {
@@ -412,15 +467,18 @@ fn validate_previous_round_vote(
 // * validate that the creator of the proposal is on the whitelist
 // Then, it will create the proposal in the specified tranche and in the current round.
 fn create_proposal(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     tranche_id: u64,
     title: String,
     description: String,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
+
+    let round_id = compute_current_round_id(&env, &constants)?;
+    initialize_validator_store(deps.storage, round_id)?;
 
     // validate that the sender is on the whitelist
     let whitelist = WHITELIST.load(deps.storage)?;
@@ -432,7 +490,6 @@ fn create_proposal(
     // check that the tranche with the given id exists
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
-    let round_id = compute_current_round_id(&env, &constants)?;
     let proposal_id = PROP_ID.load(deps.storage)?;
 
     let proposal = Proposal {
@@ -457,7 +514,7 @@ fn create_proposal(
     Ok(Response::new().add_attribute("action", "create_proposal"))
 }
 
-fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: Uint128) -> Uint128 {
+pub fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: Uint128) -> Uint128 {
     let two: Uint128 = 2u16.into();
 
     // Scale lockup power
@@ -479,12 +536,12 @@ fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: Uint1
 }
 
 fn vote(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     tranche_id: u64,
     proposal_id: u64,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     // This voting system is designed to allow for an unlimited number of proposals and an unlimited number of votes
     // to be created, without being vulnerable to DOS. A naive implementation, where all votes or all proposals were iterated
     // at the end of the round could be DOSed by creating a large number of votes or proposals. This is not a problem
@@ -499,11 +556,13 @@ fn vote(
     let constants = CONSTANTS.load(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
+    let round_id = compute_current_round_id(&env, &constants)?;
+    // voting can never be the first action in a round (since one can only vote on proposals in the current round, and a proposal must be created first)
+    // however, to be safe, we initialize the validator store here, since this is more robust in case we change something about voting later
+    initialize_validator_store(deps.storage, round_id)?;
+
     // check that the tranche with the given id exists
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
-
-    // compute the round_id
-    let round_id = compute_current_round_id(&env, &constants)?;
 
     // compute the round end
     let round_end = compute_round_end(&constants, round_id)?;
@@ -526,8 +585,19 @@ fn vote(
             ),
         );
 
-        // Decrement proposal's power
-        proposal.power -= vote.power;
+        remove_many_validator_shares_from_proposal(
+            deps.storage,
+            round_id,
+            vote.prop_id,
+            vote.time_weighted_shares
+                .iter()
+                .map(|(k, v)| (k.clone(), *v))
+                .collect::<Vec<_>>(),
+        )?;
+
+        // save the new power into the proposal
+        let total_power = get_total_power_for_proposal(deps.as_ref().storage, vote.prop_id)?;
+        proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
 
         // Save the proposal
         PROPOSAL_MAP.save(
@@ -554,8 +624,9 @@ fn vote(
     }
 
     let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
-    // Get sender's total locked power
-    let mut power: Uint128 = Uint128::zero();
+
+    // Get sender's locked shares for each validator
+    let mut time_weighted_shares_map: HashMap<String, Decimal> = HashMap::new();
     let locks =
         LOCKS_MAP
             .prefix(info.sender.clone())
@@ -564,26 +635,40 @@ fn vote(
     for lock in locks {
         let (_, lock_entry) = lock?;
 
-        // user gets 0 voting power for lockups that expire before the current round ends
-        if round_end.nanos() > lock_entry.lock_end.nanos() {
+        // get the validator from the denom
+        let validator_result = validate_denom(
+            deps.as_ref(),
+            env.clone(),
+            &constants,
+            lock_entry.clone().funds.denom,
+        );
+        if validator_result.is_err() {
+            deps.api.debug(&format!(
+                "Denom {} is not a valid validator denom; validator might not be in the current set of top validators by delegation",
+                lock_entry.funds.denom
+            ));
+            // skip this lock entry, since the locked shares do not belong to a validator that we want to take into account
             continue;
         }
+        let validator = validator_result.unwrap();
 
-        // Get the remaining lockup length at the end of this round.
-        // This means that their power will be scaled the same by this function no matter when they vote in the round
-        let lockup_length = lock_entry.lock_end.nanos() - round_end.nanos();
+        let scaled_shares = get_lock_time_weighted_shares(round_end, lock_entry, lock_epoch_length);
 
-        // Scale power. This is what implements the different powers for different lockup times.
-        let scaled_power =
-            scale_lockup_power(lock_epoch_length, lockup_length, lock_entry.funds.amount);
+        // add the shares to the map
+        let shares = match time_weighted_shares_map.get(&validator) {
+            Some(shares) => *shares,
+            None => Decimal::zero(),
+        };
+        let new_shares = shares.checked_add(Decimal::from_ratio(scaled_shares, Uint128::one()))?;
 
-        power += scaled_power;
+        // insert the shares into the time_weigted_shares_map
+        time_weighted_shares_map.insert(validator.clone(), new_shares);
     }
 
     let response = Response::new().add_attribute("action", "vote");
 
-    // if users voting power is 0 we don't need to update any of the stores
-    if power == Uint128::zero() {
+    // if the user doesn't have any shares that give voting power, we don't need to do anything
+    if time_weighted_shares_map.is_empty() {
         return Ok(response);
     }
 
@@ -596,8 +681,23 @@ fn vote(
         ((round_id, tranche_id), proposal.power.into(), proposal_id),
     );
 
-    // Update proposal's power
-    proposal.power += power;
+    // update the proposal's power with the new shares
+    for (validator, num_shares) in time_weighted_shares_map.iter() {
+        // add the validator shares to the proposal
+        add_validator_shares_to_proposal(
+            deps.storage,
+            round_id,
+            proposal_id,
+            validator.to_string(),
+            *num_shares,
+        )?;
+    }
+
+    // get the new total power of the proposal
+    let total_power = get_total_power_for_proposal(deps.storage, proposal.proposal_id)?;
+
+    // save the new power into the proposal
+    proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
 
     // Save the proposal
     PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, proposal_id), &proposal)?;
@@ -612,20 +712,34 @@ fn vote(
     // Create vote in Votemap
     let vote = Vote {
         prop_id: proposal_id,
-        power,
+        time_weighted_shares: time_weighted_shares_map,
     };
     VOTE_MAP.save(deps.storage, (round_id, tranche_id, info.sender), &vote)?;
 
     Ok(response)
 }
 
+// Returns the time-weighted amount of shares locked in the given lock entry in a round with the given end time,
+// and using the given lock epoch length.
+fn get_lock_time_weighted_shares(
+    round_end: Timestamp,
+    lock_entry: LockEntry,
+    lock_epoch_length: u64,
+) -> Uint128 {
+    if round_end.nanos() > lock_entry.lock_end.nanos() {
+        return Uint128::zero();
+    }
+    let lockup_length = lock_entry.lock_end.nanos() - round_end.nanos();
+    scale_lockup_power(lock_epoch_length, lockup_length, lock_entry.funds.amount)
+}
+
 // Adds a new account address to the whitelist.
 fn add_to_whitelist(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     _env: Env,
     info: MessageInfo,
     address: String,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -650,11 +764,11 @@ fn add_to_whitelist(
 
 // Removes an account address from the whitelist.
 fn remove_from_whitelist(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     _env: Env,
     info: MessageInfo,
     address: String,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -672,10 +786,10 @@ fn remove_from_whitelist(
 }
 
 fn update_max_locked_tokens(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
     max_locked_tokens: u128,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let mut constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -694,7 +808,10 @@ fn update_max_locked_tokens(
 //     Validate that the contract isn't already paused
 //     Validate sender is whitelist admin
 //     Set paused to true and save the changes
-fn pause_contract(deps: DepsMut, info: MessageInfo) -> Result<Response, ContractError> {
+fn pause_contract(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+) -> Result<Response<NeutronMsg>, ContractError> {
     let mut constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -715,10 +832,10 @@ fn pause_contract(deps: DepsMut, info: MessageInfo) -> Result<Response, Contract
 //     Validate that the tranche with the same name doesn't already exist
 //     Add new tranche to the store
 fn add_tranche(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
     tranche: TrancheInfo,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
     let tranche_name = tranche.name.trim().to_string();
 
@@ -751,12 +868,12 @@ fn add_tranche(
 //     Validate that the tranche with the same name doesn't already exist
 //     Update the tranche in the store
 fn edit_tranche(
-    deps: DepsMut,
+    deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
     tranche_id: u64,
     tranche_name: Option<String>,
     tranche_metadata: Option<String>,
-) -> Result<Response, ContractError> {
+) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -789,8 +906,75 @@ fn edit_tranche(
         .add_attribute("new tranche metadata", tranche.metadata))
 }
 
+// CreateICQsForValidators:
+//     Validate that the contract isn't paused
+//     Validate that the first round has started
+//     Validate received validator addresses
+//     Validate that the sender paid enough deposit for ICQs creation
+//     Create ICQ for each of the valid addresses
+fn create_icqs_for_validators(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    validators: Vec<String>,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+    // This function will return error if the first round hasn't started yet. It is necessarry
+    // that it has started, since handling the results of the interchain queries relies on this.
+    let round_id = compute_current_round_id(&env, &constants)?;
+    initialize_validator_store(deps.storage, round_id)?;
+
+    let mut valid_addresses = HashSet::new();
+    for validator in validators
+        .iter()
+        .map(|validator| validator.trim().to_owned())
+    {
+        if !valid_addresses.contains(&validator)
+            && validator.starts_with(COSMOS_VALIDATOR_PREFIX)
+            && bech32::decode(&validator).is_ok()
+            && !VALIDATOR_TO_QUERY_ID.has(deps.storage, validator.clone())
+        {
+            valid_addresses.insert(validator);
+        }
+    }
+
+    let min_icq_deposit = query_min_interchain_query_deposit(&deps.as_ref())?;
+    let sent_token = must_pay(&info, &min_icq_deposit.denom)?;
+    let min_icqs_deposit = min_icq_deposit.amount.u128() * (valid_addresses.len() as u128);
+    if min_icqs_deposit > sent_token.u128() {
+        return Err(ContractError::Std(
+            StdError::generic_err(format!("Insufficient tokens sent to pay for interchain queries deposits. Sent: {}, Required: {}", Coin::new(sent_token, NATIVE_TOKEN_DENOM), Coin::new(min_icqs_deposit, NATIVE_TOKEN_DENOM)))));
+    }
+
+    let mut register_icqs_submsgs = vec![];
+    for validator_address in valid_addresses {
+        let msg = new_register_staking_validators_query_msg(
+            constants.hub_connection_id.clone(),
+            vec![validator_address.clone()],
+            constants.icq_update_period,
+        )
+        .map_err(|err| {
+            StdError::generic_err(format!(
+                "Failed to create staking validators interchain query. Error: {}",
+                err
+            ))
+        })?;
+
+        register_icqs_submsgs.push(build_create_interchain_query_submsg(
+            msg,
+            validator_address,
+        )?);
+    }
+
+    Ok(Response::new()
+        .add_attribute("action", "create_icqs_for_validators")
+        .add_attribute("sender", info.sender.clone())
+        .add_submessages(register_icqs_submsgs))
+}
+
 fn validate_sender_is_whitelist_admin(
-    deps: &DepsMut,
+    deps: &DepsMut<NeutronQuery>,
     info: &MessageInfo,
 ) -> Result<(), ContractError> {
     let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
@@ -809,7 +993,7 @@ fn validate_contract_is_not_paused(constants: &Constants) -> Result<(), Contract
 }
 
 fn validate_tranche_name_uniqueness(
-    deps: &DepsMut,
+    deps: &DepsMut<NeutronQuery>,
     tranche_name: &String,
 ) -> Result<(), ContractError> {
     for tranche_entry in TRANCHE_MAP.range(deps.storage, None, None, Order::Ascending) {
@@ -825,7 +1009,7 @@ fn validate_tranche_name_uniqueness(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Constants {} => to_json_binary(&query_constants(deps)?),
         QueryMsg::Tranches {} => to_json_binary(&query_tranches(deps)?),
@@ -833,7 +1017,9 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
             address,
             start_from,
             limit,
-        } => to_json_binary(&query_all_user_lockups(deps, address, start_from, limit)?),
+        } => to_json_binary(&query_all_user_lockups(
+            deps, env, address, start_from, limit,
+        )?),
         QueryMsg::ExpiredUserLockups {
             address,
             start_from,
@@ -884,39 +1070,107 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
 }
 
 pub fn query_round_total_power(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     round_id: u64,
 ) -> StdResult<RoundTotalVotingPowerResponse> {
+    let total_round_power = get_total_power_for_round(deps, round_id)?;
     Ok(RoundTotalVotingPowerResponse {
-        total_voting_power: TOTAL_ROUND_POWER.load(deps.storage, round_id)?,
+        total_voting_power: total_round_power.to_uint_ceil(), // TODO: decide on rounding
     })
 }
 
-pub fn query_constants(deps: Deps) -> StdResult<ConstantsResponse> {
+pub fn query_constants(deps: Deps<NeutronQuery>) -> StdResult<ConstantsResponse> {
     Ok(ConstantsResponse {
         constants: CONSTANTS.load(deps.storage)?,
     })
 }
 
 pub fn query_all_user_lockups(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
+    env: Env,
     address: String,
     start_from: u32,
     limit: u32,
 ) -> StdResult<AllUserLockupsResponse> {
+    let raw_lockups = query_user_lockups(
+        deps,
+        deps.api.addr_validate(&address)?,
+        |_| true,
+        start_from,
+        limit,
+    );
+
+    let constants = CONSTANTS.load(deps.storage)?;
+    let current_round_id = compute_current_round_id(&env, &constants)?;
+    let round_end = compute_round_end(&constants, current_round_id)?;
+
+    // enrich the lockups by computing the voting power for each lockup
+    let enriched_lockups = raw_lockups
+        .iter()
+        .map(|lock| {
+            // compute the lockup power scaling due to remaining lockup length
+            let lock_epoch_length = constants.lock_epoch_length;
+
+            let validator_res =
+                validate_denom(deps, env.clone(), &constants, lock.funds.denom.clone());
+
+            if validator_res.is_err() {
+                // lockup has no power if validator is not in the current set
+                return LockEntryWithPower {
+                    lock_entry: lock.clone(),
+                    current_voting_power: Uint128::zero(),
+                };
+            }
+
+            // get the validators power ratio
+            let validator = validator_res.unwrap();
+            let validator_power_ratio =
+                get_validator_power_ratio_for_round(deps.storage, current_round_id, validator);
+            if validator_power_ratio.is_err() {
+                // if there was an error, log this but return 0
+                deps.api.debug(&format!(
+                    "Error when computing voting power for lock: {:?}",
+                    lock
+                ));
+                return LockEntryWithPower {
+                    lock_entry: lock.clone(),
+                    current_voting_power: Uint128::zero(),
+                };
+            }
+            let validator_power_ratio = validator_power_ratio.unwrap();
+
+            let time_weighted_shares =
+                get_lock_time_weighted_shares(round_end, lock.clone(), lock_epoch_length);
+
+            let current_voting_power = validator_power_ratio
+                .checked_mul(Decimal::from_ratio(time_weighted_shares, Uint128::one()));
+
+            if current_voting_power.is_err() {
+                // if there was an overflow error, log this but return 0
+                deps.api.debug(&format!(
+                    "Overflow error when computing voting power for lock: {:?}",
+                    lock
+                ));
+                return LockEntryWithPower {
+                    lock_entry: lock.clone(),
+                    current_voting_power: Uint128::zero(),
+                };
+            }
+
+            LockEntryWithPower {
+                lock_entry: lock.clone(),
+                current_voting_power: current_voting_power.unwrap().to_uint_ceil(),
+            }
+        })
+        .collect();
+
     Ok(AllUserLockupsResponse {
-        lockups: query_user_lockups(
-            deps,
-            deps.api.addr_validate(&address)?,
-            |_| true,
-            start_from,
-            limit,
-        ),
+        lockups: enriched_lockups,
     })
 }
 
 pub fn query_expired_user_lockups(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     env: Env,
     address: String,
     start_from: u32,
@@ -937,7 +1191,7 @@ pub fn query_expired_user_lockups(
 }
 
 pub fn query_proposal(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
@@ -948,7 +1202,7 @@ pub fn query_proposal(
 }
 
 pub fn query_user_voting_power(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     env: Env,
     address: String,
 ) -> StdResult<UserVotingPowerResponse> {
@@ -973,7 +1227,7 @@ pub fn query_user_voting_power(
 }
 
 pub fn query_user_vote(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     round_id: u64,
     tranche_id: u64,
     user_address: String,
@@ -983,11 +1237,18 @@ pub fn query_user_vote(
         (round_id, tranche_id, deps.api.addr_validate(&user_address)?),
     )?;
 
-    Ok(UserVoteResponse { vote })
+    let vote_with_power = VoteWithPower {
+        prop_id: vote.prop_id,
+        power: vote.time_weighted_shares.values().sum(),
+    };
+
+    Ok(UserVoteResponse {
+        vote: vote_with_power,
+    })
 }
 
 pub fn query_round_tranche_proposals(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     round_id: u64,
     tranche_id: u64,
     start_from: u32,
@@ -1012,14 +1273,22 @@ pub fn query_round_tranche_proposals(
     Ok(RoundProposalsResponse { proposals })
 }
 
-pub fn query_current_round_id(deps: Deps, env: Env) -> StdResult<CurrentRoundResponse> {
+pub fn query_current_round_id(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+) -> StdResult<CurrentRoundResponse> {
     let constants = &CONSTANTS.load(deps.storage)?;
     let round_id = compute_round_id_for_timestamp(constants, env.block.time.nanos())?;
 
-    Ok(CurrentRoundResponse { round_id })
+    let round_end = compute_round_end(constants, round_id)?;
+
+    Ok(CurrentRoundResponse {
+        round_id,
+        round_end,
+    })
 }
 
-pub fn query_round_end(deps: Deps, round_id: u64) -> StdResult<RoundEndResponse> {
+pub fn query_round_end(deps: Deps<NeutronQuery>, round_id: u64) -> StdResult<RoundEndResponse> {
     let constants = &CONSTANTS.load(deps.storage)?;
     let round_end = compute_round_end(constants, round_id)?;
 
@@ -1027,7 +1296,7 @@ pub fn query_round_end(deps: Deps, round_id: u64) -> StdResult<RoundEndResponse>
 }
 
 pub fn query_top_n_proposals(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     round_id: u64,
     tranche_id: u64,
     num: usize,
@@ -1055,10 +1324,7 @@ pub fn query_top_n_proposals(
     }
 
     // get total voting power for the round
-    let total_voting_power = match TOTAL_ROUND_POWER.may_load(deps.storage, round_id)? {
-        Some(power) => power,
-        None => Uint128::zero(),
-    };
+    let total_voting_power = get_total_power_for_round(deps, round_id)?.to_uint_ceil(); // TODO: decide on rounding
 
     let top_proposals = top_props
         .into_iter()
@@ -1080,7 +1346,7 @@ pub fn query_top_n_proposals(
     })
 }
 
-pub fn query_tranches(deps: Deps) -> StdResult<TranchesResponse> {
+pub fn query_tranches(deps: Deps<NeutronQuery>) -> StdResult<TranchesResponse> {
     let tranches = TRANCHE_MAP
         .range(deps.storage, None, None, Order::Ascending)
         .map(|t| t.unwrap().1)
@@ -1090,7 +1356,7 @@ pub fn query_tranches(deps: Deps) -> StdResult<TranchesResponse> {
 }
 
 fn query_user_lockups(
-    deps: Deps,
+    deps: Deps<NeutronQuery>,
     user_address: Addr,
     predicate: impl FnMut(&LockEntry) -> bool,
     start_from: u32,
@@ -1106,22 +1372,44 @@ fn query_user_lockups(
         .collect()
 }
 
-pub fn query_whitelist(deps: Deps) -> StdResult<WhitelistResponse> {
+pub fn query_whitelist(deps: Deps<NeutronQuery>) -> StdResult<WhitelistResponse> {
     Ok(WhitelistResponse {
         whitelist: WHITELIST.load(deps.storage)?,
     })
 }
 
-pub fn query_whitelist_admins(deps: Deps) -> StdResult<WhitelistAdminsResponse> {
+pub fn query_whitelist_admins(deps: Deps<NeutronQuery>) -> StdResult<WhitelistAdminsResponse> {
     Ok(WhitelistAdminsResponse {
         admins: WHITELIST_ADMINS.load(deps.storage)?,
     })
 }
 
-pub fn query_total_locked_tokens(deps: Deps) -> StdResult<TotalLockedTokensResponse> {
+pub fn query_total_locked_tokens(deps: Deps<NeutronQuery>) -> StdResult<TotalLockedTokensResponse> {
     Ok(TotalLockedTokensResponse {
         total_locked_tokens: LOCKED_TOKENS.load(deps.storage)?,
     })
+}
+
+pub fn query_validators_info(
+    deps: Deps<NeutronQuery>,
+    round_id: u64,
+) -> StdResult<Vec<ValidatorInfo>> {
+    Ok(VALIDATORS_INFO
+        .prefix(round_id)
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|l| l.unwrap().1)
+        .collect())
+}
+
+pub fn query_validators_per_round(
+    deps: Deps<NeutronQuery>,
+    round_id: u64,
+) -> StdResult<Vec<(u128, String)>> {
+    Ok(VALIDATORS_PER_ROUND
+        .sub_prefix(round_id)
+        .range(deps.storage, None, None, Order::Descending)
+        .map(|l| l.unwrap().0)
+        .collect())
 }
 
 // Computes the current round_id by taking contract_start_time and dividing the time since
@@ -1149,13 +1437,15 @@ fn compute_round_end(constants: &Constants, round_id: u64) -> StdResult<Timestam
     Ok(round_end)
 }
 
-fn update_total_voting_power<T>(
-    deps: DepsMut,
+#[allow(clippy::too_many_arguments)] // complex function that needs a lot of arguments
+fn update_total_time_weighted_shares<T>(
+    deps: DepsMut<NeutronQuery>,
     constants: &Constants,
     start_round_id: u64,
     end_round_id: u64,
     lock_end: u64,
-    funds: Uint128,
+    shares_validator: String,
+    amount: Uint128,
     get_old_voting_power: T,
 ) -> StdResult<()>
 where
@@ -1164,28 +1454,30 @@ where
     for round in start_round_id..=end_round_id {
         let round_end = compute_round_end(constants, round)?;
         let lockup_length = lock_end - round_end.nanos();
-        let voting_power_change =
-            scale_lockup_power(constants.lock_epoch_length, lockup_length, funds)
-                - get_old_voting_power(round, round_end, funds);
+        let scaled_amount = scale_lockup_power(constants.lock_epoch_length, lockup_length, amount);
+        let old_voting_power = get_old_voting_power(round, round_end, amount);
+        let scaled_shares = Decimal::from_ratio(scaled_amount, Uint128::one())
+            - Decimal::from_ratio(old_voting_power, Uint128::one());
 
         // save some gas if there was no power change
-        if voting_power_change == Uint128::zero() {
+        if scaled_shares.is_zero() {
             continue;
         }
 
-        TOTAL_ROUND_POWER.update(deps.storage, round, |power| -> Result<Uint128, StdError> {
-            match power {
-                Some(power) => Ok(power + voting_power_change),
-                None => Ok(voting_power_change),
-            }
-        })?;
+        // add the shares to the total power in the round
+        add_validator_shares_to_round_total(
+            deps.storage,
+            round,
+            shares_validator.clone(),
+            scaled_shares,
+        )?;
     }
 
     Ok(())
 }
 
 // Returns the number of locks for a given user
-fn get_lock_count(deps: Deps, user_address: Addr) -> usize {
+fn get_lock_count(deps: Deps<NeutronQuery>, user_address: Addr) -> usize {
     LOCKS_MAP
         .prefix(user_address)
         .range(deps.storage, None, None, Order::Ascending)
@@ -1199,7 +1491,11 @@ fn get_lock_count(deps: Deps, user_address: Addr) -> usize {
 /// perform any state changes needed. It should also handle the un-pausing of the contract, depending if
 /// it was previously paused or not.
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+pub fn migrate(
+    deps: DepsMut<NeutronQuery>,
+    _env: Env,
+    _msg: MigrateMsg,
+) -> Result<Response<NeutronMsg>, ContractError> {
     CONSTANTS.update(
         deps.storage,
         |mut constants| -> Result<Constants, ContractError> {
@@ -1209,4 +1505,29 @@ pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, C
     )?;
 
     Ok(Response::default())
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn reply(
+    deps: DepsMut<NeutronQuery>,
+    _env: Env,
+    msg: Reply,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    handle_submsg_reply(deps, msg)
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn sudo(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    msg: SudoMsg,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    match msg {
+        SudoMsg::KVQueryResult { query_id } => {
+            handle_delivered_interchain_query_result(deps, env, query_id)
+        }
+        _ => Err(ContractError::Std(StdError::generic_err(
+            "Unexpected sudo message received",
+        ))),
+    }
 }

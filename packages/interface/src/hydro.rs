@@ -19,15 +19,4 @@ impl<Chain: CwEnv> Uploadable for Hydro<Chain> {
             .find_wasm_path("hydro")
             .unwrap()
     }
-    // Return a CosmWasm contract wrapper
-    fn wrapper() -> Box<dyn MockContract<Empty>> {
-        Box::new(
-            ContractWrapper::new_with_empty(
-                hydro::contract::execute,
-                hydro::contract::instantiate,
-                hydro::contract::query,
-            )
-            .with_migrate(hydro::contract::migrate),
-        )
-    }
 }

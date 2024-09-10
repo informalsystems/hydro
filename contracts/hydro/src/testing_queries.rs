@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
-use crate::lsm_integration::set_current_validators;
+use crate::contract::{compute_current_round_id, query_all_user_lockups, scale_lockup_power};
+use crate::state::CONSTANTS;
 use crate::testing::{
-    get_default_instantiate_msg, get_message_info, IBC_DENOM_1, ONE_MONTH_IN_NANO_SECONDS,
-    VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
+    get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds, IBC_DENOM_1,
+    ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
 };
+use crate::testing_lsm_integration::set_validator_power_ratio;
 use crate::testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, MockQuerier};
 use crate::{
     contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
@@ -13,11 +15,13 @@ use crate::{
 };
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
-    Coin, Empty, Env, OwnedDeps,
+    Coin, Env, OwnedDeps,
 };
+use cosmwasm_std::{Decimal, Uint128};
+use neutron_sdk::bindings::query::NeutronQuery;
 
 #[test]
-fn query_expired_user_lockups_test() {
+fn query_user_lockups_test() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
@@ -34,8 +38,7 @@ fn query_expired_user_lockups_test() {
     // simulate user locking 1000 tokens for 1 month, one day after the round started
     env.block.time = env.block.time.plus_days(1);
 
-    let res = set_current_validators(deps.as_mut(), env.clone(), vec![VALIDATOR_1.to_string()]);
-    assert!(res.is_ok());
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     let first_lockup_amount = 1000;
     let info = get_message_info(
@@ -54,8 +57,7 @@ fn query_expired_user_lockups_test() {
     env.block.time = env.block.time.plus_days(1);
 
     // set validators for new round
-    let res = set_current_validators(deps.as_mut(), env.clone(), vec![VALIDATOR_1.to_string()]);
-    assert!(res.is_ok());
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     let second_lockup_amount = 2000;
     let info = get_message_info(
@@ -74,11 +76,83 @@ fn query_expired_user_lockups_test() {
     let expired_lockups = get_expired_user_lockups(&deps, env.clone(), info.sender.to_string());
     assert_eq!(0, expired_lockups.len());
 
+    // but they should have 2 lockups
+    let res = query_all_user_lockups(deps.as_ref(), env.clone(), info.sender.to_string(), 0, 2000);
+    assert!(res.is_ok());
+    let res = res.unwrap();
+
+    assert_eq!(2, res.lockups.len());
+    assert_eq!(
+        first_lockup_amount,
+        res.lockups[0].lock_entry.funds.amount.u128()
+    );
+    assert_eq!(
+        second_lockup_amount,
+        res.lockups[1].lock_entry.funds.amount.u128()
+    );
+
+    // check that the voting powers match
+    assert_eq!(
+        first_lockup_amount,
+        res.lockups[0].current_voting_power.u128()
+    );
+    assert_eq!(
+        // adjust for the 3 month lockup
+        scale_lockup_power(
+            ONE_MONTH_IN_NANO_SECONDS,
+            3 * ONE_MONTH_IN_NANO_SECONDS,
+            Uint128::new(second_lockup_amount),
+        )
+        .u128(),
+        res.lockups[1].current_voting_power.u128()
+    );
+
     // advance the chain for a month and verify that the first lockup has expired
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
     let expired_lockups = get_expired_user_lockups(&deps, env.clone(), info.sender.to_string());
     assert_eq!(1, expired_lockups.len());
     assert_eq!(first_lockup_amount, expired_lockups[0].funds.amount.u128());
+
+    // adjust the validator power ratios to check that they are reflected properly in the result
+    let constants = CONSTANTS.load(deps.as_ref().storage).unwrap();
+    let current_round_id = compute_current_round_id(&env, &constants).unwrap();
+    set_validator_power_ratio(
+        deps.as_mut().storage,
+        current_round_id,
+        VALIDATOR_1,
+        Decimal::percent(50),
+    );
+
+    let all_lockups =
+        query_all_user_lockups(deps.as_ref(), env.clone(), info.sender.to_string(), 0, 2000);
+    assert!(all_lockups.is_ok());
+
+    let all_lockups = all_lockups.unwrap();
+    assert_eq!(2, all_lockups.lockups.len()); // still 2 lockups
+    assert_eq!(
+        first_lockup_amount,
+        all_lockups.lockups[0].lock_entry.funds.amount.u128()
+    );
+    assert_eq!(
+        second_lockup_amount,
+        all_lockups.lockups[1].lock_entry.funds.amount.u128()
+    );
+
+    // check that the first lockup has power 0
+    assert_eq!(0, all_lockups.lockups[0].current_voting_power.u128());
+
+    // second lockup still has 2 months left, so has power
+    assert_eq!(
+        // adjust for the remaining 2 month lockup
+        scale_lockup_power(
+            ONE_MONTH_IN_NANO_SECONDS,
+            2 * ONE_MONTH_IN_NANO_SECONDS,
+            Uint128::new(second_lockup_amount),
+        )
+        .u128()
+            / 2, // adjusted for the 50% power ratio,
+        all_lockups.lockups[1].current_voting_power.u128()
+    );
 
     // advance the chain for 3 more months and verify that the second lockup has expired as well
     env.block.time = env.block.time.plus_nanos(3 * ONE_MONTH_IN_NANO_SECONDS);
@@ -87,9 +161,25 @@ fn query_expired_user_lockups_test() {
     assert_eq!(first_lockup_amount, expired_lockups[0].funds.amount.u128());
     assert_eq!(second_lockup_amount, expired_lockups[1].funds.amount.u128());
 
-    // set validators for this round once again
-    let res = set_current_validators(deps.as_mut(), env.clone(), vec![VALIDATOR_1.to_string()]);
-    assert!(res.is_ok());
+    let all_lockups =
+        query_all_user_lockups(deps.as_ref(), env.clone(), info.sender.to_string(), 0, 2000);
+
+    assert!(all_lockups.is_ok());
+
+    let all_lockups = all_lockups.unwrap();
+    assert_eq!(2, all_lockups.lockups.len()); // still 2 lockups
+    assert_eq!(
+        first_lockup_amount,
+        all_lockups.lockups[0].lock_entry.funds.amount.u128()
+    );
+    assert_eq!(
+        second_lockup_amount,
+        all_lockups.lockups[1].lock_entry.funds.amount.u128()
+    );
+
+    // check that both lockups have 0 voting power
+    assert_eq!(0, all_lockups.lockups[0].current_voting_power.u128());
+    assert_eq!(0, all_lockups.lockups[1].current_voting_power.u128());
 
     // unlock the tokens and verify that the user doesn't have any expired lockups after that
     let msg = ExecuteMsg::UnlockTokens {};
@@ -98,6 +188,13 @@ fn query_expired_user_lockups_test() {
 
     let expired_lockups = get_expired_user_lockups(&deps, env.clone(), info.sender.to_string());
     assert_eq!(0, expired_lockups.len());
+
+    let all_lockups =
+        query_all_user_lockups(deps.as_ref(), env.clone(), info.sender.to_string(), 0, 2000);
+    assert!(all_lockups.is_ok());
+
+    let all_lockups = all_lockups.unwrap();
+    assert_eq!(0, all_lockups.lockups.len());
 }
 
 #[test]
@@ -118,8 +215,7 @@ fn query_user_voting_power_test() {
     let mut env_new = env.clone();
     env_new.block.time = env_new.block.time.plus_days(1);
 
-    let res = set_current_validators(deps.as_mut(), env.clone(), vec![VALIDATOR_1.to_string()]);
-    assert!(res.is_ok());
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     let first_lockup_amount = 1000;
     let info = get_message_info(
@@ -138,8 +234,7 @@ fn query_user_voting_power_test() {
     env_new.block.time = env.block.time.plus_days(2);
 
     // set the validators for the new round
-    let res = set_current_validators(deps.as_mut(), env.clone(), vec![VALIDATOR_1.to_string()]);
-    assert!(res.is_ok());
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     let second_lockup_amount = 2000;
     let info = get_message_info(
@@ -166,8 +261,7 @@ fn query_user_voting_power_test() {
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
 
     // set the validators for the new round, again
-    let res = set_current_validators(deps.as_mut(), env.clone(), vec![VALIDATOR_1.to_string()]);
-    assert!(res.is_ok());
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     // first lockup expires 29 days before the round 1 ends, and the second
     // lockup expires 1 month and 2 days after the round 1 ends, so the
@@ -178,7 +272,7 @@ fn query_user_voting_power_test() {
 }
 
 fn get_expired_user_lockups(
-    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, Empty>,
+    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
     env: Env,
     user_address: String,
 ) -> Vec<LockEntry> {
@@ -196,7 +290,7 @@ fn get_expired_user_lockups(
 }
 
 fn get_user_voting_power(
-    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, Empty>,
+    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
     env: Env,
     user_address: String,
 ) -> u128 {

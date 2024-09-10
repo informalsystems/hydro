@@ -3,10 +3,14 @@
   "title": "InstantiateMsg",
   "type": "object",
   "required": [
+    "community_pool_config",
     "hydro_contract",
     "top_n_props_count"
   ],
   "properties": {
+    "community_pool_config": {
+      "$ref": "#/definitions/CommunityPoolTaxConfig"
+    },
     "hydro_contract": {
       "type": "string"
     },
@@ -16,5 +20,31 @@
       "minimum": 0.0
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "definitions": {
+    "CommunityPoolTaxConfig": {
+      "type": "object",
+      "required": [
+        "bucket_address",
+        "channel_id",
+        "tax_percent"
+      ],
+      "properties": {
+        "bucket_address": {
+          "type": "string"
+        },
+        "channel_id": {
+          "type": "string"
+        },
+        "tax_percent": {
+          "$ref": "#/definitions/Decimal"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Decimal": {
+      "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
+      "type": "string"
+    }
+  }
 }

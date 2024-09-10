@@ -16,7 +16,9 @@
       "type": "object",
       "required": [
         "first_round_start",
+        "hub_connection_id",
         "hub_transfer_channel_id",
+        "icq_update_period",
         "lock_epoch_length",
         "max_locked_tokens",
         "max_validator_shares_participating",
@@ -27,8 +29,16 @@
         "first_round_start": {
           "$ref": "#/definitions/Timestamp"
         },
+        "hub_connection_id": {
+          "type": "string"
+        },
         "hub_transfer_channel_id": {
           "type": "string"
+        },
+        "icq_update_period": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
         },
         "lock_epoch_length": {
           "type": "integer",

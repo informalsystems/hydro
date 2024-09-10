@@ -1,6 +1,9 @@
-use std::time::UNIX_EPOCH;
+use std::{
+    thread,
+    time::{Duration, UNIX_EPOCH},
+};
 
-use cosmwasm_std::{Timestamp, Uint128};
+use cosmwasm_std::{Decimal, Timestamp, Uint128};
 
 use cw_orch::{anyhow, prelude::*};
 
@@ -33,7 +36,13 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             .as_nanos() as u64
             + 15000000000,
     );
-    let round_length = 30000000000;
+    let round_length = 3_600_000_000_000; // 1 hour
+
+    // neutrond q ibc channel channels --node https://rpc-falcron.pion-1.ntrn.tech
+    // find the provider-consumer channel and use its connection-id in next command
+    // neutrond q ibc channel connections [CONNECTION-ID] --node https://rpc-falcron.pion-1.ntrn.tech
+    let hub_connection_id = "connection-42".to_string();
+    let hub_transfer_channel_id = "channel-96".to_string();
 
     hydro.upload()?;
     hydro.instantiate(
@@ -55,14 +64,19 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             whitelist_admins: vec![whitelist_admin_address.clone()],
             initial_whitelist: vec![whitelist_admin_address.clone()],
             max_validator_shares_participating: 500,
-            hub_transfer_channel_id: "channel-0".to_string(),
+            hub_connection_id,
+            hub_transfer_channel_id,
+            icq_update_period: 10000,
         },
-        None,
-        None,
+        Some(&Addr::unchecked(whitelist_admin_address.clone())),
+        &[],
     )?;
 
     let constants_response = hydro.constants()?;
     assert_eq!(constants_response.constants.round_length, round_length);
+
+    // wait for the first round to start
+    thread::sleep(Duration::from_secs(15));
 
     let tribute = Tribute::new(chain.clone());
     tribute.upload()?;
@@ -71,9 +85,14 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
         &tribute::msg::InstantiateMsg {
             hydro_contract: hydro.addr_str()?,
             top_n_props_count: 10,
+            community_pool_config: tribute::msg::CommunityPoolTaxConfig {
+                tax_percent: Decimal::percent(10),
+                channel_id: "channel-1".to_string(),
+                bucket_address: "community-pool-address".to_string(), // TODO: fill this in
+            },
         },
         None,
-        None,
+        &[],
     )?;
 
     let config_response = tribute.config()?;
@@ -85,7 +104,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
 fn get_neutron_testnet_chain_config() -> (ChainInfo, String) {
     (
         networks::PION_1.clone(),
-        String::from("neutron1e68032v8dr8rfeg9wuhd3jjsun83vvla2fsrfs"),
+        String::from("neutron1r6rv879netg009eh6ty23v57qrq29afecuehlm"),
     )
 }
 
@@ -93,7 +112,7 @@ fn get_neutron_testnet_chain_config() -> (ChainInfo, String) {
 //     let network = ChainInfo {
 //         kind: ChainKind::Local,
 //         chain_id: "neutron",
-//         gas_denom: "stake",
+//         gas_denom: "untrn",
 //         gas_price: 0.005,
 //         grpc_urls: &["tcp://localhost:9101"],
 //         network_info: NetworkInfo {

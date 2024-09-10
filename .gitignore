@@ -19,3 +19,6 @@ Cargo.toml.orig
 # Ignore generated documentation
 
 /doc/
+
+# ignore proptest regressions
+*/proptest-regressions/*

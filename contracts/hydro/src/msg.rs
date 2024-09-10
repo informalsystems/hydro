@@ -12,7 +12,9 @@ pub struct InstantiateMsg {
     pub whitelist_admins: Vec<String>,
     pub initial_whitelist: Vec<String>,
     pub max_validator_shares_participating: u64,
+    pub hub_connection_id: String,
     pub hub_transfer_channel_id: String,
+    pub icq_update_period: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -60,6 +62,11 @@ pub enum ExecuteMsg {
         tranche_id: u64,
         tranche_name: Option<String>,
         tranche_metadata: Option<String>,
+    },
+    #[serde(rename = "create_icqs_for_validators")]
+    #[cw_orch(payable)]
+    CreateICQsForValidators {
+        validators: Vec<String>,
     },
 }
 

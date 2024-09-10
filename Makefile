@@ -34,6 +34,8 @@ schema:
 	# to install ts tooling see here: https://docs.cosmology.zone/ts-codegen
 	cd contracts/hydro && cargo run --bin hydro_schema
 	cd contracts/tribute && cargo run --bin tribute_schema
+	cd contracts/hydro/schema && python3 generate_full_schema.py
+	cd contracts/tribute/schema && python3 generate_full_schema.py
 
 	cosmwasm-ts-codegen generate \
           --plugin client \
