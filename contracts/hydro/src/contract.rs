@@ -20,10 +20,10 @@ use crate::lsm_integration::{
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    LockEntryWithPower, ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
-    RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse,
-    TranchesResponse, UserVoteResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
-    WhitelistAdminsResponse, WhitelistResponse,
+    LockEntryWithPower, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
+    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, TopNProposalsResponse,
+    TotalLockedTokensResponse, TranchesResponse, UserVoteResponse, UserVotingPowerResponse,
+    ValidatorPowerRatioResponse, WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, get_total_power_for_proposal,
