@@ -71,7 +71,7 @@ func (s *HydroSuite) TestHappyPath() {
 	codeId := s.StoreCode(neutronNode, s.HubChain.ValidatorWallets[0].Moniker, contractPath)
 
 	// deploy hydro contract - instantiate code
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, codeId, s.NeutronChain.ValidatorWallets[0].Address, 2)
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, codeId, s.NeutronChain.ValidatorWallets[0].Address, 3)
 
 	// register interchain query
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[0].ValoperAddress, s.HubChain.ValidatorWallets[1].ValoperAddress},
@@ -169,6 +169,98 @@ func (s *HydroSuite) TestHappyPath() {
 	err = s.EditTranche(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "test", "test", 1)
 	s.Require().Error(err)
 	s.Require().Contains(err.Error(), "Paused")
+}
+
+// TestActiveValidatorChange tests dropping one validator from the active set, adding a new one, and checks its effect on the proposal voting power
+func (s *HydroSuite) TestActiveValidatorChange() {
+	hubNode := s.HubChain.Validators[0]
+	neutronNode := s.NeutronChain.Validators[0]
+
+	// val1 delegate tokens to validator 1(self delegate), 2 and 3
+	s.DelegateTokens(hubNode, s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[0].ValoperAddress, txAmountUatom(1000))
+	s.DelegateTokens(hubNode, s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[1].ValoperAddress, txAmountUatom(1000))
+	s.DelegateTokens(hubNode, s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[2].ValoperAddress, txAmountUatom(1000))
+
+	// liquid stake tokens
+	recordId1 := s.LiquidStakeTokens(hubNode, s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[0].ValoperAddress,
+		s.HubChain.ValidatorWallets[0].Address, txAmountUatom(500))
+	recordId2 := s.LiquidStakeTokens(hubNode, s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[1].ValoperAddress,
+		s.HubChain.ValidatorWallets[0].Address, txAmountUatom(500))
+	recordId3 := s.LiquidStakeTokens(hubNode, s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[2].ValoperAddress,
+		s.HubChain.ValidatorWallets[0].Address, txAmountUatom(500))
+
+	// transfer share tokens to neutron chain
+	sourceIbcDenom1 := fmt.Sprintf("%s/%s", strings.ToLower(s.HubChain.ValidatorWallets[0].ValoperAddress), recordId1)
+	dstIbcDenom1 := s.HubToNeutronShareTokenTransfer(s.HubChain.ValidatorWallets[0].Moniker, math.NewInt(400), sourceIbcDenom1, s.NeutronChain.ValidatorWallets[0].Address)
+	sourceIbcDenom2 := fmt.Sprintf("%s/%s", strings.ToLower(s.HubChain.ValidatorWallets[1].ValoperAddress), recordId2)
+	dstIbcDenom2 := s.HubToNeutronShareTokenTransfer(s.HubChain.ValidatorWallets[0].Moniker, math.NewInt(400), sourceIbcDenom2, s.NeutronChain.ValidatorWallets[0].Address)
+	sourceIbcDenom3 := fmt.Sprintf("%s/%s", strings.ToLower(s.HubChain.ValidatorWallets[2].ValoperAddress), recordId3)
+	dstIbcDenom3 := s.HubToNeutronShareTokenTransfer(s.HubChain.ValidatorWallets[0].Moniker, math.NewInt(400), sourceIbcDenom3, s.NeutronChain.ValidatorWallets[0].Address)
+
+	// deploy hydro contract - store code
+	hydroContract, err := os.ReadFile("../../artifacts/hydro.wasm")
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), hydroContract, "hydro.wasm"))
+	contractPath := path.Join(s.NeutronChain.GetNode().HomeDir(), "hydro.wasm")
+
+	codeId := s.StoreCode(neutronNode, s.HubChain.ValidatorWallets[0].Moniker, contractPath)
+
+	// deploy hydro contract - instantiate code
+	// active valset consists of 2 validators, currently val1 and val2
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, codeId, s.NeutronChain.ValidatorWallets[0].Address, 2)
+
+	// register interchain query for val1 and val2
+	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[0].ValoperAddress, s.HubChain.ValidatorWallets[1].ValoperAddress},
+		contractAddr, s.NeutronChain.ValidatorWallets[0].Moniker)
+
+	// lockTxData tokens
+	err = s.LockTokens(s.NeutronChain.ValidatorWallets[0].Moniker, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, "10", dstIbcDenom1, contractAddr)
+	s.Require().NoError(err)
+	err = s.LockTokens(s.NeutronChain.ValidatorWallets[0].Moniker, s.NeutronChain.ValidatorWallets[0].Address, 3*86400000000000, "10", dstIbcDenom2, contractAddr)
+	s.Require().NoError(err)
+
+	votingPowerVal1Val1 := "10"
+	votingPowerVal1Val2 := "25"
+	votingPowerVal1Val3 := "30"
+
+	// create hydro proposals
+	err = s.SubmitHydroProposal(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 1 prop 1", 1)
+	s.Require().NoError(err)
+
+	// vote for trenche 1 proposal 1
+	proposal, err := s.GetProposalByTitle(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 1 prop 1", 1)
+	s.Require().NoError(err)
+	s.Require().Equal("0", proposal.Power)
+
+	err = s.VoteForHydroProposal(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, proposal.ProposalID, 1)
+	s.Require().NoError(err)
+	proposal, err = s.GetProposalByTitle(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 1 prop 1", 1)
+	s.Require().NoError(err)
+	s.Require().Equal(votingPowerVal1Val2, proposal.Power)
+
+	// increase stake for val3 on hub, so that val2 drops from active valset and val3 enters
+	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, s.Relayer, 1_000_000, 2, 1))
+
+	// register icq for val3
+	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[2].ValoperAddress}, contractAddr, s.NeutronChain.ValidatorWallets[0].Moniker)
+
+	// lock token for val3
+	err = s.LockTokens(s.NeutronChain.ValidatorWallets[0].Moniker, s.NeutronChain.ValidatorWallets[0].Address, 6*86400000000000, "10", dstIbcDenom3, contractAddr)
+	s.Require().NoError(err)
+
+	// check that voting power is equal to voting power of val1 because val2 is not among active vals anymore
+	proposal, err = s.GetProposalByTitle(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 1 prop 1", 1)
+	s.Require().NoError(err)
+	s.Require().Equal(votingPowerVal1Val1, proposal.Power)
+
+	// vote again so that val3 power is taken into account
+	err = s.VoteForHydroProposal(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, proposal.ProposalID, 1)
+	s.Require().NoError(err)
+	proposal, err = s.GetProposalByTitle(s.NeutronChain.ValidatorWallets[0].Moniker, contractAddr, "trenche 1 prop 1", 1)
+	s.Require().NoError(err)
+	s.Require().Equal(votingPowerVal1Val3, proposal.Power)
+
 }
 
 func (s *HydroSuite) DelegateTokens(node *cosmos.ChainNode, keyMoniker string, valoperAddr string, amount string) {

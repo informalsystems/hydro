@@ -270,7 +270,7 @@ func (p *Chain) consumerAdditionProposal(ctx context.Context, chainID string, sp
 	return propWaiter, errCh, nil
 }
 
-func (p *Chain) CheckCCV(ctx context.Context, consumer *Chain, relayer *Relayer, amount, valIdx, blocksPerEpoch int) error {
+func (p *Chain) UpdateAndVerifyStakeChange(ctx context.Context, consumer *Chain, relayer *Relayer, amount, valIdx, blocksPerEpoch int) error {
 	providerAddress := p.ValidatorWallets[valIdx]
 
 	json, err := p.Validators[valIdx].ReadFile(ctx, "config/priv_validator_key.json")

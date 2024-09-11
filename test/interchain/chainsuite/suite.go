@@ -33,7 +33,7 @@ func (s *Suite) SetupSuite() {
 	// create and start neutron chain
 	s.NeutronChain, err = s.HubChain.AddConsumerChain(s.GetContext(), relayer, NeutronChainID, GetNeutronSpec)
 	s.Require().NoError(err)
-	s.Require().NoError(s.HubChain.CheckCCV(s.GetContext(), s.NeutronChain, relayer, 1_000_000, 0, 1))
+	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, relayer, 1_000_000, 0, 1))
 
 	// start icq relayer
 	sidecarConfig := GetIcqSidecarConfig(s.HubChain, s.NeutronChain)

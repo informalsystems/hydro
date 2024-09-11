@@ -52,7 +52,7 @@ const (
 	CommitTimeout          = 4 * time.Second
 	TotalValidatorFunds    = 11_000_000_000
 	ValidatorFunds         = 30_000_000
-	ValidatorCount         = 2
+	ValidatorCount         = 3
 	FullNodeCount          = 0
 	ChainSpawnWait         = 155 * time.Second
 	CosmosChainType        = "cosmos"
@@ -75,7 +75,7 @@ func DefaultGenesisAmounts(denom string) func(i int) (sdktypes.Coin, sdktypes.Co
 				Amount: sdkmath.NewInt(TotalValidatorFunds),
 			}, sdktypes.Coin{
 				Denom:  denom,
-				Amount: sdkmath.NewInt(ValidatorFunds),
+				Amount: sdkmath.NewInt(ValidatorFunds - int64(i*1000)),
 			}
 	}
 }
