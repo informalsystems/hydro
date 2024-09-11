@@ -81,7 +81,7 @@ pub enum QueryMsg {
 
     #[returns(RegisteredValidatorQueriesResponse)]
     RegisteredValidatorQueries {},
-    
+
     #[returns(ValidatorPowerRatioResponse)]
     ValidatorPowerRatio { validator: String, round_id: u64 },
 }
@@ -170,15 +170,14 @@ pub struct RoundProposalsResponse {
     pub proposals: Vec<Proposal>,
 }
 
-<<<<<<< HEAD
 // A vector containing tuples, where each tuple contains a validator address
 // and the id of the interchain query associated with that validator.
 #[cw_serde]
 pub struct RegisteredValidatorQueriesResponse {
     pub query_ids: Vec<(String, u64)>,
-=======
+}
+
 #[cw_serde]
 pub struct ValidatorPowerRatioResponse {
     pub ratio: Decimal,
->>>>>>> main
 }
