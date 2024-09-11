@@ -1,6 +1,6 @@
 use crate::state::{Constants, LockEntry, Proposal, Tranche, VoteWithPower};
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Timestamp, Uint128};
+use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -78,6 +78,9 @@ pub enum QueryMsg {
 
     #[returns(TotalLockedTokensResponse)]
     TotalLockedTokens {},
+
+    #[returns(ValidatorPowerRatioResponse)]
+    ValidatorPowerRatio { validator: String, round_id: u64 },
 }
 
 #[cw_serde]
@@ -162,4 +165,9 @@ pub struct TotalLockedTokensResponse {
 #[cw_serde]
 pub struct RoundProposalsResponse {
     pub proposals: Vec<Proposal>,
+}
+
+#[cw_serde]
+pub struct ValidatorPowerRatioResponse {
+    pub ratio: Decimal,
 }
