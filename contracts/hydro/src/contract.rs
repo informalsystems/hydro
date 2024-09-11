@@ -22,8 +22,8 @@ use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
     LockEntryWithPower, ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
     RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse,
-    TranchesResponse, UserVoteResponse, UserVotingPowerResponse, WhitelistAdminsResponse,
-    WhitelistResponse,
+    TranchesResponse, UserVoteResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
+    WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, get_total_power_for_proposal,
@@ -1109,6 +1109,10 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(deps)?),
         QueryMsg::WhitelistAdmins {} => to_json_binary(&query_whitelist_admins(deps)?),
         QueryMsg::TotalLockedTokens {} => to_json_binary(&query_total_locked_tokens(deps)?),
+        QueryMsg::ValidatorPowerRatio {
+            validator,
+            round_id,
+        } => to_json_binary(&query_validator_power_ratio(deps, validator, round_id)?),
     }
 }
 
@@ -1453,6 +1457,18 @@ pub fn query_validators_per_round(
         .range(deps.storage, None, None, Order::Descending)
         .map(|l| l.unwrap().0)
         .collect())
+}
+
+// Returns the power ratio of a validator for a given round
+// This will return an error if there is an error parsing the store,
+// but will return 0 if there is no power ratio for the given validator and the round.
+pub fn query_validator_power_ratio(
+    deps: Deps<NeutronQuery>,
+    validator: String,
+    round_id: u64,
+) -> StdResult<ValidatorPowerRatioResponse> {
+    get_validator_power_ratio_for_round(deps.storage, round_id, validator)
+        .map(|r| ValidatorPowerRatioResponse { ratio: r }) // error can stay untouched
 }
 
 // Computes the current round_id by taking contract_start_time and dividing the time since
