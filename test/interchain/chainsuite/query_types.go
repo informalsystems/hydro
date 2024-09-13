@@ -74,3 +74,15 @@ type RoundData struct {
 		RoundID int `json:"round_id"`
 	} `json:"data"`
 }
+
+type RoundVotingPower struct {
+	Data struct {
+		VotingPower string `json:"total_voting_power"`
+	} `json:"data"`
+}
+
+type UserVotingPower struct {
+	Data struct {
+		VotingPower int64 `json:"voting_power"`
+	} `json:"data"`
+}

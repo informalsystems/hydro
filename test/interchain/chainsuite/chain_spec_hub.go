@@ -47,6 +47,8 @@ func hubModifiedGenesis() []cosmos.GenesisKV {
 		cosmos.NewGenesisKV("app_state.gov.params.min_deposit.0.amount", strconv.Itoa(GovMinDepositAmount)),
 		cosmos.NewGenesisKV("app_state.slashing.params.signed_blocks_window", strconv.Itoa(ProviderSlashingWindow)),
 		cosmos.NewGenesisKV("app_state.slashing.params.downtime_jail_duration", DowntimeJailDuration.String()),
+		cosmos.NewGenesisKV("app_state.slashing.params.min_signed_per_window", "0.200000000000000000"),
+		cosmos.NewGenesisKV("app_state.slashing.params.slash_fraction_downtime", "0.10000000000000000"),
 		cosmos.NewGenesisKV("app_state.provider.params.slash_meter_replenish_period", "2s"),
 		cosmos.NewGenesisKV("app_state.provider.params.slash_meter_replenish_fraction", "1.00"),
 		cosmos.NewGenesisKV("app_state.provider.params.blocks_per_epoch", "1"),

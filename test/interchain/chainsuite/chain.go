@@ -273,16 +273,14 @@ func (p *Chain) consumerAdditionProposal(ctx context.Context, chainID string, sp
 func (p *Chain) UpdateAndVerifyStakeChange(ctx context.Context, consumer *Chain, relayer *Relayer, amount, valIdx, blocksPerEpoch int) error {
 	providerAddress := p.ValidatorWallets[valIdx]
 
-	json, err := p.Validators[valIdx].ReadFile(ctx, "config/priv_validator_key.json")
+	providerHex, err := p.GetValidatorHexAddress(ctx, valIdx)
 	if err != nil {
 		return err
 	}
-	providerHex := gjson.GetBytes(json, "address").String()
-	json, err = consumer.Validators[valIdx].ReadFile(ctx, "config/priv_validator_key.json")
+	consumerHex, err := consumer.GetValidatorHexAddress(ctx, valIdx)
 	if err != nil {
 		return err
 	}
-	consumerHex := gjson.GetBytes(json, "address").String()
 
 	providerPowerBefore, err := p.GetValidatorPower(ctx, providerHex)
 	if err != nil {
@@ -341,6 +339,14 @@ func (p *Chain) UpdateAndVerifyStakeChange(ctx context.Context, consumer *Chain,
 		time.Sleep(CommitTimeout)
 	}
 	return retErr
+}
+
+func (p *Chain) GetValidatorHexAddress(ctx context.Context, valIdx int) (string, error) {
+	json, err := p.Validators[valIdx].ReadFile(ctx, "config/priv_validator_key.json")
+	if err != nil {
+		return "", err
+	}
+	return gjson.GetBytes(json, "address").String(), nil
 }
 
 func (c *Chain) GetValidatorPower(ctx context.Context, hexaddr string) (int64, error) {

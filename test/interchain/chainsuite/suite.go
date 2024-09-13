@@ -2,6 +2,7 @@ package chainsuite
 
 import (
 	"context"
+	"os"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -34,6 +35,11 @@ func (s *Suite) SetupSuite() {
 	s.NeutronChain, err = s.HubChain.AddConsumerChain(s.GetContext(), relayer, NeutronChainID, GetNeutronSpec)
 	s.Require().NoError(err)
 	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, relayer, 1_000_000, 0, 1))
+
+	// copy hydro contract to neutron validator
+	hydroContract, err := os.ReadFile("../../artifacts/hydro.wasm")
+	s.Require().NoError(err)
+	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), hydroContract, "hydro.wasm"))
 
 	// start icq relayer
 	sidecarConfig := GetIcqSidecarConfig(s.HubChain, s.NeutronChain)
