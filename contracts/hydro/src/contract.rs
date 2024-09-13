@@ -1268,8 +1268,31 @@ pub fn query_user_voting_power(
         .map(|l| l.unwrap().1)
         .filter(|l| l.lock_end > round_end)
         .map(|lockup| {
-            let lockup_length = lockup.lock_end.nanos() - round_end.nanos();
-            scale_lockup_power(lock_epoch_length, lockup_length, lockup.funds.amount).u128()
+            match validate_denom(deps, env.clone(), &constants, lockup.funds.denom.clone()) {
+                Err(_) => {
+                    // If we fail to resove the denom, or the validator has dropped
+                    // from the top N, then this lockup has zero voting power.
+                    0u128
+                }
+                Ok(validator) => {
+                    match get_validator_power_ratio_for_round(
+                        deps.storage,
+                        current_round_id,
+                        validator,
+                    ) {
+                        Err(_) => 0u128,
+                        Ok(validator_power_ratio) => {
+                            let scaled_power =
+                                get_lock_time_weighted_shares(round_end, lockup, lock_epoch_length);
+
+                            (Decimal::from_ratio(scaled_power, Uint128::one())
+                                * validator_power_ratio)
+                                .to_uint_floor()
+                                .u128()
+                        }
+                    }
+                }
+            }
         })
         .sum();
 
