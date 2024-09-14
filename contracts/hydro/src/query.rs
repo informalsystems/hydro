@@ -79,6 +79,9 @@ pub enum QueryMsg {
     #[returns(TotalLockedTokensResponse)]
     TotalLockedTokens {},
 
+    #[returns(RegisteredValidatorQueriesResponse)]
+    RegisteredValidatorQueries {},
+
     #[returns(ValidatorPowerRatioResponse)]
     ValidatorPowerRatio { validator: String, round_id: u64 },
 }
@@ -165,6 +168,13 @@ pub struct TotalLockedTokensResponse {
 #[cw_serde]
 pub struct RoundProposalsResponse {
     pub proposals: Vec<Proposal>,
+}
+
+// A vector containing tuples, where each tuple contains a validator address
+// and the id of the interchain query associated with that validator.
+#[cw_serde]
+pub struct RegisteredValidatorQueriesResponse {
+    pub query_ids: Vec<(String, u64)>,
 }
 
 #[cw_serde]
