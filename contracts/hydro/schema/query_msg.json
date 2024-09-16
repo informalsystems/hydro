@@ -347,6 +347,19 @@
     {
       "type": "object",
       "required": [
+        "i_c_q_managers"
+      ],
+      "properties": {
+        "i_c_q_managers": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
         "total_locked_tokens"
       ],
       "properties": {
