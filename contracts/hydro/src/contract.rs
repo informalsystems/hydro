@@ -1284,59 +1284,14 @@ pub fn query_all_user_lockups(
     let enriched_lockups = raw_lockups
         .iter()
         .map(|lock| {
-            // compute the lockup power scaling due to remaining lockup length
-            let lock_epoch_length = constants.lock_epoch_length;
-
-            let validator_res =
-                validate_denom(deps, env.clone(), &constants, lock.funds.denom.clone());
-
-            if validator_res.is_err() {
-                // lockup has no power if validator is not in the current set
-                return LockEntryWithPower {
-                    lock_entry: lock.clone(),
-                    current_voting_power: Uint128::zero(),
-                };
-            }
-
-            // get the validators power ratio
-            let validator = validator_res.unwrap();
-            let validator_power_ratio =
-                get_validator_power_ratio_for_round(deps.storage, current_round_id, validator);
-            if validator_power_ratio.is_err() {
-                // if there was an error, log this but return 0
-                deps.api.debug(&format!(
-                    "Error when computing voting power for lock: {:?}",
-                    lock
-                ));
-                return LockEntryWithPower {
-                    lock_entry: lock.clone(),
-                    current_voting_power: Uint128::zero(),
-                };
-            }
-            let validator_power_ratio = validator_power_ratio.unwrap();
-
-            let time_weighted_shares =
-                get_lock_time_weighted_shares(round_end, lock.clone(), lock_epoch_length);
-
-            let current_voting_power = validator_power_ratio
-                .checked_mul(Decimal::from_ratio(time_weighted_shares, Uint128::one()));
-
-            if current_voting_power.is_err() {
-                // if there was an overflow error, log this but return 0
-                deps.api.debug(&format!(
-                    "Overflow error when computing voting power for lock: {:?}",
-                    lock
-                ));
-                return LockEntryWithPower {
-                    lock_entry: lock.clone(),
-                    current_voting_power: Uint128::zero(),
-                };
-            }
-
-            LockEntryWithPower {
-                lock_entry: lock.clone(),
-                current_voting_power: current_voting_power.unwrap().to_uint_ceil(),
-            }
+            to_lockup_with_power(
+                deps,
+                env.clone(),
+                &constants,
+                current_round_id,
+                round_end,
+                lock.clone(),
+            )
         })
         .collect();
 
@@ -1386,7 +1341,6 @@ pub fn query_user_voting_power(
     let constants = CONSTANTS.load(deps.storage)?;
     let current_round_id = compute_current_round_id(&env, &constants)?;
     let round_end = compute_round_end(&constants, current_round_id)?;
-    let lock_epoch_length = constants.lock_epoch_length;
 
     let voting_power = LOCKS_MAP
         .prefix(user_address)
@@ -1394,8 +1348,16 @@ pub fn query_user_voting_power(
         .map(|l| l.unwrap().1)
         .filter(|l| l.lock_end > round_end)
         .map(|lockup| {
-            let lockup_length = lockup.lock_end.nanos() - round_end.nanos();
-            scale_lockup_power(lock_epoch_length, lockup_length, lockup.funds.amount).u128()
+            to_lockup_with_power(
+                deps,
+                env.clone(),
+                &constants,
+                current_round_id,
+                round_end,
+                lockup,
+            )
+            .current_voting_power
+            .u128()
         })
         .sum();
 
@@ -1706,6 +1668,70 @@ fn get_lock_count(deps: Deps<NeutronQuery>, user_address: Addr) -> usize {
         .prefix(user_address)
         .range(deps.storage, None, None, Order::Ascending)
         .count()
+}
+
+fn to_lockup_with_power(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    constants: &Constants,
+    round_id: u64,
+    round_end: Timestamp,
+    lock_entry: LockEntry,
+) -> LockEntryWithPower {
+    match validate_denom(deps, env.clone(), constants, lock_entry.funds.denom.clone()) {
+        Err(_) => {
+            // If we fail to resove the denom, or the validator has dropped
+            // from the top N, then this lockup has zero voting power.
+            LockEntryWithPower {
+                lock_entry,
+                current_voting_power: Uint128::zero(),
+            }
+        }
+        Ok(validator) => {
+            match get_validator_power_ratio_for_round(deps.storage, round_id, validator) {
+                Err(_) => {
+                    deps.api.debug(&format!(
+                        "An error occured while computing voting power for lock: {:?}",
+                        lock_entry,
+                    ));
+
+                    LockEntryWithPower {
+                        lock_entry,
+                        current_voting_power: Uint128::zero(),
+                    }
+                }
+                Ok(validator_power_ratio) => {
+                    let time_weighted_shares = get_lock_time_weighted_shares(
+                        round_end,
+                        lock_entry.clone(),
+                        constants.lock_epoch_length,
+                    );
+
+                    let current_voting_power = validator_power_ratio
+                        .checked_mul(Decimal::from_ratio(time_weighted_shares, Uint128::one()));
+
+                    match current_voting_power {
+                        Err(_) => {
+                            // if there was an overflow error, log this but return 0
+                            deps.api.debug(&format!(
+                                "Overflow error when computing voting power for lock: {:?}",
+                                lock_entry
+                            ));
+
+                            LockEntryWithPower {
+                                lock_entry: lock_entry.clone(),
+                                current_voting_power: Uint128::zero(),
+                            }
+                        }
+                        Ok(current_voting_power) => LockEntryWithPower {
+                            lock_entry,
+                            current_voting_power: current_voting_power.to_uint_ceil(),
+                        },
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// In the first version of Hydro, we allow contract to be un-paused through the Cosmos Hub governance
