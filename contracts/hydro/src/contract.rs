@@ -20,10 +20,11 @@ use crate::lsm_integration::{
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    ICQManagersResponse, LockEntryWithPower, ProposalResponse, QueryMsg, RoundEndResponse,
-    RoundProposalsResponse, RoundTotalVotingPowerResponse, TopNProposalsResponse,
-    TotalLockedTokensResponse, TranchesResponse, UserVoteResponse, UserVotingPowerResponse,
-    ValidatorPowerRatioResponse, WhitelistAdminsResponse, WhitelistResponse,
+    ICQManagersResponse, LockEntryWithPower, ProposalResponse, QueryMsg,
+    RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
+    RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse,
+    TranchesResponse, UserVoteResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
+    WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, get_total_power_for_proposal,
@@ -1228,6 +1229,9 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(deps)?),
         QueryMsg::WhitelistAdmins {} => to_json_binary(&query_whitelist_admins(deps)?),
         QueryMsg::TotalLockedTokens {} => to_json_binary(&query_total_locked_tokens(deps)?),
+        QueryMsg::RegisteredValidatorQueries {} => {
+            to_json_binary(&query_registered_validator_queries(deps)?)
+        }
         QueryMsg::ValidatorPowerRatio {
             validator,
             round_id,
@@ -1555,6 +1559,26 @@ pub fn query_total_locked_tokens(deps: Deps<NeutronQuery>) -> StdResult<TotalLoc
     Ok(TotalLockedTokensResponse {
         total_locked_tokens: LOCKED_TOKENS.load(deps.storage)?,
     })
+}
+
+// Returns all the validator queries that are registered
+// by the contract right now, for each query returning the address of the validator it is
+// associated with, plus its query id.
+pub fn query_registered_validator_queries(
+    deps: Deps<NeutronQuery>,
+) -> StdResult<RegisteredValidatorQueriesResponse> {
+    let query_ids = VALIDATOR_TO_QUERY_ID
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter_map(|l| {
+            if l.is_err() {
+                deps.api
+                    .debug(&format!("Error when querying validator query id: {:?}", l));
+            }
+            l.ok()
+        })
+        .collect();
+
+    Ok(RegisteredValidatorQueriesResponse { query_ids })
 }
 
 pub fn query_validators_info(
