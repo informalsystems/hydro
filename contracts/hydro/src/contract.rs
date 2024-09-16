@@ -20,10 +20,10 @@ use crate::lsm_integration::{
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    LockEntryWithPower, ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
-    RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse,
-    TranchesResponse, UserVoteResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
-    WhitelistAdminsResponse, WhitelistResponse,
+    ICQManagersResponse, LockEntryWithPower, ProposalResponse, QueryMsg, RoundEndResponse,
+    RoundProposalsResponse, RoundTotalVotingPowerResponse, TopNProposalsResponse,
+    TotalLockedTokensResponse, TranchesResponse, UserVoteResponse, UserVotingPowerResponse,
+    ValidatorPowerRatioResponse, WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, get_total_power_for_proposal,
@@ -1232,6 +1232,7 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
             validator,
             round_id,
         } => to_json_binary(&query_validator_power_ratio(deps, validator, round_id)?),
+        QueryMsg::ICQManagers {} => to_json_binary(&query_icq_managers(deps)?),
     }
 }
 
@@ -1588,6 +1589,27 @@ pub fn query_validator_power_ratio(
 ) -> StdResult<ValidatorPowerRatioResponse> {
     get_validator_power_ratio_for_round(deps.storage, round_id, validator)
         .map(|r| ValidatorPowerRatioResponse { ratio: r }) // error can stay untouched
+}
+
+pub fn query_icq_managers(deps: Deps<NeutronQuery>) -> StdResult<ICQManagersResponse> {
+    Ok(ICQManagersResponse {
+        managers: ICQ_MANAGERS
+            .range(deps.storage, None, None, Order::Ascending)
+            .filter_map(|l| {
+                if l.is_err() {
+                    deps.api
+                        .debug("Error parsing store when iterating ICQ managers!");
+                    return None;
+                }
+                // if the value is false, filter this out
+                let (k, v) = l.unwrap();
+                if !v {
+                    return None;
+                }
+                Some(k) // map to the address of the manager
+            })
+            .collect(),
+    })
 }
 
 // Computes the current round_id by taking contract_start_time and dividing the time since
