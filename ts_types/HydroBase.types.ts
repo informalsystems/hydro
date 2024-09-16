@@ -39,6 +39,7 @@ export interface Constants {
   round_length: number;
 }
 export interface CurrentRoundResponse {
+  round_end: Timestamp;
   round_id: number;
 }
 export type ExecuteMsg = {
@@ -185,6 +186,13 @@ export type QueryMsg = {
   whitelist_admins: {};
 } | {
   total_locked_tokens: {};
+} | {
+  registered_validator_queries: {};
+} | {
+  validator_power_ratio: {
+    round_id: number;
+    validator: string;
+  };
 };
 export interface RoundEndResponse {
   round_end: Timestamp;

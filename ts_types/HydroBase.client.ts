@@ -86,6 +86,14 @@ export interface HydroBaseReadOnlyInterface {
   whitelist: () => Promise<WhitelistResponse>;
   whitelistAdmins: () => Promise<WhitelistAdminsResponse>;
   totalLockedTokens: () => Promise<TotalLockedTokensResponse>;
+  registeredValidatorQueries: () => Promise<RegisteredValidatorQueriesResponse>;
+  validatorPowerRatio: ({
+    roundId,
+    validator
+  }: {
+    roundId: number;
+    validator: string;
+  }) => Promise<ValidatorPowerRatioResponse>;
 }
 export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
   client: CosmWasmClient;
@@ -108,6 +116,8 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     this.whitelist = this.whitelist.bind(this);
     this.whitelistAdmins = this.whitelistAdmins.bind(this);
     this.totalLockedTokens = this.totalLockedTokens.bind(this);
+    this.registeredValidatorQueries = this.registeredValidatorQueries.bind(this);
+    this.validatorPowerRatio = this.validatorPowerRatio.bind(this);
   }
   constants = async (): Promise<ConstantsResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -275,6 +285,25 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
   totalLockedTokens = async (): Promise<TotalLockedTokensResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       total_locked_tokens: {}
+    });
+  };
+  registeredValidatorQueries = async (): Promise<RegisteredValidatorQueriesResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      registered_validator_queries: {}
+    });
+  };
+  validatorPowerRatio = async ({
+    roundId,
+    validator
+  }: {
+    roundId: number;
+    validator: string;
+  }): Promise<ValidatorPowerRatioResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      validator_power_ratio: {
+        round_id: roundId,
+        validator
+      }
     });
   };
 }

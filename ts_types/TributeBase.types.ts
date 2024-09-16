@@ -74,6 +74,25 @@ export type QueryMsg = {
     proposal_id: number;
     round_id: number;
     start_from: number;
+  };
+} | {
+  historical_tribute_claims: {
+    limit: number;
+    start_from: number;
+    user_address: string;
+  };
+} | {
+  round_tributes: {
+    limit: number;
+    round_id: number;
+    start_from: number;
+  };
+} | {
+  outstanding_tribute_claims: {
+    limit: number;
+    round_id: number;
+    start_from: number;
     tranche_id: number;
+    user_address: string;
   };
 };
