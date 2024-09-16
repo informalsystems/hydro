@@ -1055,7 +1055,7 @@ fn add_icq_manager(
     let user_addr = deps.api.addr_validate(&address)?;
 
     let is_icq_manager = ICQ_MANAGERS.may_load(deps.storage, user_addr.clone())?;
-    if is_icq_manager.is_some() && is_icq_manager.unwrap() {
+    if is_icq_manager.is_some() {
         return Err(ContractError::Std(StdError::generic_err(
             "Address is already an ICQ manager",
         )));
@@ -1065,7 +1065,8 @@ fn add_icq_manager(
 
     Ok(Response::new()
         .add_attribute("action", "add_icq_manager")
-        .add_attribute("address", user_addr))
+        .add_attribute("address", user_addr)
+        .add_attribute("sender", info.sender))
 }
 
 fn remove_icq_manager(
@@ -1081,7 +1082,7 @@ fn remove_icq_manager(
     let user_addr = deps.api.addr_validate(&address)?;
 
     let free_icq_creators = ICQ_MANAGERS.may_load(deps.storage, user_addr.clone())?;
-    if free_icq_creators.is_none() || !free_icq_creators.unwrap() {
+    if free_icq_creators.is_none() {
         return Err(ContractError::Std(StdError::generic_err(
             "Address is not an ICQ manager",
         )));
@@ -1091,7 +1092,8 @@ fn remove_icq_manager(
 
     Ok(Response::new()
         .add_attribute("action", "remove_icq_manager")
-        .add_attribute("address", user_addr))
+        .add_attribute("address", user_addr)
+        .add_attribute("sender", info.sender))
 }
 
 // Tries to withdraw the given amount of the NATIVE_TOKEN_DENOM from
@@ -1141,7 +1143,7 @@ fn validate_sender_is_icq_manager(
     info: &MessageInfo,
 ) -> Result<(), ContractError> {
     let is_manager = ICQ_MANAGERS.may_load(deps.storage, info.sender.clone())?;
-    if is_manager.is_none() || !is_manager.unwrap() {
+    if is_manager.is_none() {
         return Err(ContractError::Unauthorized);
     }
 
