@@ -1620,11 +1620,11 @@ pub fn query_icq_managers(deps: Deps<NeutronQuery>) -> StdResult<ICQManagersResp
         managers: ICQ_MANAGERS
             .range(deps.storage, None, None, Order::Ascending)
             .filter_map(|l| match l {
-                Ok((k, v)) => Some(k),
+                Ok((k, _)) => Some(k),
                 Err(_) => {
                     deps.api
                         .debug("Error parsing store when iterating ICQ managers!");
-                    return None;
+                    None
                 }
             })
             .collect(),
