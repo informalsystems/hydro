@@ -105,6 +105,11 @@ pub fn instantiate(
         }
     }
 
+    for manager in msg.icq_managers {
+        let manager_addr = deps.api.addr_validate(&manager)?;
+        ICQ_MANAGERS.save(deps.storage, manager_addr, &true)?;
+    }
+
     WHITELIST_ADMINS.save(deps.storage, &whitelist_admins)?;
     WHITELIST.save(deps.storage, &whitelist)?;
 

@@ -505,13 +505,24 @@ fn test_icq_managers_feature() {
     let admin = "admin";
     let non_manager = "non_manager";
     let non_manager_addr = get_address_as_str(&deps.api, non_manager);
+    let initial_icq_manager = "manager";
+    let initial_icq_manager_addr = get_address_as_str(&deps.api, initial_icq_manager);
     let info = get_message_info(&deps.api, admin, &coins(1000, NATIVE_TOKEN_DENOM));
 
     // Instantiate the contract
     let mut instantiate_msg = get_default_instantiate_msg(&deps.api);
     instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, admin)];
+    instantiate_msg.icq_managers = vec![initial_icq_manager_addr.clone()];
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg);
     assert!(res.is_ok(), "Error: {:?}", res);
+
+    // query the initial icq managers to make sure that the manager was added correctly
+    let managers = query_icq_managers(deps.as_ref()).unwrap().managers;
+    assert!(
+        managers.contains(&deps.api.addr_make(initial_icq_manager)),
+        "Managers: {:?}",
+        managers
+    );
 
     // Scenario 1: An address that is not an ICQ manager cannot withdraw funds
     let non_manager_info = get_message_info(&deps.api, non_manager, &[]);

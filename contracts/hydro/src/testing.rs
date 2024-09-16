@@ -1339,6 +1339,15 @@ fn contract_pausing_test() {
             tranche_metadata: Some(String::new()),
         },
         ExecuteMsg::CreateICQsForValidators { validators: vec![] },
+        ExecuteMsg::AddICQManager {
+            address: whitelist_admin.to_string(),
+        },
+        ExecuteMsg::RemoveICQManager {
+            address: whitelist_admin.to_string(),
+        },
+        ExecuteMsg::WithdrawICQFunds {
+            amount: Uint128::new(50),
+        },
     ];
 
     for msg in msgs {
