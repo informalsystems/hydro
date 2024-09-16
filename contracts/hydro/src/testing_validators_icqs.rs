@@ -3,9 +3,7 @@ use std::collections::HashMap;
 use cosmos_sdk_proto::cosmos::staking::v1beta1::Validator as CosmosValidator;
 use cosmos_sdk_proto::prost::Message;
 use cosmwasm_std::{
-    attr, coins,
-    testing::{mock_env, mock_info},
-    Addr, BankMsg, Binary, Coin, Decimal, SubMsg, Uint128,
+    attr, coins, testing::mock_env, Addr, BankMsg, Binary, Coin, Decimal, SubMsg, Uint128,
 };
 use neutron_sdk::{
     bindings::types::StorageValue,
@@ -19,7 +17,7 @@ use crate::{
         query_validators_per_round, sudo, NATIVE_TOKEN_DENOM,
     },
     error::ContractError,
-    msg::{ExecuteMsg, InstantiateMsg},
+    msg::ExecuteMsg,
     state::{
         ValidatorInfo, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
         VALIDATOR_TO_QUERY_ID,
