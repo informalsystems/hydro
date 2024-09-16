@@ -49,7 +49,8 @@ fn create_interchain_queries_test() {
     );
     let info = get_message_info(&deps.api, "addr0000", &[]);
 
-    let msg = get_default_instantiate_msg(&deps.api);
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.icq_managers = vec![]; // make sure we have no icq managers
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
