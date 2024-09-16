@@ -78,7 +78,7 @@ fn create_interchain_queries_test() {
     assert!(
         res
         .to_string()
-        .to_lowercase().contains(format!("insufficient tokens sent to pay for interchain queries deposits. sent: {}, required: {}", user_token, min_deposit_required).as_str()));
+        .to_lowercase().contains(format!("insufficient tokens sent to pay for {} interchain queries deposits. sent: {}, required: {}", 2, user_token, min_deposit_required).as_str()));
 
     let info = get_message_info(&deps.api, "addr0000", &[min_deposit_required.clone()]);
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
