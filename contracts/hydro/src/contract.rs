@@ -979,9 +979,7 @@ fn create_icqs_for_validators(
         }
     }
 
-    let is_icq_manager = ICQ_MANAGERS
-        .may_load(deps.storage, info.sender.clone())?
-        .is_some_and(|v| v); // check that v is some, and also that v is true
+    let is_icq_manager = validate_address_is_icq_manager(&deps, info.sender.clone()).is_ok();
 
     // icq_manager can create ICQs without paying for them; in this case, the
     // funds are implicitly provided by the contract, and these can thus either be funds
@@ -1054,8 +1052,8 @@ fn add_icq_manager(
 
     let user_addr = deps.api.addr_validate(&address)?;
 
-    let is_icq_manager = ICQ_MANAGERS.may_load(deps.storage, user_addr.clone())?;
-    if is_icq_manager.is_some() {
+    let is_icq_manager = validate_address_is_icq_manager(&deps, user_addr.clone());
+    if is_icq_manager.is_ok() {
         return Err(ContractError::Std(StdError::generic_err(
             "Address is already an ICQ manager",
         )));
@@ -1081,8 +1079,8 @@ fn remove_icq_manager(
 
     let user_addr = deps.api.addr_validate(&address)?;
 
-    let free_icq_creators = ICQ_MANAGERS.may_load(deps.storage, user_addr.clone())?;
-    if free_icq_creators.is_none() {
+    let free_icq_creators = validate_address_is_icq_manager(&deps, user_addr.clone());
+    if free_icq_creators.is_err() {
         return Err(ContractError::Std(StdError::generic_err(
             "Address is not an ICQ manager",
         )));
@@ -1109,7 +1107,7 @@ fn withdraw_icq_funds(
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
-    validate_sender_is_icq_manager(&deps, &info)?;
+    validate_address_is_icq_manager(&deps, info.sender.clone())?;
 
     // send the amount of native tokens to the sender
     let send = Coin {
@@ -1138,11 +1136,11 @@ fn validate_sender_is_whitelist_admin(
     Ok(())
 }
 
-fn validate_sender_is_icq_manager(
+fn validate_address_is_icq_manager(
     deps: &DepsMut<NeutronQuery>,
-    info: &MessageInfo,
+    address: Addr,
 ) -> Result<(), ContractError> {
-    let is_manager = ICQ_MANAGERS.may_load(deps.storage, info.sender.clone())?;
+    let is_manager = ICQ_MANAGERS.may_load(deps.storage, address)?;
     if is_manager.is_none() {
         return Err(ContractError::Unauthorized);
     }
