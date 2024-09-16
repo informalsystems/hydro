@@ -5,7 +5,7 @@ use cosmwasm_std::{
     MessageInfo, Order, Reply, Response, StdError, StdResult, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
-use cw_utils::must_pay;
+use cw_utils::{must_pay, NativeBalance};
 use neutron_sdk::bindings::msg::NeutronMsg;
 use neutron_sdk::bindings::query::NeutronQuery;
 use neutron_sdk::interchain_queries::v047::register_queries::new_register_staking_validators_query_msg;
@@ -31,8 +31,8 @@ use crate::score_keeper::{
 };
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS,
-    LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID,
-    TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
+    ICQ_MANAGERS, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID,
+    TRANCHE_ID, TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
     VALIDATOR_TO_QUERY_ID, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::validators_icqs::{
@@ -180,6 +180,9 @@ pub fn execute(
         ExecuteMsg::CreateICQsForValidators { validators } => {
             create_icqs_for_validators(deps, env, info, validators)
         }
+        ExecuteMsg::AddICQManager { address } => add_icq_manager(deps, info, address),
+        ExecuteMsg::RemoveICQManager { address } => remove_icq_manager(deps, info, address),
+        ExecuteMsg::WithdrawICQFunds { amount } => withdraw_icq_funds(deps, info, amount),
     }
 }
 
@@ -1016,12 +1019,106 @@ fn create_icqs_for_validators(
         .add_submessages(register_icqs_submsgs))
 }
 
+fn add_icq_manager(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    address: String,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    let user_addr = deps.api.addr_validate(&address)?;
+
+    let is_icq_manager = ICQ_MANAGERS.may_load(deps.storage, user_addr.clone())?;
+    if is_icq_manager.is_some() && is_icq_manager.unwrap() {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Address is already an ICQ manager",
+        )));
+    }
+
+    ICQ_MANAGERS.save(deps.storage, user_addr.clone(), &true)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "add_icq_manager")
+        .add_attribute("address", user_addr))
+}
+
+fn remove_icq_manager(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    address: String,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    let user_addr = deps.api.addr_validate(&address)?;
+
+    let free_icq_creators = ICQ_MANAGERS.may_load(deps.storage, user_addr.clone())?;
+    if free_icq_creators.is_none() || free_icq_creators.unwrap() == false {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Address is not an ICQ manager",
+        )));
+    }
+
+    ICQ_MANAGERS.remove(deps.storage, user_addr.clone());
+
+    Ok(Response::new()
+        .add_attribute("action", "remove_icq_manager")
+        .add_attribute("address", user_addr))
+}
+
+// Tries to withdraw the given amount of the NATIVE_TOKEN_DENOM from
+// the contract. These will in practice be funds that
+// were returned to the contract when Interchain Queries
+// were removed because a validator fell out of the
+// top validators.
+fn withdraw_icq_funds(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    amount: Uint128,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_sender_is_icq_manager(&deps, &info)?;
+
+    // send the amount of native tokens to the sender
+    let send = Coin {
+        denom: NATIVE_TOKEN_DENOM.to_string(),
+        amount,
+    };
+
+    Ok(Response::new()
+        .add_attribute("action", "withdraw_icq_escrows")
+        .add_attribute("sender", info.sender.clone())
+        .add_message(BankMsg::Send {
+            to_address: info.sender.to_string(),
+            amount: vec![send],
+        }))
+}
+
 fn validate_sender_is_whitelist_admin(
     deps: &DepsMut<NeutronQuery>,
     info: &MessageInfo,
 ) -> Result<(), ContractError> {
     let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
     if !whitelist_admins.contains(&info.sender) {
+        return Err(ContractError::Unauthorized);
+    }
+
+    Ok(())
+}
+
+fn validate_sender_is_icq_manager(
+    deps: &DepsMut<NeutronQuery>,
+    info: &MessageInfo,
+) -> Result<(), ContractError> {
+    let is_manager = ICQ_MANAGERS.may_load(deps.storage, info.sender.clone())?;
+    if is_manager.is_none() || is_manager.unwrap() == false {
         return Err(ContractError::Unauthorized);
     }
 

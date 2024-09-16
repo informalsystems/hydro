@@ -143,6 +143,12 @@ pub const SCALED_PROPOSAL_SHARES_MAP: Map<(u64, String), Decimal> =
 // PROPOSAL_TOTAL_MAP: key(proposal_id) -> total_power
 pub const PROPOSAL_TOTAL_MAP: Map<u64, Decimal> = Map::new("proposal_power_total");
 
+// Stores the accounts that can attempt to create ICQs without sending funds to the contract
+// in the same message, which will then implicitly be paid for by the contract.
+// These accounts can also withdraw native tokens (but not voting tokens locked by users)
+// from the contract.
+pub const ICQ_MANAGERS: Map<Addr, bool> = Map::new("icq_managers");
+
 #[cw_serde]
 #[derive(Default)]
 pub struct ValidatorInfo {

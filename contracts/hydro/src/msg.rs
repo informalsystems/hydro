@@ -15,6 +15,9 @@ pub struct InstantiateMsg {
     pub hub_connection_id: String,
     pub hub_transfer_channel_id: String,
     pub icq_update_period: u64,
+    // Anyone can permissionlessly create ICQs, but addresses in this list can attempt
+    // to create ICQs without paying, which will then implicitly be paid for by the contract
+    pub free_icq_creators_account_addrs: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -67,6 +70,18 @@ pub enum ExecuteMsg {
     #[cw_orch(payable)]
     CreateICQsForValidators {
         validators: Vec<String>,
+    },
+
+    AddICQManager {
+        address: String,
+    },
+
+    RemoveICQManager {
+        address: String,
+    },
+
+    WithdrawICQFunds {
+        amount: Uint128,
     },
 }
 

@@ -493,3 +493,12 @@ pub fn get_mock_validator(address: &str, tokens: Uint128, shares: Uint128) -> Co
         ..CosmosValidator::default()
     }
 }
+
+// TODO: test cases for fund management
+// * address that is not a manager cannot withdraw funds
+// * cannot create icqs without paying
+// * add address to manager list
+// * manager can withdraw funds
+// * manager can create icq without sending funds (fails if no funds)
+// * manager can create icq without sending funds (succeeds if funds)
+// * remove manager from list

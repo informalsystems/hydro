@@ -72,12 +72,13 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         }],
         first_round_start: mock_env().block.time,
         max_locked_tokens: Uint128::new(1000000),
-        initial_whitelist: vec![user_address],
+        initial_whitelist: vec![user_address.clone()],
         whitelist_admins: vec![],
         max_validator_shares_participating: 100,
         hub_connection_id: "connection-0".to_string(),
         hub_transfer_channel_id: "channel-0".to_string(),
         icq_update_period: 100,
+        free_icq_creators_account_addrs: vec![user_address],
     }
 }
 
