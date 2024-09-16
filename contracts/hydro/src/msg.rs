@@ -16,8 +16,10 @@ pub struct InstantiateMsg {
     pub hub_transfer_channel_id: String,
     pub icq_update_period: u64,
     // Anyone can permissionlessly create ICQs, but addresses in this list can attempt
-    // to create ICQs without paying, which will then implicitly be paid for by the contract
-    pub free_icq_creators_account_addrs: Vec<String>,
+    // to create ICQs without paying, which will then implicitly be paid for by the contract;
+    // and they can also withdraw funds in the *native token denom* from the contract;
+    // they can however not withdraw user funds that were locked for voting.
+    pub icq_managers: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

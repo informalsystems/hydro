@@ -5,7 +5,7 @@ use cosmwasm_std::{
     MessageInfo, Order, Reply, Response, StdError, StdResult, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
-use cw_utils::{must_pay, NativeBalance};
+use cw_utils::must_pay;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use neutron_sdk::bindings::query::NeutronQuery;
 use neutron_sdk::interchain_queries::v047::register_queries::new_register_staking_validators_query_msg;
@@ -978,12 +978,17 @@ fn create_icqs_for_validators(
         }
     }
 
-    let min_icq_deposit = query_min_interchain_query_deposit(&deps.as_ref())?;
-    let sent_token = must_pay(&info, &min_icq_deposit.denom)?;
-    let min_icqs_deposit = min_icq_deposit.amount.u128() * (valid_addresses.len() as u128);
-    if min_icqs_deposit > sent_token.u128() {
-        return Err(ContractError::Std(
-            StdError::generic_err(format!("Insufficient tokens sent to pay for interchain queries deposits. Sent: {}, Required: {}", Coin::new(sent_token, NATIVE_TOKEN_DENOM), Coin::new(min_icqs_deposit, NATIVE_TOKEN_DENOM)))));
+    let is_icq_manager = ICQ_MANAGERS
+        .may_load(deps.storage, info.sender.clone())?
+        .is_some_and(|v| v); // check that v is some, and also that v is true
+
+    // icq_manager can create ICQs without paying for them; in this case, the
+    // funds are implicitly provided by the contract, and these can thus either be funds
+    // sent to the contract beforehand, or they could be escrowed funds
+    // that were returned to the contract when previous Interchain Queries were removed
+    // amd the escrowed funds were removed
+    if !is_icq_manager {
+        validate_icq_deposit_funds_sent(deps, &info, valid_addresses.len() as u64)?;
     }
 
     let mut register_icqs_submsgs = vec![];
@@ -1017,6 +1022,23 @@ fn create_icqs_for_validators(
                 .join(", "),
         )
         .add_submessages(register_icqs_submsgs))
+}
+
+// Validates that enough funds were sent to create ICQs for the given validator addresses.
+fn validate_icq_deposit_funds_sent(
+    deps: DepsMut<'_, NeutronQuery>,
+    info: &MessageInfo,
+    num_created_icqs: u64,
+) -> Result<(), ContractError> {
+    let min_icq_deposit = query_min_interchain_query_deposit(&deps.as_ref())?;
+    let sent_token = must_pay(info, &min_icq_deposit.denom)?;
+    let min_icqs_deposit = min_icq_deposit.amount.u128() * (num_created_icqs as u128);
+    if min_icqs_deposit > sent_token.u128() {
+        return Err(ContractError::Std(
+            StdError::generic_err(format!("Insufficient tokens sent to pay for {} interchain queries deposits. Sent: {}, Required: {}", num_created_icqs, Coin::new(sent_token, NATIVE_TOKEN_DENOM), Coin::new(min_icqs_deposit, NATIVE_TOKEN_DENOM)))));
+    }
+
+    Ok(())
 }
 
 fn add_icq_manager(
@@ -1058,7 +1080,7 @@ fn remove_icq_manager(
     let user_addr = deps.api.addr_validate(&address)?;
 
     let free_icq_creators = ICQ_MANAGERS.may_load(deps.storage, user_addr.clone())?;
-    if free_icq_creators.is_none() || free_icq_creators.unwrap() == false {
+    if free_icq_creators.is_none() || !free_icq_creators.unwrap() {
         return Err(ContractError::Std(StdError::generic_err(
             "Address is not an ICQ manager",
         )));
@@ -1118,7 +1140,7 @@ fn validate_sender_is_icq_manager(
     info: &MessageInfo,
 ) -> Result<(), ContractError> {
     let is_manager = ICQ_MANAGERS.may_load(deps.storage, info.sender.clone())?;
-    if is_manager.is_none() || is_manager.unwrap() == false {
+    if is_manager.is_none() || !is_manager.unwrap() {
         return Err(ContractError::Unauthorized);
     }
 
