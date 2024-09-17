@@ -154,7 +154,7 @@ type GasPrice struct {
 }
 
 type GasPriceResponse struct {
-	Price GasPrice `json:"prices"`
+	Price GasPrice `json:"price"`
 }
 
 // Function to fetch gas prices using the neutrond CLI
