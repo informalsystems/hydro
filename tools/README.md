@@ -2,7 +2,7 @@
 
 ### Neutron Interchain Queries (ICQ) Relayer Setup
 
-Clone the [ICQ Relayer](https://github.com/neutron-org/neutron-query-relayer) repository and switch to the latest tag (v0.3.0 at the time of writing).
+Clone the [ICQ Relayer](https://github.com/neutron-org/neutron-query-relayer) repository and switch to the latest tag (v0.3.0 at the time of writing). Adjust the path in the `script.sh` file to point to the cloned repository.
 
 ### Setting up variables
 

@@ -1,3 +1,5 @@
+RELAYER_REPO_PATH=../../neutron-query-relayer
+
 # populate the config for the ICQ relayer and the ICQ query creation
 export NEUTRON_CHAIN_ID="pion-1"
 export RELAYER_NEUTRON_CHAIN_RPC_ADDR=https://rpc-falcron.pion-1.ntrn.tech:443  
@@ -20,7 +22,7 @@ export RELAYER_REGISTRY_ADDRESSES=neutron15e0r3h6nw4d9yhe2y5kslaq9t35pdk4egm5qd8
 # lower this if you get errors about exceeding the max block size
 export BATCH_SIZE=30
 # the number of top validators to add queries for
-export NUM_VALIDATORS_TO_ADD=7
+export NUM_VALIDATORS_TO_ADD=9
 
 #####
 # typically, no need to modify these  
@@ -34,5 +36,5 @@ export LOGGER_LEVEL=debug
 go run main.go
 
 # Run the relayer
-cd ../../neutron-query-relayer
+cd $RELAYER_REPO_PATH
 go run ./cmd/neutron_query_relayer start

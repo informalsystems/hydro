@@ -13,9 +13,6 @@ import (
 	"sort"
 	"strconv"
 	"time"
-
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	feemarkettypes "github.com/skip-mev/feemarket/x/feemarket/types"
 )
 
 var (
@@ -103,6 +100,63 @@ func init() {
 	}
 }
 
+type Response struct {
+	Validators []Validator `json:"validators"`
+	Pagination Pagination  `json:"pagination"`
+}
+
+type Validator struct {
+	OperatorAddress   string          `json:"operator_address"`
+	ConsensusPubkey   ConsensusPubkey `json:"consensus_pubkey"`
+	Jailed            bool            `json:"jailed"`
+	Status            string          `json:"status"`
+	Tokens            string          `json:"tokens"`
+	DelegatorShares   string          `json:"delegator_shares"`
+	Description       Description     `json:"description"`
+	UnbondingHeight   string          `json:"unbonding_height"`
+	UnbondingTime     string          `json:"unbonding_time"`
+	Commission        Commission      `json:"commission"`
+	MinSelfDelegation string          `json:"min_self_delegation"`
+}
+
+type ConsensusPubkey struct {
+	Type string `json:"@type"`
+	Key  string `json:"key"`
+}
+
+type Description struct {
+	Moniker         string `json:"moniker"`
+	Identity        string `json:"identity"`
+	Website         string `json:"website"`
+	SecurityContact string `json:"security_contact"`
+	Details         string `json:"details"`
+}
+
+type Commission struct {
+	CommissionRates CommissionRates `json:"commission_rates"`
+	UpdateTime      string          `json:"update_time"`
+}
+
+type CommissionRates struct {
+	Rate          string `json:"rate"`
+	MaxRate       string `json:"max_rate"`
+	MaxChangeRate string `json:"max_change_rate"`
+}
+
+type Pagination struct {
+	NextKey string `json:"next_key"`
+	Total   string `json:"total"`
+}
+
+type GasPrice struct {
+	Denom  string `json:"denom"`
+	Amount string `json:"amount"`
+}
+
+type GasPriceResponse struct {
+	Price GasPrice `json:"prices"`
+}
+
 // Function to fetch gas prices using the neutrond CLI
 func fetch_gas_price() (string, error) {
 	// Construct the command arguments
@@ -123,7 +177,7 @@ func fetch_gas_price() (string, error) {
 	}
 
 	// Parse the JSON output
-	var gasPricesResponse feemarkettypes.GasPriceResponse
+	var gasPricesResponse GasPriceResponse
 	err = json.Unmarshal(output, &gasPricesResponse)
 	if err != nil {
 		return "", fmt.Errorf("error decoding JSON: %v", err)
@@ -131,7 +185,7 @@ func fetch_gas_price() (string, error) {
 
 	// Find the gas price for 'untrn'
 	if gasPricesResponse.Price.Denom == "untrn" {
-		return gasPricesResponse.Price.Amount.String(), nil
+		return gasPricesResponse.Price.Amount, nil
 	}
 
 	return "", fmt.Errorf("untrn gas price not found: %v", gasPricesResponse)
@@ -278,7 +332,7 @@ func add_validator_queries(validators []string, contractAddress string) error {
 }
 
 // Function to query Cosmos Hub validators
-func query_hub_validators() ([]stakingtypes.Validator, error) {
+func query_hub_validators() ([]Validator, error) {
 	// Endpoint to fetch validators
 	// TODO: Add pagination support. 1000 is fine for now, because the Hub doesn't have that many anyways
 	endpoint := fmt.Sprintf("%s/cosmos/staking/v1beta1/validators?pagination.limit=1000", HUB_API_NODE)
@@ -297,7 +351,7 @@ func query_hub_validators() ([]stakingtypes.Validator, error) {
 	}
 
 	// Parse JSON response
-	var response stakingtypes.QueryValidatorsResponse
+	var response Response
 	err = json.NewDecoder(resp.Body).Decode(&response)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding JSON: %v", err)
@@ -305,7 +359,11 @@ func query_hub_validators() ([]stakingtypes.Validator, error) {
 
 	// Sort validators by tokens in descending order
 	sort.Slice(response.Validators, func(i, j int) bool {
-		return response.Validators[i].Tokens.GT(response.Validators[j].Tokens)
+		tokensI := new(big.Int)
+		tokensI.SetString(response.Validators[i].Tokens, 10)
+		tokensJ := new(big.Int)
+		tokensJ.SetString(response.Validators[j].Tokens, 10)
+		return tokensI.Cmp(tokensJ) > 0
 	})
 
 	// Take the top NUM_VALIDATORS_TO_ADD validators
