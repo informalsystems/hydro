@@ -32,25 +32,25 @@ func init() {
 	// NEUTRON_API_NODE
 	NEUTRON_API_NODE = os.Getenv("RELAYER_NEUTRON_CHAIN_REST_ADDR")
 	if NEUTRON_API_NODE == "" {
-		NEUTRON_API_NODE = "https://neutron-testnet-api.polkachu.com:443" // Default value or handle error
+		NEUTRON_API_NODE = "https://neutron-testnet-api.polkachu.com:443"
 	}
 
 	// NEUTRON_RPC_NODE
 	NEUTRON_RPC_NODE = os.Getenv("RELAYER_NEUTRON_CHAIN_RPC_ADDR")
 	if NEUTRON_RPC_NODE == "" {
-		NEUTRON_RPC_NODE = "https://neutron-testnet-rpc.polkachu.com:443" // Default value or handle error
+		NEUTRON_RPC_NODE = "https://neutron-testnet-rpc.polkachu.com:443"
 	}
 
 	// HUB_API_NODE
 	HUB_API_NODE = os.Getenv("RELAYER_TARGET_CHAIN_API_ADDR")
 	if HUB_API_NODE == "" {
-		HUB_API_NODE = "https://cosmos-testnet-api.polkachu.com:443" // Default value or handle error
+		HUB_API_NODE = "https://cosmos-testnet-api.polkachu.com:443"
 	}
 
 	// NEUTRON_CHAIN_ID
 	NEUTRON_CHAIN_ID = os.Getenv("RELAYER_NEUTRON_CHAIN_ID")
 	if NEUTRON_CHAIN_ID == "" {
-		NEUTRON_CHAIN_ID = "pion-1" // Default value or handle error
+		NEUTRON_CHAIN_ID = "pion-1"
 	}
 
 	// HYDRO_CONTRACT_ADDRESS
