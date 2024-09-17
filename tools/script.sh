@@ -20,7 +20,7 @@ export RELAYER_REGISTRY_ADDRESSES=neutron15e0r3h6nw4d9yhe2y5kslaq9t35pdk4egm5qd8
 # lower this if you get errors about exceeding the max block size
 export BATCH_SIZE=30
 # the number of top validators to add queries for
-export NUM_VALIDATORS_TO_ADD=5
+export NUM_VALIDATORS_TO_ADD=7
 
 #####
 # typically, no need to modify these  
