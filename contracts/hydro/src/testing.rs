@@ -941,8 +941,8 @@ fn total_voting_power_tracking_test() {
 
     // user locks 20 additional tokens for three months, so the expectation is:
     // round:         0      1       2       3
-    // power:       10+30   0+30    0+20    0+0
-    let expected_total_voting_powers = [(0, 40), (1, 30), (2, 20), (3, 0)];
+    // power:       10+30   0+25    0+20    0+0
+    let expected_total_voting_powers = [(0, 40), (1, 25), (2, 20), (3, 0)];
     verify_expected_voting_power(deps.as_ref(), &expected_total_voting_powers);
 
     // advance the chain by 25 more days to move to round 1 and have user refresh second lockup to 6 months
@@ -958,14 +958,14 @@ fn total_voting_power_tracking_test() {
 
     // user relocks second lockup worth 20 tokens for six months in round 1, so the expectation is (note that round 0 is not affected):
     // round:         0       1       2       3       4       5       6       7
-    // power:       10+30    0+40    0+40    0+40    0+30    0+30    0+20    0+0
+    // power:       10+30    0+40    0+40    0+40    0+30    0+25    0+20    0+0
     let expected_total_voting_powers = [
         (0, 40),
         (1, 40),
         (2, 40),
         (3, 40),
         (4, 30),
-        (5, 30),
+        (5, 25),
         (6, 20),
         (7, 0),
     ];
@@ -987,14 +987,14 @@ fn total_voting_power_tracking_test() {
 
     // user locks 50 additional tokens in round 1 for three months, so the expectation is (note that round 0 is not affected):
     // round:         0        1          2          3          4         5         6         7
-    // power:       10+30    0+40+75    0+40+75    0+40+50    0+30+0    0+30+0    0+20+0    0+0+0
+    // power:       10+30    0+40+75    0+40+62    0+40+50    0+30+0    0+25+0    0+20+0    0+0+0
     let expected_total_voting_powers = [
         (0, 40),
         (1, 115),
-        (2, 115),
+        (2, 102),
         (3, 90),
         (4, 30),
-        (5, 30),
+        (5, 25),
         (6, 20),
         (7, 0),
     ];

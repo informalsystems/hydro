@@ -373,15 +373,16 @@ fn refresh_lock_duration(
         .add_attribute("new_lock_end", new_lock_end.to_string()))
 }
 
-// Validate that the lock duration (given in nanos) is either 1, 3, 6, or 12 epochs
+// Validate that the lock duration (given in nanos) is either 1, 2, 3, 6, or 12 epochs
 fn validate_lock_duration(lock_epoch_length: u64, lock_duration: u64) -> Result<(), ContractError> {
     if lock_duration != lock_epoch_length
+        && lock_duration != lock_epoch_length * 2
         && lock_duration != lock_epoch_length * 3
         && lock_duration != lock_epoch_length * 6
         && lock_duration != lock_epoch_length * 12
     {
         return Err(ContractError::Std(StdError::generic_err(
-            "Lock duration must be 1, 3, 6, or 12 epochs",
+            "Lock duration must be 1, 2, 3, 6, or 12 epochs",
         )));
     }
 
@@ -554,7 +555,8 @@ pub fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: U
 
     // Scale lockup power
     // 1x if lockup is between 0 and 1 epochs
-    // 1.5x if lockup is between 1 and 3 epochs
+    // 1.25x if lockup is between 1 and 2 epochs
+    // 1.5x if lockup is between 2 and 3 epochs
     // 2x if lockup is between 3 and 6 epochs
     // 4x if lockup is between 6 and 12 epochs
     // TODO: is there a less funky way to do Uint128 math???
@@ -563,8 +565,10 @@ pub fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: U
         _ if lockup_time > lock_epoch_length * 6 => raw_power * two * two,
         // 2x if lockup is between 3 and 6 epochs
         _ if lockup_time > lock_epoch_length * 3 => raw_power * two,
-        // 1.5x if lockup is between 1 and 3 epochs
-        _ if lockup_time > lock_epoch_length => raw_power + (raw_power / two),
+        // 1.5x if lockup is between 2 and 3 epochs
+        _ if lockup_time > lock_epoch_length * 2 => raw_power + (raw_power / two),
+        // 1.25x if lockup is between 1 and 2 epochs
+        _ if lockup_time > lock_epoch_length => raw_power + (raw_power / (two * two)),
         // Covers 0 and 1 epoch which have no scaling
         _ => raw_power,
     }
