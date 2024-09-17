@@ -1,4 +1,5 @@
 # populate the config for the ICQ relayer and the ICQ query creation
+export NEUTRON_CHAIN_ID="pion-1"
 export RELAYER_NEUTRON_CHAIN_RPC_ADDR=https://rpc-falcron.pion-1.ntrn.tech:443  
 export RELAYER_NEUTRON_CHAIN_REST_ADDR=https://rest-falcron.pion-1.ntrn.tech  
 export RELAYER_NEUTRON_CHAIN_HOME_DIR=$HOME/.neutrond
@@ -18,7 +19,7 @@ export RELAYER_REGISTRY_ADDRESSES=neutron15e0r3h6nw4d9yhe2y5kslaq9t35pdk4egm5qd8
 # lower this if you get errors about exceeding the max block size
 export BATCH_SIZE=30
 # the number of top validators to add queries for
-export NUM_VALIDATORS_TO_ADD=4
+export NUM_VALIDATORS_TO_ADD=5
 
 #####
 # typically, no need to modify these  
