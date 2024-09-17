@@ -142,6 +142,7 @@ fn add_tribute(
         .add_attribute("round_id", current_round_id.to_string())
         .add_attribute("tranche_id", tranche_id.to_string())
         .add_attribute("proposal_id", proposal_id.to_string())
+        .add_attribute("tribute_id", tribute_id.to_string())
         .add_attribute("funds", info.funds[0].to_string()))
 }
 
