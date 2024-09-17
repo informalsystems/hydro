@@ -85,6 +85,7 @@ export interface HydroBaseReadOnlyInterface {
   }) => Promise<TopNProposalsResponse>;
   whitelist: () => Promise<WhitelistResponse>;
   whitelistAdmins: () => Promise<WhitelistAdminsResponse>;
+  iCQManagers: () => Promise<ICQManagersResponse>;
   totalLockedTokens: () => Promise<TotalLockedTokensResponse>;
   registeredValidatorQueries: () => Promise<RegisteredValidatorQueriesResponse>;
   validatorPowerRatio: ({
@@ -115,6 +116,7 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     this.topNProposals = this.topNProposals.bind(this);
     this.whitelist = this.whitelist.bind(this);
     this.whitelistAdmins = this.whitelistAdmins.bind(this);
+    this.iCQManagers = this.iCQManagers.bind(this);
     this.totalLockedTokens = this.totalLockedTokens.bind(this);
     this.registeredValidatorQueries = this.registeredValidatorQueries.bind(this);
     this.validatorPowerRatio = this.validatorPowerRatio.bind(this);
@@ -282,6 +284,11 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
       whitelist_admins: {}
     });
   };
+  iCQManagers = async (): Promise<ICQManagersResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      i_c_q_managers: {}
+    });
+  };
   totalLockedTokens = async (): Promise<TotalLockedTokensResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       total_locked_tokens: {}
@@ -374,6 +381,21 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   }: {
     validators: string[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  addICQManager: ({
+    address
+  }: {
+    address: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  removeICQManager: ({
+    address
+  }: {
+    address: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  withdrawICQFunds: ({
+    amount
+  }: {
+    amount: Uint128;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseInterface {
   client: SigningCosmWasmClient;
@@ -396,6 +418,9 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.addTranche = this.addTranche.bind(this);
     this.editTranche = this.editTranche.bind(this);
     this.createIcqsForValidators = this.createIcqsForValidators.bind(this);
+    this.addICQManager = this.addICQManager.bind(this);
+    this.removeICQManager = this.removeICQManager.bind(this);
+    this.withdrawICQFunds = this.withdrawICQFunds.bind(this);
   }
   lockTokens = async ({
     lockDuration
@@ -532,6 +557,39 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     return await this.client.execute(this.sender, this.contractAddress, {
       create_icqs_for_validators: {
         validators
+      }
+    }, fee, memo, _funds);
+  };
+  addICQManager = async ({
+    address
+  }: {
+    address: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      add_i_c_q_manager: {
+        address
+      }
+    }, fee, memo, _funds);
+  };
+  removeICQManager = async ({
+    address
+  }: {
+    address: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      remove_i_c_q_manager: {
+        address
+      }
+    }, fee, memo, _funds);
+  };
+  withdrawICQFunds = async ({
+    amount
+  }: {
+    amount: Uint128;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      withdraw_i_c_q_funds: {
+        amount
       }
     }, fee, memo, _funds);
   };

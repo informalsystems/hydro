@@ -92,6 +92,18 @@ export type ExecuteMsg = {
   create_icqs_for_validators: {
     validators: string[];
   };
+} | {
+  add_i_c_q_manager: {
+    address: string;
+  };
+} | {
+  remove_i_c_q_manager: {
+    address: string;
+  };
+} | {
+  withdraw_i_c_q_funds: {
+    amount: Uint128;
+  };
 };
 export interface TrancheInfo {
   metadata: string;
@@ -104,6 +116,7 @@ export interface InstantiateMsg {
   first_round_start: Timestamp;
   hub_connection_id: string;
   hub_transfer_channel_id: string;
+  icq_managers: string[];
   icq_update_period: number;
   initial_whitelist: string[];
   lock_epoch_length: number;
@@ -184,6 +197,8 @@ export type QueryMsg = {
   whitelist: {};
 } | {
   whitelist_admins: {};
+} | {
+  i_c_q_managers: {};
 } | {
   total_locked_tokens: {};
 } | {
