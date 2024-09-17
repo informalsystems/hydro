@@ -48,7 +48,7 @@ func init() {
 	}
 
 	// NEUTRON_CHAIN_ID
-	NEUTRON_CHAIN_ID = os.Getenv("RELAYER_NEUTRON_CHAIN_ID")
+	NEUTRON_CHAIN_ID = os.Getenv("NEUTRON_CHAIN_ID")
 	if NEUTRON_CHAIN_ID == "" {
 		NEUTRON_CHAIN_ID = "pion-1"
 	}
@@ -310,6 +310,9 @@ func add_validator_queries(validators []string, contractAddress string) error {
 			"--keyring-backend", KEYRING_BACKEND,
 			"--home", NEUTRON_NODE_HOME,
 		}
+
+		// Print the command for debugging
+		fmt.Printf("Command: neutrond %s\n", cmdArgs)
 
 		// Execute the command
 		cmd := exec.Command("neutrond", cmdArgs...)
