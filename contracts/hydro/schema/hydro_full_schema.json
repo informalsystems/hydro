@@ -1,0 +1,1589 @@
+{
+  "instantiate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "InstantiateMsg",
+    "type": "object",
+    "required": [
+      "first_round_start",
+      "hub_connection_id",
+      "hub_transfer_channel_id",
+      "icq_managers",
+      "icq_update_period",
+      "initial_whitelist",
+      "lock_epoch_length",
+      "max_locked_tokens",
+      "max_validator_shares_participating",
+      "round_length",
+      "tranches",
+      "whitelist_admins"
+    ],
+    "properties": {
+      "first_round_start": {
+        "$ref": "#/definitions/Timestamp"
+      },
+      "hub_connection_id": {
+        "type": "string"
+      },
+      "hub_transfer_channel_id": {
+        "type": "string"
+      },
+      "icq_managers": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "icq_update_period": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "initial_whitelist": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "lock_epoch_length": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "max_locked_tokens": {
+        "$ref": "#/definitions/Uint128"
+      },
+      "max_validator_shares_participating": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "round_length": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "tranches": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/TrancheInfo"
+        }
+      },
+      "whitelist_admins": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "Timestamp": {
+        "description": "A point in time in nanosecond precision.\n\nThis type can represent times from 1970-01-01T00:00:00Z to 2554-07-21T23:34:33Z.\n\n## Examples\n\n``` # use cosmwasm_std::Timestamp; let ts = Timestamp::from_nanos(1_000_000_202); assert_eq!(ts.nanos(), 1_000_000_202); assert_eq!(ts.seconds(), 1); assert_eq!(ts.subsec_nanos(), 202);\n\nlet ts = ts.plus_seconds(2); assert_eq!(ts.nanos(), 3_000_000_202); assert_eq!(ts.seconds(), 3); assert_eq!(ts.subsec_nanos(), 202); ```",
+        "allOf": [
+          {
+            "$ref": "#/definitions/Uint64"
+          }
+        ]
+      },
+      "TrancheInfo": {
+        "type": "object",
+        "required": [
+          "metadata",
+          "name"
+        ],
+        "properties": {
+          "metadata": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Uint128": {
+        "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+        "type": "string"
+      },
+      "Uint64": {
+        "description": "A thin wrapper around u64 that is using strings for JSON encoding/decoding, such that the full u64 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u64` to get the value out:\n\n``` # use cosmwasm_std::Uint64; let a = Uint64::from(42u64); assert_eq!(a.u64(), 42);\n\nlet b = Uint64::from(70u32); assert_eq!(b.u64(), 70); ```",
+        "type": "string"
+      }
+    }
+  },
+  "execute": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExecuteMsg",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "lock_tokens"
+        ],
+        "properties": {
+          "lock_tokens": {
+            "type": "object",
+            "required": [
+              "lock_duration"
+            ],
+            "properties": {
+              "lock_duration": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "refresh_lock_duration"
+        ],
+        "properties": {
+          "refresh_lock_duration": {
+            "type": "object",
+            "required": [
+              "lock_duration",
+              "lock_id"
+            ],
+            "properties": {
+              "lock_duration": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "lock_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "unlock_tokens"
+        ],
+        "properties": {
+          "unlock_tokens": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "create_proposal"
+        ],
+        "properties": {
+          "create_proposal": {
+            "type": "object",
+            "required": [
+              "description",
+              "title",
+              "tranche_id"
+            ],
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "tranche_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "vote"
+        ],
+        "properties": {
+          "vote": {
+            "type": "object",
+            "required": [
+              "proposal_id",
+              "tranche_id"
+            ],
+            "properties": {
+              "proposal_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "tranche_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "add_account_to_whitelist"
+        ],
+        "properties": {
+          "add_account_to_whitelist": {
+            "type": "object",
+            "required": [
+              "address"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "remove_account_from_whitelist"
+        ],
+        "properties": {
+          "remove_account_from_whitelist": {
+            "type": "object",
+            "required": [
+              "address"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "update_max_locked_tokens"
+        ],
+        "properties": {
+          "update_max_locked_tokens": {
+            "type": "object",
+            "required": [
+              "max_locked_tokens"
+            ],
+            "properties": {
+              "max_locked_tokens": {
+                "type": "integer",
+                "format": "uint128",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "pause"
+        ],
+        "properties": {
+          "pause": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "add_tranche"
+        ],
+        "properties": {
+          "add_tranche": {
+            "type": "object",
+            "required": [
+              "tranche"
+            ],
+            "properties": {
+              "tranche": {
+                "$ref": "#/definitions/TrancheInfo"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "edit_tranche"
+        ],
+        "properties": {
+          "edit_tranche": {
+            "type": "object",
+            "required": [
+              "tranche_id"
+            ],
+            "properties": {
+              "tranche_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "tranche_metadata": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "tranche_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "create_icqs_for_validators"
+        ],
+        "properties": {
+          "create_icqs_for_validators": {
+            "type": "object",
+            "required": [
+              "validators"
+            ],
+            "properties": {
+              "validators": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "add_i_c_q_manager"
+        ],
+        "properties": {
+          "add_i_c_q_manager": {
+            "type": "object",
+            "required": [
+              "address"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "remove_i_c_q_manager"
+        ],
+        "properties": {
+          "remove_i_c_q_manager": {
+            "type": "object",
+            "required": [
+              "address"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "withdraw_i_c_q_funds"
+        ],
+        "properties": {
+          "withdraw_i_c_q_funds": {
+            "type": "object",
+            "required": [
+              "amount"
+            ],
+            "properties": {
+              "amount": {
+                "$ref": "#/definitions/Uint128"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    ],
+    "definitions": {
+      "TrancheInfo": {
+        "type": "object",
+        "required": [
+          "metadata",
+          "name"
+        ],
+        "properties": {
+          "metadata": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Uint128": {
+        "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+        "type": "string"
+      }
+    }
+  },
+  "query": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "QueryMsg",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "constants"
+        ],
+        "properties": {
+          "constants": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "tranches"
+        ],
+        "properties": {
+          "tranches": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "all_user_lockups"
+        ],
+        "properties": {
+          "all_user_lockups": {
+            "type": "object",
+            "required": [
+              "address",
+              "limit",
+              "start_from"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              "start_from": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "expired_user_lockups"
+        ],
+        "properties": {
+          "expired_user_lockups": {
+            "type": "object",
+            "required": [
+              "address",
+              "limit",
+              "start_from"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              "start_from": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "user_voting_power"
+        ],
+        "properties": {
+          "user_voting_power": {
+            "type": "object",
+            "required": [
+              "address"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "user_vote"
+        ],
+        "properties": {
+          "user_vote": {
+            "type": "object",
+            "required": [
+              "address",
+              "round_id",
+              "tranche_id"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "round_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "tranche_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "current_round"
+        ],
+        "properties": {
+          "current_round": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "round_end"
+        ],
+        "properties": {
+          "round_end": {
+            "type": "object",
+            "required": [
+              "round_id"
+            ],
+            "properties": {
+              "round_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "round_total_voting_power"
+        ],
+        "properties": {
+          "round_total_voting_power": {
+            "type": "object",
+            "required": [
+              "round_id"
+            ],
+            "properties": {
+              "round_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "round_proposals"
+        ],
+        "properties": {
+          "round_proposals": {
+            "type": "object",
+            "required": [
+              "limit",
+              "round_id",
+              "start_from",
+              "tranche_id"
+            ],
+            "properties": {
+              "limit": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              "round_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "start_from": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              "tranche_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "proposal"
+        ],
+        "properties": {
+          "proposal": {
+            "type": "object",
+            "required": [
+              "proposal_id",
+              "round_id",
+              "tranche_id"
+            ],
+            "properties": {
+              "proposal_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "round_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "tranche_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "top_n_proposals"
+        ],
+        "properties": {
+          "top_n_proposals": {
+            "type": "object",
+            "required": [
+              "number_of_proposals",
+              "round_id",
+              "tranche_id"
+            ],
+            "properties": {
+              "number_of_proposals": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              },
+              "round_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "tranche_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "whitelist"
+        ],
+        "properties": {
+          "whitelist": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "whitelist_admins"
+        ],
+        "properties": {
+          "whitelist_admins": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "i_c_q_managers"
+        ],
+        "properties": {
+          "i_c_q_managers": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "total_locked_tokens"
+        ],
+        "properties": {
+          "total_locked_tokens": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "registered_validator_queries"
+        ],
+        "properties": {
+          "registered_validator_queries": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "validator_power_ratio"
+        ],
+        "properties": {
+          "validator_power_ratio": {
+            "type": "object",
+            "required": [
+              "round_id",
+              "validator"
+            ],
+            "properties": {
+              "round_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "validator": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    ]
+  },
+  "migrate": {},
+  "sudo": {},
+  "responses": {
+    "tranches": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "TranchesResponse",
+      "type": "object",
+      "required": [
+        "tranches"
+      ],
+      "properties": {
+        "tranches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Tranche"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Tranche": {
+          "type": "object",
+          "required": [
+            "id",
+            "metadata",
+            "name"
+          ],
+          "properties": {
+            "id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "metadata": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "top_n_proposals": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "TopNProposalsResponse",
+      "type": "object",
+      "required": [
+        "proposals"
+      ],
+      "properties": {
+        "proposals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Proposal"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Proposal": {
+          "type": "object",
+          "required": [
+            "description",
+            "percentage",
+            "power",
+            "proposal_id",
+            "round_id",
+            "title",
+            "tranche_id"
+          ],
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "percentage": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "power": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "proposal_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "title": {
+              "type": "string"
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        }
+      }
+    },
+    "round_proposals": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "RoundProposalsResponse",
+      "type": "object",
+      "required": [
+        "proposals"
+      ],
+      "properties": {
+        "proposals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Proposal"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Proposal": {
+          "type": "object",
+          "required": [
+            "description",
+            "percentage",
+            "power",
+            "proposal_id",
+            "round_id",
+            "title",
+            "tranche_id"
+          ],
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "percentage": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "power": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "proposal_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "title": {
+              "type": "string"
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        }
+      }
+    },
+    "all_user_lockups": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "AllUserLockupsResponse",
+      "type": "object",
+      "required": [
+        "lockups"
+      ],
+      "properties": {
+        "lockups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LockEntryWithPower"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Coin": {
+          "type": "object",
+          "required": [
+            "amount",
+            "denom"
+          ],
+          "properties": {
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "denom": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "LockEntry": {
+          "type": "object",
+          "required": [
+            "funds",
+            "lock_end",
+            "lock_id",
+            "lock_start"
+          ],
+          "properties": {
+            "funds": {
+              "$ref": "#/definitions/Coin"
+            },
+            "lock_end": {
+              "$ref": "#/definitions/Timestamp"
+            },
+            "lock_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "lock_start": {
+              "$ref": "#/definitions/Timestamp"
+            }
+          },
+          "additionalProperties": false
+        },
+        "LockEntryWithPower": {
+          "type": "object",
+          "required": [
+            "current_voting_power",
+            "lock_entry"
+          ],
+          "properties": {
+            "current_voting_power": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "lock_entry": {
+              "$ref": "#/definitions/LockEntry"
+            }
+          },
+          "additionalProperties": false
+        },
+        "Timestamp": {
+          "description": "A point in time in nanosecond precision.\n\nThis type can represent times from 1970-01-01T00:00:00Z to 2554-07-21T23:34:33Z.\n\n## Examples\n\n``` # use cosmwasm_std::Timestamp; let ts = Timestamp::from_nanos(1_000_000_202); assert_eq!(ts.nanos(), 1_000_000_202); assert_eq!(ts.seconds(), 1); assert_eq!(ts.subsec_nanos(), 202);\n\nlet ts = ts.plus_seconds(2); assert_eq!(ts.nanos(), 3_000_000_202); assert_eq!(ts.seconds(), 3); assert_eq!(ts.subsec_nanos(), 202); ```",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint64"
+            }
+          ]
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        },
+        "Uint64": {
+          "description": "A thin wrapper around u64 that is using strings for JSON encoding/decoding, such that the full u64 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u64` to get the value out:\n\n``` # use cosmwasm_std::Uint64; let a = Uint64::from(42u64); assert_eq!(a.u64(), 42);\n\nlet b = Uint64::from(70u32); assert_eq!(b.u64(), 70); ```",
+          "type": "string"
+        }
+      }
+    },
+    "user_voting_power": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "UserVotingPowerResponse",
+      "type": "object",
+      "required": [
+        "voting_power"
+      ],
+      "properties": {
+        "voting_power": {
+          "type": "integer",
+          "format": "uint128",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "total_locked_tokens": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "TotalLockedTokensResponse",
+      "type": "object",
+      "required": [
+        "total_locked_tokens"
+      ],
+      "properties": {
+        "total_locked_tokens": {
+          "type": "integer",
+          "format": "uint128",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "whitelist": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "WhitelistResponse",
+      "type": "object",
+      "required": [
+        "whitelist"
+      ],
+      "properties": {
+        "whitelist": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Addr"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Addr": {
+          "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
+          "type": "string"
+        }
+      }
+    },
+    "constants": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ConstantsResponse",
+      "type": "object",
+      "required": [
+        "constants"
+      ],
+      "properties": {
+        "constants": {
+          "$ref": "#/definitions/Constants"
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Constants": {
+          "type": "object",
+          "required": [
+            "first_round_start",
+            "hub_connection_id",
+            "hub_transfer_channel_id",
+            "icq_update_period",
+            "lock_epoch_length",
+            "max_locked_tokens",
+            "max_validator_shares_participating",
+            "paused",
+            "round_length"
+          ],
+          "properties": {
+            "first_round_start": {
+              "$ref": "#/definitions/Timestamp"
+            },
+            "hub_connection_id": {
+              "type": "string"
+            },
+            "hub_transfer_channel_id": {
+              "type": "string"
+            },
+            "icq_update_period": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "lock_epoch_length": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "max_locked_tokens": {
+              "type": "integer",
+              "format": "uint128",
+              "minimum": 0.0
+            },
+            "max_validator_shares_participating": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "paused": {
+              "type": "boolean"
+            },
+            "round_length": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        "Timestamp": {
+          "description": "A point in time in nanosecond precision.\n\nThis type can represent times from 1970-01-01T00:00:00Z to 2554-07-21T23:34:33Z.\n\n## Examples\n\n``` # use cosmwasm_std::Timestamp; let ts = Timestamp::from_nanos(1_000_000_202); assert_eq!(ts.nanos(), 1_000_000_202); assert_eq!(ts.seconds(), 1); assert_eq!(ts.subsec_nanos(), 202);\n\nlet ts = ts.plus_seconds(2); assert_eq!(ts.nanos(), 3_000_000_202); assert_eq!(ts.seconds(), 3); assert_eq!(ts.subsec_nanos(), 202); ```",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint64"
+            }
+          ]
+        },
+        "Uint64": {
+          "description": "A thin wrapper around u64 that is using strings for JSON encoding/decoding, such that the full u64 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u64` to get the value out:\n\n``` # use cosmwasm_std::Uint64; let a = Uint64::from(42u64); assert_eq!(a.u64(), 42);\n\nlet b = Uint64::from(70u32); assert_eq!(b.u64(), 70); ```",
+          "type": "string"
+        }
+      }
+    },
+    "expired_user_lockups": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ExpiredUserLockupsResponse",
+      "type": "object",
+      "required": [
+        "lockups"
+      ],
+      "properties": {
+        "lockups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LockEntry"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Coin": {
+          "type": "object",
+          "required": [
+            "amount",
+            "denom"
+          ],
+          "properties": {
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "denom": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "LockEntry": {
+          "type": "object",
+          "required": [
+            "funds",
+            "lock_end",
+            "lock_id",
+            "lock_start"
+          ],
+          "properties": {
+            "funds": {
+              "$ref": "#/definitions/Coin"
+            },
+            "lock_end": {
+              "$ref": "#/definitions/Timestamp"
+            },
+            "lock_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "lock_start": {
+              "$ref": "#/definitions/Timestamp"
+            }
+          },
+          "additionalProperties": false
+        },
+        "Timestamp": {
+          "description": "A point in time in nanosecond precision.\n\nThis type can represent times from 1970-01-01T00:00:00Z to 2554-07-21T23:34:33Z.\n\n## Examples\n\n``` # use cosmwasm_std::Timestamp; let ts = Timestamp::from_nanos(1_000_000_202); assert_eq!(ts.nanos(), 1_000_000_202); assert_eq!(ts.seconds(), 1); assert_eq!(ts.subsec_nanos(), 202);\n\nlet ts = ts.plus_seconds(2); assert_eq!(ts.nanos(), 3_000_000_202); assert_eq!(ts.seconds(), 3); assert_eq!(ts.subsec_nanos(), 202); ```",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint64"
+            }
+          ]
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        },
+        "Uint64": {
+          "description": "A thin wrapper around u64 that is using strings for JSON encoding/decoding, such that the full u64 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u64` to get the value out:\n\n``` # use cosmwasm_std::Uint64; let a = Uint64::from(42u64); assert_eq!(a.u64(), 42);\n\nlet b = Uint64::from(70u32); assert_eq!(b.u64(), 70); ```",
+          "type": "string"
+        }
+      }
+    },
+    "round_total_voting_power": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "RoundTotalVotingPowerResponse",
+      "type": "object",
+      "required": [
+        "total_voting_power"
+      ],
+      "properties": {
+        "total_voting_power": {
+          "$ref": "#/definitions/Uint128"
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        }
+      }
+    },
+    "user_vote": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "UserVoteResponse",
+      "type": "object",
+      "required": [
+        "vote"
+      ],
+      "properties": {
+        "vote": {
+          "$ref": "#/definitions/VoteWithPower"
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Decimal": {
+          "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
+          "type": "string"
+        },
+        "VoteWithPower": {
+          "type": "object",
+          "required": [
+            "power",
+            "prop_id"
+          ],
+          "properties": {
+            "power": {
+              "$ref": "#/definitions/Decimal"
+            },
+            "prop_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "whitelist_admins": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "WhitelistAdminsResponse",
+      "type": "object",
+      "required": [
+        "admins"
+      ],
+      "properties": {
+        "admins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Addr"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Addr": {
+          "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
+          "type": "string"
+        }
+      }
+    },
+    "current_round": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "CurrentRoundResponse",
+      "type": "object",
+      "required": [
+        "round_end",
+        "round_id"
+      ],
+      "properties": {
+        "round_end": {
+          "$ref": "#/definitions/Timestamp"
+        },
+        "round_id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Timestamp": {
+          "description": "A point in time in nanosecond precision.\n\nThis type can represent times from 1970-01-01T00:00:00Z to 2554-07-21T23:34:33Z.\n\n## Examples\n\n``` # use cosmwasm_std::Timestamp; let ts = Timestamp::from_nanos(1_000_000_202); assert_eq!(ts.nanos(), 1_000_000_202); assert_eq!(ts.seconds(), 1); assert_eq!(ts.subsec_nanos(), 202);\n\nlet ts = ts.plus_seconds(2); assert_eq!(ts.nanos(), 3_000_000_202); assert_eq!(ts.seconds(), 3); assert_eq!(ts.subsec_nanos(), 202); ```",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint64"
+            }
+          ]
+        },
+        "Uint64": {
+          "description": "A thin wrapper around u64 that is using strings for JSON encoding/decoding, such that the full u64 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u64` to get the value out:\n\n``` # use cosmwasm_std::Uint64; let a = Uint64::from(42u64); assert_eq!(a.u64(), 42);\n\nlet b = Uint64::from(70u32); assert_eq!(b.u64(), 70); ```",
+          "type": "string"
+        }
+      }
+    },
+    "proposal": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ProposalResponse",
+      "type": "object",
+      "required": [
+        "proposal"
+      ],
+      "properties": {
+        "proposal": {
+          "$ref": "#/definitions/Proposal"
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Proposal": {
+          "type": "object",
+          "required": [
+            "description",
+            "percentage",
+            "power",
+            "proposal_id",
+            "round_id",
+            "title",
+            "tranche_id"
+          ],
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "percentage": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "power": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "proposal_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "title": {
+              "type": "string"
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        }
+      }
+    },
+    "round_end": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "RoundEndResponse",
+      "type": "object",
+      "required": [
+        "round_end"
+      ],
+      "properties": {
+        "round_end": {
+          "$ref": "#/definitions/Timestamp"
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Timestamp": {
+          "description": "A point in time in nanosecond precision.\n\nThis type can represent times from 1970-01-01T00:00:00Z to 2554-07-21T23:34:33Z.\n\n## Examples\n\n``` # use cosmwasm_std::Timestamp; let ts = Timestamp::from_nanos(1_000_000_202); assert_eq!(ts.nanos(), 1_000_000_202); assert_eq!(ts.seconds(), 1); assert_eq!(ts.subsec_nanos(), 202);\n\nlet ts = ts.plus_seconds(2); assert_eq!(ts.nanos(), 3_000_000_202); assert_eq!(ts.seconds(), 3); assert_eq!(ts.subsec_nanos(), 202); ```",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint64"
+            }
+          ]
+        },
+        "Uint64": {
+          "description": "A thin wrapper around u64 that is using strings for JSON encoding/decoding, such that the full u64 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u64` to get the value out:\n\n``` # use cosmwasm_std::Uint64; let a = Uint64::from(42u64); assert_eq!(a.u64(), 42);\n\nlet b = Uint64::from(70u32); assert_eq!(b.u64(), 70); ```",
+          "type": "string"
+        }
+      }
+    }
+  }
+}
