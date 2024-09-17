@@ -42,7 +42,7 @@ func init() {
 	}
 
 	// HUB_API_NODE
-	HUB_API_NODE = os.Getenv("RELAYER_HUB_CHAIN_REST_ADDR")
+	HUB_API_NODE = os.Getenv("RELAYER_TARGET_CHAIN_RPC_ADDR")
 	if HUB_API_NODE == "" {
 		HUB_API_NODE = "https://cosmos-testnet-api.polkachu.com:443" // Default value or handle error
 	}
