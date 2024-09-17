@@ -13,6 +13,7 @@ export RELAYER_NEUTRON_CHAIN_GAS_ADJUSTMENT=1.5
 export RELAYER_NEUTRON_CHAIN_CONNECTION_ID=connection-42  
 export RELAYER_NEUTRON_CHAIN_OUTPUT_FORMAT=json  
 export RELAYER_TARGET_CHAIN_RPC_ADDR=https://rpc-rs.cosmos.nodestake.top:443
+export RELAYER_TARGET_CHAIN_API_ADDR=https://cosmos-testnet-api.polkachu.com:443
 # this needs to be the address of the contract
 export RELAYER_REGISTRY_ADDRESSES=neutron15e0r3h6nw4d9yhe2y5kslaq9t35pdk4egm5qd8nytfmzwl9msyssew5339
 # maximum number of validator queries to submit in a single block.
