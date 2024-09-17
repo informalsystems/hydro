@@ -20,6 +20,13 @@ const (
 	HUB_API_NODE = "https://cosmos-testnet-api.polkachu.com:443"
 
 	NEUTRON_CHAIN_ID = "pion-1"
+
+	HYDRO_CONTRACT_ADDRESS = "neutron15e0r3h6nw4d9yhe2y5kslaq9t35pdk4egm5qd8nytfmzwl9msyssew5339"
+
+	NUM_VALIDATORS_TO_ADD = 4
+	// the maximal number of validator queries to add in a single block
+	// reduce this if you get errors about exceeding the block gas limit
+	BATCH_SIZE = 30
 )
 
 type Response struct {
@@ -132,7 +139,7 @@ type ICQParamsResponse struct {
 	Params ICQParams `json:"params"`
 }
 
-func fetch_min_icq_deposit() (string, error) {
+func fetch_min_icq_deposit() (int, error) {
 	// Construct the command
 	cmdArgs := []string{
 		"q", "interchainqueries", "params",
@@ -146,26 +153,30 @@ func fetch_min_icq_deposit() (string, error) {
 	// Capture the output and error
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to execute command: %v\nOutput: %s", err, string(output))
+		return 0, fmt.Errorf("failed to execute command: %v\nOutput: %s", err, string(output))
 	}
 
 	// Parse the JSON output
 	var paramsResponse ICQParamsResponse
 	err = json.Unmarshal(output, &paramsResponse)
 	if err != nil {
-		return "", fmt.Errorf("error decoding JSON: %v", err)
+		return 0, fmt.Errorf("error decoding JSON: %v", err)
 	}
 
 	// Extract the query_deposit amount
 	if len(paramsResponse.Params.QueryDeposit) == 0 {
-		return "", fmt.Errorf("query_deposit is empty")
+		return 0, fmt.Errorf("query_deposit is empty")
 	}
 
-	// Assuming you want the first deposit amount
 	deposit := paramsResponse.Params.QueryDeposit[0]
-	amountWithDenom := fmt.Sprintf("%s%s", deposit.Amount, deposit.Denom)
 
-	return amountWithDenom, nil
+	// Convert the amount to an integer
+	amount, ok := new(big.Int).SetString(deposit.Amount, 10)
+	if !ok {
+		return 0, fmt.Errorf("failed to parse amount: %s", deposit.Amount)
+	}
+
+	return int(amount.Int64()), nil
 }
 
 // Function to split a slice into batches
@@ -180,8 +191,8 @@ func splitIntoBatches(validators []string, batchSize int) [][]string {
 
 // Function to add validator queries in batches via CLI
 func add_validator_queries(validators []string, contractAddress string) error {
-	// Split validators into batches of 30
-	batches := splitIntoBatches(validators, 30)
+	// Split validators into batches of BATCH_SIZE
+	batches := splitIntoBatches(validators, BATCH_SIZE)
 
 	// Fetch gas price
 	gasPrice, err := fetch_gas_price()
@@ -226,7 +237,7 @@ func add_validator_queries(validators []string, contractAddress string) error {
 			"--from", "money",
 			"-y",               // Auto-confirm the transaction
 			"--output", "json", // Output format
-			"--amount", minICQDeposit,
+			"--amount", fmt.Sprintf("%d%s", minICQDeposit*len(batch), "untrn"),
 		}
 
 		// Execute the command
@@ -252,6 +263,7 @@ func add_validator_queries(validators []string, contractAddress string) error {
 // Function to query Cosmos Hub validators
 func query_hub_validators() ([]Validator, error) {
 	// Endpoint to fetch validators
+	// TODO: Add pagination support. 1000 is fine for now, because the Hub doesn't have that many anyways
 	endpoint := fmt.Sprintf("%s/cosmos/staking/v1beta1/validators?pagination.limit=1000", HUB_API_NODE)
 
 	// HTTP GET request
@@ -283,24 +295,23 @@ func query_hub_validators() ([]Validator, error) {
 		return tokensI.Cmp(tokensJ) > 0
 	})
 
-	// Take the top 1 validators
+	// Take the top NUM_VALIDATORS_TO_ADD validators
 	topValidators := response.Validators
-	if len(topValidators) > 1 {
-		topValidators = topValidators[:1]
+	if len(topValidators) > NUM_VALIDATORS_TO_ADD {
+		topValidators = topValidators[:NUM_VALIDATORS_TO_ADD]
 	}
 
 	return topValidators, nil
 }
 
-// Struct for Neutron contract query response
+// Struct to hold the response from the Hydro contract
 type RegisteredValidatorQueriesResponse struct {
-	QueryIDs []struct {
-		ValidatorAddress string `json:"validator_address"`
-		QueryID          uint64 `json:"query_id"`
-	} `json:"query_ids"`
+	Data struct {
+		QueryIDs [][]interface{} `json:"query_ids"`
+	} `json:"data"`
 }
 
-// Function to query Neutron validators from a CosmWasm contract
+// Function to query Hydro validators from a CosmWasm contract
 func query_hydro_validators(contractAddress string) ([]string, error) {
 	// Prepare the query message
 	queryMsg := map[string]interface{}{
@@ -338,10 +349,11 @@ func query_hydro_validators(contractAddress string) ([]string, error) {
 		return nil, fmt.Errorf("error reading response body: %v", err)
 	}
 
+	// Print the response body for debugging
+	fmt.Printf("Response Body: %s\n", string(body))
+
 	// Parse the JSON response
-	var result struct {
-		Data RegisteredValidatorQueriesResponse `json:"data"`
-	}
+	var result RegisteredValidatorQueriesResponse
 	err = json.Unmarshal(body, &result)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding JSON: %v", err)
@@ -350,7 +362,28 @@ func query_hydro_validators(contractAddress string) ([]string, error) {
 	// Extract validator addresses
 	var validatorAddresses []string
 	for _, item := range result.Data.QueryIDs {
-		validatorAddresses = append(validatorAddresses, item.ValidatorAddress)
+		if len(item) != 2 {
+			return nil, fmt.Errorf("unexpected item length: expected 2, got %d", len(item))
+		}
+
+		// Extract the validator address
+		validatorAddress, ok := item[0].(string)
+		if !ok {
+			return nil, fmt.Errorf("expected validator address to be a string")
+		}
+
+		// Extract the query ID (if needed)
+		queryIDFloat, ok := item[1].(float64)
+		if !ok {
+			return nil, fmt.Errorf("expected query ID to be a number")
+		}
+		queryID := uint64(queryIDFloat)
+
+		// Append the validator address to the list
+		validatorAddresses = append(validatorAddresses, validatorAddress)
+
+		// Use queryID if needed
+		_ = queryID
 	}
 
 	return validatorAddresses, nil
@@ -363,8 +396,8 @@ func main() {
 		log.Fatalf("Error querying hub validators: %v", err)
 	}
 
-	// Print the top 300 Cosmos Hub validators
-	fmt.Println("Top 300 Cosmos Hub Validators:")
+	// Print the top NUM_VALIDATORS_TO_ADD Cosmos Hub validators
+	fmt.Printf("Top %d Cosmos Hub Validators:", NUM_VALIDATORS_TO_ADD)
 	for idx, validator := range hubValidators {
 		fmt.Printf("%d: OperatorAddress: %s, Tokens: %s, Moniker: %s\n",
 			idx+1, validator.OperatorAddress, validator.Tokens, validator.Description.Moniker)
@@ -372,10 +405,8 @@ func main() {
 
 	fmt.Println()
 
-	contractAddress := "neutron15e0r3h6nw4d9yhe2y5kslaq9t35pdk4egm5qd8nytfmzwl9msyssew5339"
-
 	// Query Hydro validators
-	neutronValidators, err := query_hydro_validators(contractAddress)
+	neutronValidators, err := query_hydro_validators(HYDRO_CONTRACT_ADDRESS)
 	if err != nil {
 		log.Fatalf("Error querying Hydro validators: %v", err)
 	}
@@ -407,8 +438,13 @@ func main() {
 		fmt.Println(addr)
 	}
 
+	if len(diffValidators) == 0 {
+		fmt.Println("No validators to add")
+		return
+	}
+
 	// Add validator queries in batches
-	err = add_validator_queries(diffValidators, contractAddress)
+	err = add_validator_queries(diffValidators, HYDRO_CONTRACT_ADDRESS)
 	if err != nil {
 		log.Fatalf("Error adding validator queries: %v", err)
 	}
