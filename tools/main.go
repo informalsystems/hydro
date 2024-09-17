@@ -8,26 +8,97 @@ import (
 	"log"
 	"math/big"
 	"net/http"
+	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"time"
 )
 
-const (
-	NEUTRON_API_NODE = "https://neutron-testnet-api.polkachu.com:443"
-	NEUTRON_RPC_NODE = "https://neutron-testnet-rpc.polkachu.com:443"
-
-	HUB_API_NODE = "https://cosmos-testnet-api.polkachu.com:443"
-
-	NEUTRON_CHAIN_ID = "pion-1"
-
-	HYDRO_CONTRACT_ADDRESS = "neutron15e0r3h6nw4d9yhe2y5kslaq9t35pdk4egm5qd8nytfmzwl9msyssew5339"
-
-	NUM_VALIDATORS_TO_ADD = 4
-	// the maximal number of validator queries to add in a single block
-	// reduce this if you get errors about exceeding the block gas limit
-	BATCH_SIZE = 30
+var (
+	NEUTRON_API_NODE       string
+	NEUTRON_RPC_NODE       string
+	HUB_API_NODE           string
+	NEUTRON_CHAIN_ID       string
+	HYDRO_CONTRACT_ADDRESS string
+	NUM_VALIDATORS_TO_ADD  int
+	BATCH_SIZE             int
+	KEY_NAME               string
+	KEYRING_BACKEND        string
+	NEUTRON_NODE_HOME      string
 )
+
+func init() {
+	// NEUTRON_API_NODE
+	NEUTRON_API_NODE = os.Getenv("RELAYER_NEUTRON_CHAIN_REST_ADDR")
+	if NEUTRON_API_NODE == "" {
+		NEUTRON_API_NODE = "https://neutron-testnet-api.polkachu.com:443" // Default value or handle error
+	}
+
+	// NEUTRON_RPC_NODE
+	NEUTRON_RPC_NODE = os.Getenv("RELAYER_NEUTRON_CHAIN_RPC_ADDR")
+	if NEUTRON_RPC_NODE == "" {
+		NEUTRON_RPC_NODE = "https://neutron-testnet-rpc.polkachu.com:443" // Default value or handle error
+	}
+
+	// HUB_API_NODE
+	HUB_API_NODE = os.Getenv("RELAYER_HUB_CHAIN_REST_ADDR")
+	if HUB_API_NODE == "" {
+		HUB_API_NODE = "https://cosmos-testnet-api.polkachu.com:443" // Default value or handle error
+	}
+
+	// NEUTRON_CHAIN_ID
+	NEUTRON_CHAIN_ID = os.Getenv("RELAYER_NEUTRON_CHAIN_ID")
+	if NEUTRON_CHAIN_ID == "" {
+		NEUTRON_CHAIN_ID = "pion-1" // Default value or handle error
+	}
+
+	// HYDRO_CONTRACT_ADDRESS
+	HYDRO_CONTRACT_ADDRESS = os.Getenv("RELAYER_REGISTRY_ADDRESSES")
+	if HYDRO_CONTRACT_ADDRESS == "" {
+		log.Fatal("HYDRO_CONTRACT_ADDRESS not set. Please set RELAYER_REGISTRY_ADDRESSES environment variable.")
+	}
+
+	// NUM_VALIDATORS_TO_ADD
+	NUM_VALIDATORS_TO_ADD = 4 // Default value
+	numValidatorsStr := os.Getenv("NUM_VALIDATORS_TO_ADD")
+	if numValidatorsStr != "" {
+		numValidators, err := strconv.Atoi(numValidatorsStr)
+		if err != nil {
+			log.Fatalf("Invalid NUM_VALIDATORS_TO_ADD: %v", err)
+		}
+		NUM_VALIDATORS_TO_ADD = numValidators
+	}
+
+	// BATCH_SIZE
+	BATCH_SIZE = 30 // Default value
+	batchSizeStr := os.Getenv("BATCH_SIZE")
+	if batchSizeStr != "" {
+		batchSize, err := strconv.Atoi(batchSizeStr)
+		if err != nil {
+			log.Fatalf("Invalid BATCH_SIZE: %v", err)
+		}
+		BATCH_SIZE = batchSize
+	}
+
+	// KEY_NAME
+	KEY_NAME = os.Getenv("RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME")
+	if KEY_NAME == "" {
+		log.Fatal("KEY_NAME not set. Please set RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME environment variable.")
+	}
+
+	// KEYRING_BACKEND
+	KEYRING_BACKEND = os.Getenv("RELAYER_NEUTRON_CHAIN_KEYRING_BACKEND")
+	if KEYRING_BACKEND == "" {
+		KEYRING_BACKEND = "os" // Default value
+	}
+
+	// NEUTRON_NODE_HOME
+	NEUTRON_NODE_HOME = os.Getenv("RELAYER_NEUTRON_CHAIN_HOME_DIR")
+	if NEUTRON_NODE_HOME == "" {
+		NEUTRON_NODE_HOME = "$HOME/.neutrond" // Default value
+	}
+}
 
 type Response struct {
 	Validators []Validator `json:"validators"`
@@ -234,10 +305,12 @@ func add_validator_queries(validators []string, contractAddress string) error {
 			"--gas-adjustment", "1.3",
 			"--gas-prices", fmt.Sprintf("%s%s", gasPrice, "untrn"),
 			"--node", NEUTRON_RPC_NODE,
-			"--from", "money",
+			"--from", KEY_NAME,
 			"-y",               // Auto-confirm the transaction
 			"--output", "json", // Output format
 			"--amount", fmt.Sprintf("%d%s", minICQDeposit*len(batch), "untrn"),
+			"--keyring-backend", KEYRING_BACKEND,
+			"--home", NEUTRON_NODE_HOME,
 		}
 
 		// Execute the command
@@ -390,6 +463,13 @@ func query_hydro_validators(contractAddress string) ([]string, error) {
 }
 
 func main() {
+	fmt.Printf("NEUTRON_API_NODE: %s\n", NEUTRON_API_NODE)
+	fmt.Printf("NEUTRON_RPC_NODE: %s\n", NEUTRON_RPC_NODE)
+	fmt.Printf("HUB_API_NODE: %s\n", HUB_API_NODE)
+	fmt.Printf("NEUTRON_CHAIN_ID: %s\n", NEUTRON_CHAIN_ID)
+	fmt.Printf("HYDRO_CONTRACT_ADDRESS: %s\n", HYDRO_CONTRACT_ADDRESS)
+	fmt.Printf("NUM_VALIDATORS_TO_ADD: %d\n", NUM_VALIDATORS_TO_ADD)
+	fmt.Printf("BATCH_SIZE: %d\n", BATCH_SIZE)
 	// Query Cosmos Hub validators
 	hubValidators, err := query_hub_validators()
 	if err != nil {
