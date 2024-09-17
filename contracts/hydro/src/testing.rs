@@ -72,12 +72,13 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         }],
         first_round_start: mock_env().block.time,
         max_locked_tokens: Uint128::new(1000000),
-        initial_whitelist: vec![user_address],
+        initial_whitelist: vec![user_address.clone()],
         whitelist_admins: vec![],
         max_validator_shares_participating: 100,
         hub_connection_id: "connection-0".to_string(),
         hub_transfer_channel_id: "channel-0".to_string(),
         icq_update_period: 100,
+        icq_managers: vec![user_address],
     }
 }
 
@@ -1338,6 +1339,15 @@ fn contract_pausing_test() {
             tranche_metadata: Some(String::new()),
         },
         ExecuteMsg::CreateICQsForValidators { validators: vec![] },
+        ExecuteMsg::AddICQManager {
+            address: whitelist_admin.to_string(),
+        },
+        ExecuteMsg::RemoveICQManager {
+            address: whitelist_admin.to_string(),
+        },
+        ExecuteMsg::WithdrawICQFunds {
+            amount: Uint128::new(50),
+        },
     ];
 
     for msg in msgs {

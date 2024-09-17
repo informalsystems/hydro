@@ -76,6 +76,9 @@ pub enum QueryMsg {
     #[returns(WhitelistAdminsResponse)]
     WhitelistAdmins {},
 
+    #[returns(ICQManagersResponse)]
+    ICQManagers {},
+
     #[returns(TotalLockedTokensResponse)]
     TotalLockedTokens {},
 
@@ -180,4 +183,9 @@ pub struct RegisteredValidatorQueriesResponse {
 #[cw_serde]
 pub struct ValidatorPowerRatioResponse {
     pub ratio: Decimal,
+}
+
+#[cw_serde]
+pub struct ICQManagersResponse {
+    pub managers: Vec<Addr>,
 }

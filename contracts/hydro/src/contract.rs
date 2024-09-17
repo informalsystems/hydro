@@ -20,10 +20,11 @@ use crate::lsm_integration::{
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    LockEntryWithPower, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
-    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, TopNProposalsResponse,
-    TotalLockedTokensResponse, TranchesResponse, UserVoteResponse, UserVotingPowerResponse,
-    ValidatorPowerRatioResponse, WhitelistAdminsResponse, WhitelistResponse,
+    ICQManagersResponse, LockEntryWithPower, ProposalResponse, QueryMsg,
+    RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
+    RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse,
+    TranchesResponse, UserVoteResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
+    WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, get_total_power_for_proposal,
@@ -31,8 +32,8 @@ use crate::score_keeper::{
 };
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS,
-    LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID,
-    TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
+    ICQ_MANAGERS, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID,
+    TRANCHE_ID, TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
     VALIDATOR_TO_QUERY_ID, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::validators_icqs::{
@@ -102,6 +103,11 @@ pub fn instantiate(
         if !whitelist.contains(&whitelist_account_addr) {
             whitelist.push(whitelist_account_addr.clone());
         }
+    }
+
+    for manager in msg.icq_managers {
+        let manager_addr = deps.api.addr_validate(&manager)?;
+        ICQ_MANAGERS.save(deps.storage, manager_addr, &true)?;
     }
 
     WHITELIST_ADMINS.save(deps.storage, &whitelist_admins)?;
@@ -180,6 +186,9 @@ pub fn execute(
         ExecuteMsg::CreateICQsForValidators { validators } => {
             create_icqs_for_validators(deps, env, info, validators)
         }
+        ExecuteMsg::AddICQManager { address } => add_icq_manager(deps, info, address),
+        ExecuteMsg::RemoveICQManager { address } => remove_icq_manager(deps, info, address),
+        ExecuteMsg::WithdrawICQFunds { amount } => withdraw_icq_funds(deps, info, amount),
     }
 }
 
@@ -975,12 +984,15 @@ fn create_icqs_for_validators(
         }
     }
 
-    let min_icq_deposit = query_min_interchain_query_deposit(&deps.as_ref())?;
-    let sent_token = must_pay(&info, &min_icq_deposit.denom)?;
-    let min_icqs_deposit = min_icq_deposit.amount.u128() * (valid_addresses.len() as u128);
-    if min_icqs_deposit > sent_token.u128() {
-        return Err(ContractError::Std(
-            StdError::generic_err(format!("Insufficient tokens sent to pay for interchain queries deposits. Sent: {}, Required: {}", Coin::new(sent_token, NATIVE_TOKEN_DENOM), Coin::new(min_icqs_deposit, NATIVE_TOKEN_DENOM)))));
+    let is_icq_manager = validate_address_is_icq_manager(&deps, info.sender.clone()).is_ok();
+
+    // icq_manager can create ICQs without paying for them; in this case, the
+    // funds are implicitly provided by the contract, and these can thus either be funds
+    // sent to the contract beforehand, or they could be escrowed funds
+    // that were returned to the contract when previous Interchain Queries were removed
+    // amd the escrowed funds were removed
+    if !is_icq_manager {
+        validate_icq_deposit_funds_sent(deps, &info, valid_addresses.len() as u64)?;
     }
 
     let mut register_icqs_submsgs = vec![];
@@ -1016,12 +1028,125 @@ fn create_icqs_for_validators(
         .add_submessages(register_icqs_submsgs))
 }
 
+// Validates that enough funds were sent to create ICQs for the given validator addresses.
+fn validate_icq_deposit_funds_sent(
+    deps: DepsMut<'_, NeutronQuery>,
+    info: &MessageInfo,
+    num_created_icqs: u64,
+) -> Result<(), ContractError> {
+    let min_icq_deposit = query_min_interchain_query_deposit(&deps.as_ref())?;
+    let sent_token = must_pay(info, &min_icq_deposit.denom)?;
+    let min_icqs_deposit = min_icq_deposit.amount.u128() * (num_created_icqs as u128);
+    if min_icqs_deposit > sent_token.u128() {
+        return Err(ContractError::Std(
+            StdError::generic_err(format!("Insufficient tokens sent to pay for {} interchain queries deposits. Sent: {}, Required: {}", num_created_icqs, Coin::new(sent_token, NATIVE_TOKEN_DENOM), Coin::new(min_icqs_deposit, NATIVE_TOKEN_DENOM)))));
+    }
+
+    Ok(())
+}
+
+fn add_icq_manager(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    address: String,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    let user_addr = deps.api.addr_validate(&address)?;
+
+    let is_icq_manager = validate_address_is_icq_manager(&deps, user_addr.clone());
+    if is_icq_manager.is_ok() {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Address is already an ICQ manager",
+        )));
+    }
+
+    ICQ_MANAGERS.save(deps.storage, user_addr.clone(), &true)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "add_icq_manager")
+        .add_attribute("address", user_addr)
+        .add_attribute("sender", info.sender))
+}
+
+fn remove_icq_manager(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    address: String,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    let user_addr = deps.api.addr_validate(&address)?;
+
+    let free_icq_creators = validate_address_is_icq_manager(&deps, user_addr.clone());
+    if free_icq_creators.is_err() {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Address is not an ICQ manager",
+        )));
+    }
+
+    ICQ_MANAGERS.remove(deps.storage, user_addr.clone());
+
+    Ok(Response::new()
+        .add_attribute("action", "remove_icq_manager")
+        .add_attribute("address", user_addr)
+        .add_attribute("sender", info.sender))
+}
+
+// Tries to withdraw the given amount of the NATIVE_TOKEN_DENOM from
+// the contract. These will in practice be funds that
+// were returned to the contract when Interchain Queries
+// were removed because a validator fell out of the
+// top validators.
+fn withdraw_icq_funds(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    amount: Uint128,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_address_is_icq_manager(&deps, info.sender.clone())?;
+
+    // send the amount of native tokens to the sender
+    let send = Coin {
+        denom: NATIVE_TOKEN_DENOM.to_string(),
+        amount,
+    };
+
+    Ok(Response::new()
+        .add_attribute("action", "withdraw_icq_escrows")
+        .add_attribute("sender", info.sender.clone())
+        .add_message(BankMsg::Send {
+            to_address: info.sender.to_string(),
+            amount: vec![send],
+        }))
+}
+
 fn validate_sender_is_whitelist_admin(
     deps: &DepsMut<NeutronQuery>,
     info: &MessageInfo,
 ) -> Result<(), ContractError> {
     let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
     if !whitelist_admins.contains(&info.sender) {
+        return Err(ContractError::Unauthorized);
+    }
+
+    Ok(())
+}
+
+fn validate_address_is_icq_manager(
+    deps: &DepsMut<NeutronQuery>,
+    address: Addr,
+) -> Result<(), ContractError> {
+    let is_manager = ICQ_MANAGERS.may_load(deps.storage, address)?;
+    if is_manager.is_none() {
         return Err(ContractError::Unauthorized);
     }
 
@@ -1116,6 +1241,7 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
             validator,
             round_id,
         } => to_json_binary(&query_validator_power_ratio(deps, validator, round_id)?),
+        QueryMsg::ICQManagers {} => to_json_binary(&query_icq_managers(deps)?),
     }
 }
 
@@ -1454,6 +1580,22 @@ pub fn query_validator_power_ratio(
 ) -> StdResult<ValidatorPowerRatioResponse> {
     get_validator_power_ratio_for_round(deps.storage, round_id, validator)
         .map(|r| ValidatorPowerRatioResponse { ratio: r }) // error can stay untouched
+}
+
+pub fn query_icq_managers(deps: Deps<NeutronQuery>) -> StdResult<ICQManagersResponse> {
+    Ok(ICQManagersResponse {
+        managers: ICQ_MANAGERS
+            .range(deps.storage, None, None, Order::Ascending)
+            .filter_map(|l| match l {
+                Ok((k, _)) => Some(k),
+                Err(_) => {
+                    deps.api
+                        .debug("Error parsing store when iterating ICQ managers!");
+                    None
+                }
+            })
+            .collect(),
+    })
 }
 
 // Computes the current round_id by taking contract_start_time and dividing the time since
