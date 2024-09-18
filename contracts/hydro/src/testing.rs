@@ -376,7 +376,7 @@ fn past_start_time_test() {
 
     // check behaviour starting in round 100
     vote_test_with_start_time(
-        // make the first round start slightly less than one epoch length in the past
+        // make the first round start slightly more than 100 epochs in the past
         mock_env()
             .block
             .time
