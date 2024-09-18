@@ -1,8 +1,8 @@
 # Hydro technical spec
 
-This is an overview of **the first version of** Hydro from a technical and user perspective. The code implementing most of the voting system has already been written, but there is still a substantial amount of work to do to allow the contract to handle protocol owned liquidity. This integration will be done by Timewave.
-
-Much of this has already been covered in the original Hydro post, but there are some nuances and differences here since this describes the functioning of the actual contract.
+This is an overview of the core smart contracts that make up Hydro as of now.
+Not all features from the original [litepaper](https://forum.cosmos.network/t/atom-wars-introducing-the-hydro-auction-platform/13842) are present in this version,
+and some implementation details might lead to slightly different behavior than described in the litepaper.
 
 # Protocol Owned Liquidity
 
@@ -14,49 +14,97 @@ Atom is commonly used to enter and exit positions of other Cosmos tokens. Supply
 
 Projects using the Cosmos Hub’s Interchain Security platform will receive a gauge multiplier. For a given percentage of the vote, they will receive a higher percentage of the deployed PoL.
 
-# Locking
+The advantage of PoL compared to issuing incentives (i.e. paying rewards to liquidity providers in certain pools) is that
+the community pool does not *spend* its funds, but rather deploys them. This means that the funds can be re-used in the future, and the community pool can grow over time.
 
-## Collateral
+# Main features
 
-The first version of Hydro will take stAtom as collateral. There has been some opposition to this since there is still debate over whether liquid staking is safe, and Stride (the issuer of stAtom) charges a 10% fee on staking rewards. However, Stride is a consumer chain, and a portion of this fee ultimately goes back to the Hub.
+The main features of the Hydro smart contract are as follows:
 
-Accepting multiple liquid staking tokens would be complicated and require using an price oracle, and/or querying multiple LST providers before most actions to check how many Atoms each LST represents.
+## Locking
 
-A future version of Hydro will let people lock up their Atoms without using a liquid staking token or unstaking from their current validator by using a technology called “LSM shares”, which effectively create a separate denomination for every delegator’s stake on every Hub validator. This is exciting, but non-trivial, since it will require the Hydro contract to be able to handle a potentially unlimited number of locked denominations, and it will require Hydro to query the Cosmos Hub in several places to validate these denominations whenever a user takes an action.
+Users can lock their Atoms in the Hydro smart contract to receive voting power. Concretely, users can lock liquid staking module shares aka LSM shares in Hydro. Each LSM share represents a staked Atom that is delegated to a certain validator. Learn more about the Liquid Staking Module [here](https://github.com/iqlusioninc/liquidity-staking-module).
+This means users that currently have liquid Atom tokens first need to stake their tokens before they can lock them in Hydro.
+There are different locking durations available, and the longer the duration, the more voting power the user receives.
+Currently, the different options for locking are 1, 2, 3, 6, and 12 months.
+Once the locking period is over, the user can unlock their locked tokens and will receive the original amount of tokens back.
 
-Until this technology is ready, Hydro will institute a cap on the number of stAtoms that can be locked in the contract. This cap will be a fraction of a percent of the total Atom supply, alleviating any security concerns.
+It is also possible to refresh a partially expired lockup to gain more voting power (read more about *Voting* below).
 
-## Lock lengths
+For security reasons, there is also a maximal number of LSM shares that can be locked in the contract. This number can be updated by the whitelist admin (see more in the section on the "Permission structure" below).
 
-When a user locks their stAtom, they can select to lock it for different amounts of time. The longer they lock, the more voting power they get.
+## Tranches, Rounds, Proposals
 
-| stATOM Lock | Power |
-| --- | --- |
-| 1 month | 1x |
-| 3 months | 1.5x |
-| 6 months | 2x |
-| 1 year | 4x |
+The Hydro contract supports multiple tranches.
+In practice, there will be a general tranche accessible to all projects, and a tranche for projects using the Interchain Security platform.
 
-Power will decay as time goes by. If a user locks their stAtom for 6 months, their multiplier will stay at 2x until 3 months have passed, then drop down to 1.5x, and so on. This is to make sure that the voters with the longest remaining lockups, hence the most “skin in the game” have the most power at any given time.
+Projects can submit proposals. These proposals are submitted during the current round, with rounds lasting for a certain amount of time,
+currently set to 1 month.
+For spam avoidance, only whitelisted accounts can submit proposals (see more in the section on the "Permission structure" below).
+Each proposal will be submitted in a specific tranche, and this tranche can just be picked by the submitter.
 
-![Untitled](images/power_decay.png)
+During round N, the PoL from the community pool is deployed according to the results of voting from round N-1.
 
-# Voting and deployment of PoL
+![Rounds Overview](images/rounds.png)
 
-Voting happens in rounds. The length is configurable and still needs to be fully decided, but let’s say rounds are one month for this example.
+## Voting
 
-During a round, anyone can submit a Timewave covenant. This is basically a specification for a liquidity position which will be deployed if the proposal gets enough votes.
+Users that have locked tokens in Hydro can vote on proposals to decide how to deploy the community pool funds.
+The voting power of a user is calculated as
+```
+voting_power = locked_atom * duration_scaling_factor
+```
+where `duration_scaling_factor` is a factor that depends on the amount of time that is left on the lockup *at the end of the current round*.
+The `duration_scaling_factor` is given as:
+| Remaining Lockup Duration | Duration Scaling Factor |
+|---------------------------|-------------------------|
+| >0 months                   | 1                       |
+| >1 month                  | 1.25                    |
+| >2 months                  | 1.5                     |
+| >3 months                  | 2                       |
+| >6 months                 | 4                       |
 
-![Untitled](images/rounds.png)
+Notice this means that a users voting power decays over time in steps, and behaves like this:
 
-Once the round is over, proposals are deployed using Timewave, a product which automates DeFi processes. Currently it supports liquidity provision on Astroport and Osmosis. The amount of liquidity deployed to each proposal is based on how many votes it gets and any liquidity multipliers related to the project’s use of Interchain Security.
+![Voting Power Decay](images/power_decay.png)
 
-# Tribute
+Each user can vote for one proposal during each round and in each tranche. Users can switch their votes as often as they want.
+The score of a proposal is the sum of the voting power of all users that voted for it.
 
-The Hydro forum post mentions “tribute”- funds that proposal creators can attach to proposals which is paid out to the winning proposal. This is not implemented within the main Hydro contract, but it is possible for tribute to be awarded with pluggable tribute contracts that read from the Hydro contract. These can be switched out permissionlessly and even customized or reinvented by proposal authors.
+# Liquid staking module and shares
 
-We will deploy an example default tribute contract which pays out tribute to anyone who voted for a proposal- but only if that proposal wins. This can be used as is by proposal authors, or used as a starting point for custom tribute contracts.
+It was already mentioned that users can lock LSM shares.
+We need to give a bit of background to explain one particularity that this has for the Hydro contract.
 
-# Pausing/Un-pausing of the contract
-In case of emergency, the Oversight committee will be able to suspend any actions on the smart contract by submitting the Pause transaction to the smart contract. Once the contract is paused, it can be un-paused through the Cosmos Hub governance by submitting the proposal to migrate the contract state (potentially to the same Code ID, in case the contract is safe to unpause without any changes to the code). Such proposal execution will trigger the `migrate()` function on the new contract code. This function will un-pause the contract and allow normal functioning of the contract to continue.
+Namely, an LSM share represents one share of a validator, and thus a claim to a part of the underlying Atom of that validator.
+
+However, one LSM share does *not* represent one staked Atom directly.
+Instead, different validators have different ratios of share<>staked Atom (we call this the "power ratio").
+This means that the Hydro contract needs to keep track of the power ratios of all validators that users can lock tokens from.
+Additionally, in the worst case we need to iterate over all the different validators that users hold tokens from
+to calculate the voting power of a user and the scores of proposals.
+
+This introduces two complexities:
+* We have to restrict the set of validators that users can lock LSM shares from (to ensure DoS)
+* We have to keep track of the power ratios of all validators that users can lock LSM shares from, and regularly update them in case they change (so that voting powers are calculated correctly)
+
+We solve both by utilizing Interchain Queries (learn more about what those are [here](https://docs.neutron.org/neutron/modules/interchain-queries/overview/)).
+The Hydro contract keeps a list of validators, which are the validators that users can currently lock shares from.
+Anyone can permissionlessly submit a transaction to make the Hydro contract *create* an Interchain Query for a new validator (and the submitter has to pay the query creation deposit to do so).
+Then, the Hydro contract will periodically receive results about the voting power ratio of that validator.
+
+However, Hydro also keeps, for each validator, the number of tokens delegated to that validator on the Cosmos Hub, and at any point in time,
+it will only keep queries for the 500 validators with the most delegated tokens it knows about.
+Other queries are removed, and the Hydro contract will keep the query creation deposits that it recovers in this manner.
+
+# Permission structure
+
+There are three different types of permissioned addresses in the Hydro contract:
+
+1. **Whitelist admin**: The main responsibility of the whitelist admin is managing the other two types of permissioned addresses, and pausing the contract. It is also capable of updating the maximal number of tokens that can be locked in the contract.
+2. **Whitelisted addresses**: These addresses can submit proposals.
+3. **ICQ Managers**: These addresses can create Interchain Queries for validators, but *without* sending along the funds to pay for query creation. This means the contracts funds (for example, the funds that the contract kept from removing old queries) are used to pay for the query creation. ICQ managers can also withdraw the native denom from the contract. Notably, this means that ICQ managers *cannot* withdraw the LSM shares locked by users, since they can only withdraw the native denom (for example, untrn).
+
+### Pausing/Un-pausing of the contract
+In case of emergency, any whitelist admin will be able to suspend any actions on the smart contract by submitting the Pause transaction to the smart contract. Once the contract is paused, it can be un-paused through the Cosmos Hub governance by submitting the proposal to migrate the contract state (potentially to the same Code ID, in case the contract is safe to unpause without any changes to the code). Such proposal execution will trigger the `migrate()` function on the new contract code. This function will un-pause the contract and allow normal functioning of the contract to continue.
 For more information on contract upgrade through the Cosmos Hub governance see [here](./docs/contract_upgrade.md).
