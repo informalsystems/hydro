@@ -349,6 +349,46 @@ fn create_proposal_basic_test() {
 
 #[test]
 fn vote_basic_test() {
+    vote_test_with_start_time(mock_env().block.time, 0);
+}
+
+#[test]
+fn past_start_time_test() {
+    // check behaviour starting one round before the start
+    vote_test_with_start_time(
+        // make the first round start slightly more than one epoch length in the past
+        mock_env()
+            .block
+            .time
+            .minus_nanos(TWO_WEEKS_IN_NANO_SECONDS + ONE_DAY_IN_NANO_SECONDS),
+        1,
+    );
+
+    // check behaviour starting with the first round not done yet
+    vote_test_with_start_time(
+        // make the first round start slightly less than one epoch length in the past
+        mock_env()
+            .block
+            .time
+            .minus_nanos(TWO_WEEKS_IN_NANO_SECONDS - ONE_DAY_IN_NANO_SECONDS),
+        0, // round_id should be 0 because we are still during the first round
+    );
+
+    // check behaviour starting in round 100
+    vote_test_with_start_time(
+        // make the first round start slightly less than one epoch length in the past
+        mock_env()
+            .block
+            .time
+            .minus_nanos(TWO_WEEKS_IN_NANO_SECONDS * 100 + ONE_DAY_IN_NANO_SECONDS),
+        100,
+    );
+}
+
+// Locks tokens, creates two proposals, then votes for one, and switches the vote to the other.
+// It will set the start time of the contract to the specified time, and will use the specified
+// round id to query proposals and votes.
+fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
     let user_address = "addr0000";
     let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
 
@@ -358,7 +398,8 @@ fn vote_basic_test() {
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
-    let msg = get_default_instantiate_msg(&deps.api);
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.first_round_start = start_time;
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
@@ -406,11 +447,11 @@ fn vote_basic_test() {
     assert!(res.is_ok());
 
     // verify users vote for the first proposal
-    let round_id = 0;
+    let round_id = current_round_id;
     let tranche_id = 1;
 
     let res = query_user_vote(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
-    assert!(res.is_ok());
+    assert!(res.is_ok(), "error: {:?}", res);
     assert_eq!(first_proposal_id, res.unwrap().vote.prop_id);
 
     let res = query_proposal(deps.as_ref(), round_id, tranche_id, first_proposal_id);
