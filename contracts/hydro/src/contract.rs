@@ -53,18 +53,11 @@ pub const NATIVE_TOKEN_DENOM: &str = "untrn";
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut<NeutronQuery>,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-
-    // validate that the first round starts in the future
-    if msg.first_round_start < env.block.time {
-        return Err(ContractError::Std(StdError::generic_err(
-            "First round start time must be in the future",
-        )));
-    }
 
     // validate that the lock epoch length is not shorter than the round length
     if msg.lock_epoch_length < msg.round_length {
