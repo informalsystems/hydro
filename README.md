@@ -85,7 +85,7 @@ Additionally, in the worst case we need to iterate over all the different valida
 to calculate the voting power of a user and the scores of proposals.
 
 This introduces two complexities:
-* We have to restrict the set of validators that users can lock LSM shares from (to ensure DoS)
+* We have to restrict the set of validators that users can lock LSM shares from (to avoid a DoS vector)
 * We have to keep track of the power ratios of all validators that users can lock LSM shares from, and regularly update them in case they change (so that voting powers are calculated correctly)
 
 We solve both by utilizing Interchain Queries (learn more about what those are [here](https://docs.neutron.org/neutron/modules/interchain-queries/overview/)).
