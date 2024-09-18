@@ -33,7 +33,7 @@ export LOGGER_LEVEL=debug
 #####
 
 # Create the ICQ queries by running the go script in this folder
-# go run main.go
+go run main.go
 
 # Run the relayer
 cd $RELAYER_REPO_PATH
