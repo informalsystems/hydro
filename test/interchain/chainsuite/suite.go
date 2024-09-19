@@ -36,10 +36,14 @@ func (s *Suite) SetupSuite() {
 	s.Require().NoError(err)
 	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, relayer, 1_000_000, 0, 1))
 
-	// copy hydro contract to neutron validator
+	// copy hydro and tribute contracts to neutron validator
 	hydroContract, err := os.ReadFile("../../artifacts/hydro.wasm")
 	s.Require().NoError(err)
 	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), hydroContract, "hydro.wasm"))
+
+	tributeContract, err := os.ReadFile("../../artifacts/tribute.wasm")
+	s.Require().NoError(err)
+	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), tributeContract, "tribute.wasm"))
 
 	// start icq relayer
 	sidecarConfig := GetIcqSidecarConfig(s.HubChain, s.NeutronChain)
