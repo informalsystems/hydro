@@ -13,7 +13,7 @@ import (
 )
 
 func TestHydroSuite(t *testing.T) {
-	s := &HydroSuite{&chainsuite.Suite{}}
+	s := &HydroSuite{}
 	suite.Run(t, s)
 }
 
@@ -25,7 +25,6 @@ func TestHydroSuite(t *testing.T) {
 // pausing/disabling contract
 func (s *HydroSuite) TestHappyPath() {
 	hubNode := s.HubChain.GetNode()
-	neutronNode := s.NeutronChain.GetNode()
 
 	// delegate tokens
 	s.DelegateTokens(hubNode, s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[0].ValoperAddress, txAmountUatom(1000))
@@ -43,11 +42,8 @@ func (s *HydroSuite) TestHappyPath() {
 	sourceIbcDenom2 := fmt.Sprintf("%s/%s", strings.ToLower(s.HubChain.ValidatorWallets[1].ValoperAddress), recordId2)
 	dstIbcDenom2 := s.HubToNeutronShareTokenTransfer(0, math.NewInt(400), sourceIbcDenom2, s.NeutronChain.ValidatorWallets[0].Address)
 
-	// deploy hydro contract - store code
-	codeId := s.StoreCode(neutronNode, s.HubChain.ValidatorWallets[0].Moniker, s.GetHydroContractPath())
-
 	// deploy hydro contract - instantiate code
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, codeId, s.NeutronChain.ValidatorWallets[0].Address, 3, 86400000000000)
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 3, 86400000000000)
 
 	// register interchain query
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[0].ValoperAddress, s.HubChain.ValidatorWallets[1].ValoperAddress},
@@ -150,7 +146,6 @@ func (s *HydroSuite) TestHappyPath() {
 // TestActiveValidatorChange tests dropping one validator from the active set, adding a new one, and checks its effect on the proposal voting power
 func (s *HydroSuite) TestActiveValidatorChange() {
 	hubNode := s.HubChain.GetNode()
-	neutronNode := s.NeutronChain.GetNode()
 
 	// val1 delegate tokens to validator 1(self delegate), 2 and 3
 	s.DelegateTokens(hubNode, s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[0].ValoperAddress, txAmountUatom(1000))
@@ -173,12 +168,9 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 	sourceIbcDenom3 := fmt.Sprintf("%s/%s", strings.ToLower(s.HubChain.ValidatorWallets[2].ValoperAddress), recordId3)
 	dstIbcDenom3 := s.HubToNeutronShareTokenTransfer(0, math.NewInt(400), sourceIbcDenom3, s.NeutronChain.ValidatorWallets[0].Address)
 
-	// deploy hydro contract - store code
-	codeId := s.StoreCode(neutronNode, s.HubChain.ValidatorWallets[0].Moniker, s.GetHydroContractPath())
-
 	// deploy hydro contract - instantiate code
 	// active valset consists of 2 validators, currently val1 and val2
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, codeId, s.NeutronChain.ValidatorWallets[0].Address, 2, 86400000000000)
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 2, 86400000000000)
 
 	// register interchain query for val1 and val2
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[0].ValoperAddress, s.HubChain.ValidatorWallets[1].ValoperAddress},
@@ -235,7 +227,6 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 // TestValidatorSlashing tests that voting power of user, proposal, round is changed after validator is slashed
 func (s *HydroSuite) TestValidatorSlashing() {
 	hubNode := s.HubChain.GetNode()
-	neutronNode := s.NeutronChain.GetNode()
 
 	// delegate tokens
 	s.DelegateTokens(hubNode, s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[3].ValoperAddress, txAmountUatom(1000))
@@ -248,11 +239,8 @@ func (s *HydroSuite) TestValidatorSlashing() {
 	sourceIbcDenom1 := fmt.Sprintf("%s/%s", strings.ToLower(s.HubChain.ValidatorWallets[3].ValoperAddress), recordId1)
 	dstIbcDenom1 := s.HubToNeutronShareTokenTransfer(0, math.NewInt(400), sourceIbcDenom1, s.NeutronChain.ValidatorWallets[0].Address)
 
-	// deploy hydro contract - store code
-	codeId := s.StoreCode(neutronNode, s.HubChain.ValidatorWallets[0].Moniker, s.GetHydroContractPath())
-
 	// deploy hydro contract - instantiate code
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, codeId, s.NeutronChain.ValidatorWallets[0].Address, 4, 86400000000000)
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 4, 86400000000000)
 
 	// register interchain query
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[3].ValoperAddress},
@@ -294,10 +282,9 @@ func (s *HydroSuite) TestValidatorSlashing() {
 	s.Require().NoError(err)
 	s.Require().Equal(strconv.Itoa(powerAfterSlashing), proposal.Power)
 
-	// todo: uncomment once the contract is fixed so that it updates user power as well
 	// check user total voting power
-	//userPower := s.GetUserVotingPower(contractAddr, s.NeutronChain.ValidatorWallets[0].Address)
-	//s.Require().Equal(powerAfterSlashing, userPower)
+	userPower := s.GetUserVotingPower(contractAddr, s.NeutronChain.ValidatorWallets[0].Address)
+	s.Require().Equal(int64(powerAfterSlashing), userPower)
 
 	// check round total voting power
 	roundPower := s.GetRoundVotingPower(contractAddr, 0)
@@ -306,8 +293,6 @@ func (s *HydroSuite) TestValidatorSlashing() {
 
 // TestTributeContract tests tribute creation and distribution
 func (s *HydroSuite) TestTributeContract() {
-	neutronNode := s.NeutronChain.GetNode()
-
 	// delegate tokens
 	s.DelegateTokens(s.HubChain.Validators[0], s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[0].ValoperAddress, txAmountUatom(10000))
 
@@ -321,16 +306,12 @@ func (s *HydroSuite) TestTributeContract() {
 	s.HubToNeutronShareTokenTransfer(0, math.NewInt(1000), sourceIbcDenom, s.NeutronChain.ValidatorWallets[2].Address)
 	s.HubToNeutronShareTokenTransfer(0, math.NewInt(1000), sourceIbcDenom, s.NeutronChain.ValidatorWallets[3].Address)
 
-	// deploy hydro contract - store code
-	codeId := s.StoreCode(neutronNode, s.HubChain.ValidatorWallets[0].Moniker, s.GetHydroContractPath())
 	// deploy hydro contract - instantiate code
 	roundLength := 300000000000
-	hydroContractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, codeId, s.NeutronChain.ValidatorWallets[0].Address, 4, roundLength)
+	hydroContractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 4, roundLength)
 
-	// deploy tribute contract - store code
-	codeId = s.StoreCode(neutronNode, s.HubChain.ValidatorWallets[0].Moniker, s.GetTributeContractPath())
 	// deploy tribute contract - instantiate code
-	tributeContractAddr := s.InstantiateTributeContract(codeId, hydroContractAddr, s.NeutronChain.ValidatorWallets[0].Address)
+	tributeContractAddr := s.InstantiateTributeContract(tributeCodeId, hydroContractAddr, s.NeutronChain.ValidatorWallets[0].Address)
 
 	// register interchain query
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[0].ValoperAddress},
@@ -449,10 +430,4 @@ func (s *HydroSuite) TestTributeContract() {
 	// val1 account payed gas for claiming tribute rewards for other voters. We cannot check exact refund amount, but we will check that the new balance
 	// is greater than the proposal 4 reward which means that both proposals 3 and 4 are refunded
 	s.Require().True(newBalanceVal1.Sub(oldBalanceVal1).GT(math.NewInt(40000)))
-
-	// todo: uncomment this once the contract is fixed, cuurently it does not send the fee for ibc tx when sending community reward
-	// confirm that community pool rewards are transfered to validator 1 on the hub (this address is used in tribute contract as a bucket address)
-	// s.Require().NoError(s.ClaimCommunityPoolReward(0, tributeContractAddr, roundId, proposal1.TrancheID))
-	// balanceAmount := s.WaitForCommunityRewards(s.HubChain.ValidatorWallets[0].Address)
-	// s.Require().True(balanceAmount.Equal(math.NewInt(3000))) // 10% from proposal1 and proposal2 tributes
 }

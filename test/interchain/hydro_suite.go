@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"hydro/test/interchain/chainsuite"
+	"os"
 	"path"
 	"strconv"
-	"strings"
 	"time"
 
 	"cosmossdk.io/math"
@@ -18,10 +18,84 @@ import (
 	transfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
 	"github.com/strangelove-ventures/interchaintest/v8/chain/cosmos"
 	"github.com/strangelove-ventures/interchaintest/v8/ibc"
+	"github.com/stretchr/testify/suite"
+)
+
+var (
+	hydroCodeId   string
+	tributeCodeId string
 )
 
 type HydroSuite struct {
-	*chainsuite.Suite
+	suite.Suite
+	HubChain     *chainsuite.Chain
+	NeutronChain *chainsuite.Chain
+	Relayer      *chainsuite.Relayer
+	ctx          context.Context
+}
+
+func (s *HydroSuite) SetupSuite() {
+	ctx, err := chainsuite.NewSuiteContext(&s.Suite)
+	s.Require().NoError(err)
+	s.ctx = ctx
+
+	// create and start hub chain
+	s.HubChain, err = chainsuite.CreateChain(s.GetContext(), s.T(), chainsuite.GetHubSpec())
+	s.Require().NoError(err)
+
+	// setup hermes relayer
+	relayer, err := chainsuite.NewRelayer(s.GetContext(), s.T())
+	s.Require().NoError(err)
+	s.Relayer = relayer
+	err = relayer.SetupChainKeys(s.GetContext(), s.HubChain)
+	s.Require().NoError(err)
+
+	// create and start neutron chain
+	s.NeutronChain, err = s.HubChain.AddConsumerChain(s.GetContext(), relayer, chainsuite.NeutronChainID, chainsuite.GetNeutronSpec)
+	s.Require().NoError(err)
+	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, relayer, 1_000_000, 0, 1))
+
+	// copy hydro and tribute contracts to neutron validator
+	hydroContract, err := os.ReadFile("../../artifacts/hydro.wasm")
+	s.Require().NoError(err)
+	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), hydroContract, "hydro.wasm"))
+
+	tributeContract, err := os.ReadFile("../../artifacts/tribute.wasm")
+	s.Require().NoError(err)
+	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), tributeContract, "tribute.wasm"))
+
+	// store hydro contract code
+	hydroCodeId = s.StoreCode(s.GetHydroContractPath())
+	// store tribute contract code
+	tributeCodeId = s.StoreCode(s.GetTributeContractPath())
+
+	// start icq relayer
+	sidecarConfig := chainsuite.GetIcqSidecarConfig(s.HubChain, s.NeutronChain)
+	dockerClient, dockerNetwork := chainsuite.GetDockerContext(ctx)
+	err = s.NeutronChain.NewSidecarProcess(
+		s.ctx,
+		sidecarConfig.PreStart,
+		sidecarConfig.ProcessName,
+		s.T().Name(),
+		dockerClient,
+		dockerNetwork,
+		sidecarConfig.Image,
+		sidecarConfig.HomeDir,
+		0,
+		sidecarConfig.Ports,
+		sidecarConfig.StartCmd,
+		sidecarConfig.Env,
+	)
+	s.Require().NoError(err)
+	err = chainsuite.CopyIcqRelayerKey(s.GetContext(), s.NeutronChain.Sidecars[0])
+	s.Require().NoError(err)
+	err = s.NeutronChain.StartAllSidecars(s.ctx)
+	s.Require().NoError(err)
+}
+
+func (s *HydroSuite) GetContext() context.Context {
+	s.Require().NotNil(s.ctx, "Tried to GetContext before it was set. SetupSuite must run first")
+	return s.ctx
 }
 
 func txAmountUatom(txAmount uint64) string {
@@ -98,7 +172,9 @@ func (s *HydroSuite) HubToNeutronShareTokenTransfer(
 	return dstIbcDenom
 }
 
-func (s *HydroSuite) StoreCode(node *cosmos.ChainNode, keyMoniker string, contractPath string) string {
+func (s *HydroSuite) StoreCode(contractPath string) string {
+	node := s.NeutronChain.Validators[0]
+	keyMoniker := s.NeutronChain.ValidatorWallets[0].Moniker
 	txHash, err := node.ExecTx(s.GetContext(), keyMoniker, "wasm", "store", contractPath, "--gas", "auto")
 	s.Require().NoError(err)
 
@@ -144,6 +220,7 @@ func (s *HydroSuite) InstantiateHydroContract(
 		"hub_connection_id":                  neutronTransferChannel.ConnectionHops[0],
 		"hub_transfer_channel_id":            neutronTransferChannel.ChannelID,
 		"icq_update_period":                  10,
+		"icq_managers":                       []string{adminAddr},
 	}
 	initHydroJson, err := json.Marshal(initHydro)
 	s.Require().NoError(err)
@@ -243,7 +320,7 @@ func (s *HydroSuite) RegisterInterchainQueries(
 	s.Require().True(dataSubmitted)
 }
 
-func (s HydroSuite) WaitForQueryUpdate(contractAddr string, remoteHeight int64) {
+func (s *HydroSuite) WaitForQueryUpdate(contractAddr string, remoteHeight int64) {
 	tCtx, cancelFn := context.WithTimeout(s.GetContext(), 30*chainsuite.CommitTimeout)
 	defer cancelFn()
 
@@ -546,24 +623,18 @@ func (s *HydroSuite) SubmitTribute(validatorIndex, amount, trancheId, proposalId
 		},
 	}
 
-	_, err := s.WasmExecuteTx(validatorIndex, txData, contractAddr, []string{"--amount", strconv.Itoa(amount) + "untrn"})
+	response, err := s.WasmExecuteTx(validatorIndex, txData, contractAddr, []string{"--amount", strconv.Itoa(amount) + "untrn"})
 	if err != nil {
 		return 0, err
 	}
 
-	return proposalId, nil
-	//todo uncoment when event is added
-	// response, err := s.NeutronChain.Validators[0].TxHashToResponse(s.GetContext(), txHash)
-	// if err != nil {
-	// 	return 0, err
-	// }
-	// tributeIdStr, found := getEvtAttribute(response.Events, "", "")
-	// s.Require().True(found)
+	tributeIdStr, found := getEvtAttribute(response.Events, "wasm", "tribute_id")
+	s.Require().True(found)
 
-	// tributeId, err := strconv.ParseInt(tributeIdStr, 10, 64)
-	// s.Require().NoError(err)
+	tributeId, err := strconv.Atoi(tributeIdStr)
+	s.Require().NoError(err)
 
-	// return int(tributeId), nil
+	return tributeId, nil
 }
 
 func (s *HydroSuite) ClaimTribute(validatorIndex int, contractAddr, voterAddress string, roundId, trancheId, tributeId int) error {
@@ -573,22 +644,6 @@ func (s *HydroSuite) ClaimTribute(validatorIndex int, contractAddr, voterAddress
 			"tranche_id":    trancheId,
 			"tribute_id":    tributeId,
 			"voter_address": voterAddress,
-		},
-	}
-
-	_, err := s.WasmExecuteTx(validatorIndex, txData, contractAddr, []string{})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *HydroSuite) ClaimCommunityPoolReward(validatorIndex int, contractAddr string, roundId, trancheId int) error {
-	txData := map[string]interface{}{
-		"claim_community_pool_tribute": map[string]interface{}{
-			"round_id":   roundId,
-			"tranche_id": trancheId,
 		},
 	}
 
@@ -616,28 +671,6 @@ func (s *HydroSuite) RefundTribute(validatorIndex int, contractAddr string, roun
 	}
 
 	return nil
-}
-
-func (s *HydroSuite) WaitForCommunityRewards(address string) math.Int {
-	balanceAmount := math.NewInt(0)
-	tCtx, cancelFn := context.WithTimeout(s.GetContext(), 30*chainsuite.CommitTimeout)
-	defer cancelFn()
-
-	for tCtx.Err() == nil {
-		time.Sleep(chainsuite.CommitTimeout)
-
-		balances, err := s.HubChain.BankQueryAllBalances(s.GetContext(), address)
-		s.Require().NoError(err)
-
-		for _, balance := range balances {
-			if strings.Contains(balance.Denom, "ibc") {
-				balanceAmount = balance.Amount
-				break
-			}
-		}
-	}
-
-	return balanceAmount
 }
 
 func (s *HydroSuite) QueryContractState(queryData map[string]interface{}, contractAddr string) []byte {

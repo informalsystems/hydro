@@ -11,8 +11,8 @@ import (
 
 const (
 	//hub params
-	HubImageName     = "ghcr.io/hyphacoop/gaia"
-	HubImageVersion  = "v19.0.0"
+	HubImageName     = "ghcr.io/strangelove-ventures/heighliner/gaia"
+	HubImageVersion  = "v19.2.0"
 	HubBin           = "gaiad"
 	HubBech32Prefix  = "cosmos"
 	HubValOperPrefix = "cosmosvaloper"
@@ -20,7 +20,7 @@ const (
 	Uatom            = "uatom"
 	//neutron params
 	NeutronImageName       = "ghcr.io/strangelove-ventures/heighliner/neutron"
-	NeutronVersion         = "v4.2.0"
+	NeutronVersion         = "v4.2.3"
 	NeutronBin             = "neutrond"
 	NeutronBech32Prefix    = "neutron"
 	NeutronChainID         = "neutron"

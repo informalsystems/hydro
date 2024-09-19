@@ -1,6 +1,7 @@
 package chainsuite
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/strangelove-ventures/interchaintest/v8/chain/cosmos"
@@ -60,17 +61,17 @@ func SetIcqSidecarConfigEnv(hubChain *Chain, neutronChain *Chain) []string {
 
 // CopyIcqRelayerKey copies the key that will be used for signing neutron txs. Since neutron_query_relayer does not have 'keys add' and the key
 // cannot be recovered from the key mnemonic
-func CopyIcqRelayerKey(suite *Suite, icqSidecarProcess *cosmos.SidecarProcess) error {
+func CopyIcqRelayerKey(ctx context.Context, icqSidecarProcess *cosmos.SidecarProcess) error {
 	srcKeyInfoPath := fmt.Sprintf("testdata/%s", IcqRelayerKeyFile)
 	srcKeyAddrPath := fmt.Sprintf("testdata/%s", IcqRelayerKeyAddrFile)
 	destKeyInfoPath := fmt.Sprintf("/keyring-test/%s", IcqRelayerKeyFile)
 	destKeyAddrPath := fmt.Sprintf("/keyring-test/%s", IcqRelayerKeyAddrFile)
 
-	err := icqSidecarProcess.CopyFile(suite.ctx, srcKeyInfoPath, destKeyInfoPath)
+	err := icqSidecarProcess.CopyFile(ctx, srcKeyInfoPath, destKeyInfoPath)
 	if err != nil {
 		return err
 	}
-	err = icqSidecarProcess.CopyFile(suite.ctx, srcKeyAddrPath, destKeyAddrPath)
+	err = icqSidecarProcess.CopyFile(ctx, srcKeyAddrPath, destKeyAddrPath)
 	if err != nil {
 		return err
 	}
