@@ -1,37 +1,17 @@
-use cosmwasm_schema::cw_serde;
-use cosmwasm_std::Decimal;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
-#[cw_serde]
-pub struct CommunityPoolTaxConfig {
-    // The percentage of the tribute that goes to the community pool,
-    // sent to a liquidity bucket under control of the Hydro multisig for reinvestment.
-    // The rest is distributed among voters.
-    // Should be a number between 0 and 1.
-    pub tax_percent: Decimal,
-    // The channel ID to send the tokens to the community pool over.
-    pub channel_id: String,
-    // The address of the liquidity bucket *on the remote chain* that should receive the funds.
-    // This should be the address under control of the Hydro committee multisig.
-    pub bucket_address: String,
-}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
     pub hydro_contract: String,
     pub top_n_props_count: u64,
-    pub community_pool_config: CommunityPoolTaxConfig,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, cw_orch::ExecuteFns)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
     #[cw_orch(payable)]
-    AddTribute {
-        tranche_id: u64,
-        proposal_id: u64,
-    },
+    AddTribute { tranche_id: u64, proposal_id: u64 },
     ClaimTribute {
         round_id: u64,
         tranche_id: u64,
@@ -43,10 +23,6 @@ pub enum ExecuteMsg {
         tranche_id: u64,
         proposal_id: u64,
         tribute_id: u64,
-    },
-    ClaimCommunityPoolTribute {
-        round_id: u64,
-        tranche_id: u64,
     },
 }
 
