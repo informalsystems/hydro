@@ -20,10 +20,11 @@ use crate::lsm_integration::{
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    LockEntryWithPower, ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
+    ICQManagersResponse, LockEntryWithPower, ProposalResponse, QueryMsg,
+    RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
     RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse,
-    TranchesResponse, UserVoteResponse, UserVotingPowerResponse, WhitelistAdminsResponse,
-    WhitelistResponse,
+    TranchesResponse, UserVoteResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
+    WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, get_total_power_for_proposal,
@@ -31,8 +32,8 @@ use crate::score_keeper::{
 };
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS,
-    LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID,
-    TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
+    ICQ_MANAGERS, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID,
+    TRANCHE_ID, TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
     VALIDATOR_TO_QUERY_ID, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::validators_icqs::{
@@ -52,18 +53,11 @@ pub const NATIVE_TOKEN_DENOM: &str = "untrn";
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut<NeutronQuery>,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-
-    // validate that the first round starts in the future
-    if msg.first_round_start < env.block.time {
-        return Err(ContractError::Std(StdError::generic_err(
-            "First round start time must be in the future",
-        )));
-    }
 
     // validate that the lock epoch length is not shorter than the round length
     if msg.lock_epoch_length < msg.round_length {
@@ -102,6 +96,11 @@ pub fn instantiate(
         if !whitelist.contains(&whitelist_account_addr) {
             whitelist.push(whitelist_account_addr.clone());
         }
+    }
+
+    for manager in msg.icq_managers {
+        let manager_addr = deps.api.addr_validate(&manager)?;
+        ICQ_MANAGERS.save(deps.storage, manager_addr, &true)?;
     }
 
     WHITELIST_ADMINS.save(deps.storage, &whitelist_admins)?;
@@ -180,6 +179,9 @@ pub fn execute(
         ExecuteMsg::CreateICQsForValidators { validators } => {
             create_icqs_for_validators(deps, env, info, validators)
         }
+        ExecuteMsg::AddICQManager { address } => add_icq_manager(deps, info, address),
+        ExecuteMsg::RemoveICQManager { address } => remove_icq_manager(deps, info, address),
+        ExecuteMsg::WithdrawICQFunds { amount } => withdraw_icq_funds(deps, info, amount),
     }
 }
 
@@ -241,7 +243,7 @@ fn lock_tokens(
         lock_end: env.block.time.plus_nanos(lock_duration),
     };
     let lock_end = lock_entry.lock_end.nanos();
-    LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
+    LOCKS_MAP.save(deps.storage, (info.sender.clone(), lock_id), &lock_entry)?;
     LOCKED_TOKENS.save(deps.storage, &(locked_tokens + amount_to_lock))?;
 
     // Calculate and update the total voting power info for current and all
@@ -259,7 +261,13 @@ fn lock_tokens(
         |_, _, _| Uint128::zero(),
     )?;
 
-    Ok(Response::new().add_attribute("action", "lock_tokens"))
+    Ok(Response::new()
+        .add_attribute("action", "lock_tokens")
+        .add_attribute("sender", info.sender)
+        .add_attribute("lock_id", lock_entry.lock_id.to_string())
+        .add_attribute("locked_tokens", info.funds[0].clone().to_string())
+        .add_attribute("lock_start", lock_entry.lock_start.to_string())
+        .add_attribute("lock_end", lock_entry.lock_end.to_string()))
 }
 
 // Extends the lock duration of a lock entry to be current_block_time + lock_duration,
@@ -305,7 +313,7 @@ fn refresh_lock_duration(
     lock_entry.lock_end = Timestamp::from_nanos(new_lock_end);
 
     // save the updated lock entry
-    LOCKS_MAP.save(deps.storage, (info.sender, lock_id), &lock_entry)?;
+    LOCKS_MAP.save(deps.storage, (info.sender.clone(), lock_id), &lock_entry)?;
 
     // get the validator whose shares are in this lock
     let validator_result = validate_denom(
@@ -351,18 +359,23 @@ fn refresh_lock_duration(
         },
     )?;
 
-    Ok(Response::new().add_attribute("action", "refresh_lock_duration"))
+    Ok(Response::new()
+        .add_attribute("action", "refresh_lock_duration")
+        .add_attribute("sender", info.sender)
+        .add_attribute("old_lock_end", old_lock_end.to_string())
+        .add_attribute("new_lock_end", new_lock_end.to_string()))
 }
 
-// Validate that the lock duration (given in nanos) is either 1, 3, 6, or 12 epochs
+// Validate that the lock duration (given in nanos) is either 1, 2, 3, 6, or 12 epochs
 fn validate_lock_duration(lock_epoch_length: u64, lock_duration: u64) -> Result<(), ContractError> {
     if lock_duration != lock_epoch_length
+        && lock_duration != lock_epoch_length * 2
         && lock_duration != lock_epoch_length * 3
         && lock_duration != lock_epoch_length * 6
         && lock_duration != lock_epoch_length * 12
     {
         return Err(ContractError::Std(StdError::generic_err(
-            "Lock duration must be 1, 3, 6, or 12 epochs",
+            "Lock duration must be 1, 2, 3, 6, or 12 epochs",
         )));
     }
 
@@ -394,8 +407,12 @@ fn unlock_tokens(
     let mut to_delete = vec![];
     let mut total_unlocked_amount = Uint128::zero();
 
-    let mut response = Response::new().add_attribute("action", "unlock_tokens");
+    let mut response = Response::new()
+        .add_attribute("action", "unlock_tokens")
+        .add_attribute("sender", info.sender.to_string());
 
+    let mut unlocked_lock_ids = vec![];
+    let mut unlocked_tokens = vec![];
     for lock in locks {
         let (lock_id, lock_entry) = lock?;
         if lock_entry.lock_end < env.block.time {
@@ -414,6 +431,9 @@ fn unlock_tokens(
 
             // Delete entry from LocksMap
             to_delete.push((info.sender.clone(), lock_id));
+
+            unlocked_lock_ids.push(lock_id.to_string());
+            unlocked_tokens.push(send.to_string());
         }
     }
 
@@ -431,7 +451,9 @@ fn unlock_tokens(
         )?;
     }
 
-    Ok(response)
+    Ok(response
+        .add_attribute("unlocked_lock_ids", unlocked_lock_ids.join(", "))
+        .add_attribute("unlocked_tokens", unlocked_tokens.join(", ")))
 }
 
 fn validate_previous_round_vote(
@@ -511,7 +533,14 @@ fn create_proposal(
         &proposal_id,
     )?;
 
-    Ok(Response::new().add_attribute("action", "create_proposal"))
+    Ok(Response::new()
+        .add_attribute("action", "create_proposal")
+        .add_attribute("sender", info.sender)
+        .add_attribute("round_id", round_id.to_string())
+        .add_attribute("tranche_id", tranche_id.to_string())
+        .add_attribute("proposal_id", proposal_id.to_string())
+        .add_attribute("proposal_title", proposal.title)
+        .add_attribute("proposal_description", proposal.description))
 }
 
 pub fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: Uint128) -> Uint128 {
@@ -519,7 +548,8 @@ pub fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: U
 
     // Scale lockup power
     // 1x if lockup is between 0 and 1 epochs
-    // 1.5x if lockup is between 1 and 3 epochs
+    // 1.25x if lockup is between 1 and 2 epochs
+    // 1.5x if lockup is between 2 and 3 epochs
     // 2x if lockup is between 3 and 6 epochs
     // 4x if lockup is between 6 and 12 epochs
     // TODO: is there a less funky way to do Uint128 math???
@@ -528,8 +558,10 @@ pub fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: U
         _ if lockup_time > lock_epoch_length * 6 => raw_power * two * two,
         // 2x if lockup is between 3 and 6 epochs
         _ if lockup_time > lock_epoch_length * 3 => raw_power * two,
-        // 1.5x if lockup is between 1 and 3 epochs
-        _ if lockup_time > lock_epoch_length => raw_power + (raw_power / two),
+        // 1.5x if lockup is between 2 and 3 epochs
+        _ if lockup_time > lock_epoch_length * 2 => raw_power + (raw_power / two),
+        // 1.25x if lockup is between 1 and 2 epochs
+        _ if lockup_time > lock_epoch_length => raw_power + (raw_power / (two * two)),
         // Covers 0 and 1 epoch which have no scaling
         _ => raw_power,
     }
@@ -566,6 +598,10 @@ fn vote(
 
     // compute the round end
     let round_end = compute_round_end(&constants, round_id)?;
+
+    let mut response = Response::new()
+        .add_attribute("action", "vote")
+        .add_attribute("sender", info.sender.to_string());
 
     // Get any existing vote for this sender and reverse it- this may be a vote for a different proposal (if they are switching their vote),
     // or it may be a vote for the same proposal (if they have increased their power by locking more and want to update their vote).
@@ -621,6 +657,8 @@ fn vote(
 
         // Delete vote
         VOTE_MAP.remove(deps.storage, (round_id, tranche_id, info.sender.clone()));
+
+        response = response.add_attribute("old_proposal_id", vote.prop_id.to_string());
     }
 
     let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
@@ -664,8 +702,6 @@ fn vote(
         // insert the shares into the time_weigted_shares_map
         time_weighted_shares_map.insert(validator.clone(), new_shares);
     }
-
-    let response = Response::new().add_attribute("action", "vote");
 
     // if the user doesn't have any shares that give voting power, we don't need to do anything
     if time_weighted_shares_map.is_empty() {
@@ -716,7 +752,7 @@ fn vote(
     };
     VOTE_MAP.save(deps.storage, (round_id, tranche_id, info.sender), &vote)?;
 
-    Ok(response)
+    Ok(response.add_attribute("proposal_id", vote.prop_id.to_string()))
 }
 
 // Returns the time-weighted amount of shares locked in the given lock entry in a round with the given end time,
@@ -759,7 +795,10 @@ fn add_to_whitelist(
     whitelist.push(whitelist_account_addr.clone());
     WHITELIST.save(deps.storage, &whitelist)?;
 
-    Ok(Response::new().add_attribute("action", "add_to_whitelist"))
+    Ok(Response::new()
+        .add_attribute("action", "add_to_whitelist")
+        .add_attribute("sender", info.sender)
+        .add_attribute("added_whitelist_address", whitelist_account_addr))
 }
 
 // Removes an account address from the whitelist.
@@ -782,7 +821,10 @@ fn remove_from_whitelist(
     whitelist.retain(|cp| cp != whitelist_account_addr);
     WHITELIST.save(deps.storage, &whitelist)?;
 
-    Ok(Response::new().add_attribute("action", "remove_from_whitelist"))
+    Ok(Response::new()
+        .add_attribute("action", "remove_from_whitelist")
+        .add_attribute("sender", info.sender)
+        .add_attribute("removed_whitelist_address", whitelist_account_addr))
 }
 
 fn update_max_locked_tokens(
@@ -800,7 +842,7 @@ fn update_max_locked_tokens(
 
     Ok(Response::new()
         .add_attribute("action", "update_max_locked_tokens")
-        .add_attribute("sender", info.sender.clone())
+        .add_attribute("sender", info.sender)
         .add_attribute("max_locked_tokens", max_locked_tokens.to_string()))
 }
 
@@ -822,7 +864,7 @@ fn pause_contract(
 
     Ok(Response::new()
         .add_attribute("action", "pause_contract")
-        .add_attribute("sender", info.sender.clone())
+        .add_attribute("sender", info.sender)
         .add_attribute("paused", "true"))
 }
 
@@ -855,7 +897,7 @@ fn add_tranche(
 
     Ok(Response::new()
         .add_attribute("action", "add_tranche")
-        .add_attribute("sender", info.sender.clone())
+        .add_attribute("sender", info.sender)
         .add_attribute("tranche id", tranche.id.to_string())
         .add_attribute("tranche name", tranche.name)
         .add_attribute("tranche metadata", tranche.metadata))
@@ -898,7 +940,7 @@ fn edit_tranche(
 
     Ok(Response::new()
         .add_attribute("action", "edit_tranche")
-        .add_attribute("sender", info.sender.clone())
+        .add_attribute("sender", info.sender)
         .add_attribute("tranche id", tranche.id.to_string())
         .add_attribute("old tranche name", old_tranche_name)
         .add_attribute("old tranche metadata", old_tranche_metadata)
@@ -939,16 +981,19 @@ fn create_icqs_for_validators(
         }
     }
 
-    let min_icq_deposit = query_min_interchain_query_deposit(&deps.as_ref())?;
-    let sent_token = must_pay(&info, &min_icq_deposit.denom)?;
-    let min_icqs_deposit = min_icq_deposit.amount.u128() * (valid_addresses.len() as u128);
-    if min_icqs_deposit > sent_token.u128() {
-        return Err(ContractError::Std(
-            StdError::generic_err(format!("Insufficient tokens sent to pay for interchain queries deposits. Sent: {}, Required: {}", Coin::new(sent_token, NATIVE_TOKEN_DENOM), Coin::new(min_icqs_deposit, NATIVE_TOKEN_DENOM)))));
+    let is_icq_manager = validate_address_is_icq_manager(&deps, info.sender.clone()).is_ok();
+
+    // icq_manager can create ICQs without paying for them; in this case, the
+    // funds are implicitly provided by the contract, and these can thus either be funds
+    // sent to the contract beforehand, or they could be escrowed funds
+    // that were returned to the contract when previous Interchain Queries were removed
+    // amd the escrowed funds were removed
+    if !is_icq_manager {
+        validate_icq_deposit_funds_sent(deps, &info, valid_addresses.len() as u64)?;
     }
 
     let mut register_icqs_submsgs = vec![];
-    for validator_address in valid_addresses {
+    for validator_address in valid_addresses.clone() {
         let msg = new_register_staking_validators_query_msg(
             constants.hub_connection_id.clone(),
             vec![validator_address.clone()],
@@ -969,8 +1014,116 @@ fn create_icqs_for_validators(
 
     Ok(Response::new()
         .add_attribute("action", "create_icqs_for_validators")
-        .add_attribute("sender", info.sender.clone())
+        .add_attribute("sender", info.sender)
+        .add_attribute(
+            "validator_addresses",
+            valid_addresses
+                .into_iter()
+                .collect::<Vec<String>>()
+                .join(", "),
+        )
         .add_submessages(register_icqs_submsgs))
+}
+
+// Validates that enough funds were sent to create ICQs for the given validator addresses.
+fn validate_icq_deposit_funds_sent(
+    deps: DepsMut<'_, NeutronQuery>,
+    info: &MessageInfo,
+    num_created_icqs: u64,
+) -> Result<(), ContractError> {
+    let min_icq_deposit = query_min_interchain_query_deposit(&deps.as_ref())?;
+    let sent_token = must_pay(info, &min_icq_deposit.denom)?;
+    let min_icqs_deposit = min_icq_deposit.amount.u128() * (num_created_icqs as u128);
+    if min_icqs_deposit > sent_token.u128() {
+        return Err(ContractError::Std(
+            StdError::generic_err(format!("Insufficient tokens sent to pay for {} interchain queries deposits. Sent: {}, Required: {}", num_created_icqs, Coin::new(sent_token, NATIVE_TOKEN_DENOM), Coin::new(min_icqs_deposit, NATIVE_TOKEN_DENOM)))));
+    }
+
+    Ok(())
+}
+
+fn add_icq_manager(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    address: String,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    let user_addr = deps.api.addr_validate(&address)?;
+
+    let is_icq_manager = validate_address_is_icq_manager(&deps, user_addr.clone());
+    if is_icq_manager.is_ok() {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Address is already an ICQ manager",
+        )));
+    }
+
+    ICQ_MANAGERS.save(deps.storage, user_addr.clone(), &true)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "add_icq_manager")
+        .add_attribute("address", user_addr)
+        .add_attribute("sender", info.sender))
+}
+
+fn remove_icq_manager(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    address: String,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    let user_addr = deps.api.addr_validate(&address)?;
+
+    let free_icq_creators = validate_address_is_icq_manager(&deps, user_addr.clone());
+    if free_icq_creators.is_err() {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Address is not an ICQ manager",
+        )));
+    }
+
+    ICQ_MANAGERS.remove(deps.storage, user_addr.clone());
+
+    Ok(Response::new()
+        .add_attribute("action", "remove_icq_manager")
+        .add_attribute("address", user_addr)
+        .add_attribute("sender", info.sender))
+}
+
+// Tries to withdraw the given amount of the NATIVE_TOKEN_DENOM from
+// the contract. These will in practice be funds that
+// were returned to the contract when Interchain Queries
+// were removed because a validator fell out of the
+// top validators.
+fn withdraw_icq_funds(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    amount: Uint128,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_address_is_icq_manager(&deps, info.sender.clone())?;
+
+    // send the amount of native tokens to the sender
+    let send = Coin {
+        denom: NATIVE_TOKEN_DENOM.to_string(),
+        amount,
+    };
+
+    Ok(Response::new()
+        .add_attribute("action", "withdraw_icq_escrows")
+        .add_attribute("sender", info.sender.clone())
+        .add_message(BankMsg::Send {
+            to_address: info.sender.to_string(),
+            amount: vec![send],
+        }))
 }
 
 fn validate_sender_is_whitelist_admin(
@@ -979,6 +1132,18 @@ fn validate_sender_is_whitelist_admin(
 ) -> Result<(), ContractError> {
     let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
     if !whitelist_admins.contains(&info.sender) {
+        return Err(ContractError::Unauthorized);
+    }
+
+    Ok(())
+}
+
+fn validate_address_is_icq_manager(
+    deps: &DepsMut<NeutronQuery>,
+    address: Addr,
+) -> Result<(), ContractError> {
+    let is_manager = ICQ_MANAGERS.may_load(deps.storage, address)?;
+    if is_manager.is_none() {
         return Err(ContractError::Unauthorized);
     }
 
@@ -1066,6 +1231,14 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(deps)?),
         QueryMsg::WhitelistAdmins {} => to_json_binary(&query_whitelist_admins(deps)?),
         QueryMsg::TotalLockedTokens {} => to_json_binary(&query_total_locked_tokens(deps)?),
+        QueryMsg::RegisteredValidatorQueries {} => {
+            to_json_binary(&query_registered_validator_queries(deps)?)
+        }
+        QueryMsg::ValidatorPowerRatio {
+            validator,
+            round_id,
+        } => to_json_binary(&query_validator_power_ratio(deps, validator, round_id)?),
+        QueryMsg::ICQManagers {} => to_json_binary(&query_icq_managers(deps)?),
     }
 }
 
@@ -1108,59 +1281,14 @@ pub fn query_all_user_lockups(
     let enriched_lockups = raw_lockups
         .iter()
         .map(|lock| {
-            // compute the lockup power scaling due to remaining lockup length
-            let lock_epoch_length = constants.lock_epoch_length;
-
-            let validator_res =
-                validate_denom(deps, env.clone(), &constants, lock.funds.denom.clone());
-
-            if validator_res.is_err() {
-                // lockup has no power if validator is not in the current set
-                return LockEntryWithPower {
-                    lock_entry: lock.clone(),
-                    current_voting_power: Uint128::zero(),
-                };
-            }
-
-            // get the validators power ratio
-            let validator = validator_res.unwrap();
-            let validator_power_ratio =
-                get_validator_power_ratio_for_round(deps.storage, current_round_id, validator);
-            if validator_power_ratio.is_err() {
-                // if there was an error, log this but return 0
-                deps.api.debug(&format!(
-                    "Error when computing voting power for lock: {:?}",
-                    lock
-                ));
-                return LockEntryWithPower {
-                    lock_entry: lock.clone(),
-                    current_voting_power: Uint128::zero(),
-                };
-            }
-            let validator_power_ratio = validator_power_ratio.unwrap();
-
-            let time_weighted_shares =
-                get_lock_time_weighted_shares(round_end, lock.clone(), lock_epoch_length);
-
-            let current_voting_power = validator_power_ratio
-                .checked_mul(Decimal::from_ratio(time_weighted_shares, Uint128::one()));
-
-            if current_voting_power.is_err() {
-                // if there was an overflow error, log this but return 0
-                deps.api.debug(&format!(
-                    "Overflow error when computing voting power for lock: {:?}",
-                    lock
-                ));
-                return LockEntryWithPower {
-                    lock_entry: lock.clone(),
-                    current_voting_power: Uint128::zero(),
-                };
-            }
-
-            LockEntryWithPower {
-                lock_entry: lock.clone(),
-                current_voting_power: current_voting_power.unwrap().to_uint_ceil(),
-            }
+            to_lockup_with_power(
+                deps,
+                env.clone(),
+                &constants,
+                current_round_id,
+                round_end,
+                lock.clone(),
+            )
         })
         .collect();
 
@@ -1210,7 +1338,6 @@ pub fn query_user_voting_power(
     let constants = CONSTANTS.load(deps.storage)?;
     let current_round_id = compute_current_round_id(&env, &constants)?;
     let round_end = compute_round_end(&constants, current_round_id)?;
-    let lock_epoch_length = constants.lock_epoch_length;
 
     let voting_power = LOCKS_MAP
         .prefix(user_address)
@@ -1218,8 +1345,16 @@ pub fn query_user_voting_power(
         .map(|l| l.unwrap().1)
         .filter(|l| l.lock_end > round_end)
         .map(|lockup| {
-            let lockup_length = lockup.lock_end.nanos() - round_end.nanos();
-            scale_lockup_power(lock_epoch_length, lockup_length, lockup.funds.amount).u128()
+            to_lockup_with_power(
+                deps,
+                env.clone(),
+                &constants,
+                current_round_id,
+                round_end,
+                lockup,
+            )
+            .current_voting_power
+            .u128()
         })
         .sum();
 
@@ -1390,6 +1525,26 @@ pub fn query_total_locked_tokens(deps: Deps<NeutronQuery>) -> StdResult<TotalLoc
     })
 }
 
+// Returns all the validator queries that are registered
+// by the contract right now, for each query returning the address of the validator it is
+// associated with, plus its query id.
+pub fn query_registered_validator_queries(
+    deps: Deps<NeutronQuery>,
+) -> StdResult<RegisteredValidatorQueriesResponse> {
+    let query_ids = VALIDATOR_TO_QUERY_ID
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter_map(|l| {
+            if l.is_err() {
+                deps.api
+                    .debug(&format!("Error when querying validator query id: {:?}", l));
+            }
+            l.ok()
+        })
+        .collect();
+
+    Ok(RegisteredValidatorQueriesResponse { query_ids })
+}
+
 pub fn query_validators_info(
     deps: Deps<NeutronQuery>,
     round_id: u64,
@@ -1410,6 +1565,34 @@ pub fn query_validators_per_round(
         .range(deps.storage, None, None, Order::Descending)
         .map(|l| l.unwrap().0)
         .collect())
+}
+
+// Returns the power ratio of a validator for a given round
+// This will return an error if there is an error parsing the store,
+// but will return 0 if there is no power ratio for the given validator and the round.
+pub fn query_validator_power_ratio(
+    deps: Deps<NeutronQuery>,
+    validator: String,
+    round_id: u64,
+) -> StdResult<ValidatorPowerRatioResponse> {
+    get_validator_power_ratio_for_round(deps.storage, round_id, validator)
+        .map(|r| ValidatorPowerRatioResponse { ratio: r }) // error can stay untouched
+}
+
+pub fn query_icq_managers(deps: Deps<NeutronQuery>) -> StdResult<ICQManagersResponse> {
+    Ok(ICQManagersResponse {
+        managers: ICQ_MANAGERS
+            .range(deps.storage, None, None, Order::Ascending)
+            .filter_map(|l| match l {
+                Ok((k, _)) => Some(k),
+                Err(_) => {
+                    deps.api
+                        .debug("Error parsing store when iterating ICQ managers!");
+                    None
+                }
+            })
+            .collect(),
+    })
 }
 
 // Computes the current round_id by taking contract_start_time and dividing the time since
@@ -1482,6 +1665,70 @@ fn get_lock_count(deps: Deps<NeutronQuery>, user_address: Addr) -> usize {
         .prefix(user_address)
         .range(deps.storage, None, None, Order::Ascending)
         .count()
+}
+
+fn to_lockup_with_power(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    constants: &Constants,
+    round_id: u64,
+    round_end: Timestamp,
+    lock_entry: LockEntry,
+) -> LockEntryWithPower {
+    match validate_denom(deps, env.clone(), constants, lock_entry.funds.denom.clone()) {
+        Err(_) => {
+            // If we fail to resove the denom, or the validator has dropped
+            // from the top N, then this lockup has zero voting power.
+            LockEntryWithPower {
+                lock_entry,
+                current_voting_power: Uint128::zero(),
+            }
+        }
+        Ok(validator) => {
+            match get_validator_power_ratio_for_round(deps.storage, round_id, validator) {
+                Err(_) => {
+                    deps.api.debug(&format!(
+                        "An error occured while computing voting power for lock: {:?}",
+                        lock_entry,
+                    ));
+
+                    LockEntryWithPower {
+                        lock_entry,
+                        current_voting_power: Uint128::zero(),
+                    }
+                }
+                Ok(validator_power_ratio) => {
+                    let time_weighted_shares = get_lock_time_weighted_shares(
+                        round_end,
+                        lock_entry.clone(),
+                        constants.lock_epoch_length,
+                    );
+
+                    let current_voting_power = validator_power_ratio
+                        .checked_mul(Decimal::from_ratio(time_weighted_shares, Uint128::one()));
+
+                    match current_voting_power {
+                        Err(_) => {
+                            // if there was an overflow error, log this but return 0
+                            deps.api.debug(&format!(
+                                "Overflow error when computing voting power for lock: {:?}",
+                                lock_entry
+                            ));
+
+                            LockEntryWithPower {
+                                lock_entry: lock_entry.clone(),
+                                current_voting_power: Uint128::zero(),
+                            }
+                        }
+                        Ok(current_voting_power) => LockEntryWithPower {
+                            lock_entry,
+                            current_voting_power: current_voting_power.to_uint_ceil(),
+                        },
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// In the first version of Hydro, we allow contract to be un-paused through the Cosmos Hub governance

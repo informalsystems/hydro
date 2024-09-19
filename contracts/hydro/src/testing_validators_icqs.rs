@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use cosmos_sdk_proto::cosmos::staking::v1beta1::Validator as CosmosValidator;
 use cosmos_sdk_proto::prost::Message;
-use cosmwasm_std::{testing::mock_env, Binary, Coin, Decimal, Uint128};
+use cosmwasm_std::{
+    attr, coins, testing::mock_env, Addr, BankMsg, Binary, Coin, Decimal, SubMsg, Uint128,
+};
 use neutron_sdk::{
     bindings::types::StorageValue,
     interchain_queries::{types::QueryType, v047::types::STAKING_STORE_KEY},
@@ -11,16 +13,18 @@ use neutron_sdk::{
 
 use crate::{
     contract::{
-        execute, instantiate, query_validators_info, query_validators_per_round, sudo,
-        NATIVE_TOKEN_DENOM,
+        execute, instantiate, query_icq_managers, query_validators_info,
+        query_validators_per_round, sudo, NATIVE_TOKEN_DENOM,
     },
+    error::ContractError,
     msg::ExecuteMsg,
     state::{
         ValidatorInfo, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
         VALIDATOR_TO_QUERY_ID,
     },
     testing::{
-        get_default_instantiate_msg, get_message_info, VALIDATOR_1, VALIDATOR_2, VALIDATOR_3,
+        get_address_as_str, get_default_instantiate_msg, get_message_info, VALIDATOR_1,
+        VALIDATOR_2, VALIDATOR_3,
     },
     testing_mocks::{
         custom_interchain_query_mock, min_query_deposit_grpc_query_mock, mock_dependencies,
@@ -45,7 +49,8 @@ fn create_interchain_queries_test() {
     );
     let info = get_message_info(&deps.api, "addr0000", &[]);
 
-    let msg = get_default_instantiate_msg(&deps.api);
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.icq_managers = vec![]; // make sure we have no icq managers
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
@@ -78,7 +83,7 @@ fn create_interchain_queries_test() {
     assert!(
         res
         .to_string()
-        .to_lowercase().contains(format!("insufficient tokens sent to pay for interchain queries deposits. sent: {}, required: {}", user_token, min_deposit_required).as_str()));
+        .to_lowercase().contains(format!("insufficient tokens sent to pay for {} interchain queries deposits. sent: {}, required: {}", 2, user_token, min_deposit_required).as_str()));
 
     let info = get_message_info(&deps.api, "addr0000", &[min_deposit_required.clone()]);
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -491,5 +496,129 @@ pub fn get_mock_validator(address: &str, tokens: Uint128, shares: Uint128) -> Co
         tokens: tokens.to_string(),
         delegator_shares: shares.to_string(),
         ..CosmosValidator::default()
+    }
+}
+
+#[test]
+fn test_icq_managers_feature() {
+    let mut deps = mock_dependencies(no_op_grpc_query_mock());
+    let env = mock_env();
+    let admin = "admin";
+    let non_manager = "non_manager";
+    let non_manager_addr = get_address_as_str(&deps.api, non_manager);
+    let initial_icq_manager = "manager";
+    let initial_icq_manager_addr = get_address_as_str(&deps.api, initial_icq_manager);
+    let info = get_message_info(&deps.api, admin, &coins(1000, NATIVE_TOKEN_DENOM));
+
+    // Instantiate the contract
+    let mut instantiate_msg = get_default_instantiate_msg(&deps.api);
+    instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, admin)];
+    instantiate_msg.icq_managers = vec![initial_icq_manager_addr.clone()];
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg);
+    assert!(res.is_ok(), "Error: {:?}", res);
+
+    // query the initial icq managers to make sure that the manager was added correctly
+    let managers = query_icq_managers(deps.as_ref()).unwrap().managers;
+    assert!(
+        managers.contains(&deps.api.addr_make(initial_icq_manager)),
+        "Managers: {:?}",
+        managers
+    );
+
+    // Scenario 1: An address that is not an ICQ manager cannot withdraw funds
+    let non_manager_info = get_message_info(&deps.api, non_manager, &[]);
+    let withdraw_msg = ExecuteMsg::WithdrawICQFunds {
+        amount: Uint128::new(100),
+    };
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        non_manager_info.clone(),
+        withdraw_msg.clone(),
+    );
+    match res {
+        Err(ContractError::Unauthorized {}) => {}
+        _ => panic!("Expected Unauthorized error"),
+    }
+
+    // Scenario 2: Add that address to the ICQ managers and check that it was added correctly
+    let add_manager_msg = ExecuteMsg::AddICQManager {
+        address: non_manager_addr.clone(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), add_manager_msg);
+    assert!(res.is_ok(), "Error: {:?}", res);
+
+    let managers = query_icq_managers(deps.as_ref()).unwrap().managers;
+    assert!(
+        managers.contains(&deps.api.addr_make(non_manager)),
+        "Managers: {:?}",
+        managers
+    );
+
+    // Scenario 3: Check that the manager address can withdraw funds
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        non_manager_info.clone(),
+        withdraw_msg.clone(),
+    )
+    .unwrap();
+    assert_eq!(
+        res.attributes,
+        vec![
+            attr("action", "withdraw_icq_escrows"),
+            attr("sender", non_manager_addr.clone()),
+        ]
+    );
+    assert_eq!(
+        res.messages,
+        vec![SubMsg::new(BankMsg::Send {
+            to_address: non_manager_addr.clone(),
+            amount: vec![Coin {
+                denom: NATIVE_TOKEN_DENOM.to_string(),
+                amount: Uint128::new(100),
+            }],
+        })]
+    );
+
+    // Scenario 4: Check that the manager address can create ICQs without needing to send funds
+    let create_icq_msg = ExecuteMsg::CreateICQsForValidators {
+        validators: vec![VALIDATOR_1.to_string()],
+    };
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        non_manager_info.clone(),
+        create_icq_msg.clone(),
+    )
+    .unwrap();
+    assert_eq!(
+        res.attributes,
+        vec![
+            attr("action", "create_icqs_for_validators"),
+            attr("sender", non_manager_addr.clone()),
+            attr("validator_addresses", VALIDATOR_1.to_string()),
+        ]
+    );
+
+    // Scenario 5: Remove the manager from the managers list and check that the removal was processed correctly
+    let remove_manager_msg = ExecuteMsg::RemoveICQManager {
+        address: non_manager_addr.clone(),
+    };
+    let _res = execute(deps.as_mut(), env.clone(), info.clone(), remove_manager_msg).unwrap();
+
+    let managers: Vec<Addr> = query_icq_managers(deps.as_ref()).unwrap().managers;
+    assert!(!managers.contains(&Addr::unchecked(non_manager)));
+
+    // Check that the removed manager cannot withdraw funds anymore
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        non_manager_info.clone(),
+        withdraw_msg,
+    );
+    match res {
+        Err(ContractError::Unauthorized {}) => {}
+        _ => panic!("Expected Unauthorized error"),
     }
 }

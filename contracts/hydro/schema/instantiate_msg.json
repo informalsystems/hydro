@@ -6,6 +6,7 @@
     "first_round_start",
     "hub_connection_id",
     "hub_transfer_channel_id",
+    "icq_managers",
     "icq_update_period",
     "initial_whitelist",
     "lock_epoch_length",
@@ -24,6 +25,12 @@
     },
     "hub_transfer_channel_id": {
       "type": "string"
+    },
+    "icq_managers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     },
     "icq_update_period": {
       "type": "integer",

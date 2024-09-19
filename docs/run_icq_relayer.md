@@ -42,7 +42,7 @@ Finally, start the Relayer:
 >neutron_query_relayer start
 
 ## Notes
-- After executing start command, any misconfiguration will be seen in the logs and the relayer will fail to start. This only applies to misconfigurations such as providing invalid RPC/REST addreses, an absence of the signer key, etc. If, for example, a wrong smart contract address (or no address at all) is provided for *RELAYER_REGISTRY_ADDRESSES*, or a wrong connection ID is provided for *RELAYER_NEUTRON_CHAIN_CONNECTION_ID* parameter, then the relayer will start with whatever values it was provdied with.
+- After executing start command, any misconfiguration will be seen in the logs and the relayer will fail to start. This only applies to misconfigurations such as providing invalid RPC/REST addreses, an absence of the signer key, etc. If, for example, a wrong smart contract address (or no address at all) is provided for *RELAYER_REGISTRY_ADDRESSES*, or a wrong connection ID is provided for *RELAYER_NEUTRON_CHAIN_CONNECTION_ID* parameter, then the relayer will start with whatever values it was provided with.
 - To verify if the relayer started relaying ICQ results for the Hydro smart contract, make the smart contract create at least one ICQ and run the following query against the Neutron:
     >neutrond q interchainqueries registered-queries --owners $HYDRO_CONTRACT_ADDR
 

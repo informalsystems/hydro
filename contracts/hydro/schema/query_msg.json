@@ -347,11 +347,64 @@
     {
       "type": "object",
       "required": [
+        "i_c_q_managers"
+      ],
+      "properties": {
+        "i_c_q_managers": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
         "total_locked_tokens"
       ],
       "properties": {
         "total_locked_tokens": {
           "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "registered_validator_queries"
+      ],
+      "properties": {
+        "registered_validator_queries": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "validator_power_ratio"
+      ],
+      "properties": {
+        "validator_power_ratio": {
+          "type": "object",
+          "required": [
+            "round_id",
+            "validator"
+          ],
+          "properties": {
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "validator": {
+              "type": "string"
+            }
+          },
           "additionalProperties": false
         }
       },

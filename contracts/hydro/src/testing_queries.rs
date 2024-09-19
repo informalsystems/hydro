@@ -257,7 +257,7 @@ fn query_user_voting_power_test() {
         first_lockup_amount + second_lockup_amount + (second_lockup_amount / 2);
     assert_eq!(expected_voting_power, voting_power);
 
-    // advance the chain for 1 month and start a new round
+    // advance the chain for 1 month to start a new round
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
 
     // set the validators for the new round, again
@@ -265,9 +265,9 @@ fn query_user_voting_power_test() {
 
     // first lockup expires 29 days before the round 1 ends, and the second
     // lockup expires 1 month and 2 days after the round 1 ends, so the
-    // expected voting power multipler is 0 for first lockup and 1.5 for second lockup
+    // expected voting power multipler is 0 for first lockup and 1.25 for second lockup
     let voting_power = get_user_voting_power(&deps, env.clone(), info.sender.to_string());
-    let expected_voting_power = second_lockup_amount + (second_lockup_amount / 2);
+    let expected_voting_power = second_lockup_amount + (second_lockup_amount / 4);
     assert_eq!(expected_voting_power, voting_power);
 }
 

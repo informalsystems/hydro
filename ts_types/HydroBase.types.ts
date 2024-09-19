@@ -39,6 +39,7 @@ export interface Constants {
   round_length: number;
 }
 export interface CurrentRoundResponse {
+  round_end: Timestamp;
   round_id: number;
 }
 export type ExecuteMsg = {
@@ -91,6 +92,18 @@ export type ExecuteMsg = {
   create_icqs_for_validators: {
     validators: string[];
   };
+} | {
+  add_i_c_q_manager: {
+    address: string;
+  };
+} | {
+  remove_i_c_q_manager: {
+    address: string;
+  };
+} | {
+  withdraw_i_c_q_funds: {
+    amount: Uint128;
+  };
 };
 export interface TrancheInfo {
   metadata: string;
@@ -103,6 +116,7 @@ export interface InstantiateMsg {
   first_round_start: Timestamp;
   hub_connection_id: string;
   hub_transfer_channel_id: string;
+  icq_managers: string[];
   icq_update_period: number;
   initial_whitelist: string[];
   lock_epoch_length: number;
@@ -184,7 +198,16 @@ export type QueryMsg = {
 } | {
   whitelist_admins: {};
 } | {
+  i_c_q_managers: {};
+} | {
   total_locked_tokens: {};
+} | {
+  registered_validator_queries: {};
+} | {
+  validator_power_ratio: {
+    round_id: number;
+    validator: string;
+  };
 };
 export interface RoundEndResponse {
   round_end: Timestamp;

@@ -14,15 +14,44 @@ export interface TributeBaseReadOnlyInterface {
     limit,
     proposalId,
     roundId,
-    startFrom,
-    trancheId
+    startFrom
   }: {
     limit: number;
     proposalId: number;
     roundId: number;
     startFrom: number;
-    trancheId: number;
   }) => Promise<ProposalTributesResponse>;
+  historicalTributeClaims: ({
+    limit,
+    startFrom,
+    userAddress
+  }: {
+    limit: number;
+    startFrom: number;
+    userAddress: string;
+  }) => Promise<HistoricalTributeClaimsResponse>;
+  roundTributes: ({
+    limit,
+    roundId,
+    startFrom
+  }: {
+    limit: number;
+    roundId: number;
+    startFrom: number;
+  }) => Promise<RoundTributesResponse>;
+  outstandingTributeClaims: ({
+    limit,
+    roundId,
+    startFrom,
+    trancheId,
+    userAddress
+  }: {
+    limit: number;
+    roundId: number;
+    startFrom: number;
+    trancheId: number;
+    userAddress: string;
+  }) => Promise<OutstandingTributeClaimsResponse>;
 }
 export class TributeBaseQueryClient implements TributeBaseReadOnlyInterface {
   client: CosmWasmClient;
@@ -32,6 +61,9 @@ export class TributeBaseQueryClient implements TributeBaseReadOnlyInterface {
     this.contractAddress = contractAddress;
     this.config = this.config.bind(this);
     this.proposalTributes = this.proposalTributes.bind(this);
+    this.historicalTributeClaims = this.historicalTributeClaims.bind(this);
+    this.roundTributes = this.roundTributes.bind(this);
+    this.outstandingTributeClaims = this.outstandingTributeClaims.bind(this);
   }
   config = async (): Promise<ConfigResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -42,22 +74,76 @@ export class TributeBaseQueryClient implements TributeBaseReadOnlyInterface {
     limit,
     proposalId,
     roundId,
-    startFrom,
-    trancheId
+    startFrom
   }: {
     limit: number;
     proposalId: number;
     roundId: number;
     startFrom: number;
-    trancheId: number;
   }): Promise<ProposalTributesResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       proposal_tributes: {
         limit,
         proposal_id: proposalId,
         round_id: roundId,
+        start_from: startFrom
+      }
+    });
+  };
+  historicalTributeClaims = async ({
+    limit,
+    startFrom,
+    userAddress
+  }: {
+    limit: number;
+    startFrom: number;
+    userAddress: string;
+  }): Promise<HistoricalTributeClaimsResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      historical_tribute_claims: {
+        limit,
         start_from: startFrom,
-        tranche_id: trancheId
+        user_address: userAddress
+      }
+    });
+  };
+  roundTributes = async ({
+    limit,
+    roundId,
+    startFrom
+  }: {
+    limit: number;
+    roundId: number;
+    startFrom: number;
+  }): Promise<RoundTributesResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      round_tributes: {
+        limit,
+        round_id: roundId,
+        start_from: startFrom
+      }
+    });
+  };
+  outstandingTributeClaims = async ({
+    limit,
+    roundId,
+    startFrom,
+    trancheId,
+    userAddress
+  }: {
+    limit: number;
+    roundId: number;
+    startFrom: number;
+    trancheId: number;
+    userAddress: string;
+  }): Promise<OutstandingTributeClaimsResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      outstanding_tribute_claims: {
+        limit,
+        round_id: roundId,
+        start_from: startFrom,
+        tranche_id: trancheId,
+        user_address: userAddress
       }
     });
   };

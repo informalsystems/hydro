@@ -67,6 +67,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             hub_connection_id,
             hub_transfer_channel_id,
             icq_update_period: 10000,
+            icq_managers: vec![],
         },
         Some(&Addr::unchecked(whitelist_admin_address.clone())),
         &[],
