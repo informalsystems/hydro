@@ -1,22 +1,19 @@
 use crate::{
     contract::{
-        calculate_voter_claim_amount, execute, get_community_pool_tribute_share,
-        get_voters_tribute_share, instantiate, query_historical_tribute_claims,
-        query_outstanding_tribute_claims, query_proposal_tributes, query_round_tributes,
+        execute, instantiate, query_historical_tribute_claims, query_outstanding_tribute_claims,
+        query_proposal_tributes, query_round_tributes,
     },
-    error::ContractError,
-    msg::{CommunityPoolTaxConfig, ExecuteMsg, InstantiateMsg},
+    msg::{ExecuteMsg, InstantiateMsg},
     query::TributeClaim,
     state::{Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_MAP},
 };
-use cosmwasm_std::{coin, BankMsg, Coin, CosmosMsg};
 use cosmwasm_std::{
     from_json,
-    testing::{mock_dependencies, mock_env, MockApi, MockQuerier},
-    to_json_binary, Addr, Binary, ContractResult, Decimal, Env, IbcMsg, MemoryStorage, MessageInfo,
-    OwnedDeps, QuerierResult, Response, StdError, StdResult, SubMsg, SystemError, SystemResult,
-    Timestamp, Uint128, WasmQuery,
+    testing::{mock_dependencies, mock_env, MockApi},
+    to_json_binary, Addr, Binary, ContractResult, Decimal, MessageInfo, QuerierResult, Response,
+    StdError, StdResult, SystemError, SystemResult, Timestamp, Uint128, WasmQuery,
 };
+use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
 use hydro::{
     query::{
         CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
@@ -24,17 +21,11 @@ use hydro::{
     },
     state::{Proposal, VoteWithPower},
 };
-use proptest::prelude::*;
 
 pub fn get_instantiate_msg(hydro_contract: String) -> InstantiateMsg {
     InstantiateMsg {
         hydro_contract,
         top_n_props_count: 10,
-        community_pool_config: CommunityPoolTaxConfig {
-            tax_percent: Decimal::zero(),
-            channel_id: "channel_id".to_string(),
-            bucket_address: "community_pool_address".to_string(),
-        },
     }
 }
 
@@ -727,313 +718,6 @@ fn verify_tokens_received(
     };
 }
 
-fn verify_ibc_tokens_received(
-    res: SubMsg,
-    expected_receiver: &String,
-    expected_channel_id: &String,
-    expected_denom: &String,
-    expected_amount: u128,
-) {
-    match &res.msg {
-        CosmosMsg::Ibc(IbcMsg::Transfer {
-            channel_id,
-            to_address,
-            amount,
-            timeout: _,
-            memo: _,
-        }) => {
-            assert_eq!(*expected_channel_id, *channel_id);
-            assert_eq!(*expected_receiver, *to_address);
-            assert_eq!(*expected_denom, amount.denom);
-            assert_eq!(expected_amount, amount.amount.u128());
-        }
-        _ => panic!("expected CosmosMsg::Bank msg"),
-    };
-}
-
-proptest! {
-    #![proptest_config(ProptestConfig::with_cases(1000000))] // set the number of test cases to run
-    #[test]
-    fn test_tribute_shares(total_amount in 0u128..=1_000_000_000u128, tax_percent in 0u64..=100u64) {
-        let funds = Coin {
-            denom: "token".to_string(),
-            amount: Uint128::new(total_amount),
-        };
-
-        let config = Config {
-            community_pool_config: CommunityPoolTaxConfig {
-                tax_percent: Decimal::percent(tax_percent),
-                channel_id: "channel_id".to_string(),
-                bucket_address: "community_pool_address".to_string(),
-            },
-            top_n_props_count: 10,
-            hydro_contract: Addr::unchecked("hydro_contract".to_string()),
-        };
-
-        let community_pool_share = get_community_pool_tribute_share(&config, funds.clone()).unwrap();
-        let voters_share = get_voters_tribute_share(&config, funds.clone()).unwrap();
-
-        assert_eq!(community_pool_share + voters_share, funds.amount);
-
-        // if the tax percent is 100, the voter share should be 0
-        if tax_percent == 100 {
-            assert!(voters_share.is_zero());
-            // community pool amount should be equal to the total tribute
-            assert_eq!(community_pool_share, funds.amount);
-        }
-
-        // if the tax percent is 0, the community pool share should be 0
-        if tax_percent == 0 {
-            assert!(community_pool_share.is_zero());
-            // voters share should be equal to the total tribute
-            assert_eq!(voters_share, funds.amount);
-        }
-    }
-}
-
-proptest! {
-    // The test will create 3 proposals, add tribute to all of them.
-    // * Two proposals are in the same round&tranche
-    // * Third prop is in a different tranche
-    // The latter proposal exists to check that the claim function only claims tribute for the specified tranche.
-    //
-    // The test will try to claim the community pool tribute before the round has ended, which should fail.
-    // It then updates the round, and tries to claim the tribute for the community pool again, verifying that an IBC message with the right amount of tokens is sent.
-    // Then, it will try to claim the community pool tribute again (which should not send any tribute, because it was already claimed).
-    // Lastly, it claims the tribute for a voter, and verifies that the portion of the tribute the voter receives is correctly taking into account the community pool tax.
-    #![proptest_config(ProptestConfig::with_cases(1000))] // set the number of test cases to run
-    #[test]
-    fn claim_community_pool_tribute_test(tribute_amount1 in 0u64..=1_000_000_000u64, tribute_amount2 in 0u64..=1_000_000_000u64, community_pool_tax_percent in 0u64..=100u64) {
-        let expected_community_pool_tax1 = tribute_amount1 * community_pool_tax_percent / 100;
-        let expected_community_pool_tax2 = tribute_amount2 * community_pool_tax_percent / 100;
-
-        let mock_top_n_proposals = vec![
-            Proposal {
-                round_id: 0,
-                tranche_id: 0,
-                proposal_id: 0,
-                title: "proposal title 1".to_string(),
-                description: "proposal description 1".to_string(),
-                power: Uint128::new(10000),
-                percentage: Uint128::zero(),
-            },
-            Proposal {
-                round_id: 0,
-                tranche_id: 0,
-                proposal_id: 1,
-                title: "proposal title 2".to_string(),
-                description: "proposal description 2".to_string(),
-                power: Uint128::new(10000),
-                percentage: Uint128::zero(),
-            },
-            // proposal in a different tranche
-            Proposal {
-                round_id: 0,
-                tranche_id: 1,
-                proposal_id: 2,
-                title: "proposal title 3".to_string(),
-                description: "proposal description 3".to_string(),
-                power: Uint128::new(10000),
-                percentage: Uint128::zero(),
-            },
-        ];
-        // we will query for the top props of tranche 0, so don't return prop with id 2
-        let top_n_proposals = mock_top_n_proposals[0..=1].to_vec();
-
-        let (mut deps, env) = (mock_dependencies(), mock_env());
-        let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
-
-        let hydro_contract_address = get_address_as_str(&deps.api, HYDRO_CONTRACT_ADDRESS);
-        let mock_querier = MockWasmQuerier::new(
-            hydro_contract_address.clone(),
-            0,
-            mock_top_n_proposals.clone(),
-            vec![],
-            top_n_proposals.clone(),
-        );
-        deps.querier.update_wasm(move |q| mock_querier.handler(q));
-
-        let mut msg = get_instantiate_msg(hydro_contract_address.clone());
-        // set the tax percent to 10%
-        msg.community_pool_config.tax_percent = Decimal::percent(community_pool_tax_percent);
-        let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-        assert!(res.is_ok());
-
-        // add a tribute to proposal 0
-        let res = add_tribute_helper(
-            &mut deps,
-            env.clone(),
-            USER_ADDRESS_1,
-            tribute_amount1,
-            "uatom".to_string(),
-            0,
-            0,
-        );
-        assert!(res.is_ok(), "failed to add tribute: {}", res.unwrap_err());
-
-        // add a tribute to proposal 1
-        let res = add_tribute_helper(
-            &mut deps,
-            env.clone(),
-            USER_ADDRESS_1,
-            tribute_amount2,
-            "untrn".to_string(),
-            0,
-            1,
-        );
-        assert!(res.is_ok(), "failed to add tribute: {}", res.unwrap_err());
-
-        // add tributes to the other proposals, too (but the exact amount is not important)
-        let res = add_tribute_helper(
-            &mut deps,
-            env.clone(),
-            USER_ADDRESS_1,
-            1000,
-            "uthree".to_string(),
-            1,
-            2,
-        );
-        assert!(res.is_ok(), "failed to add tribute: {}", res.unwrap_err());
-
-        // try to claim tribute for the community pool; but the round has not ended yet
-        let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
-        let msg = ExecuteMsg::ClaimCommunityPoolTribute {
-            round_id: 0,
-            tranche_id: 0,
-        };
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-        assert!(res.is_err());
-        assert!(res
-            .err()
-            .unwrap()
-            .to_string()
-            .contains("Round has not ended yet"));
-
-        // update the round so that the tribute can be claimed, and to simulate that a user has voted on the prop
-        let user_vote = (
-            0, // round_id
-            0, // tranche_id
-            get_address_as_str(&deps.api, USER_ADDRESS_1),
-            VoteWithPower {
-                prop_id: 0,
-                power: Decimal::from_ratio(mock_top_n_proposals[0].power, Uint128::new(2)), // user has 50% of the voting power
-            },
-        );
-
-        let mock_querier = MockWasmQuerier::new(
-            hydro_contract_address.clone(),
-            1,
-            mock_top_n_proposals.clone(),
-            vec![user_vote],
-            top_n_proposals,
-        );
-        deps.querier.update_wasm(move |q| mock_querier.handler(q));
-
-        // try to claim again; this time it should succeed
-        let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
-        let msg = ExecuteMsg::ClaimCommunityPoolTribute {
-            round_id: 0,
-            tranche_id: 0,
-        };
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-        assert!(res.is_ok(), "failed to claim tribute: {}", res.unwrap_err());
-
-        let res = res.unwrap();
-        assert_eq!(2, res.messages.len());
-        // verify that an ibc message was sent to claim the tokens for the community pool
-        verify_ibc_tokens_received(
-            res.clone().messages[0].clone(),
-            &"community_pool_address".to_string(),
-            &"channel_id".to_string(),
-            &"uatom".to_string(),
-            expected_community_pool_tax1.into(),
-        );
-        verify_ibc_tokens_received(
-            res.clone().messages[1].clone(),
-            &"community_pool_address".to_string(),
-            &"channel_id".to_string(),
-            &"untrn".to_string(),
-            expected_community_pool_tax2.into(),
-        );
-        verify_claimed_tributes_count(res, 2);
-
-        // try to claim tribute again - it should succeed, but no extra tokens should be sent, because the tribute was already claimed
-        let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
-        let msg = ExecuteMsg::ClaimCommunityPoolTribute {
-            round_id: 0,
-            tranche_id: 0,
-        };
-
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-        assert!(res.is_ok(), "failed to claim tribute: {}", res.unwrap_err());
-
-        let res = res.unwrap();
-        // no message in the response, in particular no IBC message, so no tokens are sent
-        assert_eq!(0, res.messages.len());
-        verify_claimed_tributes_count(res, 0);
-
-        // user claims tribute for proposal 1
-        let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
-        let msg = ExecuteMsg::ClaimTribute {
-            round_id: 0,
-            tranche_id: 0,
-            tribute_id: 0,
-            voter_address: get_address_as_str(&deps.api, USER_ADDRESS_1),
-        };
-
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-        assert!(res.is_ok(), "failed to claim tribute: {}", res.unwrap_err());
-
-        let res = res.unwrap();
-        assert_eq!(1, res.messages.len());
-
-        verify_tokens_received(
-            res,
-            &get_address_as_str(&deps.api, USER_ADDRESS_1),
-            &DEFAULT_DENOM.to_string(),
-            ((tribute_amount1 - expected_community_pool_tax1) / 2).into(), // user has 50% of the voting power
-        );
-    }
-}
-
-fn add_tribute_helper(
-    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier>,
-    env: Env,
-    tribute_payer: &str,
-    tribute_amount: u64,
-    denom: String,
-    tranche_id: u64,
-    proposal_id: u64,
-) -> Result<Response, ContractError> {
-    let info = get_message_info(
-        &deps.api,
-        tribute_payer,
-        &[Coin::new(tribute_amount, denom)],
-    );
-    let msg = ExecuteMsg::AddTribute {
-        tranche_id,
-        proposal_id,
-    };
-    execute(deps.as_mut(), env, info, msg)
-}
-
-// Verifies that in the response, the claimed_tributes_count attribute
-// has the expected value
-fn verify_claimed_tributes_count(res: Response, expected_num_of_tributes: u128) {
-    // assert that the claimed tribute count in the response is 1
-    let claimed_tribute_count = res
-        .attributes
-        .iter()
-        .find(|attr| attr.key == "claimed_tributes_count")
-        .unwrap()
-        .clone()
-        .value;
-    assert_eq!(
-        expected_num_of_tributes,
-        claimed_tribute_count.parse::<u128>().unwrap()
-    );
-}
-
 struct HistoricalTributeClaimsTestCase {
     description: String,
     user_address: Addr,
@@ -1272,101 +956,6 @@ fn test_query_round_tributes() {
     }
 }
 
-fn get_config_with_community_pool_tax(tax_percent: u64) -> Config {
-    Config {
-        hydro_contract: Addr::unchecked("hydro_contract".to_string()),
-        top_n_props_count: 1,
-        community_pool_config: CommunityPoolTaxConfig {
-            tax_percent: Decimal::percent(tax_percent),
-            channel_id: "".to_string(),
-            bucket_address: "".to_string(),
-        },
-    }
-}
-
-fn decimal(value: u128) -> Decimal {
-    Decimal::from_ratio(Uint128::new(value), Uint128::one())
-}
-
-#[test]
-fn test_calculate_voter_claim_amount() {
-    struct TestCase {
-        description: &'static str,
-        config: Config,
-        tribute_funds: Coin,
-        user_voting_power: Decimal,
-        total_proposal_power: Uint128,
-        expected_result: Result<Coin, ContractError>,
-    }
-
-    let test_cases = vec![
-        TestCase {
-            description: "Happy path with 0% community pool tax",
-            config: get_config_with_community_pool_tax(0),
-            tribute_funds: coin(1000, "token"),
-            user_voting_power: decimal(100),
-            total_proposal_power: Uint128::new(1000),
-            expected_result: Ok(coin(100, "token")),
-        },
-        TestCase {
-            description: "Happy path with 10% community pool tax",
-            config: get_config_with_community_pool_tax(10),
-            tribute_funds: coin(1000, "token"),
-            user_voting_power: decimal(100),
-            total_proposal_power: Uint128::new(1000),
-            expected_result: Ok(coin(90, "token")),
-        },
-        TestCase {
-            description: "Edge case with 0 voting power",
-            config: get_config_with_community_pool_tax(10),
-            tribute_funds: coin(1000, "token"),
-            user_voting_power: Decimal::zero(),
-            total_proposal_power: Uint128::new(1000),
-            expected_result: Ok(coin(0, "token")),
-        },
-        TestCase {
-            description: "Edge case with 0 total proposal power",
-            config: get_config_with_community_pool_tax(10),
-            tribute_funds: coin(1000, "token"),
-            user_voting_power: decimal(100),
-            total_proposal_power: Uint128::zero(),
-            expected_result: Err(ContractError::Std(StdError::generic_err(
-                "Failed to compute users voting power percentage",
-            ))),
-        },
-        TestCase {
-            description: "Edge case with 100% community pool tax",
-            config: get_config_with_community_pool_tax(100),
-            tribute_funds: coin(1000, "token"),
-            user_voting_power: decimal(10),
-            total_proposal_power: Uint128::new(1000),
-            expected_result: Ok(coin(0, "token")),
-        },
-    ];
-
-    for test_case in test_cases {
-        println!("Running test case: {}", test_case.description);
-
-        let result = calculate_voter_claim_amount(
-            test_case.config,
-            test_case.tribute_funds.clone(),
-            test_case.user_voting_power,
-            test_case.total_proposal_power,
-        );
-
-        match (result, test_case.expected_result) {
-            (Ok(result_coin), Ok(expected_coin)) => assert_eq!(result_coin, expected_coin),
-            (Err(result_err), Err(expected_err)) => {
-                assert_eq!(result_err.to_string(), expected_err.to_string())
-            }
-            _ => panic!(
-                "Test case '{}' failed: result and expected result do not match",
-                test_case.description
-            ),
-        }
-    }
-}
-
 struct OutstandingTributeClaimsTestCase {
     description: String,
     user_address: Addr,
@@ -1395,8 +984,8 @@ fn test_query_outstanding_tribute_claims() {
                 tranche_id: 1,
                 proposal_id: 1,
                 tribute_id: 2,
-                // proposal has 2000 total power, user has 500 power, 10% community pool tax, so get 90 tokens
-                amount: Coin::new(Uint128::new(90), "token"),
+                // proposal has 2000 total power, user has 500 power, so get 100 tokens
+                amount: Coin::new(Uint128::new(100), "token"),
             }],
             expected_error: None,
         },
@@ -1532,7 +1121,7 @@ fn test_query_outstanding_tribute_claims() {
 
         let user_vote = VoteWithPower {
             prop_id: 1,
-            power: decimal(500),
+            power: Decimal::from_ratio(Uint128::new(500), Uint128::one()),
         };
 
         // print this
@@ -1564,8 +1153,10 @@ fn test_query_outstanding_tribute_claims() {
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
         // Mock config
-        let mut config = get_config_with_community_pool_tax(10);
-        config.hydro_contract = Addr::unchecked("hydro_contract_address".to_string());
+        let config = Config {
+            hydro_contract: Addr::unchecked("hydro_contract_address".to_string()),
+            top_n_props_count: 2,
+        };
         CONFIG.save(&mut deps.storage, &config).unwrap();
 
         // Query outstanding tribute claims

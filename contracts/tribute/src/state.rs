@@ -2,15 +2,12 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin};
 use cw_storage_plus::{Item, Map};
 
-use crate::msg::CommunityPoolTaxConfig;
-
 pub const CONFIG: Item<Config> = Item::new("config");
 
 #[cw_serde]
 pub struct Config {
     pub hydro_contract: Addr,
     pub top_n_props_count: u64,
-    pub community_pool_config: CommunityPoolTaxConfig,
 }
 
 pub const TRIBUTE_ID: Item<u64> = Item::new("tribute_id");
@@ -37,6 +34,3 @@ pub const ID_TO_TRIBUTE_MAP: Map<u64, Tribute> = Map::new("id_to_tribute_map");
 // Importantly, the TRIBUTE_CLAIMS for a voter_addr and tribute_id being present at all means the user has claimed that tribute.
 // TRIBUTE_CLAIMS: key(voter_addr, tribute_id) -> amount_claimed
 pub const TRIBUTE_CLAIMS: Map<(Addr, u64), Coin> = Map::new("tribute_claims");
-
-// COMMUNITY_POOL_CLAIMS: tribute_id -> bool
-pub const COMMUNITY_POOL_CLAIMS: Map<u64, bool> = Map::new("community_pool_claims");

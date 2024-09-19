@@ -1,8 +1,8 @@
 use std::vec;
 
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, IbcMsg,
-    IbcTimeout, MessageInfo, Order, Reply, Response, StdError, StdResult, Uint128,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
+    MessageInfo, Order, Reply, Response, StdError, StdResult, Uint128,
 };
 use cw2::set_contract_version;
 
@@ -13,8 +13,7 @@ use crate::query::{
     RoundTributesResponse, TributeClaim,
 };
 use crate::state::{
-    Config, Tribute, COMMUNITY_POOL_CLAIMS, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_ID,
-    TRIBUTE_MAP,
+    Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP,
 };
 use hydro::query::{
     CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
@@ -43,7 +42,6 @@ pub fn instantiate(
     let config = Config {
         hydro_contract: deps.api.addr_validate(&msg.hydro_contract)?,
         top_n_props_count: msg.top_n_props_count,
-        community_pool_config: msg.community_pool_config,
     };
 
     CONFIG.save(deps.storage, &config)?;
@@ -78,10 +76,6 @@ pub fn execute(
             proposal_id,
             tribute_id,
         } => refund_tribute(deps, info, round_id, proposal_id, tranche_id, tribute_id),
-        ExecuteMsg::ClaimCommunityPoolTribute {
-            round_id,
-            tranche_id,
-        } => claim_tribute_for_community_pool(deps, _env, round_id, tranche_id),
     }
 }
 
@@ -206,8 +200,7 @@ fn claim_tribute(
     // Load the tribute and use the percentage to figure out how much of the tribute to send them
     let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
 
-    let sent_coin =
-        calculate_voter_claim_amount(config, tribute.funds, vote.power, proposal.power)?;
+    let sent_coin = calculate_voter_claim_amount(tribute.funds, vote.power, proposal.power)?;
 
     // Mark in the TRIBUTE_CLAIMS that the voter has claimed this tribute
     TRIBUTE_CLAIMS.save(
@@ -233,12 +226,10 @@ fn claim_tribute(
 }
 
 pub fn calculate_voter_claim_amount(
-    config: Config,
     tribute_funds: Coin,
     user_voting_power: Decimal,
     total_proposal_power: Uint128,
 ) -> Result<Coin, ContractError> {
-    let voters_share = get_voters_tribute_share(&config, tribute_funds.clone())?;
     let percentage_fraction = match user_voting_power
         .checked_div(Decimal::from_ratio(total_proposal_power, Uint128::one()))
     {
@@ -249,102 +240,26 @@ pub fn calculate_voter_claim_amount(
             )));
         }
     };
-    let amount =
-        match Decimal::from_ratio(voters_share, Uint128::one()).checked_mul(percentage_fraction) {
-            Ok(amount) => amount,
-            Err(_) => {
-                return Err(ContractError::Std(StdError::generic_err(
-                    "Failed to compute users tribute share",
-                )));
-            }
+    let amount = match Decimal::from_ratio(tribute_funds.amount, Uint128::one())
+        .checked_mul(percentage_fraction)
+    {
+        Ok(amount) => amount,
+        Err(_) => {
+            return Err(ContractError::Std(StdError::generic_err(
+                "Failed to compute users tribute share",
+            )));
         }
-        // to_uint_floor() is used so that, due to the precision, contract doesn't transfer by 1 token more
-        // to some users, which would leave the last users trying to claim the tribute unable to do so
-        // This also implies that some dust amount of tokens could be left on the contract after everyone
-        // claiming their portion of the tribute
-        .to_uint_floor();
+    }
+    // to_uint_floor() is used so that, due to the precision, contract doesn't transfer by 1 token more
+    // to some users, which would leave the last users trying to claim the tribute unable to do so
+    // This also implies that some dust amount of tokens could be left on the contract after everyone
+    // claiming their portion of the tribute
+    .to_uint_floor();
     let sent_coin = Coin {
         denom: tribute_funds.denom,
         amount,
     };
     Ok(sent_coin)
-}
-
-// For each proposal in the top N proposals for the given round and tranche:
-// Trigger a send of the community pool tax share to the community pool address
-pub fn claim_tribute_for_community_pool(
-    deps: DepsMut,
-    env: Env,
-    round_id: u64,
-    tranche_id: u64,
-) -> Result<Response, ContractError> {
-    // Load the config
-    let config = CONFIG.load(deps.storage)?;
-
-    let current_round_id = query_current_round_id(&deps, &config.hydro_contract)?;
-    if round_id >= current_round_id {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Round has not ended yet",
-        )));
-    }
-
-    // Load the top N proposals
-    let proposals_resp: Vec<Proposal> =
-        get_top_n_proposals(&deps.as_ref(), &config, round_id, tranche_id)?;
-
-    // For each proposal in the top N proposals, send the community pool tax share to the community pool address
-    let mut res = Response::new();
-
-    // count how many tributes were claimed for the community pool to add to the response
-    let mut claimed_tributes_count = 0;
-    for proposal in proposals_resp {
-        // iterate over all tributes for this proposal
-        let tributes = TRIBUTE_MAP
-            .prefix((round_id, proposal.proposal_id))
-            .range(deps.storage, None, None, Order::Ascending)
-            .map(|l| l.unwrap().1)
-            .map(|tribute_id| ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap())
-            .collect::<Vec<Tribute>>();
-
-        for tribute in tributes {
-            // continue if this tribute was already claimed for the community pool
-            if COMMUNITY_POOL_CLAIMS
-                .may_load(deps.storage, tribute.tribute_id)?
-                .unwrap_or(false)
-            {
-                continue;
-            }
-
-            // Calculate the community pool share
-            let community_pool_share =
-                get_community_pool_tribute_share(&config, tribute.clone().funds).unwrap();
-
-            let send_coin = Coin {
-                denom: tribute.funds.denom,
-                amount: community_pool_share,
-            };
-
-            // Send the community pool share to the community pool address
-            res = res.add_message(IbcMsg::Transfer {
-                channel_id: config.community_pool_config.clone().channel_id,
-                to_address: config.community_pool_config.clone().bucket_address,
-                amount: send_coin,
-                timeout: IbcTimeout::with_timestamp(
-                    env.block.time.plus_seconds(IBC_TIMEOUT_DURATION_IN_SECONDS),
-                ),
-                memo: None,
-            });
-
-            // mark the tribute as claimed by the community pool
-            COMMUNITY_POOL_CLAIMS.save(deps.storage, tribute.tribute_id, &true)?;
-            claimed_tributes_count += 1;
-        }
-    }
-    Ok(res
-        .add_attribute("action", "claim_tribute_for_community_pool")
-        .add_attribute("round_id", round_id.to_string())
-        .add_attribute("tranche_id", tranche_id.to_string())
-        .add_attribute("claimed_tributes_count", claimed_tributes_count.to_string()))
 }
 
 // RefundTribute(round_id, tranche_id, prop_id, tribute_id):
@@ -664,7 +579,6 @@ pub fn query_outstanding_tribute_claims(
             .iter()
             .filter_map(|tribute| {
                 match calculate_voter_claim_amount(
-                    config.clone(),
                     tribute.funds.clone(),
                     user_vote.power,
                     proposal.power,
@@ -723,40 +637,6 @@ fn get_top_n_proposals(
     )?;
 
     Ok(proposals_resp.proposals)
-}
-
-// Given a funds amount, calculate how much of it should go to the community pool
-pub fn get_community_pool_tribute_share(
-    config: &Config,
-    funds: Coin,
-) -> Result<Uint128, ContractError> {
-    // Calculate the community pool share
-    let community_pool_share = Decimal::from_ratio(funds.amount, Uint128::one())
-        .checked_mul(config.community_pool_config.tax_percent)
-        .map_err(|_| {
-            ContractError::Std(StdError::generic_err(
-                "Failed to calculate community pool share due to overflow",
-            ))
-        })?
-        // round down here to avoid claiming more than the tax amount
-        .to_uint_floor();
-
-    Ok(community_pool_share)
-}
-
-// Given a funds amount, calculate how much of it should go to the voters
-pub fn get_voters_tribute_share(config: &Config, funds: Coin) -> Result<Uint128, ContractError> {
-    // Calculate the voters share
-    let voters_share = funds
-        .amount
-        .checked_sub(get_community_pool_tribute_share(config, funds)?)
-        .map_err(|_| {
-            ContractError::Std(StdError::generic_err(
-                "Failed to calculate voters share due to overflow",
-            ))
-        })?;
-
-    Ok(voters_share)
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
