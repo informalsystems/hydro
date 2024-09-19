@@ -2,7 +2,7 @@
 
 The oversight committee has a few main tasks they have to interact with the Hydro contract for:
 * Adding/Removing accounts from the whitelist or the ICQ managers
-* Pausing/unpausing the contract
+* Pausing the contract
 * Updating the maximal number of tokens that can be locked in the contract
 * Querying the top N proposals
 
