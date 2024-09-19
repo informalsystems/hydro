@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Decimal, Addr, ConfigResponse, Config, CommunityPoolTaxConfig, ExecuteMsg, InstantiateMsg, Uint128, ProposalTributesResponse, Tribute, Coin, QueryMsg } from "./TributeBase.types";
+import { Addr, ConfigResponse, Config, ExecuteMsg, InstantiateMsg, Uint128, ProposalTributesResponse, Tribute, Coin, QueryMsg } from "./TributeBase.types";
 export interface TributeBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
@@ -180,13 +180,6 @@ export interface TributeBaseInterface extends TributeBaseReadOnlyInterface {
     trancheId: number;
     tributeId: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
-  claimCommunityPoolTribute: ({
-    roundId,
-    trancheId
-  }: {
-    roundId: number;
-    trancheId: number;
-  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class TributeBaseClient extends TributeBaseQueryClient implements TributeBaseInterface {
   client: SigningCosmWasmClient;
@@ -200,7 +193,6 @@ export class TributeBaseClient extends TributeBaseQueryClient implements Tribute
     this.addTribute = this.addTribute.bind(this);
     this.claimTribute = this.claimTribute.bind(this);
     this.refundTribute = this.refundTribute.bind(this);
-    this.claimCommunityPoolTribute = this.claimCommunityPoolTribute.bind(this);
   }
   addTribute = async ({
     proposalId,
@@ -253,20 +245,6 @@ export class TributeBaseClient extends TributeBaseQueryClient implements Tribute
         round_id: roundId,
         tranche_id: trancheId,
         tribute_id: tributeId
-      }
-    }, fee, memo, _funds);
-  };
-  claimCommunityPoolTribute = async ({
-    roundId,
-    trancheId
-  }: {
-    roundId: number;
-    trancheId: number;
-  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
-    return await this.client.execute(this.sender, this.contractAddress, {
-      claim_community_pool_tribute: {
-        round_id: roundId,
-        tranche_id: trancheId
       }
     }, fee, memo, _funds);
   };
