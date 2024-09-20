@@ -13,7 +13,7 @@ test-unit:
 test-e2e:
 	cargo test e2e --no-fail-fast -- "mnemonic: $(E2E_TESTS_MNEMONIC)"
 
-# Note: If the neutron-org/neutron-query-relayer docker image does not exist locally, run build-docker-relayer before running the interchain tests.
+# Note: If the neutron-org/neutron-query-relayer docker image does not exist locally, run `make build-docker-relayer` before running the interchain tests.
 test-interchain:
 	cd test/interchain && go test ./... -timeout 30m
 
