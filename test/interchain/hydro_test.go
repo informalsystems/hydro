@@ -49,7 +49,7 @@ func (s *HydroSuite) TestHappyPath() {
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[0].ValoperAddress, s.HubChain.ValidatorWallets[1].ValoperAddress},
 		contractAddr, s.NeutronChain.ValidatorWallets[0].Moniker)
 
-	// lockTxData tokens
+	// lock tokens
 	err := s.LockTokens(0, 86400000000000, "10", dstIbcDenom1, contractAddr)
 	s.Require().NoError(err)
 	err = s.LockTokens(0, 3*86400000000000, "10", dstIbcDenom2, contractAddr)
@@ -69,51 +69,51 @@ func (s *HydroSuite) TestHappyPath() {
 	// create hydro proposals
 	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
-	err = s.SubmitHydroProposal(0, contractAddr, "trenche 1 prop 2", 1)
+	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 2", 1)
 	s.Require().NoError(err)
-	err = s.SubmitHydroProposal(0, contractAddr, "trenche 2 prop 1", 2)
+	err = s.SubmitHydroProposal(0, contractAddr, "tranche 2 prop 1", 2)
 	s.Require().NoError(err)
 
-	// vote for trenche 1 proposal 1
-	proposal, err := s.GetProposalByTitle(contractAddr, "trenche 1 prop 1", 1)
+	// vote for tranche 1 proposal 1
+	proposal, err := s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	s.Require().Equal("0", proposal.Power)
 
 	err = s.VoteForHydroProposal(0, contractAddr, proposal.ProposalID, 1)
 	s.Require().NoError(err)
-	proposal, err = s.GetProposalByTitle(contractAddr, "trenche 1 prop 1", 1)
+	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	s.Require().Equal(votingPower, proposal.Power)
 
-	// vote for trenche 2 proposal
-	proposal, err = s.GetProposalByTitle(contractAddr, "trenche 2 prop 1", 2)
+	// vote for tranche 2 proposal
+	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 2 prop 1", 2)
 	s.Require().NoError(err)
 	s.Require().Equal("0", proposal.Power)
 
 	err = s.VoteForHydroProposal(0, contractAddr, proposal.ProposalID, 2)
 	s.Require().NoError(err)
-	proposal, err = s.GetProposalByTitle(contractAddr, "trenche 2 prop 1", 2)
+	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 2 prop 1", 2)
 	s.Require().NoError(err)
 	s.Require().Equal(votingPower, proposal.Power)
 
-	// power of trenche 1 proposal 1 is not changed after voting for proposal from different trenche
-	proposal, err = s.GetProposalByTitle(contractAddr, "trenche 1 prop 1", 1)
+	// power of tranche 1 proposal 1 is not changed after voting for proposal from different tranche
+	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	s.Require().Equal(votingPower, proposal.Power)
 
-	// revote for trenche 1 proposal 2
-	proposal, err = s.GetProposalByTitle(contractAddr, "trenche 1 prop 2", 1)
+	// revote for tranche 1 proposal 2
+	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 2", 1)
 	s.Require().NoError(err)
 	s.Require().Equal("0", proposal.Power)
 
 	err = s.VoteForHydroProposal(0, contractAddr, proposal.ProposalID, 1)
 	s.Require().NoError(err)
-	proposal, err = s.GetProposalByTitle(contractAddr, "trenche 1 prop 2", 1)
+	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 2", 1)
 	s.Require().NoError(err)
 	s.Require().Equal(votingPower, proposal.Power)
 
-	// power of trenche 1 proposal 1 is now 0, since we revoted for the proposal 2 from the first trenche
-	proposal, err = s.GetProposalByTitle(contractAddr, "trenche 1 prop 1", 1)
+	// power of tranche 1 proposal 1 is now 0, since we revoted for the proposal 2 from the first tranche
+	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	s.Require().Equal("0", proposal.Power)
 
@@ -123,7 +123,7 @@ func (s *HydroSuite) TestHappyPath() {
 	err = s.LockTokens(0, 86400000000000, "10", dstIbcDenom1, contractAddr)
 	s.Require().Error(err)
 	s.Require().Contains(err.Error(), "Paused")
-	err = s.SubmitHydroProposal(0, contractAddr, "trenche 2 prop 2", 2)
+	err = s.SubmitHydroProposal(0, contractAddr, "tranche 2 prop 2", 2)
 	s.Require().Error(err)
 	s.Require().Contains(err.Error(), "Paused")
 	err = s.VoteForHydroProposal(0, contractAddr, proposal.ProposalID, 1)
@@ -176,7 +176,7 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[0].ValoperAddress, s.HubChain.ValidatorWallets[1].ValoperAddress},
 		contractAddr, s.NeutronChain.ValidatorWallets[0].Moniker)
 
-	// lockTxData tokens
+	// lock tokens
 	err := s.LockTokens(0, 86400000000000, "10", dstIbcDenom1, contractAddr)
 	s.Require().NoError(err)
 	err = s.LockTokens(0, 3*86400000000000, "10", dstIbcDenom2, contractAddr)
@@ -187,22 +187,22 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 	votingPowerVal1Val3 := "30"
 
 	// create hydro proposals
-	err = s.SubmitHydroProposal(0, contractAddr, "trenche 1 prop 1", 1)
+	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 
-	// vote for trenche 1 proposal 1
-	proposal, err := s.GetProposalByTitle(contractAddr, "trenche 1 prop 1", 1)
+	// vote for tranche 1 proposal 1
+	proposal, err := s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	s.Require().Equal("0", proposal.Power)
 
 	err = s.VoteForHydroProposal(0, contractAddr, proposal.ProposalID, 1)
 	s.Require().NoError(err)
-	proposal, err = s.GetProposalByTitle(contractAddr, "trenche 1 prop 1", 1)
+	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	s.Require().Equal(votingPowerVal1Val2, proposal.Power)
 
 	// increase stake for val3 on hub, so that val2 drops from active valset and val3 enters
-	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, s.Relayer, 1_000_000, 2, 1))
+	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, s.Relayer, 1_000_000, 2))
 
 	// register icq for val3
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[2].ValoperAddress}, contractAddr, s.NeutronChain.ValidatorWallets[0].Moniker)
@@ -212,14 +212,14 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 	s.Require().NoError(err)
 
 	// check that voting power is equal to voting power of val1 because val2 is not among active vals anymore
-	proposal, err = s.GetProposalByTitle(contractAddr, "trenche 1 prop 1", 1)
+	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	s.Require().Equal(votingPowerVal1Val1, proposal.Power)
 
 	// vote again so that val3 power is taken into account
 	err = s.VoteForHydroProposal(0, contractAddr, proposal.ProposalID, 1)
 	s.Require().NoError(err)
-	proposal, err = s.GetProposalByTitle(contractAddr, "trenche 1 prop 1", 1)
+	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	s.Require().Equal(votingPowerVal1Val3, proposal.Power)
 }
@@ -246,21 +246,21 @@ func (s *HydroSuite) TestValidatorSlashing() {
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[3].ValoperAddress},
 		contractAddr, s.NeutronChain.ValidatorWallets[0].Moniker)
 
-	// lockTxData tokens
+	// lock tokens
 	lockAmount := "300"
 	powerAfterSlashing := 271 // ceil rounding is used, which is why the power after slashing 10% of the tokens is 271 instead of 270
 	s.Require().NoError(s.LockTokens(0, 86400000000000, lockAmount, dstIbcDenom1, contractAddr))
 
 	// create hydro proposals
-	s.Require().NoError(s.SubmitHydroProposal(0, contractAddr, "trenche 1 prop 1", 1))
+	s.Require().NoError(s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1))
 
 	// vote for proposal
-	proposal, err := s.GetProposalByTitle(contractAddr, "trenche 1 prop 1", 1)
+	proposal, err := s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	s.Require().Equal("0", proposal.Power)
 
 	s.Require().NoError(s.VoteForHydroProposal(0, contractAddr, proposal.ProposalID, 1))
-	proposal, err = s.GetProposalByTitle(contractAddr, "trenche 1 prop 1", 1)
+	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	s.Require().Equal(lockAmount, proposal.Power)
 
@@ -278,7 +278,7 @@ func (s *HydroSuite) TestValidatorSlashing() {
 
 	// check power after slashing
 	// power decrease is based on slash_fraction_downtime from genesis
-	proposal, err = s.GetProposalByTitle(contractAddr, "trenche 1 prop 1", 1)
+	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	s.Require().Equal(strconv.Itoa(powerAfterSlashing), proposal.Power)
 
@@ -317,7 +317,7 @@ func (s *HydroSuite) TestTributeContract() {
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[0].ValoperAddress},
 		hydroContractAddr, s.NeutronChain.ValidatorWallets[0].Moniker)
 
-	// lockTxData tokens
+	// lock tokens
 	lockAmountVal2 := "800"
 	lockAmountVal3 := "400"
 	lockAmountVal4 := "200"
@@ -326,21 +326,21 @@ func (s *HydroSuite) TestTributeContract() {
 	s.Require().NoError(s.LockTokens(3, roundLength, lockAmountVal4, dstIbcDenom, hydroContractAddr))
 
 	// validator 1 creates hydro proposals
-	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "trenche 1 prop 1", 1))
-	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "trenche 1 prop 2", 1))
-	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "trenche 1 prop 3", 1))
-	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "trenche 1 prop 4", 1))
+	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 1", 1))
+	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 2", 1))
+	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 3", 1))
+	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 4", 1))
 
-	proposal1, err := s.GetProposalByTitle(hydroContractAddr, "trenche 1 prop 1", 1)
+	proposal1, err := s.GetProposalByTitle(hydroContractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	s.Require().Equal("0", proposal1.Power)
-	proposal2, err := s.GetProposalByTitle(hydroContractAddr, "trenche 1 prop 2", 1)
+	proposal2, err := s.GetProposalByTitle(hydroContractAddr, "tranche 1 prop 2", 1)
 	s.Require().NoError(err)
 	s.Require().Equal("0", proposal2.Power)
-	proposal3, err := s.GetProposalByTitle(hydroContractAddr, "trenche 1 prop 3", 1)
+	proposal3, err := s.GetProposalByTitle(hydroContractAddr, "tranche 1 prop 3", 1)
 	s.Require().NoError(err)
 	s.Require().Equal("0", proposal3.Power)
-	proposal4, err := s.GetProposalByTitle(hydroContractAddr, "trenche 1 prop 4", 1)
+	proposal4, err := s.GetProposalByTitle(hydroContractAddr, "tranche 1 prop 4", 1)
 	s.Require().NoError(err)
 	s.Require().Equal("0", proposal4.Power)
 
@@ -353,24 +353,24 @@ func (s *HydroSuite) TestTributeContract() {
 	s.Require().NoError(err)
 	tribute3Id, err := s.SubmitTribute(0, 30000, proposal3.TrancheID, proposal3.ProposalID, tributeContractAddr)
 	s.Require().NoError(err)
-	tribute4Id, err := s.SubmitTribute(0, 40000, proposal4.TrancheID, proposal4.ProposalID, tributeContractAddr)
+	tribute4Id, err := s.SubmitTribute(3, 40000, proposal4.TrancheID, proposal4.ProposalID, tributeContractAddr)
 	s.Require().NoError(err)
 
 	// val2 votes for proposal 1
 	s.Require().NoError(s.VoteForHydroProposal(1, hydroContractAddr, proposal1.ProposalID, int64(proposal1.TrancheID)))
-	proposal1, err = s.GetProposalByTitle(hydroContractAddr, "trenche 1 prop 1", 1)
+	proposal1, err = s.GetProposalByTitle(hydroContractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	s.Require().Equal(lockAmountVal2, proposal1.Power)
 
 	// val3 votes for proposal 2
 	s.Require().NoError(s.VoteForHydroProposal(2, hydroContractAddr, proposal2.ProposalID, int64(proposal2.TrancheID)))
-	proposal2, err = s.GetProposalByTitle(hydroContractAddr, "trenche 1 prop 2", 1)
+	proposal2, err = s.GetProposalByTitle(hydroContractAddr, "tranche 1 prop 2", 1)
 	s.Require().NoError(err)
 	s.Require().Equal(lockAmountVal3, proposal2.Power)
 
 	// val4 votes for proposal 3
 	s.Require().NoError(s.VoteForHydroProposal(3, hydroContractAddr, proposal3.ProposalID, int64(proposal3.TrancheID)))
-	proposal3, err = s.GetProposalByTitle(hydroContractAddr, "trenche 1 prop 3", 1)
+	proposal3, err = s.GetProposalByTitle(hydroContractAddr, "tranche 1 prop 3", 1)
 	s.Require().NoError(err)
 	s.Require().Equal(lockAmountVal4, proposal3.Power)
 
@@ -384,7 +384,7 @@ func (s *HydroSuite) TestTributeContract() {
 	oldBalanceVal4, err := s.NeutronChain.GetBalance(s.GetContext(), s.NeutronChain.ValidatorWallets[3].Address, chainsuite.Untrn)
 	s.Require().NoError(err)
 
-	// verify that reward cannot be cliamed nor refunded before the round is finished
+	// verify that reward cannot be claimed nor refunded before the round is finished
 	err = s.ClaimTribute(0, tributeContractAddr, s.NeutronChain.ValidatorWallets[1].Address, roundId, proposal1.TrancheID, tribute1Id)
 	s.Require().Error(err)
 	s.Require().Contains(err.Error(), "Round has not ended yet")
@@ -394,24 +394,42 @@ func (s *HydroSuite) TestTributeContract() {
 	err = s.ClaimTribute(0, tributeContractAddr, s.NeutronChain.ValidatorWallets[3].Address, roundId, proposal3.TrancheID, tribute3Id)
 	s.Require().Error(err)
 	s.Require().Contains(err.Error(), "Round has not ended yet")
-	err = s.RefundTribute(0, tributeContractAddr, roundId, proposal4.TrancheID, tribute4Id, proposal4.ProposalID)
+	err = s.RefundTribute(3, tributeContractAddr, roundId, proposal4.TrancheID, tribute4Id, proposal4.ProposalID)
 	s.Require().Error(err)
 	s.Require().Contains(err.Error(), "Round has not ended yet")
 
-	// wait for round 1 to start, so that we can claim tribute rewards gained in round 0
+	// wait for new round to start, so that we can claim tribute rewards gained in previous round
 	s.WaitForRound(hydroContractAddr, roundId+1)
 
+	// verify that top N proposal cannot be refunded
+	err = s.RefundTribute(0, tributeContractAddr, roundId, proposal1.TrancheID, tribute1Id, proposal1.ProposalID)
+	s.Require().Error(err)
+	// claim reward for top N proposal
 	err = s.ClaimTribute(0, tributeContractAddr, s.NeutronChain.ValidatorWallets[1].Address, roundId, proposal1.TrancheID, tribute1Id)
 	s.Require().NoError(err)
+	// claim reward for top N proposal
 	err = s.ClaimTribute(0, tributeContractAddr, s.NeutronChain.ValidatorWallets[2].Address, roundId, proposal2.TrancheID, tribute2Id)
 	s.Require().NoError(err)
+	// proposal out of top N proposal cannot be claimed
 	err = s.ClaimTribute(0, tributeContractAddr, s.NeutronChain.ValidatorWallets[3].Address, roundId, proposal3.TrancheID, tribute3Id)
 	s.Require().Error(err)
 	s.Require().Contains(err.Error(), "outside of top N proposals")
+	// refund tribute for proposal that is not in top N
 	err = s.RefundTribute(0, tributeContractAddr, roundId, proposal3.TrancheID, tribute3Id, proposal3.ProposalID)
 	s.Require().NoError(err)
-	err = s.RefundTribute(0, tributeContractAddr, roundId, proposal4.TrancheID, tribute4Id, proposal4.ProposalID)
+	// refund tribute for the proposal that has no votes at all
+	err = s.RefundTribute(3, tributeContractAddr, roundId, proposal4.TrancheID, tribute4Id, proposal4.ProposalID)
 	s.Require().NoError(err)
+
+	// verify that the same proposal cannot be claimed twice
+	err = s.ClaimTribute(0, tributeContractAddr, s.NeutronChain.ValidatorWallets[1].Address, roundId, proposal1.TrancheID, tribute1Id)
+	s.Require().Error(err)
+	// verify that same proposal cannot be refunded twice
+	err = s.RefundTribute(0, tributeContractAddr, roundId, proposal3.TrancheID, tribute3Id, proposal3.ProposalID)
+	s.Require().Error(err)
+	// refunded proposal cannot be claimed
+	err = s.ClaimTribute(0, tributeContractAddr, s.NeutronChain.ValidatorWallets[1].Address, roundId, proposal3.TrancheID, tribute3Id)
+	s.Require().Error(err)
 
 	newBalanceVal1, err := s.NeutronChain.GetBalance(s.GetContext(), s.NeutronChain.ValidatorWallets[0].Address, chainsuite.Untrn)
 	s.Require().NoError(err)
@@ -426,8 +444,6 @@ func (s *HydroSuite) TestTributeContract() {
 	// proposal 1 and 2 are in top N proposals(N=2), which means that only those voters got the tribute reward and tribute from the other proposals can be refunded
 	s.Require().True(newBalanceVal2.Sub(oldBalanceVal2).Equal(math.NewInt(9000)))  // reward is tribute for proposal1 - communityTax = 10000-10%=9000
 	s.Require().True(newBalanceVal3.Sub(oldBalanceVal3).Equal(math.NewInt(18000))) // reward is tribute for proposal2 - communityTax = 20000-10%=18000
-	s.Require().True(newBalanceVal4.Equal(oldBalanceVal4))                         // did not get reward since proposal is not in top N
-	// val1 account payed gas for claiming tribute rewards for other voters. We cannot check exact refund amount, but we will check that the new balance
-	// is greater than the proposal 4 reward which means that both proposals 3 and 4 are refunded
-	s.Require().True(newBalanceVal1.Sub(oldBalanceVal1).GT(math.NewInt(40000)))
+	s.Require().True(newBalanceVal1.GT(oldBalanceVal1))                            // refunded proposal3
+	s.Require().True(newBalanceVal4.GT(oldBalanceVal4))                            // refunded proposal4
 }

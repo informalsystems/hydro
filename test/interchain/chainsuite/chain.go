@@ -16,7 +16,6 @@ import (
 	"github.com/strangelove-ventures/interchaintest/v8"
 	"github.com/strangelove-ventures/interchaintest/v8/chain/cosmos"
 	"github.com/strangelove-ventures/interchaintest/v8/ibc"
-	"github.com/strangelove-ventures/interchaintest/v8/testutil"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 )
@@ -270,7 +269,8 @@ func (p *Chain) consumerAdditionProposal(ctx context.Context, chainID string, sp
 	return propWaiter, errCh, nil
 }
 
-func (p *Chain) UpdateAndVerifyStakeChange(ctx context.Context, consumer *Chain, relayer *Relayer, amount, valIdx, blocksPerEpoch int) error {
+// UpdateAndVerifyStakeChange updates the staking amount on the provider chain and verifies that the change is reflected on the consumer side
+func (p *Chain) UpdateAndVerifyStakeChange(ctx context.Context, consumer *Chain, relayer *Relayer, amount, valIdx int) error {
 	providerAddress := p.ValidatorWallets[valIdx]
 
 	providerHex, err := p.GetValidatorHexAddress(ctx, valIdx)
@@ -287,6 +287,7 @@ func (p *Chain) UpdateAndVerifyStakeChange(ctx context.Context, consumer *Chain,
 		return err
 	}
 
+	// increase the stake for the given validator
 	_, err = p.Validators[valIdx].ExecTx(ctx, providerAddress.Moniker,
 		"staking", "delegate",
 		providerAddress.ValoperAddress, fmt.Sprintf("%d%s", amount, p.Config().Denom),
@@ -295,26 +296,7 @@ func (p *Chain) UpdateAndVerifyStakeChange(ctx context.Context, consumer *Chain,
 		return err
 	}
 
-	if blocksPerEpoch > 1 {
-		providerPower, err := p.GetValidatorPower(ctx, providerHex)
-		if err != nil {
-			return err
-		}
-		if providerPowerBefore >= providerPower {
-			return fmt.Errorf("provider power did not increase after delegation")
-		}
-		consumerPower, err := consumer.GetValidatorPower(ctx, consumerHex)
-		if err != nil {
-			return err
-		}
-		if providerPower == consumerPower {
-			return fmt.Errorf("consumer power updated too soon")
-		}
-		if err := testutil.WaitForBlocks(ctx, blocksPerEpoch, p); err != nil {
-			return err
-		}
-	}
-
+	// check that the validator power is updated on both, provider and consumer chains
 	tCtx, tCancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer tCancel()
 	var retErr error

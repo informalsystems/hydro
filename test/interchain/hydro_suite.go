@@ -53,7 +53,7 @@ func (s *HydroSuite) SetupSuite() {
 	// create and start neutron chain
 	s.NeutronChain, err = s.HubChain.AddConsumerChain(s.GetContext(), relayer, chainsuite.NeutronChainID, chainsuite.GetNeutronSpec)
 	s.Require().NoError(err)
-	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, relayer, 1_000_000, 0, 1))
+	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, relayer, 1_000_000, 0))
 
 	// copy hydro and tribute contracts to neutron validator
 	hydroContract, err := os.ReadFile("../../artifacts/hydro.wasm")
@@ -194,8 +194,7 @@ func (s *HydroSuite) InstantiateHydroContract(
 	maxValParticipating int,
 	roundLength int,
 ) string {
-	firstRoundStartBuffer := int64(10000000000)
-	firstRoundStartTime := time.Now().UnixNano() + firstRoundStartBuffer // 10sec from now
+	firstRoundStartTime := time.Now().UnixNano()
 	neutronTransferChannel, err := s.Relayer.GetTransferChannel(s.GetContext(), s.NeutronChain, s.HubChain)
 	s.Require().NoError(err)
 
@@ -235,7 +234,6 @@ func (s *HydroSuite) InstantiateHydroContract(
 	s.Require().NoError(err)
 	contractAddr, found := getEvtAttribute(response.Events, wasmtypes.EventTypeInstantiate, wasmtypes.AttributeKeyContractAddr)
 	s.Require().True(found)
-	time.Sleep(time.Nanosecond * time.Duration(firstRoundStartBuffer)) // wait for the first round to start
 
 	return contractAddr
 }
