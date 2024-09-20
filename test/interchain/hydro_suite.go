@@ -247,11 +247,6 @@ func (s *HydroSuite) InstantiateTributeContract(codeId, hydroContractAddress, ad
 	initTribute := map[string]interface{}{
 		"hydro_contract":    hydroContractAddress,
 		"top_n_props_count": 2,
-		"community_pool_config": map[string]interface{}{
-			"bucket_address": s.HubChain.ValidatorWallets[0].Address,
-			"channel_id":     transferChannel.ChannelID,
-			"tax_percent":    "0.1", //10% to be sent to bucket address on the hub
-		},
 	}
 	initTributeJson, err := json.Marshal(initTribute)
 	s.Require().NoError(err)
