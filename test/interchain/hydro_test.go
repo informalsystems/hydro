@@ -67,7 +67,7 @@ func (s *HydroSuite) TestHappyPath() {
 	votingPower := "85" // 10*1+10*1.5+10*2+10*4
 
 	// create hydro proposals
-	err = s.SubmitHydroProposal(0, contractAddr, "trenche 1 prop 1", 1)
+	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	err = s.SubmitHydroProposal(0, contractAddr, "trenche 1 prop 2", 1)
 	s.Require().NoError(err)
