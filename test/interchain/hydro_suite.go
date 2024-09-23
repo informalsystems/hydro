@@ -195,6 +195,8 @@ func (s *HydroSuite) InstantiateHydroContract(
 	maxValParticipating int,
 	roundLength int,
 ) string {
+	s.Suite.T().Log("Instantiating Hydro contract")
+
 	firstRoundStartTime := time.Now().UnixNano()
 	neutronTransferChannel, err := s.Relayer.GetTransferChannel(s.GetContext(), s.NeutronChain, s.HubChain)
 	s.Require().NoError(err)
@@ -528,12 +530,43 @@ func (s *HydroSuite) PauseTheHydroContract(keyMoniker string, contractAddr strin
 	s.Require().NoError(err)
 }
 
-func (s *HydroSuite) UnlockTokens(keyMoniker string, contractAddr string) error {
+func (s *HydroSuite) UnlockTokens(contractAddr string) error {
 	unlockTxData := map[string]interface{}{
 		"unlock_tokens": map[string]interface{}{},
 	}
 
 	_, err := s.WasmExecuteTx(0, unlockTxData, contractAddr, []string{})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *HydroSuite) RefreshLock(contractAddr string, new_lock_duration, lock_id int64) error {
+	refreshTxData := map[string]interface{}{
+		"refresh_lock_duration": map[string]interface{}{
+			"lock_id":       lock_id,
+			"lock_duration": new_lock_duration,
+		},
+	}
+
+	_, err := s.WasmExecuteTx(0, refreshTxData, contractAddr, []string{})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *HydroSuite) UpdateMaxLockedTokens(contractAddr string, newMaxLockedTokens int64) error {
+	updateMaxLockedTokensTxData := map[string]interface{}{
+		"update_max_locked_tokens": map[string]interface{}{
+			"max_locked_tokens": newMaxLockedTokens,
+		},
+	}
+
+	_, err := s.WasmExecuteTx(0, updateMaxLockedTokensTxData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -599,6 +632,51 @@ func (s *HydroSuite) EditTranche(contractAddr, name, metadata string, trancheId 
 	}
 
 	_, err := s.WasmExecuteTx(0, trancheTxData, contractAddr, []string{})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *HydroSuite) AddICQManager(contractAddr, address string) error {
+	icqTxData := map[string]interface{}{
+		"add_i_c_q_manager": map[string]interface{}{
+			"address": address,
+		},
+	}
+
+	_, err := s.WasmExecuteTx(0, icqTxData, contractAddr, []string{})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *HydroSuite) RemoveICQManager(contractAddr, address string) error {
+	icqTxData := map[string]interface{}{
+		"remove_i_c_q_manager": map[string]interface{}{
+			"address": address,
+		},
+	}
+
+	_, err := s.WasmExecuteTx(0, icqTxData, contractAddr, []string{})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *HydroSuite) WithdrawICQFunds(contractAddr string, amount int64) error {
+	icqTxData := map[string]interface{}{
+		"withdraw_i_cq_funds": map[string]interface{}{
+			"amount": amount,
+		},
+	}
+
+	_, err := s.WasmExecuteTx(0, icqTxData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
