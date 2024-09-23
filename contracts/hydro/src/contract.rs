@@ -396,7 +396,8 @@ fn unlock_tokens(
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
-    validate_previous_round_vote(&deps, &env, info.sender.clone())?;
+    // TODO: reenable this when we implement slashing
+    // validate_previous_round_vote(&deps, &env, info.sender.clone())?;
 
     // Iterate all locks for the caller and unlock them if lock_end < now
     let locks =
@@ -456,6 +457,9 @@ fn unlock_tokens(
         .add_attribute("unlocked_tokens", unlocked_tokens.join(", ")))
 }
 
+// prevent clippy from warning for unused function
+// TODO: reenable this when we enable slashing
+#[allow(dead_code)]
 fn validate_previous_round_vote(
     deps: &DepsMut<NeutronQuery>,
     env: &Env,
