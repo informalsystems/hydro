@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"hydro/test/interchain/chainsuite"
 	"os"
 	"path"
 	"strconv"
 	"time"
+
+	"hydro/test/interchain/chainsuite"
 
 	"cosmossdk.io/math"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
@@ -239,9 +240,6 @@ func (s *HydroSuite) InstantiateHydroContract(
 }
 
 func (s *HydroSuite) InstantiateTributeContract(codeId, hydroContractAddress, adminAddr string) string {
-	transferChannel, err := s.Relayer.GetTransferChannel(s.GetContext(), s.NeutronChain, s.HubChain)
-	s.Require().NoError(err)
-
 	initTribute := map[string]interface{}{
 		"hydro_contract":    hydroContractAddress,
 		"top_n_props_count": 2,
