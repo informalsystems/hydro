@@ -13,6 +13,10 @@ test-unit:
 test-e2e:
 	cargo test e2e --no-fail-fast -- "mnemonic: $(E2E_TESTS_MNEMONIC)"
 
+# Note: If the neutron-org/neutron-query-relayer docker image does not exist locally, run `make build-docker-relayer` before running the interchain tests.
+test-interchain:
+	cd test/interchain && go test ./... -timeout 30m
+
 coverage:
 	# to install see here: https://crates.io/crates/cargo-tarpaulin
 	cargo tarpaulin --skip-clean --frozen --out html
@@ -47,3 +51,6 @@ schema:
 
 	cd contracts/hydro/schema && python3 generate_full_schema.py
 	cd contracts/tribute/schema && python3 generate_full_schema.py
+
+build-docker-relayer:
+	docker build -t neutron-org/neutron-query-relayer https://github.com/neutron-org/neutron-query-relayer.git#main
