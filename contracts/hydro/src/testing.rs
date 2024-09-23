@@ -496,11 +496,8 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
         ExecuteMsg::UnlockTokens {},
     );
 
-    // user voted for a proposal in previous round so it won't be able to unlock tokens
-    assert!(res.is_err());
-    assert!(res.unwrap_err().to_string().contains(
-        "Tokens can not be unlocked, user voted for at least one proposal in previous round"
-    ));
+    // user voted for a proposal in previous round, but can unlock tokens
+    assert!(res.is_ok());
 }
 
 #[test]
