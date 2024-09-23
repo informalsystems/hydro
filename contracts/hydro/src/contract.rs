@@ -457,6 +457,9 @@ fn unlock_tokens(
         .add_attribute("unlocked_tokens", unlocked_tokens.join(", ")))
 }
 
+// prevent clippy from warning for unused function
+// TODO: reenable this when we enable slashing
+#[allow(dead_code)]
 fn validate_previous_round_vote(
     deps: &DepsMut<NeutronQuery>,
     env: &Env,
