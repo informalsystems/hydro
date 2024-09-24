@@ -4,7 +4,7 @@
 
 Date: September 24th, 2023
 
-This is the first version of the auction and tribute contracts for the Hydro liquidity auction platform..
+This is the first version of the auction and tribute contracts for the Hydro liquidity auction platform.
 It includes:
 * The main _Hydro_ contract, where:
   * Users can lock, relock, and unlock staked ATOM in the form of LSM shares
