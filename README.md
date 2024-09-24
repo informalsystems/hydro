@@ -7,6 +7,7 @@ and some implementation details might lead to slightly different behavior than d
 # Protocol Owned Liquidity
 
 Hydro is a system where Atom stakers can lock up their staked Atoms in exchange for voting power, which they can use to vote on proposals to deploy Atoms owned by the community pool into liquidity (aka market-making) positions on various decentralized exchanges.
+The liquidity itself is still owned by the Cosmos Hub, thus this is a way of deploying Protocol Owned Liquditiy (PoL).
 
 Like other “___ Wars” competitions, Hydro uses the concept of “gauges”- deployed liquidity is split between proposals proportional to the number of votes that they receive, instead of a winner-takes-all approach.
 
