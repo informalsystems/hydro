@@ -1182,6 +1182,9 @@ fn test_query_outstanding_tribute_claims() {
 
 #[test]
 // This test ensures that a voter can only claim tribute for a proposal that they actually voted for.
+// It creates two proposals in the same round/tranche, creates a tribute for each proposal,
+// and mocks that a user voted for the first proposal, but
+// attempts to have that user claim the tribute for the second proposal.
 fn test_claim_tribute_regression() {
     // create two proposals in the same tranche
     let mock_top_n_proposals = vec![
