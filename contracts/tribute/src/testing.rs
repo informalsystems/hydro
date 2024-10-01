@@ -459,6 +459,29 @@ fn claim_tribute_test() {
             expected_success: false,
             expected_error_msg: "not found".to_string(),
         },
+        ClaimTributeTestCase {
+            description: "try to claim tribute that belongs to different top N proposal than the one user voted on".to_string(),
+            tribute_info: (10, 0, 5, 0),
+            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
+            mock_data: (
+                10,
+                11,
+                mock_proposals.clone(),
+                vec![(
+                    10,
+                    0,
+                    get_address_as_str(&deps.api, USER_ADDRESS_2),
+                    VoteWithPower {
+                        prop_id: 6,
+                        power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
+                    },
+                )],
+                mock_top_n_proposals.clone(),
+            ),
+            expected_tribute_claim: 0,
+            expected_success: false,
+            expected_error_msg: "The tribute with the given ID does not belong to the proposal that the user voted on".to_string(),
+        },
     ];
 
     for test in test_cases {
@@ -1286,11 +1309,8 @@ fn test_claim_tribute_regression() {
         voter_address: tribute_claimer.clone(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-
-    verify_tokens_received(
-        res.unwrap(),
-        &tribute_claimer,
-        &"prop6token".to_string(),
-        6666,
-    );
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().to_lowercase().contains(
+        "the tribute with the given id does not belong to the proposal that the user voted on"
+    ));
 }
