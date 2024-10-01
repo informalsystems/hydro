@@ -188,6 +188,8 @@ pub fn execute(
 // LockTokens(lock_duration):
 //     Receive tokens
 //     Validate against the accepted denom
+//     Update voting power on proposals if user already voted for any
+//     Update total round power
 //     Create entry in LocksMap
 fn lock_tokens(
     deps: DepsMut<NeutronQuery>,
@@ -246,6 +248,18 @@ fn lock_tokens(
     LOCKS_MAP.save(deps.storage, (info.sender.clone(), lock_id), &lock_entry)?;
     LOCKED_TOKENS.save(deps.storage, &(locked_tokens + amount_to_lock))?;
 
+    // If user already voted for some proposals in the current round, update the voting power on those proposals.
+    let mut deps = deps;
+    update_voting_power_on_proposals(
+        &mut deps,
+        &info,
+        &constants,
+        current_round,
+        None,
+        lock_entry.clone(),
+        validator.clone(),
+    )?;
+
     // Calculate and update the total voting power info for current and all
     // future rounds in which the user will have voting power greather than 0
     let last_round_with_power = compute_round_id_for_timestamp(&constants, lock_end)? - 1;
@@ -293,6 +307,7 @@ fn refresh_lock_duration(
     // try to get the lock with the given id
     // note that this is already indexed by the caller, so if it is successful, the sender owns this lock
     let mut lock_entry = LOCKS_MAP.load(deps.storage, (info.sender.clone(), lock_id))?;
+    let old_lock_entry = lock_entry.clone();
 
     // log the lock entry
     deps.api.debug(&format!("lock_entry: {:?}", lock_entry));
@@ -320,7 +335,7 @@ fn refresh_lock_duration(
         deps.as_ref(),
         env.clone(),
         &constants,
-        lock_entry.funds.denom,
+        lock_entry.funds.denom.clone(),
     );
     if validator_result.is_err() {
         return Err(ContractError::Std(StdError::generic_err(
@@ -328,6 +343,18 @@ fn refresh_lock_duration(
         )));
     }
     let validator = validator_result.unwrap();
+
+    // If user already voted for some proposals in the current round, update the voting power on those proposals.
+    let mut deps = deps;
+    update_voting_power_on_proposals(
+        &mut deps,
+        &info,
+        &constants,
+        current_round,
+        Some(old_lock_entry),
+        lock_entry.clone(),
+        validator.clone(),
+    )?;
 
     // Calculate and update the total voting power info for current and all
     // future rounds in which the user will have voting power greather than 0.
@@ -1622,6 +1649,99 @@ fn compute_round_end(constants: &Constants, round_id: u64) -> StdResult<Timestam
         .plus_nanos(constants.round_length * (round_id + 1));
 
     Ok(round_end)
+}
+
+fn update_voting_power_on_proposals(
+    deps: &mut DepsMut<NeutronQuery>,
+    info: &MessageInfo,
+    constants: &Constants,
+    current_round: u64,
+    old_lock_entry: Option<LockEntry>,
+    new_lock_entry: LockEntry,
+    validator: String,
+) -> Result<(), ContractError> {
+    let round_end = compute_round_end(constants, current_round)?;
+    let lock_epoch_length = constants.lock_epoch_length;
+
+    let old_scaled_shares = match old_lock_entry {
+        None => Uint128::zero(),
+        Some(lock_entry) => {
+            get_lock_time_weighted_shares(round_end, lock_entry.clone(), lock_epoch_length)
+        }
+    };
+    let new_scaled_shares =
+        get_lock_time_weighted_shares(round_end, new_lock_entry, lock_epoch_length);
+
+    let vote_power_change = Decimal::from_ratio(new_scaled_shares, Uint128::one())
+        .checked_sub(Decimal::from_ratio(old_scaled_shares, Uint128::one()))?;
+
+    let tranche_ids = TRANCHE_MAP
+        .keys(deps.storage, None, None, Order::Ascending)
+        .collect::<Result<Vec<u64>, StdError>>()?;
+
+    for tranche_id in tranche_ids {
+        if let Some(mut vote) = VOTE_MAP.may_load(
+            deps.storage,
+            (current_round, tranche_id, info.sender.clone()),
+        )? {
+            let current_vote_shares = match vote.time_weighted_shares.get(&validator) {
+                None => Decimal::zero(),
+                Some(shares) => *shares,
+            };
+
+            let new_vote_shares = current_vote_shares.checked_add(vote_power_change)?;
+            vote.time_weighted_shares
+                .insert(validator.clone(), new_vote_shares);
+
+            VOTE_MAP.save(
+                deps.storage,
+                (current_round, tranche_id, info.sender.clone()),
+                &vote,
+            )?;
+
+            add_validator_shares_to_proposal(
+                deps.storage,
+                current_round,
+                vote.prop_id,
+                validator.clone(),
+                vote_power_change,
+            )?;
+
+            let proposal_id = vote.prop_id;
+            let mut proposal =
+                PROPOSAL_MAP.load(deps.storage, (current_round, tranche_id, proposal_id))?;
+
+            PROPS_BY_SCORE.remove(
+                deps.storage,
+                (
+                    (current_round, tranche_id),
+                    proposal.power.into(),
+                    proposal_id,
+                ),
+            );
+
+            let total_power = get_total_power_for_proposal(deps.storage, proposal_id)?;
+            proposal.power = total_power.to_uint_ceil();
+
+            PROPOSAL_MAP.save(
+                deps.storage,
+                (current_round, tranche_id, proposal_id),
+                &proposal,
+            )?;
+
+            PROPS_BY_SCORE.save(
+                deps.storage,
+                (
+                    (current_round, tranche_id),
+                    proposal.power.into(),
+                    proposal_id,
+                ),
+                &proposal_id,
+            )?;
+        }
+    }
+
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)] // complex function that needs a lot of arguments

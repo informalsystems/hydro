@@ -5,7 +5,9 @@ use crate::contract::{
 };
 use crate::msg::TrancheInfo;
 use crate::testing_lsm_integration::set_validator_infos_for_round;
-use crate::testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock};
+use crate::testing_mocks::{
+    denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
+};
 use crate::{
     contract::{
         compute_current_round_id, execute, instantiate, query_all_user_lockups, query_constants,
@@ -14,8 +16,8 @@ use crate::{
     },
     msg::{ExecuteMsg, InstantiateMsg},
 };
-use cosmwasm_std::testing::{mock_env, MockApi};
-use cosmwasm_std::{BankMsg, CosmosMsg, Deps, DepsMut, MessageInfo, Timestamp, Uint128};
+use cosmwasm_std::testing::{mock_env, MockApi, MockStorage};
+use cosmwasm_std::{BankMsg, CosmosMsg, Deps, DepsMut, MessageInfo, OwnedDeps, Timestamp, Uint128};
 use cosmwasm_std::{Coin, StdError, StdResult};
 use neutron_sdk::bindings::query::NeutronQuery;
 use proptest::prelude::*;
@@ -350,6 +352,314 @@ fn create_proposal_basic_test() {
 #[test]
 fn vote_basic_test() {
     vote_test_with_start_time(mock_env().block.time, 0);
+}
+
+// If user already voted for some proposal, and then locks new tokens or refreshes the existing lock,
+// the voting power on those proposals should get updated accordingly.
+#[test]
+fn proposal_power_change_on_lock_and_refresh_test() {
+    let user_address = "addr0000";
+    let user_token1 = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token2 = Coin::new(1000u64, IBC_DENOM_2.to_string());
+
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+        ]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[user_token1.clone()]);
+
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.lock_epoch_length = TWO_WEEKS_IN_NANO_SECONDS;
+    // add another tranche
+    msg.tranches.push(TrancheInfo {
+        name: "tranche 2".to_string(),
+        metadata: "tranche 2 metadata".to_string(),
+    });
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    let res = set_validator_infos_for_round(
+        deps.as_mut().storage,
+        0,
+        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
+    );
+    assert!(res.is_ok());
+
+    // advance the chain by 1000 nano seconds to simulate locking during the round
+    env.block.time = env.block.time.plus_nanos(1000);
+
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: TWO_WEEKS_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    let prop_infos = vec![
+        (
+            1,
+            "proposal title 1".to_string(),
+            "proposal description 1".to_string(),
+        ),
+        (
+            2,
+            "proposal title 2".to_string(),
+            "proposal description 2".to_string(),
+        ),
+    ];
+
+    for prop_info in prop_infos {
+        let msg = ExecuteMsg::CreateProposal {
+            tranche_id: prop_info.0,
+            title: prop_info.1,
+            description: prop_info.2,
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_ok());
+    }
+
+    let first_round_id = 0;
+    let second_round_id = 1;
+
+    let first_proposal_id = 0;
+    let second_proposal_id = 1;
+    let third_proposal_id = 2;
+
+    let first_tranche_id = 1;
+    let second_tranche_id = 2;
+
+    // lock additional 1000 tokens before voting and verify this has no effect on proposals power
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: TWO_WEEKS_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    let mut expected_voting_power = 0u128;
+    assert_proposal_voting_power(
+        &deps,
+        first_round_id,
+        first_tranche_id,
+        first_proposal_id,
+        expected_voting_power,
+    );
+
+    assert_proposal_voting_power(
+        &deps,
+        first_round_id,
+        second_tranche_id,
+        second_proposal_id,
+        expected_voting_power,
+    );
+
+    // vote for the first proposal in tranche 1
+    let msg = ExecuteMsg::Vote {
+        tranche_id: first_tranche_id,
+        proposal_id: first_proposal_id,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // verify users vote for the first proposal in tranche 1
+    expected_voting_power = 2000u128;
+
+    let res = query_user_vote(
+        deps.as_ref(),
+        first_round_id,
+        first_tranche_id,
+        info.sender.to_string(),
+    );
+    assert!(res.is_ok(), "error: {:?}", res);
+    assert_eq!(first_proposal_id, res.unwrap().vote.prop_id);
+
+    assert_proposal_voting_power(
+        &deps,
+        first_round_id,
+        first_tranche_id,
+        first_proposal_id,
+        expected_voting_power,
+    );
+
+    // vote for the second proposal in tranche 2
+    let msg = ExecuteMsg::Vote {
+        tranche_id: second_tranche_id,
+        proposal_id: second_proposal_id,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // verify users vote for the second proposal in tranche 2
+    let res = query_user_vote(
+        deps.as_ref(),
+        first_round_id,
+        second_tranche_id,
+        info.sender.to_string(),
+    );
+    assert!(res.is_ok(), "error: {:?}", res);
+    assert_eq!(second_proposal_id, res.unwrap().vote.prop_id);
+
+    assert_proposal_voting_power(
+        &deps,
+        first_round_id,
+        second_tranche_id,
+        second_proposal_id,
+        expected_voting_power,
+    );
+
+    // lock additional 1000 tokens and verify that the voting power gets updated on both proposals
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: TWO_WEEKS_IN_NANO_SECONDS,
+    };
+    // lock LSM token that user already locked before
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    expected_voting_power = 3000u128;
+
+    // verify that the voting power increased for the first proposal
+    assert_proposal_voting_power(
+        &deps,
+        first_round_id,
+        first_tranche_id,
+        first_proposal_id,
+        expected_voting_power,
+    );
+
+    // verify that the voting power increased for the second proposal
+    assert_proposal_voting_power(
+        &deps,
+        first_round_id,
+        second_tranche_id,
+        second_proposal_id,
+        expected_voting_power,
+    );
+
+    // lock 1000 of a different LSM token
+    let info = get_message_info(&deps.api, user_address, &[user_token2.clone()]);
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: TWO_WEEKS_IN_NANO_SECONDS,
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    expected_voting_power = 4000u128;
+
+    // verify that the voting power increased for the first proposal
+    assert_proposal_voting_power(
+        &deps,
+        first_round_id,
+        first_tranche_id,
+        first_proposal_id,
+        expected_voting_power,
+    );
+
+    // verify that the voting power increased for the second proposal
+    assert_proposal_voting_power(
+        &deps,
+        first_round_id,
+        second_tranche_id,
+        second_proposal_id,
+        expected_voting_power,
+    );
+
+    let first_lockup_id = 0;
+    let second_lockup_id = 1;
+
+    // refresh first lockup
+    let msg = ExecuteMsg::RefreshLockDuration {
+        lock_id: first_lockup_id,
+        lock_duration: 3 * TWO_WEEKS_IN_NANO_SECONDS,
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    expected_voting_power = 4500u128;
+
+    // verify that the voting power increased for the first proposal
+    assert_proposal_voting_power(
+        &deps,
+        first_round_id,
+        first_tranche_id,
+        first_proposal_id,
+        expected_voting_power,
+    );
+
+    // verify that the voting power increased for the second proposal
+    assert_proposal_voting_power(
+        &deps,
+        first_round_id,
+        second_tranche_id,
+        second_proposal_id,
+        expected_voting_power,
+    );
+
+    // advance the chain by two weeks to move to the next round
+    env.block.time = env.block.time.plus_nanos(TWO_WEEKS_IN_NANO_SECONDS);
+
+    // create a new proposal in this round
+    let msg = ExecuteMsg::CreateProposal {
+        tranche_id: first_tranche_id,
+        title: "proposal title 3".to_string(),
+        description: "proposal description 3".to_string(),
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // vote for the third proposal in tranche 1
+    let msg = ExecuteMsg::Vote {
+        tranche_id: first_tranche_id,
+        proposal_id: third_proposal_id,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // verify users vote for the third proposal in tranche 1
+    expected_voting_power = 1250u128;
+
+    let res = query_user_vote(
+        deps.as_ref(),
+        second_round_id,
+        first_tranche_id,
+        info.sender.to_string(),
+    );
+    assert!(res.is_ok(), "error: {:?}", res);
+    assert_eq!(third_proposal_id, res.unwrap().vote.prop_id);
+
+    assert_proposal_voting_power(
+        &deps,
+        second_round_id,
+        first_tranche_id,
+        third_proposal_id,
+        expected_voting_power,
+    );
+
+    // refresh second (expired) lockup
+    let msg = ExecuteMsg::RefreshLockDuration {
+        lock_id: second_lockup_id,
+        lock_duration: 3 * TWO_WEEKS_IN_NANO_SECONDS,
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    expected_voting_power = 2750u128;
+
+    // verify that the voting power increased for the third proposal
+    assert_proposal_voting_power(
+        &deps,
+        second_round_id,
+        first_tranche_id,
+        third_proposal_id,
+        expected_voting_power,
+    );
 }
 
 #[test]
@@ -1465,4 +1775,16 @@ pub fn whitelist_proposal_submission_test() {
     // now, there should be a second proposal (with id 1)
     let res = query_proposal(deps.as_ref(), 0, 1, 1);
     assert!(res.is_ok(), "error: {:?}", res);
+}
+
+fn assert_proposal_voting_power(
+    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    round_id: u64,
+    tranche_id: u64,
+    proposal_id: u64,
+    expected_voting_power: u128,
+) {
+    let res = query_proposal(deps.as_ref(), round_id, tranche_id, proposal_id);
+    assert!(res.is_ok());
+    assert_eq!(expected_voting_power, res.unwrap().proposal.power.u128());
 }
