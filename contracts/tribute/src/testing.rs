@@ -1179,3 +1179,115 @@ fn test_query_outstanding_tribute_claims() {
         }
     }
 }
+
+#[test]
+// This test ensures that a voter can only claim tribute for a proposal that they actually voted for.
+fn test_claim_tribute_regression() {
+    // create two proposals in the same tranche
+    let mock_top_n_proposals = vec![
+        Proposal {
+            round_id: 10,
+            tranche_id: 0,
+            proposal_id: 5,
+            title: "proposal title 1".to_string(),
+            description: "proposal description 1".to_string(),
+            power: Uint128::new(10000),
+            percentage: Uint128::zero(),
+        },
+        Proposal {
+            round_id: 10,
+            tranche_id: 0,
+            proposal_id: 6,
+            title: "proposal title 2".to_string(),
+            description: "proposal description 2".to_string(),
+            power: Uint128::new(10000),
+            percentage: Uint128::zero(),
+        },
+    ];
+
+    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
+
+    let hydro_contract_address = get_address_as_str(&deps.api, HYDRO_CONTRACT_ADDRESS);
+    // create a vote for the user: voted for prop 5
+    let user_vote: UserVote = (
+        10,                                            // round_id
+        0,                                             // tranche_id
+        get_address_as_str(&deps.api, USER_ADDRESS_1), // address
+        VoteWithPower {
+            prop_id: 5,                                                      // proposal_id
+            power: Decimal::from_ratio(Uint128::new(10000), Uint128::one()), // power
+        },
+    );
+    let mock_querier = MockWasmQuerier::new(
+        hydro_contract_address.clone(),
+        10,
+        mock_top_n_proposals.clone(),
+        vec![user_vote.clone()],
+        vec![],
+    );
+    deps.querier.update_wasm(move |q| mock_querier.handler(q));
+
+    let msg = get_instantiate_msg(hydro_contract_address.clone());
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // add a tribute of 5555 tokens to prop 5, which the user voted for
+    let tribute_payer = USER_ADDRESS_1;
+    let info = get_message_info(
+        &deps.api,
+        tribute_payer,
+        &vec![Coin::new(5555u64, "prop5token")],
+    );
+    let msg = ExecuteMsg::AddTribute {
+        tranche_id: 0,
+        proposal_id: 5,
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    // add a tribute of 6666 tokens to prop 6, which the user did not vote for
+    let info = get_message_info(
+        &deps.api,
+        tribute_payer,
+        &vec![Coin::new(6666u64, "prop6token")],
+    );
+    let msg = ExecuteMsg::AddTribute {
+        tranche_id: 0,
+        proposal_id: 6,
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // Update the current round so that the tribute can be claimed
+    let mock_querier = MockWasmQuerier::new(
+        hydro_contract_address.clone(),
+        11,
+        mock_top_n_proposals.clone(),
+        vec![user_vote.clone()],
+        mock_top_n_proposals.clone(),
+    );
+    deps.querier.update_wasm(move |q| mock_querier.handler(q));
+
+    // attempt to claim the tribute for prop 6, which the user did not vote for
+    let tribute_claimer = get_address_as_str(&deps.api, USER_ADDRESS_1);
+    let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
+
+    // should be unable to claim tribute 1, because the user did not vote for prop 6
+    let msg = ExecuteMsg::ClaimTribute {
+        round_id: 10,
+        tranche_id: 0,
+        tribute_id: 1, // id 1 is the tribute for prop 6
+        voter_address: tribute_claimer.clone(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+
+    verify_tokens_received(
+        res.unwrap(),
+        &tribute_claimer,
+        &"prop6token".to_string(),
+        6666,
+    );
+}
