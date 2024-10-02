@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
-    MessageInfo, Order, Reply, Response, StdError, StdResult, Timestamp, Uint128,
+    MessageInfo, Order, Reply, Response, StdError, StdResult, Storage, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
 use cw_utils::must_pay;
@@ -28,7 +28,7 @@ use crate::query::{
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, get_total_power_for_proposal,
-    remove_many_validator_shares_from_proposal,
+    remove_many_validator_shares_from_proposal, remove_validator_shares_from_proposal,
 };
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS,
@@ -252,7 +252,7 @@ fn lock_tokens(
     let mut deps = deps;
     update_voting_power_on_proposals(
         &mut deps,
-        &info,
+        &info.sender,
         &constants,
         current_round,
         None,
@@ -348,7 +348,7 @@ fn refresh_lock_duration(
     let mut deps = deps;
     update_voting_power_on_proposals(
         &mut deps,
-        &info,
+        &info.sender,
         &constants,
         current_round,
         Some(old_lock_entry),
@@ -739,15 +739,6 @@ fn vote(
         return Ok(response);
     }
 
-    // Load the proposal being voted on
-    let mut proposal = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
-
-    // Delete the proposal's old power in PROPS_BY_SCORE
-    PROPS_BY_SCORE.remove(
-        deps.storage,
-        ((round_id, tranche_id), proposal.power.into(), proposal_id),
-    );
-
     // update the proposal's power with the new shares
     for (validator, num_shares) in time_weighted_shares_map.iter() {
         // add the validator shares to the proposal
@@ -760,21 +751,8 @@ fn vote(
         )?;
     }
 
-    // get the new total power of the proposal
-    let total_power = get_total_power_for_proposal(deps.storage, proposal.proposal_id)?;
-
-    // save the new power into the proposal
-    proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
-
-    // Save the proposal
-    PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, proposal_id), &proposal)?;
-
-    // Save the proposal's new power in PROPS_BY_SCORE
-    PROPS_BY_SCORE.save(
-        deps.storage,
-        ((round_id, tranche_id), proposal.power.into(), proposal_id),
-        &proposal_id,
-    )?;
+    // update the proposal in the proposal map, as well as the props by score map
+    update_proposal_and_props_by_score_maps(deps.storage, round_id, tranche_id, proposal_id)?;
 
     // Create vote in Votemap
     let vote = Vote {
@@ -1651,9 +1629,14 @@ fn compute_round_end(constants: &Constants, round_id: u64) -> StdResult<Timestam
     Ok(round_end)
 }
 
+// When a user locks new tokens or extends an existing lock duration, this function checks if that user already
+// voted on some proposals in the current round. This is done by looking up for user votes in all tranches.
+// If there are such proposals, the function will update the voting power to reflect the voting power change
+// caused by lock/extend_lock action. The following data structures will be updated:
+//      PROPOSAL_MAP, PROPS_BY_SCORE, VOTE_MAP, SCALED_PROPOSAL_SHARES_MAP, PROPOSAL_TOTAL_MAP
 fn update_voting_power_on_proposals(
     deps: &mut DepsMut<NeutronQuery>,
-    info: &MessageInfo,
+    sender: &Addr,
     constants: &Constants,
     current_round: u64,
     old_lock_entry: Option<LockEntry>,
@@ -1672,74 +1655,108 @@ fn update_voting_power_on_proposals(
     let new_scaled_shares =
         get_lock_time_weighted_shares(round_end, new_lock_entry, lock_epoch_length);
 
-    let vote_power_change = Decimal::from_ratio(new_scaled_shares, Uint128::one())
-        .checked_sub(Decimal::from_ratio(old_scaled_shares, Uint128::one()))?;
+    // With a future code changes, it could happen that the new power becomes less than
+    // the old one. This calculation will cover both power increase and decrease scenarios.
+    let power_change = if new_scaled_shares > old_scaled_shares {
+        let power_change = Decimal::from_ratio(new_scaled_shares, Uint128::one())
+            .checked_sub(Decimal::from_ratio(old_scaled_shares, Uint128::one()))?;
+
+        VotingPowerChange::new(true, power_change)
+    } else {
+        let power_change = Decimal::from_ratio(old_scaled_shares, Uint128::one())
+            .checked_sub(Decimal::from_ratio(new_scaled_shares, Uint128::one()))?;
+
+        VotingPowerChange::new(false, power_change)
+    };
 
     let tranche_ids = TRANCHE_MAP
         .keys(deps.storage, None, None, Order::Ascending)
         .collect::<Result<Vec<u64>, StdError>>()?;
 
     for tranche_id in tranche_ids {
-        if let Some(mut vote) = VOTE_MAP.may_load(
-            deps.storage,
-            (current_round, tranche_id, info.sender.clone()),
-        )? {
+        if let Some(mut vote) =
+            VOTE_MAP.may_load(deps.storage, (current_round, tranche_id, sender.clone()))?
+        {
             let current_vote_shares = match vote.time_weighted_shares.get(&validator) {
                 None => Decimal::zero(),
                 Some(shares) => *shares,
             };
 
-            let new_vote_shares = current_vote_shares.checked_add(vote_power_change)?;
+            let new_vote_shares = if power_change.is_increased {
+                current_vote_shares.checked_add(power_change.scaled_power_change)?
+            } else {
+                current_vote_shares.checked_sub(power_change.scaled_power_change)?
+            };
+
             vote.time_weighted_shares
                 .insert(validator.clone(), new_vote_shares);
 
             VOTE_MAP.save(
                 deps.storage,
-                (current_round, tranche_id, info.sender.clone()),
+                (current_round, tranche_id, sender.clone()),
                 &vote,
             )?;
 
-            add_validator_shares_to_proposal(
+            if power_change.is_increased {
+                add_validator_shares_to_proposal(
+                    deps.storage,
+                    current_round,
+                    vote.prop_id,
+                    validator.clone(),
+                    power_change.scaled_power_change,
+                )?;
+            } else {
+                remove_validator_shares_from_proposal(
+                    deps.storage,
+                    current_round,
+                    vote.prop_id,
+                    validator.clone(),
+                    power_change.scaled_power_change,
+                )?;
+            }
+
+            update_proposal_and_props_by_score_maps(
                 deps.storage,
                 current_round,
+                tranche_id,
                 vote.prop_id,
-                validator.clone(),
-                vote_power_change,
-            )?;
-
-            let proposal_id = vote.prop_id;
-            let mut proposal =
-                PROPOSAL_MAP.load(deps.storage, (current_round, tranche_id, proposal_id))?;
-
-            PROPS_BY_SCORE.remove(
-                deps.storage,
-                (
-                    (current_round, tranche_id),
-                    proposal.power.into(),
-                    proposal_id,
-                ),
-            );
-
-            let total_power = get_total_power_for_proposal(deps.storage, proposal_id)?;
-            proposal.power = total_power.to_uint_ceil();
-
-            PROPOSAL_MAP.save(
-                deps.storage,
-                (current_round, tranche_id, proposal_id),
-                &proposal,
-            )?;
-
-            PROPS_BY_SCORE.save(
-                deps.storage,
-                (
-                    (current_round, tranche_id),
-                    proposal.power.into(),
-                    proposal_id,
-                ),
-                &proposal_id,
             )?;
         }
     }
+
+    Ok(())
+}
+
+fn update_proposal_and_props_by_score_maps(
+    storage: &mut dyn Storage,
+    round_id: u64,
+    tranche_id: u64,
+    proposal_id: u64,
+) -> Result<(), ContractError> {
+    // Load the proposal that needs to be updated
+    let mut proposal = PROPOSAL_MAP.load(storage, (round_id, tranche_id, proposal_id))?;
+
+    // Delete the proposal's old power in PROPS_BY_SCORE
+    PROPS_BY_SCORE.remove(
+        storage,
+        ((round_id, tranche_id), proposal.power.into(), proposal_id),
+    );
+
+    // Get the new total power of the proposal
+    let total_power = get_total_power_for_proposal(storage, proposal_id)?;
+
+    // Save the new power into the proposal
+    proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
+
+    // Save the proposal
+    PROPOSAL_MAP.save(storage, (round_id, tranche_id, proposal_id), &proposal)?;
+
+    // Save the proposal's new power in PROPS_BY_SCORE
+    PROPS_BY_SCORE.save(
+        storage,
+        ((round_id, tranche_id), proposal.power.into(), proposal_id),
+        &proposal_id,
+    )?;
 
     Ok(())
 }
@@ -1900,5 +1917,19 @@ pub fn sudo(
         _ => Err(ContractError::Std(StdError::generic_err(
             "Unexpected sudo message received",
         ))),
+    }
+}
+
+struct VotingPowerChange {
+    pub is_increased: bool,
+    pub scaled_power_change: Decimal,
+}
+
+impl VotingPowerChange {
+    pub fn new(is_increased: bool, scaled_power_change: Decimal) -> Self {
+        Self {
+            is_increased,
+            scaled_power_change,
+        }
     }
 }

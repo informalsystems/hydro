@@ -410,6 +410,11 @@ fn proposal_power_change_on_lock_and_refresh_test() {
             "proposal title 2".to_string(),
             "proposal description 2".to_string(),
         ),
+        (
+            2,
+            "proposal title 3".to_string(),
+            "proposal description 3".to_string(),
+        ),
     ];
 
     for prop_info in prop_infos {
@@ -429,6 +434,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
     let first_proposal_id = 0;
     let second_proposal_id = 1;
     let third_proposal_id = 2;
+    let fourth_proposal_id = 3;
 
     let first_tranche_id = 1;
     let second_tranche_id = 2;
@@ -454,6 +460,14 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         first_round_id,
         second_tranche_id,
         second_proposal_id,
+        expected_voting_power,
+    );
+
+    assert_proposal_voting_power(
+        &deps,
+        first_round_id,
+        second_tranche_id,
+        third_proposal_id,
         expected_voting_power,
     );
 
@@ -511,6 +525,15 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         expected_voting_power,
     );
 
+    // verify that the proposal that user didn't vote for is unaffected
+    assert_proposal_voting_power(
+        &deps,
+        first_round_id,
+        second_tranche_id,
+        third_proposal_id,
+        0,
+    );
+
     // lock additional 1000 tokens and verify that the voting power gets updated on both proposals
     let msg = ExecuteMsg::LockTokens {
         lock_duration: TWO_WEEKS_IN_NANO_SECONDS,
@@ -537,6 +560,15 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         second_tranche_id,
         second_proposal_id,
         expected_voting_power,
+    );
+
+    // verify that the proposal that user didn't vote for is unaffected
+    assert_proposal_voting_power(
+        &deps,
+        first_round_id,
+        second_tranche_id,
+        third_proposal_id,
+        0,
     );
 
     // lock 1000 of a different LSM token
@@ -566,6 +598,15 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         second_tranche_id,
         second_proposal_id,
         expected_voting_power,
+    );
+
+    // verify that the proposal that user didn't vote for is unaffected
+    assert_proposal_voting_power(
+        &deps,
+        first_round_id,
+        second_tranche_id,
+        third_proposal_id,
+        0,
     );
 
     let first_lockup_id = 0;
@@ -600,28 +641,37 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         expected_voting_power,
     );
 
+    // verify that the proposal that user didn't vote for is unaffected
+    assert_proposal_voting_power(
+        &deps,
+        first_round_id,
+        second_tranche_id,
+        third_proposal_id,
+        0,
+    );
+
     // advance the chain by two weeks to move to the next round
     env.block.time = env.block.time.plus_nanos(TWO_WEEKS_IN_NANO_SECONDS);
 
     // create a new proposal in this round
     let msg = ExecuteMsg::CreateProposal {
         tranche_id: first_tranche_id,
-        title: "proposal title 3".to_string(),
-        description: "proposal description 3".to_string(),
+        title: "proposal title 4".to_string(),
+        description: "proposal description 4".to_string(),
     };
 
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    // vote for the third proposal in tranche 1
+    // vote for the fourth proposal in tranche 1
     let msg = ExecuteMsg::Vote {
         tranche_id: first_tranche_id,
-        proposal_id: third_proposal_id,
+        proposal_id: fourth_proposal_id,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    // verify users vote for the third proposal in tranche 1
+    // verify users vote for the fourth proposal in tranche 1
     expected_voting_power = 1250u128;
 
     let res = query_user_vote(
@@ -631,13 +681,13 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         info.sender.to_string(),
     );
     assert!(res.is_ok(), "error: {:?}", res);
-    assert_eq!(third_proposal_id, res.unwrap().vote.prop_id);
+    assert_eq!(fourth_proposal_id, res.unwrap().vote.prop_id);
 
     assert_proposal_voting_power(
         &deps,
         second_round_id,
         first_tranche_id,
-        third_proposal_id,
+        fourth_proposal_id,
         expected_voting_power,
     );
 
@@ -652,12 +702,12 @@ fn proposal_power_change_on_lock_and_refresh_test() {
 
     expected_voting_power = 2750u128;
 
-    // verify that the voting power increased for the third proposal
+    // verify that the voting power increased for the fourth proposal
     assert_proposal_voting_power(
         &deps,
         second_round_id,
         first_tranche_id,
-        third_proposal_id,
+        fourth_proposal_id,
         expected_voting_power,
     );
 }
