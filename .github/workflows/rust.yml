@@ -42,7 +42,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Build
-      run: cargo build --verbose
+      env:
+        WORK_DIR: ${{ github.workspace }}
+      run: make compile-rust-optimizer-inner
   test-unit:
     runs-on: ubuntu-latest
     steps:
