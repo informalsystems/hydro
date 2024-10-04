@@ -36,7 +36,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Clippy
-      run: cargo clippy --all --all-targets -- -D warnings
+      run: make clippy
   build:
     runs-on: ubuntu-latest
     steps:
@@ -48,7 +48,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Unit tests
-      run: cargo test --workspace --exclude test-e2e --verbose --no-fail-fast
+      run: make test-unit
   test-e2e:
     runs-on: ubuntu-latest
     steps:
