@@ -28,31 +28,31 @@ jobs:
   fmt:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Fmt
-      run: cargo fmt --all -- --check
+      run: make fmt-check
   clippy:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Clippy
       run: cargo clippy --all --all-targets -- -D warnings
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Build
       run: cargo build --verbose
   test-unit:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Unit tests
       run: cargo test --workspace --exclude test-e2e --verbose --no-fail-fast
   test-e2e:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: E2E tests
       env:
         E2E_TESTS_MNEMONIC: ${{ secrets.E2E_TESTS_MNEMONIC }}

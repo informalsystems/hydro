@@ -1,7 +1,10 @@
-.PHONY: test-unit test-e2e fmt clippy compile compile-rust-optimizer coverage schema
+.PHONY: test-unit test-e2e fmt fmt-check clippy compile compile-rust-optimizer coverage schema
 
 fmt:
 	cargo fmt --all
+
+fmt-check:
+	cargo fmt --all -- --check
 
 clippy:
 	cargo clippy --all --all-targets -- -D warnings
