@@ -1,4 +1,4 @@
-.PHONY: test-unit test-e2e fmt fmt-check clippy compile-rust-optimizer compile-rust-optimizer-inner coverage schema
+.PHONY: test-unit test-e2e fmt fmt-check clippy compile compile-inner coverage schema
 
 fmt:
 	cargo fmt --all
@@ -24,10 +24,10 @@ coverage:
 	# to install see here: https://crates.io/crates/cargo-tarpaulin
 	cargo tarpaulin --skip-clean --frozen --out html
 
-compile-rust-optimizer: WORK_DIR=$(CURDIR)
-compile-rust-optimizer: compile-rust-optimizer-inner
+compile: WORK_DIR=$(CURDIR)
+compile: compile-inner
 
-compile-rust-optimizer-inner:
+compile-inner:
 	docker run --rm -v "$(WORK_DIR)":/code \
 		--mount type=volume,source="$(notdir $(WORK_DIR))_cache",target=/target \
 		--mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \

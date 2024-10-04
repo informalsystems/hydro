@@ -44,4 +44,4 @@ jobs:
     - name: Build
       env:
         WORK_DIR: ${{ github.workspace }}
-      run: make compile-rust-optimizer-inner
+      run: make compile-inner
