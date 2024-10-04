@@ -1,7 +1,10 @@
-.PHONY: test-unit test-e2e fmt clippy compile compile-rust-optimizer coverage schema
+.PHONY: test-unit test-e2e fmt fmt-check clippy compile compile-inner coverage schema
 
 fmt:
 	cargo fmt --all
+
+fmt-check:
+	cargo fmt --all -- --check
 
 clippy:
 	cargo clippy --all --all-targets -- -D warnings
@@ -21,12 +24,12 @@ coverage:
 	# to install see here: https://crates.io/crates/cargo-tarpaulin
 	cargo tarpaulin --skip-clean --frozen --out html
 
-compile:
-	RUSTFLAGS='-C link-arg=-s' cargo build --release --target wasm32-unknown-unknown --lib
+compile: WORK_DIR=$(CURDIR)
+compile: compile-inner
 
-compile-rust-optimizer:
-	docker run --rm -v "$(CURDIR)":/code \
-		--mount type=volume,source="$(notdir $(CURDIR))_cache",target=/target \
+compile-inner:
+	docker run --rm -v "$(WORK_DIR)":/code \
+		--mount type=volume,source="$(notdir $(WORK_DIR))_cache",target=/target \
 		--mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
 		cosmwasm/optimizer:0.16.0
 

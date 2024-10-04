@@ -1,10 +1,10 @@
-name: Rust
+name: Tests
 
 on:
   push:
     branches: [ "main", "release/**",  ]
     paths:
-      - .github/workflows/rust.yml
+      - .github/workflows/tests.yml
       - Cargo.toml
       - Cargo.lock
       - contracts/**
@@ -13,7 +13,7 @@ on:
       - artifacts/**
   pull_request:
     paths:
-      - .github/workflows/rust.yml
+      - .github/workflows/tests.yml
       - Cargo.toml
       - Cargo.lock
       - contracts/**
@@ -25,23 +25,17 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  fmt:
+  test-unit:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Fmt
-      run: make fmt-check
-  clippy:
+    - name: Unit tests
+      run: make test-unit
+  test-e2e:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Clippy
-      run: make clippy
-  build:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Build
+    - name: E2E tests
       env:
-        WORK_DIR: ${{ github.workspace }}
-      run: make compile-inner
+        E2E_TESTS_MNEMONIC: ${{ secrets.E2E_TESTS_MNEMONIC }}
+      run: make test-e2e

@@ -200,6 +200,13 @@ fn claim_tribute(
     // Load the tribute and use the percentage to figure out how much of the tribute to send them
     let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
 
+    // Check that the given tribute belongs to the proposal that the user voted on
+    if tribute.proposal_id != proposal.proposal_id {
+        return Err(ContractError::Std(StdError::generic_err(
+            "The tribute with the given ID does not belong to the proposal that the user voted on",
+        )));
+    }
+
     let sent_coin = calculate_voter_claim_amount(tribute.funds, vote.power, proposal.power)?;
 
     // Mark in the TRIBUTE_CLAIMS that the voter has claimed this tribute
