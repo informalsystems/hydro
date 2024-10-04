@@ -43,6 +43,7 @@ jobs:
     - uses: actions/checkout@v4
     - name: Build
       env:
+        # dummy change to trigger actions
         WORK_DIR: ${{ github.workspace }}
       run: make compile-rust-optimizer-inner
   test-unit:

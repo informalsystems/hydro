@@ -4,7 +4,6 @@
 
 # Ignore project-specific files
 
-Cargo.lock
 Cargo.toml.orig
 
 # Ignore editor-specific files
