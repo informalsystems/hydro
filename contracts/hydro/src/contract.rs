@@ -558,12 +558,6 @@ fn create_proposal(
     PROP_ID.save(deps.storage, &(proposal_id + 1))?;
     PROPOSAL_MAP.save(deps.storage, (round_id, tranche_id, proposal_id), &proposal)?;
 
-    PROPS_BY_SCORE.save(
-        deps.storage,
-        ((round_id, tranche_id), proposal.power.into(), proposal_id),
-        &proposal_id,
-    )?;
-
     Ok(Response::new()
         .add_attribute("action", "create_proposal")
         .add_attribute("sender", info.sender)
