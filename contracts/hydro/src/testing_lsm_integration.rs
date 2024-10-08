@@ -13,7 +13,7 @@ use neutron_sdk::{
 use neutron_std::types::ibc::applications::transfer::v1::QueryDenomTraceResponse;
 
 use crate::{
-    contract::{execute, instantiate, query_top_n_proposals, sudo},
+    contract::{execute, instantiate, query_round_tranche_proposals, query_top_n_proposals, sudo},
     lsm_integration::{
         get_total_power_for_round, get_validator_power_ratio_for_round,
         update_scores_due_to_power_ratio_change, validate_denom,
@@ -699,7 +699,7 @@ fn lock_tokens_multiple_validators_and_vote() {
     // check proposals
     {
         // Check the proposal scores
-        let proposals = query_top_n_proposals(deps.as_ref(), 0, 1, 2);
+        let proposals = query_round_tranche_proposals(deps.as_ref(), 0, 1, 0, 100);
 
         // unwrap the proposals
         let proposals = proposals.unwrap();
