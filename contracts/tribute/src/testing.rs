@@ -251,6 +251,7 @@ fn add_tribute_test() {
         description: "proposal description 1".to_string(),
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
+        rounds: 1,
     };
 
     let test_cases: Vec<AddTributeTestCase> = vec![
@@ -378,6 +379,7 @@ fn claim_tribute_test() {
         description: "proposal description 1".to_string(),
         power: Uint128::new(10000),
         percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
+        rounds: 1,
     };
     let mock_proposal2 = Proposal {
         round_id: 10,
@@ -387,6 +389,7 @@ fn claim_tribute_test() {
         description: "proposal description 2".to_string(),
         power: Uint128::new(10000),
         percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
+        rounds: 1,
     };
     let mock_proposal3 = Proposal {
         round_id: 10,
@@ -396,6 +399,7 @@ fn claim_tribute_test() {
         description: "proposal description 3".to_string(),
         power: Uint128::new(10000),
         percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
+        rounds: 1,
     };
 
     let mock_proposals = vec![
@@ -755,6 +759,7 @@ fn refund_tribute_test() {
         description: "proposal description 1".to_string(),
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
+        rounds: 1,
     };
 
     let mock_proposals = vec![mock_proposal.clone()];
@@ -767,6 +772,7 @@ fn refund_tribute_test() {
         description: "proposal description 2".to_string(),
         power: Uint128::new(10000),
         percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
+        rounds: 1,
     }];
 
     let mock_top_n_voting_threshold_reached = vec![Proposal {
@@ -1360,6 +1366,7 @@ fn test_query_outstanding_tribute_claims() {
                 description: "Description 1".to_string(),
                 power: Uint128::new(1000),
                 percentage: Uint128::new(7),
+                rounds: 1,
             },
             Proposal {
                 round_id: 1,
@@ -1369,6 +1376,7 @@ fn test_query_outstanding_tribute_claims() {
                 description: "Description 2".to_string(),
                 power: Uint128::new(2000),
                 percentage: Uint128::new(7),
+                rounds: 1,
             },
         ];
 

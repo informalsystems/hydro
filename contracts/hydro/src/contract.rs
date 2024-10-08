@@ -158,7 +158,8 @@ pub fn execute(
             tranche_id,
             title,
             description,
-        } => create_proposal(deps, env, info, tranche_id, title, description),
+            rounds
+        } => create_proposal(deps, env, info, tranche_id, title, description, rounds),
         ExecuteMsg::Vote {
             tranche_id,
             proposals_votes,
@@ -573,6 +574,7 @@ fn create_proposal(
     tranche_id: u64,
     title: String,
     description: String,
+    rounds: u32,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
@@ -600,6 +602,7 @@ fn create_proposal(
         percentage: Uint128::zero(),
         title: title.trim().to_string(),
         description: description.trim().to_string(),
+        rounds: rounds,
     };
 
     PROP_ID.save(deps.storage, &(proposal_id + 1))?;

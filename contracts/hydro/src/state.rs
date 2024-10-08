@@ -48,6 +48,7 @@ pub struct Proposal {
     pub description: String,
     pub power: Uint128,
     pub percentage: Uint128,
+    pub rounds: u32,
 }
 
 // VOTE_MAP: key((round_id, tranche_id), sender_addr, lock_id) -> Vote

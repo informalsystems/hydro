@@ -317,6 +317,7 @@ fn create_proposal_basic_test() {
         tranche_id: 1,
         title: "proposal title 1".to_string(),
         description: "proposal description 1".to_string(),
+        rounds: 1,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg1.clone());
     assert!(res.is_ok());
@@ -325,6 +326,7 @@ fn create_proposal_basic_test() {
         tranche_id: 1,
         title: "proposal title 2".to_string(),
         description: "proposal description 2".to_string(),
+        rounds: 1,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg2.clone());
     assert!(res.is_ok());
@@ -426,6 +428,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
             tranche_id: prop_info.0,
             title: prop_info.1,
             description: prop_info.2,
+            rounds: 1,
         };
 
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -670,6 +673,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         tranche_id: first_tranche_id,
         title: "proposal title 4".to_string(),
         description: "proposal description 4".to_string(),
+        rounds: 1,
     };
 
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -811,6 +815,7 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
             tranche_id: prop_info.0,
             title: prop_info.1,
             description: prop_info.2,
+            rounds: 1,
         };
 
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -920,6 +925,7 @@ fn multi_tranches_test() {
         tranche_id: 1,
         title: "proposal title 1".to_string(),
         description: "proposal description 1".to_string(),
+        rounds: 1,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg1.clone());
     assert!(res.is_ok());
@@ -928,6 +934,7 @@ fn multi_tranches_test() {
         tranche_id: 1,
         title: "proposal title 2".to_string(),
         description: "proposal description 2".to_string(),
+        rounds: 1,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg2.clone());
     assert!(res.is_ok());
@@ -937,6 +944,7 @@ fn multi_tranches_test() {
         tranche_id: 2,
         title: "proposal title 3".to_string(),
         description: "proposal description 3".to_string(),
+        rounds: 1,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg3.clone());
     assert!(res.is_ok());
@@ -945,6 +953,7 @@ fn multi_tranches_test() {
         tranche_id: 2,
         title: "proposal title 4".to_string(),
         description: "proposal description 4".to_string(),
+        rounds: 1,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg4.clone());
     assert!(res.is_ok());
@@ -1087,6 +1096,7 @@ fn test_query_round_tranche_proposals_pagination() {
             tranche_id: 1,
             title: format!("proposal title {}", i),
             description: format!("proposal description {}", i),
+            rounds: 1,
         };
         let _ = execute(
             deps.as_mut(),
@@ -1755,6 +1765,7 @@ fn contract_pausing_test() {
             tranche_id: 0,
             title: "".to_string(),
             description: "".to_string(),
+            rounds: 1,
         },
         ExecuteMsg::Vote {
             tranche_id: 0,
@@ -1822,6 +1833,7 @@ pub fn whitelist_proposal_submission_test() {
         tranche_id: 1,
         title: "proposal title".to_string(),
         description: "proposal description".to_string(),
+        rounds: 1,
     };
 
     let res = execute(
