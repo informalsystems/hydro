@@ -229,6 +229,7 @@ fn add_tribute_test() {
         description: "proposal description 1".to_string(),
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
+        rounds: 1,
     };
 
     let test_cases: Vec<AddTributeTestCase> = vec![
@@ -347,6 +348,7 @@ fn claim_tribute_test() {
         description: "proposal description 1".to_string(),
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
+        rounds: 1,
     }];
 
     let mock_top_n_proposals = vec![
@@ -358,6 +360,7 @@ fn claim_tribute_test() {
             description: "proposal description 1".to_string(),
             power: Uint128::new(10000),
             percentage: Uint128::zero(),
+            rounds: 1,
         },
         Proposal {
             round_id: 10,
@@ -367,6 +370,7 @@ fn claim_tribute_test() {
             description: "proposal description 2".to_string(),
             power: Uint128::new(10000),
             percentage: Uint128::zero(),
+            rounds: 1,
         },
     ];
 
@@ -572,6 +576,7 @@ fn refund_tribute_test() {
         description: "proposal description 1".to_string(),
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
+        rounds: 1,
     };
     let mock_proposals = vec![mock_proposal.clone()];
 
@@ -583,6 +588,7 @@ fn refund_tribute_test() {
         description: "proposal description 2".to_string(),
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
+        rounds: 1,
     }];
 
     let test_cases: Vec<RefundTributeTestCase> = vec![
@@ -1130,6 +1136,7 @@ fn test_query_outstanding_tribute_claims() {
                 description: "Description 1".to_string(),
                 power: Uint128::new(1000),
                 percentage: Uint128::zero(),
+                rounds: 1,
             },
             Proposal {
                 round_id: 1,
@@ -1139,6 +1146,7 @@ fn test_query_outstanding_tribute_claims() {
                 description: "Description 2".to_string(),
                 power: Uint128::new(2000),
                 percentage: Uint128::zero(),
+                rounds: 1,
             },
         ];
 

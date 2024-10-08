@@ -157,7 +157,8 @@ pub fn execute(
             tranche_id,
             title,
             description,
-        } => create_proposal(deps, env, info, tranche_id, title, description),
+            rounds
+        } => create_proposal(deps, env, info, tranche_id, title, description, rounds),
         ExecuteMsg::Vote {
             tranche_id,
             proposal_id,
@@ -526,6 +527,7 @@ fn create_proposal(
     tranche_id: u64,
     title: String,
     description: String,
+    rounds: u32,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
@@ -553,6 +555,7 @@ fn create_proposal(
         percentage: Uint128::zero(),
         title: title.trim().to_string(),
         description: description.trim().to_string(),
+        rounds: rounds,
     };
 
     PROP_ID.save(deps.storage, &(proposal_id + 1))?;
@@ -621,9 +624,6 @@ fn vote(
     // check that the tranche with the given id exists
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
-    // compute the round end
-    let round_end = compute_round_end(&constants, round_id)?;
-
     let mut response = Response::new()
         .add_attribute("action", "vote")
         .add_attribute("sender", info.sender.to_string());
@@ -687,6 +687,9 @@ fn vote(
     }
 
     let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
+
+    // compute the round end
+    let round_end = compute_round_end(&constants, round_id)?;
 
     // Get sender's locked shares for each validator
     let mut time_weighted_shares_map: HashMap<String, Decimal> = HashMap::new();
