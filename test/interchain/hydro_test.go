@@ -234,9 +234,9 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 	err = s.LockTokens(0, 3*86400000000000, "10", dstIbcDenom2, contractAddr)
 	s.Require().NoError(err)
 
-	votingPowerVal1Val1 := "10"
-	votingPowerVal1Val2 := "25"
-	votingPowerVal1Val3 := "30"
+	votingPowerVal1Denom := "10"
+	votingPowerVal1Val2Denoms := "25"
+	votingPowerVal1Val3Denoms := "30"
 
 	// create hydro proposals
 	log.Println("==== Creating proposals")
@@ -253,7 +253,7 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 	s.Require().NoError(err)
 	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
-	s.Require().Equal(votingPowerVal1Val2, proposal.Power)
+	s.Require().Equal(votingPowerVal1Val2Denoms, proposal.Power)
 
 	// increase stake for val3 on hub, so that val2 drops from active valset and val3 enters
 	log.Println("==== Increasing stake for val3 to drop val2 from active valset")
@@ -263,23 +263,20 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 	log.Println("==== Registering interchain query for val3")
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[2].ValoperAddress}, contractAddr, s.NeutronChain.ValidatorWallets[0].Moniker)
 
+	// check that voting power is equal to voting power of val1 because val2 is not among active vals anymore
+	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
+	s.Require().NoError(err)
+	s.Require().Equal(votingPowerVal1Denom, proposal.Power)
+
 	// lock token for val3
 	log.Println("==== Locking tokens for val3")
 	err = s.LockTokens(0, 6*86400000000000, "10", dstIbcDenom3, contractAddr)
 	s.Require().NoError(err)
 
-	// check that voting power is equal to voting power of val1 because val2 is not among active vals anymore
+	// proposal power is increased with val3 shares right after the locking
 	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
-	s.Require().Equal(votingPowerVal1Val1, proposal.Power)
-
-	// vote again so that val3 power is taken into account
-	log.Println("==== Voting for proposal with val3 shares")
-	err = s.VoteForHydroProposal(0, contractAddr, proposal.ProposalID, 1)
-	s.Require().NoError(err)
-	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
-	s.Require().NoError(err)
-	s.Require().Equal(votingPowerVal1Val3, proposal.Power)
+	s.Require().Equal(votingPowerVal1Val3Denoms, proposal.Power)
 }
 
 // TestValidatorSlashing tests that voting power of user, proposal, round is changed after validator is slashed
@@ -507,8 +504,8 @@ func (s *HydroSuite) TestTributeContract() {
 
 	// proposal power after voting: proposal_1=800, proposal_2: 400, proposal_3: 200,  proposal_4: 0
 	// proposal 1 and 2 are in top N proposals(N=2), which means that only those voters got the tribute reward and tribute from the other proposals can be refunded
-	s.Require().True(newBalanceVal2.Sub(oldBalanceVal2).Equal(math.NewInt(9000)))  // reward is tribute for proposal1 - communityTax = 10000-10%=9000
-	s.Require().True(newBalanceVal3.Sub(oldBalanceVal3).Equal(math.NewInt(18000))) // reward is tribute for proposal2 - communityTax = 20000-10%=18000
+	s.Require().True(newBalanceVal2.Sub(oldBalanceVal2).Equal(math.NewInt(10000))) // reward is tribute for proposal1 = 10000
+	s.Require().True(newBalanceVal3.Sub(oldBalanceVal3).Equal(math.NewInt(20000))) // reward is tribute for proposal2 = 20000
 	s.Require().True(newBalanceVal1.GT(oldBalanceVal1))                            // refunded proposal3
 	s.Require().True(newBalanceVal4.GT(oldBalanceVal4))                            // refunded proposal4
 }
