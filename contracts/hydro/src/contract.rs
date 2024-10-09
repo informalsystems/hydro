@@ -76,6 +76,7 @@ pub fn instantiate(
         hub_transfer_channel_id: msg.hub_transfer_channel_id,
         icq_update_period: msg.icq_update_period,
         paused: false,
+        is_in_pilot_mode: msg.is_in_pilot_mode,
     };
 
     CONSTANTS.save(deps.storage, &state)?;
@@ -200,7 +201,12 @@ fn lock_tokens(
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
-    validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
+    // if we are in pilot mode, only allow lockups of a single epoch
+    if constants.is_in_pilot_mode {
+        pilot_round_validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
+    } else {
+        validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
+    }
 
     let current_round = compute_current_round_id(&env, &constants)?;
     initialize_validator_store(deps.storage, current_round)?;
@@ -299,7 +305,12 @@ fn refresh_lock_duration(
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
-    validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
+
+    if constants.is_in_pilot_mode {
+        pilot_round_validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
+    } else {
+        validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
+    }
 
     let current_round = compute_current_round_id(&env, &constants)?;
     initialize_validator_store(deps.storage, current_round)?;
@@ -403,6 +414,20 @@ fn validate_lock_duration(lock_epoch_length: u64, lock_duration: u64) -> Result<
     {
         return Err(ContractError::Std(StdError::generic_err(
             "Lock duration must be 1, 2, 3, 6, or 12 epochs",
+        )));
+    }
+
+    Ok(())
+}
+// This is a separate validation function which will be used in the pilot rounds
+// of the contract, making sure that only lockups of a single epoch are allowed.
+fn pilot_round_validate_lock_duration(
+    lock_epoch_length: u64,
+    lock_duration: u64,
+) -> Result<(), ContractError> {
+    if lock_duration != lock_epoch_length {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Lock duration must be 1 epoch",
         )));
     }
 

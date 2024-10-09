@@ -81,6 +81,7 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         hub_transfer_channel_id: "channel-0".to_string(),
         icq_update_period: 100,
         icq_managers: vec![user_address],
+        is_in_pilot_mode: false,
     }
 }
 
@@ -1836,4 +1837,92 @@ fn assert_proposal_voting_power(
     let res = query_proposal(deps.as_ref(), round_id, tranche_id, proposal_id);
     assert!(res.is_ok());
     assert_eq!(expected_voting_power, res.unwrap().proposal.power.u128());
+}
+
+// This test verifies that when the contract is in pilot mode,
+// the possible lock durations are restricted to the durations allowed during
+// pilot rounds (just 1 round in this case).
+#[test]
+pub fn pilot_round_lock_duration_test() {
+    struct TestCase {
+        lock_duration: u64,
+        expect_error: bool,
+    }
+
+    let test_cases = vec![
+        TestCase {
+            lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+            expect_error: false,
+        },
+        TestCase {
+            lock_duration: ONE_MONTH_IN_NANO_SECONDS * 2,
+            expect_error: true,
+        },
+        TestCase {
+            lock_duration: ONE_MONTH_IN_NANO_SECONDS * 3,
+            expect_error: true,
+        },
+        TestCase {
+            lock_duration: ONE_MONTH_IN_NANO_SECONDS * 6,
+            expect_error: true,
+        },
+        TestCase {
+            lock_duration: ONE_MONTH_IN_NANO_SECONDS * 12,
+            expect_error: true,
+        },
+    ];
+
+    for case in test_cases {
+        let grpc_query = denom_trace_grpc_query_mock(
+            "transfer/channel-0".to_string(),
+            HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        );
+        let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+        let mut info: MessageInfo = get_message_info(&deps.api, "addr0000", &[]);
+
+        let whitelist_admin = "addr0001";
+        let mut msg = get_default_instantiate_msg(&deps.api);
+        msg.whitelist_admins = vec![get_address_as_str(&deps.api, whitelist_admin)];
+        msg.is_in_pilot_mode = true;
+        msg.round_length = ONE_DAY_IN_NANO_SECONDS;
+        msg.lock_epoch_length = ONE_MONTH_IN_NANO_SECONDS;
+
+        let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_ok());
+
+        set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+
+        // try to lock tokens for the specified duration
+        info = get_message_info(
+            &deps.api,
+            "addr0000",
+            &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        );
+
+        let lock_msg = ExecuteMsg::LockTokens {
+            lock_duration: case.lock_duration,
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
+
+        if case.expect_error {
+            assert!(
+                res.is_err(),
+                "Expected error for lock_duration: {}",
+                case.lock_duration
+            );
+            assert!(res
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("Lock duration must be 1 epoch"),);
+        } else {
+            assert!(
+                res.is_ok(),
+                "Expected success for lock_duration: {}; error: {}",
+                case.lock_duration,
+                res.err().unwrap()
+            );
+        }
+    }
 }

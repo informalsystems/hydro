@@ -9,6 +9,7 @@
     "icq_managers",
     "icq_update_period",
     "initial_whitelist",
+    "is_in_pilot_mode",
     "lock_epoch_length",
     "max_locked_tokens",
     "max_validator_shares_participating",
@@ -42,6 +43,9 @@
       "items": {
         "type": "string"
       }
+    },
+    "is_in_pilot_mode": {
+      "type": "boolean"
     },
     "lock_epoch_length": {
       "type": "integer",
