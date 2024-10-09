@@ -1911,6 +1911,11 @@ pub fn pilot_round_lock_duration_test() {
                 "Expected error for lock_duration: {}",
                 case.lock_duration
             );
+            assert!(res
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("Lock duration must be 1 epoch"),);
         } else {
             assert!(
                 res.is_ok(),
