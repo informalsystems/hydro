@@ -32,6 +32,7 @@ export interface Constants {
   hub_connection_id: string;
   hub_transfer_channel_id: string;
   icq_update_period: number;
+  is_in_pilot_mode: boolean;
   lock_epoch_length: number;
   max_locked_tokens: number;
   max_validator_shares_participating: number;
@@ -119,6 +120,7 @@ export interface InstantiateMsg {
   icq_managers: string[];
   icq_update_period: number;
   initial_whitelist: string[];
+  is_in_pilot_mode: boolean;
   lock_epoch_length: number;
   max_locked_tokens: Uint128;
   max_validator_shares_participating: number;
