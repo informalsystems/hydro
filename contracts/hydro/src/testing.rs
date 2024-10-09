@@ -1838,3 +1838,77 @@ fn assert_proposal_voting_power(
     assert!(res.is_ok());
     assert_eq!(expected_voting_power, res.unwrap().proposal.power.u128());
 }
+
+// This test verifies that when the contract is in pilot mode,
+// the possible lock durations are restricted to the durations allowed during
+// pilot rounds (just 1 round in this case).
+#[test]
+pub fn pilot_round_lock_duration_test() {
+    struct TestCase {
+        lock_duration: u64,
+        expect_error: bool,
+    }
+
+    let test_cases = vec![
+        TestCase {
+            lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+            expect_error: false,
+        },
+        TestCase {
+            lock_duration: ONE_MONTH_IN_NANO_SECONDS * 2,
+            expect_error: true,
+        },
+        TestCase {
+            lock_duration: ONE_MONTH_IN_NANO_SECONDS * 3,
+            expect_error: true,
+        },
+        TestCase {
+            lock_duration: ONE_MONTH_IN_NANO_SECONDS * 6,
+            expect_error: true,
+        },
+        TestCase {
+            lock_duration: ONE_MONTH_IN_NANO_SECONDS * 12,
+            expect_error: true,
+        },
+    ];
+
+    for case in test_cases {
+        let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+        let mut info = get_message_info(&deps.api, "addr0000", &[]);
+
+        let whitelist_admin = "addr0001";
+        let mut msg = get_default_instantiate_msg(&deps.api);
+        msg.whitelist_admins = vec![get_address_as_str(&deps.api, whitelist_admin)];
+        msg.is_in_pilot_mode = true;
+
+        let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_ok());
+
+        // try to lock tokens for the specified duration
+        info = get_message_info(
+            &deps.api,
+            "addr0000",
+            &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        );
+
+        let lock_msg = ExecuteMsg::LockTokens {
+            lock_duration: case.lock_duration,
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
+
+        if case.expect_error {
+            assert!(
+                res.is_err(),
+                "Expected error for lock_duration: {}",
+                case.lock_duration
+            );
+        } else {
+            assert!(
+                res.is_ok(),
+                "Expected success for lock_duration: {}",
+                case.lock_duration
+            );
+        }
+    }
+}
