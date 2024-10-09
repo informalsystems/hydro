@@ -19,6 +19,7 @@
         "hub_connection_id",
         "hub_transfer_channel_id",
         "icq_update_period",
+        "is_in_pilot_mode",
         "lock_epoch_length",
         "max_locked_tokens",
         "max_validator_shares_participating",
@@ -39,6 +40,9 @@
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
+        },
+        "is_in_pilot_mode": {
+          "type": "boolean"
         },
         "lock_epoch_length": {
           "type": "integer",
