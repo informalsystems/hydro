@@ -17,6 +17,7 @@ pub struct Constants {
     pub hub_transfer_channel_id: String,
     pub icq_update_period: u64,
     pub paused: bool,
+    pub is_in_pilot_mode: bool,
 }
 
 // the total number of tokens locked in the contract

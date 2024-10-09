@@ -20,6 +20,7 @@ pub struct InstantiateMsg {
     // and they can also withdraw funds in the *native token denom* from the contract;
     // they can however not withdraw user funds that were locked for voting.
     pub icq_managers: Vec<String>,
+    pub is_in_pilot_mode: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

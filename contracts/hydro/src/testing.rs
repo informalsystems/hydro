@@ -81,6 +81,7 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         hub_transfer_channel_id: "channel-0".to_string(),
         icq_update_period: 100,
         icq_managers: vec![user_address],
+        is_in_pilot_mode: false,
     }
 }
 
@@ -333,19 +334,20 @@ fn create_proposal_basic_test() {
 
     let proposal = &res.proposals[0];
     assert_eq!(expected_round_id, proposal.round_id);
-    assert_eq!(0, proposal.power.u128());
 
     let proposal = &res.proposals[1];
     assert_eq!(expected_round_id, proposal.round_id);
-    assert_eq!(0, proposal.power.u128());
 
-    // assert that the proposals are not added to top N proposals
-    // immediately upon creation, as their voting power is 0
     let res = query_top_n_proposals(deps.as_ref(), expected_round_id, 1, 2);
     assert!(res.is_ok(), "error: {:?}", res);
 
     let res = res.unwrap();
-    assert_eq!(0, res.proposals.len());
+    assert_eq!(2, res.proposals.len());
+
+    // check that both proposals have power 0
+    for proposal in res.proposals.iter() {
+        assert_eq!(0, proposal.power.u128());
+    }
 }
 
 #[test]
