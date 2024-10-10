@@ -1,0 +1,14 @@
+name: Nightly Tests
+
+on:
+  schedule:
+    # run at 4am every day
+    - cron: '0 4 * * *'
+
+jobs:
+  test-interchain:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Interchain Tests
+      run: make build-docker-relayer && make test-interchain

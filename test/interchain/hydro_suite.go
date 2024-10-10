@@ -223,6 +223,7 @@ func (s *HydroSuite) InstantiateHydroContract(
 		"hub_transfer_channel_id":            neutronTransferChannel.ChannelID,
 		"icq_update_period":                  10,
 		"icq_managers":                       []string{adminAddr},
+		"is_in_pilot_mode":                   false,
 	}
 	initHydroJson, err := json.Marshal(initHydro)
 	s.Require().NoError(err)
