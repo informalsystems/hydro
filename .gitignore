@@ -21,3 +21,6 @@ Cargo.toml.orig
 
 # ignore proptest regressions
 */proptest-regressions/*
+
+# macOS specific
+*/.DS_Store
