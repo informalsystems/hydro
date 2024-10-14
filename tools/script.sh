@@ -5,7 +5,7 @@ export NEUTRON_CHAIN_ID="neutron-1"
 export RELAYER_NEUTRON_CHAIN_RPC_ADDR=https://neutron-rpc.publicnode.com:443
 export RELAYER_NEUTRON_CHAIN_REST_ADDR=https://neutron-rest.publicnode.com
 export RELAYER_NEUTRON_CHAIN_HOME_DIR=$HOME/.neutrond
-export RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=money
+export RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=hs
 export RELAYER_NEUTRON_CHAIN_KEYRING_BACKEND=test
 export RELAYER_NEUTRON_CHAIN_DENOM=untrn
 export RELAYER_NEUTRON_CHAIN_GAS_PRICES=0.0055untrn
@@ -17,12 +17,12 @@ export RELAYER_NEUTRON_CHAIN_OUTPUT_FORMAT=json
 export RELAYER_TARGET_CHAIN_RPC_ADDR=https://cosmos-rpc.publicnode.com:443
 export RELAYER_TARGET_CHAIN_API_ADDR=https://api.cosmos.nodestake.org
 # this needs to be the address of the contract
-export RELAYER_REGISTRY_ADDRESSES=neutron192s005pfsx7j397l4jarhgu8gs2lcgwyuntehp6wundrh8pgkywqgss0tm
+export RELAYER_REGISTRY_ADDRESSES=neutron13w6sagl4clacx4c8drhuwfl20cesn3pnllhf37e65ls8zwf6gcgq93t2lp
 # maximum number of validator queries to submit in a single block.
 # lower this if you get errors about exceeding the max block size
 export BATCH_SIZE=30
 # the number of top validators to add queries for
-export NUM_VALIDATORS_TO_ADD=9
+export NUM_VALIDATORS_TO_ADD=300
 
 #####
 # typically, no need to modify these  
