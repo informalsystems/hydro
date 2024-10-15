@@ -685,10 +685,11 @@ func (s *HydroSuite) WithdrawICQFunds(contractAddr string, amount int64) error {
 	return nil
 }
 
-func (s *HydroSuite) SubmitTribute(validatorIndex, amount, trancheId, proposalId int, contractAddr string) (int, error) {
+func (s *HydroSuite) SubmitTribute(validatorIndex, amount, round_id, trancheId, proposalId int, contractAddr string) (int, error) {
 	txData := map[string]interface{}{
 		"add_tribute": map[string]interface{}{
 			"tranche_id":  trancheId,
+			"round_id":    round_id,
 			"proposal_id": proposalId,
 		},
 	}

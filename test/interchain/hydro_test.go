@@ -409,13 +409,13 @@ func (s *HydroSuite) TestTributeContract() {
 	roundId := s.GetCurrentRound(hydroContractAddr) // all proposals are expected to be submitted in the same round
 
 	// validator 1 adds tribute for proposals
-	tribute1Id, err := s.SubmitTribute(0, 10000, proposal1.TrancheID, proposal1.ProposalID, tributeContractAddr)
+	tribute1Id, err := s.SubmitTribute(0, 10000, proposal1.RoundID, proposal1.TrancheID, proposal1.ProposalID, tributeContractAddr)
 	s.Require().NoError(err)
-	tribute2Id, err := s.SubmitTribute(0, 20000, proposal2.TrancheID, proposal2.ProposalID, tributeContractAddr)
+	tribute2Id, err := s.SubmitTribute(0, 20000, proposal2.RoundID, proposal2.TrancheID, proposal2.ProposalID, tributeContractAddr)
 	s.Require().NoError(err)
-	tribute3Id, err := s.SubmitTribute(0, 30000, proposal3.TrancheID, proposal3.ProposalID, tributeContractAddr)
+	tribute3Id, err := s.SubmitTribute(0, 30000, proposal3.RoundID, proposal3.TrancheID, proposal3.ProposalID, tributeContractAddr)
 	s.Require().NoError(err)
-	tribute4Id, err := s.SubmitTribute(3, 40000, proposal4.TrancheID, proposal4.ProposalID, tributeContractAddr)
+	tribute4Id, err := s.SubmitTribute(3, 40000, proposal4.RoundID, proposal4.TrancheID, proposal4.ProposalID, tributeContractAddr)
 	s.Require().NoError(err)
 
 	// val2 votes for proposal 1
@@ -508,4 +508,28 @@ func (s *HydroSuite) TestTributeContract() {
 	s.Require().True(newBalanceVal3.Sub(oldBalanceVal3).Equal(math.NewInt(20000))) // reward is tribute for proposal2 = 20000
 	s.Require().True(newBalanceVal1.GT(oldBalanceVal1))                            // refunded proposal3
 	s.Require().True(newBalanceVal4.GT(oldBalanceVal4))                            // refunded proposal4
+
+	// verify that we can add a tribute to proposals even after the round has ended
+	tribute5Id, err := s.SubmitTribute(0, 50000, proposal1.RoundID, proposal1.TrancheID, proposal1.ProposalID, tributeContractAddr)
+	s.Require().NoError(err)
+	tribute6Id, err := s.SubmitTribute(0, 50000, proposal3.RoundID, proposal3.TrancheID, proposal3.ProposalID, tributeContractAddr)
+	s.Require().NoError(err)
+
+	// users can claim immediately, since the voting period for the proposal is over
+	// expect no error when claiming the tribute for prop 1
+	err = s.ClaimTribute(0, tributeContractAddr, s.NeutronChain.ValidatorWallets[1].Address, proposal4.RoundID, proposal4.TrancheID, tribute5Id)
+	s.Require().NoError(err)
+	// expect an error when claiming the tribute for prop 4, since it is not in the top N proposals
+	err = s.ClaimTribute(0, tributeContractAddr, s.NeutronChain.ValidatorWallets[3].Address, proposal4.RoundID, proposal4.TrancheID, tribute6Id)
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "outside of top N proposals")
+
+	// also, tributes can be refund immediately, since the voting period for the proposal is over
+	// expect an error refunding tribute 5 since it was for a top n proposal
+	err = s.RefundTribute(0, tributeContractAddr, proposal4.RoundID, proposal4.TrancheID, tribute5Id, proposal1.ProposalID)
+	s.Require().Error(err)
+
+	// expect no error when refunding tribute 6 since it was for a proposal that was not in the top N
+	err = s.RefundTribute(0, tributeContractAddr, proposal4.RoundID, proposal4.TrancheID, tribute6Id, proposal3.ProposalID)
+	s.Require().NoError(err)
 }
