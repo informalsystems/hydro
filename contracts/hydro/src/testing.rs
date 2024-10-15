@@ -614,7 +614,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
 
     // refresh first lockup
     let msg = ExecuteMsg::RefreshLockDuration {
-        lock_id: first_lockup_id,
+        lock_ids: vec![first_lockup_id],
         lock_duration: 3 * TWO_WEEKS_IN_NANO_SECONDS,
     };
 
@@ -693,7 +693,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
 
     // refresh second (expired) lockup
     let msg = ExecuteMsg::RefreshLockDuration {
-        lock_id: second_lockup_id,
+        lock_ids: vec![second_lockup_id],
         lock_duration: 3 * TWO_WEEKS_IN_NANO_SECONDS,
     };
 
@@ -1348,7 +1348,7 @@ fn total_voting_power_tracking_test() {
 
     let info3 = get_message_info(&deps.api, user_address, &[]);
     let msg = ExecuteMsg::RefreshLockDuration {
-        lock_id: 1,
+        lock_ids: vec![1],
         lock_duration: 2 * THREE_MONTHS_IN_NANO_SECONDS,
     };
     let res = execute(deps.as_mut(), env.clone(), info3.clone(), msg);
@@ -1452,7 +1452,7 @@ proptest! {
         // try to refresh the lock duration as a different user
         let info2 = get_message_info(&deps.api, "addr0002", &[]);
         let msg = ExecuteMsg::RefreshLockDuration {
-            lock_id: 0,
+            lock_ids: vec![0],
             lock_duration: new_lock_duration,
         };
         let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
@@ -1463,7 +1463,7 @@ proptest! {
         // refresh the lock duration
         let info = get_message_info(&deps.api, "addr0001", &[]);
         let msg = ExecuteMsg::RefreshLockDuration {
-            lock_id: 0,
+            lock_ids: vec![0],
             lock_duration: new_lock_duration,
         };
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -1702,7 +1702,7 @@ fn contract_pausing_test() {
     let msgs = vec![
         ExecuteMsg::LockTokens { lock_duration: 0 },
         ExecuteMsg::RefreshLockDuration {
-            lock_id: 0,
+            lock_ids: vec![0],
             lock_duration: 0,
         },
         ExecuteMsg::UnlockTokens {},

@@ -298,7 +298,7 @@ fn lock_tokens(
 // This should essentially have the same effect as removing the old locks and immediately re-locking all
 // the same funds for the new lock duration.
 fn refresh_lock_duration(
-    deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     lock_ids: Vec<u64>,
@@ -319,13 +319,13 @@ fn refresh_lock_duration(
 
     let mut response = Response::new()
         .add_attribute("action", "refresh_lock_duration")
-        .add_attribute("sender", info.sender)
+        .add_attribute("sender", info.clone().sender)
         .add_attribute("lock_count", lock_ids.len().to_string());
 
     for lock_id in lock_ids {
         let (new_lock_end, old_lock_end) = refresh_single_lock(
-            deps,
-            &info,
+            deps.branch(),
+            &info.clone(),
             env.clone(),
             constants.clone(),
             current_round_id,
