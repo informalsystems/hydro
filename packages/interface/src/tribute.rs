@@ -27,7 +27,7 @@ impl<Chain: CwEnv> Uploadable for Tribute<Chain> {
                 tribute::contract::instantiate,
                 tribute::contract::query,
             )
-            .with_migrate(tribute::contract::migrate),
+            .with_migrate(tribute::migrate::migrate),
         )
     }
 }

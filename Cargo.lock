@@ -3728,7 +3728,7 @@ dependencies = [
 
 [[package]]
 name = "tribute"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "cosmwasm-schema",
  "cosmwasm-std",

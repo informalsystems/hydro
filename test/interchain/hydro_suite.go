@@ -244,8 +244,9 @@ func (s *HydroSuite) InstantiateHydroContract(
 
 func (s *HydroSuite) InstantiateTributeContract(codeId, hydroContractAddress, adminAddr string) string {
 	initTribute := map[string]interface{}{
-		"hydro_contract":    hydroContractAddress,
-		"top_n_props_count": 2,
+		"hydro_contract":                          hydroContractAddress,
+		"top_n_props_count":                       2,
+		"min_prop_percent_for_claimable_tributes": "3",
 	}
 	initTributeJson, err := json.Marshal(initTribute)
 	s.Require().NoError(err)
@@ -685,10 +686,11 @@ func (s *HydroSuite) WithdrawICQFunds(contractAddr string, amount int64) error {
 	return nil
 }
 
-func (s *HydroSuite) SubmitTribute(validatorIndex, amount, trancheId, proposalId int, contractAddr string) (int, error) {
+func (s *HydroSuite) SubmitTribute(validatorIndex, amount, round_id, trancheId, proposalId int, contractAddr string) (int, error) {
 	txData := map[string]interface{}{
 		"add_tribute": map[string]interface{}{
 			"tranche_id":  trancheId,
+			"round_id":    round_id,
 			"proposal_id": proposalId,
 		},
 	}
