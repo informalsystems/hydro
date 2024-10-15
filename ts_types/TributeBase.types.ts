@@ -17,6 +17,7 @@ export interface Config {
 export type ExecuteMsg = {
   add_tribute: {
     proposal_id: number;
+    round_id: number;
     tranche_id: number;
   };
 } | {
@@ -39,10 +40,14 @@ export interface InstantiateMsg {
   min_prop_percent_for_claimable_tributes: Uint128;
   top_n_props_count: number;
 }
+export type Timestamp = Uint64;
+export type Uint64 = string;
 export interface ProposalTributesResponse {
   tributes: Tribute[];
 }
 export interface Tribute {
+  creation_round: number;
+  creation_time: Timestamp;
   depositor: Addr;
   funds: Coin;
   proposal_id: number;

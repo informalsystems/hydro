@@ -104,7 +104,7 @@ impl MockWasmQuerier {
                             Ok(res) => res,
                             Err(_) => {
                                 return SystemResult::Err(SystemError::InvalidRequest {
-                                    error: "proposal couldn't be found".to_string(),
+                                    error: format!("proposal couldn't be found: round_id={}, tranche_id={}, proposal_id={}", round_id, tranche_id, proposal_id),
                                     request: Binary::new(vec![]),
                                 })
                             }
@@ -188,8 +188,6 @@ impl MockWasmQuerier {
 
 struct AddTributeTestCase {
     description: String,
-    // (tranche_id, proposal_id)
-    proposal_info: (u64, u64),
     tributes_to_add: Vec<Vec<Coin>>,
     // (current_round_id, proposal_to_tribute)
     mock_data: (u64, Vec<Proposal>),
@@ -242,7 +240,6 @@ fn add_tribute_test() {
     let test_cases: Vec<AddTributeTestCase> = vec![
         AddTributeTestCase {
             description: "happy path".to_string(),
-            proposal_info: (0, 5),
             tributes_to_add: vec![
                 vec![Coin::new(1000u64, DEFAULT_DENOM)],
                 vec![Coin::new(5000u64, DEFAULT_DENOM)],
@@ -253,7 +250,6 @@ fn add_tribute_test() {
         },
         AddTributeTestCase {
             description: "try adding tribute for non-existing proposal".to_string(),
-            proposal_info: (0, 5),
             tributes_to_add: vec![vec![Coin::new(1000u64, DEFAULT_DENOM)]],
             mock_data: (10, vec![]),
             expected_success: false,
@@ -261,7 +257,6 @@ fn add_tribute_test() {
         },
         AddTributeTestCase {
             description: "try adding tribute without providing any funds".to_string(),
-            proposal_info: (0, 5),
             tributes_to_add: vec![vec![]],
             mock_data: (10, vec![mock_proposal.clone()]),
             expected_success: false,
@@ -269,7 +264,6 @@ fn add_tribute_test() {
         },
         AddTributeTestCase {
             description: "try adding tribute by providing more than one token".to_string(),
-            proposal_info: (0, 5),
             tributes_to_add: vec![vec![
                 Coin::new(1000u64, DEFAULT_DENOM),
                 Coin::new(1000u64, "stake"),
@@ -277,6 +271,14 @@ fn add_tribute_test() {
             mock_data: (10, vec![mock_proposal.clone()]),
             expected_success: false,
             expected_error_msg: "Must send exactly one coin".to_string(),
+        },
+        AddTributeTestCase {
+            description: "add tribute to previous round".to_string(),
+            tributes_to_add: vec![vec![Coin::new(1000u64, DEFAULT_DENOM)]],
+            // proposal is in round 10, but we are trying to add tribute during round 11
+            mock_data: (11, vec![mock_proposal.clone()]),
+            expected_success: true,
+            expected_error_msg: String::new(),
         },
     ];
 
@@ -309,13 +311,14 @@ fn add_tribute_test() {
         for tribute in &test.tributes_to_add {
             let info = get_message_info(&deps.api, tribute_payer, tribute);
             let msg = ExecuteMsg::AddTribute {
-                tranche_id: test.proposal_info.0,
-                proposal_id: test.proposal_info.1,
+                tranche_id: mock_proposal.tranche_id,
+                round_id: mock_proposal.round_id,
+                proposal_id: mock_proposal.proposal_id,
             };
 
             let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
             if test.expected_success {
-                assert!(res.is_ok());
+                assert!(res.is_ok(), "failed with: {}", res.unwrap_err());
             } else {
                 assert!(res
                     .unwrap_err()
@@ -331,8 +334,8 @@ fn add_tribute_test() {
 
         let res = query_proposal_tributes(
             deps.as_ref(),
-            test.mock_data.0,
-            test.proposal_info.1,
+            mock_proposal.round_id,
+            mock_proposal.proposal_id,
             0,
             3000,
         )
@@ -344,6 +347,7 @@ fn add_tribute_test() {
             assert_eq!(res[i].funds, tribute[0].clone());
             assert_eq!(res[i].depositor.to_string(), tribute_payer_addr.clone());
             assert!(!res[i].refunded);
+            assert_eq!(res[i].creation_time, env.block.time);
         }
     }
 }
@@ -546,6 +550,7 @@ fn claim_tribute_test() {
         let info = get_message_info(&deps.api, tribute_payer, &test.tribute_to_add);
         let msg = ExecuteMsg::AddTribute {
             tranche_id: test.tribute_info.1,
+            round_id: test.tribute_info.0,
             proposal_id: test.tribute_info.2,
         };
 
@@ -724,6 +729,7 @@ fn refund_tribute_test() {
         let info = get_message_info(&deps.api, tribute_payer, &test.tribute_to_add);
         let msg = ExecuteMsg::AddTribute {
             tranche_id: test.tribute_info.1,
+            round_id: test.tribute_info.0,
             proposal_id: test.tribute_info.2,
         };
 
@@ -865,6 +871,8 @@ fn test_query_historical_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(100), "token"),
                 refunded: false,
+                creation_round: 1,
+                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
             Tribute {
                 tribute_id: 1,
@@ -874,6 +882,8 @@ fn test_query_historical_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(200), "token"),
                 refunded: false,
+                creation_round: 1,
+                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
         ];
 
@@ -930,6 +940,8 @@ fn test_query_round_tributes() {
             depositor: Addr::unchecked("user1"),
             funds: Coin::new(Uint128::new(100), "token"),
             refunded: false,
+            creation_round: 1,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
         },
         Tribute {
             tribute_id: 2,
@@ -939,6 +951,8 @@ fn test_query_round_tributes() {
             depositor: Addr::unchecked("user2"),
             funds: Coin::new(Uint128::new(200), "token"),
             refunded: false,
+            creation_round: 1,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
         },
         Tribute {
             tribute_id: 3,
@@ -948,6 +962,8 @@ fn test_query_round_tributes() {
             depositor: Addr::unchecked("user3"),
             funds: Coin::new(Uint128::new(300), "token"),
             refunded: false,
+            creation_round: 1,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
         },
         Tribute {
             tribute_id: 4,
@@ -957,6 +973,8 @@ fn test_query_round_tributes() {
             depositor: Addr::unchecked("user4"),
             funds: Coin::new(Uint128::new(400), "token"),
             refunded: false,
+            creation_round: 1,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
         },
         Tribute {
             tribute_id: 5,
@@ -966,6 +984,8 @@ fn test_query_round_tributes() {
             depositor: Addr::unchecked("user5"),
             funds: Coin::new(Uint128::new(500), "token"),
             refunded: false,
+            creation_round: 1,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
         },
     ];
 
@@ -1112,6 +1132,8 @@ fn test_query_outstanding_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(100), "token"),
                 refunded: false,
+                creation_round: 1,
+                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
             Tribute {
                 tribute_id: 2,
@@ -1121,6 +1143,8 @@ fn test_query_outstanding_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(200), "token"),
                 refunded: false,
+                creation_round: 1,
+                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
             Tribute {
                 tribute_id: 3,
@@ -1130,6 +1154,8 @@ fn test_query_outstanding_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(300), "token"),
                 refunded: false,
+                creation_round: 1,
+                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
             Tribute {
                 tribute_id: 4,
@@ -1139,6 +1165,8 @@ fn test_query_outstanding_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(400), "token"),
                 refunded: false,
+                creation_round: 1,
+                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
         ];
 

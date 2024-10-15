@@ -13,7 +13,11 @@ pub struct InstantiateMsg {
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
     #[cw_orch(payable)]
-    AddTribute { tranche_id: u64, proposal_id: u64 },
+    AddTribute {
+        round_id: u64,
+        tranche_id: u64,
+        proposal_id: u64,
+    },
     ClaimTribute {
         round_id: u64,
         tranche_id: u64,

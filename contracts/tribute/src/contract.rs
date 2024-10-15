@@ -53,15 +53,16 @@ pub fn instantiate(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::AddTribute {
+            round_id,
             tranche_id,
             proposal_id,
-        } => add_tribute(deps, info, tranche_id, proposal_id),
+        } => add_tribute(deps, env, info, round_id, tranche_id, proposal_id),
         ExecuteMsg::ClaimTribute {
             round_id,
             tranche_id,
@@ -79,21 +80,16 @@ pub fn execute(
 
 fn add_tribute(
     deps: DepsMut,
+    env: Env,
     info: MessageInfo,
+    round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
 ) -> Result<Response, ContractError> {
     let hydro_contract = CONFIG.load(deps.storage)?.hydro_contract;
-    let current_round_id = query_current_round_id(&deps, &hydro_contract)?;
 
     // Check that the proposal exists
-    query_proposal(
-        &deps,
-        &hydro_contract,
-        current_round_id,
-        tranche_id,
-        proposal_id,
-    )?;
+    query_proposal(&deps, &hydro_contract, round_id, tranche_id, proposal_id)?;
 
     // Check that the sender has sent funds
     if info.funds.is_empty() {
@@ -113,17 +109,19 @@ fn add_tribute(
     let tribute_id = TRIBUTE_ID.load(deps.storage)?;
     TRIBUTE_ID.save(deps.storage, &(tribute_id + 1))?;
     let tribute = Tribute {
-        round_id: current_round_id,
+        round_id,
         tranche_id,
         proposal_id,
         tribute_id,
         funds: info.funds[0].clone(),
         depositor: info.sender.clone(),
         refunded: false,
+        creation_time: env.block.time,
+        creation_round: query_current_round_id(&deps, &hydro_contract)?,
     };
     TRIBUTE_MAP.save(
         deps.storage,
-        (current_round_id, proposal_id, tribute_id),
+        (round_id, proposal_id, tribute_id),
         &tribute_id,
     )?;
     ID_TO_TRIBUTE_MAP.save(deps.storage, tribute_id, &tribute)?;
@@ -131,7 +129,7 @@ fn add_tribute(
     Ok(Response::new()
         .add_attribute("action", "add_tribute")
         .add_attribute("depositor", info.sender.clone())
-        .add_attribute("round_id", current_round_id.to_string())
+        .add_attribute("round_id", round_id.to_string())
         .add_attribute("tranche_id", tranche_id.to_string())
         .add_attribute("proposal_id", proposal_id.to_string())
         .add_attribute("tribute_id", tribute_id.to_string())

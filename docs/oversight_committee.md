@@ -30,3 +30,10 @@ This is how you can query the top N proposals using the command line (make sure 
 ```bash
 neutrond q wasm contract-state smart neutron192s005pfsx7j397l4jarhgu8gs2lcgwyuntehp6wundrh8pgkywqgss0tm "{\"top_n_proposals\": {\"round_id\": 0, \"tranche_id\": 1, \"number_of_proposals\": 5}}"
 ```
+
+## Revenue Sharing
+
+Revenue sharing (i.e. distributing a portion of the profit made by a liquidity deployment to
+its voters) is enabled in Hydro by utilizing the tribute contract.
+While projects would add their tribute *during* a round, the revenue sharing is done *after* the round has ended, where the committee can simply add the appropriate revenue that should
+be shared with voters as a tribute.
