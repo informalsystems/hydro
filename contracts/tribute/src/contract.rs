@@ -111,7 +111,7 @@ fn add_tribute(
     let tribute_id = TRIBUTE_ID.load(deps.storage)?;
     TRIBUTE_ID.save(deps.storage, &(tribute_id + 1))?;
     let tribute = Tribute {
-        round_id: round_id,
+        round_id,
         tranche_id,
         proposal_id,
         tribute_id,
