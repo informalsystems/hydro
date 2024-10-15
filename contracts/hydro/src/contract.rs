@@ -150,9 +150,9 @@ pub fn execute(
     match msg {
         ExecuteMsg::LockTokens { lock_duration } => lock_tokens(deps, env, info, lock_duration),
         ExecuteMsg::RefreshLockDuration {
-            lock_id,
+            lock_ids,
             lock_duration,
-        } => refresh_lock_duration(deps, env, info, lock_id, lock_duration),
+        } => refresh_lock_duration(deps, env, info, lock_ids, lock_duration),
         ExecuteMsg::UnlockTokens {} => unlock_tokens(deps, env, info),
         ExecuteMsg::CreateProposal {
             tranche_id,
@@ -290,16 +290,18 @@ fn lock_tokens(
         .add_attribute("lock_end", lock_entry.lock_end.to_string()))
 }
 
-// Extends the lock duration of a lock entry to be current_block_time + lock_duration,
+// Extends the lock duration of the guiven lock entries to be current_block_time + lock_duration,
 // assuming that this would actually increase the lock_end_time (so this *should not* be a way to make the lock time shorter).
-// Thus, the lock_end_time afterwards *must* be later than the lock_end_time before.
-// This should essentially have the same effect as removing the old lock and immediately re-locking all
+// Thus, for each lock entry the lock_end_time afterwards *must* be later than the lock_end_time before.
+// If this doesn't hold for any of the input lock entries, the function will return an error, and no
+// lock entries will be updated.
+// This should essentially have the same effect as removing the old locks and immediately re-locking all
 // the same funds for the new lock duration.
 fn refresh_lock_duration(
     deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
-    lock_id: u64,
+    lock_ids: Vec<u64>,
     lock_duration: u64,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
@@ -312,36 +314,59 @@ fn refresh_lock_duration(
         validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
     }
 
-    let current_round = compute_current_round_id(&env, &constants)?;
-    initialize_validator_store(deps.storage, current_round)?;
+    let current_round_id = compute_current_round_id(&env, &constants)?;
+    initialize_validator_store(deps.storage, current_round_id)?;
 
-    // try to get the lock with the given id
-    // note that this is already indexed by the caller, so if it is successful, the sender owns this lock
+    let mut response = Response::new()
+        .add_attribute("action", "refresh_lock_duration")
+        .add_attribute("sender", info.sender)
+        .add_attribute("lock_count", lock_ids.len().to_string());
+
+    for lock_id in lock_ids {
+        let (new_lock_end, old_lock_end) = refresh_single_lock(
+            deps,
+            &info,
+            env.clone(),
+            constants.clone(),
+            current_round_id,
+            lock_id,
+            lock_duration,
+        )?;
+
+        response = response.add_attribute(
+            &format!("lock_id_{}_old_end", lock_id),
+            old_lock_end.to_string(),
+        );
+        response = response.add_attribute(
+            &format!("lock_id_{}_new_end", lock_id),
+            new_lock_end.to_string(),
+        );
+    }
+
+    Ok(response)
+}
+
+fn refresh_single_lock(
+    deps: DepsMut<'_, NeutronQuery>,
+    info: &MessageInfo,
+    env: Env,
+    constants: Constants,
+    current_round_id: u64,
+    lock_id: u64,
+    new_lock_duration: u64,
+) -> Result<(u64, u64), ContractError> {
     let mut lock_entry = LOCKS_MAP.load(deps.storage, (info.sender.clone(), lock_id))?;
     let old_lock_entry = lock_entry.clone();
-
-    // log the lock entry
     deps.api.debug(&format!("lock_entry: {:?}", lock_entry));
-
-    // compute the new lock_end_time
-    let new_lock_end = env.block.time.plus_nanos(lock_duration).nanos();
-
+    let new_lock_end = env.block.time.plus_nanos(new_lock_duration).nanos();
     let old_lock_end = lock_entry.lock_end.nanos();
-
-    // check that the new lock_end_time is later than the old lock_end_time
     if new_lock_end <= old_lock_end {
         return Err(ContractError::Std(StdError::generic_err(
             "Shortening locks is not allowed, new lock end time must be after the old lock end",
         )));
     }
-
-    // update the lock entry with the new lock_end_time
     lock_entry.lock_end = Timestamp::from_nanos(new_lock_end);
-
-    // save the updated lock entry
     LOCKS_MAP.save(deps.storage, (info.sender.clone(), lock_id), &lock_entry)?;
-
-    // get the validator whose shares are in this lock
     let validator_result = validate_denom(
         deps.as_ref(),
         env.clone(),
@@ -354,31 +379,22 @@ fn refresh_lock_duration(
         )));
     }
     let validator = validator_result.unwrap();
-
-    // If user already voted for some proposals in the current round, update the voting power on those proposals.
     let mut deps = deps;
     update_voting_power_on_proposals(
         &mut deps,
         &info.sender,
         &constants,
-        current_round,
+        current_round_id,
         Some(old_lock_entry),
         lock_entry.clone(),
         validator.clone(),
     )?;
-
-    // Calculate and update the total voting power info for current and all
-    // future rounds in which the user will have voting power greather than 0.
-    // The voting power originated from the old lockup is subtracted from the
-    // total voting power, and the voting power gained with the new lockup is
-    // added to the total voting power for each applicable round.
     let old_last_round_with_power = compute_round_id_for_timestamp(&constants, old_lock_end)? - 1;
     let new_last_round_with_power = compute_round_id_for_timestamp(&constants, new_lock_end)? - 1;
-
     update_total_time_weighted_shares(
         deps,
         &constants,
-        current_round,
+        current_round_id,
         new_last_round_with_power,
         new_lock_end,
         validator,
@@ -396,12 +412,7 @@ fn refresh_lock_duration(
             )
         },
     )?;
-
-    Ok(Response::new()
-        .add_attribute("action", "refresh_lock_duration")
-        .add_attribute("sender", info.sender)
-        .add_attribute("old_lock_end", old_lock_end.to_string())
-        .add_attribute("new_lock_end", new_lock_end.to_string()))
+    Ok((new_lock_end, old_lock_end))
 }
 
 // Validate that the lock duration (given in nanos) is either 1, 2, 3, 6, or 12 epochs

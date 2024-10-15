@@ -38,7 +38,7 @@ pub enum ExecuteMsg {
         lock_duration: u64,
     },
     RefreshLockDuration {
-        lock_id: u64,
+        lock_ids: Vec<u64>,
         lock_duration: u64,
     },
     UnlockTokens {},
