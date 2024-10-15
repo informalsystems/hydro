@@ -5,11 +5,13 @@
 */
 
 export type Addr = string;
+export type Uint128 = string;
 export interface ConfigResponse {
   config: Config;
 }
 export interface Config {
   hydro_contract: Addr;
+  min_prop_percent_for_claimable_tributes: Uint128;
   top_n_props_count: number;
 }
 export type ExecuteMsg = {
@@ -35,13 +37,17 @@ export type ExecuteMsg = {
 };
 export interface InstantiateMsg {
   hydro_contract: string;
+  min_prop_percent_for_claimable_tributes: Uint128;
   top_n_props_count: number;
 }
-export type Uint128 = string;
+export type Timestamp = Uint64;
+export type Uint64 = string;
 export interface ProposalTributesResponse {
   tributes: Tribute[];
 }
 export interface Tribute {
+  creation_round: number;
+  creation_time: Timestamp;
   depositor: Addr;
   funds: Coin;
   proposal_id: number;

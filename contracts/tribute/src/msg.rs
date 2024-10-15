@@ -1,3 +1,4 @@
+use cosmwasm_std::Uint128;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -5,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub struct InstantiateMsg {
     pub hydro_contract: String,
     pub top_n_props_count: u64,
+    pub min_prop_percent_for_claimable_tributes: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, cw_orch::ExecuteFns)]
@@ -31,4 +33,6 @@ pub enum ExecuteMsg {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct MigrateMsg {}
+pub struct MigrateMsg {
+    pub min_prop_percent_for_claimable_tributes: Uint128,
+}
