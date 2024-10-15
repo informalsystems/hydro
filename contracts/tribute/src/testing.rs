@@ -299,6 +299,7 @@ fn add_tribute_test() {
             let info = get_message_info(&deps.api, tribute_payer, tribute);
             let msg = ExecuteMsg::AddTribute {
                 tranche_id: test.proposal_info.0,
+                round_id: test.mock_data.0,
                 proposal_id: test.proposal_info.1,
             };
 
@@ -508,6 +509,7 @@ fn claim_tribute_test() {
         let info = get_message_info(&deps.api, tribute_payer, &test.tribute_to_add);
         let msg = ExecuteMsg::AddTribute {
             tranche_id: test.tribute_info.1,
+            round_id: test.tribute_info.0,
             proposal_id: test.tribute_info.2,
         };
 
@@ -662,6 +664,7 @@ fn refund_tribute_test() {
         let info = get_message_info(&deps.api, tribute_payer, &test.tribute_to_add);
         let msg = ExecuteMsg::AddTribute {
             tranche_id: test.tribute_info.1,
+            round_id: test.tribute_info.0,
             proposal_id: test.tribute_info.2,
         };
 
