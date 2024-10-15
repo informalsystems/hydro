@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## v1.0.3
+
+Date: October 15th, 2024
+<!--
+    Add a summary for the release here.
+
+    If you don't change this message, or if this file is empty, the release
+    will not be created. -->
+
+### BUG FIXES
+
+- Forbid users to claim tributes that belong to other proposals than the one user voted on.
+  ([\#129](https://github.com/informalsystems/hydro/pull/129))
+- fix: do not insert proposal into PROPS_BY_SCORE on proposal creation.
+  ([\#135](https://github.com/informalsystems/hydro/pull/135))
+
+### FEATURES
+
+- Update proposal powers when user that voted locks or relocks tokens.
+  ([\#128](https://github.com/informalsystems/hydro/pull/128))
+- Add 'pilot round mode' with a different lock duration.
+  ([\#137](https://github.com/informalsystems/hydro/pull/137))
+
 # v1.0.0
 
 Date: September 24th, 2023
@@ -13,3 +36,4 @@ It includes:
 * The _Tribute_ contract, where:
   * Projects can add tributes to their proposals
   * Users can claim tributes for the proposals that they voted on
+
