@@ -96,7 +96,7 @@ impl MockWasmQuerier {
                             Ok(res) => res,
                             Err(_) => {
                                 return SystemResult::Err(SystemError::InvalidRequest {
-                                    error: "proposal couldn't be found".to_string(),
+                                    error: format!("proposal couldn't be found: round_id={}, tranche_id={}, proposal_id={}", round_id, tranche_id, proposal_id),
                                     request: Binary::new(vec![]),
                                 })
                             }
@@ -180,8 +180,6 @@ impl MockWasmQuerier {
 
 struct AddTributeTestCase {
     description: String,
-    // (tranche_id, proposal_id)
-    proposal_info: (u64, u64),
     tributes_to_add: Vec<Vec<Coin>>,
     // (current_round_id, proposal_to_tribute)
     mock_data: (u64, Vec<Proposal>),
@@ -234,7 +232,6 @@ fn add_tribute_test() {
     let test_cases: Vec<AddTributeTestCase> = vec![
         AddTributeTestCase {
             description: "happy path".to_string(),
-            proposal_info: (0, 5),
             tributes_to_add: vec![
                 vec![Coin::new(1000u64, DEFAULT_DENOM)],
                 vec![Coin::new(5000u64, DEFAULT_DENOM)],
@@ -245,7 +242,6 @@ fn add_tribute_test() {
         },
         AddTributeTestCase {
             description: "try adding tribute for non-existing proposal".to_string(),
-            proposal_info: (0, 5),
             tributes_to_add: vec![vec![Coin::new(1000u64, DEFAULT_DENOM)]],
             mock_data: (10, vec![]),
             expected_success: false,
@@ -253,7 +249,6 @@ fn add_tribute_test() {
         },
         AddTributeTestCase {
             description: "try adding tribute without providing any funds".to_string(),
-            proposal_info: (0, 5),
             tributes_to_add: vec![vec![]],
             mock_data: (10, vec![mock_proposal.clone()]),
             expected_success: false,
@@ -261,7 +256,6 @@ fn add_tribute_test() {
         },
         AddTributeTestCase {
             description: "try adding tribute by providing more than one token".to_string(),
-            proposal_info: (0, 5),
             tributes_to_add: vec![vec![
                 Coin::new(1000u64, DEFAULT_DENOM),
                 Coin::new(1000u64, "stake"),
@@ -269,6 +263,14 @@ fn add_tribute_test() {
             mock_data: (10, vec![mock_proposal.clone()]),
             expected_success: false,
             expected_error_msg: "Must send exactly one coin".to_string(),
+        },
+        AddTributeTestCase {
+            description: "add tribute to previous round".to_string(),
+            tributes_to_add: vec![vec![Coin::new(1000u64, DEFAULT_DENOM)]],
+            // proposal is in round 10, but we are trying to add tribute during round 11
+            mock_data: (11, vec![mock_proposal.clone()]),
+            expected_success: true,
+            expected_error_msg: String::new(),
         },
     ];
 
@@ -298,14 +300,14 @@ fn add_tribute_test() {
         for tribute in &test.tributes_to_add {
             let info = get_message_info(&deps.api, tribute_payer, tribute);
             let msg = ExecuteMsg::AddTribute {
-                tranche_id: test.proposal_info.0,
-                round_id: test.mock_data.0,
-                proposal_id: test.proposal_info.1,
+                tranche_id: mock_proposal.tranche_id,
+                round_id: mock_proposal.round_id,
+                proposal_id: mock_proposal.proposal_id,
             };
 
             let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
             if test.expected_success {
-                assert!(res.is_ok());
+                assert!(res.is_ok(), "failed with: {}", res.unwrap_err());
             } else {
                 assert!(res
                     .unwrap_err()
@@ -321,8 +323,8 @@ fn add_tribute_test() {
 
         let res = query_proposal_tributes(
             deps.as_ref(),
-            test.mock_data.0,
-            test.proposal_info.1,
+            mock_proposal.round_id,
+            mock_proposal.proposal_id,
             0,
             3000,
         )
