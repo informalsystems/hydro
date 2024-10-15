@@ -336,6 +336,7 @@ fn add_tribute_test() {
             assert_eq!(res[i].funds, tribute[0].clone());
             assert_eq!(res[i].depositor.to_string(), tribute_payer_addr.clone());
             assert!(!res[i].refunded);
+            assert_eq!(res[i].creation_time, env.block.time);
         }
     }
 }
@@ -808,6 +809,8 @@ fn test_query_historical_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(100), "token"),
                 refunded: false,
+                creation_round: 1,
+                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
             Tribute {
                 tribute_id: 1,
@@ -817,6 +820,8 @@ fn test_query_historical_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(200), "token"),
                 refunded: false,
+                creation_round: 1,
+                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
         ];
 
@@ -873,6 +878,8 @@ fn test_query_round_tributes() {
             depositor: Addr::unchecked("user1"),
             funds: Coin::new(Uint128::new(100), "token"),
             refunded: false,
+            creation_round: 1,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
         },
         Tribute {
             tribute_id: 2,
@@ -882,6 +889,8 @@ fn test_query_round_tributes() {
             depositor: Addr::unchecked("user2"),
             funds: Coin::new(Uint128::new(200), "token"),
             refunded: false,
+            creation_round: 1,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
         },
         Tribute {
             tribute_id: 3,
@@ -891,6 +900,8 @@ fn test_query_round_tributes() {
             depositor: Addr::unchecked("user3"),
             funds: Coin::new(Uint128::new(300), "token"),
             refunded: false,
+            creation_round: 1,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
         },
         Tribute {
             tribute_id: 4,
@@ -900,6 +911,8 @@ fn test_query_round_tributes() {
             depositor: Addr::unchecked("user4"),
             funds: Coin::new(Uint128::new(400), "token"),
             refunded: false,
+            creation_round: 1,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
         },
         Tribute {
             tribute_id: 5,
@@ -909,6 +922,8 @@ fn test_query_round_tributes() {
             depositor: Addr::unchecked("user5"),
             funds: Coin::new(Uint128::new(500), "token"),
             refunded: false,
+            creation_round: 1,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
         },
     ];
 
@@ -1055,6 +1070,8 @@ fn test_query_outstanding_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(100), "token"),
                 refunded: false,
+                creation_round: 1,
+                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
             Tribute {
                 tribute_id: 2,
@@ -1064,6 +1081,8 @@ fn test_query_outstanding_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(200), "token"),
                 refunded: false,
+                creation_round: 1,
+                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
             Tribute {
                 tribute_id: 3,
@@ -1073,6 +1092,8 @@ fn test_query_outstanding_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(300), "token"),
                 refunded: false,
+                creation_round: 1,
+                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
             Tribute {
                 tribute_id: 4,
@@ -1082,6 +1103,8 @@ fn test_query_outstanding_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(400), "token"),
                 refunded: false,
+                creation_round: 1,
+                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
         ];
 

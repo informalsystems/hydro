@@ -1,5 +1,5 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Coin};
+use cosmwasm_std::{Addr, Coin, Timestamp};
 use cw_storage_plus::{Item, Map};
 
 pub const CONFIG: Item<Config> = Item::new("config");
@@ -24,6 +24,8 @@ pub struct Tribute {
     pub depositor: Addr,
     pub funds: Coin,
     pub refunded: bool,
+    pub creation_time: Timestamp,
+    pub creation_round: u64,
 }
 
 // For ease of accessing, maps each tribute_id to its Tribute struct
