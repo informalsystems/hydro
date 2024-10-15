@@ -48,8 +48,13 @@ pub struct Proposal {
     pub description: String,
     pub power: Uint128,
     pub percentage: Uint128,
-    pub rounds: u32,
+    pub bid_duration: u64, // number of rounds liquidity is allocated excluding voting round. default 1
 }
+
+// USER_VOTE_MAP: key(tranche_id, sender_addr) -> u64 tracks the next round a user
+// is allowed to vote.
+// - users can only vote on on proposal at a time in a tranche (no splitting so far)
+pub const USER_VOTE_MAP: Map<(u64, Addr), u64> = Map::new("user_vote_map");
 
 // VOTE_MAP: key((round_id, tranche_id), sender_addr, lock_id) -> Vote
 pub const VOTE_MAP: Map<((u64, u64), Addr, u64), Vote> = Map::new("vote_map");

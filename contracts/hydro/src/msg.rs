@@ -46,7 +46,7 @@ pub enum ExecuteMsg {
         tranche_id: u64,
         title: String,
         description: String,
-        rounds: u32,
+        bid_duration: u64,
     },
     Vote {
         tranche_id: u64,

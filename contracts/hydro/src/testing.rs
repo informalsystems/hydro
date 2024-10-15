@@ -317,7 +317,7 @@ fn create_proposal_basic_test() {
         tranche_id: 1,
         title: "proposal title 1".to_string(),
         description: "proposal description 1".to_string(),
-        rounds: 1,
+        bid_duration: 1,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg1.clone());
     assert!(res.is_ok());
@@ -326,7 +326,7 @@ fn create_proposal_basic_test() {
         tranche_id: 1,
         title: "proposal title 2".to_string(),
         description: "proposal description 2".to_string(),
-        rounds: 1,
+        bid_duration: 1,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg2.clone());
     assert!(res.is_ok());
@@ -428,7 +428,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
             tranche_id: prop_info.0,
             title: prop_info.1,
             description: prop_info.2,
-            rounds: 1,
+            bid_duration: 1,
         };
 
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -673,7 +673,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         tranche_id: first_tranche_id,
         title: "proposal title 4".to_string(),
         description: "proposal description 4".to_string(),
-        rounds: 1,
+        bid_duration: 1,
     };
 
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -815,7 +815,7 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
             tranche_id: prop_info.0,
             title: prop_info.1,
             description: prop_info.2,
-            rounds: 1,
+            bid_duration: 1,
         };
 
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -880,6 +880,7 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
 
     // advance the chain by two weeks + 1 nano second to move to the next round and try to unlock tokens
     env.block.time = env.block.time.plus_nanos(TWO_WEEKS_IN_NANO_SECONDS + 1);
+
     let res = execute(
         deps.as_mut(),
         env.clone(),
@@ -889,6 +890,162 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
 
     // user voted for a proposal in previous round, but can unlock tokens
     assert!(res.is_ok());
+}
+
+#[test]
+fn vote_extended_proposals_test() {
+    vote_test_extended_proposals(mock_env().block.time, 0);
+}
+
+// vote_test_extended_proposals tests that a vote is rejected if the round where votes
+// are possible is not reached yet and the vote is granted if it is done in last round of an extended
+//
+// Test comprises 2 scenarios
+//  * A: fails to vote due to ongoing proposal user voted already for.
+//  * B: vote for new proposal succeeds as 'extended proposal' the user voted for is in last round.
+//
+// - round 0: user votes for extended proposal p(2)
+// - round 1: user tries to vote for p(3) but fails [scenario A]
+// - round 3: user is in last round of p(2) and votes successfully for p(4) [scenario B]
+//
+//  | round 0 | round 1 | round 2 | round 3 | round 4 |
+//  |  p(1)   |  end    |         |         |         |
+//  |  p(2)   |  ----   | -----   |  end    |         |
+//  |         |  p(3)   | end     |         |         |
+//  |         |         |         |  p(4)   | end     |
+//
+// TODO: might be good to split the 2 scenarios into 2 separate test cases
+fn vote_test_extended_proposals(start_time: Timestamp, current_round_id: u64) {
+    let user_address = "addr0000";
+    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let second_proposal_id = 1;
+
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let mut init_params = get_default_instantiate_msg(&deps.api);
+    init_params.first_round_start = start_time;
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), init_params.clone());
+    assert!(res.is_ok());
+
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+
+    // lock some tokens to get voting power
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    let tranche_id = 1;
+    let prop_infos = vec![
+        // proposal p(1)  with bidding period 1 rounds
+        (
+            "proposal title 1".to_string(),
+            "proposal description 1".to_string(),
+            1, // rounds
+            true, // expected_failure
+        ),
+        // proposal p(2) with bidding period 3 round
+        (
+            "proposal title 2".to_string(),
+            "proposal description 2".to_string(),
+            3, // rounds
+            false, // expected_failure
+        ),
+    ];
+
+    for prop_info in &prop_infos {
+        // create the proposals
+        let msg = ExecuteMsg::CreateProposal {
+            tranche_id: tranche_id,
+            title: prop_info.0.clone(),
+            description: prop_info.1.clone(),
+            bid_duration: prop_info.2,
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_ok());
+    }
+
+    // vote for the second proposals p(2)
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposal_id: second_proposal_id,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // check that users voted for the two proposal
+    let round_id = current_round_id;
+    let res = query_user_vote(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
+    assert!(res.is_ok(), "error: {:?}", res);
+    assert_eq!(second_proposal_id, res.unwrap().vote.prop_id);
+
+    // advance the chain by one more update period to move to round 1
+    env.block.time = env.block.time.plus_nanos( init_params.round_length);
+
+    // cross check current round is round 1
+    let resp = query_constants(deps.as_ref());
+    assert!(resp.is_ok());
+    let constants = resp.unwrap().constants;
+    let round_id = compute_current_round_id(&env, &constants.clone());
+    assert_eq!(Ok(1), round_id, "expected to reach round 1 (round after voting), sitting in {:?}", round_id);
+
+    // create new proposal p(3) (successor of p(1))
+    let msg = ExecuteMsg::CreateProposal {
+        tranche_id: tranche_id,
+        title: prop_infos[0].0.clone(),
+        description: prop_infos[0].1.clone(),
+        bid_duration: prop_infos[0].2,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // check that switching vote after the first round for 'long proposal' to p(3) fails
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposal_id: 2,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert_eq!(res.is_ok(), false, "switching vote from proposal not in last round did not fail");
+
+    // advance to the last round of chain #rounds - current round
+    let remaining_rounds = (prop_infos[1].2 - 1) as u64;
+    env.block.time = env.block.time.plus_nanos(remaining_rounds * init_params.round_length);
+
+    // check that this is the last round for proposal 1
+    let round_id = compute_current_round_id(&env, &constants.clone());
+    assert_eq!(Ok(3), round_id, "expected to reach round {:?}, sitting in {:?}", prop_infos[0].2-1, round_id);
+
+    // create new proposal p(4) (successor of p(3))
+    let msg = ExecuteMsg::CreateProposal {
+        tranche_id: tranche_id,
+        title: prop_infos[0].0.clone(),
+        description: prop_infos[0].1.clone(),
+        bid_duration: prop_infos[0].2,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // check that switching vote in round 3 ' end of long proposal' to p(4) passes
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposal_id: 3,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok(), "switching vote from 'long proposal' in last round failed");
+
+    let round_no = round_id.unwrap();
+    let res = query_user_vote(deps.as_ref(), round_no, tranche_id, info.sender.to_string());
+    assert!(res.is_ok(), "querying vote for round {:?} failed {:?}", round_no, res);
+    assert_eq!(3, res.unwrap().vote.prop_id);
+
 }
 
 #[test]
@@ -925,7 +1082,7 @@ fn multi_tranches_test() {
         tranche_id: 1,
         title: "proposal title 1".to_string(),
         description: "proposal description 1".to_string(),
-        rounds: 1,
+        bid_duration: 1,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg1.clone());
     assert!(res.is_ok());
@@ -934,7 +1091,7 @@ fn multi_tranches_test() {
         tranche_id: 1,
         title: "proposal title 2".to_string(),
         description: "proposal description 2".to_string(),
-        rounds: 1,
+        bid_duration: 1,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg2.clone());
     assert!(res.is_ok());
@@ -944,7 +1101,7 @@ fn multi_tranches_test() {
         tranche_id: 2,
         title: "proposal title 3".to_string(),
         description: "proposal description 3".to_string(),
-        rounds: 1,
+        bid_duration: 1,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg3.clone());
     assert!(res.is_ok());
@@ -953,7 +1110,7 @@ fn multi_tranches_test() {
         tranche_id: 2,
         title: "proposal title 4".to_string(),
         description: "proposal description 4".to_string(),
-        rounds: 1,
+        bid_duration: 1,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg4.clone());
     assert!(res.is_ok());
@@ -1096,7 +1253,7 @@ fn test_query_round_tranche_proposals_pagination() {
             tranche_id: 1,
             title: format!("proposal title {}", i),
             description: format!("proposal description {}", i),
-            rounds: 1,
+            bid_duration: 1,
         };
         let _ = execute(
             deps.as_mut(),
@@ -1765,7 +1922,7 @@ fn contract_pausing_test() {
             tranche_id: 0,
             title: "".to_string(),
             description: "".to_string(),
-            rounds: 1,
+            bid_duration: 1,
         },
         ExecuteMsg::Vote {
             tranche_id: 0,
@@ -1833,7 +1990,7 @@ pub fn whitelist_proposal_submission_test() {
         tranche_id: 1,
         title: "proposal title".to_string(),
         description: "proposal description".to_string(),
-        rounds: 1,
+        bid_duration: 1,
     };
 
     let res = execute(
