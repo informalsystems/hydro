@@ -1985,7 +1985,7 @@ fn test_refresh_multiple_locks() {
         set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
         // Create multiple locks with different durations and starting times
-        let lock_durations = vec![
+        let lock_durations = [
             ONE_MONTH_IN_NANO_SECONDS * 12,
             ONE_MONTH_IN_NANO_SECONDS * 6,
             ONE_MONTH_IN_NANO_SECONDS * 3,
