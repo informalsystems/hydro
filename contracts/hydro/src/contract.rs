@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::ops::Add;
 
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
@@ -31,10 +32,7 @@ use crate::score_keeper::{
     remove_many_validator_shares_from_proposal, remove_validator_shares_from_proposal,
 };
 use crate::state::{
-    Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS,
-    ICQ_MANAGERS, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID,
-    TRANCHE_ID, TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
-    VALIDATOR_TO_QUERY_ID, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
+    Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS, ICQ_MANAGERS, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, USER_VOTE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP, WHITELIST, WHITELIST_ADMINS
 };
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
@@ -157,8 +155,8 @@ pub fn execute(
             tranche_id,
             title,
             description,
-            rounds
-        } => create_proposal(deps, env, info, tranche_id, title, description, rounds),
+            bid_duration
+        } => create_proposal(deps, env, info, tranche_id, title, description, bid_duration),
         ExecuteMsg::Vote {
             tranche_id,
             proposal_id,
@@ -262,7 +260,7 @@ fn lock_tokens(
     )?;
 
     // Calculate and update the total voting power info for current and all
-    // future rounds in which the user will have voting power greather than 0
+    // future rounds in which the user will have voting power greater than 0
     let last_round_with_power = compute_round_id_for_timestamp(&constants, lock_end)? - 1;
 
     update_total_time_weighted_shares(
@@ -527,7 +525,7 @@ fn create_proposal(
     tranche_id: u64,
     title: String,
     description: String,
-    rounds: u32,
+    bid_duration: u64,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
@@ -555,7 +553,7 @@ fn create_proposal(
         percentage: Uint128::zero(),
         title: title.trim().to_string(),
         description: description.trim().to_string(),
-        rounds: rounds,
+        bid_duration,
     };
 
     PROP_ID.save(deps.storage, &(proposal_id + 1))?;
@@ -684,6 +682,18 @@ fn vote(
         VOTE_MAP.remove(deps.storage, (round_id, tranche_id, info.sender.clone()));
 
         response = response.add_attribute("old_proposal_id", vote.prop_id.to_string());
+    } else {
+        // no votes in current round !
+        // -> check if eligible (no votes on ongoing bidding in this tranche)
+        let next_vote_res = USER_VOTE_MAP.load(deps.storage, (tranche_id,info.sender.clone()));
+        if let Ok(next_vote) = next_vote_res {
+            if round_id < next_vote {
+                return Err(ContractError::Std(
+                    StdError::generic_err(format!(
+                        "Not allowed to vote on proposal {}. Voted already on proposal still in bidding phase ending in round {}.",
+                        proposal_id, next_vote))));
+            }
+        }
     }
 
     let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
@@ -718,7 +728,7 @@ fn vote(
         }
         let validator = validator_result.unwrap();
 
-        let scaled_shares = get_lock_time_weighted_shares(round_end, lock_entry, lock_epoch_length);
+        let scaled_shares = get_lock_time_weighted_shares(round_end, lock_entry.clone(), lock_epoch_length);
 
         // add the shares to the map
         let shares = match time_weighted_shares_map.get(&validator) {
@@ -756,8 +766,11 @@ fn vote(
         prop_id: proposal_id,
         time_weighted_shares: time_weighted_shares_map,
     };
-    VOTE_MAP.save(deps.storage, (round_id, tranche_id, info.sender), &vote)?;
+    VOTE_MAP.save(deps.storage, (round_id, tranche_id, info.sender.clone()), &vote)?;
 
+    let proposal = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
+    let next_vote = round_id.add(proposal.bid_duration);
+    USER_VOTE_MAP.save(deps.storage, (tranche_id, info.sender.clone()), &next_vote)?;
     Ok(response.add_attribute("proposal_id", vote.prop_id.to_string()))
 }
 
@@ -1627,7 +1640,7 @@ fn compute_round_end(constants: &Constants, round_id: u64) -> StdResult<Timestam
 }
 
 // When a user locks new tokens or extends an existing lock duration, this function checks if that user already
-// voted on some proposals in the current round. This is done by looking up for user votes in all tranches.
+// voted on some proposals in t-he current round. This is done by looking up for user votes in all tranches.
 // If there are such proposals, the function will update the voting power to reflect the voting power change
 // caused by lock/extend_lock action. The following data structures will be updated:
 //      PROPOSAL_MAP, PROPS_BY_SCORE, VOTE_MAP, SCALED_PROPOSAL_SHARES_MAP, PROPOSAL_TOTAL_MAP
