@@ -11,7 +11,7 @@ export interface ConfigResponse {
 }
 export interface Config {
   hydro_contract: Addr;
-  min_prop_percent_to_deploy: Uint128;
+  min_prop_percent_for_claimable_tributes: Uint128;
   top_n_props_count: number;
 }
 export type ExecuteMsg = {
@@ -36,7 +36,7 @@ export type ExecuteMsg = {
 };
 export interface InstantiateMsg {
   hydro_contract: string;
-  min_prop_percent_to_deploy: Uint128;
+  min_prop_percent_for_claimable_tributes: Uint128;
   top_n_props_count: number;
 }
 export interface ProposalTributesResponse {

@@ -4,14 +4,14 @@
   "type": "object",
   "required": [
     "hydro_contract",
-    "min_prop_percent_to_deploy",
+    "min_prop_percent_for_claimable_tributes",
     "top_n_props_count"
   ],
   "properties": {
     "hydro_contract": {
       "type": "string"
     },
-    "min_prop_percent_to_deploy": {
+    "min_prop_percent_for_claimable_tributes": {
       "$ref": "#/definitions/Uint128"
     },
     "top_n_props_count": {

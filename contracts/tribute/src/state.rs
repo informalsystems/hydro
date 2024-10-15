@@ -8,7 +8,7 @@ pub const CONFIG: Item<Config> = Item::new("config");
 pub struct Config {
     pub hydro_contract: Addr,
     pub top_n_props_count: u64,
-    pub min_prop_percent_to_deploy: Uint128,
+    pub min_prop_percent_for_claimable_tributes: Uint128,
 }
 
 // Need to have old version of Config in order to migrate data that is already stored on the chain.

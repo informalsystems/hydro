@@ -4,8 +4,7 @@ use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
     MessageInfo, Order, Reply, Response, StdError, StdResult, Uint128,
 };
-use cw2::{get_contract_version, set_contract_version};
-use cw_storage_plus::Item;
+use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
@@ -14,7 +13,7 @@ use crate::query::{
     RoundTributesResponse, TributeClaim,
 };
 use crate::state::{
-    Config, ConfigV1, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP,
+    Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP,
 };
 use hydro::query::{
     CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
@@ -40,7 +39,7 @@ pub fn instantiate(
     let config = Config {
         hydro_contract: deps.api.addr_validate(&msg.hydro_contract)?,
         top_n_props_count: msg.top_n_props_count,
-        min_prop_percent_to_deploy: msg.min_prop_percent_to_deploy,
+        min_prop_percent_for_claimable_tributes: msg.min_prop_percent_for_claimable_tributes,
     };
 
     CONFIG.save(deps.storage, &config)?;
@@ -186,10 +185,10 @@ fn claim_tribute(
     )?;
 
     // Check that the voter voted for one of the top N proposals that
-    // received enough voting percentage to get the liquidity deployed.
+    // received at least the threshold of the total voting power.
     let proposal =
         get_top_n_proposal_info(&deps.as_ref(), &config, round_id, tranche_id, vote.prop_id)?
-            .are_tributes_claimable()?;
+            .are_tributes_claimable(&config)?;
 
     // Load the tribute and use the percentage to figure out how much of the tribute to send them
     let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
@@ -326,21 +325,26 @@ fn refund_tribute(
         }))
 }
 
+// Holds information about possible top N proposal. If the proposal is among the top N,
+// the "top_n_proposal" field will be set to some value and "is_above_voting_threshold"
+// field will be set to true if the proposal received at least the minimum voting threshold.
+// If the proposal is not among the top N, the "top_n_proposal" field will be set to None,
+// and "is_above_voting_threshold" field will be set to false.
 struct TopNProposalInfo {
     pub top_n_proposal: Option<Proposal>,
     pub is_above_voting_threshold: bool,
 }
 
 impl TopNProposalInfo {
-    fn are_tributes_claimable(&self) -> Result<Proposal, ContractError> {
+    fn are_tributes_claimable(&self, config: &Config) -> Result<Proposal, ContractError> {
         match self.top_n_proposal.as_ref() {
             None => Err(ContractError::Std(StdError::generic_err(
                 "User voted for proposal outside of top N proposals",
             ))),
             Some(proposal) => {
                 if !self.is_above_voting_threshold {
-                    return Err(ContractError::Std(StdError::generic_err(
-                        "Tribute can not be claimed because the proposal received less voting percentage than required to deploy the liquidity.")));
+                    return Err(ContractError::Std(StdError::generic_err(format!(
+                        "Tribute not claimable: Proposal received less voting percentage than threshold: {} required, but is {}", config.min_prop_percent_for_claimable_tributes, proposal.percentage))));
                 }
 
                 Ok(proposal.clone())
@@ -359,10 +363,9 @@ impl TopNProposalInfo {
     }
 }
 
-// This function will query the top N proposals from the Hydro contract and determine if the proposal
-// with the given ID is among the top N. If yes, it will also determine if the proposal received at least
-// the threshold percent of the total voting power, which would mean that the liquidity for this proposal
-// is (or will shortly be) deployed.
+// This function will query the top N proposals from the Hydro contract and determine
+// if the proposal with the given ID is among the top N. If yes, it will also determine
+// if the proposal received at least the threshold percent of the total voting power.
 fn get_top_n_proposal_info(
     deps: &Deps,
     config: &Config,
@@ -373,7 +376,8 @@ fn get_top_n_proposal_info(
     match get_top_n_proposal(deps, config, round_id, tranche_id, proposal_id)? {
         Some(proposal) => Ok(TopNProposalInfo {
             top_n_proposal: Some(proposal.clone()),
-            is_above_voting_threshold: proposal.percentage >= config.min_prop_percent_to_deploy,
+            is_above_voting_threshold: proposal.percentage
+                >= config.min_prop_percent_for_claimable_tributes,
         }),
         None => Ok(TopNProposalInfo {
             top_n_proposal: None,
@@ -691,38 +695,6 @@ fn get_top_n_proposals(
     )?;
 
     Ok(proposals_resp.proposals)
-}
-
-#[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> Result<Response, ContractError> {
-    // V1 to V2 migration
-    let contract_version = get_contract_version(deps.storage)?;
-    if contract_version.version == CONTRACT_VERSION {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Contract is already migrated to the newest version.",
-        )));
-    }
-
-    if msg.min_prop_percent_to_deploy > Uint128::new(100) {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Minimum proposal percentage to deploy the liquidity must be between 0 and 100.",
-        )));
-    }
-
-    const OLD_CONFIG: Item<ConfigV1> = Item::new("config");
-    let old_config = OLD_CONFIG.load(deps.storage)?;
-
-    let new_config = Config {
-        hydro_contract: old_config.hydro_contract,
-        top_n_props_count: old_config.top_n_props_count,
-        min_prop_percent_to_deploy: msg.min_prop_percent_to_deploy,
-    };
-
-    CONFIG.save(deps.storage, &new_config)?;
-
-    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-
-    Ok(Response::default())
 }
 
 // TODO: figure out build issue that we have if we don't define all this functions in both contracts
