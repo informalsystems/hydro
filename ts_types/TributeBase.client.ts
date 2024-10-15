@@ -153,9 +153,11 @@ export interface TributeBaseInterface extends TributeBaseReadOnlyInterface {
   sender: string;
   addTribute: ({
     proposalId,
+    roundId,
     trancheId
   }: {
     proposalId: number;
+    roundId: number;
     trancheId: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   claimTribute: ({
@@ -196,14 +198,17 @@ export class TributeBaseClient extends TributeBaseQueryClient implements Tribute
   }
   addTribute = async ({
     proposalId,
+    roundId,
     trancheId
   }: {
     proposalId: number;
+    roundId: number;
     trancheId: number;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       add_tribute: {
         proposal_id: proposalId,
+        round_id: roundId,
         tranche_id: trancheId
       }
     }, fee, memo, _funds);

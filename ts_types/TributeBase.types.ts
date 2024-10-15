@@ -15,6 +15,7 @@ export interface Config {
 export type ExecuteMsg = {
   add_tribute: {
     proposal_id: number;
+    round_id: number;
     tranche_id: number;
   };
 } | {
