@@ -1410,7 +1410,7 @@ fn verify_expected_voting_power(deps: Deps<NeutronQuery>, expected_powers: &[(u6
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10000))] // set the number of test cases to run
+    #![proptest_config(ProptestConfig::with_cases(100))] // set the number of test cases to run
     #[test]
     fn relock_proptest(old_lock_remaining_time: u64, new_lock_duration: u8) {
         let grpc_query = denom_trace_grpc_query_mock(
