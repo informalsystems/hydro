@@ -1,11 +1,12 @@
 use crate::{
     contract::{
-        execute, instantiate, query_historical_tribute_claims, query_outstanding_tribute_claims,
-        query_proposal_tributes, query_round_tributes,
+        execute, instantiate, migrate, query_historical_tribute_claims,
+        query_outstanding_tribute_claims, query_proposal_tributes, query_round_tributes,
+        CONTRACT_NAME,
     },
-    msg::{ExecuteMsg, InstantiateMsg},
+    msg::{ExecuteMsg, InstantiateMsg, MigrateMsg},
     query::TributeClaim,
-    state::{Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_MAP},
+    state::{Config, ConfigV1, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_MAP},
 };
 use cosmwasm_std::{
     from_json,
@@ -14,6 +15,8 @@ use cosmwasm_std::{
     StdError, StdResult, SystemError, SystemResult, Timestamp, Uint128, WasmQuery,
 };
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
+use cw2::set_contract_version;
+use cw_storage_plus::Item;
 use hydro::{
     query::{
         CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
@@ -22,10 +25,14 @@ use hydro::{
     state::{Proposal, VoteWithPower},
 };
 
-pub fn get_instantiate_msg(hydro_contract: String) -> InstantiateMsg {
+pub fn get_instantiate_msg(
+    hydro_contract: String,
+    min_prop_percent_to_deploy: Uint128,
+) -> InstantiateMsg {
     InstantiateMsg {
         hydro_contract,
         top_n_props_count: 10,
+        min_prop_percent_to_deploy,
     }
 }
 
@@ -44,6 +51,7 @@ const DEFAULT_DENOM: &str = "uatom";
 const HYDRO_CONTRACT_ADDRESS: &str = "addr0000";
 const USER_ADDRESS_1: &str = "addr0001";
 const USER_ADDRESS_2: &str = "addr0002";
+const MIN_PROP_PERCENT_TO_DEPLOY: Uint128 = Uint128::new(5);
 
 pub struct MockWasmQuerier {
     hydro_contract: String,
@@ -288,7 +296,7 @@ fn add_tribute_test() {
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
-        let msg = get_instantiate_msg(hydro_contract_address);
+        let msg = get_instantiate_msg(hydro_contract_address, MIN_PROP_PERCENT_TO_DEPLOY);
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 
@@ -339,35 +347,35 @@ fn add_tribute_test() {
 
 #[test]
 fn claim_tribute_test() {
-    let mock_proposals = vec![Proposal {
+    let mock_proposal1 = Proposal {
         round_id: 10,
         tranche_id: 0,
         proposal_id: 5,
         title: "proposal title 1".to_string(),
         description: "proposal description 1".to_string(),
         power: Uint128::new(10000),
-        percentage: Uint128::zero(),
-    }];
+        percentage: MIN_PROP_PERCENT_TO_DEPLOY,
+    };
+    let mock_proposal2 = Proposal {
+        round_id: 10,
+        tranche_id: 0,
+        proposal_id: 6,
+        title: "proposal title 2".to_string(),
+        description: "proposal description 2".to_string(),
+        power: Uint128::new(10000),
+        percentage: MIN_PROP_PERCENT_TO_DEPLOY,
+    };
 
-    let mock_top_n_proposals = vec![
+    let mock_proposals = vec![mock_proposal1.clone(), mock_proposal2.clone()];
+
+    let mock_top_n_proposals = vec![mock_proposal1.clone(), mock_proposal2.clone()];
+
+    let mock_top_n_deployment_threshold_not_reached = vec![
         Proposal {
-            round_id: 10,
-            tranche_id: 0,
-            proposal_id: 5,
-            title: "proposal title 1".to_string(),
-            description: "proposal description 1".to_string(),
-            power: Uint128::new(10000),
-            percentage: Uint128::zero(),
+            percentage: MIN_PROP_PERCENT_TO_DEPLOY - Uint128::one(),
+            ..mock_proposal1.clone()
         },
-        Proposal {
-            round_id: 10,
-            tranche_id: 0,
-            proposal_id: 6,
-            title: "proposal title 2".to_string(),
-            description: "proposal description 2".to_string(),
-            power: Uint128::new(10000),
-            percentage: Uint128::zero(),
-        },
+        mock_proposal2.clone(),
     ];
 
     let deps = mock_dependencies();
@@ -437,6 +445,29 @@ fn claim_tribute_test() {
             expected_error_msg: "User voted for proposal outside of top N proposals".to_string(),
         },
         ClaimTributeTestCase {
+            description: "try claim tribute if user voted for top N proposal that didn't reach the liquidity deployment threshold".to_string(),
+            tribute_info: (10, 0, 5, 0),
+            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
+            mock_data: (
+                10,
+                11,
+                mock_proposals.clone(),
+                vec![(
+                    10,
+                    0,
+                    get_address_as_str(&deps.api, USER_ADDRESS_2),
+                    VoteWithPower {
+                        prop_id: 5,
+                        power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
+                    },
+                )],
+                mock_top_n_deployment_threshold_not_reached.clone(),
+            ),
+            expected_tribute_claim: 0,
+            expected_success: false,
+            expected_error_msg: format!("Tribute can not be claimed because the proposal received less voting percentage than required to deploy the liquidity. Proposal percentage: {}%, Minimum required to deploy the liquidity: {}%", MIN_PROP_PERCENT_TO_DEPLOY - Uint128::one(), MIN_PROP_PERCENT_TO_DEPLOY).to_string(),
+        },
+        ClaimTributeTestCase {
             description: "try claim tribute for non existing tribute id".to_string(),
             tribute_info: (10, 0, 5, 1),
             tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
@@ -500,7 +531,7 @@ fn claim_tribute_test() {
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
-        let msg = get_instantiate_msg(hydro_contract_address.clone());
+        let msg = get_instantiate_msg(hydro_contract_address.clone(), MIN_PROP_PERCENT_TO_DEPLOY);
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 
@@ -573,24 +604,45 @@ fn refund_tribute_test() {
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
     };
+
     let mock_proposals = vec![mock_proposal.clone()];
 
-    let mock_top_n_proposals = vec![Proposal {
+    let mock_top_n_different_proposals = vec![Proposal {
         round_id: 10,
         tranche_id: 0,
         proposal_id: 6,
         title: "proposal title 2".to_string(),
         description: "proposal description 2".to_string(),
         power: Uint128::new(10000),
-        percentage: Uint128::zero(),
+        percentage: MIN_PROP_PERCENT_TO_DEPLOY,
+    }];
+
+    let mock_top_n_percent_threshold_reached = vec![Proposal {
+        percentage: MIN_PROP_PERCENT_TO_DEPLOY,
+        ..mock_proposal.clone()
+    }];
+
+    let mock_top_n_percent_threshold_not_reached = vec![Proposal {
+        percentage: MIN_PROP_PERCENT_TO_DEPLOY - Uint128::one(),
+        ..mock_proposal.clone()
     }];
 
     let test_cases: Vec<RefundTributeTestCase> = vec![
         RefundTributeTestCase {
-            description: "happy path".to_string(),
+            description: "refund tribute for the non top N proposal".to_string(),
             tribute_info: (10, 0, 5, 0),
             tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
-            mock_data: (10, 11, mock_proposals.clone(), mock_top_n_proposals.clone()),
+            mock_data: (10, 11, mock_proposals.clone(), mock_top_n_different_proposals.clone()),
+            tribute_refunder: None,
+            expected_tribute_refund: 1000,
+            expected_success: true,
+            expected_error_msg: String::new(),
+        },
+        RefundTributeTestCase {
+            description: "refund tribute for the top N proposal with less voting percentage than required for liquidity deployment".to_string(),
+            tribute_info: (10, 0, 5, 0),
+            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
+            mock_data: (10, 11, mock_proposals.clone(), mock_top_n_percent_threshold_not_reached),
             tribute_refunder: None,
             expected_tribute_refund: 1000,
             expected_success: true,
@@ -600,27 +652,27 @@ fn refund_tribute_test() {
             description: "try to get refund for the current round".to_string(),
             tribute_info: (10, 0, 5, 0),
             tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
-            mock_data: (10, 10, mock_proposals.clone(), mock_top_n_proposals.clone()),
+            mock_data: (10, 10, mock_proposals.clone(), mock_top_n_different_proposals.clone()),
             tribute_refunder: None,
             expected_tribute_refund: 0,
             expected_success: false,
             expected_error_msg: "Round has not ended yet".to_string(),
         },
         RefundTributeTestCase {
-            description: "try to get refund for the top N proposal".to_string(),
+            description: "try to get refund for the top N proposal with at least minimum voting percentage".to_string(),
             tribute_info: (10, 0, 5, 0),
             tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
-            mock_data: (10, 11, mock_proposals.clone(), mock_proposals.clone()),
+            mock_data: (10, 11, mock_proposals.clone(), mock_top_n_percent_threshold_reached.clone()),
             tribute_refunder: None,
             expected_tribute_refund: 0,
             expected_success: false,
-            expected_error_msg: "Can't refund top N proposal".to_string(),
+            expected_error_msg: format!("Can't refund top N proposal that received at least {} percents of the total voting power", MIN_PROP_PERCENT_TO_DEPLOY).to_string(),
         },
         RefundTributeTestCase {
             description: "try to get refund for non existing tribute".to_string(),
             tribute_info: (10, 0, 5, 1),
             tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
-            mock_data: (10, 11, mock_proposals.clone(), mock_top_n_proposals.clone()),
+            mock_data: (10, 11, mock_proposals.clone(), mock_top_n_different_proposals.clone()),
             tribute_refunder: None,
             expected_tribute_refund: 0,
             expected_success: false,
@@ -630,7 +682,7 @@ fn refund_tribute_test() {
             description: "try to get refund if not the depositor".to_string(),
             tribute_info: (10, 0, 5, 0),
             tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
-            mock_data: (10, 11, mock_proposals.clone(), mock_top_n_proposals.clone()),
+            mock_data: (10, 11, mock_proposals.clone(), mock_top_n_different_proposals.clone()),
             tribute_refunder: Some(USER_ADDRESS_2.to_string()),
             expected_tribute_refund: 0,
             expected_success: false,
@@ -654,7 +706,7 @@ fn refund_tribute_test() {
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
-        let msg = get_instantiate_msg(hydro_contract_address.clone());
+        let msg = get_instantiate_msg(hydro_contract_address.clone(), MIN_PROP_PERCENT_TO_DEPLOY);
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 
@@ -1179,6 +1231,7 @@ fn test_query_outstanding_tribute_claims() {
         let config = Config {
             hydro_contract: Addr::unchecked("hydro_contract_address".to_string()),
             top_n_props_count: 2,
+            min_prop_percent_to_deploy: Uint128::new(5),
         };
         CONFIG.save(&mut deps.storage, &config).unwrap();
 
@@ -1201,4 +1254,60 @@ fn test_query_outstanding_tribute_claims() {
             }
         }
     }
+}
+
+#[test]
+fn test_migrate() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+    let hydro_contract_address = deps.api.addr_make(HYDRO_CONTRACT_ADDRESS);
+
+    let old_config = ConfigV1 {
+        hydro_contract: hydro_contract_address,
+        top_n_props_count: 77,
+    };
+
+    // Save old version of the config into the store
+    const OLD_CONFIG: Item<ConfigV1> = Item::new("config");
+    let result = OLD_CONFIG.save(&mut deps.storage, &old_config);
+    assert!(result.is_ok());
+
+    // Set the V1 contract version
+    let result = set_contract_version(&mut deps.storage, CONTRACT_NAME, "1.0.0");
+    assert!(result.is_ok());
+
+    // Try to migrate to the new config by setting the percentage above 100%
+    let msg = MigrateMsg {
+        min_prop_percent_to_deploy: Uint128::new(101),
+    };
+    let result = migrate(deps.as_mut(), env.clone(), msg.clone());
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().to_lowercase().contains(
+        "minimum proposal percentage to deploy the liquidity must be between 0 and 100."
+    ));
+
+    // Try to migrate to a new (valid) config
+    let msg = MigrateMsg {
+        min_prop_percent_to_deploy: Uint128::new(5),
+    };
+    let result = migrate(deps.as_mut(), env.clone(), msg.clone());
+    assert!(result.is_ok());
+
+    // Assert that the migration was successful
+    let new_config = CONFIG.load(&deps.storage).unwrap();
+    assert_eq!(old_config.hydro_contract, new_config.hydro_contract);
+    assert_eq!(old_config.top_n_props_count, new_config.top_n_props_count);
+    assert_eq!(
+        msg.min_prop_percent_to_deploy,
+        new_config.min_prop_percent_to_deploy
+    );
+
+    // Try to migrate already migrated contract and verify this errors out
+    let result = migrate(deps.as_mut(), env.clone(), msg.clone());
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .to_lowercase()
+        .contains("contract is already migrated to the newest version."))
 }

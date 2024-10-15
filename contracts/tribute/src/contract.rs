@@ -4,7 +4,8 @@ use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
     MessageInfo, Order, Reply, Response, StdError, StdResult, Uint128,
 };
-use cw2::set_contract_version;
+use cw2::{get_contract_version, set_contract_version};
+use cw_storage_plus::Item;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
@@ -13,7 +14,7 @@ use crate::query::{
     RoundTributesResponse, TributeClaim,
 };
 use crate::state::{
-    Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP,
+    Config, ConfigV1, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP,
 };
 use hydro::query::{
     CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
@@ -22,14 +23,11 @@ use hydro::query::{
 use hydro::state::{Proposal, VoteWithPower};
 
 /// Contract name that is used for migration.
-const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
+pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
 /// Contract version that is used for migration.
-const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const DEFAULT_MAX_ENTRIES: usize = 100;
-
-// Use 1 week as IBC timeout by default
-pub const IBC_TIMEOUT_DURATION_IN_SECONDS: u64 = 60 * 60 * 24 * 7;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -42,6 +40,7 @@ pub fn instantiate(
     let config = Config {
         hydro_contract: deps.api.addr_validate(&msg.hydro_contract)?,
         top_n_props_count: msg.top_n_props_count,
+        min_prop_percent_to_deploy: msg.min_prop_percent_to_deploy,
     };
 
     CONFIG.save(deps.storage, &config)?;
@@ -197,6 +196,15 @@ fn claim_tribute(
             }
         };
 
+    // Check that the proposal received enough percentage of the total voting power.
+    // Only the proposals that have at least some minimum voting percentage will get
+    // the liquidity deployed, and therefore their tributes will be claimable.
+    if proposal.percentage < config.min_prop_percent_to_deploy {
+        return Err(ContractError::Std(StdError::generic_err(format!(
+            "Tribute can not be claimed because the proposal received less voting percentage than required to deploy the liquidity. Proposal percentage: {}%, Minimum required to deploy the liquidity: {}%", proposal.percentage, config.min_prop_percent_to_deploy,
+        ))));
+    }
+
     // Load the tribute and use the percentage to figure out how much of the tribute to send them
     let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
 
@@ -293,10 +301,14 @@ fn refund_tribute(
         )));
     }
 
-    if get_top_n_proposal(&deps.as_ref(), &config, round_id, tranche_id, proposal_id)?.is_some() {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Can't refund top N proposal",
-        )));
+    if let Some(proposal) =
+        get_top_n_proposal(&deps.as_ref(), &config, round_id, tranche_id, proposal_id)?
+    {
+        if proposal.percentage >= config.min_prop_percent_to_deploy {
+            return Err(ContractError::Std(StdError::generic_err(
+                format!("Can't refund top N proposal that received at least {} percents of the total voting power", config.min_prop_percent_to_deploy),
+            )));
+        }
     }
 
     // Load the tribute
@@ -647,7 +659,34 @@ fn get_top_n_proposals(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> Result<Response, ContractError> {
+    // V1 to V2 migration
+    let contract_version = get_contract_version(deps.storage)?;
+    if contract_version.version == CONTRACT_VERSION {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Contract is already migrated to the newest version.",
+        )));
+    }
+
+    if msg.min_prop_percent_to_deploy > Uint128::new(100) {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Minimum proposal percentage to deploy the liquidity must be between 0 and 100.",
+        )));
+    }
+
+    const OLD_CONFIG: Item<ConfigV1> = Item::new("config");
+    let old_config = OLD_CONFIG.load(deps.storage)?;
+
+    let new_config = Config {
+        hydro_contract: old_config.hydro_contract,
+        top_n_props_count: old_config.top_n_props_count,
+        min_prop_percent_to_deploy: msg.min_prop_percent_to_deploy,
+    };
+
+    CONFIG.save(deps.storage, &new_config)?;
+
+    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
+
     Ok(Response::default())
 }
 
