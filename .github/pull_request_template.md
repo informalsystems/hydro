@@ -15,7 +15,7 @@ please add links to any relevant follow up issues.*
 I have...
 
 * [ ] Targeted the correct branch
-* [ ] Included the necessary unit and e2e tests
+* [ ] Included the necessary unit tests
 * [ ] Added/adjusted the necessary [interchain tests](./test/interchain/)
 * [ ] Added a changelog entry in `.changelog`
 * [ ] Compiled the contracts by using `make compile` and included content of the *artifacts* directory into the PR
