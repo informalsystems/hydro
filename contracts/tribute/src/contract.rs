@@ -185,25 +185,11 @@ fn claim_tribute(
         voter.clone().to_string(),
     )?;
 
-    // Check that the voter voted for one of the top N proposals
+    // Check that the voter voted for one of the top N proposals that
+    // received enough voting percentage to get the liquidity deployed.
     let proposal =
-        match get_top_n_proposal(&deps.as_ref(), &config, round_id, tranche_id, vote.prop_id)? {
-            Some(prop) => prop,
-            None => {
-                return Err(ContractError::Std(StdError::generic_err(
-                    "User voted for proposal outside of top N proposals",
-                )))
-            }
-        };
-
-    // Check that the proposal received enough percentage of the total voting power.
-    // Only the proposals that have at least some minimum voting percentage will get
-    // the liquidity deployed, and therefore their tributes will be claimable.
-    if proposal.percentage < config.min_prop_percent_to_deploy {
-        return Err(ContractError::Std(StdError::generic_err(format!(
-            "Tribute can not be claimed because the proposal received less voting percentage than required to deploy the liquidity. Proposal percentage: {}%, Minimum required to deploy the liquidity: {}%", proposal.percentage, config.min_prop_percent_to_deploy,
-        ))));
-    }
+        get_top_n_proposal_info(&deps.as_ref(), &config, round_id, tranche_id, vote.prop_id)?
+            .are_tributes_claimable()?;
 
     // Load the tribute and use the percentage to figure out how much of the tribute to send them
     let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
@@ -301,15 +287,8 @@ fn refund_tribute(
         )));
     }
 
-    if let Some(proposal) =
-        get_top_n_proposal(&deps.as_ref(), &config, round_id, tranche_id, proposal_id)?
-    {
-        if proposal.percentage >= config.min_prop_percent_to_deploy {
-            return Err(ContractError::Std(StdError::generic_err(
-                format!("Can't refund top N proposal that received at least {} percents of the total voting power", config.min_prop_percent_to_deploy),
-            )));
-        }
-    }
+    get_top_n_proposal_info(&deps.as_ref(), &config, round_id, tranche_id, proposal_id)?
+        .are_tributes_refundable()?;
 
     // Load the tribute
     let mut tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
@@ -345,6 +324,62 @@ fn refund_tribute(
             to_address: info.sender.to_string(),
             amount: vec![tribute.funds],
         }))
+}
+
+struct TopNProposalInfo {
+    pub top_n_proposal: Option<Proposal>,
+    pub is_above_voting_threshold: bool,
+}
+
+impl TopNProposalInfo {
+    fn are_tributes_claimable(&self) -> Result<Proposal, ContractError> {
+        match self.top_n_proposal.as_ref() {
+            None => Err(ContractError::Std(StdError::generic_err(
+                "User voted for proposal outside of top N proposals",
+            ))),
+            Some(proposal) => {
+                if !self.is_above_voting_threshold {
+                    return Err(ContractError::Std(StdError::generic_err(
+                        "Tribute can not be claimed because the proposal received less voting percentage than required to deploy the liquidity.")));
+                }
+
+                Ok(proposal.clone())
+            }
+        }
+    }
+
+    fn are_tributes_refundable(&self) -> Result<(), ContractError> {
+        if self.top_n_proposal.is_some() && self.is_above_voting_threshold {
+            return Err(ContractError::Std(StdError::generic_err(
+                "Can't refund top N proposal that received at least the threshold of the total voting power",
+            )));
+        }
+
+        Ok(())
+    }
+}
+
+// This function will query the top N proposals from the Hydro contract and determine if the proposal
+// with the given ID is among the top N. If yes, it will also determine if the proposal received at least
+// the threshold percent of the total voting power, which would mean that the liquidity for this proposal
+// is (or will shortly be) deployed.
+fn get_top_n_proposal_info(
+    deps: &Deps,
+    config: &Config,
+    round_id: u64,
+    tranche_id: u64,
+    proposal_id: u64,
+) -> Result<TopNProposalInfo, ContractError> {
+    match get_top_n_proposal(deps, config, round_id, tranche_id, proposal_id)? {
+        Some(proposal) => Ok(TopNProposalInfo {
+            top_n_proposal: Some(proposal.clone()),
+            is_above_voting_threshold: proposal.percentage >= config.min_prop_percent_to_deploy,
+        }),
+        None => Ok(TopNProposalInfo {
+            top_n_proposal: None,
+            is_above_voting_threshold: false,
+        }),
+    }
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]

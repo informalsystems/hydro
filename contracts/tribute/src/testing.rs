@@ -465,7 +465,7 @@ fn claim_tribute_test() {
             ),
             expected_tribute_claim: 0,
             expected_success: false,
-            expected_error_msg: format!("Tribute can not be claimed because the proposal received less voting percentage than required to deploy the liquidity. Proposal percentage: {}%, Minimum required to deploy the liquidity: {}%", MIN_PROP_PERCENT_TO_DEPLOY - Uint128::one(), MIN_PROP_PERCENT_TO_DEPLOY).to_string(),
+            expected_error_msg: "Tribute can not be claimed because the proposal received less voting percentage than required to deploy the liquidity.".to_string(),
         },
         ClaimTributeTestCase {
             description: "try claim tribute for non existing tribute id".to_string(),
@@ -666,7 +666,7 @@ fn refund_tribute_test() {
             tribute_refunder: None,
             expected_tribute_refund: 0,
             expected_success: false,
-            expected_error_msg: format!("Can't refund top N proposal that received at least {} percents of the total voting power", MIN_PROP_PERCENT_TO_DEPLOY).to_string(),
+            expected_error_msg: "Can't refund top N proposal that received at least the threshold of the total voting power".to_string(),
         },
         RefundTributeTestCase {
             description: "try to get refund for non existing tribute".to_string(),
