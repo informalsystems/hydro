@@ -314,6 +314,13 @@ fn refresh_lock_duration(
         validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
     }
 
+    // if there are no lock_ids, return an error
+    if lock_ids.is_empty() {
+        return Err(ContractError::Std(StdError::generic_err(
+            "No lock_ids provided",
+        )));
+    }
+
     let current_round_id = compute_current_round_id(&env, &constants)?;
     initialize_validator_store(deps.storage, current_round_id)?;
 
@@ -423,9 +430,15 @@ fn validate_lock_duration(lock_epoch_length: u64, lock_duration: u64) -> Result<
         && lock_duration != lock_epoch_length * 6
         && lock_duration != lock_epoch_length * 12
     {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Lock duration must be 1, 2, 3, 6, or 12 epochs",
-        )));
+        return Err(ContractError::Std(StdError::generic_err(format!(
+            "Lock duration must be 1, 2, 3, 6, or 12 epochs: {}, {}, {}, {}, or {}; but was: {}",
+            lock_epoch_length,
+            lock_epoch_length * 2,
+            lock_epoch_length * 3,
+            lock_epoch_length * 6,
+            lock_epoch_length * 12,
+            lock_duration
+        ))));
     }
 
     Ok(())

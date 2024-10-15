@@ -1926,3 +1926,126 @@ pub fn pilot_round_lock_duration_test() {
         }
     }
 }
+
+struct TestCase {
+    lock_ids: Vec<u64>,
+    new_lock_duration: u64,
+    expected_error: Option<String>,
+}
+
+// This test checks the behaviour when refreshing multiple locks at once.
+// It creates multiple locks in different rounds and then tries to refresh subsets of them.
+// It checks:
+// * a case where multiple locks are successfully refreshed together
+// * a case where one of the locks that are being refreshed would get shorter, so this case should fail
+// * a case where the list of locks is empty
+#[test]
+fn test_refresh_multiple_locks() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, "addr0000", &[]);
+
+    // Define test cases
+    let test_cases = vec![
+        TestCase {
+            lock_ids: vec![],
+            new_lock_duration: ONE_MONTH_IN_NANO_SECONDS * 3,
+            expected_error: Some("No lock_ids provided".to_string()),
+        },
+        TestCase {
+            lock_ids: vec![0, 1, 2],
+            new_lock_duration: ONE_MONTH_IN_NANO_SECONDS, // shorter than the remaining duration
+            expected_error: Some("Shortening locks is not allowed".to_string()),
+        },
+        TestCase {
+            lock_ids: vec![1, 2],
+            new_lock_duration: ONE_MONTH_IN_NANO_SECONDS * 6, // longer than the remaining duration
+            expected_error: None,
+        },
+        TestCase {
+            lock_ids: vec![2],
+            new_lock_duration: ONE_MONTH_IN_NANO_SECONDS * 3,
+            expected_error: None,
+        },
+    ];
+
+    // Execute test cases
+    for case in test_cases {
+        let mut msg = get_default_instantiate_msg(&deps.api);
+        msg.is_in_pilot_mode = false;
+        msg.lock_epoch_length = ONE_MONTH_IN_NANO_SECONDS;
+        msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
+
+        let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_ok());
+
+        set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+
+        // Create multiple locks with different durations and starting times
+        let lock_durations = vec![
+            ONE_MONTH_IN_NANO_SECONDS * 12,
+            ONE_MONTH_IN_NANO_SECONDS * 6,
+            ONE_MONTH_IN_NANO_SECONDS * 3,
+        ];
+
+        let info = get_message_info(
+            &deps.api,
+            "addr0000",
+            &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        );
+
+        for &duration in lock_durations.iter() {
+            let lock_msg = ExecuteMsg::LockTokens {
+                lock_duration: duration,
+            };
+            let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg);
+            assert!(
+                res.is_ok(),
+                "Lock creation failed for duration: {} with error: {}",
+                duration,
+                res.err().unwrap()
+            );
+
+            // Advance time for each lock
+            env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
+        }
+
+        // now, the locks should have remaining times of 9, 4, and 2 months
+        let refresh_msg = ExecuteMsg::RefreshLockDuration {
+            lock_ids: case.lock_ids.clone(),
+            lock_duration: case.new_lock_duration,
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), refresh_msg);
+
+        match &case.expected_error {
+            Some(expected_error) => {
+                assert!(
+                    res.is_err(),
+                    "Expected error for lock_ids: {:?}, new_lock_duration: {}",
+                    case.lock_ids,
+                    case.new_lock_duration
+                );
+                let error = res.unwrap_err().to_string();
+                assert!(
+                    error.contains(expected_error),
+                    "Expected error message to contain: {}, but was: {}",
+                    expected_error,
+                    error
+                );
+            }
+            None => {
+                assert!(
+                    res.is_ok(),
+                    "Expected success for lock_ids: {:?}, new_lock_duration: {}; error: {}",
+                    case.lock_ids,
+                    case.new_lock_duration,
+                    res.err().unwrap()
+                );
+            }
+        }
+    }
+}
