@@ -377,7 +377,7 @@ fn refresh_single_lock(
     let validator_result = validate_denom(
         deps.as_ref(),
         env.clone(),
-        &constants,
+        constants,
         lock_entry.funds.denom.clone(),
     );
     if validator_result.is_err() {
@@ -386,21 +386,20 @@ fn refresh_single_lock(
         )));
     }
     let validator = validator_result.unwrap();
-    let mut deps = deps;
     update_voting_power_on_proposals(
-        &mut deps,
+        deps,
         &info.sender,
-        &constants,
+        constants,
         current_round_id,
         Some(old_lock_entry),
         lock_entry.clone(),
         validator.clone(),
     )?;
-    let old_last_round_with_power = compute_round_id_for_timestamp(&constants, old_lock_end)? - 1;
-    let new_last_round_with_power = compute_round_id_for_timestamp(&constants, new_lock_end)? - 1;
+    let old_last_round_with_power = compute_round_id_for_timestamp(constants, old_lock_end)? - 1;
+    let new_last_round_with_power = compute_round_id_for_timestamp(constants, new_lock_end)? - 1;
     update_total_time_weighted_shares(
         deps,
-        &constants,
+        constants,
         current_round_id,
         new_last_round_with_power,
         new_lock_end,
