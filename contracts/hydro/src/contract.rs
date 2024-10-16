@@ -341,11 +341,11 @@ fn refresh_lock_duration(
         )?;
 
         response = response.add_attribute(
-            &format!("lock_id_{}_old_end", lock_id),
+            format!("lock_id_{}_old_end", lock_id),
             old_lock_end.to_string(),
         );
         response = response.add_attribute(
-            &format!("lock_id_{}_new_end", lock_id),
+            format!("lock_id_{}_new_end", lock_id),
             new_lock_end.to_string(),
         );
     }
@@ -755,7 +755,8 @@ fn vote(
             lock_entry.clone().funds.denom,
         );
         if validator_result.is_err() {
-            deps.api.debug(&format!(
+            deps.api.debug(&
+                format!(
                 "Denom {} is not a valid validator denom; validator might not be in the current set of top validators by delegation",
                 lock_entry.funds.denom
             ));
