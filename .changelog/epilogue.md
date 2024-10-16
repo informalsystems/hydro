@@ -1,5 +1,3 @@
-# CHANGELOG
-
 # v1.0.0
 
 Date: September 24th, 2023
