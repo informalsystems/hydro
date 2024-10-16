@@ -1928,9 +1928,11 @@ pub fn pilot_round_lock_duration_test() {
 }
 
 struct TestCase {
+    name: &'static str,
     lock_ids: Vec<u64>,
     new_lock_duration: u64,
     expected_error: Option<String>,
+    expected_new_lock_durations: Vec<u64>,
 }
 
 // This test checks the behaviour when refreshing multiple locks at once.
@@ -1951,29 +1953,38 @@ fn test_refresh_multiple_locks() {
     // Define test cases
     let test_cases = vec![
         TestCase {
+            name: "Empty lock_ids",
             lock_ids: vec![],
             new_lock_duration: ONE_MONTH_IN_NANO_SECONDS * 3,
             expected_error: Some("No lock_ids provided".to_string()),
+            expected_new_lock_durations: vec![9, 4, 2],
         },
         TestCase {
+            name: "Shortening locks",
             lock_ids: vec![0, 1, 2],
             new_lock_duration: ONE_MONTH_IN_NANO_SECONDS, // shorter than the remaining duration
             expected_error: Some("Shortening locks is not allowed".to_string()),
+            expected_new_lock_durations: vec![9, 4, 2],
         },
         TestCase {
+            name: "Successful refresh of multiple locks",
             lock_ids: vec![1, 2],
             new_lock_duration: ONE_MONTH_IN_NANO_SECONDS * 6, // longer than the remaining duration
             expected_error: None,
+            expected_new_lock_durations: vec![9, 6, 6],
         },
         TestCase {
+            name: "Successful refresh of a single lock",
             lock_ids: vec![2],
             new_lock_duration: ONE_MONTH_IN_NANO_SECONDS * 3,
             expected_error: None,
+            expected_new_lock_durations: vec![9, 4, 3],
         },
     ];
 
     // Execute test cases
     for case in test_cases {
+        println!("Running test case: {}", case.name);
         let mut msg = get_default_instantiate_msg(&deps.api);
         msg.is_in_pilot_mode = false;
         msg.lock_epoch_length = ONE_MONTH_IN_NANO_SECONDS;
@@ -2046,6 +2057,27 @@ fn test_refresh_multiple_locks() {
                     res.err().unwrap()
                 );
             }
+        }
+
+        // Verify the new lock durations
+        let lockups =
+            query_all_user_lockups(deps.as_ref(), env.clone(), info.sender.to_string(), 0, 100)
+                .unwrap()
+                .lockups;
+        for (i, &expected_duration) in case.expected_new_lock_durations.iter().enumerate() {
+            let expected_nanos = expected_duration * ONE_MONTH_IN_NANO_SECONDS;
+            let remaining_lock_duration = lockups[i]
+                .lock_entry
+                .lock_end
+                .minus_nanos(env.block.time.nanos());
+            assert_eq!(
+                expected_nanos,
+                remaining_lock_duration.nanos(),
+                "Lock duration mismatch for lock_id: {}, expected: {}, actual: {}",
+                i,
+                expected_nanos,
+                remaining_lock_duration.nanos()
+            );
         }
     }
 }
