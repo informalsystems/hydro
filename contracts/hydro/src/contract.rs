@@ -271,7 +271,7 @@ fn lock_tokens(
     let last_round_with_power = compute_round_id_for_timestamp(&constants, lock_end)? - 1;
 
     update_total_time_weighted_shares(
-        deps,
+        &mut deps,
         &constants,
         current_round,
         last_round_with_power,
@@ -331,7 +331,7 @@ fn refresh_lock_duration(
 
     for lock_id in lock_ids {
         let (new_lock_end, old_lock_end) = refresh_single_lock(
-            deps.branch(),
+            &mut deps,
             &info.clone(),
             env.clone(),
             constants.clone(),
@@ -354,7 +354,7 @@ fn refresh_lock_duration(
 }
 
 fn refresh_single_lock(
-    deps: DepsMut<'_, NeutronQuery>,
+    deps: &mut DepsMut<'_, NeutronQuery>,
     info: &MessageInfo,
     env: Env,
     constants: Constants,
@@ -1807,7 +1807,7 @@ fn update_proposal_and_props_by_score_maps(
 
 #[allow(clippy::too_many_arguments)] // complex function that needs a lot of arguments
 fn update_total_time_weighted_shares<T>(
-    deps: DepsMut<NeutronQuery>,
+    deps: &mut DepsMut<NeutronQuery>,
     constants: &Constants,
     start_round_id: u64,
     end_round_id: u64,
