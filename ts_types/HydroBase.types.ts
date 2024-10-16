@@ -50,7 +50,7 @@ export type ExecuteMsg = {
 } | {
   refresh_lock_duration: {
     lock_duration: number;
-    lock_id: number;
+    lock_ids: number[];
   };
 } | {
   unlock_tokens: {};

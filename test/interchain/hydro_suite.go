@@ -548,7 +548,7 @@ func (s *HydroSuite) UnlockTokens(contractAddr string) error {
 func (s *HydroSuite) RefreshLock(contractAddr string, new_lock_duration, lock_id int64) error {
 	refreshTxData := map[string]interface{}{
 		"refresh_lock_duration": map[string]interface{}{
-			"lock_id":       lock_id,
+			"lock_ids":      []int64{lock_id},
 			"lock_duration": new_lock_duration,
 		},
 	}

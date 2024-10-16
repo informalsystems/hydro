@@ -784,7 +784,7 @@ fn validator_set_initialization_test() {
             description: "Refresh lock".to_string(),
             message: ExecuteMsg::RefreshLockDuration {
                 lock_duration: ONE_MONTH_IN_NANO_SECONDS,
-                lock_id: 0,
+                lock_ids: vec![0],
             },
         },
     ];

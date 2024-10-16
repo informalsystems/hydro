@@ -324,10 +324,10 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   refreshLockDuration: ({
     lockDuration,
-    lockId
+    lockIds
   }: {
     lockDuration: number;
-    lockId: number;
+    lockIds: number[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   unlockTokens: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   createProposal: ({
@@ -435,15 +435,15 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
   };
   refreshLockDuration = async ({
     lockDuration,
-    lockId
+    lockIds
   }: {
     lockDuration: number;
-    lockId: number;
+    lockIds: number[];
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       refresh_lock_duration: {
         lock_duration: lockDuration,
-        lock_id: lockId
+        lock_ids: lockIds
       }
     }, fee, memo, _funds);
   };
