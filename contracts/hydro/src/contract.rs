@@ -332,9 +332,9 @@ fn refresh_lock_duration(
     for lock_id in lock_ids {
         let (new_lock_end, old_lock_end) = refresh_single_lock(
             &mut deps,
-            &info.clone(),
-            env.clone(),
-            constants.clone(),
+            &info,
+            &env,
+            &constants,
             current_round_id,
             lock_id,
             lock_duration,
@@ -356,8 +356,8 @@ fn refresh_lock_duration(
 fn refresh_single_lock(
     deps: &mut DepsMut<'_, NeutronQuery>,
     info: &MessageInfo,
-    env: Env,
-    constants: Constants,
+    env: &Env,
+    constants: &Constants,
     current_round_id: u64,
     lock_id: u64,
     new_lock_duration: u64,
