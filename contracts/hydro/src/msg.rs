@@ -49,7 +49,7 @@ pub enum ExecuteMsg {
     },
     Vote {
         tranche_id: u64,
-        proposal_id: u64,
+        proposals_votes: Vec<ProposalToLockups>,
     },
     AddAccountToWhitelist {
         address: String,
@@ -86,6 +86,13 @@ pub enum ExecuteMsg {
     WithdrawICQFunds {
         amount: Uint128,
     },
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct ProposalToLockups {
+    pub proposal_id: u64,
+    pub lock_ids: Vec<u64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

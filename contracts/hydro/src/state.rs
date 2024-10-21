@@ -52,8 +52,8 @@ pub struct Proposal {
     pub percentage: Uint128,
 }
 
-// VOTE_MAP: key(round_id, tranche_id, sender_addr) -> Vote
-pub const VOTE_MAP: Map<(u64, u64, Addr), Vote> = Map::new("vote_map");
+// VOTE_MAP: key((round_id, tranche_id), sender_addr, lock_id) -> Vote
+pub const VOTE_MAP: Map<((u64, u64), Addr, u64), Vote> = Map::new("vote_map");
 #[cw_serde]
 pub struct Vote {
     pub prop_id: u64,

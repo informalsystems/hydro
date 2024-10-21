@@ -8,7 +8,7 @@ use hydro::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
     ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
     RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse,
-    TranchesResponse, UserVoteResponse, UserVotingPowerResponse, WhitelistAdminsResponse,
+    TranchesResponse, UserVotesResponse, UserVotingPowerResponse, WhitelistAdminsResponse,
     WhitelistResponse,
 };
 
@@ -28,7 +28,7 @@ fn main() {
     export_schema(&schema_for!(AllUserLockupsResponse), &out_dir);
     export_schema(&schema_for!(ExpiredUserLockupsResponse), &out_dir);
     export_schema(&schema_for!(UserVotingPowerResponse), &out_dir);
-    export_schema(&schema_for!(UserVoteResponse), &out_dir);
+    export_schema(&schema_for!(UserVotesResponse), &out_dir);
     export_schema(&schema_for!(CurrentRoundResponse), &out_dir);
     export_schema(&schema_for!(RoundEndResponse), &out_dir);
     export_schema(&schema_for!(RoundTotalVotingPowerResponse), &out_dir);

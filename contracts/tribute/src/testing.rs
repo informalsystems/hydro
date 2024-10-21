@@ -20,7 +20,7 @@ use cw_storage_plus::Item;
 use hydro::{
     query::{
         CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
-        UserVoteResponse,
+        UserVotesResponse,
     },
     state::{Proposal, VoteWithPower},
 };
@@ -110,7 +110,7 @@ impl MockWasmQuerier {
                             }
                         }
                     }),
-                    HydroQueryMsg::UserVote {
+                    HydroQueryMsg::UserVotes {
                         round_id,
                         tranche_id,
                         address,
@@ -157,8 +157,9 @@ impl MockWasmQuerier {
                 && *vote_tranche_id == tranche_id
                 && vote_address == address
             {
-                let res: StdResult<Binary> =
-                    to_json_binary(&UserVoteResponse { vote: vote.clone() });
+                let res: StdResult<Binary> = to_json_binary(&UserVotesResponse {
+                    votes: vec![vote.clone()],
+                });
                 return res;
             }
         }
@@ -372,8 +373,21 @@ fn claim_tribute_test() {
         power: Uint128::new(10000),
         percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
     };
+    let mock_proposal3 = Proposal {
+        round_id: 10,
+        tranche_id: 0,
+        proposal_id: 7,
+        title: "proposal title 3".to_string(),
+        description: "proposal description 3".to_string(),
+        power: Uint128::new(10000),
+        percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
+    };
 
-    let mock_proposals = vec![mock_proposal1.clone(), mock_proposal2.clone()];
+    let mock_proposals = vec![
+        mock_proposal1.clone(),
+        mock_proposal2.clone(),
+        mock_proposal3.clone(),
+    ];
 
     let mock_top_n_proposals = vec![mock_proposal1.clone(), mock_proposal2.clone()];
 
@@ -430,7 +444,7 @@ fn claim_tribute_test() {
         },
         ClaimTributeTestCase {
             description: "try claim tribute if user didn't vote for top N proposal".to_string(),
-            tribute_info: (10, 0, 5, 0),
+            tribute_info: (10, 0, 7, 0),
             tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
             mock_data: (
                 10,
@@ -519,7 +533,7 @@ fn claim_tribute_test() {
             ),
             expected_tribute_claim: 0,
             expected_success: false,
-            expected_error_msg: "The tribute with the given ID does not belong to the proposal that the user voted on".to_string(),
+            expected_error_msg: "User voted for a different proposal than the one this tribute belongs to".to_string(),
         },
     ];
 
@@ -1219,7 +1233,7 @@ fn test_query_outstanding_tribute_claims() {
                 title: "Proposal 1".to_string(),
                 description: "Description 1".to_string(),
                 power: Uint128::new(1000),
-                percentage: Uint128::zero(),
+                percentage: Uint128::new(7),
             },
             Proposal {
                 round_id: 1,
@@ -1228,7 +1242,7 @@ fn test_query_outstanding_tribute_claims() {
                 title: "Proposal 2".to_string(),
                 description: "Description 2".to_string(),
                 power: Uint128::new(2000),
-                percentage: Uint128::zero(),
+                percentage: Uint128::new(7),
             },
         ];
 

@@ -62,7 +62,7 @@ export type ExecuteMsg = {
   };
 } | {
   vote: {
-    proposal_id: number;
+    proposals_votes: ProposalToLockups[];
     tranche_id: number;
   };
 } | {
@@ -106,6 +106,10 @@ export type ExecuteMsg = {
     amount: Uint128;
   };
 };
+export interface ProposalToLockups {
+  lock_ids: number[];
+  proposal_id: number;
+}
 export interface TrancheInfo {
   metadata: string;
   name: string;
@@ -161,7 +165,7 @@ export type QueryMsg = {
     address: string;
   };
 } | {
-  user_vote: {
+  user_votes: {
     address: string;
     round_id: number;
     tranche_id: number;
@@ -235,8 +239,8 @@ export interface Tranche {
   name: string;
 }
 export type Decimal = string;
-export interface UserVoteResponse {
-  vote: VoteWithPower;
+export interface UserVotesResponse {
+  votes: VoteWithPower[];
 }
 export interface VoteWithPower {
   power: Decimal;
