@@ -25,18 +25,10 @@ mod tests {
         }
 
         fn create_migrate_msg(env: &Env, offset: i64) -> MigrateMsg {
-            if offset > 0 {
-                return MigrateMsg {
-                    new_first_round_start: env.block.time.plus_nanos(offset as u64),
-                };
-            } else if offset < 0 {
-                return MigrateMsg {
-                    new_first_round_start: env.block.time.minus_nanos(offset.abs() as u64),
-                };
-            } else {
-                return MigrateMsg {
-                    new_first_round_start: env.block.time,
-                };
+            MigrateMsg {
+                new_first_round_start: Timestamp::from_nanos(
+                    (env.block.time.nanos() as i64 + offset) as u64,
+                ),
             }
         }
 
@@ -44,7 +36,7 @@ mod tests {
             env.block.time.plus_nanos(offset).nanos()
         }
 
-        let test_cases = vec![
+        let test_cases = [
             TestCase {
                 description: "Happy path".to_string(),
                 migrate_msg: |env| create_migrate_msg(&env, ONE_DAY_IN_NANO_SECONDS as i64),
