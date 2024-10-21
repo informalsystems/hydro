@@ -99,5 +99,10 @@ mod tests {
                 addr, lock_id
             );
         }
+
+        // ensure that the migration returns an error if we try to migrate *not* during the first round
+        env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS * 2);
+        let res = migrate(deps.as_mut(), env.clone(), migrate_msg);
+        assert!(res.is_err(), "Migration should have failed: {:?}", res);
     }
 }

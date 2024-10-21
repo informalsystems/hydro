@@ -1,4 +1,6 @@
-use crate::contract::{compute_round_end, CONTRACT_NAME, CONTRACT_VERSION};
+use crate::contract::{
+    compute_current_round_id, compute_round_end, CONTRACT_NAME, CONTRACT_VERSION,
+};
 use crate::error::ContractError;
 use crate::msg::MigrateMsg;
 use crate::state::{Constants, CONSTANTS, LOCKS_MAP};
@@ -15,7 +17,7 @@ use neutron_sdk::bindings::query::NeutronQuery;
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(
     mut deps: DepsMut<NeutronQuery>,
-    _env: Env,
+    env: Env,
     msg: MigrateMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let contract_version = get_contract_version(deps.storage)?;
@@ -35,7 +37,7 @@ pub fn migrate(
 
     if contract_version.version == "1.0.0" {
         // Perform the migration from 1.0.0 to 1.1.0
-        migrate_v1_0_0_to_v1_1_0(&mut deps, msg)?;
+        migrate_v1_0_0_to_v1_1_0(&mut deps, env, msg)?;
     }
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
@@ -46,11 +48,22 @@ pub fn migrate(
 // Migrating from 1.0.0 to 1.1.0 will:
 // - Update the first_round_start to the value provided in the migration message
 // - For each lock, update the lock_end to the end of the new first round
+// Note that this migration will only work properly if the contract is currently within the first round.
 fn migrate_v1_0_0_to_v1_1_0(
     deps: &mut DepsMut<NeutronQuery>,
+    env: Env,
     msg: MigrateMsg,
 ) -> Result<(), ContractError> {
     // Migrate the contract to version 1.1.0
+
+    // ensure that the contract is currently within the first round
+    let constants = CONSTANTS.load(deps.storage)?;
+    let current_round_id = compute_current_round_id(&env, &constants)?;
+    if current_round_id != 0 {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Migration to version 1.1.0 can only be done within the first round.",
+        )));
+    }
 
     // update the first_round_start to the value provided in the migration message
     CONSTANTS.update(
