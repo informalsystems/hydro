@@ -10,9 +10,8 @@ use neutron_sdk::bindings::query::NeutronQuery;
 /// In the first version of Hydro, we allow contract to be un-paused through the Cosmos Hub governance
 /// by migrating contract to the same code ID. This will trigger the migrate() function where we set
 /// the paused flag to false.
-/// Keep in mind that, for the future versions, this function should check the `CONTRACT_VERSION` and
-/// perform any state changes needed. It should also handle the un-pausing of the contract, depending if
-/// it was previously paused or not.
+/// Additionally, any migration logic can be added here.
+/// Those migrations should check the contract version and apply the necessary changes.
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(
     mut deps: DepsMut<NeutronQuery>,
@@ -35,7 +34,7 @@ pub fn migrate(
     }
 
     if contract_version.version == "1.0.0" {
-        // Perform the migration from 1.0.0 to 1.0.1
+        // Perform the migration from 1.0.0 to 1.1.0
         migrate_v1_0_0_to_v1_1_0(&mut deps, msg)?;
     }
 
@@ -44,11 +43,14 @@ pub fn migrate(
     Ok(Response::default())
 }
 
+// Migrating from 1.0.0 to 1.1.0 will:
+// - Update the first_round_start to the value provided in the migration message
+// - For each lock, update the lock_end to the end of the new first round
 fn migrate_v1_0_0_to_v1_1_0(
     deps: &mut DepsMut<NeutronQuery>,
     msg: MigrateMsg,
 ) -> Result<(), ContractError> {
-    // Migrate the contract to version 1.0.1
+    // Migrate the contract to version 1.1.0
 
     // update the first_round_start to the value provided in the migration message
     CONSTANTS.update(

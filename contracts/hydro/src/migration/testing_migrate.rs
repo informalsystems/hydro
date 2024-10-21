@@ -13,10 +13,10 @@ mod tests {
     use crate::testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies};
     use cosmwasm_std::testing::mock_env;
     use cosmwasm_std::{Coin, Order, StdResult};
-    use cw2::set_contract_version;
+    use cw2::{get_contract_version, set_contract_version};
 
     #[test]
-    fn test_migrate() {
+    fn test_migrate_v100_to_v110() {
         let grpc_query = denom_trace_grpc_query_mock(
             "transfer/channel-0".to_string(),
             HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
@@ -71,6 +71,10 @@ mod tests {
         // Call the migrate function
         let res = migrate(deps.as_mut(), env.clone(), migrate_msg.clone());
         assert!(res.is_ok(), "Migration failed: {:?}", res);
+
+        // Check that the contract version is updated
+        let contract_version = get_contract_version(deps.as_ref().storage).unwrap();
+        assert_eq!(contract_version.version, "1.1.0");
 
         // Check that the first round end is as expected
         let constants = CONSTANTS.load(deps.as_ref().storage).unwrap();
