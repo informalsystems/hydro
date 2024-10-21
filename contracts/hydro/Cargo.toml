@@ -1,6 +1,6 @@
 [package]
 name = "hydro"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Jehan Tremback", "Philip Offtermatt", "Dusan Maksimovic"]
 edition = "2018"
 
