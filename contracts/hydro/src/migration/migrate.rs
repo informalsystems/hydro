@@ -48,7 +48,8 @@ pub fn migrate(
 // Migrating from 1.0.0 to 1.1.0 will:
 // - Update the first_round_start to the value provided in the migration message
 // - For each lock, update the lock_end to the end of the new first round
-// Note that this migration will only work properly if the contract is currently within the first round.
+// Note that this migration will only work properly if the contract is currently within the first round,
+// and if the contract will be before the end of the first round after the migration, too.
 fn migrate_v1_0_0_to_v1_1_0(
     deps: &mut DepsMut<NeutronQuery>,
     env: Env,
@@ -77,6 +78,12 @@ fn migrate_v1_0_0_to_v1_1_0(
     // for each lock, update the lock_end to the new round_end
     let constants = CONSTANTS.load(deps.storage)?;
     let first_round_end = compute_round_end(&constants, 0)?;
+
+    if first_round_end < env.block.time {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Migration to version 1.1.0 can only be done if the new first round end is in the future.",
+        )));
+    }
 
     let locks = LOCKS_MAP
         .range(deps.storage, None, None, Order::Ascending)
