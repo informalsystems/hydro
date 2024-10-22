@@ -35,7 +35,7 @@
           "type": "object",
           "required": [
             "lock_duration",
-            "lock_id"
+            "lock_ids"
           ],
           "properties": {
             "lock_duration": {
@@ -43,10 +43,13 @@
               "format": "uint64",
               "minimum": 0.0
             },
-            "lock_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+            "lock_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
             }
           },
           "additionalProperties": false

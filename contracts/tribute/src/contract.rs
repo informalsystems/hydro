@@ -22,14 +22,11 @@ use hydro::query::{
 use hydro::state::{Proposal, VoteWithPower};
 
 /// Contract name that is used for migration.
-const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
+pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
 /// Contract version that is used for migration.
-const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const DEFAULT_MAX_ENTRIES: usize = 100;
-
-// Use 1 week as IBC timeout by default
-pub const IBC_TIMEOUT_DURATION_IN_SECONDS: u64 = 60 * 60 * 24 * 7;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -42,6 +39,7 @@ pub fn instantiate(
     let config = Config {
         hydro_contract: deps.api.addr_validate(&msg.hydro_contract)?,
         top_n_props_count: msg.top_n_props_count,
+        min_prop_percent_for_claimable_tributes: msg.min_prop_percent_for_claimable_tributes,
     };
 
     CONFIG.save(deps.storage, &config)?;
@@ -55,15 +53,16 @@ pub fn instantiate(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::AddTribute {
+            round_id,
             tranche_id,
             proposal_id,
-        } => add_tribute(deps, info, tranche_id, proposal_id),
+        } => add_tribute(deps, env, info, round_id, tranche_id, proposal_id),
         ExecuteMsg::ClaimTribute {
             round_id,
             tranche_id,
@@ -81,21 +80,16 @@ pub fn execute(
 
 fn add_tribute(
     deps: DepsMut,
+    env: Env,
     info: MessageInfo,
+    round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
 ) -> Result<Response, ContractError> {
     let hydro_contract = CONFIG.load(deps.storage)?.hydro_contract;
-    let current_round_id = query_current_round_id(&deps, &hydro_contract)?;
 
     // Check that the proposal exists
-    query_proposal(
-        &deps,
-        &hydro_contract,
-        current_round_id,
-        tranche_id,
-        proposal_id,
-    )?;
+    query_proposal(&deps, &hydro_contract, round_id, tranche_id, proposal_id)?;
 
     // Check that the sender has sent funds
     if info.funds.is_empty() {
@@ -115,17 +109,19 @@ fn add_tribute(
     let tribute_id = TRIBUTE_ID.load(deps.storage)?;
     TRIBUTE_ID.save(deps.storage, &(tribute_id + 1))?;
     let tribute = Tribute {
-        round_id: current_round_id,
+        round_id,
         tranche_id,
         proposal_id,
         tribute_id,
         funds: info.funds[0].clone(),
         depositor: info.sender.clone(),
         refunded: false,
+        creation_time: env.block.time,
+        creation_round: query_current_round_id(&deps, &hydro_contract)?,
     };
     TRIBUTE_MAP.save(
         deps.storage,
-        (current_round_id, proposal_id, tribute_id),
+        (round_id, proposal_id, tribute_id),
         &tribute_id,
     )?;
     ID_TO_TRIBUTE_MAP.save(deps.storage, tribute_id, &tribute)?;
@@ -133,7 +129,7 @@ fn add_tribute(
     Ok(Response::new()
         .add_attribute("action", "add_tribute")
         .add_attribute("depositor", info.sender.clone())
-        .add_attribute("round_id", current_round_id.to_string())
+        .add_attribute("round_id", round_id.to_string())
         .add_attribute("tranche_id", tranche_id.to_string())
         .add_attribute("proposal_id", proposal_id.to_string())
         .add_attribute("tribute_id", tribute_id.to_string())
@@ -186,16 +182,11 @@ fn claim_tribute(
         voter.clone().to_string(),
     )?;
 
-    // Check that the voter voted for one of the top N proposals
+    // Check that the voter voted for one of the top N proposals that
+    // received at least the threshold of the total voting power.
     let proposal =
-        match get_top_n_proposal(&deps.as_ref(), &config, round_id, tranche_id, vote.prop_id)? {
-            Some(prop) => prop,
-            None => {
-                return Err(ContractError::Std(StdError::generic_err(
-                    "User voted for proposal outside of top N proposals",
-                )))
-            }
-        };
+        get_top_n_proposal_info(&deps.as_ref(), &config, round_id, tranche_id, vote.prop_id)?
+            .are_tributes_claimable(&config)?;
 
     // Load the tribute and use the percentage to figure out how much of the tribute to send them
     let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
@@ -293,11 +284,8 @@ fn refund_tribute(
         )));
     }
 
-    if get_top_n_proposal(&deps.as_ref(), &config, round_id, tranche_id, proposal_id)?.is_some() {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Can't refund top N proposal",
-        )));
-    }
+    get_top_n_proposal_info(&deps.as_ref(), &config, round_id, tranche_id, proposal_id)?
+        .are_tributes_refundable()?;
 
     // Load the tribute
     let mut tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
@@ -333,6 +321,67 @@ fn refund_tribute(
             to_address: info.sender.to_string(),
             amount: vec![tribute.funds],
         }))
+}
+
+// Holds information about possible top N proposal. If the proposal is among the top N,
+// the "top_n_proposal" field will be set to some value and "is_above_voting_threshold"
+// field will be set to true if the proposal received at least the minimum voting threshold.
+// If the proposal is not among the top N, the "top_n_proposal" field will be set to None,
+// and "is_above_voting_threshold" field will be set to false.
+struct TopNProposalInfo {
+    pub top_n_proposal: Option<Proposal>,
+    pub is_above_voting_threshold: bool,
+}
+
+impl TopNProposalInfo {
+    fn are_tributes_claimable(&self, config: &Config) -> Result<Proposal, ContractError> {
+        match self.top_n_proposal.as_ref() {
+            None => Err(ContractError::Std(StdError::generic_err(
+                "User voted for proposal outside of top N proposals",
+            ))),
+            Some(proposal) => {
+                if !self.is_above_voting_threshold {
+                    return Err(ContractError::Std(StdError::generic_err(format!(
+                        "Tribute not claimable: Proposal received less voting percentage than threshold: {} required, but is {}", config.min_prop_percent_for_claimable_tributes, proposal.percentage))));
+                }
+
+                Ok(proposal.clone())
+            }
+        }
+    }
+
+    fn are_tributes_refundable(&self) -> Result<(), ContractError> {
+        if self.top_n_proposal.is_some() && self.is_above_voting_threshold {
+            return Err(ContractError::Std(StdError::generic_err(
+                "Can't refund top N proposal that received at least the threshold of the total voting power",
+            )));
+        }
+
+        Ok(())
+    }
+}
+
+// This function will query the top N proposals from the Hydro contract and determine
+// if the proposal with the given ID is among the top N. If yes, it will also determine
+// if the proposal received at least the threshold percent of the total voting power.
+fn get_top_n_proposal_info(
+    deps: &Deps,
+    config: &Config,
+    round_id: u64,
+    tranche_id: u64,
+    proposal_id: u64,
+) -> Result<TopNProposalInfo, ContractError> {
+    match get_top_n_proposal(deps, config, round_id, tranche_id, proposal_id)? {
+        Some(proposal) => Ok(TopNProposalInfo {
+            top_n_proposal: Some(proposal.clone()),
+            is_above_voting_threshold: proposal.percentage
+                >= config.min_prop_percent_for_claimable_tributes,
+        }),
+        None => Ok(TopNProposalInfo {
+            top_n_proposal: None,
+            is_above_voting_threshold: false,
+        }),
+    }
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -644,11 +693,6 @@ fn get_top_n_proposals(
     )?;
 
     Ok(proposals_resp.proposals)
-}
-
-#[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
-    Ok(Response::default())
 }
 
 // TODO: figure out build issue that we have if we don't define all this functions in both contracts

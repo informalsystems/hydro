@@ -38,7 +38,7 @@ pub enum ExecuteMsg {
         lock_duration: u64,
     },
     RefreshLockDuration {
-        lock_id: u64,
+        lock_ids: Vec<u64>,
         lock_duration: u64,
     },
     UnlockTokens {},
@@ -89,4 +89,6 @@ pub enum ExecuteMsg {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct MigrateMsg {}
+pub struct MigrateMsg {
+    pub new_first_round_start: Timestamp,
+}

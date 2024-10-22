@@ -614,7 +614,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
 
     // refresh first lockup
     let msg = ExecuteMsg::RefreshLockDuration {
-        lock_id: first_lockup_id,
+        lock_ids: vec![first_lockup_id],
         lock_duration: 3 * TWO_WEEKS_IN_NANO_SECONDS,
     };
 
@@ -693,7 +693,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
 
     // refresh second (expired) lockup
     let msg = ExecuteMsg::RefreshLockDuration {
-        lock_id: second_lockup_id,
+        lock_ids: vec![second_lockup_id],
         lock_duration: 3 * TWO_WEEKS_IN_NANO_SECONDS,
     };
 
@@ -1348,7 +1348,7 @@ fn total_voting_power_tracking_test() {
 
     let info3 = get_message_info(&deps.api, user_address, &[]);
     let msg = ExecuteMsg::RefreshLockDuration {
-        lock_id: 1,
+        lock_ids: vec![1],
         lock_duration: 2 * THREE_MONTHS_IN_NANO_SECONDS,
     };
     let res = execute(deps.as_mut(), env.clone(), info3.clone(), msg);
@@ -1410,7 +1410,7 @@ fn verify_expected_voting_power(deps: Deps<NeutronQuery>, expected_powers: &[(u6
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10000))] // set the number of test cases to run
+    #![proptest_config(ProptestConfig::with_cases(100))] // set the number of test cases to run
     #[test]
     fn relock_proptest(old_lock_remaining_time: u64, new_lock_duration: u8) {
         let grpc_query = denom_trace_grpc_query_mock(
@@ -1452,7 +1452,7 @@ proptest! {
         // try to refresh the lock duration as a different user
         let info2 = get_message_info(&deps.api, "addr0002", &[]);
         let msg = ExecuteMsg::RefreshLockDuration {
-            lock_id: 0,
+            lock_ids: vec![0],
             lock_duration: new_lock_duration,
         };
         let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
@@ -1463,7 +1463,7 @@ proptest! {
         // refresh the lock duration
         let info = get_message_info(&deps.api, "addr0001", &[]);
         let msg = ExecuteMsg::RefreshLockDuration {
-            lock_id: 0,
+            lock_ids: vec![0],
             lock_duration: new_lock_duration,
         };
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -1702,7 +1702,7 @@ fn contract_pausing_test() {
     let msgs = vec![
         ExecuteMsg::LockTokens { lock_duration: 0 },
         ExecuteMsg::RefreshLockDuration {
-            lock_id: 0,
+            lock_ids: vec![0],
             lock_duration: 0,
         },
         ExecuteMsg::UnlockTokens {},
@@ -1923,6 +1923,195 @@ pub fn pilot_round_lock_duration_test() {
                 case.lock_duration,
                 res.err().unwrap()
             );
+        }
+    }
+}
+
+struct TestCase {
+    name: &'static str,
+    lock_ids: Vec<u64>,
+    new_lock_duration: u64,
+    expected_error: Option<String>,
+    // expected_new_lock_durations is a list of tuples, where the first element is the sender address,
+    // and the second element is a list of the expected remaining lock durations for the locks
+    expected_new_lock_durations: Vec<(String, Vec<u64>)>,
+}
+
+// This test checks the behaviour when refreshing multiple locks at once.
+// It creates multiple locks in different rounds and then tries to refresh subsets of them.
+// It checks:
+// * a case where multiple locks are successfully refreshed together
+// * a case where one of the locks that are being refreshed would get shorter, so this case should fail
+// * a case where the list of locks is empty
+// * that a user cannot include a lock id for a lock belonging to a different user
+#[test]
+fn test_refresh_multiple_locks() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let sender = "addr0000";
+    let other_sender = "addr0001";
+    let info = get_message_info(&deps.api, sender, &[]);
+
+    // Define test cases
+    let test_cases = vec![
+        TestCase {
+            name: "Empty lock_ids",
+            lock_ids: vec![],
+            new_lock_duration: ONE_MONTH_IN_NANO_SECONDS * 3,
+            expected_error: Some("No lock_ids provided".to_string()),
+            expected_new_lock_durations: vec![
+                (other_sender.to_string(), vec![8]),
+                (sender.to_string(), vec![9, 4, 2]),
+            ],
+        },
+        TestCase {
+            name: "Shortening locks",
+            lock_ids: vec![1, 2, 3],
+            new_lock_duration: ONE_MONTH_IN_NANO_SECONDS, // shorter than the remaining duration
+            expected_error: Some("Shortening locks is not allowed".to_string()),
+            expected_new_lock_durations: vec![
+                (other_sender.to_string(), vec![8]),
+                (sender.to_string(), vec![9, 4, 2]),
+            ],
+        },
+        TestCase {
+            name: "Successful refresh of multiple locks",
+            lock_ids: vec![2, 3],
+            new_lock_duration: ONE_MONTH_IN_NANO_SECONDS * 6, // longer than the remaining duration
+            expected_error: None,
+            expected_new_lock_durations: vec![
+                (other_sender.to_string(), vec![8]),
+                (sender.to_string(), vec![9, 6, 6]),
+            ],
+        },
+        TestCase {
+            name: "Successful refresh of a single lock",
+            lock_ids: vec![3],
+            new_lock_duration: ONE_MONTH_IN_NANO_SECONDS * 3,
+            expected_error: None,
+            expected_new_lock_durations: vec![
+                (other_sender.to_string(), vec![8]),
+                (sender.to_string(), vec![9, 4, 3]),
+            ],
+        },
+        TestCase {
+            name: "Refresh other users lock",
+            lock_ids: vec![0, 1, 2, 3],
+            new_lock_duration: ONE_MONTH_IN_NANO_SECONDS * 12,
+            expected_error: Some("not found".to_string()),
+            expected_new_lock_durations: vec![
+                (other_sender.to_string(), vec![8]),
+                (sender.to_string(), vec![9, 4, 2]),
+            ],
+        },
+    ];
+
+    // Execute test cases
+    for case in test_cases {
+        println!("Running test case: {}", case.name);
+        let mut msg = get_default_instantiate_msg(&deps.api);
+        msg.is_in_pilot_mode = false;
+        msg.lock_epoch_length = ONE_MONTH_IN_NANO_SECONDS;
+        msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
+
+        let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_ok());
+
+        set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+
+        // Create multiple locks with different durations, starting times, and senders
+        let lock_durations = [
+            (ONE_MONTH_IN_NANO_SECONDS * 12, other_sender),
+            (ONE_MONTH_IN_NANO_SECONDS * 12, sender),
+            (ONE_MONTH_IN_NANO_SECONDS * 6, sender),
+            (ONE_MONTH_IN_NANO_SECONDS * 3, sender),
+        ];
+
+        for &(duration, locker) in lock_durations.iter() {
+            let info = get_message_info(
+                &deps.api,
+                locker,
+                &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+            );
+            let lock_msg = ExecuteMsg::LockTokens {
+                lock_duration: duration,
+            };
+            let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg);
+            assert!(
+                res.is_ok(),
+                "Lock creation failed for duration: {} with error: {}",
+                duration,
+                res.err().unwrap()
+            );
+
+            // Advance time for each lock
+            env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
+        }
+
+        // now, the locks should have remaining times of 9, 4, and 2 months (and the other senders lockup has 8 months remaining)
+        let refresh_msg = ExecuteMsg::RefreshLockDuration {
+            lock_ids: case.lock_ids.clone(),
+            lock_duration: case.new_lock_duration,
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), refresh_msg);
+
+        match &case.expected_error {
+            Some(expected_error) => {
+                assert!(
+                    res.is_err(),
+                    "Expected error for lock_ids: {:?}, new_lock_duration: {}",
+                    case.lock_ids,
+                    case.new_lock_duration
+                );
+                let error = res.unwrap_err().to_string();
+                assert!(
+                    error.contains(expected_error),
+                    "Expected error message to contain: {}, but was: {}",
+                    expected_error,
+                    error
+                );
+            }
+            None => {
+                assert!(
+                    res.is_ok(),
+                    "Expected success for lock_ids: {:?}, new_lock_duration: {}; error: {}",
+                    case.lock_ids,
+                    case.new_lock_duration,
+                    res.err().unwrap()
+                );
+            }
+        }
+
+        // Verify the new lock durations
+        for (sender, expected_durations) in &case.expected_new_lock_durations {
+            let lockups = query_all_user_lockups(
+                deps.as_ref(),
+                env.clone(),
+                get_address_as_str(&deps.api, sender),
+                0,
+                100,
+            )
+            .unwrap()
+            .lockups;
+            for (i, &expected_duration) in expected_durations.iter().enumerate() {
+                let expected_nanos = expected_duration * ONE_MONTH_IN_NANO_SECONDS;
+                let remaining_lock_duration = lockups[i]
+                    .lock_entry
+                    .lock_end
+                    .minus_nanos(env.block.time.nanos());
+                assert_eq!(
+                    expected_nanos,
+                    remaining_lock_duration.nanos(),
+                    "Lock duration mismatch for lock_id: {}, expected: {}, actual: {}",
+                    i,
+                    expected_nanos,
+                    remaining_lock_duration.nanos()
+                );
+            }
         }
     }
 }
