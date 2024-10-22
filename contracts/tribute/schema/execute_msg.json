@@ -12,10 +12,16 @@
           "type": "object",
           "required": [
             "proposal_id",
+            "round_id",
             "tranche_id"
           ],
           "properties": {
             "proposal_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "round_id": {
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0

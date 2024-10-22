@@ -223,6 +223,7 @@ func (s *HydroSuite) InstantiateHydroContract(
 		"hub_transfer_channel_id":            neutronTransferChannel.ChannelID,
 		"icq_update_period":                  10,
 		"icq_managers":                       []string{adminAddr},
+		"is_in_pilot_mode":                   false,
 	}
 	initHydroJson, err := json.Marshal(initHydro)
 	s.Require().NoError(err)
@@ -243,8 +244,9 @@ func (s *HydroSuite) InstantiateHydroContract(
 
 func (s *HydroSuite) InstantiateTributeContract(codeId, hydroContractAddress, adminAddr string) string {
 	initTribute := map[string]interface{}{
-		"hydro_contract":    hydroContractAddress,
-		"top_n_props_count": 2,
+		"hydro_contract":                          hydroContractAddress,
+		"top_n_props_count":                       2,
+		"min_prop_percent_for_claimable_tributes": "3",
 	}
 	initTributeJson, err := json.Marshal(initTribute)
 	s.Require().NoError(err)
@@ -546,7 +548,7 @@ func (s *HydroSuite) UnlockTokens(contractAddr string) error {
 func (s *HydroSuite) RefreshLock(contractAddr string, new_lock_duration, lock_id int64) error {
 	refreshTxData := map[string]interface{}{
 		"refresh_lock_duration": map[string]interface{}{
-			"lock_id":       lock_id,
+			"lock_ids":      []int64{lock_id},
 			"lock_duration": new_lock_duration,
 		},
 	}
@@ -684,10 +686,11 @@ func (s *HydroSuite) WithdrawICQFunds(contractAddr string, amount int64) error {
 	return nil
 }
 
-func (s *HydroSuite) SubmitTribute(validatorIndex, amount, trancheId, proposalId int, contractAddr string) (int, error) {
+func (s *HydroSuite) SubmitTribute(validatorIndex, amount, round_id, trancheId, proposalId int, contractAddr string) (int, error) {
 	txData := map[string]interface{}{
 		"add_tribute": map[string]interface{}{
 			"tranche_id":  trancheId,
+			"round_id":    round_id,
 			"proposal_id": proposalId,
 		},
 	}
