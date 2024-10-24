@@ -675,37 +675,36 @@ fn vote(
         .add_attribute("action", "vote")
         .add_attribute("sender", info.sender.to_string());
 
-    // Eliminate duplicate proposal and lock IDs
+    // Check for duplicate proposal and lock IDs
     let mut proposal_ids = HashSet::new();
     let mut lock_ids = HashSet::new();
 
-    let proposals_votes: Vec<ProposalToLockups> = proposals_votes
-        .into_iter()
-        .filter_map(|prop_to_lockups| {
-            // filter out non unique proposal IDs
-            if proposal_ids.insert(prop_to_lockups.proposal_id) {
-                // filter out non unique lock IDs
-                let unique_lock_ids: Vec<u64> = prop_to_lockups
-                    .lock_ids
-                    .into_iter()
-                    .filter(|lock_id| lock_ids.insert(*lock_id))
-                    .collect();
+    for proposal_votes in proposals_votes.iter() {
+        if !proposal_ids.insert(proposal_votes.proposal_id) {
+            return Err(ContractError::Std(StdError::generic_err(format!(
+                "Duplicate proposal ID {} provided",
+                proposal_votes.proposal_id
+            ))));
+        }
 
-                if !unique_lock_ids.is_empty() {
-                    Some(ProposalToLockups {
-                        proposal_id: prop_to_lockups.proposal_id,
-                        lock_ids: unique_lock_ids,
-                    })
-                } else {
-                    None
-                }
-            } else {
-                None
+        if proposal_votes.lock_ids.is_empty() {
+            return Err(ContractError::Std(StdError::generic_err(format!(
+                "No lock IDs provided to vote for proposal ID {}",
+                proposal_votes.proposal_id
+            ))));
+        }
+
+        for lock_id in proposal_votes.lock_ids.iter() {
+            if !lock_ids.insert(*lock_id) {
+                return Err(ContractError::Std(StdError::generic_err(format!(
+                    "Duplicate lock ID {} provided",
+                    lock_id
+                ))));
             }
-        })
-        .collect();
+        }
+    }
 
-    if proposals_votes.is_empty() {
+    if proposal_ids.is_empty() || lock_ids.is_empty() {
         return Err(ContractError::Std(StdError::generic_err(
             "Must provide at least one proposal and lockup to vote",
         )));

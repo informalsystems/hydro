@@ -33,7 +33,7 @@ struct TestUserVote {
 struct TestLockAndVote {
     lockups_to_create: Vec<TestLockup>,
     votes: Vec<ProposalToLockups>,
-    expected_error: Option<&'static str>,
+    expected_error: Option<String>,
     expected_proposal_powers: Vec<TestProposalPower>,
     expected_user_votes: Vec<TestUserVote>,
 }
@@ -276,7 +276,7 @@ fn fractional_voting_test() {
             lock_and_vote: TestLockAndVote {
                 lockups_to_create: vec![],
                 votes: vec![],
-                expected_error: Some("Must provide at least one proposal and lockup to vote"),
+                expected_error: Some("Must provide at least one proposal and lockup to vote".to_string()),
                 expected_proposal_powers: vec![],
                 expected_user_votes: vec![],
             },
@@ -292,7 +292,7 @@ fn fractional_voting_test() {
                     proposal_id: proposal_id_1,
                     lock_ids: vec![],
                 }],
-                expected_error: Some("Must provide at least one proposal and lockup to vote"),
+                expected_error: Some(format!("No lock IDs provided to vote for proposal ID {}", proposal_id_1).to_string()),
                 expected_proposal_powers: vec![],
                 expected_user_votes: vec![],
             },
@@ -301,7 +301,7 @@ fn fractional_voting_test() {
         },
         FractionalVotingTestCase {
             description:
-                "repeat proposal ID in Vote message- only first occurence is taken into account",
+                "repeat proposal ID in Vote message",
             voter_address: "addr0000",
             lock_and_vote: TestLockAndVote {
                 lockups_to_create: vec![lockup_1.clone(), lockup_2.clone()],
@@ -315,22 +315,19 @@ fn fractional_voting_test() {
                         lock_ids: vec![lockup_3.lockup_id, lockup_4.lockup_id],
                     },
                 ],
-                expected_error: None,
-                expected_proposal_powers: vec![TestProposalPower {
-                    proposal_id: proposal_id_1,
-                    power: lockup_1_amount + lockup_2_amount,
-                }],
-                expected_user_votes: vec![TestUserVote {
-                    proposal_id: proposal_id_1,
-                    power: lockup_1_amount + lockup_2_amount,
-                }],
+                expected_error: Some(format!(
+                    "Duplicate proposal ID {} provided",
+                    proposal_id_1
+                ).to_string()),
+                expected_proposal_powers: vec![],
+                expected_user_votes: vec![],
             },
             add_more_locks: None,
             refresh_locks: None,
         },
         FractionalVotingTestCase {
             description:
-                "repeat lock IDs in Vote message- only first occurence is taken into account",
+                "repeat lock IDs in Vote message",
             voter_address: "addr0000",
             lock_and_vote: TestLockAndVote {
                 lockups_to_create: vec![
@@ -356,27 +353,12 @@ fn fractional_voting_test() {
                         ],
                     },
                 ],
-                expected_error: None,
-                expected_proposal_powers: vec![
-                    TestProposalPower {
-                        proposal_id: proposal_id_1,
-                        power: lockup_1_amount + lockup_2_amount,
-                    },
-                    TestProposalPower {
-                        proposal_id: proposal_id_2,
-                        power: lockup_3_amount + lockup_4_amount,
-                    },
-                ],
-                expected_user_votes: vec![
-                    TestUserVote {
-                        proposal_id: proposal_id_1,
-                        power: lockup_1_amount + lockup_2_amount,
-                    },
-                    TestUserVote {
-                        proposal_id: proposal_id_2,
-                        power: lockup_3_amount + lockup_4_amount,
-                    },
-                ],
+                expected_error: Some(format!(
+                    "Duplicate lock ID {} provided",
+                    lockup_1.lockup_id
+                ).to_string()),
+                expected_proposal_powers: vec![],
+                expected_user_votes: vec![],
             },
             add_more_locks: None,
             refresh_locks: None,
@@ -390,7 +372,7 @@ fn fractional_voting_test() {
                     proposal_id: non_existing_proposal_id,
                     lock_ids: vec![lockup_1.lockup_id],
                 }],
-                expected_error: Some("not found"),
+                expected_error: Some("not found".to_string()),
                 expected_proposal_powers: vec![],
                 expected_user_votes: vec![],
             },
@@ -406,7 +388,7 @@ fn fractional_voting_test() {
                     proposal_id: proposal_id_1,
                     lock_ids: vec![1000],
                 }],
-                expected_error: Some("not found"),
+                expected_error: Some("not found".to_string()),
                 expected_proposal_powers: vec![],
                 expected_user_votes: vec![],
             },
@@ -427,7 +409,7 @@ fn fractional_voting_test() {
                     proposal_id: proposal_id_1,
                     lock_ids: vec![5],
                 }],
-                expected_error: Some("not found"),
+                expected_error: Some("not found".to_string()),
                 expected_proposal_powers: vec![],
                 expected_user_votes: vec![],
             },
@@ -510,7 +492,10 @@ fn fractional_voting_test() {
         let res = execute(deps.as_mut(), env.clone(), info1.clone(), vote_msg);
 
         if let Some(expected_error) = test.lock_and_vote.expected_error {
-            assert!(res.unwrap_err().to_string().contains(expected_error));
+            assert!(res
+                .unwrap_err()
+                .to_string()
+                .contains(expected_error.as_str()));
             continue;
         }
 
