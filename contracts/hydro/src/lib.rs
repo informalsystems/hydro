@@ -22,3 +22,6 @@ mod testing_lsm_integration;
 
 #[cfg(test)]
 mod testing_validators_icqs;
+
+#[cfg(test)]
+mod testing_fractional_voting;

@@ -32,8 +32,8 @@ pub enum QueryMsg {
     #[returns(UserVotingPowerResponse)]
     UserVotingPower { address: String },
 
-    #[returns(UserVoteResponse)]
-    UserVote {
+    #[returns(UserVotesResponse)]
+    UserVotes {
         round_id: u64,
         tranche_id: u64,
         address: String,
@@ -124,8 +124,8 @@ pub struct UserVotingPowerResponse {
 }
 
 #[cw_serde]
-pub struct UserVoteResponse {
-    pub vote: VoteWithPower,
+pub struct UserVotesResponse {
+    pub votes: Vec<VoteWithPower>,
 }
 
 #[cw_serde]

@@ -415,11 +415,16 @@ func (s *HydroSuite) SubmitHydroProposal(validatorIndex int, contractAddr, propo
 	return nil
 }
 
-func (s *HydroSuite) VoteForHydroProposal(validatorIndex int, contractAddr string, proposalId int, trancheId int64) error {
+type ProposalToLockups struct {
+	ProposalId int   `json:"proposal_id"`
+	LockIds    []int `json:"lock_ids"`
+}
+
+func (s *HydroSuite) VoteForHydroProposal(validatorIndex int, contractAddr string, trancheId int64, proposalsVotes []ProposalToLockups) error {
 	voteTxData := map[string]interface{}{
 		"vote": map[string]interface{}{
-			"tranche_id":  trancheId,
-			"proposal_id": proposalId,
+			"tranche_id":      trancheId,
+			"proposals_votes": proposalsVotes,
 		},
 	}
 

@@ -110,14 +110,15 @@
         "vote": {
           "type": "object",
           "required": [
-            "proposal_id",
+            "proposals_votes",
             "tranche_id"
           ],
           "properties": {
-            "proposal_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+            "proposals_votes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ProposalToLockups"
+              }
             },
             "tranche_id": {
               "type": "integer",
@@ -353,6 +354,29 @@
     }
   ],
   "definitions": {
+    "ProposalToLockups": {
+      "type": "object",
+      "required": [
+        "lock_ids",
+        "proposal_id"
+      ],
+      "properties": {
+        "lock_ids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        },
+        "proposal_id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
     "TrancheInfo": {
       "type": "object",
       "required": [

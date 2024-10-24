@@ -18,7 +18,7 @@ use crate::{
         get_total_power_for_round, get_validator_power_ratio_for_round,
         update_scores_due_to_power_ratio_change, validate_denom,
     },
-    msg::ExecuteMsg,
+    msg::{ExecuteMsg, ProposalToLockups},
     state::{ValidatorInfo, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED},
     testing::{
         get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
@@ -692,7 +692,10 @@ fn lock_tokens_multiple_validators_and_vote() {
     // User votes on the first proposal
     let msg = ExecuteMsg::Vote {
         tranche_id: 1,
-        proposal_id: 0,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id: 0,
+            lock_ids: vec![0, 1, 2],
+        }],
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
