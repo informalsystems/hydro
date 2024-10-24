@@ -17,7 +17,7 @@ use crate::lsm_integration::{
     get_validator_power_ratio_for_round, initialize_validator_store, validate_denom,
     COSMOS_VALIDATOR_PREFIX,
 };
-use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, ProposalToLockups, TrancheInfo};
+use crate::msg::{ExecuteMsg, InstantiateMsg, ProposalToLockups, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
     ICQManagersResponse, LockEntryWithPower, ProposalResponse, QueryMsg,
@@ -42,9 +42,9 @@ use crate::validators_icqs::{
 };
 
 /// Contract name that is used for migration.
-const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
+pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
 /// Contract version that is used for migration.
-const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const MAX_LOCK_ENTRIES: usize = 100;
 
@@ -1741,7 +1741,7 @@ fn compute_round_id_for_timestamp(constants: &Constants, timestamp: u64) -> StdR
     Ok(round_id)
 }
 
-fn compute_round_end(constants: &Constants, round_id: u64) -> StdResult<Timestamp> {
+pub fn compute_round_end(constants: &Constants, round_id: u64) -> StdResult<Timestamp> {
     let round_end = constants
         .first_round_start
         .plus_nanos(constants.round_length * (round_id + 1));
@@ -2067,29 +2067,6 @@ fn to_lockup_with_power(
             }
         }
     }
-}
-
-/// In the first version of Hydro, we allow contract to be un-paused through the Cosmos Hub governance
-/// by migrating contract to the same code ID. This will trigger the migrate() function where we set
-/// the paused flag to false.
-/// Keep in mind that, for the future versions, this function should check the `CONTRACT_VERSION` and
-/// perform any state changes needed. It should also handle the un-pausing of the contract, depending if
-/// it was previously paused or not.
-#[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(
-    deps: DepsMut<NeutronQuery>,
-    _env: Env,
-    _msg: MigrateMsg,
-) -> Result<Response<NeutronMsg>, ContractError> {
-    CONSTANTS.update(
-        deps.storage,
-        |mut constants| -> Result<Constants, ContractError> {
-            constants.paused = false;
-            Ok(constants)
-        },
-    )?;
-
-    Ok(Response::default())
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]

@@ -96,4 +96,6 @@ pub struct ProposalToLockups {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct MigrateMsg {}
+pub struct MigrateMsg {
+    pub new_first_round_start: Timestamp,
+}
