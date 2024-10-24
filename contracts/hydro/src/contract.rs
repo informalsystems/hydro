@@ -772,7 +772,10 @@ fn vote(
                 ((round_id, tranche_id), info.sender.clone(), lock_id),
             );
 
-            response = response.add_attribute("old_proposal_id", vote.prop_id.to_string());
+            response = response.add_attribute(
+                format!("lock_id_{}_old_proposal_id", lock_id),
+                vote.prop_id.to_string(),
+            );
         }
     }
 
