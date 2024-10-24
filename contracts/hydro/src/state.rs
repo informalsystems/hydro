@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
 use cw_storage_plus::{Item, Map};
@@ -57,9 +55,9 @@ pub const VOTE_MAP: Map<((u64, u64), Addr, u64), Vote> = Map::new("vote_map");
 #[cw_serde]
 pub struct Vote {
     pub prop_id: u64,
-    // for each validator, stores the amount of shares of that validator the user voted with
+    // stores the amount of shares of that validator the user voted with
     // (already scaled according to lockup scaling)
-    pub time_weighted_shares: HashMap<String, Decimal>,
+    pub time_weighted_shares: (String, Decimal),
 }
 
 #[cw_serde]

@@ -28,7 +28,7 @@ use crate::query::{
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, get_total_power_for_proposal,
-    remove_many_validator_shares_from_proposal, remove_validator_shares_from_proposal,
+    remove_validator_shares_from_proposal,
 };
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS,
@@ -734,14 +734,12 @@ fn vote(
                 ),
             );
 
-            remove_many_validator_shares_from_proposal(
+            remove_validator_shares_from_proposal(
                 deps.storage,
                 round_id,
                 vote.prop_id,
-                vote.time_weighted_shares
-                    .iter()
-                    .map(|(k, v)| (k.clone(), *v))
-                    .collect::<Vec<_>>(),
+                vote.time_weighted_shares.0,
+                vote.time_weighted_shares.1,
             )?;
 
             // save the new power into the proposal
@@ -785,11 +783,7 @@ fn vote(
         let proposal_id = proposal_to_lockups.proposal_id;
 
         // TODO: optimize so that proposal related stores are updated only once
-        // TODO: time_weighted_shares on Vote will have only one item
         for lock_id in proposal_to_lockups.lock_ids {
-            // Get sender's locked shares for each validator
-            let mut time_weighted_shares_map: HashMap<String, Decimal> = HashMap::new();
-
             // If any of the lock_ids doesn't exist, or it belongs to a different user
             // then error out and revert any changes that were made until now.
             let lock_entry = LOCKS_MAP.load(deps.storage, (info.sender.clone(), lock_id))?;
@@ -814,36 +808,19 @@ fn vote(
             }
             let validator = validator_result.unwrap();
 
-            let scaled_shares =
-                get_lock_time_weighted_shares(round_end, lock_entry, lock_epoch_length);
+            let scaled_shares = Decimal::from_ratio(
+                get_lock_time_weighted_shares(round_end, lock_entry, lock_epoch_length),
+                Uint128::one(),
+            );
 
-            // add the shares to the map
-            let shares = match time_weighted_shares_map.get(&validator) {
-                Some(shares) => *shares,
-                None => Decimal::zero(),
-            };
-            let new_shares =
-                shares.checked_add(Decimal::from_ratio(scaled_shares, Uint128::one()))?;
-
-            // insert the shares into the time_weigted_shares_map
-            time_weighted_shares_map.insert(validator.clone(), new_shares);
-
-            // if the user doesn't have any shares that give voting power, we don't need to do anything
-            if time_weighted_shares_map.is_empty() {
-                return Ok(response);
-            }
-
-            // update the proposal's power with the new shares
-            for (validator, num_shares) in time_weighted_shares_map.iter() {
-                // add the validator shares to the proposal
-                add_validator_shares_to_proposal(
-                    deps.storage,
-                    round_id,
-                    proposal_id,
-                    validator.to_string(),
-                    *num_shares,
-                )?;
-            }
+            // add the validator shares to the proposal
+            add_validator_shares_to_proposal(
+                deps.storage,
+                round_id,
+                proposal_id,
+                validator.to_string(),
+                scaled_shares,
+            )?;
 
             // update the proposal in the proposal map, as well as the props by score map
             update_proposal_and_props_by_score_maps(
@@ -856,7 +833,7 @@ fn vote(
             // Create vote in Votemap
             let vote = Vote {
                 prop_id: proposal_id,
-                time_weighted_shares: time_weighted_shares_map,
+                time_weighted_shares: (validator, scaled_shares),
             };
             VOTE_MAP.save(
                 deps.storage,
@@ -1513,7 +1490,7 @@ pub fn query_user_votes(
                 Some(current_power) => *current_power,
             };
 
-            let new_power = current_power + vote.time_weighted_shares.values().sum::<Decimal>();
+            let new_power = current_power + vote.time_weighted_shares.1;
             voted_proposals_power_sum.insert(vote.prop_id, new_power);
         });
 
@@ -1817,12 +1794,22 @@ fn update_voting_power_on_proposals(
         .collect::<Result<Vec<u64>, StdError>>()?;
 
     for tranche_id in tranche_ids {
-        let vote = get_vote_for_update(deps, sender, current_round, tranche_id, &old_lock_entry)?;
+        let vote = get_vote_for_update(
+            deps,
+            sender,
+            current_round,
+            tranche_id,
+            &old_lock_entry,
+            &validator,
+        )?;
 
         if let Some(mut vote) = vote {
-            let current_vote_shares = match vote.time_weighted_shares.get(&validator) {
-                None => Decimal::zero(),
-                Some(shares) => *shares,
+            let current_vote_shares = if vote.time_weighted_shares.0.eq(&validator) {
+                vote.time_weighted_shares.1
+            } else {
+                return Err(ContractError::Std(StdError::generic_err(
+                    "Can't update the vote- it holds shares of a different validator",
+                )));
             };
 
             let new_vote_shares = if power_change.is_increased {
@@ -1831,8 +1818,7 @@ fn update_voting_power_on_proposals(
                 current_vote_shares.checked_sub(power_change.scaled_power_change)?
             };
 
-            vote.time_weighted_shares
-                .insert(validator.clone(), new_vote_shares);
+            vote.time_weighted_shares.1 = new_vote_shares;
 
             VOTE_MAP.save(
                 deps.storage,
@@ -1890,6 +1876,7 @@ fn get_vote_for_update(
     current_round: u64,
     tranche_id: u64,
     old_lock_entry: &Option<LockEntry>,
+    validator: &str,
 ) -> Result<Option<Vote>, ContractError> {
     Ok(match old_lock_entry {
         Some(old_lock_entry) => {
@@ -1928,7 +1915,7 @@ fn get_vote_for_update(
                     // Create a vote with 0 power, which will be updated later
                     Some(Vote {
                         prop_id,
-                        time_weighted_shares: HashMap::new(),
+                        time_weighted_shares: (validator.to_string(), Decimal::zero()),
                     })
                 }
                 _ => None,
