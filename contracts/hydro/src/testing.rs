@@ -711,16 +711,16 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         expected_voting_power,
     );
 
-    // refresh second (expired) lockup
+    // refresh first lockup
     let msg = ExecuteMsg::RefreshLockDuration {
-        lock_ids: vec![second_lockup_id],
+        lock_ids: vec![first_lockup_id],
         lock_duration: 3 * TWO_WEEKS_IN_NANO_SECONDS,
     };
 
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
-    expected_voting_power = 2750u128;
+    expected_voting_power = 1500u128;
 
     // verify that the voting power increased for the fourth proposal
     assert_proposal_voting_power(

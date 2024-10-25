@@ -792,29 +792,34 @@ fn vote(
             let lock_entry = LOCKS_MAP.load(deps.storage, (info.sender.clone(), lock_id))?;
 
             // get the validator from the denom
-            let validator_result = validate_denom(
+            let validator = match validate_denom(
                 deps.as_ref(),
                 env.clone(),
                 &constants,
                 lock_entry.clone().funds.denom,
-            );
+            ) {
+                Ok(validator) => validator,
+                Err(_) => {
+                    deps.api.debug(&
+                        format!(
+                            "Denom {} is not a valid validator denom; validator might not be in the current set of top validators by delegation",
+                            lock_entry.funds.denom
+                        ));
 
-            if validator_result.is_err() {
-                deps.api.debug(&
-                format!(
-                    "Denom {} is not a valid validator denom; validator might not be in the current set of top validators by delegation",
-                    lock_entry.funds.denom
-                ));
-
-                // skip this lock entry, since the locked shares do not belong to a validator that we want to take into account
-                continue;
-            }
-            let validator = validator_result.unwrap();
+                    // skip this lock entry, since the locked shares do not belong to a validator that we want to take into account
+                    continue;
+                }
+            };
 
             let scaled_shares = Decimal::from_ratio(
                 get_lock_time_weighted_shares(round_end, lock_entry, lock_epoch_length),
                 Uint128::one(),
             );
+
+            // skip the lock entries that give zero voting power
+            if scaled_shares.is_zero() {
+                continue;
+            }
 
             // add the validator shares to the proposal
             add_validator_shares_to_proposal(
