@@ -89,7 +89,13 @@ func (s *HydroSuite) TestHappyPath() {
 	s.Require().NoError(err)
 	s.Require().Equal("0", proposal.Power)
 
-	err = s.VoteForHydroProposal(0, contractAddr, proposal.ProposalID, 1)
+	proposalsVotes := []ProposalToLockups{
+		{
+			ProposalId: proposal.ProposalID,
+			LockIds:    []int{0, 1, 2, 3},
+		},
+	}
+	err = s.VoteForHydroProposal(0, contractAddr, 1, proposalsVotes)
 	s.Require().NoError(err)
 	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
@@ -100,7 +106,9 @@ func (s *HydroSuite) TestHappyPath() {
 	s.Require().NoError(err)
 	s.Require().Equal("0", proposal.Power)
 
-	err = s.VoteForHydroProposal(0, contractAddr, proposal.ProposalID, 2)
+	// vote for proposal in tranche 2 with the same lockups
+	proposalsVotes[0].ProposalId = proposal.ProposalID
+	err = s.VoteForHydroProposal(0, contractAddr, 2, proposalsVotes)
 	s.Require().NoError(err)
 	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 2 prop 1", 2)
 	s.Require().NoError(err)
@@ -116,7 +124,9 @@ func (s *HydroSuite) TestHappyPath() {
 	s.Require().NoError(err)
 	s.Require().Equal("0", proposal.Power)
 
-	err = s.VoteForHydroProposal(0, contractAddr, proposal.ProposalID, 1)
+	// vote for proposal 2 in tranche 1 with the same lockups
+	proposalsVotes[0].ProposalId = proposal.ProposalID
+	err = s.VoteForHydroProposal(0, contractAddr, 1, proposalsVotes)
 	s.Require().NoError(err)
 	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 2", 1)
 	s.Require().NoError(err)
@@ -162,7 +172,7 @@ func (s *HydroSuite) TestPauseContract() {
 
 	err = s.SubmitHydroProposal(0, contractAddr, "tranche 2 prop 2", 2)
 	RequirePaused(s, err)
-	err = s.VoteForHydroProposal(0, contractAddr, 0, 1)
+	err = s.VoteForHydroProposal(0, contractAddr, 1, []ProposalToLockups{})
 	RequirePaused(s, err)
 
 	err = s.WhitelistAccount(contractAddr, s.NeutronChain.ValidatorWallets[1].Address)
@@ -249,7 +259,13 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 	s.Require().NoError(err)
 	s.Require().Equal("0", proposal.Power)
 
-	err = s.VoteForHydroProposal(0, contractAddr, proposal.ProposalID, 1)
+	proposalsVotes := []ProposalToLockups{
+		{
+			ProposalId: proposal.ProposalID,
+			LockIds:    []int{0, 1},
+		},
+	}
+	err = s.VoteForHydroProposal(0, contractAddr, 1, proposalsVotes)
 	s.Require().NoError(err)
 	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
@@ -319,7 +335,13 @@ func (s *HydroSuite) TestValidatorSlashing() {
 	s.Require().NoError(err)
 	s.Require().Equal("0", proposal.Power)
 
-	s.Require().NoError(s.VoteForHydroProposal(0, contractAddr, proposal.ProposalID, 1))
+	proposalsVotes := []ProposalToLockups{
+		{
+			ProposalId: proposal.ProposalID,
+			LockIds:    []int{0},
+		},
+	}
+	s.Require().NoError(s.VoteForHydroProposal(0, contractAddr, 1, proposalsVotes))
 	proposal, err = s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	s.Require().Equal(lockAmount, proposal.Power)
@@ -419,19 +441,37 @@ func (s *HydroSuite) TestTributeContract() {
 	s.Require().NoError(err)
 
 	// val2 votes for proposal 1
-	s.Require().NoError(s.VoteForHydroProposal(1, hydroContractAddr, proposal1.ProposalID, int64(proposal1.TrancheID)))
+	proposalsVotes := []ProposalToLockups{
+		{
+			ProposalId: proposal1.ProposalID,
+			LockIds:    []int{0},
+		},
+	}
+	s.Require().NoError(s.VoteForHydroProposal(1, hydroContractAddr, int64(proposal1.TrancheID), proposalsVotes))
 	proposal1, err = s.GetProposalByTitle(hydroContractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
 	s.Require().Equal(lockAmountVal2, proposal1.Power)
 
 	// val3 votes for proposal 2
-	s.Require().NoError(s.VoteForHydroProposal(2, hydroContractAddr, proposal2.ProposalID, int64(proposal2.TrancheID)))
+	proposalsVotes = []ProposalToLockups{
+		{
+			ProposalId: proposal2.ProposalID,
+			LockIds:    []int{1},
+		},
+	}
+	s.Require().NoError(s.VoteForHydroProposal(2, hydroContractAddr, int64(proposal2.TrancheID), proposalsVotes))
 	proposal2, err = s.GetProposalByTitle(hydroContractAddr, "tranche 1 prop 2", 1)
 	s.Require().NoError(err)
 	s.Require().Equal(lockAmountVal3, proposal2.Power)
 
 	// val4 votes for proposal 3
-	s.Require().NoError(s.VoteForHydroProposal(3, hydroContractAddr, proposal3.ProposalID, int64(proposal3.TrancheID)))
+	proposalsVotes = []ProposalToLockups{
+		{
+			ProposalId: proposal3.ProposalID,
+			LockIds:    []int{2},
+		},
+	}
+	s.Require().NoError(s.VoteForHydroProposal(3, hydroContractAddr, int64(proposal3.TrancheID), proposalsVotes))
 	proposal3, err = s.GetProposalByTitle(hydroContractAddr, "tranche 1 prop 3", 1)
 	s.Require().NoError(err)
 	s.Require().Equal(lockAmountVal4, proposal3.Power)

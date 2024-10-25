@@ -20,7 +20,7 @@ use cw_storage_plus::Item;
 use hydro::{
     query::{
         CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
-        UserVoteResponse,
+        UserVotesResponse,
     },
     state::{Proposal, VoteWithPower},
 };
@@ -110,13 +110,13 @@ impl MockWasmQuerier {
                             }
                         }
                     }),
-                    HydroQueryMsg::UserVote {
+                    HydroQueryMsg::UserVotes {
                         round_id,
                         tranche_id,
                         address,
                     } => Ok({
                         let res =
-                            self.find_matching_user_vote(round_id, tranche_id, address.as_str());
+                            self.find_matching_user_votes(round_id, tranche_id, address.as_str());
 
                         match res {
                             Ok(res) => res,
@@ -146,23 +146,27 @@ impl MockWasmQuerier {
         }
     }
 
-    fn find_matching_user_vote(
+    fn find_matching_user_votes(
         &self,
         round_id: u64,
         tranche_id: u64,
         address: &str,
     ) -> StdResult<Binary> {
+        let mut votes = vec![];
         for (vote_round_id, vote_tranche_id, vote_address, vote) in &self.user_votes {
             if *vote_round_id == round_id
                 && *vote_tranche_id == tranche_id
                 && vote_address == address
             {
-                let res: StdResult<Binary> =
-                    to_json_binary(&UserVoteResponse { vote: vote.clone() });
-                return res;
+                votes.push(vote.clone());
             }
         }
-        StdResult::Err(StdError::generic_err("vote couldn't be found"))
+
+        if votes.is_empty() {
+            return StdResult::Err(StdError::generic_err("vote couldn't be found"));
+        }
+
+        to_json_binary(&UserVotesResponse { votes })
     }
 
     fn find_matching_proposal(
@@ -197,18 +201,30 @@ struct AddTributeTestCase {
 
 struct ClaimTributeTestCase {
     description: String,
-    // (round_id, tranche_id, proposal_id, tribute_id)
-    tribute_info: (u64, u64, u64, u64),
-    tribute_to_add: Vec<Coin>,
+    tributes_to_add: Vec<AddTributeInfo>,
+    tributes_to_claim: Vec<ClaimTributeInfo>,
     mock_data: ClaimTributeMockData,
-    expected_tribute_claim: u128,
-    expected_success: bool,
-    expected_error_msg: String,
 }
 
 // to make clippy happy :)
-// (add_tribute_round_id, claim_tribute_round_id, proposals, user_vote, top_n_proposals)
+// (add_tribute_round_id, claim_tribute_round_id, proposals, user_votes, top_n_proposals)
 type ClaimTributeMockData = (u64, u64, Vec<Proposal>, Vec<UserVote>, Vec<Proposal>);
+
+struct AddTributeInfo {
+    round_id: u64,
+    tranche_id: u64,
+    proposal_id: u64,
+    token: Coin,
+}
+
+struct ClaimTributeInfo {
+    round_id: u64,
+    tranche_id: u64,
+    tribute_id: u64,
+    expected_success: bool,
+    expected_error_msg: String,
+    expected_tribute_claim: u128,
+}
 
 type UserVote = (u64, u64, String, VoteWithPower); // (round_id, tranche_id, address, VoteWithPower)
 
@@ -372,8 +388,21 @@ fn claim_tribute_test() {
         power: Uint128::new(10000),
         percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
     };
+    let mock_proposal3 = Proposal {
+        round_id: 10,
+        tranche_id: 0,
+        proposal_id: 7,
+        title: "proposal title 3".to_string(),
+        description: "proposal description 3".to_string(),
+        power: Uint128::new(10000),
+        percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
+    };
 
-    let mock_proposals = vec![mock_proposal1.clone(), mock_proposal2.clone()];
+    let mock_proposals = vec![
+        mock_proposal1.clone(),
+        mock_proposal2.clone(),
+        mock_proposal3.clone(),
+    ];
 
     let mock_top_n_proposals = vec![mock_proposal1.clone(), mock_proposal2.clone()];
 
@@ -388,9 +417,38 @@ fn claim_tribute_test() {
     let deps = mock_dependencies();
     let test_cases: Vec<ClaimTributeTestCase> = vec![
         ClaimTributeTestCase {
-            description: "happy path".to_string(),
-            tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
+            description: "happy path: claim tributes for multiple proposals that user voted on".to_string(),
+            tributes_to_add: vec![
+                AddTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    proposal_id: 5,
+                    token: Coin::new(1000u64, DEFAULT_DENOM),
+                },
+                AddTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    proposal_id: 6,
+                    token: Coin::new(2000u64, DEFAULT_DENOM),
+                }],
+            tributes_to_claim: vec![
+                ClaimTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    tribute_id: 0,
+                    expected_success: true,
+                    expected_tribute_claim: 7, // (70 / 10_000) * 1_000
+                    expected_error_msg: String::new(),
+                },
+                ClaimTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    tribute_id: 1,
+                    expected_success: true,
+                    expected_tribute_claim: 14, // (70 / 10_000) * 2_000
+                    expected_error_msg: String::new(),
+                }
+            ],
             mock_data: (
                 10,
                 11,
@@ -403,35 +461,80 @@ fn claim_tribute_test() {
                         prop_id: 5,
                         power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
                     },
+                ),
+                (
+                    10,
+                    0,
+                    get_address_as_str(&deps.api, USER_ADDRESS_2),
+                    VoteWithPower {
+                        prop_id: 6,
+                        power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
+                    },
                 )],
                 mock_top_n_proposals.clone(),
             ),
-            expected_tribute_claim: 7, // (70 / 10_000) * 1_000
-            expected_success: true,
-            expected_error_msg: String::new(),
         },
         ClaimTributeTestCase {
             description: "try claim tribute for proposal in current round".to_string(),
-            tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
+            tributes_to_add: vec![
+                AddTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    proposal_id: 5,
+                    token: Coin::new(1000u64, DEFAULT_DENOM),
+                }],
+            tributes_to_claim: vec![
+                ClaimTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    tribute_id: 0,
+                    expected_success: false,
+                    expected_tribute_claim: 0,
+                    expected_error_msg: "Round has not ended yet".to_string(),
+                }
+            ],
             mock_data: (10, 10, mock_proposals.clone(), vec![], vec![]),
-            expected_tribute_claim: 0,
-            expected_success: false,
-            expected_error_msg: "Round has not ended yet".to_string(),
         },
         ClaimTributeTestCase {
             description: "try claim tribute if user didn't vote at all".to_string(),
-            tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
+            tributes_to_add: vec![
+                AddTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    proposal_id: 5,
+                    token: Coin::new(1000u64, DEFAULT_DENOM),
+                }],
+            tributes_to_claim: vec![
+                ClaimTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    tribute_id: 0,
+                    expected_success: false,
+                    expected_tribute_claim: 0,
+                    expected_error_msg: "vote couldn't be found".to_string(),
+                }
+            ],
             mock_data: (10, 11, mock_proposals.clone(), vec![], vec![]),
-            expected_tribute_claim: 0,
-            expected_success: false,
-            expected_error_msg: "vote couldn't be found".to_string(),
         },
         ClaimTributeTestCase {
             description: "try claim tribute if user didn't vote for top N proposal".to_string(),
-            tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
+            tributes_to_add: vec![
+                AddTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    proposal_id: 7,
+                    token: Coin::new(1000u64, DEFAULT_DENOM),
+                }],
+            tributes_to_claim: vec![
+                ClaimTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    tribute_id: 0,
+                    expected_success: false,
+                    expected_tribute_claim: 0,
+                    expected_error_msg: "User voted for proposal outside of top N proposals".to_string(),
+                }
+            ],
             mock_data: (
                 10,
                 11,
@@ -447,14 +550,27 @@ fn claim_tribute_test() {
                 )],
                 mock_top_n_proposals.clone(),
             ),
-            expected_tribute_claim: 0,
-            expected_success: false,
-            expected_error_msg: "User voted for proposal outside of top N proposals".to_string(),
         },
         ClaimTributeTestCase {
             description: "try claim tribute if user voted for top N proposal that didn't reach the voting percentage threshold".to_string(),
-            tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
+            tributes_to_add: vec![
+                AddTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    proposal_id: 5,
+                    token: Coin::new(1000u64, DEFAULT_DENOM),
+                }],
+            tributes_to_claim: vec![
+                ClaimTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    tribute_id: 0,
+                    expected_success: false,
+                    expected_tribute_claim: 0,
+                    expected_error_msg: format!(
+                        "Tribute not claimable: Proposal received less voting percentage than threshold: {} required, but is {}", MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES, MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES - Uint128::one()).to_string(),
+                }
+            ],
             mock_data: (
                 10,
                 11,
@@ -470,15 +586,26 @@ fn claim_tribute_test() {
                 )],
                 mock_top_n_voting_threshold_not_reached.clone(),
             ),
-            expected_tribute_claim: 0,
-            expected_success: false,
-            expected_error_msg: format!(
-                "Tribute not claimable: Proposal received less voting percentage than threshold: {} required, but is {}", MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES, MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES - Uint128::one()).to_string(),
         },
         ClaimTributeTestCase {
             description: "try claim tribute for non existing tribute id".to_string(),
-            tribute_info: (10, 0, 5, 1),
-            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
+            tributes_to_add: vec![
+                AddTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    proposal_id: 5,
+                    token: Coin::new(1000u64, DEFAULT_DENOM),
+                }],
+            tributes_to_claim: vec![
+                ClaimTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    tribute_id: 1,
+                    expected_success: false,
+                    expected_tribute_claim: 0,
+                    expected_error_msg: "not found".to_string(),
+                }
+            ],
             mock_data: (
                 10,
                 11,
@@ -494,14 +621,26 @@ fn claim_tribute_test() {
                 )],
                 mock_top_n_proposals.clone(),
             ),
-            expected_tribute_claim: 0,
-            expected_success: false,
-            expected_error_msg: "not found".to_string(),
         },
         ClaimTributeTestCase {
             description: "try to claim tribute that belongs to different top N proposal than the one user voted on".to_string(),
-            tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
+            tributes_to_add: vec![
+                AddTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    proposal_id: 5,
+                    token: Coin::new(1000u64, DEFAULT_DENOM)
+                }],
+            tributes_to_claim: vec![
+                ClaimTributeInfo {
+                    round_id: 10,
+                    tranche_id: 0,
+                    tribute_id: 0,
+                    expected_success: false,
+                    expected_tribute_claim: 0,
+                    expected_error_msg: "User didn't vote for the proposal this tribute belongs to".to_string(),
+                }
+            ],
             mock_data: (
                 10,
                 11,
@@ -517,9 +656,6 @@ fn claim_tribute_test() {
                 )],
                 mock_top_n_proposals.clone(),
             ),
-            expected_tribute_claim: 0,
-            expected_success: false,
-            expected_error_msg: "The tribute with the given ID does not belong to the proposal that the user voted on".to_string(),
         },
     ];
 
@@ -547,15 +683,17 @@ fn claim_tribute_test() {
         assert!(res.is_ok());
 
         let tribute_payer = USER_ADDRESS_1;
-        let info = get_message_info(&deps.api, tribute_payer, &test.tribute_to_add);
-        let msg = ExecuteMsg::AddTribute {
-            tranche_id: test.tribute_info.1,
-            round_id: test.tribute_info.0,
-            proposal_id: test.tribute_info.2,
-        };
+        for tribute_to_add in test.tributes_to_add.iter() {
+            let info = get_message_info(&deps.api, tribute_payer, &[tribute_to_add.token.clone()]);
+            let msg = ExecuteMsg::AddTribute {
+                tranche_id: tribute_to_add.tranche_id,
+                round_id: tribute_to_add.round_id,
+                proposal_id: tribute_to_add.proposal_id,
+            };
 
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-        assert!(res.is_ok());
+            let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+            assert!(res.is_ok());
+        }
 
         // Update the expected round so that the tribute can be claimed
         let mock_querier = MockWasmQuerier::new(
@@ -567,41 +705,43 @@ fn claim_tribute_test() {
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
-        let tribute_claimer = get_address_as_str(&deps.api, USER_ADDRESS_2);
-        let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
-        let msg = ExecuteMsg::ClaimTribute {
-            round_id: test.tribute_info.0,
-            tranche_id: test.tribute_info.1,
-            tribute_id: test.tribute_info.3,
-            voter_address: tribute_claimer.clone(),
-        };
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        for tribute_to_claim in test.tributes_to_claim.iter() {
+            let tribute_claimer = get_address_as_str(&deps.api, USER_ADDRESS_2);
+            let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
+            let msg = ExecuteMsg::ClaimTribute {
+                round_id: tribute_to_claim.round_id,
+                tranche_id: tribute_to_claim.tranche_id,
+                tribute_id: tribute_to_claim.tribute_id,
+                voter_address: tribute_claimer.clone(),
+            };
+            let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
 
-        if !test.expected_success {
+            if !tribute_to_claim.expected_success {
+                assert!(res
+                    .unwrap_err()
+                    .to_string()
+                    .contains(&tribute_to_claim.expected_error_msg));
+                continue;
+            }
+
+            assert!(res.is_ok());
+            let res = res.unwrap();
+            assert_eq!(1, res.messages.len());
+
+            verify_tokens_received(
+                res,
+                &tribute_claimer.clone(),
+                &DEFAULT_DENOM.to_string(),
+                tribute_to_claim.expected_tribute_claim,
+            );
+
+            // Verify that the same tribute can't be claimed twice for the same user
+            let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
             assert!(res
                 .unwrap_err()
                 .to_string()
-                .contains(&test.expected_error_msg));
-            continue;
+                .contains("User has already claimed the tribute"));
         }
-
-        assert!(res.is_ok());
-        let res = res.unwrap();
-        assert_eq!(1, res.messages.len());
-
-        verify_tokens_received(
-            res,
-            &tribute_claimer.clone(),
-            &test.tribute_to_add[0].denom,
-            test.expected_tribute_claim,
-        );
-
-        // Verify that the same tribute can't be claimed twice for the same user
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-        assert!(res
-            .unwrap_err()
-            .to_string()
-            .contains("User has already claimed the tribute"))
     }
 }
 
@@ -1219,7 +1359,7 @@ fn test_query_outstanding_tribute_claims() {
                 title: "Proposal 1".to_string(),
                 description: "Description 1".to_string(),
                 power: Uint128::new(1000),
-                percentage: Uint128::zero(),
+                percentage: Uint128::new(7),
             },
             Proposal {
                 round_id: 1,
@@ -1228,7 +1368,7 @@ fn test_query_outstanding_tribute_claims() {
                 title: "Proposal 2".to_string(),
                 description: "Description 2".to_string(),
                 power: Uint128::new(2000),
-                percentage: Uint128::zero(),
+                percentage: Uint128::new(7),
             },
         ];
 

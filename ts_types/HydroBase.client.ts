@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Uint128, Timestamp, Uint64, AllUserLockupsResponse, LockEntryWithPower, LockEntry, Coin, ConstantsResponse, Constants, CurrentRoundResponse, ExecuteMsg, TrancheInfo, ExpiredUserLockupsResponse, InstantiateMsg, ProposalResponse, Proposal, QueryMsg, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse, Tranche, Decimal, UserVoteResponse, VoteWithPower, UserVotingPowerResponse, Addr, WhitelistAdminsResponse, WhitelistResponse } from "./HydroBase.types";
+import { Uint128, Timestamp, Uint64, AllUserLockupsResponse, LockEntryWithPower, LockEntry, Coin, ConstantsResponse, Constants, CurrentRoundResponse, ExecuteMsg, ProposalToLockups, TrancheInfo, ExpiredUserLockupsResponse, InstantiateMsg, ProposalResponse, Proposal, QueryMsg, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse, Tranche, Decimal, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, Addr, WhitelistAdminsResponse, WhitelistResponse } from "./HydroBase.types";
 export interface HydroBaseReadOnlyInterface {
   contractAddress: string;
   constants: () => Promise<ConstantsResponse>;
@@ -34,7 +34,7 @@ export interface HydroBaseReadOnlyInterface {
   }: {
     address: string;
   }) => Promise<UserVotingPowerResponse>;
-  userVote: ({
+  userVotes: ({
     address,
     roundId,
     trancheId
@@ -42,7 +42,7 @@ export interface HydroBaseReadOnlyInterface {
     address: string;
     roundId: number;
     trancheId: number;
-  }) => Promise<UserVoteResponse>;
+  }) => Promise<UserVotesResponse>;
   currentRound: () => Promise<CurrentRoundResponse>;
   roundEnd: ({
     roundId
@@ -107,7 +107,7 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     this.allUserLockups = this.allUserLockups.bind(this);
     this.expiredUserLockups = this.expiredUserLockups.bind(this);
     this.userVotingPower = this.userVotingPower.bind(this);
-    this.userVote = this.userVote.bind(this);
+    this.userVotes = this.userVotes.bind(this);
     this.currentRound = this.currentRound.bind(this);
     this.roundEnd = this.roundEnd.bind(this);
     this.roundTotalVotingPower = this.roundTotalVotingPower.bind(this);
@@ -176,7 +176,7 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
       }
     });
   };
-  userVote = async ({
+  userVotes = async ({
     address,
     roundId,
     trancheId
@@ -184,9 +184,9 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     address: string;
     roundId: number;
     trancheId: number;
-  }): Promise<UserVoteResponse> => {
+  }): Promise<UserVotesResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      user_vote: {
+      user_votes: {
         address,
         round_id: roundId,
         tranche_id: trancheId
@@ -340,10 +340,10 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
     trancheId: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   vote: ({
-    proposalId,
+    proposalsVotes,
     trancheId
   }: {
-    proposalId: number;
+    proposalsVotes: ProposalToLockups[];
     trancheId: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   addAccountToWhitelist: ({
@@ -470,15 +470,15 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     }, fee, memo, _funds);
   };
   vote = async ({
-    proposalId,
+    proposalsVotes,
     trancheId
   }: {
-    proposalId: number;
+    proposalsVotes: ProposalToLockups[];
     trancheId: number;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       vote: {
-        proposal_id: proposalId,
+        proposals_votes: proposalsVotes,
         tranche_id: trancheId
       }
     }, fee, memo, _funds);

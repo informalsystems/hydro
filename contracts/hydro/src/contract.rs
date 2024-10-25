@@ -17,18 +17,18 @@ use crate::lsm_integration::{
     get_validator_power_ratio_for_round, initialize_validator_store, validate_denom,
     COSMOS_VALIDATOR_PREFIX,
 };
-use crate::msg::{ExecuteMsg, InstantiateMsg, TrancheInfo};
+use crate::msg::{ExecuteMsg, InstantiateMsg, ProposalToLockups, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
     ICQManagersResponse, LockEntryWithPower, ProposalResponse, QueryMsg,
     RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
     RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse,
-    TranchesResponse, UserVoteResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
+    TranchesResponse, UserVotesResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
     WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, get_total_power_for_proposal,
-    remove_many_validator_shares_from_proposal, remove_validator_shares_from_proposal,
+    remove_validator_shares_from_proposal,
 };
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS,
@@ -161,8 +161,8 @@ pub fn execute(
         } => create_proposal(deps, env, info, tranche_id, title, description),
         ExecuteMsg::Vote {
             tranche_id,
-            proposal_id,
-        } => vote(deps, env, info, tranche_id, proposal_id),
+            proposals_votes,
+        } => vote(deps, env, info, tranche_id, proposals_votes),
         ExecuteMsg::AddAccountToWhitelist { address } => add_to_whitelist(deps, env, info, address),
         ExecuteMsg::RemoveAccountFromWhitelist { address } => {
             remove_from_whitelist(deps, env, info, address)
@@ -546,11 +546,10 @@ fn validate_previous_round_vote(
         let previous_round_id = current_round_id - 1;
         for tranche_id in TRANCHE_MAP.keys(deps.storage, None, None, Order::Ascending) {
             if VOTE_MAP
-                .may_load(
-                    deps.storage,
-                    (previous_round_id, tranche_id?, sender.clone()),
-                )?
-                .is_some()
+                .prefix(((previous_round_id, tranche_id?), sender.clone()))
+                .range(deps.storage, None, None, Order::Ascending)
+                .count()
+                > 0
             {
                 return Err(ContractError::Std(StdError::generic_err(
                     "Tokens can not be unlocked, user voted for at least one proposal in previous round",
@@ -645,7 +644,7 @@ fn vote(
     env: Env,
     info: MessageInfo,
     tranche_id: u64,
-    proposal_id: u64,
+    proposals_votes: Vec<ProposalToLockups>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     // This voting system is designed to allow for an unlimited number of proposals and an unlimited number of votes
     // to be created, without being vulnerable to DOS. A naive implementation, where all votes or all proposals were iterated
@@ -676,135 +675,194 @@ fn vote(
         .add_attribute("action", "vote")
         .add_attribute("sender", info.sender.to_string());
 
-    // Get any existing vote for this sender and reverse it- this may be a vote for a different proposal (if they are switching their vote),
-    // or it may be a vote for the same proposal (if they have increased their power by locking more and want to update their vote).
-    // TODO: this could be made more gas-efficient by using a separate path with fewer writes if the vote is for the same proposal
-    let vote = VOTE_MAP.load(deps.storage, (round_id, tranche_id, info.sender.clone()));
-    if let Ok(vote) = vote {
-        // Load the proposal in the vote
-        let mut proposal = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, vote.prop_id))?;
+    // Check for duplicate proposal and lock IDs
+    let mut proposal_ids = HashSet::new();
+    let mut lock_ids = HashSet::new();
 
-        // Remove proposal's old power in PROPS_BY_SCORE
-        PROPS_BY_SCORE.remove(
+    for proposal_votes in proposals_votes.iter() {
+        if !proposal_ids.insert(proposal_votes.proposal_id) {
+            return Err(ContractError::Std(StdError::generic_err(format!(
+                "Duplicate proposal ID {} provided",
+                proposal_votes.proposal_id
+            ))));
+        }
+
+        if proposal_votes.lock_ids.is_empty() {
+            return Err(ContractError::Std(StdError::generic_err(format!(
+                "No lock IDs provided to vote for proposal ID {}",
+                proposal_votes.proposal_id
+            ))));
+        }
+
+        for lock_id in proposal_votes.lock_ids.iter() {
+            if !lock_ids.insert(*lock_id) {
+                return Err(ContractError::Std(StdError::generic_err(format!(
+                    "Duplicate lock ID {} provided",
+                    lock_id
+                ))));
+            }
+        }
+    }
+
+    if proposal_ids.is_empty() || lock_ids.is_empty() {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Must provide at least one proposal and lockup to vote",
+        )));
+    }
+
+    // TODO: optimize so that all locks that voted for the same proposal are removed in single execution
+    for lock_id in lock_ids {
+        // Get any existing vote for this sender and reverse it- this may be a vote for a different proposal (if they are switching their vote),
+        // or it may be a vote for the same proposal (if they have increased their power by locking more and want to update their vote).
+        // TODO: this could be made more gas-efficient by using a separate path with fewer writes if the vote is for the same proposal
+        let vote = VOTE_MAP.load(
             deps.storage,
-            (
-                (round_id, proposal.tranche_id),
-                proposal.power.into(),
-                vote.prop_id,
-            ),
+            ((round_id, tranche_id), info.sender.clone(), lock_id),
         );
+        if let Ok(vote) = vote {
+            // Load the proposal in the vote
+            let mut proposal =
+                PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, vote.prop_id))?;
 
-        remove_many_validator_shares_from_proposal(
-            deps.storage,
-            round_id,
-            vote.prop_id,
-            vote.time_weighted_shares
-                .iter()
-                .map(|(k, v)| (k.clone(), *v))
-                .collect::<Vec<_>>(),
-        )?;
-
-        // save the new power into the proposal
-        let total_power = get_total_power_for_proposal(deps.as_ref().storage, vote.prop_id)?;
-        proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
-
-        // Save the proposal
-        PROPOSAL_MAP.save(
-            deps.storage,
-            (round_id, tranche_id, vote.prop_id),
-            &proposal,
-        )?;
-
-        // Add proposal's new power in PROPS_BY_SCORE
-        if proposal.power > Uint128::zero() {
-            PROPS_BY_SCORE.save(
+            // Remove proposal's old power in PROPS_BY_SCORE
+            PROPS_BY_SCORE.remove(
                 deps.storage,
                 (
                     (round_id, proposal.tranche_id),
                     proposal.power.into(),
                     vote.prop_id,
                 ),
-                &vote.prop_id,
+            );
+
+            remove_validator_shares_from_proposal(
+                deps.storage,
+                round_id,
+                vote.prop_id,
+                vote.time_weighted_shares.0,
+                vote.time_weighted_shares.1,
             )?;
+
+            // save the new power into the proposal
+            let total_power = get_total_power_for_proposal(deps.as_ref().storage, vote.prop_id)?;
+            proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
+
+            // Save the proposal
+            PROPOSAL_MAP.save(
+                deps.storage,
+                (round_id, tranche_id, vote.prop_id),
+                &proposal,
+            )?;
+
+            // Add proposal's new power in PROPS_BY_SCORE
+            if proposal.power > Uint128::zero() {
+                PROPS_BY_SCORE.save(
+                    deps.storage,
+                    (
+                        (round_id, proposal.tranche_id),
+                        proposal.power.into(),
+                        vote.prop_id,
+                    ),
+                    &vote.prop_id,
+                )?;
+            }
+
+            // Delete vote
+            VOTE_MAP.remove(
+                deps.storage,
+                ((round_id, tranche_id), info.sender.clone(), lock_id),
+            );
+
+            response = response.add_attribute(
+                format!("lock_id_{}_old_proposal_id", lock_id),
+                vote.prop_id.to_string(),
+            );
         }
-
-        // Delete vote
-        VOTE_MAP.remove(deps.storage, (round_id, tranche_id, info.sender.clone()));
-
-        response = response.add_attribute("old_proposal_id", vote.prop_id.to_string());
     }
 
     let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
+    let mut voted_proposals = vec![];
 
-    // Get sender's locked shares for each validator
-    let mut time_weighted_shares_map: HashMap<String, Decimal> = HashMap::new();
-    let locks =
-        LOCKS_MAP
-            .prefix(info.sender.clone())
-            .range(deps.storage, None, None, Order::Ascending);
+    for proposal_to_lockups in proposals_votes {
+        let proposal_id = proposal_to_lockups.proposal_id;
 
-    for lock in locks {
-        let (_, lock_entry) = lock?;
+        // TODO: optimize so that proposal related stores are updated only once
+        for lock_id in proposal_to_lockups.lock_ids {
+            // If any of the lock_ids doesn't exist, or it belongs to a different user
+            // then error out and revert any changes that were made until now.
+            let lock_entry = LOCKS_MAP.load(deps.storage, (info.sender.clone(), lock_id))?;
 
-        // get the validator from the denom
-        let validator_result = validate_denom(
-            deps.as_ref(),
-            env.clone(),
-            &constants,
-            lock_entry.clone().funds.denom,
-        );
-        if validator_result.is_err() {
-            deps.api.debug(&
-                format!(
-                "Denom {} is not a valid validator denom; validator might not be in the current set of top validators by delegation",
-                lock_entry.funds.denom
-            ));
-            // skip this lock entry, since the locked shares do not belong to a validator that we want to take into account
-            continue;
+            // get the validator from the denom
+            let validator = match validate_denom(
+                deps.as_ref(),
+                env.clone(),
+                &constants,
+                lock_entry.clone().funds.denom,
+            ) {
+                Ok(validator) => validator,
+                Err(_) => {
+                    deps.api.debug(&
+                        format!(
+                            "Denom {} is not a valid validator denom; validator might not be in the current set of top validators by delegation",
+                            lock_entry.funds.denom
+                        ));
+
+                    // skip this lock entry, since the locked shares do not belong to a validator that we want to take into account
+                    continue;
+                }
+            };
+
+            let scaled_shares = Decimal::from_ratio(
+                get_lock_time_weighted_shares(round_end, lock_entry, lock_epoch_length),
+                Uint128::one(),
+            );
+
+            // skip the lock entries that give zero voting power
+            if scaled_shares.is_zero() {
+                continue;
+            }
+
+            // add the validator shares to the proposal
+            add_validator_shares_to_proposal(
+                deps.storage,
+                round_id,
+                proposal_id,
+                validator.to_string(),
+                scaled_shares,
+            )?;
+
+            // update the proposal in the proposal map, as well as the props by score map
+            update_proposal_and_props_by_score_maps(
+                deps.storage,
+                round_id,
+                tranche_id,
+                proposal_id,
+            )?;
+
+            // Create vote in Votemap
+            let vote = Vote {
+                prop_id: proposal_id,
+                time_weighted_shares: (validator, scaled_shares),
+            };
+            VOTE_MAP.save(
+                deps.storage,
+                ((round_id, tranche_id), info.sender.clone(), lock_id),
+                &vote,
+            )?;
         }
-        let validator = validator_result.unwrap();
 
-        let scaled_shares = get_lock_time_weighted_shares(round_end, lock_entry, lock_epoch_length);
-
-        // add the shares to the map
-        let shares = match time_weighted_shares_map.get(&validator) {
-            Some(shares) => *shares,
-            None => Decimal::zero(),
-        };
-        let new_shares = shares.checked_add(Decimal::from_ratio(scaled_shares, Uint128::one()))?;
-
-        // insert the shares into the time_weigted_shares_map
-        time_weighted_shares_map.insert(validator.clone(), new_shares);
+        voted_proposals.push(proposal_id);
     }
 
-    // if the user doesn't have any shares that give voting power, we don't need to do anything
-    if time_weighted_shares_map.is_empty() {
-        return Ok(response);
+    if !voted_proposals.is_empty() {
+        let voted_props_attr = voted_proposals
+            .iter()
+            .map(|proposal_id| proposal_id.to_string())
+            .collect::<Vec<String>>()
+            .join(",");
+        Ok(response.add_attribute("proposal_id", voted_props_attr))
+    } else {
+        Ok(response)
     }
-
-    // update the proposal's power with the new shares
-    for (validator, num_shares) in time_weighted_shares_map.iter() {
-        // add the validator shares to the proposal
-        add_validator_shares_to_proposal(
-            deps.storage,
-            round_id,
-            proposal_id,
-            validator.to_string(),
-            *num_shares,
-        )?;
-    }
-
-    // update the proposal in the proposal map, as well as the props by score map
-    update_proposal_and_props_by_score_maps(deps.storage, round_id, tranche_id, proposal_id)?;
-
-    // Create vote in Votemap
-    let vote = Vote {
-        prop_id: proposal_id,
-        time_weighted_shares: time_weighted_shares_map,
-    };
-    VOTE_MAP.save(deps.storage, (round_id, tranche_id, info.sender), &vote)?;
-
-    Ok(response.add_attribute("proposal_id", vote.prop_id.to_string()))
 }
 
 // Returns the time-weighted amount of shares locked in the given lock entry in a round with the given end time,
@@ -1247,11 +1305,11 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         QueryMsg::UserVotingPower { address } => {
             to_json_binary(&query_user_voting_power(deps, env, address)?)
         }
-        QueryMsg::UserVote {
+        QueryMsg::UserVotes {
             round_id,
             tranche_id,
             address,
-        } => to_json_binary(&query_user_vote(deps, round_id, tranche_id, address)?),
+        } => to_json_binary(&query_user_votes(deps, round_id, tranche_id, address)?),
         QueryMsg::Proposal {
             round_id,
             tranche_id,
@@ -1413,25 +1471,52 @@ pub fn query_user_voting_power(
     Ok(UserVotingPowerResponse { voting_power })
 }
 
-pub fn query_user_vote(
+// This function queries user votes for the given round and tranche.
+// It goes through all user votes per lock_id and groups them by the
+// proposal ID. The returned result will contain one VoteWithPower per
+// each proposal ID, with the total power summed up from all lock IDs
+// used to vote for that proposal.
+pub fn query_user_votes(
     deps: Deps<NeutronQuery>,
     round_id: u64,
     tranche_id: u64,
     user_address: String,
-) -> StdResult<UserVoteResponse> {
-    let vote = VOTE_MAP.load(
-        deps.storage,
-        (round_id, tranche_id, deps.api.addr_validate(&user_address)?),
-    )?;
+) -> StdResult<UserVotesResponse> {
+    let user_address = deps.api.addr_validate(&user_address)?;
+    let mut voted_proposals_power_sum: HashMap<u64, Decimal> = HashMap::new();
 
-    let vote_with_power = VoteWithPower {
-        prop_id: vote.prop_id,
-        power: vote.time_weighted_shares.values().sum(),
-    };
+    VOTE_MAP
+        .prefix(((round_id, tranche_id), user_address.clone()))
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter_map(|vote| match vote {
+            Err(_) => None,
+            Ok(vote) => Some(vote.1),
+        })
+        .for_each(|vote| {
+            let current_power = match voted_proposals_power_sum.get(&vote.prop_id) {
+                None => Decimal::zero(),
+                Some(current_power) => *current_power,
+            };
 
-    Ok(UserVoteResponse {
-        vote: vote_with_power,
-    })
+            let new_power = current_power + vote.time_weighted_shares.1;
+            voted_proposals_power_sum.insert(vote.prop_id, new_power);
+        });
+
+    if voted_proposals_power_sum.is_empty() {
+        return Err(StdError::generic_err(
+            "User didn't vote in the given round and tranche",
+        ));
+    }
+
+    let votes: Vec<VoteWithPower> = voted_proposals_power_sum
+        .into_iter()
+        .map(|vote| VoteWithPower {
+            prop_id: vote.0,
+            power: vote.1,
+        })
+        .collect();
+
+    Ok(UserVotesResponse { votes })
 }
 
 pub fn query_round_tranche_proposals(
@@ -1689,14 +1774,14 @@ fn update_voting_power_on_proposals(
     let round_end = compute_round_end(constants, current_round)?;
     let lock_epoch_length = constants.lock_epoch_length;
 
-    let old_scaled_shares = match old_lock_entry {
+    let old_scaled_shares = match old_lock_entry.as_ref() {
         None => Uint128::zero(),
         Some(lock_entry) => {
             get_lock_time_weighted_shares(round_end, lock_entry.clone(), lock_epoch_length)
         }
     };
     let new_scaled_shares =
-        get_lock_time_weighted_shares(round_end, new_lock_entry, lock_epoch_length);
+        get_lock_time_weighted_shares(round_end, new_lock_entry.clone(), lock_epoch_length);
 
     // With a future code changes, it could happen that the new power becomes less than
     // the old one. This calculation will cover both power increase and decrease scenarios.
@@ -1717,12 +1802,22 @@ fn update_voting_power_on_proposals(
         .collect::<Result<Vec<u64>, StdError>>()?;
 
     for tranche_id in tranche_ids {
-        if let Some(mut vote) =
-            VOTE_MAP.may_load(deps.storage, (current_round, tranche_id, sender.clone()))?
-        {
-            let current_vote_shares = match vote.time_weighted_shares.get(&validator) {
-                None => Decimal::zero(),
-                Some(shares) => *shares,
+        let vote = get_vote_for_update(
+            deps,
+            sender,
+            current_round,
+            tranche_id,
+            &old_lock_entry,
+            &validator,
+        )?;
+
+        if let Some(mut vote) = vote {
+            let current_vote_shares = if vote.time_weighted_shares.0.eq(&validator) {
+                vote.time_weighted_shares.1
+            } else {
+                return Err(ContractError::Std(StdError::generic_err(
+                    "Can't update the vote- it holds shares of a different validator",
+                )));
             };
 
             let new_vote_shares = if power_change.is_increased {
@@ -1731,12 +1826,15 @@ fn update_voting_power_on_proposals(
                 current_vote_shares.checked_sub(power_change.scaled_power_change)?
             };
 
-            vote.time_weighted_shares
-                .insert(validator.clone(), new_vote_shares);
+            vote.time_weighted_shares.1 = new_vote_shares;
 
             VOTE_MAP.save(
                 deps.storage,
-                (current_round, tranche_id, sender.clone()),
+                (
+                    (current_round, tranche_id),
+                    sender.clone(),
+                    new_lock_entry.lock_id,
+                ),
                 &vote,
             )?;
 
@@ -1768,6 +1866,70 @@ fn update_voting_power_on_proposals(
     }
 
     Ok(())
+}
+
+// This function will lookup the vote that needs to be updated when user locks
+// more tokens or refreshes the existing lockup. Whether some vote should be
+// updated or not is determined by the following logic:
+//
+// If user is refreshing a lock, we check if this lock was already voted with.
+// If yes, this vote will be updated. If no, we will not add a vote for it. Instead,
+// we leave user a choice to vote later.
+// Is user is adding a new lock, we check if the user already voted for some proposals.
+// If user voted for only one proposal, then the new lock power will be added to it.
+// If user voted for multiple proposals, then we do not add a vote for new lock entry.
+pub fn get_vote_for_update(
+    deps: &mut DepsMut<NeutronQuery>,
+    sender: &Addr,
+    current_round: u64,
+    tranche_id: u64,
+    old_lock_entry: &Option<LockEntry>,
+    validator: &str,
+) -> Result<Option<Vote>, ContractError> {
+    Ok(match old_lock_entry {
+        Some(old_lock_entry) => {
+            match VOTE_MAP.load(
+                deps.storage,
+                (
+                    (current_round, tranche_id),
+                    sender.clone(),
+                    old_lock_entry.lock_id,
+                ),
+            ) {
+                Ok(vote) => Some(vote),
+                Err(_) => None,
+            }
+        }
+        None => {
+            let mut voted_proposals: HashSet<u64> = HashSet::new();
+
+            VOTE_MAP
+                .prefix(((current_round, tranche_id), sender.clone()))
+                .range(deps.storage, None, None, Order::Ascending)
+                .filter_map(|vote| match vote {
+                    Err(_) => None,
+                    Ok(vote) => Some(vote.1),
+                })
+                .for_each(|vote| {
+                    voted_proposals.insert(vote.prop_id);
+                });
+
+            match voted_proposals.len() {
+                1 => {
+                    let prop_id = *voted_proposals.iter().next().ok_or(StdError::generic_err(
+                        "Failed to obtain proposal id that user voted on",
+                    ))?;
+
+                    // Create a vote with 0 power, which will be updated later
+                    Some(Vote {
+                        prop_id,
+                        time_weighted_shares: (validator.to_string(), Decimal::zero()),
+                    })
+                }
+                _ => None,
+            }
+        }
+    })
 }
 
 fn update_proposal_and_props_by_score_maps(

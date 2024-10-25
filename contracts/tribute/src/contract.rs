@@ -17,7 +17,7 @@ use crate::state::{
 };
 use hydro::query::{
     CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
-    UserVoteResponse,
+    UserVotesResponse,
 };
 use hydro::state::{Proposal, VoteWithPower};
 
@@ -173,30 +173,33 @@ fn claim_tribute(
         )));
     }
 
-    // Look up voter's vote for the round, error if it cannot be found
-    let vote = query_user_vote(
+    let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
+
+    // Look up voter's votes for the round, error if no votes can be found
+    let vote = match query_user_votes(
         &deps.as_ref(),
         &config.hydro_contract,
         round_id,
         tranche_id,
         voter.clone().to_string(),
-    )?;
+    )?
+    .into_iter()
+    .find(|vote| vote.prop_id == tribute.proposal_id)
+    {
+        None => {
+            // Error out if user didn't vote for the proposal that the given tribute belongs to.
+            return Err(ContractError::Std(StdError::generic_err(
+                "User didn't vote for the proposal this tribute belongs to",
+            )));
+        }
+        Some(vote) => vote,
+    };
 
     // Check that the voter voted for one of the top N proposals that
     // received at least the threshold of the total voting power.
     let proposal =
         get_top_n_proposal_info(&deps.as_ref(), &config, round_id, tranche_id, vote.prop_id)?
             .are_tributes_claimable(&config)?;
-
-    // Load the tribute and use the percentage to figure out how much of the tribute to send them
-    let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
-
-    // Check that the given tribute belongs to the proposal that the user voted on
-    if tribute.proposal_id != proposal.proposal_id {
-        return Err(ContractError::Std(StdError::generic_err(
-            "The tribute with the given ID does not belong to the proposal that the user voted on",
-        )));
-    }
 
     let sent_coin = calculate_voter_claim_amount(tribute.funds, vote.power, proposal.power)?;
 
@@ -484,23 +487,23 @@ fn query_proposal(
     Ok(proposal_resp.proposal)
 }
 
-fn query_user_vote(
+fn query_user_votes(
     deps: &Deps,
     hydro_contract: &Addr,
     round_id: u64,
     tranche_id: u64,
     address: String,
-) -> Result<VoteWithPower, ContractError> {
-    let user_vote_resp: UserVoteResponse = deps.querier.query_wasm_smart(
+) -> Result<Vec<VoteWithPower>, ContractError> {
+    let user_vote_resp: UserVotesResponse = deps.querier.query_wasm_smart(
         hydro_contract,
-        &HydroQueryMsg::UserVote {
+        &HydroQueryMsg::UserVotes {
             round_id,
             tranche_id,
             address,
         },
     )?;
 
-    let vote = user_vote_resp.vote;
+    let vote = user_vote_resp.votes;
 
     Ok(vote)
 }
@@ -578,60 +581,69 @@ pub fn query_outstanding_tribute_claims(
 ) -> StdResult<OutstandingTributeClaimsResponse> {
     let address = deps.api.addr_validate(&address)?;
 
-    // get the user vote for this tranche
-    let user_vote = query_user_vote(
+    // get user votes for this round and tranche
+    let user_votes = query_user_votes(
         deps,
         &CONFIG.load(deps.storage)?.hydro_contract,
         round_id,
         tranche_id,
         address.to_string(),
     )
-    .map_err(|err| StdError::generic_err(format!("Failed to get user vote: {}", err)))?;
+    .map_err(|err| StdError::generic_err(format!("Failed to get user votes: {}", err)))?;
 
     let config = CONFIG.load(deps.storage)?;
+    let mut claims = vec![];
 
-    // check that this proposal is one of the top N in this tranche/round
-    let proposal = get_top_n_proposal(deps, &config, round_id, tranche_id, user_vote.prop_id)
-        .map_err(|err| StdError::generic_err(format!("Failed to get top N proposal: {}", err)))?
-        .ok_or_else(|| {
-            StdError::generic_err("User voted for proposal outside of top N proposals")
-        })?;
+    for user_vote in user_votes {
+        let proposal =
+            match get_top_n_proposal_info(deps, &config, round_id, tranche_id, user_vote.prop_id)
+                // If the query top N failed once, it will most likely always fail, so it is safe to return error here.
+                .map_err(|err| {
+                    StdError::generic_err(format!("Failed to get top N proposal: {}", err))
+                })?
+                .are_tributes_claimable(&config)
+            {
+                Err(_) => {
+                    // If the proposal wasn't in top N, or it didn't reach reach the voting threshold, we move to the next vote.
+                    continue;
+                }
+                Ok(proposal) => proposal,
+            };
 
-    // get all tributes for this proposal
-    let tributes = TRIBUTE_MAP
-        .prefix((round_id, proposal.proposal_id))
-        .range(deps.storage, None, None, Order::Ascending)
-        .filter(|l| {
-            if l.is_err() {
-                // log an error and filter out this entry
-                deps.api.debug("Error reading tribute");
-            }
-            l.is_ok()
-        })
-        .filter_map(|l| {
-            if l.is_ok() {
-                let (_, tribute_id) = l.unwrap();
-                Some(tribute_id)
-            } else {
-                None
-            }
-        })
-        .filter(
-            // make sure that the user has not claimed the tribute already
-            |tribute_id| !TRIBUTE_CLAIMS.has(deps.storage, (address.clone(), *tribute_id)),
-        )
-        .skip(start_from as usize)
-        .take(limit as usize)
-        .filter_map(|tribute_id| {
-            ID_TO_TRIBUTE_MAP
-                .may_load(deps.storage, tribute_id)
-                .unwrap_or(None)
-        })
-        .collect::<Vec<Tribute>>();
+        // get all tributes for this proposal
+        let tributes = TRIBUTE_MAP
+            .prefix((round_id, proposal.proposal_id))
+            .range(deps.storage, None, None, Order::Ascending)
+            .filter(|l| {
+                if l.is_err() {
+                    // log an error and filter out this entry
+                    deps.api.debug("Error reading tribute");
+                }
+                l.is_ok()
+            })
+            .filter_map(|l| {
+                if l.is_ok() {
+                    let (_, tribute_id) = l.unwrap();
+                    Some(tribute_id)
+                } else {
+                    None
+                }
+            })
+            .filter(
+                // make sure that the user has not claimed the tribute already
+                |tribute_id| !TRIBUTE_CLAIMS.has(deps.storage, (address.clone(), *tribute_id)),
+            )
+            .skip(start_from as usize)
+            .take(limit as usize)
+            .filter_map(|tribute_id| {
+                ID_TO_TRIBUTE_MAP
+                    .may_load(deps.storage, tribute_id)
+                    .unwrap_or(None)
+            })
+            .collect::<Vec<Tribute>>();
 
-    // for each tribute, compute the amount that the user would receive when claiming
-    Ok(OutstandingTributeClaimsResponse {
-        claims: tributes
+        // for each tribute, compute the amount that the user would receive when claiming
+        tributes
             .iter()
             .filter_map(|tribute| {
                 match calculate_voter_claim_amount(
@@ -655,8 +667,10 @@ pub fn query_outstanding_tribute_claims(
                     }
                 }
             })
-            .collect::<Vec<TributeClaim>>(),
-    })
+            .for_each(|claim| claims.push(claim));
+    }
+
+    Ok(OutstandingTributeClaimsResponse { claims })
 }
 
 fn get_top_n_proposal(
