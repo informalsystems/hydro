@@ -189,7 +189,7 @@ fn claim_tribute(
         None => {
             // Error out if user didn't vote for the proposal that the given tribute belongs to.
             return Err(ContractError::Std(StdError::generic_err(
-                "User voted for a different proposal than the one this tribute belongs to",
+                "User didn't vote for the proposal this tribute belongs to",
             )));
         }
         Some(vote) => vote,

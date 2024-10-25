@@ -1469,7 +1469,7 @@ pub fn query_user_voting_power(
 // This function queries user votes for the given round and tranche.
 // It goes through all user votes per lock_id and groups them by the
 // proposal ID. The returned result will contain one VoteWithPower per
-// each proposal ID, with the total power sumed up from all lock IDs
+// each proposal ID, with the total power summed up from all lock IDs
 // used to vote for that proposal.
 pub fn query_user_votes(
     deps: Deps<NeutronQuery>,
@@ -1873,7 +1873,7 @@ fn update_voting_power_on_proposals(
 // Is user is adding a new lock, we check if the user already voted for some proposals.
 // If user voted for only one proposal, then the new lock power will be added to it.
 // If user voted for multiple proposals, then we do not add a vote for new lock entry.
-fn get_vote_for_update(
+pub fn get_vote_for_update(
     deps: &mut DepsMut<NeutronQuery>,
     sender: &Addr,
     current_round: u64,

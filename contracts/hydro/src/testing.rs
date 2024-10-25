@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 
 use crate::contract::{
-    query_tranches, query_user_votes, query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES,
+    get_vote_for_update, query_tranches, query_user_votes, query_whitelist, query_whitelist_admins,
+    MAX_LOCK_ENTRIES,
 };
 use crate::msg::{ProposalToLockups, TrancheInfo};
+use crate::state::{LockEntry, Vote, VOTE_MAP};
 use crate::testing_lsm_integration::set_validator_infos_for_round;
 use crate::testing_mocks::{
     denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
@@ -17,7 +19,9 @@ use crate::{
     msg::{ExecuteMsg, InstantiateMsg},
 };
 use cosmwasm_std::testing::{mock_env, MockApi, MockStorage};
-use cosmwasm_std::{BankMsg, CosmosMsg, Deps, DepsMut, MessageInfo, OwnedDeps, Timestamp, Uint128};
+use cosmwasm_std::{
+    BankMsg, CosmosMsg, Decimal, Deps, DepsMut, MessageInfo, OwnedDeps, Timestamp, Uint128,
+};
 use cosmwasm_std::{Coin, StdError, StdResult};
 use neutron_sdk::bindings::query::NeutronQuery;
 use proptest::prelude::*;
@@ -2155,6 +2159,135 @@ fn test_refresh_multiple_locks() {
                     expected_nanos,
                     remaining_lock_duration.nanos()
                 );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_get_vote_for_update() {
+    let round_id = 0;
+    let tranche_id = 0;
+
+    let prop_id_1 = 0;
+    let prop_id_2 = 1;
+
+    let validator_1 = String::from(VALIDATOR_1);
+    let validator_2 = String::from(VALIDATOR_1);
+
+    let lockup_id_1 = 0;
+    let lockup_id_2 = 1;
+
+    let vote_1 = Vote {
+        prop_id: prop_id_1,
+        time_weighted_shares: (validator_1.clone(), Decimal::one()),
+    };
+    let vote_2 = Vote {
+        prop_id: prop_id_2,
+        time_weighted_shares: (validator_2.clone(), Decimal::one()),
+    };
+
+    let lock_entry_1 = LockEntry {
+        lock_id: lockup_id_1,
+        funds: Coin::default(),
+        lock_start: Timestamp::from_seconds(10),
+        lock_end: Timestamp::from_seconds(100),
+    };
+    let lock_entry_2 = LockEntry {
+        lock_id: lockup_id_2,
+        funds: Coin::default(),
+        lock_start: Timestamp::from_seconds(10),
+        lock_end: Timestamp::from_seconds(100),
+    };
+
+    struct TestCase {
+        description: &'static str,
+        votes_to_add: Vec<(u64, Vote)>,
+        old_lock_entry: Option<LockEntry>,
+        validator: String,
+        expected_vote_to_update: Option<Vote>,
+    }
+
+    let test_cases = vec![
+        TestCase {
+            description: "new lockup creation, user didn't vote at all",
+            votes_to_add: vec![],
+            old_lock_entry: None,
+            validator: validator_1.clone(),
+            expected_vote_to_update: None,
+        },
+        TestCase {
+            description: "new lockup creation, user already voted for one proposal",
+            votes_to_add: vec![(lockup_id_1, vote_1.clone())],
+            old_lock_entry: None,
+            validator: validator_1.clone(),
+            expected_vote_to_update: Some(vote_1.clone()),
+        },
+        TestCase {
+            description: "new lockup creation, user already voted for two different proposals",
+            votes_to_add: vec![(lockup_id_1, vote_1.clone()), (lockup_id_2, vote_2.clone())],
+            old_lock_entry: None,
+            validator: validator_1.clone(),
+            expected_vote_to_update: None,
+        },
+        TestCase {
+            description: "refresh existing lockup, user didn't vote at all",
+            votes_to_add: vec![],
+            old_lock_entry: Some(lock_entry_1.clone()),
+            validator: validator_1.clone(),
+            expected_vote_to_update: None,
+        },
+        TestCase {
+            description: "refresh existing lockup, user already voted with it",
+            votes_to_add: vec![(lockup_id_1, vote_1.clone())],
+            old_lock_entry: Some(lock_entry_1.clone()),
+            validator: validator_1.clone(),
+            expected_vote_to_update: Some(vote_1.clone()),
+        },
+        TestCase {
+            description: "refresh existing lockup, user already voted but with a different lockup",
+            votes_to_add: vec![(lockup_id_1, vote_1.clone())],
+            old_lock_entry: Some(lock_entry_2.clone()),
+            validator: validator_2.clone(),
+            expected_vote_to_update: None,
+        },
+    ];
+
+    for test in test_cases {
+        println!("running test case: {}", test.description);
+
+        let mut deps = mock_dependencies(no_op_grpc_query_mock());
+        let sender = get_message_info(&deps.api, "addr0000", &[]).sender;
+
+        for vote_to_add in test.votes_to_add {
+            let res = VOTE_MAP.save(
+                &mut deps.storage,
+                ((round_id, tranche_id), sender.clone(), vote_to_add.0),
+                &vote_to_add.1,
+            );
+            assert!(res.is_ok());
+        }
+
+        let vote_for_update = get_vote_for_update(
+            &mut deps.as_mut(),
+            &sender,
+            round_id,
+            tranche_id,
+            &test.old_lock_entry,
+            &test.validator,
+        )
+        .unwrap();
+
+        match test.expected_vote_to_update {
+            Some(expected_vote_to_update) => {
+                assert!(vote_for_update.is_some());
+                assert_eq!(
+                    vote_for_update.unwrap().prop_id,
+                    expected_vote_to_update.prop_id
+                );
+            }
+            None => {
+                assert!(vote_for_update.is_none());
             }
         }
     }
