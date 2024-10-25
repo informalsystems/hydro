@@ -2173,7 +2173,7 @@ fn test_get_vote_for_update() {
     let prop_id_2 = 1;
 
     let validator_1 = String::from(VALIDATOR_1);
-    let validator_2 = String::from(VALIDATOR_1);
+    let validator_2 = String::from(VALIDATOR_2);
 
     let lockup_id_1 = 0;
     let lockup_id_2 = 1;
