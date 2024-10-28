@@ -2,6 +2,8 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
 use cw_storage_plus::{Item, Map};
 
+use crate::msg::LiquidityDeployment;
+
 pub const CONSTANTS: Item<Constants> = Item::new("constants");
 
 #[cw_serde]
@@ -166,3 +168,9 @@ impl ValidatorInfo {
         }
     }
 }
+
+// This map stores the liquidity deployments that were performed.
+// These can be set by whitelist admins via the SetLiquidityDeployments message.
+// LIQUIDITY_DEPLOYMENTS_MAP: key(round_id, tranche_id, prop_id) -> deployment
+pub const LIQUIDITY_DEPLOYMENTS_MAP: Map<(u64, u64, u64), LiquidityDeployment> =
+    Map::new("liquidity_deployments_map");

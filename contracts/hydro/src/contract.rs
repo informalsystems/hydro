@@ -32,9 +32,9 @@ use crate::score_keeper::{
 };
 use crate::state::{
     Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS,
-    ICQ_MANAGERS, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID,
-    TRANCHE_ID, TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
-    VALIDATOR_TO_QUERY_ID, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
+    ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP,
+    PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
+    VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
@@ -192,13 +192,33 @@ pub fn execute(
         ExecuteMsg::AddICQManager { address } => add_icq_manager(deps, info, address),
         ExecuteMsg::RemoveICQManager { address } => remove_icq_manager(deps, info, address),
         ExecuteMsg::WithdrawICQFunds { amount } => withdraw_icq_funds(deps, info, amount),
-        ExecuteMsg::SetRoundLiquidityDeployments {
+        ExecuteMsg::AddLiquidityDeployment {
             round_id,
             tranche_id,
-            liquidity_deployment,
-        } => {
-            set_round_liquidity_deployments(deps, info, round_id, tranche_id, liquidity_deployment)
-        }
+            proposal_id,
+            destinations,
+            deployed_funds,
+            funds_before_deployment,
+            total_rounds,
+            remaining_rounds,
+        } => add_liquidity_deployment(
+            deps,
+            env,
+            info,
+            round_id,
+            tranche_id,
+            proposal_id,
+            destinations,
+            deployed_funds,
+            funds_before_deployment,
+            total_rounds,
+            remaining_rounds,
+        ),
+        ExecuteMsg::RemoveLiquidityDeployment {
+            round_id,
+            tranche_id,
+            proposal_id,
+        } => remove_liquidity_deployment(deps, info, round_id, tranche_id, proposal_id),
     }
 }
 
@@ -1254,25 +1274,125 @@ fn withdraw_icq_funds(
         }))
 }
 
-fn set_round_liquidity_deployments(
+// This function will add a given liquidity deployment to the deployments that were performed.
+// This will not actually perform any movement of funds; it is assumed to be called when
+// a trusted party, e.g. a multisig, has performed some deployment,
+// and the contract should be updated to reflect this.
+// This will return an error if:
+// * the given round has not started yet
+// * the given tranche does not exist
+// * the given proposal does not exist
+// * there already is a deployment for the given round, tranche, and proposal
+// Having more arguments rather than nested structures actually makes the json easier to construct when calling this from the outside,
+// so we allow many arguments to this function.
+#[allow(clippy::too_many_arguments)]
+pub fn add_liquidity_deployment(
     deps: DepsMut<NeutronQuery>,
+    env: Env,
     info: MessageInfo,
     round_id: u64,
     tranche_id: u64,
-    liquidity_deployments: Vec<LiquidityDeployment>,
+    proposal_id: u64,
+    destinations: Vec<String>,
+    deployed_funds: Vec<Coin>,
+    funds_before_deployment: Vec<Coin>,
+    total_rounds: u64,
+    remaining_rounds: u64,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
-    let round_end = compute_round_end(&constants, round_id)?;
+    // check that the round has started
+    let current_round_id = compute_current_round_id(&env, &constants)?;
+    if round_id > current_round_id {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Cannot add liquidity deployment for a round that has not started yet",
+        )));
+    }
 
-    let mut response = Response::new()
-        .add_attribute("action", "set_round_liquidity_deployments")
+    // check that the tranche with the given id exists
+    TRANCHE_MAP.load(deps.storage, tranche_id)?;
+
+    // check that the proposal with the given id exists
+    PROPOSAL_MAP
+        .load(deps.storage, (round_id, tranche_id, proposal_id))
+        .map_err(|_| {
+            ContractError::Std(StdError::generic_err(format!(
+                "Proposal for round {}, tranche {}, and id {} does not exist",
+                round_id, tranche_id, proposal_id
+            )))
+        })?;
+
+    // check that there is no deployment for the given round, tranche, and proposal
+    if LIQUIDITY_DEPLOYMENTS_MAP
+        .may_load(deps.storage, (round_id, tranche_id, proposal_id))?
+        .is_some()
+    {
+        return Err(ContractError::Std(StdError::generic_err(
+            "There already is a deployment for the given round, tranche, and proposal",
+        )));
+    }
+
+    let deployment = LiquidityDeployment {
+        round_id,
+        tranche_id,
+        proposal_id,
+        destinations,
+        deployed_funds,
+        funds_before_deployment,
+        total_rounds,
+        remaining_rounds,
+    };
+
+    let response = Response::new()
+        .add_attribute("action", "add_round_liquidity_deployments")
+        .add_attribute("sender", info.sender)
+        .add_attribute("round_id", round_id.to_string())
+        .add_attribute("tranche_id", tranche_id.to_string())
+        .add_attribute("proposal_id", proposal_id.to_string())
+        .add_attribute(
+            "deployment",
+            serde_json_wasm::to_string(&deployment).map_err(|_| {
+                ContractError::Std(StdError::generic_err("Failed to serialize deployment"))
+            })?,
+        );
+
+    LIQUIDITY_DEPLOYMENTS_MAP.save(
+        deps.storage,
+        (round_id, tranche_id, proposal_id),
+        &deployment,
+    )?;
+
+    Ok(response)
+}
+
+// This function will remove a given liquidity deployment from the deployments that were performed.
+// The main purpose is to correct a faulty entry added via add_liquidity_deployment.
+// This will return an error if the deployment does not exist.
+pub fn remove_liquidity_deployment(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    round_id: u64,
+    tranche_id: u64,
+    proposal_id: u64,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    // check that the deployment exists
+    LIQUIDITY_DEPLOYMENTS_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
+
+    let response = Response::new()
+        .add_attribute("action", "remove_round_liquidity_deployments")
         .add_attribute("sender", info.sender)
         .add_attribute("round_id", round_id.to_string())
         .add_attribute("tranche_id", tranche_id.to_string());
+
+    LIQUIDITY_DEPLOYMENTS_MAP.remove(deps.storage, (round_id, tranche_id, proposal_id));
 
     Ok(response)
 }
