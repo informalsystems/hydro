@@ -48,6 +48,7 @@ pub struct Proposal {
     pub description: String,
     pub power: Uint128,
     pub percentage: Uint128,
+    pub minimum_atom_liquidity_request: Uint128,
 }
 
 // VOTE_MAP: key((round_id, tranche_id), sender_addr, lock_id) -> Vote

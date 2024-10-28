@@ -17,7 +17,7 @@ use crate::lsm_integration::{
     get_validator_power_ratio_for_round, initialize_validator_store, validate_denom,
     COSMOS_VALIDATOR_PREFIX,
 };
-use crate::msg::{ExecuteMsg, InstantiateMsg, ProposalToLockups, TrancheInfo};
+use crate::msg::{ExecuteMsg, InstantiateMsg, LiquidityDeployment, ProposalToLockups, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
     ICQManagersResponse, LockEntryWithPower, ProposalResponse, QueryMsg,
@@ -158,7 +158,16 @@ pub fn execute(
             tranche_id,
             title,
             description,
-        } => create_proposal(deps, env, info, tranche_id, title, description),
+            minimum_atom_liquidity_request,
+        } => create_proposal(
+            deps,
+            env,
+            info,
+            tranche_id,
+            title,
+            description,
+            minimum_atom_liquidity_request,
+        ),
         ExecuteMsg::Vote {
             tranche_id,
             proposals_votes,
@@ -183,6 +192,13 @@ pub fn execute(
         ExecuteMsg::AddICQManager { address } => add_icq_manager(deps, info, address),
         ExecuteMsg::RemoveICQManager { address } => remove_icq_manager(deps, info, address),
         ExecuteMsg::WithdrawICQFunds { amount } => withdraw_icq_funds(deps, info, amount),
+        ExecuteMsg::SetRoundLiquidityDeployments {
+            round_id,
+            tranche_id,
+            liquidity_deployment,
+        } => {
+            set_round_liquidity_deployments(deps, info, round_id, tranche_id, liquidity_deployment)
+        }
     }
 }
 
@@ -573,6 +589,7 @@ fn create_proposal(
     tranche_id: u64,
     title: String,
     description: String,
+    minimum_atom_liquidity_request: Uint128,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
@@ -600,6 +617,7 @@ fn create_proposal(
         percentage: Uint128::zero(),
         title: title.trim().to_string(),
         description: description.trim().to_string(),
+        minimum_atom_liquidity_request,
     };
 
     PROP_ID.save(deps.storage, &(proposal_id + 1))?;
@@ -1234,6 +1252,29 @@ fn withdraw_icq_funds(
             to_address: info.sender.to_string(),
             amount: vec![send],
         }))
+}
+
+fn set_round_liquidity_deployments(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    round_id: u64,
+    tranche_id: u64,
+    liquidity_deployments: Vec<LiquidityDeployment>,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    let round_end = compute_round_end(&constants, round_id)?;
+
+    let mut response = Response::new()
+        .add_attribute("action", "set_round_liquidity_deployments")
+        .add_attribute("sender", info.sender)
+        .add_attribute("round_id", round_id.to_string())
+        .add_attribute("tranche_id", tranche_id.to_string());
+
+    Ok(response)
 }
 
 fn validate_sender_is_whitelist_admin(

@@ -46,6 +46,11 @@ pub enum ExecuteMsg {
         tranche_id: u64,
         title: String,
         description: String,
+        // the minimum amount of liquidity, in ATOM equivalent, that the project wants
+        // to receive. If they would receive less than this amount of liquidity,
+        // it is assumed that no liquidity will be deployed to them.
+        // If this is set to 0, the project is assumed to not have a minimum requirement.
+        minimum_atom_liquidity_request: Uint128,
     },
     Vote {
         tranche_id: u64,
@@ -86,9 +91,10 @@ pub enum ExecuteMsg {
     WithdrawICQFunds {
         amount: Uint128,
     },
-
-    SetLiquidityDeploymentsForRound {
-        deployments: Vec<LiquidityDeployment>,
+    SetRoundLiquidityDeployments {
+        round_id: u64,
+        tranche_id: u64,
+        liquidity_deployment: Vec<LiquidityDeployment>,
     },
 }
 
