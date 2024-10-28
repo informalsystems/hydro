@@ -1,4 +1,4 @@
-use cosmwasm_std::{Timestamp, Uint128};
+use cosmwasm_std::{Coin, Timestamp, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -86,6 +86,10 @@ pub enum ExecuteMsg {
     WithdrawICQFunds {
         amount: Uint128,
     },
+
+    SetLiquidityDeploymentsForRound {
+        deployments: Vec<LiquidityDeployment>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -98,4 +102,21 @@ pub struct ProposalToLockups {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct MigrateMsg {
     pub new_first_round_start: Timestamp,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct LiquidityDeployment {
+    pub round_id: u64,
+    pub tranche_id: u64,
+    pub proposal_id: u64,
+    pub destinations: Vec<String>,
+    // allocation assigned to the proposal to be deployed during the specified round
+    pub deployed_funds: Vec<Coin>,
+    // allocation at the end of the last round for the proposal. this is 0 if no equivalent proposal exicted in the last round.
+    // if this is a "repeating" proposal (where proposals in subsequent rounds are for the same underlying liqudiity deployment),
+    // it's the allocation prior to any potential clawback or increase
+    pub funds_before_deployment: Vec<Coin>,
+    // how many rounds this proposal has been in effect for
+    // if this is a "repeating" proposal
+    pub total_rounds: u64,
 }
