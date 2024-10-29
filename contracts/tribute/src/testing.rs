@@ -792,7 +792,7 @@ fn claim_tribute_test() {
                     power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
                 },
             )],
-            mock_top_n_proposals.clone(), 
+            mock_top_n_proposals.clone(),
             vec![],),
         },
         ClaimTributeTestCase {
