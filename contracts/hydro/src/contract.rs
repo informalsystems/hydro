@@ -20,11 +20,11 @@ use crate::lsm_integration::{
 use crate::msg::{ExecuteMsg, InstantiateMsg, LiquidityDeployment, ProposalToLockups, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    ICQManagersResponse, LockEntryWithPower, ProposalResponse, QueryMsg,
-    RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
-    RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse,
-    TranchesResponse, UserVotesResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
-    WhitelistAdminsResponse, WhitelistResponse,
+    ICQManagersResponse, LiquidityDeploymentResponse, LockEntryWithPower, ProposalResponse,
+    QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
+    RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse,
+    TotalLockedTokensResponse, TranchesResponse, UserVotesResponse, UserVotingPowerResponse,
+    ValidatorPowerRatioResponse, WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, get_total_power_for_proposal,
@@ -1510,7 +1510,61 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
             round_id,
         } => to_json_binary(&query_validator_power_ratio(deps, validator, round_id)?),
         QueryMsg::ICQManagers {} => to_json_binary(&query_icq_managers(deps)?),
+        QueryMsg::LiquidityDeployment {
+            round_id,
+            tranche_id,
+            proposal_id,
+        } => to_json_binary(&query_liquidity_deployment(
+            deps,
+            round_id,
+            tranche_id,
+            proposal_id,
+        )?),
+        QueryMsg::RoundTrancheLiquidityDeployments {
+            round_id,
+            tranche_id,
+            start_from,
+            limit,
+        } => to_json_binary(&query_round_tranche_liquidity_deployments(
+            deps, round_id, tranche_id, start_from, limit,
+        )?),
     }
+}
+
+fn query_liquidity_deployment(
+    deps: Deps<NeutronQuery>,
+    round_id: u64,
+    tranche_id: u64,
+    proposal_id: u64,
+) -> StdResult<LiquidityDeploymentResponse> {
+    let deployment =
+        LIQUIDITY_DEPLOYMENTS_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
+    Ok(LiquidityDeploymentResponse {
+        liquidity_deployment: deployment,
+    })
+}
+
+pub fn query_round_tranche_liquidity_deployments(
+    deps: Deps<NeutronQuery>,
+    round_id: u64,
+    tranche_id: u64,
+    start_from: u64,
+    limit: u64,
+) -> StdResult<RoundTrancheLiquidityDeploymentsResponse> {
+    let mut deployments = vec![];
+    for deployment in LIQUIDITY_DEPLOYMENTS_MAP
+        .prefix((round_id, tranche_id))
+        .range(deps.storage, None, None, Order::Ascending)
+        .skip(start_from as usize)
+        .take(limit as usize)
+    {
+        let (_, deployment) = deployment?;
+        deployments.push(deployment);
+    }
+
+    Ok(RoundTrancheLiquidityDeploymentsResponse {
+        liquidity_deployments: deployments,
+    })
 }
 
 pub fn query_round_total_power(

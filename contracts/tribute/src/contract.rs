@@ -5,6 +5,7 @@ use cosmwasm_std::{
     MessageInfo, Order, Reply, Response, StdError, StdResult, Uint128,
 };
 use cw2::set_contract_version;
+use hydro::msg::LiquidityDeployment;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
@@ -334,6 +335,8 @@ fn refund_tribute(
 struct TopNProposalInfo {
     pub top_n_proposal: Option<Proposal>,
     pub is_above_voting_threshold: bool,
+    pub had_deployment_entered: bool,
+    pub received_nonzero_funds: bool,
 }
 
 impl TopNProposalInfo {
@@ -348,13 +351,37 @@ impl TopNProposalInfo {
                         "Tribute not claimable: Proposal received less voting percentage than threshold: {} required, but is {}", config.min_prop_percent_for_claimable_tributes, proposal.percentage))));
                 }
 
+                if !self.had_deployment_entered {
+                    return Err(ContractError::Std(StdError::generic_err(
+                        "Tribute not claimable: Proposal did not have a liquidity deployment entered",
+                    )));
+                }
+
+                if !self.received_nonzero_funds {
+                    return Err(ContractError::Std(StdError::generic_err(
+                        "Tribute not claimable: Proposal did not receive a non-zero liquidity deployment",
+                    )));
+                }
+
                 Ok(proposal.clone())
             }
         }
     }
 
     fn are_tributes_refundable(&self) -> Result<(), ContractError> {
-        if self.top_n_proposal.is_some() && self.is_above_voting_threshold {
+        if !self.had_deployment_entered {
+            return Err(ContractError::Std(StdError::generic_err(
+                "Can't refund tribute for proposal that didn't have a liquidity deployment entered",
+            )));
+        }
+
+        if self.received_nonzero_funds {
+            return Err(ContractError::Std(StdError::generic_err(
+                "Can't refund tribute for proposal that received a non-zero liquidity deployment",
+            )));
+        }
+
+        if self.top_n_proposal.is_some() && (self.is_above_voting_threshold) {
             return Err(ContractError::Std(StdError::generic_err(
                 "Can't refund top N proposal that received at least the threshold of the total voting power",
             )));
@@ -374,17 +401,39 @@ fn get_top_n_proposal_info(
     tranche_id: u64,
     proposal_id: u64,
 ) -> Result<TopNProposalInfo, ContractError> {
-    match get_top_n_proposal(deps, config, round_id, tranche_id, proposal_id)? {
-        Some(proposal) => Ok(TopNProposalInfo {
-            top_n_proposal: Some(proposal.clone()),
-            is_above_voting_threshold: proposal.percentage
-                >= config.min_prop_percent_for_claimable_tributes,
-        }),
-        None => Ok(TopNProposalInfo {
-            top_n_proposal: None,
-            is_above_voting_threshold: false,
-        }),
+    let mut info = TopNProposalInfo {
+        top_n_proposal: None,
+        is_above_voting_threshold: false,
+        had_deployment_entered: false,
+        received_nonzero_funds: false,
+    };
+
+    // get the liquidity deployments for this proposal
+    let liquitidy_deployment_res =
+        get_liquidity_deployment(deps, config, round_id, tranche_id, proposal_id);
+
+    match liquitidy_deployment_res {
+        Ok(liquidity_deployment) => {
+            info.had_deployment_entered = true;
+            info.received_nonzero_funds = !liquidity_deployment.deployed_funds.is_empty()
+                && liquidity_deployment
+                    .deployed_funds
+                    .iter()
+                    .any(|coin| coin.amount > Uint128::zero());
+        }
+        Err(_) => {}
     }
+
+    match get_top_n_proposal(deps, config, round_id, tranche_id, proposal_id)? {
+        Some(proposal) => {
+            info.top_n_proposal = Some(proposal.clone());
+            info.is_above_voting_threshold =
+                proposal.percentage >= config.min_prop_percent_for_claimable_tributes;
+        }
+        None => {}
+    }
+
+    Ok(info)
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -707,6 +756,33 @@ fn get_top_n_proposals(
     )?;
 
     Ok(proposals_resp.proposals)
+}
+
+fn get_liquidity_deployment(
+    deps: &Deps,
+    config: &Config,
+    round_id: u64,
+    tranche_id: u64,
+    proposal_id: u64,
+) -> Result<LiquidityDeployment, ContractError> {
+    let liquidity_deployment_resp: LiquidityDeployment = deps
+        .querier
+        .query_wasm_smart(
+            &config.hydro_contract,
+            &HydroQueryMsg::LiquidityDeployment {
+                round_id,
+                tranche_id,
+                proposal_id,
+            },
+        )
+        .map_err(|err| {
+            StdError::generic_err(format!(
+                "No liquidity deployment was entered yet for proposal. Error: {:?}",
+                err
+            ))
+        })?;
+
+    Ok(liquidity_deployment_resp)
 }
 
 // TODO: figure out build issue that we have if we don't define all this functions in both contracts

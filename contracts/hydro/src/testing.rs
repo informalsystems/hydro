@@ -1805,6 +1805,21 @@ fn contract_pausing_test() {
         ExecuteMsg::WithdrawICQFunds {
             amount: Uint128::new(50),
         },
+        ExecuteMsg::AddLiquidityDeployment {
+            round_id: 0,
+            tranche_id: 0,
+            proposal_id: 0,
+            destinations: vec![],
+            deployed_funds: vec![],
+            funds_before_deployment: vec![],
+            total_rounds: 0,
+            remaining_rounds: 0,
+        },
+        ExecuteMsg::RemoveLiquidityDeployment {
+            round_id: 0,
+            tranche_id: 0,
+            proposal_id: 0,
+        },
     ];
 
     for msg in msgs {
