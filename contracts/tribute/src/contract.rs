@@ -412,25 +412,19 @@ fn get_top_n_proposal_info(
     let liquitidy_deployment_res =
         get_liquidity_deployment(deps, config, round_id, tranche_id, proposal_id);
 
-    match liquitidy_deployment_res {
-        Ok(liquidity_deployment) => {
-            info.had_deployment_entered = true;
-            info.received_nonzero_funds = !liquidity_deployment.deployed_funds.is_empty()
-                && liquidity_deployment
-                    .deployed_funds
-                    .iter()
-                    .any(|coin| coin.amount > Uint128::zero());
-        }
-        Err(_) => {}
+    if let Ok(liquidity_deployment) = liquitidy_deployment_res {
+        info.had_deployment_entered = true;
+        info.received_nonzero_funds = !liquidity_deployment.deployed_funds.is_empty()
+            && liquidity_deployment
+                .deployed_funds
+                .iter()
+                .any(|coin| coin.amount > Uint128::zero());
     }
 
-    match get_top_n_proposal(deps, config, round_id, tranche_id, proposal_id)? {
-        Some(proposal) => {
-            info.top_n_proposal = Some(proposal.clone());
-            info.is_above_voting_threshold =
-                proposal.percentage >= config.min_prop_percent_for_claimable_tributes;
-        }
-        None => {}
+    if let Some(proposal) = get_top_n_proposal(deps, config, round_id, tranche_id, proposal_id)? {
+        info.top_n_proposal = Some(proposal.clone());
+        info.is_above_voting_threshold =
+            proposal.percentage >= config.min_prop_percent_for_claimable_tributes;
     }
 
     Ok(info)
