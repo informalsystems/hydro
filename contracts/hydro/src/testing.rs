@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::contract::{
-    get_vote_for_update, query_tranches, query_user_votes, query_whitelist, query_whitelist_admins,
-    MAX_LOCK_ENTRIES,
+    get_vote_for_update, query_current_round_id, query_tranches, query_user_votes, query_whitelist,
+    query_whitelist_admins, MAX_LOCK_ENTRIES,
 };
 use crate::msg::{ProposalToLockups, TrancheInfo};
 use crate::state::{LockEntry, Vote, VOTE_MAP};
@@ -86,6 +86,7 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         icq_update_period: 100,
         icq_managers: vec![user_address],
         is_in_pilot_mode: false,
+        max_bid_duration: 12,
     }
 }
 
@@ -892,13 +893,9 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
     assert!(res.is_ok());
 }
 
-#[test]
-fn vote_extended_proposals_test() {
-    vote_test_extended_proposals(mock_env().block.time, 0);
-}
-
-// vote_test_extended_proposals tests that a vote is rejected if the round where votes
-// are possible is not reached yet and the vote is granted if it is done in last round of an extended
+// vote_extended_proposals_test tests that a vote is rejected if the round where votes
+// are possible is not reached yet and the vote is granted if it is done in the last round
+// of an extended proposal
 //
 // Test comprises 2 scenarios
 //  * A: fails to vote due to ongoing proposal user voted already for.
@@ -914,11 +911,10 @@ fn vote_extended_proposals_test() {
 //  |         |  p(3)   | end     |         |         |
 //  |         |         |         |  p(4)   | end     |
 //
-// TODO: might be good to split the 2 scenarios into 2 separate test cases
-fn vote_test_extended_proposals(start_time: Timestamp, current_round_id: u64) {
+#[test]
+fn vote_extended_proposals_test() {
     let user_address = "addr0000";
     let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
-    let second_proposal_id = 1;
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
@@ -927,43 +923,52 @@ fn vote_test_extended_proposals(start_time: Timestamp, current_round_id: u64) {
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
     let mut init_params = get_default_instantiate_msg(&deps.api);
-    init_params.first_round_start = start_time;
+    init_params.first_round_start = env.block.time;
 
-    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), init_params.clone());
+    let res = instantiate(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        init_params.clone(),
+    );
     assert!(res.is_ok());
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    set_default_validator_for_rounds(deps.as_mut(), 0, 5);
 
-    // lock some tokens to get voting power
     let msg = ExecuteMsg::LockTokens {
-        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
     };
 
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
+    let round_id = 0;
     let tranche_id = 1;
+
+    let first_lock_id = 0;
+
+    let second_proposal_id = 1;
+    let third_proposal_id = 2;
+    let fourth_proposal_id = 3;
+
     let prop_infos = vec![
-        // proposal p(1)  with bidding period 1 rounds
+        // proposal p(1)  with bidding period of 1 round
         (
             "proposal title 1".to_string(),
             "proposal description 1".to_string(),
-            1, // rounds
-            true, // expected_failure
+            1,
         ),
-        // proposal p(2) with bidding period 3 round
+        // proposal p(2) with bidding period of 3 rounds
         (
             "proposal title 2".to_string(),
             "proposal description 2".to_string(),
-            3, // rounds
-            false, // expected_failure
+            3,
         ),
     ];
 
     for prop_info in &prop_infos {
-        // create the proposals
         let msg = ExecuteMsg::CreateProposal {
-            tranche_id: tranche_id,
+            tranche_id,
             title: prop_info.0.clone(),
             description: prop_info.1.clone(),
             bid_duration: prop_info.2,
@@ -975,31 +980,36 @@ fn vote_test_extended_proposals(start_time: Timestamp, current_round_id: u64) {
 
     // vote for the second proposals p(2)
     let msg = ExecuteMsg::Vote {
-        tranche_id: 1,
-        proposal_id: second_proposal_id,
+        tranche_id,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id: second_proposal_id,
+            lock_ids: vec![first_lock_id],
+        }],
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    // check that users voted for the two proposal
-    let round_id = current_round_id;
-    let res = query_user_vote(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
+    // check that users voted for the second proposal
+    let res = query_user_votes(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
     assert!(res.is_ok(), "error: {:?}", res);
-    assert_eq!(second_proposal_id, res.unwrap().vote.prop_id);
+    assert_eq!(second_proposal_id, res.unwrap().votes[0].prop_id);
 
-    // advance the chain by one more update period to move to round 1
-    env.block.time = env.block.time.plus_nanos( init_params.round_length);
+    // advance the chain by one round length to move to round 1
+    env.block.time = env.block.time.plus_nanos(init_params.round_length);
 
-    // cross check current round is round 1
-    let resp = query_constants(deps.as_ref());
+    // cross check that the current round is round 1
+    let resp = query_current_round_id(deps.as_ref(), env.clone());
     assert!(resp.is_ok());
-    let constants = resp.unwrap().constants;
-    let round_id = compute_current_round_id(&env, &constants.clone());
-    assert_eq!(Ok(1), round_id, "expected to reach round 1 (round after voting), sitting in {:?}", round_id);
+
+    assert_eq!(
+        1,
+        resp.unwrap().round_id,
+        "expected to reach round 1 (round after voting)",
+    );
 
     // create new proposal p(3) (successor of p(1))
     let msg = ExecuteMsg::CreateProposal {
-        tranche_id: tranche_id,
+        tranche_id,
         title: prop_infos[0].0.clone(),
         description: prop_infos[0].1.clone(),
         bid_duration: prop_infos[0].2,
@@ -1007,25 +1017,43 @@ fn vote_test_extended_proposals(start_time: Timestamp, current_round_id: u64) {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    // check that switching vote after the first round for 'long proposal' to p(3) fails
+    // check that voting for p(3), one round after voting for 'long lasting' proposal fails
     let msg = ExecuteMsg::Vote {
-        tranche_id: 1,
-        proposal_id: 2,
+        tranche_id,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id: third_proposal_id,
+            lock_ids: vec![first_lock_id],
+        }],
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert_eq!(res.is_ok(), false, "switching vote from proposal not in last round did not fail");
+    assert!(
+        res.is_err(),
+        "voting in the round after voting for 'long lasting' proposal should fail"
+    );
 
     // advance to the last round of chain #rounds - current round
-    let remaining_rounds = (prop_infos[1].2 - 1) as u64;
-    env.block.time = env.block.time.plus_nanos(remaining_rounds * init_params.round_length);
+    let remaining_rounds = prop_infos[1].2 - 1;
+    env.block.time = env
+        .block
+        .time
+        .plus_nanos(remaining_rounds * init_params.round_length);
 
-    // check that this is the last round for proposal 1
-    let round_id = compute_current_round_id(&env, &constants.clone());
-    assert_eq!(Ok(3), round_id, "expected to reach round {:?}, sitting in {:?}", prop_infos[0].2-1, round_id);
+    // check that this is the round in which the proposal 1 ends
+    let resp = query_current_round_id(deps.as_ref(), env.clone());
+    assert!(resp.is_ok());
 
-    // create new proposal p(4) (successor of p(3))
+    let round_no = resp.unwrap().round_id;
+    assert_eq!(
+        3,
+        round_no,
+        "expected to reach round {:?}, sitting in {:?}",
+        prop_infos[0].2 - 1,
+        round_id
+    );
+
+    // create new proposal p(4), successor of p(3)
     let msg = ExecuteMsg::CreateProposal {
-        tranche_id: tranche_id,
+        tranche_id,
         title: prop_infos[0].0.clone(),
         description: prop_infos[0].1.clone(),
         bid_duration: prop_infos[0].2,
@@ -1033,19 +1061,28 @@ fn vote_test_extended_proposals(start_time: Timestamp, current_round_id: u64) {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    // check that switching vote in round 3 ' end of long proposal' to p(4) passes
+    // check that voting for p(4) in round 3 (when the 'long lasting' proposal ends) passes
     let msg = ExecuteMsg::Vote {
-        tranche_id: 1,
-        proposal_id: 3,
+        tranche_id,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id: fourth_proposal_id,
+            lock_ids: vec![first_lock_id],
+        }],
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok(), "switching vote from 'long proposal' in last round failed");
+    assert!(
+        res.is_ok(),
+        "voting in the round in which the 'long lasting' proposal is ending failed"
+    );
 
-    let round_no = round_id.unwrap();
-    let res = query_user_vote(deps.as_ref(), round_no, tranche_id, info.sender.to_string());
-    assert!(res.is_ok(), "querying vote for round {:?} failed {:?}", round_no, res);
-    assert_eq!(3, res.unwrap().vote.prop_id);
-
+    let res = query_user_votes(deps.as_ref(), round_no, tranche_id, info.sender.to_string());
+    assert!(
+        res.is_ok(),
+        "querying vote for round {:?} failed {:?}",
+        round_no,
+        res
+    );
+    assert_eq!(3, res.unwrap().votes[0].prop_id);
 }
 
 #[test]
@@ -1849,8 +1886,9 @@ fn max_locked_tokens_test() {
 
     // a privileged user can update the maximum allowed locked tokens
     info = get_message_info(&deps.api, "addr0001", &[]);
-    let update_max_locked_tokens_msg = ExecuteMsg::UpdateMaxLockedTokens {
-        max_locked_tokens: 3000,
+    let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
+        max_locked_tokens: Some(3000),
+        max_bid_duration: None,
     };
     let res = execute(
         deps.as_mut(),
@@ -1937,8 +1975,9 @@ fn contract_pausing_test() {
         ExecuteMsg::RemoveAccountFromWhitelist {
             address: whitelist_admin.to_string(),
         },
-        ExecuteMsg::UpdateMaxLockedTokens {
-            max_locked_tokens: 0,
+        ExecuteMsg::UpdateConfig {
+            max_locked_tokens: None,
+            max_bid_duration: None,
         },
         ExecuteMsg::Pause {},
         ExecuteMsg::AddTranche {

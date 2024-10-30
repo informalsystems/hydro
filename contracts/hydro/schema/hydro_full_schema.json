@@ -12,6 +12,7 @@
       "initial_whitelist",
       "is_in_pilot_mode",
       "lock_epoch_length",
+      "max_bid_duration",
       "max_locked_tokens",
       "max_validator_shares_participating",
       "round_length",
@@ -49,6 +50,11 @@
         "type": "boolean"
       },
       "lock_epoch_length": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "max_bid_duration": {
         "type": "integer",
         "format": "uint64",
         "minimum": 0.0
@@ -196,11 +202,17 @@
           "create_proposal": {
             "type": "object",
             "required": [
+              "bid_duration",
               "description",
               "title",
               "tranche_id"
             ],
             "properties": {
+              "bid_duration": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
               "description": {
                 "type": "string"
               },
@@ -293,17 +305,25 @@
       {
         "type": "object",
         "required": [
-          "update_max_locked_tokens"
+          "update_config"
         ],
         "properties": {
-          "update_max_locked_tokens": {
+          "update_config": {
             "type": "object",
-            "required": [
-              "max_locked_tokens"
-            ],
             "properties": {
+              "max_bid_duration": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
               "max_locked_tokens": {
-                "type": "integer",
+                "type": [
+                  "integer",
+                  "null"
+                ],
                 "format": "uint128",
                 "minimum": 0.0
               }
@@ -973,6 +993,7 @@
         "Proposal": {
           "type": "object",
           "required": [
+            "bid_duration",
             "description",
             "percentage",
             "power",
@@ -982,6 +1003,11 @@
             "tranche_id"
           ],
           "properties": {
+            "bid_duration": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "description": {
               "type": "string"
             },
@@ -1156,6 +1182,7 @@
             "icq_update_period",
             "is_in_pilot_mode",
             "lock_epoch_length",
+            "max_bid_duration",
             "max_locked_tokens",
             "max_validator_shares_participating",
             "paused",
@@ -1180,6 +1207,11 @@
               "type": "boolean"
             },
             "lock_epoch_length": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "max_bid_duration": {
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -1255,6 +1287,7 @@
         "Proposal": {
           "type": "object",
           "required": [
+            "bid_duration",
             "description",
             "percentage",
             "power",
@@ -1264,6 +1297,11 @@
             "tranche_id"
           ],
           "properties": {
+            "bid_duration": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "description": {
               "type": "string"
             },
@@ -1501,6 +1539,7 @@
         "Proposal": {
           "type": "object",
           "required": [
+            "bid_duration",
             "description",
             "percentage",
             "power",
@@ -1510,6 +1549,11 @@
             "tranche_id"
           ],
           "properties": {
+            "bid_duration": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "description": {
               "type": "string"
             },

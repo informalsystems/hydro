@@ -46,6 +46,7 @@ fn get_default_constants() -> crate::state::Constants {
         hub_transfer_channel_id: "channel-0".to_string(),
         icq_update_period: 100,
         is_in_pilot_mode: false,
+        max_bid_duration: 12,
     }
 }
 
