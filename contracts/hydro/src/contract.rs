@@ -607,6 +607,7 @@ fn validate_previous_round_vote(
 // * validate that the contract is not paused
 // * validate that the creator of the proposal is on the whitelist
 // Then, it will create the proposal in the specified tranche and in the current round.
+#[allow(clippy::too_many_arguments)]
 fn create_proposal(
     deps: DepsMut<NeutronQuery>,
     env: Env,
