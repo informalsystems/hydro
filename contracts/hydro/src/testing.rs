@@ -908,8 +908,9 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
 //  | round 0 | round 1 | round 2 | round 3 | round 4 |
 //  |  p(1)   |  end    |         |         |         |
 //  |  p(2)   |  ----   | -----   |  end    |         |
-//  |         |  p(3)   | end     |         |         |
-//  |         |         |         |  p(4)   | end     |
+//  |  p(3)   |  ----   | -----   |  end    |         |
+//  |         |  p(4)   | end     |         |         |
+//  |         |         |         |  p(5)   | end     |
 //
 #[test]
 fn vote_extended_proposals_test() {
@@ -950,6 +951,7 @@ fn vote_extended_proposals_test() {
     let second_proposal_id = 1;
     let third_proposal_id = 2;
     let fourth_proposal_id = 3;
+    let fifth_proposal_id = 4;
 
     let prop_infos = vec![
         // proposal p(1)  with bidding period of 1 round
@@ -962,6 +964,12 @@ fn vote_extended_proposals_test() {
         (
             "proposal title 2".to_string(),
             "proposal description 2".to_string(),
+            3,
+        ),
+        // proposal p(3) with bidding period of 3 rounds
+        (
+            "proposal title 3".to_string(),
+            "proposal description 3".to_string(),
             3,
         ),
     ];
@@ -978,7 +986,23 @@ fn vote_extended_proposals_test() {
         assert!(res.is_ok());
     }
 
-    // vote for the second proposals p(2)
+    // vote for the third proposals p(3)
+    let msg = ExecuteMsg::Vote {
+        tranche_id,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id: third_proposal_id,
+            lock_ids: vec![first_lock_id],
+        }],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // check that users voted for the third proposal
+    let res = query_user_votes(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
+    assert!(res.is_ok(), "error: {:?}", res);
+    assert_eq!(third_proposal_id, res.unwrap().votes[0].prop_id);
+
+    // switch vote from the third proposal p(3) to the second proposals p(2)
     let msg = ExecuteMsg::Vote {
         tranche_id,
         proposals_votes: vec![ProposalToLockups {
@@ -1007,7 +1031,7 @@ fn vote_extended_proposals_test() {
         "expected to reach round 1 (round after voting)",
     );
 
-    // create new proposal p(3) (successor of p(1))
+    // create new proposal p(4) (successor of p(1))
     let msg = ExecuteMsg::CreateProposal {
         tranche_id,
         title: prop_infos[0].0.clone(),
@@ -1017,11 +1041,11 @@ fn vote_extended_proposals_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    // check that voting for p(3), one round after voting for 'long lasting' proposal fails
+    // check that voting for p(4), one round after voting for 'long lasting' proposal fails
     let msg = ExecuteMsg::Vote {
         tranche_id,
         proposals_votes: vec![ProposalToLockups {
-            proposal_id: third_proposal_id,
+            proposal_id: fourth_proposal_id,
             lock_ids: vec![first_lock_id],
         }],
     };
@@ -1051,7 +1075,7 @@ fn vote_extended_proposals_test() {
         round_id
     );
 
-    // create new proposal p(4), successor of p(3)
+    // create new proposal p(5), successor of p(4)
     let msg = ExecuteMsg::CreateProposal {
         tranche_id,
         title: prop_infos[0].0.clone(),
@@ -1061,11 +1085,11 @@ fn vote_extended_proposals_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    // check that voting for p(4) in round 3 (when the 'long lasting' proposal ends) passes
+    // check that voting for p(5) in round 3 (when the 'long lasting' proposal ends) passes
     let msg = ExecuteMsg::Vote {
         tranche_id,
         proposals_votes: vec![ProposalToLockups {
-            proposal_id: fourth_proposal_id,
+            proposal_id: fifth_proposal_id,
             lock_ids: vec![first_lock_id],
         }],
     };
@@ -1082,7 +1106,7 @@ fn vote_extended_proposals_test() {
         round_no,
         res
     );
-    assert_eq!(3, res.unwrap().votes[0].prop_id);
+    assert_eq!(fifth_proposal_id, res.unwrap().votes[0].prop_id);
 }
 
 #[test]

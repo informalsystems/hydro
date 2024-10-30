@@ -801,17 +801,19 @@ fn vote(
                 );
             }
             None => {
-                // If user didn't yet vote with the given lock in the given round and tranche, check if they
-                // voted in previous rounds for some proposal that spans multiple rounds.
-                let voting_allowed_round = VOTING_ALLOWED_ROUND
-                    .may_load(deps.storage, (tranche_id, info.sender.clone(), lock_id))?;
+                // If user didn't yet vote with the given lock in the given round and tranche, check
+                // if they voted in previous rounds for some proposal that spans multiple rounds.
+                // This means that users can change their vote during a round, because we don't
+                // check this if users already voted in the current round.
+                let voting_allowed_round =
+                    VOTING_ALLOWED_ROUND.may_load(deps.storage, (tranche_id, lock_id))?;
 
                 if let Some(voting_allowed_round) = voting_allowed_round {
                     if voting_allowed_round > round_id {
                         return Err(ContractError::Std(
                         StdError::generic_err(format!(
-                            "Not allowed to vote with lock_id {} on new proposal. Voted already on proposal still in bidding phase ending in round {}.",
-                            lock_id, voting_allowed_round))));
+                            "Not allowed to vote with lock_id {} in tranche {}. Cannot vote again with this lock_id until round {}.",
+                            lock_id, tranche_id, voting_allowed_round))));
                     }
                 }
             }
@@ -891,7 +893,7 @@ fn vote(
             let voting_allowed_round = round_id + updated_proposal.bid_duration;
             VOTING_ALLOWED_ROUND.save(
                 deps.storage,
-                (tranche_id, info.sender.clone(), lock_id),
+                (tranche_id, lock_id),
                 &voting_allowed_round,
             )?;
         }
