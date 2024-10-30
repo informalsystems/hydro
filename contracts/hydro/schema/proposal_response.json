@@ -15,6 +15,7 @@
     "Proposal": {
       "type": "object",
       "required": [
+        "bid_duration",
         "description",
         "percentage",
         "power",
@@ -24,6 +25,11 @@
         "tranche_id"
       ],
       "properties": {
+        "bid_duration": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
         "description": {
           "type": "string"
         },

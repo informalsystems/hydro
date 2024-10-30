@@ -79,11 +79,17 @@
         "create_proposal": {
           "type": "object",
           "required": [
+            "bid_duration",
             "description",
             "title",
             "tranche_id"
           ],
           "properties": {
+            "bid_duration": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "description": {
               "type": "string"
             },
@@ -176,17 +182,25 @@
     {
       "type": "object",
       "required": [
-        "update_max_locked_tokens"
+        "update_config"
       ],
       "properties": {
-        "update_max_locked_tokens": {
+        "update_config": {
           "type": "object",
-          "required": [
-            "max_locked_tokens"
-          ],
           "properties": {
+            "max_bid_duration": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "max_locked_tokens": {
-              "type": "integer",
+              "type": [
+                "integer",
+                "null"
+              ],
               "format": "uint128",
               "minimum": 0.0
             }

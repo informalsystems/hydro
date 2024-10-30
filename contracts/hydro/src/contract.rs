@@ -34,7 +34,8 @@ use crate::state::{
     Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS,
     ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP,
     PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
-    VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP, WHITELIST, WHITELIST_ADMINS,
+    VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP, VOTING_ALLOWED_ROUND, WHITELIST,
+    WHITELIST_ADMINS,
 };
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
@@ -75,8 +76,9 @@ pub fn instantiate(
         hub_connection_id: msg.hub_connection_id,
         hub_transfer_channel_id: msg.hub_transfer_channel_id,
         icq_update_period: msg.icq_update_period,
-        paused: false,
         is_in_pilot_mode: msg.is_in_pilot_mode,
+        max_bid_duration: msg.max_bid_duration,
+        paused: false,
     };
 
     CONSTANTS.save(deps.storage, &state)?;
@@ -158,6 +160,7 @@ pub fn execute(
             tranche_id,
             title,
             description,
+            bid_duration,
             minimum_atom_liquidity_request,
         } => create_proposal(
             deps,
@@ -166,6 +169,7 @@ pub fn execute(
             tranche_id,
             title,
             description,
+            bid_duration,
             minimum_atom_liquidity_request,
         ),
         ExecuteMsg::Vote {
@@ -176,9 +180,10 @@ pub fn execute(
         ExecuteMsg::RemoveAccountFromWhitelist { address } => {
             remove_from_whitelist(deps, env, info, address)
         }
-        ExecuteMsg::UpdateMaxLockedTokens { max_locked_tokens } => {
-            update_max_locked_tokens(deps, info, max_locked_tokens)
-        }
+        ExecuteMsg::UpdateConfig {
+            max_locked_tokens,
+            max_bid_duration,
+        } => update_config(deps, info, max_locked_tokens, max_bid_duration),
         ExecuteMsg::Pause {} => pause_contract(deps, info),
         ExecuteMsg::AddTranche { tranche } => add_tranche(deps, info, tranche),
         ExecuteMsg::EditTranche {
@@ -303,7 +308,7 @@ fn lock_tokens(
     )?;
 
     // Calculate and update the total voting power info for current and all
-    // future rounds in which the user will have voting power greather than 0
+    // future rounds in which the user will have voting power greater than 0
     let last_round_with_power = compute_round_id_for_timestamp(&constants, lock_end)? - 1;
 
     update_total_time_weighted_shares(
@@ -609,6 +614,7 @@ fn create_proposal(
     tranche_id: u64,
     title: String,
     description: String,
+    bid_duration: u64,
     minimum_atom_liquidity_request: Uint128,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
@@ -627,6 +633,14 @@ fn create_proposal(
     // check that the tranche with the given id exists
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
+    // check that the bid duration is within the allowed range
+    if bid_duration < 1 || bid_duration > constants.max_bid_duration {
+        return Err(ContractError::Std(StdError::generic_err(format!(
+            "Invalid bid duration: {}. Must be between {} and {} rounds.",
+            bid_duration, 1, constants.max_bid_duration,
+        ))));
+    }
+
     let proposal_id = PROP_ID.load(deps.storage)?;
 
     let proposal = Proposal {
@@ -637,6 +651,7 @@ fn create_proposal(
         percentage: Uint128::zero(),
         title: title.trim().to_string(),
         description: description.trim().to_string(),
+        bid_duration,
         minimum_atom_liquidity_request,
     };
 
@@ -753,71 +768,91 @@ fn vote(
         // Get any existing vote for this sender and reverse it- this may be a vote for a different proposal (if they are switching their vote),
         // or it may be a vote for the same proposal (if they have increased their power by locking more and want to update their vote).
         // TODO: this could be made more gas-efficient by using a separate path with fewer writes if the vote is for the same proposal
-        let vote = VOTE_MAP.load(
+        let vote = VOTE_MAP.may_load(
             deps.storage,
             ((round_id, tranche_id), info.sender.clone(), lock_id),
-        );
-        if let Ok(vote) = vote {
-            // Load the proposal in the vote
-            let mut proposal =
-                PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, vote.prop_id))?;
+        )?;
+        match vote {
+            Some(vote) => {
+                // Load the proposal in the vote
+                let mut proposal =
+                    PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, vote.prop_id))?;
 
-            // Remove proposal's old power in PROPS_BY_SCORE
-            PROPS_BY_SCORE.remove(
-                deps.storage,
-                (
-                    (round_id, proposal.tranche_id),
-                    proposal.power.into(),
-                    vote.prop_id,
-                ),
-            );
-
-            remove_validator_shares_from_proposal(
-                deps.storage,
-                round_id,
-                vote.prop_id,
-                vote.time_weighted_shares.0,
-                vote.time_weighted_shares.1,
-            )?;
-
-            // save the new power into the proposal
-            let total_power = get_total_power_for_proposal(deps.as_ref().storage, vote.prop_id)?;
-            proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
-
-            // Save the proposal
-            PROPOSAL_MAP.save(
-                deps.storage,
-                (round_id, tranche_id, vote.prop_id),
-                &proposal,
-            )?;
-
-            // Add proposal's new power in PROPS_BY_SCORE
-            if proposal.power > Uint128::zero() {
-                PROPS_BY_SCORE.save(
+                // Remove proposal's old power in PROPS_BY_SCORE
+                PROPS_BY_SCORE.remove(
                     deps.storage,
                     (
                         (round_id, proposal.tranche_id),
                         proposal.power.into(),
                         vote.prop_id,
                     ),
-                    &vote.prop_id,
+                );
+
+                remove_validator_shares_from_proposal(
+                    deps.storage,
+                    round_id,
+                    vote.prop_id,
+                    vote.time_weighted_shares.0,
+                    vote.time_weighted_shares.1,
                 )?;
+
+                // save the new power into the proposal
+                let total_power =
+                    get_total_power_for_proposal(deps.as_ref().storage, vote.prop_id)?;
+                proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
+
+                // Save the proposal
+                PROPOSAL_MAP.save(
+                    deps.storage,
+                    (round_id, tranche_id, vote.prop_id),
+                    &proposal,
+                )?;
+
+                // Add proposal's new power in PROPS_BY_SCORE
+                if proposal.power > Uint128::zero() {
+                    PROPS_BY_SCORE.save(
+                        deps.storage,
+                        (
+                            (round_id, proposal.tranche_id),
+                            proposal.power.into(),
+                            vote.prop_id,
+                        ),
+                        &vote.prop_id,
+                    )?;
+                }
+
+                // Delete vote
+                VOTE_MAP.remove(
+                    deps.storage,
+                    ((round_id, tranche_id), info.sender.clone(), lock_id),
+                );
+
+                response = response.add_attribute(
+                    format!("lock_id_{}_old_proposal_id", lock_id),
+                    vote.prop_id.to_string(),
+                );
             }
+            None => {
+                // If user didn't yet vote with the given lock in the given round and tranche, check
+                // if they voted in previous rounds for some proposal that spans multiple rounds.
+                // This means that users can change their vote during a round, because we don't
+                // check this if users already voted in the current round.
+                let voting_allowed_round =
+                    VOTING_ALLOWED_ROUND.may_load(deps.storage, (tranche_id, lock_id))?;
 
-            // Delete vote
-            VOTE_MAP.remove(
-                deps.storage,
-                ((round_id, tranche_id), info.sender.clone(), lock_id),
-            );
-
-            response = response.add_attribute(
-                format!("lock_id_{}_old_proposal_id", lock_id),
-                vote.prop_id.to_string(),
-            );
-        }
+                if let Some(voting_allowed_round) = voting_allowed_round {
+                    if voting_allowed_round > round_id {
+                        return Err(ContractError::Std(
+                        StdError::generic_err(format!(
+                            "Not allowed to vote with lock_id {} in tranche {}. Cannot vote again with this lock_id until round {}.",
+                            lock_id, tranche_id, voting_allowed_round))));
+                    }
+                }
+            }
+        };
     }
 
-    let lock_epoch_length = CONSTANTS.load(deps.storage)?.lock_epoch_length;
+    let lock_epoch_length = constants.lock_epoch_length;
     let mut voted_proposals = vec![];
 
     for proposal_to_lockups in proposals_votes {
@@ -869,7 +904,7 @@ fn vote(
             )?;
 
             // update the proposal in the proposal map, as well as the props by score map
-            update_proposal_and_props_by_score_maps(
+            let updated_proposal = update_proposal_and_props_by_score_maps(
                 deps.storage,
                 round_id,
                 tranche_id,
@@ -885,6 +920,13 @@ fn vote(
                 deps.storage,
                 ((round_id, tranche_id), info.sender.clone(), lock_id),
                 &vote,
+            )?;
+
+            let voting_allowed_round = round_id + updated_proposal.bid_duration;
+            VOTING_ALLOWED_ROUND.save(
+                deps.storage,
+                (tranche_id, lock_id),
+                &voting_allowed_round,
             )?;
         }
 
@@ -975,23 +1017,34 @@ fn remove_from_whitelist(
         .add_attribute("removed_whitelist_address", whitelist_account_addr))
 }
 
-fn update_max_locked_tokens(
+fn update_config(
     deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
-    max_locked_tokens: u128,
+    max_locked_tokens: Option<u128>,
+    max_bid_duration: Option<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let mut constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
-    constants.max_locked_tokens = max_locked_tokens;
+    let mut response = Response::new()
+        .add_attribute("action", "update_config")
+        .add_attribute("sender", info.sender);
+
+    if let Some(max_locked_tokens) = max_locked_tokens {
+        constants.max_locked_tokens = max_locked_tokens;
+        response = response.add_attribute("new_max_locked_tokens", max_locked_tokens.to_string());
+    }
+
+    if let Some(max_bid_duration) = max_bid_duration {
+        constants.max_bid_duration = max_bid_duration;
+        response = response.add_attribute("new_max_bid_duration", max_bid_duration.to_string());
+    }
+
     CONSTANTS.save(deps.storage, &constants)?;
 
-    Ok(Response::new()
-        .add_attribute("action", "update_max_locked_tokens")
-        .add_attribute("sender", info.sender)
-        .add_attribute("max_locked_tokens", max_locked_tokens.to_string()))
+    Ok(response)
 }
 
 // Pause:
@@ -2152,7 +2205,7 @@ fn update_proposal_and_props_by_score_maps(
     round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
-) -> Result<(), ContractError> {
+) -> Result<Proposal, ContractError> {
     // Load the proposal that needs to be updated
     let mut proposal = PROPOSAL_MAP.load(storage, (round_id, tranche_id, proposal_id))?;
 
@@ -2178,7 +2231,7 @@ fn update_proposal_and_props_by_score_maps(
         &proposal_id,
     )?;
 
-    Ok(())
+    Ok(proposal)
 }
 
 #[allow(clippy::too_many_arguments)] // complex function that needs a lot of arguments

@@ -69,6 +69,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             icq_update_period: 10000,
             icq_managers: vec![],
             is_in_pilot_mode: false,
+            max_bid_duration: 12,
         },
         Some(&Addr::unchecked(whitelist_admin_address.clone())),
         &[],

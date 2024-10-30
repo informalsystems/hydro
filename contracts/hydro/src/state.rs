@@ -18,6 +18,7 @@ pub struct Constants {
     pub icq_update_period: u64,
     pub paused: bool,
     pub is_in_pilot_mode: bool,
+    pub max_bid_duration: u64,
 }
 
 // the total number of tokens locked in the contract
@@ -50,11 +51,17 @@ pub struct Proposal {
     pub description: String,
     pub power: Uint128,
     pub percentage: Uint128,
+    pub bid_duration: u64, // number of rounds liquidity is allocated excluding voting round.
     pub minimum_atom_liquidity_request: Uint128,
 }
 
 // VOTE_MAP: key((round_id, tranche_id), sender_addr, lock_id) -> Vote
 pub const VOTE_MAP: Map<((u64, u64), Addr, u64), Vote> = Map::new("vote_map");
+
+// Tracks the next round in which user is allowed to vote with the given lock_id.
+// VOTING_ALLOWED_ROUND: key(tranche_id, lock_id) -> round_id
+pub const VOTING_ALLOWED_ROUND: Map<(u64, u64), u64> = Map::new("voting_allowed_round");
+
 #[cw_serde]
 pub struct Vote {
     pub prop_id: u64,

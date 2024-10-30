@@ -454,12 +454,14 @@ fn fractional_voting_test() {
                 title: "proposal title 1".to_string(),
                 description: "proposal description 1".to_string(),
                 minimum_atom_liquidity_request: Uint128::zero(),
+                bid_duration: 1,
             },
             ExecuteMsg::CreateProposal {
                 tranche_id: tranche_id_1,
                 title: "proposal title 2".to_string(),
                 description: "proposal description 2".to_string(),
                 minimum_atom_liquidity_request: Uint128::zero(),
+                bid_duration: 1,
             },
         ];
 

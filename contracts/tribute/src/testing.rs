@@ -314,6 +314,7 @@ fn add_tribute_test() {
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
         minimum_atom_liquidity_request: Uint128::zero(),
+        bid_duration: 1,
     };
 
     let test_cases: Vec<AddTributeTestCase> = vec![
@@ -442,6 +443,7 @@ fn claim_tribute_test() {
         power: Uint128::new(10000),
         percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
         minimum_atom_liquidity_request: Uint128::zero(),
+        bid_duration: 1,
     };
     let mock_proposal2 = Proposal {
         round_id: 10,
@@ -452,6 +454,7 @@ fn claim_tribute_test() {
         power: Uint128::new(10000),
         percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
         minimum_atom_liquidity_request: Uint128::zero(),
+        bid_duration: 1,
     };
     let mock_proposal3 = Proposal {
         round_id: 10,
@@ -462,6 +465,7 @@ fn claim_tribute_test() {
         power: Uint128::new(10000),
         percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
         minimum_atom_liquidity_request: Uint128::zero(),
+        bid_duration: 1,
     };
 
     let mock_proposals = vec![
@@ -829,6 +833,7 @@ fn refund_tribute_test() {
         power: Uint128::new(10000),
         percentage: Uint128::zero(),
         minimum_atom_liquidity_request: Uint128::zero(),
+        bid_duration: 1,
     };
 
     let mock_proposals = vec![mock_proposal.clone()];
@@ -1454,6 +1459,7 @@ fn test_query_outstanding_tribute_claims() {
                 power: Uint128::new(1000),
                 percentage: Uint128::new(7),
                 minimum_atom_liquidity_request: Uint128::zero(),
+                bid_duration: 1,
             },
             Proposal {
                 round_id: 1,
@@ -1464,6 +1470,7 @@ fn test_query_outstanding_tribute_claims() {
                 power: Uint128::new(2000),
                 percentage: Uint128::new(7),
                 minimum_atom_liquidity_request: Uint128::zero(),
+                bid_duration: 1,
             },
         ];
 

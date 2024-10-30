@@ -224,6 +224,7 @@ func (s *HydroSuite) InstantiateHydroContract(
 		"icq_update_period":                  10,
 		"icq_managers":                       []string{adminAddr},
 		"is_in_pilot_mode":                   false,
+		"max_bid_duration":                   12,
 	}
 	initHydroJson, err := json.Marshal(initHydro)
 	s.Require().NoError(err)
