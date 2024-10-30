@@ -21,13 +21,10 @@ impl<Chain: CwEnv> Uploadable for Tribute<Chain> {
     }
     // Return a CosmWasm contract wrapper
     fn wrapper() -> Box<dyn MockContract<Empty>> {
-        Box::new(
-            ContractWrapper::new_with_empty(
-                tribute::contract::execute,
-                tribute::contract::instantiate,
-                tribute::contract::query,
-            )
-            .with_migrate(tribute::migrate::migrate),
-        )
+        Box::new(ContractWrapper::new_with_empty(
+            tribute::contract::execute,
+            tribute::contract::instantiate,
+            tribute::contract::query,
+        ))
     }
 }

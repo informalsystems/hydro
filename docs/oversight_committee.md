@@ -37,3 +37,7 @@ Revenue sharing (i.e. distributing a portion of the profit made by a liquidity d
 its voters) is enabled in Hydro by utilizing the tribute contract.
 While projects would add their tribute *during* a round, the revenue sharing is done *after* the round has ended, where the committee can simply add the appropriate revenue that should
 be shared with voters as a tribute.
+
+## Liquidity deployments
+
+The committee must register performed liquidity deployments in the Hydro contract.

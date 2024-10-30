@@ -1,12 +1,11 @@
 use crate::{
     contract::{
         execute, instantiate, query_historical_tribute_claims, query_outstanding_tribute_claims,
-        query_proposal_tributes, query_round_tributes, CONTRACT_NAME,
+        query_proposal_tributes, query_round_tributes,
     },
-    migrate::migrate,
-    msg::{ExecuteMsg, InstantiateMsg, MigrateMsg},
+    msg::{ExecuteMsg, InstantiateMsg},
     query::TributeClaim,
-    state::{Config, ConfigV1, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_MAP},
+    state::{Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_MAP},
 };
 use cosmwasm_std::{
     coins, from_json,
@@ -15,14 +14,9 @@ use cosmwasm_std::{
     StdError, StdResult, SystemError, SystemResult, Timestamp, Uint128, WasmQuery,
 };
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
-use cw2::set_contract_version;
-use cw_storage_plus::Item;
 use hydro::{
     msg::LiquidityDeployment,
-    query::{
-        CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
-        UserVotesResponse,
-    },
+    query::{CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, UserVotesResponse},
     state::{Proposal, VoteWithPower},
 };
 
@@ -85,7 +79,6 @@ pub struct MockWasmQuerier {
     current_round: u64,
     proposals: Vec<Proposal>,
     user_votes: Vec<UserVote>,
-    top_n_proposals: Vec<Proposal>,
     liquidity_deployments: Vec<LiquidityDeployment>,
 }
 
@@ -95,7 +88,6 @@ impl MockWasmQuerier {
         current_round: u64,
         proposals: Vec<Proposal>,
         user_votes: Vec<UserVote>,
-        top_n_proposals: Vec<Proposal>,
         liquidity_deployments: Vec<LiquidityDeployment>,
     ) -> Self {
         Self {
@@ -103,7 +95,6 @@ impl MockWasmQuerier {
             current_round,
             proposals,
             user_votes,
-            top_n_proposals,
             liquidity_deployments,
         }
     }
@@ -157,13 +148,6 @@ impl MockWasmQuerier {
                                 })
                             }
                         }
-                    }),
-                    HydroQueryMsg::TopNProposals {
-                        round_id: _,
-                        tranche_id: _,
-                        number_of_proposals: _,
-                    } => to_json_binary(&TopNProposalsResponse {
-                        proposals: self.top_n_proposals.clone(),
                     }),
                     HydroQueryMsg::LiquidityDeployment {
                         round_id,
@@ -279,13 +263,12 @@ struct ClaimTributeTestCase {
 }
 
 // to make clippy happy :)
-// (add_tribute_round_id, claim_tribute_round_id, proposals, user_votes, top_n_proposals, liquidity_deployments)
+// (add_tribute_round_id, claim_tribute_round_id, proposals, user_votes, liquidity_deployments)
 type ClaimTributeMockData = (
     u64,
     u64,
     Vec<Proposal>,
     Vec<UserVote>,
-    Vec<Proposal>,
     Vec<LiquidityDeployment>,
 );
 
@@ -312,14 +295,8 @@ struct RefundTributeTestCase {
     // (round_id, tranche_id, proposal_id, tribute_id)
     tribute_info: (u64, u64, u64, u64),
     tribute_to_add: Vec<Coin>,
-    // (add_tribute_round_id, refund_tribute_round_id, proposals, top_n_proposals, liquidity_deployments)
-    mock_data: (
-        u64,
-        u64,
-        Vec<Proposal>,
-        Vec<Proposal>,
-        Vec<LiquidityDeployment>,
-    ),
+    // (add_tribute_round_id, refund_tribute_round_id, proposals, liquidity_deployments)
+    mock_data: (u64, u64, Vec<Proposal>, Vec<LiquidityDeployment>),
     tribute_refunder: Option<String>,
     expected_tribute_refund: u128,
     expected_success: bool,
@@ -395,7 +372,6 @@ fn add_tribute_test() {
             hydro_contract_address.clone(),
             test.mock_data.0,
             test.mock_data.1,
-            vec![],
             vec![],
             vec![],
         );
@@ -494,8 +470,6 @@ fn claim_tribute_test() {
         mock_proposal3.clone(),
     ];
 
-    let mock_top_n_proposals = vec![mock_proposal1.clone(), mock_proposal2.clone()];
-
     // a default liquidity deployments vector, to have a valid deployment
     // for each mock proposal
     let deployments_for_all_proposals = mock_proposals
@@ -508,18 +482,11 @@ fn claim_tribute_test() {
         .map(|p| get_zero_deployment_for_proposal(p.clone()))
         .collect::<Vec<LiquidityDeployment>>();
 
-    let mock_top_n_voting_threshold_not_reached = vec![
-        Proposal {
-            percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES - Uint128::one(),
-            ..mock_proposal1.clone()
-        },
-        mock_proposal2.clone(),
-    ];
-
     let deps = mock_dependencies();
     let test_cases: Vec<ClaimTributeTestCase> = vec![
         ClaimTributeTestCase {
-            description: "happy path: claim tributes for multiple proposals that user voted on".to_string(),
+            description: "happy path: claim tributes for multiple proposals that user voted on"
+                .to_string(),
             tributes_to_add: vec![
                 AddTributeInfo {
                     round_id: 10,
@@ -532,7 +499,8 @@ fn claim_tribute_test() {
                     tranche_id: 0,
                     proposal_id: 6,
                     token: Coin::new(2000u64, DEFAULT_DENOM),
-                }],
+                },
+            ],
             tributes_to_claim: vec![
                 ClaimTributeInfo {
                     round_id: 10,
@@ -549,168 +517,99 @@ fn claim_tribute_test() {
                     expected_success: true,
                     expected_tribute_claim: 14, // (70 / 10_000) * 2_000
                     expected_error_msg: String::new(),
-                }
+                },
             ],
             mock_data: (
                 10,
                 11,
                 mock_proposals.clone(),
-                vec![(
-                    10,
-                    0,
-                    get_address_as_str(&deps.api, USER_ADDRESS_2),
-                    VoteWithPower {
-                        prop_id: 5,
-                        power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
-                    },
-                ),
-                (
-                    10,
-                    0,
-                    get_address_as_str(&deps.api, USER_ADDRESS_2),
-                    VoteWithPower {
-                        prop_id: 6,
-                        power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
-                    },
-                )],
-                mock_top_n_proposals.clone(),
+                vec![
+                    (
+                        10,
+                        0,
+                        get_address_as_str(&deps.api, USER_ADDRESS_2),
+                        VoteWithPower {
+                            prop_id: 5,
+                            power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
+                        },
+                    ),
+                    (
+                        10,
+                        0,
+                        get_address_as_str(&deps.api, USER_ADDRESS_2),
+                        VoteWithPower {
+                            prop_id: 6,
+                            power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
+                        },
+                    ),
+                ],
                 deployments_for_all_proposals.clone(),
             ),
         },
         ClaimTributeTestCase {
             description: "try claim tribute for proposal in current round".to_string(),
-            tributes_to_add: vec![
-                AddTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    proposal_id: 5,
-                    token: Coin::new(1000u64, DEFAULT_DENOM),
-                }],
-            tributes_to_claim: vec![
-                ClaimTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    tribute_id: 0,
-                    expected_success: false,
-                    expected_tribute_claim: 0,
-                    expected_error_msg: "Round has not ended yet".to_string(),
-                }
-            ],
-            mock_data: (10, 10, mock_proposals.clone(), vec![], vec![], deployments_for_all_proposals.clone(),),
-        },
-        ClaimTributeTestCase {
-            description: "try claim tribute if user didn't vote at all".to_string(),
-            tributes_to_add: vec![
-                AddTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    proposal_id: 5,
-                    token: Coin::new(1000u64, DEFAULT_DENOM),
-                }],
-            tributes_to_claim: vec![
-                ClaimTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    tribute_id: 0,
-                    expected_success: false,
-                    expected_tribute_claim: 0,
-                    expected_error_msg: "vote couldn't be found".to_string(),
-                }
-            ],
-            mock_data: (10, 11, mock_proposals.clone(), vec![], vec![], deployments_for_all_proposals.clone(),),
-        },
-        ClaimTributeTestCase {
-            description: "try claim tribute if user didn't vote for top N proposal".to_string(),
-            tributes_to_add: vec![
-                AddTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    proposal_id: 7,
-                    token: Coin::new(1000u64, DEFAULT_DENOM),
-                }],
-            tributes_to_claim: vec![
-                ClaimTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    tribute_id: 0,
-                    expected_success: false,
-                    expected_tribute_claim: 0,
-                    expected_error_msg: "User voted for proposal outside of top N proposals".to_string(),
-                }
-            ],
+            tributes_to_add: vec![AddTributeInfo {
+                round_id: 10,
+                tranche_id: 0,
+                proposal_id: 5,
+                token: Coin::new(1000u64, DEFAULT_DENOM),
+            }],
+            tributes_to_claim: vec![ClaimTributeInfo {
+                round_id: 10,
+                tranche_id: 0,
+                tribute_id: 0,
+                expected_success: false,
+                expected_tribute_claim: 0,
+                expected_error_msg: "Round has not ended yet".to_string(),
+            }],
             mock_data: (
                 10,
-                11,
+                10,
                 mock_proposals.clone(),
-                vec![(
-                    10,
-                    0,
-                    get_address_as_str(&deps.api, USER_ADDRESS_2),
-                    VoteWithPower {
-                        prop_id: 7,
-                        power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
-                    },
-                )],
-                mock_top_n_proposals.clone(),
+                vec![],
                 deployments_for_all_proposals.clone(),
             ),
         },
         ClaimTributeTestCase {
-            description: "try claim tribute if user voted for top N proposal that didn't reach the voting percentage threshold".to_string(),
-            tributes_to_add: vec![
-                AddTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    proposal_id: 5,
-                    token: Coin::new(1000u64, DEFAULT_DENOM),
-                }],
-            tributes_to_claim: vec![
-                ClaimTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    tribute_id: 0,
-                    expected_success: false,
-                    expected_tribute_claim: 0,
-                    expected_error_msg: format!(
-                        "Tribute not claimable: Proposal received less voting percentage than threshold: {} required, but is {}", MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES, MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES - Uint128::one()).to_string(),
-                }
-            ],
+            description: "try claim tribute if user didn't vote at all".to_string(),
+            tributes_to_add: vec![AddTributeInfo {
+                round_id: 10,
+                tranche_id: 0,
+                proposal_id: 5,
+                token: Coin::new(1000u64, DEFAULT_DENOM),
+            }],
+            tributes_to_claim: vec![ClaimTributeInfo {
+                round_id: 10,
+                tranche_id: 0,
+                tribute_id: 0,
+                expected_success: false,
+                expected_tribute_claim: 0,
+                expected_error_msg: "vote couldn't be found".to_string(),
+            }],
             mock_data: (
                 10,
                 11,
                 mock_proposals.clone(),
-                vec![(
-                    10,
-                    0,
-                    get_address_as_str(&deps.api, USER_ADDRESS_2),
-                    VoteWithPower {
-                        prop_id: 5,
-                        power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
-                    },
-                )],
-                mock_top_n_voting_threshold_not_reached.clone(),
+                vec![],
                 deployments_for_all_proposals.clone(),
             ),
         },
         ClaimTributeTestCase {
             description: "try claim tribute for non existing tribute id".to_string(),
-            tributes_to_add: vec![
-                AddTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    proposal_id: 5,
-                    token: Coin::new(1000u64, DEFAULT_DENOM),
-                }],
-            tributes_to_claim: vec![
-                ClaimTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    tribute_id: 1,
-                    expected_success: false,
-                    expected_tribute_claim: 0,
-                    expected_error_msg: "not found".to_string(),
-                }
-            ],
+            tributes_to_add: vec![AddTributeInfo {
+                round_id: 10,
+                tranche_id: 0,
+                proposal_id: 5,
+                token: Coin::new(1000u64, DEFAULT_DENOM),
+            }],
+            tributes_to_claim: vec![ClaimTributeInfo {
+                round_id: 10,
+                tranche_id: 0,
+                tribute_id: 1,
+                expected_success: false,
+                expected_tribute_claim: 0,
+                expected_error_msg: "not found".to_string(),
+            }],
             mock_data: (
                 10,
                 11,
@@ -724,29 +623,28 @@ fn claim_tribute_test() {
                         power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
                     },
                 )],
-                mock_top_n_proposals.clone(),
                 deployments_for_all_proposals.clone(),
             ),
         },
         ClaimTributeTestCase {
-            description: "try to claim tribute that belongs to different top N proposal than the one user voted on".to_string(),
-            tributes_to_add: vec![
-                AddTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    proposal_id: 5,
-                    token: Coin::new(1000u64, DEFAULT_DENOM)
-                }],
-            tributes_to_claim: vec![
-                ClaimTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    tribute_id: 0,
-                    expected_success: false,
-                    expected_tribute_claim: 0,
-                    expected_error_msg: "User didn't vote for the proposal this tribute belongs to".to_string(),
-                }
-            ],
+            description:
+                "try to claim tribute that belongs to different proposal than the one user voted on"
+                    .to_string(),
+            tributes_to_add: vec![AddTributeInfo {
+                round_id: 10,
+                tranche_id: 0,
+                proposal_id: 5,
+                token: Coin::new(1000u64, DEFAULT_DENOM),
+            }],
+            tributes_to_claim: vec![ClaimTributeInfo {
+                round_id: 10,
+                tranche_id: 0,
+                tribute_id: 0,
+                expected_success: false,
+                expected_tribute_claim: 0,
+                expected_error_msg: "User didn't vote for the proposal this tribute belongs to"
+                    .to_string(),
+            }],
             mock_data: (
                 10,
                 11,
@@ -760,73 +658,75 @@ fn claim_tribute_test() {
                         power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
                     },
                 )],
-                mock_top_n_proposals.clone(),
                 deployments_for_all_proposals.clone(),
             ),
         },
         ClaimTributeTestCase {
             description: "try claim tribute for proposal with no deployment entered".to_string(),
-            tributes_to_add: vec![
-                AddTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    proposal_id: 5,
-                    token: Coin::new(1000u64, DEFAULT_DENOM),
-                }],
-            tributes_to_claim: vec![
-                ClaimTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    tribute_id: 0,
-                    expected_success: false,
-                    expected_tribute_claim: 0,
-                    expected_error_msg: "Proposal did not have a liquidity deployment entered".to_string(),
-                }
-            ],
-            mock_data: (10, 11, mock_proposals.clone(), vec![(
+            tributes_to_add: vec![AddTributeInfo {
+                round_id: 10,
+                tranche_id: 0,
+                proposal_id: 5,
+                token: Coin::new(1000u64, DEFAULT_DENOM),
+            }],
+            tributes_to_claim: vec![ClaimTributeInfo {
+                round_id: 10,
+                tranche_id: 0,
+                tribute_id: 0,
+                expected_success: false,
+                expected_tribute_claim: 0,
+                expected_error_msg: "Proposal did not have a liquidity deployment entered"
+                    .to_string(),
+            }],
+            mock_data: (
                 10,
-                0,
-                get_address_as_str(&deps.api, USER_ADDRESS_2),
-                VoteWithPower {
-                    prop_id: 5,
-                    power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
-                },
-            )],
-            mock_top_n_proposals.clone(),
-            vec![],),
+                11,
+                mock_proposals.clone(),
+                vec![(
+                    10,
+                    0,
+                    get_address_as_str(&deps.api, USER_ADDRESS_2),
+                    VoteWithPower {
+                        prop_id: 5,
+                        power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
+                    },
+                )],
+                vec![],
+            ),
         },
         ClaimTributeTestCase {
             description: "try claim tribute for proposal with zero deployment".to_string(),
-            tributes_to_add: vec![
-                AddTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    proposal_id: 5,
-                    token: Coin::new(1000u64, DEFAULT_DENOM),
-                }],
-            tributes_to_claim: vec![
-                ClaimTributeInfo {
-                    round_id: 10,
-                    tranche_id: 0,
-                    tribute_id: 0,
-                    expected_success: false,
-                    expected_tribute_claim: 0,
-                    expected_error_msg: "Proposal did not receive a non-zero liquidity deployment".to_string(),
-                }
-            ],
-            mock_data: (10, 11, mock_proposals.clone(), vec![(
+            tributes_to_add: vec![AddTributeInfo {
+                round_id: 10,
+                tranche_id: 0,
+                proposal_id: 5,
+                token: Coin::new(1000u64, DEFAULT_DENOM),
+            }],
+            tributes_to_claim: vec![ClaimTributeInfo {
+                round_id: 10,
+                tranche_id: 0,
+                tribute_id: 0,
+                expected_success: false,
+                expected_tribute_claim: 0,
+                expected_error_msg: "Proposal did not receive a non-zero liquidity deployment"
+                    .to_string(),
+            }],
+            mock_data: (
                 10,
-                0,
-                get_address_as_str(&deps.api, USER_ADDRESS_2),
-                VoteWithPower {
-                    prop_id: 5,
-                    power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
-                },
-            )],
-            mock_top_n_proposals.clone(),
-            zero_deployments_for_all_proposals,),
+                11,
+                mock_proposals.clone(),
+                vec![(
+                    10,
+                    0,
+                    get_address_as_str(&deps.api, USER_ADDRESS_2),
+                    VoteWithPower {
+                        prop_id: 5,
+                        power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
+                    },
+                )],
+                zero_deployments_for_all_proposals,
+            ),
         },
-
     ];
 
     for test in test_cases {
@@ -840,7 +740,6 @@ fn claim_tribute_test() {
             hydro_contract_address.clone(),
             test.mock_data.0,
             test.mock_data.2.clone(),
-            vec![],
             vec![],
             vec![],
         );
@@ -873,7 +772,6 @@ fn claim_tribute_test() {
             test.mock_data.2.clone(),
             test.mock_data.3.clone(),
             test.mock_data.4.clone(),
-            test.mock_data.5.clone(),
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
@@ -941,44 +839,18 @@ fn refund_tribute_test() {
     let liquidity_deployments_non_refundable =
         vec![get_nonzero_deployment_for_proposal(mock_proposal.clone())];
 
-    let mock_top_n_different_proposals = vec![Proposal {
-        round_id: 10,
-        tranche_id: 0,
-        proposal_id: 6,
-        title: "proposal title 2".to_string(),
-        description: "proposal description 2".to_string(),
-        power: Uint128::new(10000),
-        percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
-        minimum_atom_liquidity_request: Uint128::zero(),
-    }];
-
-    let mock_top_n_voting_threshold_reached = vec![Proposal {
-        percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
-        ..mock_proposal.clone()
-    }];
-
-    let mock_top_n_voting_threshold_not_reached = vec![Proposal {
-        percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES - Uint128::one(),
-        ..mock_proposal.clone()
-    }];
-
     let test_cases: Vec<RefundTributeTestCase> = vec![
         RefundTributeTestCase {
-            description: "refund tribute for the non top N proposal".to_string(),
+            description: "happy path: refund tribute for deployment with zero-deployment"
+                .to_string(),
             tribute_info: (10, 0, 5, 0),
             tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
-            mock_data: (10, 11, mock_proposals.clone(), mock_top_n_different_proposals.clone(), liquidity_deployments_refundable.clone()),
-            tribute_refunder: None,
-            expected_tribute_refund: 1000,
-            expected_success: true,
-            expected_error_msg: String::new(),
-        },
-        RefundTributeTestCase {
-            description: "refund tribute for the top N proposal with less voting percentage than the required threshold".to_string(),
-            tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
-            mock_data: (10, 11, mock_proposals.clone(), mock_top_n_voting_threshold_not_reached,
-                liquidity_deployments_refundable.clone()),
+            mock_data: (
+                10,
+                11,
+                mock_proposals.clone(),
+                liquidity_deployments_refundable.clone(),
+            ),
             tribute_refunder: None,
             expected_tribute_refund: 1000,
             expected_success: true,
@@ -988,28 +860,27 @@ fn refund_tribute_test() {
             description: "try to get refund for the current round".to_string(),
             tribute_info: (10, 0, 5, 0),
             tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
-            mock_data: (10, 10, mock_proposals.clone(), mock_top_n_different_proposals.clone(), liquidity_deployments_refundable.clone()),
+            mock_data: (
+                10,
+                10,
+                mock_proposals.clone(),
+                liquidity_deployments_refundable.clone(),
+            ),
             tribute_refunder: None,
             expected_tribute_refund: 0,
             expected_success: false,
             expected_error_msg: "Round has not ended yet".to_string(),
         },
         RefundTributeTestCase {
-            description: "try to get refund for the top N proposal with at least minimum voting percentage".to_string(),
-            tribute_info: (10, 0, 5, 0),
-            tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
-            mock_data: (10, 11, mock_proposals.clone(), mock_top_n_voting_threshold_reached.clone(), liquidity_deployments_refundable.clone()),
-            tribute_refunder: None,
-            expected_tribute_refund: 0,
-            expected_success: false,
-            expected_error_msg: "Can't refund top N proposal that received at least the threshold of the total voting power".to_string(),
-        },
-        RefundTributeTestCase {
             description: "try to get refund for non existing tribute".to_string(),
             tribute_info: (10, 0, 5, 1),
             tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
-            mock_data: (10, 11, mock_proposals.clone(), mock_top_n_different_proposals.clone(),
-                liquidity_deployments_refundable.clone()),
+            mock_data: (
+                10,
+                11,
+                mock_proposals.clone(),
+                liquidity_deployments_refundable.clone(),
+            ),
             tribute_refunder: None,
             expected_tribute_refund: 0,
             expected_success: false,
@@ -1019,28 +890,41 @@ fn refund_tribute_test() {
             description: "try to get refund for tribute with no deployment entered".to_string(),
             tribute_info: (10, 0, 5, 0),
             tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
-            mock_data: (10, 11, mock_proposals.clone(), mock_top_n_different_proposals.clone(), vec![]),
+            mock_data: (10, 11, mock_proposals.clone(), vec![]),
             tribute_refunder: None,
             expected_tribute_refund: 1000,
             expected_success: false,
-            expected_error_msg: "Can't refund tribute for proposal that didn't have a liquidity deployment entered".to_string(),
+            expected_error_msg:
+                "Can't refund tribute for proposal that didn't have a liquidity deployment entered"
+                    .to_string(),
         },
         RefundTributeTestCase {
             description: "try to get refund for tribute with non-zero fund deployment".to_string(),
             tribute_info: (10, 0, 5, 0),
             tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
-            mock_data: (10, 11, mock_proposals.clone(), mock_top_n_different_proposals.clone(), liquidity_deployments_non_refundable.clone()),
+            mock_data: (
+                10,
+                11,
+                mock_proposals.clone(),
+                liquidity_deployments_non_refundable.clone(),
+            ),
             tribute_refunder: None,
             expected_tribute_refund: 1000,
             expected_success: false,
-            expected_error_msg: "Can't refund tribute for proposal that received a non-zero liquidity deployment".to_string(),
+            expected_error_msg:
+                "Can't refund tribute for proposal that received a non-zero liquidity deployment"
+                    .to_string(),
         },
         RefundTributeTestCase {
             description: "try to get refund if not the depositor".to_string(),
             tribute_info: (10, 0, 5, 0),
             tribute_to_add: vec![Coin::new(1000u64, DEFAULT_DENOM)],
-            mock_data: (10, 11, mock_proposals.clone(), mock_top_n_different_proposals.clone(),
-                liquidity_deployments_refundable.clone()),
+            mock_data: (
+                10,
+                11,
+                mock_proposals.clone(),
+                liquidity_deployments_refundable.clone(),
+            ),
             tribute_refunder: Some(USER_ADDRESS_2.to_string()),
             expected_tribute_refund: 0,
             expected_success: false,
@@ -1059,7 +943,6 @@ fn refund_tribute_test() {
             hydro_contract_address.clone(),
             test.mock_data.0,
             test.mock_data.2.clone(),
-            vec![],
             vec![],
             vec![],
         );
@@ -1090,7 +973,6 @@ fn refund_tribute_test() {
             test.mock_data.2.clone(),
             vec![],
             test.mock_data.3.clone(),
-            test.mock_data.4.clone(),
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
@@ -1619,7 +1501,6 @@ fn test_query_outstanding_tribute_claims() {
                     user_vote.clone(),
                 ),
             ],
-            mock_proposals.clone(),
             liquidity_deployments,
         );
 
@@ -1628,8 +1509,6 @@ fn test_query_outstanding_tribute_claims() {
         // Mock config
         let config = Config {
             hydro_contract: Addr::unchecked("hydro_contract_address".to_string()),
-            top_n_props_count: 2,
-            min_prop_percent_for_claimable_tributes: Uint128::new(5),
         };
         CONFIG.save(&mut deps.storage, &config).unwrap();
 
@@ -1652,62 +1531,4 @@ fn test_query_outstanding_tribute_claims() {
             }
         }
     }
-}
-
-#[test]
-fn test_migrate() {
-    let mut deps = mock_dependencies();
-    let env = mock_env();
-    let hydro_contract_address = deps.api.addr_make(HYDRO_CONTRACT_ADDRESS);
-
-    let old_config = ConfigV1 {
-        hydro_contract: hydro_contract_address,
-        top_n_props_count: 77,
-    };
-
-    // Save old version of the config into the store
-    const OLD_CONFIG: Item<ConfigV1> = Item::new("config");
-    let result = OLD_CONFIG.save(&mut deps.storage, &old_config);
-    assert!(result.is_ok());
-
-    // Set the V1 contract version
-    let result = set_contract_version(&mut deps.storage, CONTRACT_NAME, "1.0.0");
-    assert!(result.is_ok());
-
-    // Try to migrate to the new config by setting the percentage above 100%
-    let msg = MigrateMsg {
-        min_prop_percent_for_claimable_tributes: Uint128::new(101),
-    };
-    let result = migrate(deps.as_mut(), env.clone(), msg.clone());
-    assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .to_lowercase()
-        .contains("minimum proposal percentage for claimable tributes must be between 0 and 100."));
-
-    // Try to migrate to a new (valid) config
-    let msg = MigrateMsg {
-        min_prop_percent_for_claimable_tributes: Uint128::new(5),
-    };
-    let result = migrate(deps.as_mut(), env.clone(), msg.clone());
-    assert!(result.is_ok());
-
-    // Assert that the migration was successful
-    let new_config = CONFIG.load(&deps.storage).unwrap();
-    assert_eq!(old_config.hydro_contract, new_config.hydro_contract);
-    assert_eq!(old_config.top_n_props_count, new_config.top_n_props_count);
-    assert_eq!(
-        msg.min_prop_percent_for_claimable_tributes,
-        new_config.min_prop_percent_for_claimable_tributes
-    );
-
-    // Try to migrate already migrated contract and verify this errors out
-    let result = migrate(deps.as_mut(), env.clone(), msg.clone());
-    assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .to_lowercase()
-        .contains("contract is already migrated to the newest version."))
 }

@@ -17,8 +17,7 @@ use crate::state::{
     Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP,
 };
 use hydro::query::{
-    CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
-    UserVotesResponse,
+    CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, UserVotesResponse,
 };
 use hydro::state::{Proposal, VoteWithPower};
 
@@ -39,8 +38,6 @@ pub fn instantiate(
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     let config = Config {
         hydro_contract: deps.api.addr_validate(&msg.hydro_contract)?,
-        top_n_props_count: msg.top_n_props_count,
-        min_prop_percent_for_claimable_tributes: msg.min_prop_percent_for_claimable_tributes,
     };
 
     CONFIG.save(deps.storage, &config)?;
@@ -196,11 +193,11 @@ fn claim_tribute(
         Some(vote) => vote,
     };
 
-    // Check that the voter voted for one of the top N proposals that
-    // received at least the threshold of the total voting power.
-    let proposal =
-        get_top_n_proposal_info(&deps.as_ref(), &config, round_id, tranche_id, vote.prop_id)?
-            .are_tributes_claimable(&config)?;
+    // make sure that tributes for this proposal are claimable
+    get_proposal_tributes_info(&deps.as_ref(), &config, round_id, tranche_id, vote.prop_id)?
+        .are_tributes_claimable()?;
+
+    let proposal = get_proposal(&deps.as_ref(), &config, round_id, tranche_id, vote.prop_id)?;
 
     let sent_coin = calculate_voter_claim_amount(tribute.funds, vote.power, proposal.power)?;
 
@@ -288,7 +285,7 @@ fn refund_tribute(
         )));
     }
 
-    get_top_n_proposal_info(&deps.as_ref(), &config, round_id, tranche_id, proposal_id)?
+    get_proposal_tributes_info(&deps.as_ref(), &config, round_id, tranche_id, proposal_id)?
         .are_tributes_refundable()?;
 
     // Load the tribute
@@ -332,40 +329,26 @@ fn refund_tribute(
 // field will be set to true if the proposal received at least the minimum voting threshold.
 // If the proposal is not among the top N, the "top_n_proposal" field will be set to None,
 // and "is_above_voting_threshold" field will be set to false.
-struct TopNProposalInfo {
-    pub top_n_proposal: Option<Proposal>,
-    pub is_above_voting_threshold: bool,
+struct ProposalTributesInfo {
     pub had_deployment_entered: bool,
     pub received_nonzero_funds: bool,
 }
 
-impl TopNProposalInfo {
-    fn are_tributes_claimable(&self, config: &Config) -> Result<Proposal, ContractError> {
-        match self.top_n_proposal.as_ref() {
-            None => Err(ContractError::Std(StdError::generic_err(
-                "User voted for proposal outside of top N proposals",
-            ))),
-            Some(proposal) => {
-                if !self.is_above_voting_threshold {
-                    return Err(ContractError::Std(StdError::generic_err(format!(
-                        "Tribute not claimable: Proposal received less voting percentage than threshold: {} required, but is {}", config.min_prop_percent_for_claimable_tributes, proposal.percentage))));
-                }
-
-                if !self.had_deployment_entered {
-                    return Err(ContractError::Std(StdError::generic_err(
-                        "Tribute not claimable: Proposal did not have a liquidity deployment entered",
-                    )));
-                }
-
-                if !self.received_nonzero_funds {
-                    return Err(ContractError::Std(StdError::generic_err(
-                        "Tribute not claimable: Proposal did not receive a non-zero liquidity deployment",
-                    )));
-                }
-
-                Ok(proposal.clone())
-            }
+impl ProposalTributesInfo {
+    fn are_tributes_claimable(&self) -> Result<(), ContractError> {
+        if !self.had_deployment_entered {
+            return Err(ContractError::Std(StdError::generic_err(
+                "Tribute not claimable: Proposal did not have a liquidity deployment entered",
+            )));
         }
+
+        if !self.received_nonzero_funds {
+            return Err(ContractError::Std(StdError::generic_err(
+                "Tribute not claimable: Proposal did not receive a non-zero liquidity deployment",
+            )));
+        }
+
+        Ok(())
     }
 
     fn are_tributes_refundable(&self) -> Result<(), ContractError> {
@@ -381,29 +364,20 @@ impl TopNProposalInfo {
             )));
         }
 
-        if self.top_n_proposal.is_some() && (self.is_above_voting_threshold) {
-            return Err(ContractError::Std(StdError::generic_err(
-                "Can't refund top N proposal that received at least the threshold of the total voting power",
-            )));
-        }
-
         Ok(())
     }
 }
 
-// This function will query the top N proposals from the Hydro contract and determine
-// if the proposal with the given ID is among the top N. If yes, it will also determine
-// if the proposal received at least the threshold percent of the total voting power.
-fn get_top_n_proposal_info(
+// This function will return an info struct that holds information about the proposal.
+// The info struct will contain information about whether tributes on this proposal are refundable, claimable, or neither.
+fn get_proposal_tributes_info(
     deps: &Deps,
     config: &Config,
     round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
-) -> Result<TopNProposalInfo, ContractError> {
-    let mut info = TopNProposalInfo {
-        top_n_proposal: None,
-        is_above_voting_threshold: false,
+) -> Result<ProposalTributesInfo, ContractError> {
+    let mut info = ProposalTributesInfo {
         had_deployment_entered: false,
         received_nonzero_funds: false,
     };
@@ -419,12 +393,6 @@ fn get_top_n_proposal_info(
                 .deployed_funds
                 .iter()
                 .any(|coin| coin.amount > Uint128::zero());
-    }
-
-    if let Some(proposal) = get_top_n_proposal(deps, config, round_id, tranche_id, proposal_id)? {
-        info.top_n_proposal = Some(proposal.clone());
-        info.is_above_voting_threshold =
-            proposal.percentage >= config.min_prop_percent_for_claimable_tributes;
     }
 
     Ok(info)
@@ -638,20 +606,17 @@ pub fn query_outstanding_tribute_claims(
     let mut claims = vec![];
 
     for user_vote in user_votes {
-        let proposal =
-            match get_top_n_proposal_info(deps, &config, round_id, tranche_id, user_vote.prop_id)
-                // If the query top N failed once, it will most likely always fail, so it is safe to return error here.
-                .map_err(|err| {
-                    StdError::generic_err(format!("Failed to get top N proposal: {}", err))
-                })?
-                .are_tributes_claimable(&config)
-            {
-                Err(_) => {
-                    // If the proposal wasn't in top N, or it didn't reach reach the voting threshold, we move to the next vote.
-                    continue;
-                }
-                Ok(proposal) => proposal,
-            };
+        if get_proposal_tributes_info(deps, &config, round_id, tranche_id, user_vote.prop_id)
+            // If the query top N failed once, it will most likely always fail, so it is safe to return error here.
+            .map_err(|err| StdError::generic_err(format!("Failed to get proposal info: {}", err)))?
+            .are_tributes_claimable()
+            .is_err()
+        {
+            continue;
+        }
+
+        let proposal = get_proposal(deps, &config, round_id, tranche_id, user_vote.prop_id)
+            .map_err(|err| StdError::generic_err(format!("Failed to get proposal: {}", err)))?;
 
         // get all tributes for this proposal
         let tributes = TRIBUTE_MAP
@@ -716,40 +681,23 @@ pub fn query_outstanding_tribute_claims(
     Ok(OutstandingTributeClaimsResponse { claims })
 }
 
-fn get_top_n_proposal(
+fn get_proposal(
     deps: &Deps,
     config: &Config,
     round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
-) -> Result<Option<Proposal>, ContractError> {
-    let top_n_proposals = get_top_n_proposals(deps, config, round_id, tranche_id)?;
-
-    for proposal in top_n_proposals {
-        if proposal.proposal_id == proposal_id {
-            return Ok(Some(proposal));
-        }
-    }
-
-    Ok(None)
-}
-
-fn get_top_n_proposals(
-    deps: &Deps,
-    config: &Config,
-    round_id: u64,
-    tranche_id: u64,
-) -> Result<Vec<Proposal>, ContractError> {
-    let proposals_resp: TopNProposalsResponse = deps.querier.query_wasm_smart(
+) -> Result<Proposal, ContractError> {
+    let proposal_resp: ProposalResponse = deps.querier.query_wasm_smart(
         &config.hydro_contract,
-        &HydroQueryMsg::TopNProposals {
+        &HydroQueryMsg::Proposal {
             round_id,
             tranche_id,
-            number_of_proposals: config.top_n_props_count as usize,
+            proposal_id,
         },
     )?;
 
-    Ok(proposals_resp.proposals)
+    Ok(proposal_resp.proposal)
 }
 
 fn get_liquidity_deployment(
