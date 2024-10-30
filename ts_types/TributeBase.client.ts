@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Addr, Uint128, ConfigResponse, Config, ExecuteMsg, InstantiateMsg, Timestamp, Uint64, ProposalTributesResponse, Tribute, Coin, QueryMsg } from "./TributeBase.types";
+import { Addr, ConfigResponse, Config, ExecuteMsg, Uint128, InstantiateMsg, Timestamp, Uint64, ProposalTributesResponse, Tribute, Coin, QueryMsg } from "./TributeBase.types";
 export interface TributeBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
