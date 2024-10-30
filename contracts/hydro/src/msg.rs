@@ -21,6 +21,7 @@ pub struct InstantiateMsg {
     // they can however not withdraw user funds that were locked for voting.
     pub icq_managers: Vec<String>,
     pub is_in_pilot_mode: bool,
+    pub max_bid_duration: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -46,6 +47,7 @@ pub enum ExecuteMsg {
         tranche_id: u64,
         title: String,
         description: String,
+        bid_duration: u64,
     },
     Vote {
         tranche_id: u64,
@@ -57,8 +59,9 @@ pub enum ExecuteMsg {
     RemoveAccountFromWhitelist {
         address: String,
     },
-    UpdateMaxLockedTokens {
-        max_locked_tokens: u128,
+    UpdateConfig {
+        max_locked_tokens: Option<u128>,
+        max_bid_duration: Option<u64>,
     },
     Pause {},
     AddTranche {

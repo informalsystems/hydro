@@ -46,6 +46,7 @@ fn get_default_constants() -> crate::state::Constants {
         hub_transfer_channel_id: "channel-0".to_string(),
         icq_update_period: 100,
         is_in_pilot_mode: false,
+        max_bid_duration: 12,
     }
 }
 
@@ -677,6 +678,7 @@ fn lock_tokens_multiple_validators_and_vote() {
         tranche_id: 1,
         title: "proposal title 1".to_string(),
         description: "proposal description 1".to_string(),
+        bid_duration: 1,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg1.clone());
     assert!(res.is_ok());
@@ -685,6 +687,7 @@ fn lock_tokens_multiple_validators_and_vote() {
         tranche_id: 1,
         title: "proposal title 2".to_string(),
         description: "proposal description 2".to_string(),
+        bid_duration: 1,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg2.clone());
     assert!(res.is_ok());
@@ -781,6 +784,7 @@ fn validator_set_initialization_test() {
                 tranche_id: 1,
                 title: "proposal title".to_string(),
                 description: "proposal description".to_string(),
+                bid_duration: 1,
             },
         },
         ValidatorSetInitializationTestCase {
@@ -861,6 +865,7 @@ fn validator_set_initialization_test() {
             tranche_id: 1,
             title: "proposal title".to_string(),
             description: "proposal description".to_string(),
+            bid_duration: 1,
         };
 
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());

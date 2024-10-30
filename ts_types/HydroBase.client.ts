@@ -331,10 +331,12 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   unlockTokens: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   createProposal: ({
+    bidDuration,
     description,
     title,
     trancheId
   }: {
+    bidDuration: number;
     description: string;
     title: string;
     trancheId: number;
@@ -356,10 +358,12 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   }: {
     address: string;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
-  updateMaxLockedTokens: ({
+  updateConfig: ({
+    maxBidDuration,
     maxLockedTokens
   }: {
-    maxLockedTokens: number;
+    maxBidDuration?: number;
+    maxLockedTokens?: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   pause: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   addTranche: ({
@@ -413,7 +417,7 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.vote = this.vote.bind(this);
     this.addAccountToWhitelist = this.addAccountToWhitelist.bind(this);
     this.removeAccountFromWhitelist = this.removeAccountFromWhitelist.bind(this);
-    this.updateMaxLockedTokens = this.updateMaxLockedTokens.bind(this);
+    this.updateConfig = this.updateConfig.bind(this);
     this.pause = this.pause.bind(this);
     this.addTranche = this.addTranche.bind(this);
     this.editTranche = this.editTranche.bind(this);
@@ -453,16 +457,19 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     }, fee, memo, _funds);
   };
   createProposal = async ({
+    bidDuration,
     description,
     title,
     trancheId
   }: {
+    bidDuration: number;
     description: string;
     title: string;
     trancheId: number;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       create_proposal: {
+        bid_duration: bidDuration,
         description,
         title,
         tranche_id: trancheId
@@ -505,13 +512,16 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
       }
     }, fee, memo, _funds);
   };
-  updateMaxLockedTokens = async ({
+  updateConfig = async ({
+    maxBidDuration,
     maxLockedTokens
   }: {
-    maxLockedTokens: number;
+    maxBidDuration?: number;
+    maxLockedTokens?: number;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      update_max_locked_tokens: {
+      update_config: {
+        max_bid_duration: maxBidDuration,
         max_locked_tokens: maxLockedTokens
       }
     }, fee, memo, _funds);
