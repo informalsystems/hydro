@@ -409,6 +409,82 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "liquidity_deployment"
+      ],
+      "properties": {
+        "liquidity_deployment": {
+          "type": "object",
+          "required": [
+            "proposal_id",
+            "round_id",
+            "tranche_id"
+          ],
+          "properties": {
+            "proposal_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "round_tranche_liquidity_deployments"
+      ],
+      "properties": {
+        "round_tranche_liquidity_deployments": {
+          "type": "object",
+          "required": [
+            "limit",
+            "round_id",
+            "start_from",
+            "tranche_id"
+          ],
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "start_from": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ]
 }

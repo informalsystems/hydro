@@ -1,4 +1,4 @@
-use cosmwasm_std::{Timestamp, Uint128};
+use cosmwasm_std::{Coin, Timestamp, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -48,6 +48,7 @@ pub enum ExecuteMsg {
         title: String,
         description: String,
         bid_duration: u64,
+        minimum_atom_liquidity_request: Uint128,
     },
     Vote {
         tranche_id: u64,
@@ -89,6 +90,23 @@ pub enum ExecuteMsg {
     WithdrawICQFunds {
         amount: Uint128,
     },
+
+    AddLiquidityDeployment {
+        round_id: u64,
+        tranche_id: u64,
+        proposal_id: u64,
+        destinations: Vec<String>,
+        deployed_funds: Vec<Coin>,
+        funds_before_deployment: Vec<Coin>,
+        total_rounds: u64,
+        remaining_rounds: u64,
+    },
+
+    RemoveLiquidityDeployment {
+        round_id: u64,
+        tranche_id: u64,
+        proposal_id: u64,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -101,4 +119,23 @@ pub struct ProposalToLockups {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct MigrateMsg {
     pub new_first_round_start: Timestamp,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct LiquidityDeployment {
+    pub round_id: u64,
+    pub tranche_id: u64,
+    pub proposal_id: u64,
+    pub destinations: Vec<String>,
+    // allocation assigned to the proposal to be deployed during the specified round
+    pub deployed_funds: Vec<Coin>,
+    // allocation at the end of the last round for the proposal. this is 0 if no equivalent proposal existed in the last round.
+    // if this is a "repeating" proposal (where proposals in subsequent rounds are for the same underlying liqudiity deployment),
+    // it's the allocation prior to any potential clawback or increase
+    pub funds_before_deployment: Vec<Coin>,
+    // how many rounds this proposal has been in effect for if the proposal has a non-zero duration
+    pub total_rounds: u64,
+    // how many rounds are left for this proposal to be in effect
+    // if this is a "repeating" proposal
+    pub remaining_rounds: u64,
 }

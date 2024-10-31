@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Uint128, Timestamp, Uint64, AllUserLockupsResponse, LockEntryWithPower, LockEntry, Coin, ConstantsResponse, Constants, CurrentRoundResponse, ExecuteMsg, ProposalToLockups, TrancheInfo, ExpiredUserLockupsResponse, InstantiateMsg, ProposalResponse, Proposal, QueryMsg, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse, Tranche, Decimal, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, Addr, WhitelistAdminsResponse, WhitelistResponse } from "./HydroBase.types";
+import { Uint128, Timestamp, Uint64, AllUserLockupsResponse, LockEntryWithPower, LockEntry, Coin, ConstantsResponse, Constants, CurrentRoundResponse, ExecuteMsg, ProposalToLockups, TrancheInfo, ExpiredUserLockupsResponse, InstantiateMsg, LiquidityDeploymentResponse, LiquidityDeployment, ProposalResponse, Proposal, QueryMsg, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse, Tranche, Decimal, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, Addr, WhitelistAdminsResponse, WhitelistResponse } from "./HydroBase.types";
 export interface HydroBaseReadOnlyInterface {
   contractAddress: string;
   constants: () => Promise<ConstantsResponse>;
@@ -95,6 +95,26 @@ export interface HydroBaseReadOnlyInterface {
     roundId: number;
     validator: string;
   }) => Promise<ValidatorPowerRatioResponse>;
+  liquidityDeployment: ({
+    proposalId,
+    roundId,
+    trancheId
+  }: {
+    proposalId: number;
+    roundId: number;
+    trancheId: number;
+  }) => Promise<LiquidityDeploymentResponse>;
+  roundTrancheLiquidityDeployments: ({
+    limit,
+    roundId,
+    startFrom,
+    trancheId
+  }: {
+    limit: number;
+    roundId: number;
+    startFrom: number;
+    trancheId: number;
+  }) => Promise<RoundTrancheLiquidityDeploymentsResponse>;
 }
 export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
   client: CosmWasmClient;
@@ -120,6 +140,8 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     this.totalLockedTokens = this.totalLockedTokens.bind(this);
     this.registeredValidatorQueries = this.registeredValidatorQueries.bind(this);
     this.validatorPowerRatio = this.validatorPowerRatio.bind(this);
+    this.liquidityDeployment = this.liquidityDeployment.bind(this);
+    this.roundTrancheLiquidityDeployments = this.roundTrancheLiquidityDeployments.bind(this);
   }
   constants = async (): Promise<ConstantsResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -313,6 +335,43 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
       }
     });
   };
+  liquidityDeployment = async ({
+    proposalId,
+    roundId,
+    trancheId
+  }: {
+    proposalId: number;
+    roundId: number;
+    trancheId: number;
+  }): Promise<LiquidityDeploymentResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      liquidity_deployment: {
+        proposal_id: proposalId,
+        round_id: roundId,
+        tranche_id: trancheId
+      }
+    });
+  };
+  roundTrancheLiquidityDeployments = async ({
+    limit,
+    roundId,
+    startFrom,
+    trancheId
+  }: {
+    limit: number;
+    roundId: number;
+    startFrom: number;
+    trancheId: number;
+  }): Promise<RoundTrancheLiquidityDeploymentsResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      round_tranche_liquidity_deployments: {
+        limit,
+        round_id: roundId,
+        start_from: startFrom,
+        tranche_id: trancheId
+      }
+    });
+  };
 }
 export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   contractAddress: string;
@@ -333,11 +392,13 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   createProposal: ({
     bidDuration,
     description,
+    minimumAtomLiquidityRequest,
     title,
     trancheId
   }: {
     bidDuration: number;
     description: string;
+    minimumAtomLiquidityRequest: Uint128;
     title: string;
     trancheId: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
@@ -400,6 +461,34 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   }: {
     amount: Uint128;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  addLiquidityDeployment: ({
+    deployedFunds,
+    destinations,
+    fundsBeforeDeployment,
+    proposalId,
+    remainingRounds,
+    roundId,
+    totalRounds,
+    trancheId
+  }: {
+    deployedFunds: Coin[];
+    destinations: string[];
+    fundsBeforeDeployment: Coin[];
+    proposalId: number;
+    remainingRounds: number;
+    roundId: number;
+    totalRounds: number;
+    trancheId: number;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  removeLiquidityDeployment: ({
+    proposalId,
+    roundId,
+    trancheId
+  }: {
+    proposalId: number;
+    roundId: number;
+    trancheId: number;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseInterface {
   client: SigningCosmWasmClient;
@@ -425,6 +514,8 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.addICQManager = this.addICQManager.bind(this);
     this.removeICQManager = this.removeICQManager.bind(this);
     this.withdrawICQFunds = this.withdrawICQFunds.bind(this);
+    this.addLiquidityDeployment = this.addLiquidityDeployment.bind(this);
+    this.removeLiquidityDeployment = this.removeLiquidityDeployment.bind(this);
   }
   lockTokens = async ({
     lockDuration
@@ -459,11 +550,13 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
   createProposal = async ({
     bidDuration,
     description,
+    minimumAtomLiquidityRequest,
     title,
     trancheId
   }: {
     bidDuration: number;
     description: string;
+    minimumAtomLiquidityRequest: Uint128;
     title: string;
     trancheId: number;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
@@ -471,6 +564,7 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
       create_proposal: {
         bid_duration: bidDuration,
         description,
+        minimum_atom_liquidity_request: minimumAtomLiquidityRequest,
         title,
         tranche_id: trancheId
       }
@@ -600,6 +694,55 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     return await this.client.execute(this.sender, this.contractAddress, {
       withdraw_i_c_q_funds: {
         amount
+      }
+    }, fee, memo, _funds);
+  };
+  addLiquidityDeployment = async ({
+    deployedFunds,
+    destinations,
+    fundsBeforeDeployment,
+    proposalId,
+    remainingRounds,
+    roundId,
+    totalRounds,
+    trancheId
+  }: {
+    deployedFunds: Coin[];
+    destinations: string[];
+    fundsBeforeDeployment: Coin[];
+    proposalId: number;
+    remainingRounds: number;
+    roundId: number;
+    totalRounds: number;
+    trancheId: number;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      add_liquidity_deployment: {
+        deployed_funds: deployedFunds,
+        destinations,
+        funds_before_deployment: fundsBeforeDeployment,
+        proposal_id: proposalId,
+        remaining_rounds: remainingRounds,
+        round_id: roundId,
+        total_rounds: totalRounds,
+        tranche_id: trancheId
+      }
+    }, fee, memo, _funds);
+  };
+  removeLiquidityDeployment = async ({
+    proposalId,
+    roundId,
+    trancheId
+  }: {
+    proposalId: number;
+    roundId: number;
+    trancheId: number;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      remove_liquidity_deployment: {
+        proposal_id: proposalId,
+        round_id: roundId,
+        tranche_id: trancheId
       }
     }, fee, memo, _funds);
   };

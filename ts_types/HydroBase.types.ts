@@ -59,6 +59,7 @@ export type ExecuteMsg = {
   create_proposal: {
     bid_duration: number;
     description: string;
+    minimum_atom_liquidity_request: Uint128;
     title: string;
     tranche_id: number;
   };
@@ -108,6 +109,23 @@ export type ExecuteMsg = {
   withdraw_i_c_q_funds: {
     amount: Uint128;
   };
+} | {
+  add_liquidity_deployment: {
+    deployed_funds: Coin[];
+    destinations: string[];
+    funds_before_deployment: Coin[];
+    proposal_id: number;
+    remaining_rounds: number;
+    round_id: number;
+    total_rounds: number;
+    tranche_id: number;
+  };
+} | {
+  remove_liquidity_deployment: {
+    proposal_id: number;
+    round_id: number;
+    tranche_id: number;
+  };
 };
 export interface ProposalToLockups {
   lock_ids: number[];
@@ -136,12 +154,26 @@ export interface InstantiateMsg {
   tranches: TrancheInfo[];
   whitelist_admins: string[];
 }
+export interface LiquidityDeploymentResponse {
+  liquidity_deployment: LiquidityDeployment;
+}
+export interface LiquidityDeployment {
+  deployed_funds: Coin[];
+  destinations: string[];
+  funds_before_deployment: Coin[];
+  proposal_id: number;
+  remaining_rounds: number;
+  round_id: number;
+  total_rounds: number;
+  tranche_id: number;
+}
 export interface ProposalResponse {
   proposal: Proposal;
 }
 export interface Proposal {
   bid_duration: number;
   description: string;
+  minimum_atom_liquidity_request: Uint128;
   percentage: Uint128;
   power: Uint128;
   proposal_id: number;
@@ -219,6 +251,19 @@ export type QueryMsg = {
     round_id: number;
     validator: string;
   };
+} | {
+  liquidity_deployment: {
+    proposal_id: number;
+    round_id: number;
+    tranche_id: number;
+  };
+} | {
+  round_tranche_liquidity_deployments: {
+    limit: number;
+    round_id: number;
+    start_from: number;
+    tranche_id: number;
+  };
 };
 export interface RoundEndResponse {
   round_end: Timestamp;
@@ -228,6 +273,9 @@ export interface RoundProposalsResponse {
 }
 export interface RoundTotalVotingPowerResponse {
   total_voting_power: Uint128;
+}
+export interface RoundTrancheLiquidityDeploymentsResponse {
+  liquidity_deployments: LiquidityDeployment[];
 }
 export interface TopNProposalsResponse {
   proposals: Proposal[];

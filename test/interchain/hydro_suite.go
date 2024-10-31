@@ -245,9 +245,7 @@ func (s *HydroSuite) InstantiateHydroContract(
 
 func (s *HydroSuite) InstantiateTributeContract(codeId, hydroContractAddress, adminAddr string) string {
 	initTribute := map[string]interface{}{
-		"hydro_contract":                          hydroContractAddress,
-		"top_n_props_count":                       2,
-		"min_prop_percent_for_claimable_tributes": "3",
+		"hydro_contract": hydroContractAddress,
 	}
 	initTributeJson, err := json.Marshal(initTribute)
 	s.Require().NoError(err)

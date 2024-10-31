@@ -1,52 +1,73 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "RoundProposalsResponse",
+  "title": "RoundTrancheLiquidityDeploymentsResponse",
   "type": "object",
   "required": [
-    "proposals"
+    "liquidity_deployments"
   ],
   "properties": {
-    "proposals": {
+    "liquidity_deployments": {
       "type": "array",
       "items": {
-        "$ref": "#/definitions/Proposal"
+        "$ref": "#/definitions/LiquidityDeployment"
       }
     }
   },
   "additionalProperties": false,
   "definitions": {
-    "Proposal": {
+    "Coin": {
       "type": "object",
       "required": [
-        "bid_duration",
-        "description",
-        "minimum_atom_liquidity_request",
-        "percentage",
-        "power",
+        "amount",
+        "denom"
+      ],
+      "properties": {
+        "amount": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "denom": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "LiquidityDeployment": {
+      "type": "object",
+      "required": [
+        "deployed_funds",
+        "destinations",
+        "funds_before_deployment",
         "proposal_id",
+        "remaining_rounds",
         "round_id",
-        "title",
+        "total_rounds",
         "tranche_id"
       ],
       "properties": {
-        "bid_duration": {
+        "deployed_funds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Coin"
+          }
+        },
+        "destinations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "funds_before_deployment": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Coin"
+          }
+        },
+        "proposal_id": {
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
         },
-        "description": {
-          "type": "string"
-        },
-        "minimum_atom_liquidity_request": {
-          "$ref": "#/definitions/Uint128"
-        },
-        "percentage": {
-          "$ref": "#/definitions/Uint128"
-        },
-        "power": {
-          "$ref": "#/definitions/Uint128"
-        },
-        "proposal_id": {
+        "remaining_rounds": {
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
@@ -56,8 +77,10 @@
           "format": "uint64",
           "minimum": 0.0
         },
-        "title": {
-          "type": "string"
+        "total_rounds": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
         },
         "tranche_id": {
           "type": "integer",

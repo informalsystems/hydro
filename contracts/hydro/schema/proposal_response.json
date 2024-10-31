@@ -17,6 +17,7 @@
       "required": [
         "bid_duration",
         "description",
+        "minimum_atom_liquidity_request",
         "percentage",
         "power",
         "proposal_id",
@@ -32,6 +33,9 @@
         },
         "description": {
           "type": "string"
+        },
+        "minimum_atom_liquidity_request": {
+          "$ref": "#/definitions/Uint128"
         },
         "percentage": {
           "$ref": "#/definitions/Uint128"

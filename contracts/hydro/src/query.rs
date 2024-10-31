@@ -1,4 +1,7 @@
-use crate::state::{Constants, LockEntry, Proposal, Tranche, VoteWithPower};
+use crate::{
+    msg::LiquidityDeployment,
+    state::{Constants, LockEntry, Proposal, Tranche, VoteWithPower},
+};
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
 use schemars::JsonSchema;
@@ -87,6 +90,21 @@ pub enum QueryMsg {
 
     #[returns(ValidatorPowerRatioResponse)]
     ValidatorPowerRatio { validator: String, round_id: u64 },
+
+    #[returns(LiquidityDeploymentResponse)]
+    LiquidityDeployment {
+        round_id: u64,
+        tranche_id: u64,
+        proposal_id: u64,
+    },
+
+    #[returns(RoundTrancheLiquidityDeploymentsResponse)]
+    RoundTrancheLiquidityDeployments {
+        round_id: u64,
+        tranche_id: u64,
+        start_from: u64,
+        limit: u64,
+    },
 }
 
 #[cw_serde]
@@ -188,4 +206,14 @@ pub struct ValidatorPowerRatioResponse {
 #[cw_serde]
 pub struct ICQManagersResponse {
     pub managers: Vec<Addr>,
+}
+
+#[cw_serde]
+pub struct LiquidityDeploymentResponse {
+    pub liquidity_deployment: LiquidityDeployment,
+}
+
+#[cw_serde]
+pub struct RoundTrancheLiquidityDeploymentsResponse {
+    pub liquidity_deployments: Vec<LiquidityDeployment>,
 }

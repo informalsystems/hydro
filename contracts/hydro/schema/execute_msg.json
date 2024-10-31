@@ -81,6 +81,7 @@
           "required": [
             "bid_duration",
             "description",
+            "minimum_atom_liquidity_request",
             "title",
             "tranche_id"
           ],
@@ -92,6 +93,9 @@
             },
             "description": {
               "type": "string"
+            },
+            "minimum_atom_liquidity_request": {
+              "$ref": "#/definitions/Uint128"
             },
             "title": {
               "type": "string"
@@ -365,9 +369,128 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "add_liquidity_deployment"
+      ],
+      "properties": {
+        "add_liquidity_deployment": {
+          "type": "object",
+          "required": [
+            "deployed_funds",
+            "destinations",
+            "funds_before_deployment",
+            "proposal_id",
+            "remaining_rounds",
+            "round_id",
+            "total_rounds",
+            "tranche_id"
+          ],
+          "properties": {
+            "deployed_funds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Coin"
+              }
+            },
+            "destinations": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "funds_before_deployment": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Coin"
+              }
+            },
+            "proposal_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "remaining_rounds": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "total_rounds": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "remove_liquidity_deployment"
+      ],
+      "properties": {
+        "remove_liquidity_deployment": {
+          "type": "object",
+          "required": [
+            "proposal_id",
+            "round_id",
+            "tranche_id"
+          ],
+          "properties": {
+            "proposal_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {
+    "Coin": {
+      "type": "object",
+      "required": [
+        "amount",
+        "denom"
+      ],
+      "properties": {
+        "amount": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "denom": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "ProposalToLockups": {
       "type": "object",
       "required": [
