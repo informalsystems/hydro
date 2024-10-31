@@ -98,7 +98,10 @@ pub enum ExecuteMsg {
         destinations: Vec<String>,
         deployed_funds: Vec<Coin>,
         funds_before_deployment: Vec<Coin>,
+        // how many rounds this proposal has been in effect for if the proposal has a non-zero duration
         total_rounds: u64,
+        // how many rounds are left for this proposal to be in effect
+        // if this is a "repeating" proposal
         remaining_rounds: u64,
     },
 
