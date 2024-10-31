@@ -206,19 +206,19 @@ pub fn execute(
             funds_before_deployment,
             total_rounds,
             remaining_rounds,
-        } => add_liquidity_deployment(
-            deps,
-            env,
-            info,
-            round_id,
-            tranche_id,
-            proposal_id,
-            destinations,
-            deployed_funds,
-            funds_before_deployment,
-            total_rounds,
-            remaining_rounds,
-        ),
+        } => {
+            let deployment = LiquidityDeployment {
+                round_id,
+                tranche_id,
+                proposal_id,
+                destinations,
+                deployed_funds,
+                funds_before_deployment,
+                total_rounds,
+                remaining_rounds,
+            };
+            add_liquidity_deployment(deps, env, info, deployment)
+        }
         ExecuteMsg::RemoveLiquidityDeployment {
             round_id,
             tranche_id,
@@ -1337,26 +1337,20 @@ fn withdraw_icq_funds(
 // * the given tranche does not exist
 // * the given proposal does not exist
 // * there already is a deployment for the given round, tranche, and proposal
-// Having more arguments rather than nested structures actually makes the json easier to construct when calling this from the outside,
-// so we allow many arguments to this function.
-#[allow(clippy::too_many_arguments)]
 pub fn add_liquidity_deployment(
     deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
-    round_id: u64,
-    tranche_id: u64,
-    proposal_id: u64,
-    destinations: Vec<String>,
-    deployed_funds: Vec<Coin>,
-    funds_before_deployment: Vec<Coin>,
-    total_rounds: u64,
-    remaining_rounds: u64,
+    deployment: LiquidityDeployment,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    let round_id = deployment.round_id;
+    let tranche_id = deployment.tranche_id;
+    let proposal_id = deployment.proposal_id;
 
     // check that the round has started
     let current_round_id = compute_current_round_id(&env, &constants)?;
@@ -1389,19 +1383,8 @@ pub fn add_liquidity_deployment(
         )));
     }
 
-    let deployment = LiquidityDeployment {
-        round_id,
-        tranche_id,
-        proposal_id,
-        destinations,
-        deployed_funds,
-        funds_before_deployment,
-        total_rounds,
-        remaining_rounds,
-    };
-
     let response = Response::new()
-        .add_attribute("action", "add_round_liquidity_deployments")
+        .add_attribute("action", "add_liquidity_deployment")
         .add_attribute("sender", info.sender)
         .add_attribute("round_id", round_id.to_string())
         .add_attribute("tranche_id", tranche_id.to_string())
@@ -1441,7 +1424,7 @@ pub fn remove_liquidity_deployment(
     LIQUIDITY_DEPLOYMENTS_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
 
     let response = Response::new()
-        .add_attribute("action", "remove_round_liquidity_deployments")
+        .add_attribute("action", "remove_liquidity_deployment")
         .add_attribute("sender", info.sender)
         .add_attribute("round_id", round_id.to_string())
         .add_attribute("tranche_id", tranche_id.to_string());
