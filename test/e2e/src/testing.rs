@@ -87,8 +87,6 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
     tribute.instantiate(
         &tribute::msg::InstantiateMsg {
             hydro_contract: hydro.addr_str()?,
-            top_n_props_count: 10,
-            min_prop_percent_for_claimable_tributes: Uint128::new(5),
         },
         None,
         &[],

@@ -20,15 +20,8 @@ use hydro::{
     state::{Proposal, VoteWithPower},
 };
 
-pub fn get_instantiate_msg(
-    hydro_contract: String,
-    min_prop_percent_for_claimable_tributes: Uint128,
-) -> InstantiateMsg {
-    InstantiateMsg {
-        hydro_contract,
-        top_n_props_count: 10,
-        min_prop_percent_for_claimable_tributes,
-    }
+pub fn get_instantiate_msg(hydro_contract: String) -> InstantiateMsg {
+    InstantiateMsg { hydro_contract }
 }
 
 pub fn get_message_info(mock_api: &MockApi, sender: &str, funds: &[Coin]) -> MessageInfo {
@@ -378,10 +371,7 @@ fn add_tribute_test() {
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
-        let msg = get_instantiate_msg(
-            hydro_contract_address,
-            MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
-        );
+        let msg = get_instantiate_msg(hydro_contract_address);
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 
@@ -749,10 +739,7 @@ fn claim_tribute_test() {
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
-        let msg = get_instantiate_msg(
-            hydro_contract_address.clone(),
-            MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
-        );
+        let msg = get_instantiate_msg(hydro_contract_address.clone());
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 
@@ -953,10 +940,7 @@ fn refund_tribute_test() {
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
-        let msg = get_instantiate_msg(
-            hydro_contract_address.clone(),
-            MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
-        );
+        let msg = get_instantiate_msg(hydro_contract_address.clone());
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 

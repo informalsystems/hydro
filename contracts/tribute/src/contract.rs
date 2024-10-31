@@ -137,7 +137,7 @@ fn add_tribute(
 // ClaimTribute(round_id, tranche_id, prop_id, tribute_id, voter_address):
 //     Check that the voter has not already claimed the tribute
 //     Check that the round is ended
-//     Check that the prop was among the top N proposals for this tranche/round
+//     Check that there was a deployment entered for the proposal, and that the proposal received a non-zero amount of funds
 //     Look up voter's vote for the round
 //     Check that the voter voted for the prop
 //     Divide voter's vote power by total power voting for the prop to figure out their percentage
@@ -324,11 +324,8 @@ fn refund_tribute(
         }))
 }
 
-// Holds information about possible top N proposal. If the proposal is among the top N,
-// the "top_n_proposal" field will be set to some value and "is_above_voting_threshold"
-// field will be set to true if the proposal received at least the minimum voting threshold.
-// If the proposal is not among the top N, the "top_n_proposal" field will be set to None,
-// and "is_above_voting_threshold" field will be set to false.
+// Holds information about a proposal: whether the proposal had a liquidity deployment entered,
+// and whether that deployment was for a non-zero amount of funds.
 struct ProposalTributesInfo {
     pub had_deployment_entered: bool,
     pub received_nonzero_funds: bool,
@@ -607,7 +604,6 @@ pub fn query_outstanding_tribute_claims(
 
     for user_vote in user_votes {
         if get_proposal_tributes_info(deps, &config, round_id, tranche_id, user_vote.prop_id)
-            // If the query top N failed once, it will most likely always fail, so it is safe to return error here.
             .map_err(|err| StdError::generic_err(format!("Failed to get proposal info: {}", err)))?
             .are_tributes_claimable()
             .is_err()
