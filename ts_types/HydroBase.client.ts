@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Uint128, Timestamp, Uint64, AllUserLockupsResponse, LockEntryWithPower, LockEntry, Coin, ConstantsResponse, Constants, CurrentRoundResponse, ExecuteMsg, ProposalToLockups, TrancheInfo, ExpiredUserLockupsResponse, InstantiateMsg, ProposalResponse, Proposal, QueryMsg, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse, Tranche, Decimal, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, Addr, WhitelistAdminsResponse, WhitelistResponse } from "./HydroBase.types";
+import { Uint128, Timestamp, Uint64, AllUserLockupsResponse, LockEntryWithPower, LockEntry, Coin, ConstantsResponse, Constants, CurrentRoundResponse, ExecuteMsg, ProposalToLockups, TrancheInfo, ExpiredUserLockupsResponse, InstantiateMsg, LiquidityDeploymentResponse, LiquidityDeployment, ProposalResponse, Proposal, QueryMsg, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse, Tranche, Decimal, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, Addr, WhitelistAdminsResponse, WhitelistResponse } from "./HydroBase.types";
 export interface HydroBaseReadOnlyInterface {
   contractAddress: string;
   constants: () => Promise<ConstantsResponse>;

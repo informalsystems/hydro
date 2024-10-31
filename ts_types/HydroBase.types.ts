@@ -154,6 +154,19 @@ export interface InstantiateMsg {
   tranches: TrancheInfo[];
   whitelist_admins: string[];
 }
+export interface LiquidityDeploymentResponse {
+  liquidity_deployment: LiquidityDeployment;
+}
+export interface LiquidityDeployment {
+  deployed_funds: Coin[];
+  destinations: string[];
+  funds_before_deployment: Coin[];
+  proposal_id: number;
+  remaining_rounds: number;
+  round_id: number;
+  total_rounds: number;
+  tranche_id: number;
+}
 export interface ProposalResponse {
   proposal: Proposal;
 }
@@ -260,6 +273,9 @@ export interface RoundProposalsResponse {
 }
 export interface RoundTotalVotingPowerResponse {
   total_voting_power: Uint128;
+}
+export interface RoundTrancheLiquidityDeploymentsResponse {
+  liquidity_deployments: LiquidityDeployment[];
 }
 export interface TopNProposalsResponse {
   proposals: Proposal[];
