@@ -32,14 +32,12 @@ export type ExecuteMsg = {
     tribute_id: number;
   };
 };
-export type Uint128 = string;
 export interface InstantiateMsg {
   hydro_contract: string;
-  min_prop_percent_for_claimable_tributes: Uint128;
-  top_n_props_count: number;
 }
 export type Timestamp = Uint64;
 export type Uint64 = string;
+export type Uint128 = string;
 export interface ProposalTributesResponse {
   tributes: Tribute[];
 }
