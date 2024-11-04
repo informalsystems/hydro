@@ -10,8 +10,14 @@ import (
 	"hydro/test/interchain/chainsuite"
 
 	"cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/strangelove-ventures/interchaintest/v8/testutil"
 	"github.com/stretchr/testify/suite"
+)
+
+const (
+	DefaultBidDuration         = 1
+	DefaultMinLiquidityRequest = 100000000
 )
 
 func TestHydroSuite(t *testing.T) {
@@ -76,11 +82,11 @@ func (s *HydroSuite) TestHappyPath() {
 
 	// create hydro proposals
 	log.Println("==== Creating proposals")
-	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1)
+	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1, DefaultBidDuration, DefaultMinLiquidityRequest)
 	s.Require().NoError(err)
-	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 2", 1)
+	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 2", 1, DefaultBidDuration, DefaultMinLiquidityRequest)
 	s.Require().NoError(err)
-	err = s.SubmitHydroProposal(0, contractAddr, "tranche 2 prop 1", 2)
+	err = s.SubmitHydroProposal(0, contractAddr, "tranche 2 prop 1", 2, DefaultBidDuration, DefaultMinLiquidityRequest)
 	s.Require().NoError(err)
 
 	log.Println("==== Voting for proposals")
@@ -170,7 +176,7 @@ func (s *HydroSuite) TestPauseContract() {
 	err = s.RefreshLock(contractAddr, 0, 0)
 	RequirePaused(s, err)
 
-	err = s.SubmitHydroProposal(0, contractAddr, "tranche 2 prop 2", 2)
+	err = s.SubmitHydroProposal(0, contractAddr, "tranche 2 prop 2", 2, DefaultBidDuration, DefaultMinLiquidityRequest)
 	RequirePaused(s, err)
 	err = s.VoteForHydroProposal(0, contractAddr, 1, []ProposalToLockups{})
 	RequirePaused(s, err)
@@ -250,7 +256,7 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 
 	// create hydro proposals
 	log.Println("==== Creating proposals")
-	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1)
+	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1, DefaultBidDuration, DefaultMinLiquidityRequest)
 	s.Require().NoError(err)
 
 	log.Println("==== Voting for proposals")
@@ -328,7 +334,7 @@ func (s *HydroSuite) TestValidatorSlashing() {
 	s.Require().NoError(s.LockTokens(0, 86400000000000, lockAmount, dstIbcDenom1, contractAddr))
 
 	// create hydro proposals
-	s.Require().NoError(s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1))
+	s.Require().NoError(s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1, DefaultBidDuration, DefaultMinLiquidityRequest))
 
 	// vote for proposal
 	proposal, err := s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
@@ -410,10 +416,10 @@ func (s *HydroSuite) TestTributeContract() {
 	s.Require().NoError(s.LockTokens(3, roundLength, lockAmountVal4, dstIbcDenom, hydroContractAddr))
 
 	// validator 1 creates hydro proposals
-	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 1", 1))
-	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 2", 1))
-	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 3", 1))
-	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 4", 1))
+	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 1", 1, DefaultBidDuration, DefaultMinLiquidityRequest))
+	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 2", 1, DefaultBidDuration, DefaultMinLiquidityRequest))
+	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 3", 1, DefaultBidDuration, DefaultMinLiquidityRequest))
+	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 4", 1, DefaultBidDuration, DefaultMinLiquidityRequest))
 
 	proposal1, err := s.GetProposalByTitle(hydroContractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
@@ -430,13 +436,15 @@ func (s *HydroSuite) TestTributeContract() {
 
 	roundId := s.GetCurrentRound(hydroContractAddr) // all proposals are expected to be submitted in the same round
 
-	// validator 1 adds tribute for proposals
+	// validator 1 adds tribute for the first three proposals
 	tribute1Id, err := s.SubmitTribute(0, 10000, proposal1.RoundID, proposal1.TrancheID, proposal1.ProposalID, tributeContractAddr)
 	s.Require().NoError(err)
 	tribute2Id, err := s.SubmitTribute(0, 20000, proposal2.RoundID, proposal2.TrancheID, proposal2.ProposalID, tributeContractAddr)
 	s.Require().NoError(err)
 	tribute3Id, err := s.SubmitTribute(0, 30000, proposal3.RoundID, proposal3.TrancheID, proposal3.ProposalID, tributeContractAddr)
 	s.Require().NoError(err)
+
+	// validator 4 adds tribute for the fourth proposal
 	tribute4Id, err := s.SubmitTribute(3, 40000, proposal4.RoundID, proposal4.TrancheID, proposal4.ProposalID, tributeContractAddr)
 	s.Require().NoError(err)
 
@@ -503,23 +511,84 @@ func (s *HydroSuite) TestTributeContract() {
 	// wait for new round to start, so that we can claim tribute rewards gained in previous round
 	s.WaitForRound(hydroContractAddr, roundId+1)
 
-	// verify that top N proposal cannot be refunded
+	// verify that tributes can not be claimed nor refunded until information about liquidity deployment is stored in the hydro contract
+	err = s.ClaimTribute(0, tributeContractAddr, s.NeutronChain.ValidatorWallets[1].Address, roundId, proposal1.TrancheID, tribute1Id)
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "Tribute not claimable: Proposal did not have a liquidity deployment entered")
+
+	err = s.RefundTribute(3, tributeContractAddr, roundId, proposal4.TrancheID, tribute4Id, proposal4.ProposalID)
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "Can't refund tribute for proposal that didn't have a liquidity deployment entered")
+
+	// enter the liquidity deployment info for each proposal from the previous round
+	liquidityDeployments := []struct {
+		TrancheID     int
+		ProposalID    int
+		DeployedFunds sdk.Coin
+	}{
+		{
+			TrancheID:  proposal1.TrancheID,
+			ProposalID: proposal1.ProposalID,
+			DeployedFunds: sdk.Coin{
+				Amount: math.NewInt(100000000),
+				Denom:  "uatom",
+			},
+		},
+		{
+			TrancheID:  proposal2.TrancheID,
+			ProposalID: proposal2.ProposalID,
+			DeployedFunds: sdk.Coin{
+				Amount: math.NewInt(100000000),
+				Denom:  "uatom",
+			},
+		},
+		{
+			TrancheID:  proposal3.TrancheID,
+			ProposalID: proposal3.ProposalID,
+			DeployedFunds: sdk.Coin{
+				Amount: math.NewInt(0),
+				Denom:  "uatom",
+			},
+		},
+		{
+			TrancheID:  proposal4.TrancheID,
+			ProposalID: proposal4.ProposalID,
+			DeployedFunds: sdk.Coin{
+				Amount: math.NewInt(0),
+				Denom:  "uatom",
+			},
+		},
+	}
+
+	for _, liquidityDeployment := range liquidityDeployments {
+		err = s.AddLiquidityDeployment(
+			0,
+			hydroContractAddr,
+			roundId,
+			liquidityDeployment.TrancheID,
+			liquidityDeployment.ProposalID,
+			liquidityDeployment.DeployedFunds)
+		s.Require().NoError(err)
+	}
+
+	// verify that proposal that received liquidity cannot be refunded
 	err = s.RefundTribute(0, tributeContractAddr, roundId, proposal1.TrancheID, tribute1Id, proposal1.ProposalID)
 	s.Require().Error(err)
-	// claim reward for top N proposal
+	s.Require().Contains(err.Error(), "Can't refund tribute for proposal that received a non-zero liquidity deployment")
+	// claim reward for proposal that received liquidity
 	err = s.ClaimTribute(0, tributeContractAddr, s.NeutronChain.ValidatorWallets[1].Address, roundId, proposal1.TrancheID, tribute1Id)
 	s.Require().NoError(err)
-	// claim reward for top N proposal
+	// claim reward for proposal that received liquidity
 	err = s.ClaimTribute(0, tributeContractAddr, s.NeutronChain.ValidatorWallets[2].Address, roundId, proposal2.TrancheID, tribute2Id)
 	s.Require().NoError(err)
-	// proposal out of top N proposal cannot be claimed
+	// can not claim tribute for proposal that didn't receive any liquidity
 	err = s.ClaimTribute(0, tributeContractAddr, s.NeutronChain.ValidatorWallets[3].Address, roundId, proposal3.TrancheID, tribute3Id)
 	s.Require().Error(err)
-	s.Require().Contains(err.Error(), "outside of top N proposals")
-	// refund tribute for proposal that is not in top N
+	s.Require().Contains(err.Error(), "Tribute not claimable: Proposal did not receive a non-zero liquidity deployment")
+	// refund tribute for proposal that received votes, but didn't receive any liquidity
 	err = s.RefundTribute(0, tributeContractAddr, roundId, proposal3.TrancheID, tribute3Id, proposal3.ProposalID)
 	s.Require().NoError(err)
-	// refund tribute for the proposal that has no votes at all
+	// refund tribute for the proposal that has no votes at all, and didn't receive any liquidity
 	err = s.RefundTribute(3, tributeContractAddr, roundId, proposal4.TrancheID, tribute4Id, proposal4.ProposalID)
 	s.Require().NoError(err)
 
@@ -543,7 +612,7 @@ func (s *HydroSuite) TestTributeContract() {
 	s.Require().NoError(err)
 
 	// proposal power after voting: proposal_1=800, proposal_2: 400, proposal_3: 200,  proposal_4: 0
-	// proposal 1 and 2 are in top N proposals(N=2), which means that only those voters got the tribute reward and tribute from the other proposals can be refunded
+	// proposal 1 and 2 received the liquidity, which means that only those voters get the tribute reward and tribute from the other proposals can be refunded
 	s.Require().True(newBalanceVal2.Sub(oldBalanceVal2).Equal(math.NewInt(10000))) // reward is tribute for proposal1 = 10000
 	s.Require().True(newBalanceVal3.Sub(oldBalanceVal3).Equal(math.NewInt(20000))) // reward is tribute for proposal2 = 20000
 	s.Require().True(newBalanceVal1.GT(oldBalanceVal1))                            // refunded proposal3
@@ -559,17 +628,17 @@ func (s *HydroSuite) TestTributeContract() {
 	// expect no error when claiming the tribute for prop 1
 	err = s.ClaimTribute(0, tributeContractAddr, s.NeutronChain.ValidatorWallets[1].Address, proposal4.RoundID, proposal4.TrancheID, tribute5Id)
 	s.Require().NoError(err)
-	// expect an error when claiming the tribute for prop 4, since it is not in the top N proposals
+	// expect an error when claiming the tribute for prop 4, since it it didn't get any liquidity deployed
 	err = s.ClaimTribute(0, tributeContractAddr, s.NeutronChain.ValidatorWallets[3].Address, proposal4.RoundID, proposal4.TrancheID, tribute6Id)
 	s.Require().Error(err)
-	s.Require().Contains(err.Error(), "outside of top N proposals")
+	s.Require().Contains(err.Error(), "Tribute not claimable: Proposal did not receive a non-zero liquidity deployment")
 
 	// also, tributes can be refund immediately, since the voting period for the proposal is over
-	// expect an error refunding tribute 5 since it was for a top n proposal
+	// expect an error refunding tribute 5 since it was for a proposal that received some liquidity
 	err = s.RefundTribute(0, tributeContractAddr, proposal4.RoundID, proposal4.TrancheID, tribute5Id, proposal1.ProposalID)
 	s.Require().Error(err)
 
-	// expect no error when refunding tribute 6 since it was for a proposal that was not in the top N
+	// expect no error when refunding tribute 6 since it was for a proposal that didn't receive any liquidity
 	err = s.RefundTribute(0, tributeContractAddr, proposal4.RoundID, proposal4.TrancheID, tribute6Id, proposal3.ProposalID)
 	s.Require().NoError(err)
 }

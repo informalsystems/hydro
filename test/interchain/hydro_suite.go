@@ -397,12 +397,21 @@ func (s *HydroSuite) LockTokens(validatorIndex int, lockDuration int, lockAmount
 	return nil
 }
 
-func (s *HydroSuite) SubmitHydroProposal(validatorIndex int, contractAddr, proposalTitle string, trancheId int64) error {
+func (s *HydroSuite) SubmitHydroProposal(
+	validatorIndex int,
+	contractAddr,
+	proposalTitle string,
+	trancheId int64,
+	bidDuration int64,
+	minimumAtomLiquidityRequest int,
+) error {
 	proposalTxData := map[string]interface{}{
 		"create_proposal": map[string]interface{}{
-			"tranche_id":  trancheId,
-			"title":       proposalTitle,
-			"description": "Proposal Description",
+			"tranche_id":                     trancheId,
+			"title":                          proposalTitle,
+			"description":                    "Proposal Description",
+			"bid_duration":                   bidDuration,
+			"minimum_atom_liquidity_request": strconv.Itoa(minimumAtomLiquidityRequest),
 		},
 	}
 
@@ -567,7 +576,7 @@ func (s *HydroSuite) RefreshLock(contractAddr string, new_lock_duration, lock_id
 
 func (s *HydroSuite) UpdateMaxLockedTokens(contractAddr string, newMaxLockedTokens int64) error {
 	updateMaxLockedTokensTxData := map[string]interface{}{
-		"update_max_locked_tokens": map[string]interface{}{
+		"update_config": map[string]interface{}{
 			"max_locked_tokens": newMaxLockedTokens,
 		},
 	}
@@ -683,6 +692,28 @@ func (s *HydroSuite) WithdrawICQFunds(contractAddr string, amount int64) error {
 	}
 
 	_, err := s.WasmExecuteTx(0, icqTxData, contractAddr, []string{})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *HydroSuite) AddLiquidityDeployment(validatorIndex int, contractAddr string, roundId, trancheId, proposalId int, deployedFunds types.Coin) error {
+	addLiquidityData := map[string]interface{}{
+		"add_liquidity_deployment": map[string]interface{}{
+			"round_id":                roundId,
+			"tranche_id":              trancheId,
+			"proposal_id":             proposalId,
+			"destinations":            []string{},
+			"deployed_funds":          []types.Coin{deployedFunds},
+			"funds_before_deployment": []string{},
+			"total_rounds":            1,
+			"remaining_rounds":        0,
+		},
+	}
+
+	_, err := s.WasmExecuteTx(0, addLiquidityData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
