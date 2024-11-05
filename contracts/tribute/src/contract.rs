@@ -17,7 +17,8 @@ use crate::state::{
     Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP,
 };
 use hydro::query::{
-    CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, UserVotesResponse,
+    CurrentRoundResponse, LiquidityDeploymentResponse, ProposalResponse, QueryMsg as HydroQueryMsg,
+    UserVotesResponse,
 };
 use hydro::state::{Proposal, VoteWithPower};
 
@@ -380,10 +381,10 @@ fn get_proposal_tributes_info(
     };
 
     // get the liquidity deployments for this proposal
-    let liquitidy_deployment_res =
+    let liquidity_deployment_res =
         get_liquidity_deployment(deps, config, round_id, tranche_id, proposal_id);
 
-    if let Ok(liquidity_deployment) = liquitidy_deployment_res {
+    if let Ok(liquidity_deployment) = liquidity_deployment_res {
         info.had_deployment_entered = true;
         info.received_nonzero_funds = !liquidity_deployment.deployed_funds.is_empty()
             && liquidity_deployment
@@ -703,7 +704,7 @@ fn get_liquidity_deployment(
     tranche_id: u64,
     proposal_id: u64,
 ) -> Result<LiquidityDeployment, ContractError> {
-    let liquidity_deployment_resp: LiquidityDeployment = deps
+    let liquidity_deployment_resp: LiquidityDeploymentResponse = deps
         .querier
         .query_wasm_smart(
             &config.hydro_contract,
@@ -720,7 +721,7 @@ fn get_liquidity_deployment(
             ))
         })?;
 
-    Ok(liquidity_deployment_resp)
+    Ok(liquidity_deployment_resp.liquidity_deployment)
 }
 
 // TODO: figure out build issue that we have if we don't define all this functions in both contracts

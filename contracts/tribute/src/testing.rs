@@ -16,7 +16,10 @@ use cosmwasm_std::{
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
 use hydro::{
     msg::LiquidityDeployment,
-    query::{CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, UserVotesResponse},
+    query::{
+        CurrentRoundResponse, LiquidityDeploymentResponse, ProposalResponse,
+        QueryMsg as HydroQueryMsg, UserVotesResponse,
+    },
     state::{Proposal, VoteWithPower},
 };
 
@@ -229,7 +232,9 @@ impl MockWasmQuerier {
                 && deployment.tranche_id == tranche_id
                 && deployment.proposal_id == proposal_id
             {
-                return to_json_binary(deployment);
+                return to_json_binary(&LiquidityDeploymentResponse {
+                    liquidity_deployment: deployment.clone(),
+                });
             }
         }
 
