@@ -16,12 +16,6 @@ pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, C
         )));
     }
 
-    // Migrate tributes
-
-    // for each tribute in the store,
-    // add the creation_time and creation_round to the tribute
-    // and store it back in the store
-
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     Ok(Response::default())
