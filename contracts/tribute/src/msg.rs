@@ -33,6 +33,4 @@ pub enum ExecuteMsg {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct MigrateMsg {
-    pub min_prop_percent_for_claimable_tributes: Uint128,
-}
+pub struct MigrateMsg {}

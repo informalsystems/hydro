@@ -80,7 +80,7 @@ pub fn execute(
 
 fn add_tribute(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     round_id: u64,
     tranche_id: u64,
@@ -116,8 +116,6 @@ fn add_tribute(
         funds: info.funds[0].clone(),
         depositor: info.sender.clone(),
         refunded: false,
-        creation_time: env.block.time,
-        creation_round: query_current_round_id(&deps, &hydro_contract)?,
     };
     TRIBUTE_MAP.save(
         deps.storage,

@@ -1,12 +1,11 @@
 use crate::{
     contract::{
         execute, instantiate, query_historical_tribute_claims, query_outstanding_tribute_claims,
-        query_proposal_tributes, query_round_tributes, CONTRACT_NAME,
+        query_proposal_tributes, query_round_tributes,
     },
-    migrate::migrate,
-    msg::{ExecuteMsg, InstantiateMsg, MigrateMsg},
+    msg::{ExecuteMsg, InstantiateMsg},
     query::TributeClaim,
-    state::{Config, ConfigV1, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_MAP},
+    state::{Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_MAP},
 };
 use cosmwasm_std::{
     from_json,
@@ -15,8 +14,6 @@ use cosmwasm_std::{
     StdError, StdResult, SystemError, SystemResult, Timestamp, Uint128, WasmQuery,
 };
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
-use cw2::set_contract_version;
-use cw_storage_plus::Item;
 use hydro::{
     query::{
         CurrentRoundResponse, ProposalResponse, QueryMsg as HydroQueryMsg, TopNProposalsResponse,
@@ -347,7 +344,6 @@ fn add_tribute_test() {
             assert_eq!(res[i].funds, tribute[0].clone());
             assert_eq!(res[i].depositor.to_string(), tribute_payer_addr.clone());
             assert!(!res[i].refunded);
-            assert_eq!(res[i].creation_time, env.block.time);
         }
     }
 }
@@ -871,8 +867,6 @@ fn test_query_historical_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(100), "token"),
                 refunded: false,
-                creation_round: 1,
-                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
             Tribute {
                 tribute_id: 1,
@@ -882,8 +876,6 @@ fn test_query_historical_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(200), "token"),
                 refunded: false,
-                creation_round: 1,
-                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
         ];
 
@@ -940,8 +932,6 @@ fn test_query_round_tributes() {
             depositor: Addr::unchecked("user1"),
             funds: Coin::new(Uint128::new(100), "token"),
             refunded: false,
-            creation_round: 1,
-            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
         },
         Tribute {
             tribute_id: 2,
@@ -951,8 +941,6 @@ fn test_query_round_tributes() {
             depositor: Addr::unchecked("user2"),
             funds: Coin::new(Uint128::new(200), "token"),
             refunded: false,
-            creation_round: 1,
-            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
         },
         Tribute {
             tribute_id: 3,
@@ -962,8 +950,6 @@ fn test_query_round_tributes() {
             depositor: Addr::unchecked("user3"),
             funds: Coin::new(Uint128::new(300), "token"),
             refunded: false,
-            creation_round: 1,
-            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
         },
         Tribute {
             tribute_id: 4,
@@ -973,8 +959,6 @@ fn test_query_round_tributes() {
             depositor: Addr::unchecked("user4"),
             funds: Coin::new(Uint128::new(400), "token"),
             refunded: false,
-            creation_round: 1,
-            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
         },
         Tribute {
             tribute_id: 5,
@@ -984,8 +968,6 @@ fn test_query_round_tributes() {
             depositor: Addr::unchecked("user5"),
             funds: Coin::new(Uint128::new(500), "token"),
             refunded: false,
-            creation_round: 1,
-            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
         },
     ];
 
@@ -1132,8 +1114,6 @@ fn test_query_outstanding_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(100), "token"),
                 refunded: false,
-                creation_round: 1,
-                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
             Tribute {
                 tribute_id: 2,
@@ -1143,8 +1123,6 @@ fn test_query_outstanding_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(200), "token"),
                 refunded: false,
-                creation_round: 1,
-                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
             Tribute {
                 tribute_id: 3,
@@ -1154,8 +1132,6 @@ fn test_query_outstanding_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(300), "token"),
                 refunded: false,
-                creation_round: 1,
-                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
             Tribute {
                 tribute_id: 4,
@@ -1165,8 +1141,6 @@ fn test_query_outstanding_tribute_claims() {
                 depositor: Addr::unchecked("user1"),
                 funds: Coin::new(Uint128::new(400), "token"),
                 refunded: false,
-                creation_round: 1,
-                creation_time: cosmwasm_std::Timestamp::from_seconds(1),
             },
         ];
 
@@ -1292,62 +1266,4 @@ fn test_query_outstanding_tribute_claims() {
             }
         }
     }
-}
-
-#[test]
-fn test_migrate() {
-    let mut deps = mock_dependencies();
-    let env = mock_env();
-    let hydro_contract_address = deps.api.addr_make(HYDRO_CONTRACT_ADDRESS);
-
-    let old_config = ConfigV1 {
-        hydro_contract: hydro_contract_address,
-        top_n_props_count: 77,
-    };
-
-    // Save old version of the config into the store
-    const OLD_CONFIG: Item<ConfigV1> = Item::new("config");
-    let result = OLD_CONFIG.save(&mut deps.storage, &old_config);
-    assert!(result.is_ok());
-
-    // Set the V1 contract version
-    let result = set_contract_version(&mut deps.storage, CONTRACT_NAME, "1.0.0");
-    assert!(result.is_ok());
-
-    // Try to migrate to the new config by setting the percentage above 100%
-    let msg = MigrateMsg {
-        min_prop_percent_for_claimable_tributes: Uint128::new(101),
-    };
-    let result = migrate(deps.as_mut(), env.clone(), msg.clone());
-    assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .to_lowercase()
-        .contains("minimum proposal percentage for claimable tributes must be between 0 and 100."));
-
-    // Try to migrate to a new (valid) config
-    let msg = MigrateMsg {
-        min_prop_percent_for_claimable_tributes: Uint128::new(5),
-    };
-    let result = migrate(deps.as_mut(), env.clone(), msg.clone());
-    assert!(result.is_ok());
-
-    // Assert that the migration was successful
-    let new_config = CONFIG.load(&deps.storage).unwrap();
-    assert_eq!(old_config.hydro_contract, new_config.hydro_contract);
-    assert_eq!(old_config.top_n_props_count, new_config.top_n_props_count);
-    assert_eq!(
-        msg.min_prop_percent_for_claimable_tributes,
-        new_config.min_prop_percent_for_claimable_tributes
-    );
-
-    // Try to migrate already migrated contract and verify this errors out
-    let result = migrate(deps.as_mut(), env.clone(), msg.clone());
-    assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .to_lowercase()
-        .contains("contract is already migrated to the newest version."))
 }
