@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## v1.1.1
+
+Date: November 6th, 2024
+
+### BUG FIXES
+
+- Remove newly introduced, unused `creation_time` and `creation_round` fields from `Tribute` struct.
+  ([\#168](https://github.com/informalsystems/hydro/pull/168))
+
 ## v1.1.0
 
 Date: October 22nd, 2024
