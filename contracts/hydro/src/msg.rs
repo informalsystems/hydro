@@ -117,11 +117,6 @@ pub struct ProposalToLockups {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct MigrateMsg {
-    pub new_first_round_start: Timestamp,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct LiquidityDeployment {
     pub round_id: u64,
     pub tranche_id: u64,

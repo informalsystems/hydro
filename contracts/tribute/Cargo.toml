@@ -1,6 +1,6 @@
 [package]
 name = "tribute"
-version = "1.1.0"
+version = "2.0.0"
 edition = "2018"
 authors = ["Jehan Tremback", "Philip Offtermatt", "Dusan Maksimovic"]
 
@@ -28,7 +28,7 @@ cw-storage-plus = { workspace = true }
 cw2 = { workspace = true }
 cosmwasm-schema = { workspace = true }
 cw-orch = { workspace = true }
-hydro = { path = "../hydro" }
+hydro = { path = "../hydro", features = ["library"] }
 
 [dev-dependencies]
 cosmwasm-schema = { workspace = true }

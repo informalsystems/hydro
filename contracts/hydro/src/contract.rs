@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+// entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
+#[allow(unused_imports)]
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
     MessageInfo, Order, Reply, Response, StdError, StdResult, Storage, Timestamp, Uint128,

@@ -17,10 +17,10 @@ use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
 use hydro::{
     msg::LiquidityDeployment,
     query::{
-        CurrentRoundResponse, LiquidityDeploymentResponse, ProposalResponse,
+        ConstantsResponse, CurrentRoundResponse, LiquidityDeploymentResponse, ProposalResponse,
         QueryMsg as HydroQueryMsg, UserVotesResponse,
     },
-    state::{Proposal, VoteWithPower},
+    state::{Constants, Proposal, VoteWithPower},
 };
 
 pub fn get_instantiate_msg(hydro_contract: String) -> InstantiateMsg {
@@ -76,15 +76,17 @@ pub struct MockWasmQuerier {
     proposals: Vec<Proposal>,
     user_votes: Vec<UserVote>,
     liquidity_deployments: Vec<LiquidityDeployment>,
+    hydro_constants: Option<Constants>,
 }
 
 impl MockWasmQuerier {
-    fn new(
+    pub fn new(
         hydro_contract: String,
         current_round: u64,
         proposals: Vec<Proposal>,
         user_votes: Vec<UserVote>,
         liquidity_deployments: Vec<LiquidityDeployment>,
+        hydro_constants: Option<Constants>,
     ) -> Self {
         Self {
             hydro_contract,
@@ -92,10 +94,11 @@ impl MockWasmQuerier {
             proposals,
             user_votes,
             liquidity_deployments,
+            hydro_constants,
         }
     }
 
-    fn handler(&self, query: &WasmQuery) -> QuerierResult {
+    pub fn handler(&self, query: &WasmQuery) -> QuerierResult {
         match query {
             WasmQuery::Smart { contract_addr, msg } => {
                 if *contract_addr != self.hydro_contract {
@@ -165,6 +168,9 @@ impl MockWasmQuerier {
                                     })
                                 }
                             }
+                    }),
+                    HydroQueryMsg::Constants {} => to_json_binary(&ConstantsResponse {
+                        constants: self.hydro_constants.clone().unwrap(),
                     }),
 
                     _ => panic!("unsupported query"),
@@ -373,6 +379,7 @@ fn add_tribute_test() {
             test.mock_data.1,
             vec![],
             vec![],
+            None,
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
@@ -741,6 +748,7 @@ fn claim_tribute_test() {
             test.mock_data.2.clone(),
             vec![],
             vec![],
+            None,
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
@@ -768,6 +776,7 @@ fn claim_tribute_test() {
             test.mock_data.2.clone(),
             test.mock_data.3.clone(),
             test.mock_data.4.clone(),
+            None,
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
@@ -942,6 +951,7 @@ fn refund_tribute_test() {
             test.mock_data.2.clone(),
             vec![],
             vec![],
+            None,
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
@@ -967,6 +977,7 @@ fn refund_tribute_test() {
             test.mock_data.2.clone(),
             vec![],
             test.mock_data.3.clone(),
+            None,
         );
         deps.querier.update_wasm(move |q| mock_querier.handler(q));
 
@@ -1498,6 +1509,7 @@ fn test_query_outstanding_tribute_claims() {
                 ),
             ],
             liquidity_deployments,
+            None,
         );
 
         deps.querier.update_wasm(move |q| mock_querier.handler(q));

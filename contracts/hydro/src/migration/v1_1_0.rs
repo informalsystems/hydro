@@ -2,6 +2,13 @@ use std::collections::HashMap;
 
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Decimal, Timestamp, Uint128};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct MigrateMsgV1_1_0 {
+    pub new_first_round_start: Timestamp,
+}
 
 #[cw_serde]
 pub struct ConstantsV1_1_0 {
