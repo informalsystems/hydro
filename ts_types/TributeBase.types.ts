@@ -32,12 +32,29 @@ export type ExecuteMsg = {
     tribute_id: number;
   };
 };
+export type Uint128 = string;
+export interface HistoricalTributeClaimsResponse {
+  claims: TributeClaim[];
+}
+export interface TributeClaim {
+  amount: Coin;
+  proposal_id: number;
+  round_id: number;
+  tranche_id: number;
+  tribute_id: number;
+}
+export interface Coin {
+  amount: Uint128;
+  denom: string;
+}
 export interface InstantiateMsg {
   hydro_contract: string;
 }
+export interface OutstandingTributeClaimsResponse {
+  claims: TributeClaim[];
+}
 export type Timestamp = Uint64;
 export type Uint64 = string;
-export type Uint128 = string;
 export interface ProposalTributesResponse {
   tributes: Tribute[];
 }
@@ -51,10 +68,6 @@ export interface Tribute {
   round_id: number;
   tranche_id: number;
   tribute_id: number;
-}
-export interface Coin {
-  amount: Uint128;
-  denom: string;
 }
 export type QueryMsg = {
   config: {};
@@ -86,3 +99,6 @@ export type QueryMsg = {
     user_address: string;
   };
 };
+export interface RoundTributesResponse {
+  tributes: Tribute[];
+}
