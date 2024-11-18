@@ -9,9 +9,9 @@ use hydro::state::Constants;
 use crate::{
     contract::{instantiate, CONTRACT_NAME},
     migration::{
-        migrate::{migrate, CONTRACT_VERSION_V1_1_1, CONTRACT_VERSION_V2_0_0},
+        migrate::{migrate, CONTRACT_VERSION_V1_1_1, CONTRACT_VERSION_V2_0_1},
         v1_1_1::{ConfigV1_1_1, TributeV1_1_1},
-        v2_0_0::{ConfigV2_0_0, MigrateMsgV2_0_0, TributeV2_0_0},
+        v2_0_1::{ConfigV2_0_1, MigrateMsgV2_0_1, TributeV2_0_1},
     },
     testing::{get_instantiate_msg, get_message_info, MockWasmQuerier},
 };
@@ -69,10 +69,10 @@ fn test_migrate() {
     );
 
     const OLD_CONFIG: Item<ConfigV1_1_1> = Item::new("config");
-    const NEW_CONFIG: Item<ConfigV2_0_0> = Item::new("config");
+    const NEW_CONFIG: Item<ConfigV2_0_1> = Item::new("config");
 
     const OLD_ID_TO_TRIBUTE_MAP: Map<u64, TributeV1_1_1> = Map::new("id_to_tribute_map");
-    const NEW_ID_TO_TRIBUTE_MAP: Map<u64, TributeV2_0_0> = Map::new("id_to_tribute_map");
+    const NEW_ID_TO_TRIBUTE_MAP: Map<u64, TributeV2_0_1> = Map::new("id_to_tribute_map");
 
     // Override the config so it has the old data structure stored before running the migration
     let old_config = ConfigV1_1_1 {
@@ -127,7 +127,7 @@ fn test_migrate() {
     }
 
     // Run the migration
-    let res = migrate(deps.as_mut(), env.clone(), MigrateMsgV2_0_0 {});
+    let res = migrate(deps.as_mut(), env.clone(), MigrateMsgV2_0_1 {});
     assert!(res.is_ok(), "migration failed!");
 
     // Verify that the Config got migrated properly
@@ -165,5 +165,5 @@ fn test_migrate() {
 
     // Verify the contract version after running the migration
     let res = get_contract_version(&deps.storage);
-    assert_eq!(res.unwrap().version, CONTRACT_VERSION_V2_0_0.to_string());
+    assert_eq!(res.unwrap().version, CONTRACT_VERSION_V2_0_1.to_string());
 }

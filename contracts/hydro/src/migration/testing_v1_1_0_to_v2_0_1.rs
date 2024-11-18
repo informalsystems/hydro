@@ -7,9 +7,9 @@ use cw_storage_plus::{Item, Map};
 use crate::{
     contract::{instantiate, CONTRACT_NAME},
     migration::{
-        migrate::{migrate, CONTRACT_VERSION_V1_1_0, CONTRACT_VERSION_V2_0_0},
+        migrate::{migrate, CONTRACT_VERSION_V1_1_0, CONTRACT_VERSION_V2_0_1},
         v1_1_0::{ConstantsV1_1_0, ProposalV1_1_0, VoteV1_1_0},
-        v2_0_0::{ConstantsV2_0_0, MigrateMsgV2_0_0, ProposalV2_0_0, VoteV2_0_0},
+        v2_0_1::{ConstantsV2_0_1, MigrateMsgV2_0_1, ProposalV2_0_1, VoteV2_0_1},
     },
     state::{LockEntry, LOCKS_MAP},
     testing::{
@@ -54,10 +54,10 @@ fn test_constants_and_proposals_migration() {
     );
 
     const OLD_CONSTANTS: Item<ConstantsV1_1_0> = Item::new("constants");
-    const NEW_CONSTANTS: Item<ConstantsV2_0_0> = Item::new("constants");
+    const NEW_CONSTANTS: Item<ConstantsV2_0_1> = Item::new("constants");
 
     const OLD_PROPOSAL_MAP: Map<(u64, u64, u64), ProposalV1_1_0> = Map::new("prop_map");
-    const NEW_PROPOSAL_MAP: Map<(u64, u64, u64), ProposalV2_0_0> = Map::new("prop_map");
+    const NEW_PROPOSAL_MAP: Map<(u64, u64, u64), ProposalV2_0_1> = Map::new("prop_map");
 
     // Override the constants so that they have old data structure stored before running the migration
     let old_constants = ConstantsV1_1_0 {
@@ -126,14 +126,14 @@ fn test_constants_and_proposals_migration() {
     }
 
     // Run the migration
-    let migrate_msg = MigrateMsgV2_0_0 {
+    let migrate_msg = MigrateMsgV2_0_1 {
         max_bid_duration: 12,
     };
     let res = migrate(deps.as_mut(), env.clone(), migrate_msg.clone());
     assert!(res.is_ok(), "migration failed!");
 
     // Verify that the Constants got migrated properly
-    let expected_new_constants = ConstantsV2_0_0 {
+    let expected_new_constants = ConstantsV2_0_1 {
         round_length: old_constants.round_length,
         lock_epoch_length: old_constants.lock_epoch_length,
         first_round_start: old_constants.first_round_start,
@@ -173,7 +173,7 @@ fn test_constants_and_proposals_migration() {
         );
         let new_proposal = res.unwrap();
 
-        let expected_new_proposal = ProposalV2_0_0 {
+        let expected_new_proposal = ProposalV2_0_1 {
             round_id: old_proposal.round_id,
             tranche_id: old_proposal.tranche_id,
             proposal_id: old_proposal.proposal_id,
@@ -192,7 +192,7 @@ fn test_constants_and_proposals_migration() {
 
     // Verify the contract version after running the migration
     let res = get_contract_version(&deps.storage);
-    assert_eq!(res.unwrap().version, CONTRACT_VERSION_V2_0_0.to_string());
+    assert_eq!(res.unwrap().version, CONTRACT_VERSION_V2_0_1.to_string());
 }
 
 #[test]
@@ -301,21 +301,11 @@ fn test_votes_migration() {
                 lock_end: Timestamp::from_nanos(first_round_start - 40000 + lock_epoch_length),
             },
         },
-        // lockup from a validator that isn't in the top N for the round anymore
-        LockToInsert {
-            voter: user1_address.clone(),
-            lock: LockEntry {
-                lock_id: 4,
-                funds: Coin::new(95u128, IBC_DENOM_3),
-                lock_start: Timestamp::from_nanos(first_round_start + 50000),
-                lock_end: Timestamp::from_nanos(first_round_start + 50000 + lock_epoch_length),
-            },
-        },
         // lockup that gives 1x power
         LockToInsert {
             voter: user2_address.clone(),
             lock: LockEntry {
-                lock_id: 5,
+                lock_id: 4,
                 funds: Coin::new(1u128, IBC_DENOM_1),
                 lock_start: Timestamp::from_nanos(first_round_start + 10000),
                 lock_end: Timestamp::from_nanos(first_round_start + 10000 + lock_epoch_length),
@@ -325,7 +315,7 @@ fn test_votes_migration() {
         LockToInsert {
             voter: user2_address.clone(),
             lock: LockEntry {
-                lock_id: 6,
+                lock_id: 5,
                 funds: Coin::new(2u128, IBC_DENOM_1),
                 lock_start: Timestamp::from_nanos(first_round_start + 20000),
                 lock_end: Timestamp::from_nanos(first_round_start + 20000 + lock_epoch_length),
@@ -335,7 +325,7 @@ fn test_votes_migration() {
         LockToInsert {
             voter: user2_address.clone(),
             lock: LockEntry {
-                lock_id: 7,
+                lock_id: 6,
                 funds: Coin::new(3u128, IBC_DENOM_2),
                 lock_start: Timestamp::from_nanos(first_round_start + 30000),
                 lock_end: Timestamp::from_nanos(first_round_start + 30000 + lock_epoch_length),
@@ -345,20 +335,10 @@ fn test_votes_migration() {
         LockToInsert {
             voter: user2_address.clone(),
             lock: LockEntry {
-                lock_id: 8,
+                lock_id: 7,
                 funds: Coin::new(4u128, IBC_DENOM_2),
                 lock_start: Timestamp::from_nanos(first_round_start - 40000),
                 lock_end: Timestamp::from_nanos(first_round_start - 40000 + lock_epoch_length),
-            },
-        },
-        // lockup from a validator that isn't in the top N for the round anymore
-        LockToInsert {
-            voter: user2_address.clone(),
-            lock: LockEntry {
-                lock_id: 9,
-                funds: Coin::new(5u128, IBC_DENOM_3),
-                lock_start: Timestamp::from_nanos(first_round_start + 50000),
-                lock_end: Timestamp::from_nanos(first_round_start + 50000 + lock_epoch_length),
             },
         },
     ];
@@ -381,8 +361,8 @@ fn test_votes_migration() {
     let user1_validator2_voting_power = user_lockups[2].lock.funds.amount;
 
     let user2_validator1_voting_power =
-        user_lockups[5].lock.funds.amount + user_lockups[6].lock.funds.amount;
-    let user2_validator2_voting_power = user_lockups[7].lock.funds.amount;
+        user_lockups[4].lock.funds.amount + user_lockups[5].lock.funds.amount;
+    let user2_validator2_voting_power = user_lockups[6].lock.funds.amount;
 
     let user1_voted_proposal = 3;
     let user2_voted_proposal = 7;
@@ -423,7 +403,7 @@ fn test_votes_migration() {
     ];
 
     const OLD_VOTE_MAP: Map<(u64, u64, Addr), VoteV1_1_0> = Map::new("vote_map");
-    const NEW_VOTE_MAP: Map<((u64, u64), Addr, u64), VoteV2_0_0> = Map::new("vote_map");
+    const NEW_VOTE_MAP: Map<((u64, u64), Addr, u64), VoteV2_0_1> = Map::new("vote_map");
 
     for user_vote in &old_user_votes {
         let res = OLD_VOTE_MAP.save(
@@ -438,7 +418,7 @@ fn test_votes_migration() {
     }
 
     // Run the migration
-    let migrate_msg = MigrateMsgV2_0_0 {
+    let migrate_msg = MigrateMsgV2_0_1 {
         max_bid_duration: 12,
     };
     let res = migrate(deps.as_mut(), env.clone(), migrate_msg);
@@ -489,10 +469,13 @@ fn test_votes_migration() {
         ExpectedUserVote {
             round_id,
             tranche_id,
-            voter: user1_address.clone(),
+            voter: user2_address.clone(),
             lock_id: 4,
-            proposal_id: None,
-            time_weighted_shares: None,
+            proposal_id: Some(user2_voted_proposal),
+            time_weighted_shares: Some((
+                VALIDATOR_1.to_string(),
+                Decimal::from_ratio(user_lockups[4].lock.funds.amount, Uint128::one()),
+            )),
         },
         ExpectedUserVote {
             round_id,
@@ -512,7 +495,7 @@ fn test_votes_migration() {
             lock_id: 6,
             proposal_id: Some(user2_voted_proposal),
             time_weighted_shares: Some((
-                VALIDATOR_1.to_string(),
+                VALIDATOR_2.to_string(),
                 Decimal::from_ratio(user_lockups[6].lock.funds.amount, Uint128::one()),
             )),
         },
@@ -521,25 +504,6 @@ fn test_votes_migration() {
             tranche_id,
             voter: user2_address.clone(),
             lock_id: 7,
-            proposal_id: Some(user2_voted_proposal),
-            time_weighted_shares: Some((
-                VALIDATOR_2.to_string(),
-                Decimal::from_ratio(user_lockups[7].lock.funds.amount, Uint128::one()),
-            )),
-        },
-        ExpectedUserVote {
-            round_id,
-            tranche_id,
-            voter: user2_address.clone(),
-            lock_id: 8,
-            proposal_id: None,
-            time_weighted_shares: None,
-        },
-        ExpectedUserVote {
-            round_id,
-            tranche_id,
-            voter: user2_address.clone(),
-            lock_id: 9,
             proposal_id: None,
             time_weighted_shares: None,
         },

@@ -8,17 +8,17 @@ use serde::{Deserialize, Serialize};
 use crate::contract::{compute_round_end, get_lock_time_weighted_shares};
 use crate::error::ContractError;
 
-use crate::lsm_integration::{is_active_round_validator, resolve_validator_from_denom};
+use crate::lsm_integration::resolve_validator_from_denom;
 use crate::migration::v1_1_0::{ConstantsV1_1_0, ProposalV1_1_0, VoteV1_1_0};
 use crate::state::{CONSTANTS, LOCKS_MAP};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct MigrateMsgV2_0_0 {
+pub struct MigrateMsgV2_0_1 {
     pub max_bid_duration: u64,
 }
 
 #[cw_serde]
-pub struct ConstantsV2_0_0 {
+pub struct ConstantsV2_0_1 {
     pub round_length: u64,
     pub lock_epoch_length: u64,
     pub first_round_start: Timestamp,
@@ -32,7 +32,7 @@ pub struct ConstantsV2_0_0 {
     pub max_bid_duration: u64,
 }
 
-impl ConstantsV2_0_0 {
+impl ConstantsV2_0_1 {
     pub fn from(old_constants: ConstantsV1_1_0, max_bid_duration: u64) -> Self {
         Self {
             round_length: old_constants.round_length,
@@ -52,7 +52,7 @@ impl ConstantsV2_0_0 {
 }
 
 #[cw_serde]
-pub struct ProposalV2_0_0 {
+pub struct ProposalV2_0_1 {
     pub round_id: u64,
     pub tranche_id: u64,
     pub proposal_id: u64,
@@ -64,7 +64,7 @@ pub struct ProposalV2_0_0 {
     pub minimum_atom_liquidity_request: Uint128,
 }
 
-impl ProposalV2_0_0 {
+impl ProposalV2_0_1 {
     pub fn from(old_proposal: ProposalV1_1_0) -> Self {
         Self {
             round_id: old_proposal.round_id,
@@ -82,7 +82,7 @@ impl ProposalV2_0_0 {
 }
 
 #[cw_serde]
-pub struct VoteV2_0_0 {
+pub struct VoteV2_0_1 {
     pub prop_id: u64,
     pub time_weighted_shares: (String, Decimal),
 }
@@ -98,10 +98,10 @@ struct NewVoteInfo {
     pub tranche_id: u64,
     pub voter: Addr,
     pub lock_id: u64,
-    pub vote: VoteV2_0_0,
+    pub vote: VoteV2_0_1,
 }
 
-// Migrating from 1.1.0 to 2.0.0 will:
+// Migrating from 1.1.0 to 2.0.1 will:
 // - Migrate the existing Constants to add "max_bid_duration" field
 // - Migrate the existing Proposals to add "bid_duration" and "minimum_atom_liquidity_request" fields
 // - Migrate each Vote from first round to a new format where the key will also include lock_id, and the value
@@ -110,9 +110,9 @@ struct NewVoteInfo {
 //   we iterate over all lock entries that belong to a user and create a vote for each lock entry.
 //   All votes saved under the old keys are removed from the store, and the replacing votes are added
 //   under the new keys.
-pub fn migrate_v1_1_0_to_v2_0_0(
+pub fn migrate_v1_1_0_to_v2_0_1(
     deps: &mut DepsMut<NeutronQuery>,
-    msg: MigrateMsgV2_0_0,
+    msg: MigrateMsgV2_0_1,
 ) -> Result<(), ContractError> {
     migrate_constants(deps.storage, msg)?;
     migrate_proposals(deps.storage)?;
@@ -123,13 +123,13 @@ pub fn migrate_v1_1_0_to_v2_0_0(
 
 fn migrate_constants(
     storage: &mut dyn Storage,
-    migrate_msg: MigrateMsgV2_0_0,
+    migrate_msg: MigrateMsgV2_0_1,
 ) -> Result<(), ContractError> {
     const OLD_CONSTANTS: Item<ConstantsV1_1_0> = Item::new("constants");
-    const NEW_CONSTANTS: Item<ConstantsV2_0_0> = Item::new("constants");
+    const NEW_CONSTANTS: Item<ConstantsV2_0_1> = Item::new("constants");
 
     let old_constants = OLD_CONSTANTS.load(storage)?;
-    let new_constants = ConstantsV2_0_0::from(old_constants, migrate_msg.max_bid_duration);
+    let new_constants = ConstantsV2_0_1::from(old_constants, migrate_msg.max_bid_duration);
     NEW_CONSTANTS.save(storage, &new_constants)?;
 
     Ok(())
@@ -137,14 +137,14 @@ fn migrate_constants(
 
 fn migrate_proposals(storage: &mut dyn Storage) -> Result<(), ContractError> {
     const OLD_PROPOSAL_MAP: Map<(u64, u64, u64), ProposalV1_1_0> = Map::new("prop_map");
-    const NEW_PROPOSAL_MAP: Map<(u64, u64, u64), ProposalV2_0_0> = Map::new("prop_map");
+    const NEW_PROPOSAL_MAP: Map<(u64, u64, u64), ProposalV2_0_1> = Map::new("prop_map");
 
     let old_proposals = OLD_PROPOSAL_MAP.range(storage, None, None, Order::Descending);
     let mut new_proposals = vec![];
 
     for old_proposal in old_proposals {
         let ((_, _, _), old_proposal) = old_proposal?;
-        new_proposals.push(ProposalV2_0_0::from(old_proposal));
+        new_proposals.push(ProposalV2_0_1::from(old_proposal));
     }
 
     for new_proposal in new_proposals {
@@ -164,7 +164,7 @@ fn migrate_proposals(storage: &mut dyn Storage) -> Result<(), ContractError> {
 
 fn migrate_votes(deps: &mut DepsMut<NeutronQuery>) -> Result<(), ContractError> {
     const OLD_VOTE_MAP: Map<(u64, u64, Addr), VoteV1_1_0> = Map::new("vote_map");
-    const NEW_VOTE_MAP: Map<((u64, u64), Addr, u64), VoteV2_0_0> = Map::new("vote_map");
+    const NEW_VOTE_MAP: Map<((u64, u64), Addr, u64), VoteV2_0_1> = Map::new("vote_map");
 
     let mut old_votes = vec![];
     let mut new_votes = vec![];
@@ -203,10 +203,12 @@ fn migrate_votes(deps: &mut DepsMut<NeutronQuery>) -> Result<(), ContractError> 
                 }
             };
 
-            if !is_active_round_validator(deps.storage, round_id, &validator.clone()) {
-                continue;
-            }
-
+            // We do not check if the validator is active at the moment we run the migration, since this can change
+            // afterwards. Instead, we will create a vote for each lock that user has. The reasoning is as follows:
+            // if user voted, most likely they voted with all their locks. If they first voted and then locked more
+            // tokens, this would add the new lock to their vote. If user voted with tokens from validator that later
+            // dropped out from the top N, this lock's power would remain in user's vote, which is the same we do in
+            // this migration. Votes with tokens from dropped-out validators will be filtered out in query_votes().
             let scaled_shares = Decimal::from_ratio(
                 get_lock_time_weighted_shares(round_end, lock_entry.clone(), lock_epoch_length),
                 Uint128::one(),
@@ -221,7 +223,7 @@ fn migrate_votes(deps: &mut DepsMut<NeutronQuery>) -> Result<(), ContractError> 
                 tranche_id,
                 voter: voter.clone(),
                 lock_id: lock_entry.lock_id,
-                vote: VoteV2_0_0 {
+                vote: VoteV2_0_1 {
                     prop_id: old_vote.prop_id,
                     time_weighted_shares: (validator, scaled_shares),
                 },
