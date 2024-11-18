@@ -6,11 +6,11 @@ use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 use hydro::msg::{ExecuteMsg, InstantiateMsg};
 use hydro::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    LiquidityDeploymentResponse, ProposalResponse, QueryMsg, RoundEndResponse,
-    RoundProposalsResponse, RoundTotalVotingPowerResponse,
-    RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse, TotalLockedTokensResponse,
-    TranchesResponse, UserVotesResponse, UserVotingPowerResponse, WhitelistAdminsResponse,
-    WhitelistResponse,
+    ICQManagersResponse, LiquidityDeploymentResponse, ProposalResponse, QueryMsg,
+    RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
+    RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse,
+    TotalLockedTokensResponse, TranchesResponse, UserVotesResponse, UserVotingPowerResponse,
+    ValidatorPowerRatioResponse, WhitelistAdminsResponse, WhitelistResponse,
 };
 
 fn main() {
@@ -43,4 +43,7 @@ fn main() {
         &schema_for!(RoundTrancheLiquidityDeploymentsResponse),
         &out_dir,
     );
+    export_schema(&schema_for!(ICQManagersResponse), &out_dir);
+    export_schema(&schema_for!(RegisteredValidatorQueriesResponse), &out_dir);
+    export_schema(&schema_for!(ValidatorPowerRatioResponse), &out_dir);
 }

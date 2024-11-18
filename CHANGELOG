@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## v2.0.0
+
+Date: November 18th, 2024
+
+### FEATURES
+
+- Adjusts tributes to only be claimable if their proposal received a non-zero fund deployment.
+  ([\#164](https://github.com/informalsystems/hydro/pull/164))
+- Add a minimum liquidity request value to proposals.
+  ([\#164](https://github.com/informalsystems/hydro/pull/164))
+- Allow whitelist admins to register performed liquidity deployments in the Hydro contract.
+  ([\#164](https://github.com/informalsystems/hydro/pull/164))
+- Allow bids to set a custom duration they would like to receive liquidity for.
+  ([\#165](https://github.com/informalsystems/hydro/pull/165))
+
 ## v1.1.0
 
 Date: October 22nd, 2024
@@ -12,6 +27,8 @@ Date: October 22nd, 2024
   ([\#149](https://github.com/informalsystems/hydro/pull/149))
 - Adds a migration to change the start of the first contract on an instantiated contract
   ([\#156](https://github.com/informalsystems/hydro/pull/156))
+- Fractional voting support
+  ([\#157](https://github.com/informalsystems/hydro/pull/157))
 
 ## v1.0.3
 

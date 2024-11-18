@@ -138,6 +138,10 @@ export interface TrancheInfo {
 export interface ExpiredUserLockupsResponse {
   lockups: LockEntry[];
 }
+export type Addr = string;
+export interface ICQManagersResponse {
+  managers: Addr[];
+}
 export interface InstantiateMsg {
   first_round_start: Timestamp;
   hub_connection_id: string;
@@ -265,6 +269,9 @@ export type QueryMsg = {
     tranche_id: number;
   };
 };
+export interface RegisteredValidatorQueriesResponse {
+  query_ids: [string, number][];
+}
 export interface RoundEndResponse {
   round_end: Timestamp;
 }
@@ -302,7 +309,9 @@ export interface VoteWithPower {
 export interface UserVotingPowerResponse {
   voting_power: number;
 }
-export type Addr = string;
+export interface ValidatorPowerRatioResponse {
+  ratio: Decimal;
+}
 export interface WhitelistAdminsResponse {
   admins: Addr[];
 }
