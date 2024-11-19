@@ -1,4 +1,3 @@
-use cosmwasm_std::Uint128;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -28,9 +27,4 @@ pub enum ExecuteMsg {
         proposal_id: u64,
         tribute_id: u64,
     },
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct MigrateMsg {
-    pub min_prop_percent_for_claimable_tributes: Uint128,
 }

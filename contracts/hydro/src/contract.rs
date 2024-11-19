@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+// entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
+#[allow(unused_imports)]
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
     MessageInfo, Order, Reply, Response, StdError, StdResult, Storage, Timestamp, Uint128,
@@ -948,7 +950,7 @@ fn vote(
 
 // Returns the time-weighted amount of shares locked in the given lock entry in a round with the given end time,
 // and using the given lock epoch length.
-fn get_lock_time_weighted_shares(
+pub fn get_lock_time_weighted_shares(
     round_end: Timestamp,
     lock_entry: LockEntry,
     lock_epoch_length: u64,

@@ -30,6 +30,26 @@ pub fn validate_denom(
     constants: &Constants,
     denom: String,
 ) -> StdResult<String> {
+    let validator = resolve_validator_from_denom(&deps, constants, denom)?;
+    let round_id = compute_current_round_id(&env, constants)?;
+    let max_validators = constants.max_validator_shares_participating;
+
+    if is_active_round_validator(deps.storage, round_id, &validator) {
+        Ok(validator)
+    } else {
+        Err(StdError::generic_err(format!(
+            "Validator {} is not present; possibly they are not part of the top {} validators by delegated tokens",
+            validator,
+            max_validators
+        )))
+    }
+}
+
+pub fn resolve_validator_from_denom(
+    deps: &Deps<NeutronQuery>,
+    constants: &Constants,
+    denom: String,
+) -> StdResult<String> {
     if !denom.starts_with(IBC_TOKEN_PREFIX) {
         return Err(StdError::generic_err("IBC token expected"));
     }
@@ -59,19 +79,7 @@ pub fn validate_denom(
         ));
     }
 
-    let validator = base_denom_parts[0].to_string();
-    let round_id = compute_current_round_id(&env, constants)?;
-    let max_validators = constants.max_validator_shares_participating;
-
-    if is_active_round_validator(deps.storage, round_id, &validator) {
-        Ok(validator)
-    } else {
-        Err(StdError::generic_err(format!(
-            "Validator {} is not present; possibly they are not part of the top {} validators by delegated tokens",
-            validator,
-            max_validators
-        )))
-    }
+    Ok(base_denom_parts[0].to_string())
 }
 
 pub fn is_active_round_validator(storage: &dyn Storage, round_id: u64, validator: &str) -> bool {
@@ -117,7 +125,7 @@ pub fn get_validator_power_ratio_for_round(
     }
 }
 
-pub fn query_ibc_denom_trace(deps: Deps<NeutronQuery>, denom: String) -> StdResult<DenomTrace> {
+fn query_ibc_denom_trace(deps: &Deps<NeutronQuery>, denom: String) -> StdResult<DenomTrace> {
     TransferQuerier::new(&deps.querier)
         .denom_trace(denom)
         .map_err(|err| StdError::generic_err(format!("Failed to obtain IBC denom trace: {}", err)))?
