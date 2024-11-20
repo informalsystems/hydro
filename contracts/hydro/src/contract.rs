@@ -1729,7 +1729,8 @@ pub fn query_user_voting_power(
 // It goes through all user votes per lock_id and groups them by the
 // proposal ID. The returned result will contain one VoteWithPower per
 // each proposal ID, with the total power summed up from all lock IDs
-// used to vote for that proposal.
+// used to vote for that proposal. The votes that are referring to the
+// validators that later dropped out from the top N will be filtered out.
 pub fn query_user_votes(
     deps: Deps<NeutronQuery>,
     round_id: u64,
@@ -1739,22 +1740,35 @@ pub fn query_user_votes(
     let user_address = deps.api.addr_validate(&user_address)?;
     let mut voted_proposals_power_sum: HashMap<u64, Decimal> = HashMap::new();
 
-    VOTE_MAP
+    let votes = VOTE_MAP
         .prefix(((round_id, tranche_id), user_address.clone()))
         .range(deps.storage, None, None, Order::Ascending)
         .filter_map(|vote| match vote {
             Err(_) => None,
             Ok(vote) => Some(vote.1),
         })
-        .for_each(|vote| {
-            let current_power = match voted_proposals_power_sum.get(&vote.prop_id) {
-                None => Decimal::zero(),
-                Some(current_power) => *current_power,
-            };
+        .collect::<Vec<Vote>>();
 
-            let new_power = current_power + vote.time_weighted_shares.1;
-            voted_proposals_power_sum.insert(vote.prop_id, new_power);
-        });
+    for vote in votes {
+        let vote_validator = vote.time_weighted_shares.0;
+        // If the validator was active in the given round, we will get its power ratio.
+        // If it wasn't we will get 0, which means we should filter out this vote.
+        let val_power_ratio =
+            get_validator_power_ratio_for_round(deps.storage, round_id, vote_validator)?;
+
+        let vote_power = vote.time_weighted_shares.1.checked_mul(val_power_ratio)?;
+        if vote_power == Decimal::zero() {
+            continue;
+        }
+
+        let current_power = match voted_proposals_power_sum.get(&vote.prop_id) {
+            None => Decimal::zero(),
+            Some(current_power) => *current_power,
+        };
+
+        let new_power = current_power.checked_add(vote_power)?;
+        voted_proposals_power_sum.insert(vote.prop_id, new_power);
+    }
 
     if voted_proposals_power_sum.is_empty() {
         return Err(StdError::generic_err(
