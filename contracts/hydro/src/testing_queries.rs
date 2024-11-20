@@ -1,13 +1,18 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
-use crate::contract::{compute_current_round_id, query_all_user_lockups, scale_lockup_power};
-use crate::state::CONSTANTS;
+use crate::contract::{
+    compute_current_round_id, query_all_user_lockups, query_user_votes, scale_lockup_power,
+};
+use crate::state::{ValidatorInfo, Vote, CONSTANTS, VALIDATORS_INFO, VOTE_MAP};
 use crate::testing::{
     get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds, IBC_DENOM_1,
-    ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
+    ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_3,
 };
 use crate::testing_lsm_integration::set_validator_power_ratio;
-use crate::testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, MockQuerier};
+use crate::testing_mocks::{
+    denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
+};
 use crate::{
     contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
     msg::ExecuteMsg,
@@ -17,7 +22,7 @@ use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
     Coin, Env, OwnedDeps,
 };
-use cosmwasm_std::{Decimal, Uint128};
+use cosmwasm_std::{Addr, Decimal, StdError, StdResult, Uint128};
 use neutron_sdk::bindings::query::NeutronQuery;
 
 #[test]
@@ -269,6 +274,355 @@ fn query_user_voting_power_test() {
     let voting_power = get_user_voting_power(&deps, env.clone(), info.sender.to_string());
     let expected_voting_power = second_lockup_amount + (second_lockup_amount / 4);
     assert_eq!(expected_voting_power, voting_power);
+}
+
+#[test]
+fn query_user_votes_test() {
+    struct VoteToCreate {
+        round_id: u64,
+        tranche_id: u64,
+        lock_id: u64,
+        vote: Vote,
+    }
+
+    struct ValidatorInfoToCreate {
+        round_id: u64,
+        validator_info: ValidatorInfo,
+    }
+
+    struct TestCase {
+        description: String,
+        voter: Addr,
+        votes_to_create: Vec<VoteToCreate>,
+        validator_infos_to_create: Vec<ValidatorInfoToCreate>,
+        expected_votes: StdResult<HashMap<u64, Decimal>>,
+    }
+
+    let round_id = 0;
+    let tranche_id = 1;
+
+    let deps = mock_dependencies(no_op_grpc_query_mock());
+    let voter = deps.api.addr_make("addr0000");
+
+    let first_proposal_id = 3;
+    let second_proposal_id = 5;
+
+    let test_cases = vec![
+        TestCase {
+            description: "votes with LSM shares from active round validators that were not slashed"
+                .to_string(),
+            voter: voter.clone(),
+            votes_to_create: vec![
+                VoteToCreate {
+                    round_id,
+                    tranche_id,
+                    lock_id: 0,
+                    vote: Vote {
+                        prop_id: first_proposal_id,
+                        time_weighted_shares: (
+                            VALIDATOR_1.to_string(),
+                            Decimal::from_ratio(500u128, Uint128::one()),
+                        ),
+                    },
+                },
+                VoteToCreate {
+                    round_id,
+                    tranche_id,
+                    lock_id: 1,
+                    vote: Vote {
+                        prop_id: first_proposal_id,
+                        time_weighted_shares: (
+                            VALIDATOR_2.to_string(),
+                            Decimal::from_ratio(300u128, Uint128::one()),
+                        ),
+                    },
+                },
+                VoteToCreate {
+                    round_id,
+                    tranche_id,
+                    lock_id: 2,
+                    vote: Vote {
+                        prop_id: second_proposal_id,
+                        time_weighted_shares: (
+                            VALIDATOR_2.to_string(),
+                            Decimal::from_ratio(700u128, Uint128::one()),
+                        ),
+                    },
+                },
+            ],
+            validator_infos_to_create: vec![
+                ValidatorInfoToCreate {
+                    round_id,
+                    validator_info: ValidatorInfo {
+                        address: VALIDATOR_1.to_string(),
+                        delegated_tokens: Uint128::zero(),
+                        power_ratio: Decimal::from_str("1.0").unwrap(),
+                    },
+                },
+                ValidatorInfoToCreate {
+                    round_id,
+                    validator_info: ValidatorInfo {
+                        address: VALIDATOR_2.to_string(),
+                        delegated_tokens: Uint128::zero(),
+                        power_ratio: Decimal::from_str("1.0").unwrap(),
+                    },
+                },
+            ],
+            expected_votes: Ok(HashMap::from([
+                (
+                    first_proposal_id,
+                    Decimal::from_ratio(800u128, Uint128::one()),
+                ),
+                (
+                    second_proposal_id,
+                    Decimal::from_ratio(700u128, Uint128::one()),
+                ),
+            ])),
+        },
+        TestCase {
+            description:
+                "votes with LSM shares from active round validators where some of them were slashed"
+                    .to_string(),
+            voter: voter.clone(),
+            votes_to_create: vec![
+                VoteToCreate {
+                    round_id,
+                    tranche_id,
+                    lock_id: 0,
+                    vote: Vote {
+                        prop_id: first_proposal_id,
+                        time_weighted_shares: (
+                            VALIDATOR_1.to_string(),
+                            Decimal::from_ratio(500u128, Uint128::one()),
+                        ),
+                    },
+                },
+                VoteToCreate {
+                    round_id,
+                    tranche_id,
+                    lock_id: 1,
+                    vote: Vote {
+                        prop_id: first_proposal_id,
+                        time_weighted_shares: (
+                            VALIDATOR_2.to_string(),
+                            Decimal::from_ratio(500u128, Uint128::one()),
+                        ),
+                    },
+                },
+                VoteToCreate {
+                    round_id,
+                    tranche_id,
+                    lock_id: 2,
+                    vote: Vote {
+                        prop_id: second_proposal_id,
+                        time_weighted_shares: (
+                            VALIDATOR_2.to_string(),
+                            Decimal::from_ratio(700u128, Uint128::one()),
+                        ),
+                    },
+                },
+            ],
+            validator_infos_to_create: vec![
+                ValidatorInfoToCreate {
+                    round_id,
+                    validator_info: ValidatorInfo {
+                        address: VALIDATOR_1.to_string(),
+                        delegated_tokens: Uint128::zero(),
+                        power_ratio: Decimal::from_str("1.0").unwrap(),
+                    },
+                },
+                ValidatorInfoToCreate {
+                    round_id,
+                    validator_info: ValidatorInfo {
+                        address: VALIDATOR_2.to_string(),
+                        delegated_tokens: Uint128::zero(),
+                        power_ratio: Decimal::from_str("0.98").unwrap(),
+                    },
+                },
+            ],
+            expected_votes: Ok(HashMap::from([
+                (
+                    first_proposal_id,
+                    Decimal::from_ratio(990u128, Uint128::one()),
+                ),
+                (
+                    second_proposal_id,
+                    Decimal::from_ratio(686u128, Uint128::one()),
+                ),
+            ])),
+        },
+        TestCase {
+            description: "votes with LSM shares from only inactive round validators".to_string(),
+            voter: voter.clone(),
+            votes_to_create: vec![
+                VoteToCreate {
+                    round_id,
+                    tranche_id,
+                    lock_id: 0,
+                    vote: Vote {
+                        prop_id: first_proposal_id,
+                        time_weighted_shares: (
+                            VALIDATOR_1.to_string(),
+                            Decimal::from_ratio(500u128, Uint128::one()),
+                        ),
+                    },
+                },
+                VoteToCreate {
+                    round_id,
+                    tranche_id,
+                    lock_id: 1,
+                    vote: Vote {
+                        prop_id: first_proposal_id,
+                        time_weighted_shares: (
+                            VALIDATOR_2.to_string(),
+                            Decimal::from_ratio(500u128, Uint128::one()),
+                        ),
+                    },
+                },
+            ],
+            validator_infos_to_create: vec![ValidatorInfoToCreate {
+                round_id,
+                validator_info: ValidatorInfo {
+                    address: VALIDATOR_3.to_string(),
+                    delegated_tokens: Uint128::zero(),
+                    power_ratio: Decimal::from_str("1.0").unwrap(),
+                },
+            }],
+            expected_votes: Err(StdError::generic_err(
+                "User didn't vote in the given round and tranche",
+            )),
+        },
+        TestCase {
+            description:
+                "votes with LSM shares from some active and some inactive round validators"
+                    .to_string(),
+            voter: voter.clone(),
+            votes_to_create: vec![
+                VoteToCreate {
+                    round_id,
+                    tranche_id,
+                    lock_id: 0,
+                    vote: Vote {
+                        prop_id: first_proposal_id,
+                        time_weighted_shares: (
+                            VALIDATOR_1.to_string(),
+                            Decimal::from_ratio(500u128, Uint128::one()),
+                        ),
+                    },
+                },
+                VoteToCreate {
+                    round_id,
+                    tranche_id,
+                    lock_id: 1,
+                    vote: Vote {
+                        prop_id: first_proposal_id,
+                        time_weighted_shares: (
+                            VALIDATOR_2.to_string(),
+                            Decimal::from_ratio(300u128, Uint128::one()),
+                        ),
+                    },
+                },
+                VoteToCreate {
+                    round_id,
+                    tranche_id,
+                    lock_id: 2,
+                    vote: Vote {
+                        prop_id: second_proposal_id,
+                        time_weighted_shares: (
+                            VALIDATOR_2.to_string(),
+                            Decimal::from_ratio(700u128, Uint128::one()),
+                        ),
+                    },
+                },
+            ],
+            validator_infos_to_create: vec![
+                ValidatorInfoToCreate {
+                    round_id,
+                    validator_info: ValidatorInfo {
+                        address: VALIDATOR_1.to_string(),
+                        delegated_tokens: Uint128::zero(),
+                        power_ratio: Decimal::from_str("0.95").unwrap(),
+                    },
+                },
+                ValidatorInfoToCreate {
+                    round_id,
+                    validator_info: ValidatorInfo {
+                        address: VALIDATOR_3.to_string(),
+                        delegated_tokens: Uint128::zero(),
+                        power_ratio: Decimal::from_str("1.0").unwrap(),
+                    },
+                },
+            ],
+            expected_votes: Ok(HashMap::from([(
+                first_proposal_id,
+                Decimal::from_ratio(475u128, Uint128::one()),
+            )])),
+        },
+    ];
+
+    for test_case in test_cases {
+        println!("running test case: {}", test_case.description);
+        let (mut deps, _env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+
+        for vote_to_create in &test_case.votes_to_create {
+            let res = VOTE_MAP.save(
+                &mut deps.storage,
+                (
+                    (vote_to_create.round_id, vote_to_create.tranche_id),
+                    test_case.voter.clone(),
+                    vote_to_create.lock_id,
+                ),
+                &vote_to_create.vote,
+            );
+            assert!(res.is_ok(), "failed to save vote");
+        }
+
+        for validator_info_to_create in &test_case.validator_infos_to_create {
+            let res = VALIDATORS_INFO.save(
+                &mut deps.storage,
+                (
+                    validator_info_to_create.round_id,
+                    validator_info_to_create.validator_info.address.clone(),
+                ),
+                &validator_info_to_create.validator_info,
+            );
+            assert!(res.is_ok(), "failed to save validator info");
+        }
+
+        let res = query_user_votes(
+            deps.as_ref(),
+            round_id,
+            tranche_id,
+            test_case.voter.to_string(),
+        );
+
+        match test_case.expected_votes {
+            Ok(expected_votes) => {
+                assert!(res.is_ok(), "failed to get user votes");
+
+                let user_votes = res.unwrap().votes;
+                assert_eq!(
+                    user_votes.len(),
+                    expected_votes.len(),
+                    "unexpected number of votes"
+                );
+
+                for user_vote in user_votes {
+                    let expected_vote_power = expected_votes.get(&user_vote.prop_id);
+                    assert!(
+                        expected_vote_power.is_some(),
+                        "query returned unexpected vote"
+                    );
+
+                    assert_eq!(user_vote.power, expected_vote_power.unwrap());
+                }
+            }
+            Err(err) => {
+                assert!(res.is_err(), "error expected but wasn't received");
+                assert!(res.unwrap_err().to_string().contains(&err.to_string()));
+            }
+        }
+    }
 }
 
 fn get_expired_user_lockups(
