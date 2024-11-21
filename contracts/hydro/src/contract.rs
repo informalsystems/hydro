@@ -857,6 +857,8 @@ fn vote(
 
     let lock_epoch_length = constants.lock_epoch_length;
     let mut voted_proposals = vec![];
+    let mut locks_voted = vec![];
+    let mut locks_skipped = vec![];
 
     for proposal_to_lockups in proposals_votes {
         let proposal_id = proposal_to_lockups.proposal_id;
@@ -883,6 +885,7 @@ fn vote(
                         ));
 
                     // skip this lock entry, since the locked shares do not belong to a validator that we want to take into account
+                    locks_skipped.push(lock_entry.lock_id);
                     continue;
                 }
             };
@@ -894,13 +897,17 @@ fn vote(
 
             // skip the lock entries that give zero voting power
             if scaled_shares.is_zero() {
+                locks_skipped.push(lock_entry.lock_id);
                 continue;
             }
 
             let proposal = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
 
-            // ensure that lock entry spans long enough to be allowed to vote for this proposal
-            can_lock_vote_for_proposal(round_id, &constants, &lock_entry, &proposal)?;
+            // skip lock entries that don't span long enough to be allowed to vote for this proposal
+            if !can_lock_vote_for_proposal(round_id, &constants, &lock_entry, &proposal)? {
+                locks_skipped.push(lock_entry.lock_id);
+                continue;
+            }
 
             // add the validator shares to the proposal
             add_validator_shares_to_proposal(
@@ -931,21 +938,25 @@ fn vote(
                 (tranche_id, lock_id),
                 &voting_allowed_round,
             )?;
+
+            locks_voted.push(lock_entry.lock_id);
         }
 
         voted_proposals.push(proposal_id);
     }
 
-    if !voted_proposals.is_empty() {
-        let voted_props_attr = voted_proposals
+    let to_string = |input: &Vec<u64>| {
+        input
             .iter()
-            .map(|proposal_id| proposal_id.to_string())
+            .map(|id| id.to_string())
             .collect::<Vec<String>>()
-            .join(",");
-        Ok(response.add_attribute("proposal_id", voted_props_attr))
-    } else {
-        Ok(response)
-    }
+            .join(",")
+    };
+
+    Ok(response
+        .add_attribute("proposal_id", to_string(&voted_proposals))
+        .add_attribute("locks_voted", to_string(&locks_voted))
+        .add_attribute("locks_skipped", to_string(&locks_skipped)))
 }
 
 // Returns the time-weighted amount of shares locked in the given lock entry in a round with the given end time,
@@ -2097,9 +2108,7 @@ fn update_voting_power_on_proposals(
             // always be satisfied when refreshing the lock entry, since we already checked this
             // condition when user voted with this lock entry, and refreshing the lock only allows
             // lock duration to be extended.
-            if can_lock_vote_for_proposal(current_round, constants, &new_lock_entry, &proposal)
-                .is_err()
-            {
+            if !can_lock_vote_for_proposal(current_round, constants, &new_lock_entry, &proposal)? {
                 continue;
             }
 
@@ -2222,17 +2231,11 @@ fn can_lock_vote_for_proposal(
     constants: &Constants,
     lock_entry: &LockEntry,
     proposal: &Proposal,
-) -> Result<(), ContractError> {
+) -> Result<bool, ContractError> {
     let power_required_round_id = current_round + proposal.bid_duration - 1;
     let power_required_round_end = compute_round_end(constants, power_required_round_id)?;
 
-    if power_required_round_end > lock_entry.lock_end {
-        return Err(ContractError::Std(StdError::generic_err(
-            format!("Can not use lock with ID {} to vote for proposal with ID {}. Given lock expires before the start of the round in which the liquidity should be returned.",
-                lock_entry.lock_id, proposal.proposal_id))));
-    }
-
-    Ok(())
+    Ok(lock_entry.lock_end >= power_required_round_end)
 }
 
 /// This function relies on PROPOSAL_TOTAL_MAP and SCALED_PROPOSAL_SHARES_MAP being

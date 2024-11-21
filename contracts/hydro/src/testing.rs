@@ -1105,9 +1105,13 @@ fn vote_extended_proposals_test() {
     // check that users voted for the second proposal
     let res = query_user_votes(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
     assert!(res.is_ok(), "error: {:?}", res);
-    assert_eq!(second_proposal_id, res.unwrap().votes[0].prop_id);
+    let user_vote = res.unwrap().votes[0].clone();
+    assert_eq!(second_proposal_id, user_vote.prop_id);
 
-    // try to vote for second proposal p(2) with lock that doesn't span long enough
+    // save vote power for future verification
+    let old_vote_power = user_vote.power;
+
+    // vote for second proposal p(2) with lock that doesn't span long enough
     let msg = ExecuteMsg::Vote {
         tranche_id,
         proposals_votes: vec![ProposalToLockups {
@@ -1116,8 +1120,29 @@ fn vote_extended_proposals_test() {
         }],
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_err());
-    assert!(res.unwrap_err().to_string().contains(format!("Can not use lock with ID {} to vote for proposal with ID {}. Given lock expires before the start of the round in which the liquidity should be returned.", second_lock_id, second_proposal_id).as_str()));
+    assert!(res.is_ok());
+
+    let mut second_lock_skipped = false;
+    for attribute in res.unwrap().attributes {
+        if attribute.key.eq("locks_skipped")
+            && attribute.value.contains(&second_lock_id.to_string())
+        {
+            second_lock_skipped = true;
+            break;
+        }
+    }
+    assert!(
+        second_lock_skipped,
+        "lock with ID {} should be skipped, but it wasn't",
+        second_lock_id
+    );
+
+    // verify that user's vote didn't change
+    let res = query_user_votes(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
+    assert!(res.is_ok(), "error: {:?}", res);
+    let user_vote = res.unwrap().votes[0].clone();
+    assert_eq!(second_proposal_id, user_vote.prop_id);
+    assert_eq!(old_vote_power, user_vote.power);
 
     // advance the chain by one round length to move to round 1
     env.block.time = env.block.time.plus_nanos(init_params.round_length);
