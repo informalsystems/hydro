@@ -86,7 +86,7 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         icq_update_period: 100,
         icq_managers: vec![user_address],
         is_in_pilot_mode: false,
-        max_bid_duration: 12,
+        max_deployment_duration: 12,
     }
 }
 
@@ -318,7 +318,7 @@ fn create_proposal_basic_test() {
         tranche_id: 1,
         title: "proposal title 1".to_string(),
         description: "proposal description 1".to_string(),
-        bid_duration: 1,
+        deployment_duration: 1,
         minimum_atom_liquidity_request: Uint128::zero(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg1.clone());
@@ -328,7 +328,7 @@ fn create_proposal_basic_test() {
         tranche_id: 1,
         title: "proposal title 2".to_string(),
         description: "proposal description 2".to_string(),
-        bid_duration: 1,
+        deployment_duration: 1,
         minimum_atom_liquidity_request: Uint128::zero(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg2.clone());
@@ -433,7 +433,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
             tranche_id: prop_info.0,
             title: prop_info.1,
             description: prop_info.2,
-            bid_duration: 1,
+            deployment_duration: 1,
             minimum_atom_liquidity_request: Uint128::zero(),
         };
 
@@ -680,7 +680,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         tranche_id: first_tranche_id,
         title: "proposal title 4".to_string(),
         description: "proposal description 4".to_string(),
-        bid_duration: 1,
+        deployment_duration: 1,
         minimum_atom_liquidity_request: Uint128::zero(),
     };
 
@@ -748,7 +748,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         tranche_id: first_tranche_id,
         title: "proposal title 5".to_string(),
         description: "proposal description 5".to_string(),
-        bid_duration: 3,
+        deployment_duration: 3,
         minimum_atom_liquidity_request: Uint128::zero(),
     };
 
@@ -887,7 +887,7 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
             tranche_id: prop_info.0,
             title: prop_info.1,
             description: prop_info.2,
-            bid_duration: 1,
+            deployment_duration: 1,
             minimum_atom_liquidity_request: Uint128::zero(),
         };
 
@@ -1042,19 +1042,19 @@ fn vote_extended_proposals_test() {
     let fifth_proposal_id = 4;
 
     let prop_infos = vec![
-        // proposal p(1)  with bidding period of 1 round
+        // proposal p(1)  with deployment period of 1 round
         (
             "proposal title 1".to_string(),
             "proposal description 1".to_string(),
             1,
         ),
-        // proposal p(2) with bidding period of 3 rounds
+        // proposal p(2) with deployment period of 3 rounds
         (
             "proposal title 2".to_string(),
             "proposal description 2".to_string(),
             3,
         ),
-        // proposal p(3) with bidding period of 3 rounds
+        // proposal p(3) with deployment period of 3 rounds
         (
             "proposal title 3".to_string(),
             "proposal description 3".to_string(),
@@ -1067,7 +1067,7 @@ fn vote_extended_proposals_test() {
             tranche_id,
             title: prop_info.0.clone(),
             description: prop_info.1.clone(),
-            bid_duration: prop_info.2,
+            deployment_duration: prop_info.2,
             minimum_atom_liquidity_request: Uint128::zero(),
         };
 
@@ -1162,7 +1162,7 @@ fn vote_extended_proposals_test() {
         tranche_id,
         title: prop_infos[0].0.clone(),
         description: prop_infos[0].1.clone(),
-        bid_duration: prop_infos[0].2,
+        deployment_duration: prop_infos[0].2,
         minimum_atom_liquidity_request: Uint128::zero(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -1207,7 +1207,7 @@ fn vote_extended_proposals_test() {
         tranche_id,
         title: prop_infos[0].0.clone(),
         description: prop_infos[0].1.clone(),
-        bid_duration: prop_infos[0].2,
+        deployment_duration: prop_infos[0].2,
         minimum_atom_liquidity_request: Uint128::zero(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -1271,7 +1271,7 @@ fn multi_tranches_test() {
         tranche_id: 1,
         title: "proposal title 1".to_string(),
         description: "proposal description 1".to_string(),
-        bid_duration: 1,
+        deployment_duration: 1,
         minimum_atom_liquidity_request: Uint128::zero(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg1.clone());
@@ -1281,7 +1281,7 @@ fn multi_tranches_test() {
         tranche_id: 1,
         title: "proposal title 2".to_string(),
         description: "proposal description 2".to_string(),
-        bid_duration: 1,
+        deployment_duration: 1,
         minimum_atom_liquidity_request: Uint128::zero(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg2.clone());
@@ -1292,7 +1292,7 @@ fn multi_tranches_test() {
         tranche_id: 2,
         title: "proposal title 3".to_string(),
         description: "proposal description 3".to_string(),
-        bid_duration: 1,
+        deployment_duration: 1,
         minimum_atom_liquidity_request: Uint128::zero(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg3.clone());
@@ -1302,7 +1302,7 @@ fn multi_tranches_test() {
         tranche_id: 2,
         title: "proposal title 4".to_string(),
         description: "proposal description 4".to_string(),
-        bid_duration: 1,
+        deployment_duration: 1,
         minimum_atom_liquidity_request: Uint128::zero(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg4.clone());
@@ -1446,7 +1446,7 @@ fn test_query_round_tranche_proposals_pagination() {
             tranche_id: 1,
             title: format!("proposal title {}", i),
             description: format!("proposal description {}", i),
-            bid_duration: 1,
+            deployment_duration: 1,
             minimum_atom_liquidity_request: Uint128::zero(),
         };
         let _ = execute(
@@ -2045,7 +2045,7 @@ fn max_locked_tokens_test() {
     info = get_message_info(&deps.api, "addr0001", &[]);
     let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
         max_locked_tokens: Some(3000),
-        max_bid_duration: None,
+        max_deployment_duration: None,
     };
     let res = execute(
         deps.as_mut(),
@@ -2117,7 +2117,7 @@ fn contract_pausing_test() {
             tranche_id: 0,
             title: "".to_string(),
             description: "".to_string(),
-            bid_duration: 1,
+            deployment_duration: 1,
             minimum_atom_liquidity_request: Uint128::zero(),
         },
         ExecuteMsg::Vote {
@@ -2135,7 +2135,7 @@ fn contract_pausing_test() {
         },
         ExecuteMsg::UpdateConfig {
             max_locked_tokens: None,
-            max_bid_duration: None,
+            max_deployment_duration: None,
         },
         ExecuteMsg::Pause {},
         ExecuteMsg::AddTranche {
@@ -2202,7 +2202,7 @@ pub fn whitelist_proposal_submission_test() {
         tranche_id: 1,
         title: "proposal title".to_string(),
         description: "proposal description".to_string(),
-        bid_duration: 1,
+        deployment_duration: 1,
         minimum_atom_liquidity_request: Uint128::zero(),
     };
 

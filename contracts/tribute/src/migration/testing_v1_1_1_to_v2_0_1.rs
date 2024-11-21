@@ -44,7 +44,7 @@ fn test_migrate() {
         icq_update_period: 109000,
         paused: false,
         is_in_pilot_mode: true,
-        max_bid_duration: 12,
+        max_deployment_duration: 12,
     };
 
     let mock_querier = MockWasmQuerier::new(

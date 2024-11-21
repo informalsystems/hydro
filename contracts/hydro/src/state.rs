@@ -18,7 +18,7 @@ pub struct Constants {
     pub icq_update_period: u64,
     pub paused: bool,
     pub is_in_pilot_mode: bool,
-    pub max_bid_duration: u64,
+    pub max_deployment_duration: u64,
 }
 
 // the total number of tokens locked in the contract
@@ -51,7 +51,7 @@ pub struct Proposal {
     pub description: String,
     pub power: Uint128,
     pub percentage: Uint128,
-    pub bid_duration: u64, // number of rounds liquidity is allocated excluding voting round.
+    pub deployment_duration: u64, // number of rounds liquidity is allocated excluding voting round.
     pub minimum_atom_liquidity_request: Uint128,
 }
 

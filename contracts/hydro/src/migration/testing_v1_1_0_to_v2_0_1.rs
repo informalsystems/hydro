@@ -127,7 +127,7 @@ fn test_constants_and_proposals_migration() {
 
     // Run the migration
     let migrate_msg = MigrateMsgV2_0_1 {
-        max_bid_duration: 12,
+        max_deployment_duration: 12,
     };
     let res = migrate(deps.as_mut(), env.clone(), migrate_msg.clone());
     assert!(res.is_ok(), "migration failed!");
@@ -144,7 +144,7 @@ fn test_constants_and_proposals_migration() {
         icq_update_period: old_constants.icq_update_period,
         paused: old_constants.paused,
         is_in_pilot_mode: old_constants.is_in_pilot_mode,
-        max_bid_duration: migrate_msg.max_bid_duration,
+        max_deployment_duration: migrate_msg.max_deployment_duration,
     };
     let res = NEW_CONSTANTS.load(&deps.storage);
     assert!(
@@ -181,7 +181,7 @@ fn test_constants_and_proposals_migration() {
             percentage: old_proposal.percentage,
             title: old_proposal.title,
             description: old_proposal.description,
-            bid_duration: 1,
+            deployment_duration: 1,
             minimum_atom_liquidity_request: Uint128::zero(),
         };
         assert_eq!(
@@ -419,7 +419,7 @@ fn test_votes_migration() {
 
     // Run the migration
     let migrate_msg = MigrateMsgV2_0_1 {
-        max_bid_duration: 12,
+        max_deployment_duration: 12,
     };
     let res = migrate(deps.as_mut(), env.clone(), migrate_msg);
     assert!(res.is_ok(), "migration failed!");

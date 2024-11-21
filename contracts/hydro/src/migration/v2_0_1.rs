@@ -14,7 +14,7 @@ use crate::state::{CONSTANTS, LOCKS_MAP};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct MigrateMsgV2_0_1 {
-    pub max_bid_duration: u64,
+    pub max_deployment_duration: u64,
 }
 
 #[cw_serde]
@@ -29,11 +29,11 @@ pub struct ConstantsV2_0_1 {
     pub icq_update_period: u64,
     pub paused: bool,
     pub is_in_pilot_mode: bool,
-    pub max_bid_duration: u64,
+    pub max_deployment_duration: u64,
 }
 
 impl ConstantsV2_0_1 {
-    pub fn from(old_constants: ConstantsV1_1_0, max_bid_duration: u64) -> Self {
+    pub fn from(old_constants: ConstantsV1_1_0, max_deployment_duration: u64) -> Self {
         Self {
             round_length: old_constants.round_length,
             lock_epoch_length: old_constants.lock_epoch_length,
@@ -45,8 +45,8 @@ impl ConstantsV2_0_1 {
             icq_update_period: old_constants.icq_update_period,
             paused: old_constants.paused,
             is_in_pilot_mode: old_constants.is_in_pilot_mode,
-            // Set max_bid_duration to the value specified in the migrate message
-            max_bid_duration,
+            // Set max_deployment_duration to the value specified in the migrate message
+            max_deployment_duration,
         }
     }
 }
@@ -60,7 +60,7 @@ pub struct ProposalV2_0_1 {
     pub description: String,
     pub power: Uint128,
     pub percentage: Uint128,
-    pub bid_duration: u64,
+    pub deployment_duration: u64,
     pub minimum_atom_liquidity_request: Uint128,
 }
 
@@ -75,7 +75,7 @@ impl ProposalV2_0_1 {
             title: old_proposal.title,
             description: old_proposal.description,
             // Existing proposals are getting the liquidity deployed for only one round
-            bid_duration: 1,
+            deployment_duration: 1,
             minimum_atom_liquidity_request: Uint128::zero(),
         }
     }
@@ -102,8 +102,8 @@ struct NewVoteInfo {
 }
 
 // Migrating from 1.1.0 to 2.0.1 will:
-// - Migrate the existing Constants to add "max_bid_duration" field
-// - Migrate the existing Proposals to add "bid_duration" and "minimum_atom_liquidity_request" fields
+// - Migrate the existing Constants to add "max_deployment_duration" field
+// - Migrate the existing Proposals to add "deployment_duration" and "minimum_atom_liquidity_request" fields
 // - Migrate each Vote from first round to a new format where the key will also include lock_id, and the value
 //   will no longer contain HashMap<String, Decimal> but only (String, Decimal), since each vote refers to
 //   a single lock entry, and therefore has only one LSM token denom associated with it. To construct new votes,
@@ -129,7 +129,7 @@ fn migrate_constants(
     const NEW_CONSTANTS: Item<ConstantsV2_0_1> = Item::new("constants");
 
     let old_constants = OLD_CONSTANTS.load(storage)?;
-    let new_constants = ConstantsV2_0_1::from(old_constants, migrate_msg.max_bid_duration);
+    let new_constants = ConstantsV2_0_1::from(old_constants, migrate_msg.max_deployment_duration);
     NEW_CONSTANTS.save(storage, &new_constants)?;
 
     Ok(())

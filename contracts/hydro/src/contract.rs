@@ -53,6 +53,8 @@ pub const MAX_LOCK_ENTRIES: usize = 100;
 
 pub const NATIVE_TOKEN_DENOM: &str = "untrn";
 
+pub const MIN_DEPLOYMENT_DURATION: u64 = 1;
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut<NeutronQuery>,
@@ -79,7 +81,7 @@ pub fn instantiate(
         hub_transfer_channel_id: msg.hub_transfer_channel_id,
         icq_update_period: msg.icq_update_period,
         is_in_pilot_mode: msg.is_in_pilot_mode,
-        max_bid_duration: msg.max_bid_duration,
+        max_deployment_duration: msg.max_deployment_duration,
         paused: false,
     };
 
@@ -162,7 +164,7 @@ pub fn execute(
             tranche_id,
             title,
             description,
-            bid_duration,
+            deployment_duration,
             minimum_atom_liquidity_request,
         } => create_proposal(
             deps,
@@ -171,7 +173,7 @@ pub fn execute(
             tranche_id,
             title,
             description,
-            bid_duration,
+            deployment_duration,
             minimum_atom_liquidity_request,
         ),
         ExecuteMsg::Vote {
@@ -184,8 +186,8 @@ pub fn execute(
         }
         ExecuteMsg::UpdateConfig {
             max_locked_tokens,
-            max_bid_duration,
-        } => update_config(deps, info, max_locked_tokens, max_bid_duration),
+            max_deployment_duration,
+        } => update_config(deps, info, max_locked_tokens, max_deployment_duration),
         ExecuteMsg::Pause {} => pause_contract(deps, info),
         ExecuteMsg::AddTranche { tranche } => add_tranche(deps, info, tranche),
         ExecuteMsg::EditTranche {
@@ -617,7 +619,7 @@ fn create_proposal(
     tranche_id: u64,
     title: String,
     description: String,
-    bid_duration: u64,
+    deployment_duration: u64,
     minimum_atom_liquidity_request: Uint128,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
@@ -636,11 +638,13 @@ fn create_proposal(
     // check that the tranche with the given id exists
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
-    // check that the bid duration is within the allowed range
-    if bid_duration < 1 || bid_duration > constants.max_bid_duration {
+    // check that the deployment duration is within the allowed range
+    if deployment_duration < MIN_DEPLOYMENT_DURATION
+        || deployment_duration > constants.max_deployment_duration
+    {
         return Err(ContractError::Std(StdError::generic_err(format!(
-            "Invalid bid duration: {}. Must be between {} and {} rounds.",
-            bid_duration, 1, constants.max_bid_duration,
+            "Invalid deployment duration: {}. Must be between {} and {} rounds.",
+            deployment_duration, MIN_DEPLOYMENT_DURATION, constants.max_deployment_duration,
         ))));
     }
 
@@ -654,7 +658,7 @@ fn create_proposal(
         percentage: Uint128::zero(),
         title: title.trim().to_string(),
         description: description.trim().to_string(),
-        bid_duration,
+        deployment_duration,
         minimum_atom_liquidity_request,
     };
 
@@ -932,7 +936,7 @@ fn vote(
                 &vote,
             )?;
 
-            let voting_allowed_round = round_id + proposal.bid_duration;
+            let voting_allowed_round = round_id + proposal.deployment_duration;
             VOTING_ALLOWED_ROUND.save(
                 deps.storage,
                 (tranche_id, lock_id),
@@ -1035,7 +1039,7 @@ fn update_config(
     deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
     max_locked_tokens: Option<u128>,
-    max_bid_duration: Option<u64>,
+    max_deployment_duration: Option<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let mut constants = CONSTANTS.load(deps.storage)?;
 
@@ -1051,9 +1055,12 @@ fn update_config(
         response = response.add_attribute("new_max_locked_tokens", max_locked_tokens.to_string());
     }
 
-    if let Some(max_bid_duration) = max_bid_duration {
-        constants.max_bid_duration = max_bid_duration;
-        response = response.add_attribute("new_max_bid_duration", max_bid_duration.to_string());
+    if let Some(max_deployment_duration) = max_deployment_duration {
+        constants.max_deployment_duration = max_deployment_duration;
+        response = response.add_attribute(
+            "new_max_deployment_duration",
+            max_deployment_duration.to_string(),
+        );
     }
 
     CONSTANTS.save(deps.storage, &constants)?;
@@ -2232,7 +2239,7 @@ fn can_lock_vote_for_proposal(
     lock_entry: &LockEntry,
     proposal: &Proposal,
 ) -> Result<bool, ContractError> {
-    let power_required_round_id = current_round + proposal.bid_duration - 1;
+    let power_required_round_id = current_round + proposal.deployment_duration - 1;
     let power_required_round_end = compute_round_end(constants, power_required_round_id)?;
 
     Ok(lock_entry.lock_end >= power_required_round_end)

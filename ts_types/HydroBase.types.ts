@@ -34,7 +34,7 @@ export interface Constants {
   icq_update_period: number;
   is_in_pilot_mode: boolean;
   lock_epoch_length: number;
-  max_bid_duration: number;
+  max_deployment_duration: number;
   max_locked_tokens: number;
   max_validator_shares_participating: number;
   paused: boolean;
@@ -57,7 +57,7 @@ export type ExecuteMsg = {
   unlock_tokens: {};
 } | {
   create_proposal: {
-    bid_duration: number;
+    deployment_duration: number;
     description: string;
     minimum_atom_liquidity_request: Uint128;
     title: string;
@@ -78,7 +78,7 @@ export type ExecuteMsg = {
   };
 } | {
   update_config: {
-    max_bid_duration?: number | null;
+    max_deployment_duration?: number | null;
     max_locked_tokens?: number | null;
   };
 } | {
@@ -151,7 +151,7 @@ export interface InstantiateMsg {
   initial_whitelist: string[];
   is_in_pilot_mode: boolean;
   lock_epoch_length: number;
-  max_bid_duration: number;
+  max_deployment_duration: number;
   max_locked_tokens: Uint128;
   max_validator_shares_participating: number;
   round_length: number;
@@ -175,7 +175,7 @@ export interface ProposalResponse {
   proposal: Proposal;
 }
 export interface Proposal {
-  bid_duration: number;
+  deployment_duration: number;
   description: string;
   minimum_atom_liquidity_request: Uint128;
   percentage: Uint128;
