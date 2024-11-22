@@ -857,6 +857,8 @@ fn vote(
 
     let lock_epoch_length = constants.lock_epoch_length;
     let mut voted_proposals = vec![];
+    let mut locks_voted = vec![];
+    let mut locks_skipped = vec![];
 
     for proposal_to_lockups in proposals_votes {
         let proposal_id = proposal_to_lockups.proposal_id;
@@ -883,17 +885,27 @@ fn vote(
                         ));
 
                     // skip this lock entry, since the locked shares do not belong to a validator that we want to take into account
+                    locks_skipped.push(lock_entry.lock_id);
                     continue;
                 }
             };
 
             let scaled_shares = Decimal::from_ratio(
-                get_lock_time_weighted_shares(round_end, lock_entry, lock_epoch_length),
+                get_lock_time_weighted_shares(round_end, lock_entry.clone(), lock_epoch_length),
                 Uint128::one(),
             );
 
             // skip the lock entries that give zero voting power
             if scaled_shares.is_zero() {
+                locks_skipped.push(lock_entry.lock_id);
+                continue;
+            }
+
+            let proposal = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
+
+            // skip lock entries that don't span long enough to be allowed to vote for this proposal
+            if !can_lock_vote_for_proposal(round_id, &constants, &lock_entry, &proposal)? {
+                locks_skipped.push(lock_entry.lock_id);
                 continue;
             }
 
@@ -907,12 +919,7 @@ fn vote(
             )?;
 
             // update the proposal in the proposal map, as well as the props by score map
-            let updated_proposal = update_proposal_and_props_by_score_maps(
-                deps.storage,
-                round_id,
-                tranche_id,
-                proposal_id,
-            )?;
+            update_proposal_and_props_by_score_maps(deps.storage, round_id, tranche_id, &proposal)?;
 
             // Create vote in Votemap
             let vote = Vote {
@@ -925,27 +932,31 @@ fn vote(
                 &vote,
             )?;
 
-            let voting_allowed_round = round_id + updated_proposal.bid_duration;
+            let voting_allowed_round = round_id + proposal.bid_duration;
             VOTING_ALLOWED_ROUND.save(
                 deps.storage,
                 (tranche_id, lock_id),
                 &voting_allowed_round,
             )?;
+
+            locks_voted.push(lock_entry.lock_id);
         }
 
         voted_proposals.push(proposal_id);
     }
 
-    if !voted_proposals.is_empty() {
-        let voted_props_attr = voted_proposals
+    let to_string = |input: &Vec<u64>| {
+        input
             .iter()
-            .map(|proposal_id| proposal_id.to_string())
+            .map(|id| id.to_string())
             .collect::<Vec<String>>()
-            .join(",");
-        Ok(response.add_attribute("proposal_id", voted_props_attr))
-    } else {
-        Ok(response)
-    }
+            .join(",")
+    };
+
+    Ok(response
+        .add_attribute("proposal_id", to_string(&voted_proposals))
+        .add_attribute("locks_voted", to_string(&locks_voted))
+        .add_attribute("locks_skipped", to_string(&locks_skipped)))
 }
 
 // Returns the time-weighted amount of shares locked in the given lock entry in a round with the given end time,
@@ -2088,6 +2099,19 @@ fn update_voting_power_on_proposals(
                 )));
             };
 
+            let proposal =
+                PROPOSAL_MAP.load(deps.storage, (current_round, tranche_id, vote.prop_id))?;
+
+            // Ensure that lock entry spans long enough to be allowed to vote for this proposal.
+            // If not, we will not have this lock vote for the proposal, even if user voted for
+            // only one proposal in the given round and tranche. Note that this condition will
+            // always be satisfied when refreshing the lock entry, since we already checked this
+            // condition when user voted with this lock entry, and refreshing the lock only allows
+            // lock duration to be extended.
+            if !can_lock_vote_for_proposal(current_round, constants, &new_lock_entry, &proposal)? {
+                continue;
+            }
+
             let new_vote_shares = if power_change.is_increased {
                 current_vote_shares.checked_add(power_change.scaled_power_change)?
             } else {
@@ -2128,7 +2152,7 @@ fn update_voting_power_on_proposals(
                 deps.storage,
                 current_round,
                 tranche_id,
-                vote.prop_id,
+                &proposal,
             )?;
         }
     }
@@ -2200,14 +2224,30 @@ pub fn get_vote_for_update(
     })
 }
 
+// Ensure that the lock will have a power greater than 0 at the end of
+// the round preceding the round in which the liquidity will be returned.
+fn can_lock_vote_for_proposal(
+    current_round: u64,
+    constants: &Constants,
+    lock_entry: &LockEntry,
+    proposal: &Proposal,
+) -> Result<bool, ContractError> {
+    let power_required_round_id = current_round + proposal.bid_duration - 1;
+    let power_required_round_end = compute_round_end(constants, power_required_round_id)?;
+
+    Ok(lock_entry.lock_end >= power_required_round_end)
+}
+
+/// This function relies on PROPOSAL_TOTAL_MAP and SCALED_PROPOSAL_SHARES_MAP being
+/// already updated with the new proposal power.
 fn update_proposal_and_props_by_score_maps(
     storage: &mut dyn Storage,
     round_id: u64,
     tranche_id: u64,
-    proposal_id: u64,
-) -> Result<Proposal, ContractError> {
-    // Load the proposal that needs to be updated
-    let mut proposal = PROPOSAL_MAP.load(storage, (round_id, tranche_id, proposal_id))?;
+    proposal: &Proposal,
+) -> Result<(), ContractError> {
+    let mut proposal = proposal.clone();
+    let proposal_id = proposal.proposal_id;
 
     // Delete the proposal's old power in PROPS_BY_SCORE
     PROPS_BY_SCORE.remove(
@@ -2219,7 +2259,7 @@ fn update_proposal_and_props_by_score_maps(
     let total_power = get_total_power_for_proposal(storage, proposal_id)?;
 
     // Save the new power into the proposal
-    proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
+    proposal.power = total_power.to_uint_ceil();
 
     // Save the proposal
     PROPOSAL_MAP.save(storage, (round_id, tranche_id, proposal_id), &proposal)?;
@@ -2231,7 +2271,7 @@ fn update_proposal_and_props_by_score_maps(
         &proposal_id,
     )?;
 
-    Ok(proposal)
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)] // complex function that needs a lot of arguments

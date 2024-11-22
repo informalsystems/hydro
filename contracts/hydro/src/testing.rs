@@ -363,8 +363,10 @@ fn vote_basic_test() {
     vote_test_with_start_time(mock_env().block.time, 0);
 }
 
-// If user already voted for some proposal, and then locks new tokens or refreshes the existing lock,
-// the voting power on those proposals should get updated accordingly.
+// If user already voted for only one proposal in the given round and tranche, and then locks new tokens or
+// refreshes the existing lock, the voting power on that proposal should get updated accordingly. However,
+// if user voted for proposal that requires liquidity deployment for multiple rounds, but the newly created
+// lock entry doesn't span long enough, then the voting power on such proposal should not be updated.
 #[test]
 fn proposal_power_change_on_lock_and_refresh_test() {
     let user_address = "addr0000";
@@ -449,6 +451,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
     let second_proposal_id = 1;
     let third_proposal_id = 2;
     let fourth_proposal_id = 3;
+    let fifth_proposal_id = 4;
 
     let first_lockup_id = 0;
     let second_lockup_id = 1;
@@ -739,6 +742,70 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         fourth_proposal_id,
         expected_voting_power,
     );
+
+    // create a new (fifth) proposal that requires liquidity for 3 rounds
+    let msg = ExecuteMsg::CreateProposal {
+        tranche_id: first_tranche_id,
+        title: "proposal title 5".to_string(),
+        description: "proposal description 5".to_string(),
+        bid_duration: 3,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // switch vote to the fifth proposal in tranche 1
+    let msg = ExecuteMsg::Vote {
+        tranche_id: first_tranche_id,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id: fifth_proposal_id,
+            lock_ids: vec![
+                // only the first lockup has some power in second round
+                first_lockup_id,
+            ],
+        }],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // verify users vote for the fifth proposal in tranche 1
+    expected_voting_power = 1500u128;
+
+    let res = query_user_votes(
+        deps.as_ref(),
+        second_round_id,
+        first_tranche_id,
+        info.sender.to_string(),
+    );
+    assert!(res.is_ok(), "error: {:?}", res);
+    assert_eq!(fifth_proposal_id, res.unwrap().votes[0].prop_id);
+
+    assert_proposal_voting_power(
+        &deps,
+        second_round_id,
+        first_tranche_id,
+        fifth_proposal_id,
+        expected_voting_power,
+    );
+
+    // lock more tokens for one round and verify that the fifth proposal power
+    // didn't change since the lock doesn't span long enough to be allowed to
+    // vote for this proposal.
+    let info = get_message_info(&deps.api, user_address, &[user_token1.clone()]);
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: TWO_WEEKS_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    assert_proposal_voting_power(
+        &deps,
+        second_round_id,
+        first_tranche_id,
+        fifth_proposal_id,
+        expected_voting_power,
+    );
 }
 
 #[test]
@@ -930,6 +997,7 @@ fn vote_extended_proposals_test() {
     let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
     let mut init_params = get_default_instantiate_msg(&deps.api);
     init_params.first_round_start = env.block.time;
+    init_params.round_length = ONE_MONTH_IN_NANO_SECONDS;
 
     let res = instantiate(
         deps.as_mut(),
@@ -941,8 +1009,22 @@ fn vote_extended_proposals_test() {
 
     set_default_validator_for_rounds(deps.as_mut(), 0, 5);
 
+    // advance the env time to simulate ongoing round
+    env.block.time = env.block.time.plus_hours(1);
+
+    // create a lock that will have power long enough to vote for the 'long lasting' proposal
     let msg = ExecuteMsg::LockTokens {
-        lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
+        lock_duration: 6 * ONE_MONTH_IN_NANO_SECONDS,
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    // create one more lock that will not be allowed to vote for the 'long lasting' proposal
+    // since it will have 0 power at the end of the round that precedes the round in which
+    // the liquidity should be returned
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: 2 * ONE_MONTH_IN_NANO_SECONDS,
     };
 
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -952,6 +1034,7 @@ fn vote_extended_proposals_test() {
     let tranche_id = 1;
 
     let first_lock_id = 0;
+    let second_lock_id = 1;
 
     let second_proposal_id = 1;
     let third_proposal_id = 2;
@@ -1022,7 +1105,44 @@ fn vote_extended_proposals_test() {
     // check that users voted for the second proposal
     let res = query_user_votes(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
     assert!(res.is_ok(), "error: {:?}", res);
-    assert_eq!(second_proposal_id, res.unwrap().votes[0].prop_id);
+    let user_vote = res.unwrap().votes[0].clone();
+    assert_eq!(second_proposal_id, user_vote.prop_id);
+
+    // save vote power for future verification
+    let old_vote_power = user_vote.power;
+
+    // vote for second proposal p(2) with lock that doesn't span long enough
+    let msg = ExecuteMsg::Vote {
+        tranche_id,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id: second_proposal_id,
+            lock_ids: vec![second_lock_id],
+        }],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    let mut second_lock_skipped = false;
+    for attribute in res.unwrap().attributes {
+        if attribute.key.eq("locks_skipped")
+            && attribute.value.contains(&second_lock_id.to_string())
+        {
+            second_lock_skipped = true;
+            break;
+        }
+    }
+    assert!(
+        second_lock_skipped,
+        "lock with ID {} should be skipped, but it wasn't",
+        second_lock_id
+    );
+
+    // verify that user's vote didn't change
+    let res = query_user_votes(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
+    assert!(res.is_ok(), "error: {:?}", res);
+    let user_vote = res.unwrap().votes[0].clone();
+    assert_eq!(second_proposal_id, user_vote.prop_id);
+    assert_eq!(old_vote_power, user_vote.power);
 
     // advance the chain by one round length to move to round 1
     env.block.time = env.block.time.plus_nanos(init_params.round_length);
