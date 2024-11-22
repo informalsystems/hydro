@@ -246,7 +246,7 @@ fn lock_tokens(
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
-    // if we are in pilot mode, only allow lockups of a single epoch
+
     if constants.is_in_pilot_mode {
         pilot_round_validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
     } else {
@@ -488,15 +488,22 @@ fn validate_lock_duration(lock_epoch_length: u64, lock_duration: u64) -> Result<
     Ok(())
 }
 // This is a separate validation function which will be used in the pilot rounds
-// of the contract, making sure that only lockups of a single epoch are allowed.
+// of the contract, making sure that only lockups of 1, 2 or 3 epochs are allowed.
 fn pilot_round_validate_lock_duration(
     lock_epoch_length: u64,
     lock_duration: u64,
 ) -> Result<(), ContractError> {
-    if lock_duration != lock_epoch_length {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Lock duration must be 1 epoch",
-        )));
+    if lock_duration != lock_epoch_length
+        && lock_duration != lock_epoch_length * 2
+        && lock_duration != lock_epoch_length * 3
+    {
+        return Err(ContractError::Std(StdError::generic_err(format!(
+            "Lock duration must be 1, 2 or 3 epochs: {}, {} or {}; but was: {}",
+            lock_epoch_length,
+            lock_epoch_length * 2,
+            lock_epoch_length * 3,
+            lock_duration
+        ))));
     }
 
     Ok(())
