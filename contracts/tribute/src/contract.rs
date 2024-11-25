@@ -2,13 +2,13 @@ use std::vec;
 
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
-    MessageInfo, Order, Reply, Response, StdError, StdResult, Uint128,
+    MessageInfo, Order, Response, StdError, StdResult, Uint128,
 };
 use cw2::set_contract_version;
 use hydro::msg::LiquidityDeployment;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::{
     ConfigResponse, OutstandingTributeClaimsResponse, ProposalTributesResponse, QueryMsg,
     RoundTributesResponse, TributeClaim,
@@ -722,15 +722,4 @@ fn get_liquidity_deployment(
         })?;
 
     Ok(liquidity_deployment_resp.liquidity_deployment)
-}
-
-// TODO: figure out build issue that we have if we don't define all this functions in both contracts
-#[cfg_attr(not(feature = "library"), entry_point)]
-pub fn reply(_deps: DepsMut, _env: Env, _msg: Reply) -> Result<Response, ContractError> {
-    Ok(Response::default())
-}
-
-#[cfg_attr(not(feature = "library"), entry_point)]
-pub fn sudo(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
-    Ok(Response::default())
 }

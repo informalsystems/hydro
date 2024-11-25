@@ -390,13 +390,13 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   unlockTokens: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   createProposal: ({
-    bidDuration,
+    deploymentDuration,
     description,
     minimumAtomLiquidityRequest,
     title,
     trancheId
   }: {
-    bidDuration: number;
+    deploymentDuration: number;
     description: string;
     minimumAtomLiquidityRequest: Uint128;
     title: string;
@@ -420,10 +420,10 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
     address: string;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   updateConfig: ({
-    maxBidDuration,
+    maxDeploymentDuration,
     maxLockedTokens
   }: {
-    maxBidDuration?: number;
+    maxDeploymentDuration?: number;
     maxLockedTokens?: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   pause: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
@@ -548,13 +548,13 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     }, fee, memo, _funds);
   };
   createProposal = async ({
-    bidDuration,
+    deploymentDuration,
     description,
     minimumAtomLiquidityRequest,
     title,
     trancheId
   }: {
-    bidDuration: number;
+    deploymentDuration: number;
     description: string;
     minimumAtomLiquidityRequest: Uint128;
     title: string;
@@ -562,7 +562,7 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       create_proposal: {
-        bid_duration: bidDuration,
+        deployment_duration: deploymentDuration,
         description,
         minimum_atom_liquidity_request: minimumAtomLiquidityRequest,
         title,
@@ -607,15 +607,15 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     }, fee, memo, _funds);
   };
   updateConfig = async ({
-    maxBidDuration,
+    maxDeploymentDuration,
     maxLockedTokens
   }: {
-    maxBidDuration?: number;
+    maxDeploymentDuration?: number;
     maxLockedTokens?: number;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       update_config: {
-        max_bid_duration: maxBidDuration,
+        max_deployment_duration: maxDeploymentDuration,
         max_locked_tokens: maxLockedTokens
       }
     }, fee, memo, _funds);

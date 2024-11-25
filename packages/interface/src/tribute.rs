@@ -1,11 +1,12 @@
 use cw_orch::interface;
 
-pub use tribute::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg};
+use tribute::migration::v2_0_1::MigrateMsgV2_0_1;
+pub use tribute::msg::{ExecuteMsg, InstantiateMsg};
 pub use tribute::query::QueryMsg;
 
 pub const CONTRACT_ID: &str = "tribute_contract";
 
-#[interface(InstantiateMsg, ExecuteMsg, QueryMsg, MigrateMsg, id = CONTRACT_ID)]
+#[interface(InstantiateMsg, ExecuteMsg, QueryMsg, MigrateMsgV2_0_1, id = CONTRACT_ID)]
 pub struct Tribute;
 
 #[cfg(not(target_arch = "wasm32"))]

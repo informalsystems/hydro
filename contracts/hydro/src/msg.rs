@@ -21,7 +21,7 @@ pub struct InstantiateMsg {
     // they can however not withdraw user funds that were locked for voting.
     pub icq_managers: Vec<String>,
     pub is_in_pilot_mode: bool,
-    pub max_bid_duration: u64,
+    pub max_deployment_duration: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -47,7 +47,7 @@ pub enum ExecuteMsg {
         tranche_id: u64,
         title: String,
         description: String,
-        bid_duration: u64,
+        deployment_duration: u64,
         minimum_atom_liquidity_request: Uint128,
     },
     Vote {
@@ -62,7 +62,7 @@ pub enum ExecuteMsg {
     },
     UpdateConfig {
         max_locked_tokens: Option<u128>,
-        max_bid_duration: Option<u64>,
+        max_deployment_duration: Option<u64>,
     },
     Pause {},
     AddTranche {
@@ -114,11 +114,6 @@ pub enum ExecuteMsg {
 pub struct ProposalToLockups {
     pub proposal_id: u64,
     pub lock_ids: Vec<u64>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct MigrateMsg {
-    pub new_first_round_start: Timestamp,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

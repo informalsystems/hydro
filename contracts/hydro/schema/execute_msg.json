@@ -79,14 +79,14 @@
         "create_proposal": {
           "type": "object",
           "required": [
-            "bid_duration",
+            "deployment_duration",
             "description",
             "minimum_atom_liquidity_request",
             "title",
             "tranche_id"
           ],
           "properties": {
-            "bid_duration": {
+            "deployment_duration": {
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -192,7 +192,7 @@
         "update_config": {
           "type": "object",
           "properties": {
-            "max_bid_duration": {
+            "max_deployment_duration": {
               "type": [
                 "integer",
                 "null"

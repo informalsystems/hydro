@@ -11,7 +11,7 @@
     "initial_whitelist",
     "is_in_pilot_mode",
     "lock_epoch_length",
-    "max_bid_duration",
+    "max_deployment_duration",
     "max_locked_tokens",
     "max_validator_shares_participating",
     "round_length",
@@ -53,7 +53,7 @@
       "format": "uint64",
       "minimum": 0.0
     },
-    "max_bid_duration": {
+    "max_deployment_duration": {
       "type": "integer",
       "format": "uint64",
       "minimum": 0.0

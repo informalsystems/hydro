@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+// entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
+#[allow(unused_imports)]
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
     MessageInfo, Order, Reply, Response, StdError, StdResult, Storage, Timestamp, Uint128,
@@ -51,6 +53,8 @@ pub const MAX_LOCK_ENTRIES: usize = 100;
 
 pub const NATIVE_TOKEN_DENOM: &str = "untrn";
 
+pub const MIN_DEPLOYMENT_DURATION: u64 = 1;
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut<NeutronQuery>,
@@ -77,7 +81,7 @@ pub fn instantiate(
         hub_transfer_channel_id: msg.hub_transfer_channel_id,
         icq_update_period: msg.icq_update_period,
         is_in_pilot_mode: msg.is_in_pilot_mode,
-        max_bid_duration: msg.max_bid_duration,
+        max_deployment_duration: msg.max_deployment_duration,
         paused: false,
     };
 
@@ -160,7 +164,7 @@ pub fn execute(
             tranche_id,
             title,
             description,
-            bid_duration,
+            deployment_duration,
             minimum_atom_liquidity_request,
         } => create_proposal(
             deps,
@@ -169,7 +173,7 @@ pub fn execute(
             tranche_id,
             title,
             description,
-            bid_duration,
+            deployment_duration,
             minimum_atom_liquidity_request,
         ),
         ExecuteMsg::Vote {
@@ -182,8 +186,8 @@ pub fn execute(
         }
         ExecuteMsg::UpdateConfig {
             max_locked_tokens,
-            max_bid_duration,
-        } => update_config(deps, info, max_locked_tokens, max_bid_duration),
+            max_deployment_duration,
+        } => update_config(deps, info, max_locked_tokens, max_deployment_duration),
         ExecuteMsg::Pause {} => pause_contract(deps, info),
         ExecuteMsg::AddTranche { tranche } => add_tranche(deps, info, tranche),
         ExecuteMsg::EditTranche {
@@ -242,7 +246,7 @@ fn lock_tokens(
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
-    // if we are in pilot mode, only allow lockups of a single epoch
+
     if constants.is_in_pilot_mode {
         pilot_round_validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
     } else {
@@ -484,15 +488,22 @@ fn validate_lock_duration(lock_epoch_length: u64, lock_duration: u64) -> Result<
     Ok(())
 }
 // This is a separate validation function which will be used in the pilot rounds
-// of the contract, making sure that only lockups of a single epoch are allowed.
+// of the contract, making sure that only lockups of 1, 2 or 3 epochs are allowed.
 fn pilot_round_validate_lock_duration(
     lock_epoch_length: u64,
     lock_duration: u64,
 ) -> Result<(), ContractError> {
-    if lock_duration != lock_epoch_length {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Lock duration must be 1 epoch",
-        )));
+    if lock_duration != lock_epoch_length
+        && lock_duration != lock_epoch_length * 2
+        && lock_duration != lock_epoch_length * 3
+    {
+        return Err(ContractError::Std(StdError::generic_err(format!(
+            "Lock duration must be 1, 2 or 3 epochs: {}, {} or {}; but was: {}",
+            lock_epoch_length,
+            lock_epoch_length * 2,
+            lock_epoch_length * 3,
+            lock_duration
+        ))));
     }
 
     Ok(())
@@ -615,7 +626,7 @@ fn create_proposal(
     tranche_id: u64,
     title: String,
     description: String,
-    bid_duration: u64,
+    deployment_duration: u64,
     minimum_atom_liquidity_request: Uint128,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
@@ -634,11 +645,13 @@ fn create_proposal(
     // check that the tranche with the given id exists
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
-    // check that the bid duration is within the allowed range
-    if bid_duration < 1 || bid_duration > constants.max_bid_duration {
+    // check that the deployment duration is within the allowed range
+    if deployment_duration < MIN_DEPLOYMENT_DURATION
+        || deployment_duration > constants.max_deployment_duration
+    {
         return Err(ContractError::Std(StdError::generic_err(format!(
-            "Invalid bid duration: {}. Must be between {} and {} rounds.",
-            bid_duration, 1, constants.max_bid_duration,
+            "Invalid deployment duration: {}. Must be between {} and {} rounds.",
+            deployment_duration, MIN_DEPLOYMENT_DURATION, constants.max_deployment_duration,
         ))));
     }
 
@@ -652,7 +665,7 @@ fn create_proposal(
         percentage: Uint128::zero(),
         title: title.trim().to_string(),
         description: description.trim().to_string(),
-        bid_duration,
+        deployment_duration,
         minimum_atom_liquidity_request,
     };
 
@@ -855,6 +868,8 @@ fn vote(
 
     let lock_epoch_length = constants.lock_epoch_length;
     let mut voted_proposals = vec![];
+    let mut locks_voted = vec![];
+    let mut locks_skipped = vec![];
 
     for proposal_to_lockups in proposals_votes {
         let proposal_id = proposal_to_lockups.proposal_id;
@@ -881,17 +896,27 @@ fn vote(
                         ));
 
                     // skip this lock entry, since the locked shares do not belong to a validator that we want to take into account
+                    locks_skipped.push(lock_entry.lock_id);
                     continue;
                 }
             };
 
             let scaled_shares = Decimal::from_ratio(
-                get_lock_time_weighted_shares(round_end, lock_entry, lock_epoch_length),
+                get_lock_time_weighted_shares(round_end, lock_entry.clone(), lock_epoch_length),
                 Uint128::one(),
             );
 
             // skip the lock entries that give zero voting power
             if scaled_shares.is_zero() {
+                locks_skipped.push(lock_entry.lock_id);
+                continue;
+            }
+
+            let proposal = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
+
+            // skip lock entries that don't span long enough to be allowed to vote for this proposal
+            if !can_lock_vote_for_proposal(round_id, &constants, &lock_entry, &proposal)? {
+                locks_skipped.push(lock_entry.lock_id);
                 continue;
             }
 
@@ -905,12 +930,7 @@ fn vote(
             )?;
 
             // update the proposal in the proposal map, as well as the props by score map
-            let updated_proposal = update_proposal_and_props_by_score_maps(
-                deps.storage,
-                round_id,
-                tranche_id,
-                proposal_id,
-            )?;
+            update_proposal_and_props_by_score_maps(deps.storage, round_id, tranche_id, &proposal)?;
 
             // Create vote in Votemap
             let vote = Vote {
@@ -923,32 +943,36 @@ fn vote(
                 &vote,
             )?;
 
-            let voting_allowed_round = round_id + updated_proposal.bid_duration;
+            let voting_allowed_round = round_id + proposal.deployment_duration;
             VOTING_ALLOWED_ROUND.save(
                 deps.storage,
                 (tranche_id, lock_id),
                 &voting_allowed_round,
             )?;
+
+            locks_voted.push(lock_entry.lock_id);
         }
 
         voted_proposals.push(proposal_id);
     }
 
-    if !voted_proposals.is_empty() {
-        let voted_props_attr = voted_proposals
+    let to_string = |input: &Vec<u64>| {
+        input
             .iter()
-            .map(|proposal_id| proposal_id.to_string())
+            .map(|id| id.to_string())
             .collect::<Vec<String>>()
-            .join(",");
-        Ok(response.add_attribute("proposal_id", voted_props_attr))
-    } else {
-        Ok(response)
-    }
+            .join(",")
+    };
+
+    Ok(response
+        .add_attribute("proposal_id", to_string(&voted_proposals))
+        .add_attribute("locks_voted", to_string(&locks_voted))
+        .add_attribute("locks_skipped", to_string(&locks_skipped)))
 }
 
 // Returns the time-weighted amount of shares locked in the given lock entry in a round with the given end time,
 // and using the given lock epoch length.
-fn get_lock_time_weighted_shares(
+pub fn get_lock_time_weighted_shares(
     round_end: Timestamp,
     lock_entry: LockEntry,
     lock_epoch_length: u64,
@@ -1022,7 +1046,7 @@ fn update_config(
     deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
     max_locked_tokens: Option<u128>,
-    max_bid_duration: Option<u64>,
+    max_deployment_duration: Option<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let mut constants = CONSTANTS.load(deps.storage)?;
 
@@ -1038,9 +1062,12 @@ fn update_config(
         response = response.add_attribute("new_max_locked_tokens", max_locked_tokens.to_string());
     }
 
-    if let Some(max_bid_duration) = max_bid_duration {
-        constants.max_bid_duration = max_bid_duration;
-        response = response.add_attribute("new_max_bid_duration", max_bid_duration.to_string());
+    if let Some(max_deployment_duration) = max_deployment_duration {
+        constants.max_deployment_duration = max_deployment_duration;
+        response = response.add_attribute(
+            "new_max_deployment_duration",
+            max_deployment_duration.to_string(),
+        );
     }
 
     CONSTANTS.save(deps.storage, &constants)?;
@@ -1727,7 +1754,8 @@ pub fn query_user_voting_power(
 // It goes through all user votes per lock_id and groups them by the
 // proposal ID. The returned result will contain one VoteWithPower per
 // each proposal ID, with the total power summed up from all lock IDs
-// used to vote for that proposal.
+// used to vote for that proposal. The votes that are referring to the
+// validators that later dropped out from the top N will be filtered out.
 pub fn query_user_votes(
     deps: Deps<NeutronQuery>,
     round_id: u64,
@@ -1737,22 +1765,35 @@ pub fn query_user_votes(
     let user_address = deps.api.addr_validate(&user_address)?;
     let mut voted_proposals_power_sum: HashMap<u64, Decimal> = HashMap::new();
 
-    VOTE_MAP
+    let votes = VOTE_MAP
         .prefix(((round_id, tranche_id), user_address.clone()))
         .range(deps.storage, None, None, Order::Ascending)
         .filter_map(|vote| match vote {
             Err(_) => None,
             Ok(vote) => Some(vote.1),
         })
-        .for_each(|vote| {
-            let current_power = match voted_proposals_power_sum.get(&vote.prop_id) {
-                None => Decimal::zero(),
-                Some(current_power) => *current_power,
-            };
+        .collect::<Vec<Vote>>();
 
-            let new_power = current_power + vote.time_weighted_shares.1;
-            voted_proposals_power_sum.insert(vote.prop_id, new_power);
-        });
+    for vote in votes {
+        let vote_validator = vote.time_weighted_shares.0;
+        // If the validator was active in the given round, we will get its power ratio.
+        // If it wasn't we will get 0, which means we should filter out this vote.
+        let val_power_ratio =
+            get_validator_power_ratio_for_round(deps.storage, round_id, vote_validator)?;
+
+        let vote_power = vote.time_weighted_shares.1.checked_mul(val_power_ratio)?;
+        if vote_power == Decimal::zero() {
+            continue;
+        }
+
+        let current_power = match voted_proposals_power_sum.get(&vote.prop_id) {
+            None => Decimal::zero(),
+            Some(current_power) => *current_power,
+        };
+
+        let new_power = current_power.checked_add(vote_power)?;
+        voted_proposals_power_sum.insert(vote.prop_id, new_power);
+    }
 
     if voted_proposals_power_sum.is_empty() {
         return Err(StdError::generic_err(
@@ -2072,6 +2113,19 @@ fn update_voting_power_on_proposals(
                 )));
             };
 
+            let proposal =
+                PROPOSAL_MAP.load(deps.storage, (current_round, tranche_id, vote.prop_id))?;
+
+            // Ensure that lock entry spans long enough to be allowed to vote for this proposal.
+            // If not, we will not have this lock vote for the proposal, even if user voted for
+            // only one proposal in the given round and tranche. Note that this condition will
+            // always be satisfied when refreshing the lock entry, since we already checked this
+            // condition when user voted with this lock entry, and refreshing the lock only allows
+            // lock duration to be extended.
+            if !can_lock_vote_for_proposal(current_round, constants, &new_lock_entry, &proposal)? {
+                continue;
+            }
+
             let new_vote_shares = if power_change.is_increased {
                 current_vote_shares.checked_add(power_change.scaled_power_change)?
             } else {
@@ -2112,7 +2166,7 @@ fn update_voting_power_on_proposals(
                 deps.storage,
                 current_round,
                 tranche_id,
-                vote.prop_id,
+                &proposal,
             )?;
         }
     }
@@ -2184,14 +2238,30 @@ pub fn get_vote_for_update(
     })
 }
 
+// Ensure that the lock will have a power greater than 0 at the end of
+// the round preceding the round in which the liquidity will be returned.
+fn can_lock_vote_for_proposal(
+    current_round: u64,
+    constants: &Constants,
+    lock_entry: &LockEntry,
+    proposal: &Proposal,
+) -> Result<bool, ContractError> {
+    let power_required_round_id = current_round + proposal.deployment_duration - 1;
+    let power_required_round_end = compute_round_end(constants, power_required_round_id)?;
+
+    Ok(lock_entry.lock_end >= power_required_round_end)
+}
+
+/// This function relies on PROPOSAL_TOTAL_MAP and SCALED_PROPOSAL_SHARES_MAP being
+/// already updated with the new proposal power.
 fn update_proposal_and_props_by_score_maps(
     storage: &mut dyn Storage,
     round_id: u64,
     tranche_id: u64,
-    proposal_id: u64,
-) -> Result<Proposal, ContractError> {
-    // Load the proposal that needs to be updated
-    let mut proposal = PROPOSAL_MAP.load(storage, (round_id, tranche_id, proposal_id))?;
+    proposal: &Proposal,
+) -> Result<(), ContractError> {
+    let mut proposal = proposal.clone();
+    let proposal_id = proposal.proposal_id;
 
     // Delete the proposal's old power in PROPS_BY_SCORE
     PROPS_BY_SCORE.remove(
@@ -2203,7 +2273,7 @@ fn update_proposal_and_props_by_score_maps(
     let total_power = get_total_power_for_proposal(storage, proposal_id)?;
 
     // Save the new power into the proposal
-    proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
+    proposal.power = total_power.to_uint_ceil();
 
     // Save the proposal
     PROPOSAL_MAP.save(storage, (round_id, tranche_id, proposal_id), &proposal)?;
@@ -2215,7 +2285,7 @@ fn update_proposal_and_props_by_score_maps(
         &proposal_id,
     )?;
 
-    Ok(proposal)
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)] // complex function that needs a lot of arguments

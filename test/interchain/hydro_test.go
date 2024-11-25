@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	DefaultBidDuration         = 1
+	DefaultDeploymentDuration  = 1
 	DefaultMinLiquidityRequest = 100000000
 )
 
@@ -82,11 +82,11 @@ func (s *HydroSuite) TestHappyPath() {
 
 	// create hydro proposals
 	log.Println("==== Creating proposals")
-	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1, DefaultBidDuration, DefaultMinLiquidityRequest)
+	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1, DefaultDeploymentDuration, DefaultMinLiquidityRequest)
 	s.Require().NoError(err)
-	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 2", 1, DefaultBidDuration, DefaultMinLiquidityRequest)
+	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 2", 1, DefaultDeploymentDuration, DefaultMinLiquidityRequest)
 	s.Require().NoError(err)
-	err = s.SubmitHydroProposal(0, contractAddr, "tranche 2 prop 1", 2, DefaultBidDuration, DefaultMinLiquidityRequest)
+	err = s.SubmitHydroProposal(0, contractAddr, "tranche 2 prop 1", 2, DefaultDeploymentDuration, DefaultMinLiquidityRequest)
 	s.Require().NoError(err)
 
 	log.Println("==== Voting for proposals")
@@ -176,7 +176,7 @@ func (s *HydroSuite) TestPauseContract() {
 	err = s.RefreshLock(contractAddr, 0, 0)
 	RequirePaused(s, err)
 
-	err = s.SubmitHydroProposal(0, contractAddr, "tranche 2 prop 2", 2, DefaultBidDuration, DefaultMinLiquidityRequest)
+	err = s.SubmitHydroProposal(0, contractAddr, "tranche 2 prop 2", 2, DefaultDeploymentDuration, DefaultMinLiquidityRequest)
 	RequirePaused(s, err)
 	err = s.VoteForHydroProposal(0, contractAddr, 1, []ProposalToLockups{})
 	RequirePaused(s, err)
@@ -256,7 +256,7 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 
 	// create hydro proposals
 	log.Println("==== Creating proposals")
-	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1, DefaultBidDuration, DefaultMinLiquidityRequest)
+	err = s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1, DefaultDeploymentDuration, DefaultMinLiquidityRequest)
 	s.Require().NoError(err)
 
 	log.Println("==== Voting for proposals")
@@ -334,7 +334,7 @@ func (s *HydroSuite) TestValidatorSlashing() {
 	s.Require().NoError(s.LockTokens(0, 86400000000000, lockAmount, dstIbcDenom1, contractAddr))
 
 	// create hydro proposals
-	s.Require().NoError(s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1, DefaultBidDuration, DefaultMinLiquidityRequest))
+	s.Require().NoError(s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1, DefaultDeploymentDuration, DefaultMinLiquidityRequest))
 
 	// vote for proposal
 	proposal, err := s.GetProposalByTitle(contractAddr, "tranche 1 prop 1", 1)
@@ -416,10 +416,10 @@ func (s *HydroSuite) TestTributeContract() {
 	s.Require().NoError(s.LockTokens(3, roundLength, lockAmountVal4, dstIbcDenom, hydroContractAddr))
 
 	// validator 1 creates hydro proposals
-	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 1", 1, DefaultBidDuration, DefaultMinLiquidityRequest))
-	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 2", 1, DefaultBidDuration, DefaultMinLiquidityRequest))
-	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 3", 1, DefaultBidDuration, DefaultMinLiquidityRequest))
-	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 4", 1, DefaultBidDuration, DefaultMinLiquidityRequest))
+	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 1", 1, DefaultDeploymentDuration, DefaultMinLiquidityRequest))
+	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 2", 1, DefaultDeploymentDuration, DefaultMinLiquidityRequest))
+	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 3", 1, DefaultDeploymentDuration, DefaultMinLiquidityRequest))
+	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 4", 1, DefaultDeploymentDuration, DefaultMinLiquidityRequest))
 
 	proposal1, err := s.GetProposalByTitle(hydroContractAddr, "tranche 1 prop 1", 1)
 	s.Require().NoError(err)
