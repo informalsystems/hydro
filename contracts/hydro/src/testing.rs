@@ -2271,7 +2271,7 @@ fn assert_proposal_voting_power(
 
 // This test verifies that when the contract is in pilot mode,
 // the possible lock durations are restricted to the durations allowed during
-// pilot rounds (just 1 round in this case).
+// pilot rounds (1, 2 or 3 rounds in this case).
 #[test]
 pub fn pilot_round_lock_duration_test() {
     struct TestCase {
@@ -2286,11 +2286,11 @@ pub fn pilot_round_lock_duration_test() {
         },
         TestCase {
             lock_duration: ONE_MONTH_IN_NANO_SECONDS * 2,
-            expect_error: true,
+            expect_error: false,
         },
         TestCase {
             lock_duration: ONE_MONTH_IN_NANO_SECONDS * 3,
-            expect_error: true,
+            expect_error: false,
         },
         TestCase {
             lock_duration: ONE_MONTH_IN_NANO_SECONDS * 6,
@@ -2341,11 +2341,16 @@ pub fn pilot_round_lock_duration_test() {
                 "Expected error for lock_duration: {}",
                 case.lock_duration
             );
-            assert!(res
-                .err()
-                .unwrap()
-                .to_string()
-                .contains("Lock duration must be 1 epoch"),);
+
+            let expected_error = format!(
+                "Lock duration must be 1, 2 or 3 epochs: {}, {} or {}; but was: {}",
+                msg.lock_epoch_length,
+                2 * msg.lock_epoch_length,
+                3 * msg.lock_epoch_length,
+                case.lock_duration
+            )
+            .to_string();
+            assert!(res.err().unwrap().to_string().contains(&expected_error),);
         } else {
             assert!(
                 res.is_ok(),
