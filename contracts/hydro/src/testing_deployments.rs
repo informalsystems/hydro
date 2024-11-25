@@ -49,7 +49,7 @@ mod tests {
             title: "proposal1".to_string(),
             description: "description1".to_string(),
             minimum_atom_liquidity_request: Uint128::zero(),
-            bid_duration: 1,
+            deployment_duration: 1,
         };
         PROPOSAL_MAP
             .save(deps.as_mut().storage, (0, 1, proposal_id), &proposal)
@@ -155,7 +155,7 @@ mod tests {
             percentage: Uint128::zero(),
             title: "proposal1".to_string(),
             description: "description1".to_string(),
-            bid_duration: 1,
+            deployment_duration: 1,
             minimum_atom_liquidity_request: Uint128::zero(),
         };
         PROPOSAL_MAP

@@ -224,7 +224,7 @@ func (s *HydroSuite) InstantiateHydroContract(
 		"icq_update_period":                  10,
 		"icq_managers":                       []string{adminAddr},
 		"is_in_pilot_mode":                   false,
-		"max_bid_duration":                   12,
+		"max_deployment_duration":            12,
 	}
 	initHydroJson, err := json.Marshal(initHydro)
 	s.Require().NoError(err)
@@ -402,7 +402,7 @@ func (s *HydroSuite) SubmitHydroProposal(
 	contractAddr,
 	proposalTitle string,
 	trancheId int64,
-	bidDuration int64,
+	deploymentDuration int64,
 	minimumAtomLiquidityRequest int,
 ) error {
 	proposalTxData := map[string]interface{}{
@@ -410,7 +410,7 @@ func (s *HydroSuite) SubmitHydroProposal(
 			"tranche_id":                     trancheId,
 			"title":                          proposalTitle,
 			"description":                    "Proposal Description",
-			"bid_duration":                   bidDuration,
+			"deployment_duration":            deploymentDuration,
 			"minimum_atom_liquidity_request": strconv.Itoa(minimumAtomLiquidityRequest),
 		},
 	}

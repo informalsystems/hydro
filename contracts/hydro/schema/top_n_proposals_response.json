@@ -18,7 +18,7 @@
     "Proposal": {
       "type": "object",
       "required": [
-        "bid_duration",
+        "deployment_duration",
         "description",
         "minimum_atom_liquidity_request",
         "percentage",
@@ -29,7 +29,7 @@
         "tranche_id"
       ],
       "properties": {
-        "bid_duration": {
+        "deployment_duration": {
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
