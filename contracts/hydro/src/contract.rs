@@ -679,7 +679,15 @@ fn create_proposal(
         .add_attribute("tranche_id", tranche_id.to_string())
         .add_attribute("proposal_id", proposal_id.to_string())
         .add_attribute("proposal_title", proposal.title)
-        .add_attribute("proposal_description", proposal.description))
+        .add_attribute("proposal_description", proposal.description)
+        .add_attribute(
+            "deployment_duration",
+            proposal.deployment_duration.to_string(),
+        )
+        .add_attribute(
+            "minimum_atom_liquidity_request",
+            proposal.minimum_atom_liquidity_request.to_string(),
+        ))
 }
 
 pub fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: Uint128) -> Uint128 {
@@ -1454,7 +1462,8 @@ pub fn remove_liquidity_deployment(
         .add_attribute("action", "remove_liquidity_deployment")
         .add_attribute("sender", info.sender)
         .add_attribute("round_id", round_id.to_string())
-        .add_attribute("tranche_id", tranche_id.to_string());
+        .add_attribute("tranche_id", tranche_id.to_string())
+        .add_attribute("proposal_id", proposal_id.to_string());
 
     LIQUIDITY_DEPLOYMENTS_MAP.remove(deps.storage, (round_id, tranche_id, proposal_id));
 
