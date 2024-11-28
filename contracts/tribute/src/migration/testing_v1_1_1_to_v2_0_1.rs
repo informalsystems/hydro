@@ -9,7 +9,7 @@ use hydro::state::Constants;
 use crate::{
     contract::{instantiate, CONTRACT_NAME},
     migration::{
-        migrate::{migrate, CONTRACT_VERSION_V1_1_1, CONTRACT_VERSION_V2_0_1},
+        migrate::{migrate, CONTRACT_VERSION_V1_1_1, CONTRACT_VERSION_V2_0_2},
         v1_1_1::{ConfigV1_1_1, TributeV1_1_1},
         v2_0_1::{ConfigV2_0_1, MigrateMsgV2_0_1, TributeV2_0_1},
     },
@@ -165,5 +165,5 @@ fn test_migrate() {
 
     // Verify the contract version after running the migration
     let res = get_contract_version(&deps.storage);
-    assert_eq!(res.unwrap().version, CONTRACT_VERSION_V2_0_1.to_string());
+    assert_eq!(res.unwrap().version, CONTRACT_VERSION_V2_0_2.to_string());
 }

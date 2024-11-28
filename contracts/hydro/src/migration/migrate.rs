@@ -11,6 +11,7 @@ use super::v2_0_1::{migrate_v1_1_0_to_v2_0_1, MigrateMsgV2_0_1};
 
 pub const CONTRACT_VERSION_V1_1_0: &str = "1.1.0";
 pub const CONTRACT_VERSION_V2_0_1: &str = "2.0.1";
+pub const CONTRACT_VERSION_V2_0_2: &str = "2.0.2";
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(
