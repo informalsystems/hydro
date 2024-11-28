@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## v2.0.2
+
+Date: November 28th, 2024
+
+### BUG FIXES
+
+- Add missing response attributes.
+  ([\#181](https://github.com/informalsystems/hydro/pull/181))
+
 ## v2.0.1
 
 Date: November 25th, 2024
