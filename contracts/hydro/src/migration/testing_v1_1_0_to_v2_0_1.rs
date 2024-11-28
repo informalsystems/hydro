@@ -7,7 +7,7 @@ use cw_storage_plus::{Item, Map};
 use crate::{
     contract::{instantiate, CONTRACT_NAME},
     migration::{
-        migrate::{migrate, CONTRACT_VERSION_V1_1_0, CONTRACT_VERSION_V2_0_1},
+        migrate::{migrate, CONTRACT_VERSION_V1_1_0, CONTRACT_VERSION_V2_0_2},
         v1_1_0::{ConstantsV1_1_0, ProposalV1_1_0, VoteV1_1_0},
         v2_0_1::{ConstantsV2_0_1, MigrateMsgV2_0_1, ProposalV2_0_1, VoteV2_0_1},
     },
@@ -192,7 +192,7 @@ fn test_constants_and_proposals_migration() {
 
     // Verify the contract version after running the migration
     let res = get_contract_version(&deps.storage);
-    assert_eq!(res.unwrap().version, CONTRACT_VERSION_V2_0_1.to_string());
+    assert_eq!(res.unwrap().version, CONTRACT_VERSION_V2_0_2.to_string());
 }
 
 #[test]
