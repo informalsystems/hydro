@@ -9,6 +9,7 @@ use crate::{
 
 pub const CONTRACT_VERSION_V1_1_1: &str = "1.1.1";
 pub const CONTRACT_VERSION_V2_0_1: &str = "2.0.1";
+pub const CONTRACT_VERSION_V2_0_2: &str = "2.0.2";
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(
