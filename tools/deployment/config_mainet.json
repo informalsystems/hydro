@@ -1,0 +1,9 @@
+{
+    "chain_id": "neutron-1",
+    "binary_name": "neutrond",
+    "rpc_node": "https://neutron-rpc.polkachu.com",
+    "tx_sender_wallet": "hs",
+    "tx_sender_address": "neutron14fmxw54lgvheyn7m0p9efpr82fac68ysph96ch",
+    "hub_connection_id": "connection-0",
+    "hub_channel_id": "channel-1"
+}
