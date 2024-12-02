@@ -393,12 +393,14 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
     deploymentDuration,
     description,
     minimumAtomLiquidityRequest,
+    roundId,
     title,
     trancheId
   }: {
     deploymentDuration: number;
     description: string;
     minimumAtomLiquidityRequest: Uint128;
+    roundId?: number;
     title: string;
     trancheId: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
@@ -551,12 +553,14 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     deploymentDuration,
     description,
     minimumAtomLiquidityRequest,
+    roundId,
     title,
     trancheId
   }: {
     deploymentDuration: number;
     description: string;
     minimumAtomLiquidityRequest: Uint128;
+    roundId?: number;
     title: string;
     trancheId: number;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
@@ -565,6 +569,7 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
         deployment_duration: deploymentDuration,
         description,
         minimum_atom_liquidity_request: minimumAtomLiquidityRequest,
+        round_id: roundId,
         title,
         tranche_id: trancheId
       }
