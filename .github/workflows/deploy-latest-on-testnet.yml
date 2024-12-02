@@ -44,13 +44,13 @@ jobs:
           chmod +x script.sh
 
           CONFIG_FILE="./tools/deployment/config_testnet.json"
-          CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
-          NEUTRON_RPC_NODE=$(jq -r '.neutron_rpc_node' $CONFIG_FILE)
-          NEUTRON_API_NODE=$(jq -r '.neutron_api_node' $CONFIG_FILE)
-          TX_SENDER_WALLET=$(jq -r '.tx_sender_wallet' $CONFIG_FILE)
-          HUB_CONNECTION_ID=$(jq -r '.hub_connection_id' $CONFIG_FILE)
-          HUB_RPC_NODE=$(jq -r '.hub_rpc_node' $CONFIG_FILE)
-          HUB_API_NODE=$(jq -r '.hub_api_node' $CONFIG_FILE)
+          CHAIN_ID=$(echo $(jq -r '.chain_id' $CONFIG_FILE) | sed -E 's/([][\/.*?$^&|])/\\\1/g')
+          NEUTRON_RPC_NODE=$(echo $(jq -r '.neutron_rpc_node' $CONFIG_FILE) | sed -E 's/([][\/.*?$^&|])/\\\1/g')
+          NEUTRON_API_NODE=$(echo $(jq -r '.neutron_api_node' $CONFIG_FILE) | sed -E 's/([][\/.*?$^&|])/\\\1/g')
+          TX_SENDER_WALLET=$(echo $(jq -r '.tx_sender_wallet' $CONFIG_FILE) | sed -E 's/([][\/.*?$^&|])/\\\1/g')
+          HUB_CONNECTION_ID=$(echo $(jq -r '.hub_connection_id' $CONFIG_FILE) | sed -E 's/([][\/.*?$^&|])/\\\1/g')
+          HUB_RPC_NODE=$(echo $(jq -r '.hub_rpc_node' $CONFIG_FILE) | sed -E 's/([][\/.*?$^&|])/\\\1/g')
+          HUB_API_NODE=$(echo $(jq -r '.hub_api_node' $CONFIG_FILE) | sed -E 's/([][\/.*?$^&|])/\\\1/g')
 
           sed -i "s|^RELAYER_REPO_PATH=.*$|RELAYER_REPO_PATH=\.\/neutron-query-relayer|" ./script.sh
           sed -i "s/^export NEUTRON_CHAIN_ID=.*$/export NEUTRON_CHAIN_ID=$CHAIN_ID/" ./script.sh
