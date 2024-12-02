@@ -12,10 +12,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - name: Download Neutron binaries
+      - name: Download Neutron chain binary
         run: |
           curl -L -o neutrond https://github.com/neutron-org/neutron/releases/download/v5.0.2/neutrond-linux-amd64
           chmod +x neutrond
+      
+      - name: Checkout Neutron ICQ relayer repository
+        uses: actions/checkout@v4
+        with:
+          repository: neutron-org/neutron-query-relayer
+          path: ./neutron-query-relayer  # directory to checkout the repo into
 
       - name: Deploy latest contracts
         env:
@@ -28,3 +34,7 @@ jobs:
 
           chmod +x ./tools/deployment/setup.sh
           bash ./tools/deployment/setup.sh $CONFIG_FILE
+      
+      - name: Run ICQs setup script
+        run: |
+          echo $HYDRO_CONTRACT_ADDRESS
