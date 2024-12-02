@@ -52,19 +52,19 @@ jobs:
           HUB_RPC_NODE=$(jq -r '.hub_rpc_node' $CONFIG_FILE)
           HUB_API_NODE=$(jq -r '.hub_api_node' $CONFIG_FILE)
 
-          sed -i 's|^RELAYER_REPO_PATH=.*$|RELAYER_REPO_PATH="./neutron-query-relayer"|' ./script.sh
-          sed -i 's/^export NEUTRON_CHAIN_ID=.*$/export NEUTRON_CHAIN_ID=$CHAIN_ID/' ./script.sh
-          sed -i 's/^export RELAYER_NEUTRON_CHAIN_RPC_ADDR=.*$/export RELAYER_NEUTRON_CHAIN_RPC_ADDR=$NEUTRON_RPC_NODE/' ./script.sh
-          sed -i 's/^export RELAYER_NEUTRON_CHAIN_REST_ADDR=.*$/export RELAYER_NEUTRON_CHAIN_REST_ADDR=$NEUTRON_API_NODE/' ./script.sh
-          sed -i 's/^export RELAYER_NEUTRON_CHAIN_HOME_DIR=.*$/export RELAYER_NEUTRON_CHAIN_HOME_DIR="./.neutrond"/' ./script.sh
-          sed -i 's/^export RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=.*$/export RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=$TX_SENDER_WALLET/' ./script.sh
-          sed -i 's/^export RELAYER_NEUTRON_CHAIN_CONNECTION_ID=.*$/export RELAYER_NEUTRON_CHAIN_CONNECTION_ID=$HUB_CONNECTION_ID/' ./script.sh
-          sed -i 's/^export RELAYER_TARGET_CHAIN_RPC_ADDR=.*$/export RELAYER_TARGET_CHAIN_RPC_ADDR=$HUB_RPC_NODE/' ./script.sh
-          sed -i 's/^export RELAYER_TARGET_CHAIN_API_ADDR=.*$/export RELAYER_TARGET_CHAIN_API_ADDR=$HUB_API_NODE/' ./script.sh
-          sed -i 's/^export RELAYER_REGISTRY_ADDRESSES=.*$/export RELAYER_REGISTRY_ADDRESSES=$HYDRO_CONTRACT_ADDRESS/' ./script.sh
-          sed -i 's/^export BATCH_SIZE=.*$/export BATCH_SIZE=5/' ./script.sh
-          sed -i 's/^export NUM_VALIDATORS_TO_ADD=.*$/export NUM_VALIDATORS_TO_ADD=5/' ./script.sh
-          sed -i 's/^export RELAYER_STORAGE_PATH=.*$/export RELAYER_STORAGE_PATH=.neutron_queries_relayer/leveldb/' ./script.sh
-          sed -i 's|^go run main.go.*$|go run ./tools/main.go|' ./script.sh
+          sed -i "s|^RELAYER_REPO_PATH=.*$|RELAYER_REPO_PATH=./neutron-query-relayer|" ./script.sh
+          sed -i "s/^export NEUTRON_CHAIN_ID=.*$/export NEUTRON_CHAIN_ID=$CHAIN_ID/" ./script.sh
+          sed -i "s/^export RELAYER_NEUTRON_CHAIN_RPC_ADDR=.*$/export RELAYER_NEUTRON_CHAIN_RPC_ADDR=$NEUTRON_RPC_NODE/" ./script.sh
+          sed -i "s/^export RELAYER_NEUTRON_CHAIN_REST_ADDR=.*$/export RELAYER_NEUTRON_CHAIN_REST_ADDR=$NEUTRON_API_NODE/" ./script.sh
+          sed -i "s/^export RELAYER_NEUTRON_CHAIN_HOME_DIR=.*$/export RELAYER_NEUTRON_CHAIN_HOME_DIR=\.\/.neutrond/" ./script.sh
+          sed -i "s/^export RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=.*$/export RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=$TX_SENDER_WALLET/" ./script.sh
+          sed -i "s/^export RELAYER_NEUTRON_CHAIN_CONNECTION_ID=.*$/export RELAYER_NEUTRON_CHAIN_CONNECTION_ID=$HUB_CONNECTION_ID/" ./script.sh
+          sed -i "s/^export RELAYER_TARGET_CHAIN_RPC_ADDR=.*$/export RELAYER_TARGET_CHAIN_RPC_ADDR=$HUB_RPC_NODE/" ./script.sh
+          sed -i "s/^export RELAYER_TARGET_CHAIN_API_ADDR=.*$/export RELAYER_TARGET_CHAIN_API_ADDR=$HUB_API_NODE/" ./script.sh
+          sed -i "s/^export RELAYER_REGISTRY_ADDRESSES=.*$/export RELAYER_REGISTRY_ADDRESSES=$HYDRO_CONTRACT_ADDRESS/" ./script.sh
+          sed -i "s/^export BATCH_SIZE=.*$/export BATCH_SIZE=5/" ./script.sh
+          sed -i "s/^export NUM_VALIDATORS_TO_ADD=.*$/export NUM_VALIDATORS_TO_ADD=5/" ./script.sh
+          sed -i "s/^export RELAYER_STORAGE_PATH=.*$/export RELAYER_STORAGE_PATH=\.neutron_queries_relayer\/leveldb/" ./script.sh
+          sed -i "s|^go run main\.go.*$|go run \./tools/main\.go|" ./script.sh
 
           bash ./script.sh
