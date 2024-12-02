@@ -7,7 +7,10 @@ use cosmwasm_std::{Timestamp, Uint128};
 
 use cw_orch::{anyhow, prelude::*};
 
-use hydro::{msg::TrancheInfo, query::QueryMsgFns as HydroQueryMsgFns};
+use hydro::{
+    migration::unreleased::get_default_power_schedule, msg::TrancheInfo,
+    query::QueryMsgFns as HydroQueryMsgFns,
+};
 use interface::{hydro::*, tribute::*};
 use tribute::query::QueryMsgFns as TributeQueryMsgFns;
 
@@ -68,8 +71,8 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             hub_transfer_channel_id,
             icq_update_period: 10000,
             icq_managers: vec![],
-            is_in_pilot_mode: false,
             max_deployment_duration: 12,
+            round_lock_power_schedule: get_default_power_schedule(),
         },
         Some(&Addr::unchecked(whitelist_admin_address.clone())),
         &[],

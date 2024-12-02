@@ -17,8 +17,21 @@ pub struct Constants {
     pub hub_transfer_channel_id: String,
     pub icq_update_period: u64,
     pub paused: bool,
-    pub is_in_pilot_mode: bool,
     pub max_deployment_duration: u64,
+    // A vector of tuples, where each tuple contains a round number and the power scaling factor
+    // that a user gets when they lock for this many rounds.
+    // The vector should be sorted by round number in ascending order.
+    // It will always be implicit that 0 rounds lock left corresponds to 0 voting power.
+    // Otherwise, it implicitly assumes that between two entries, the larger entries power is used.
+    // For example, if the vector is [(1, 1), (2, 1.25), (3, 1.5), (6, 2), (12, 4)],
+    // then the power scaling factors are
+    // 0x if lockup has expires before the end of the round
+    // 1x if lockup has between 0 and 1 epochs left at the end of the round
+    // 1.25x if lockup has between 1 and 2 epochs left at the end of the round
+    // 1.5x if lockup has between 2 and 3 epochs left at the end of the round
+    // 2x if lockup has between 3 and 6 epochs left at the end of the round
+    // 4x if lockup has between 6 and 12 epochs left at the end of the round
+    pub round_lock_power_schedule: Vec<(u64, Decimal)>,
 }
 
 // the total number of tokens locked in the contract

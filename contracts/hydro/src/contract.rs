@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::os::unix::raw;
 
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 #[allow(unused_imports)]
@@ -80,9 +81,9 @@ pub fn instantiate(
         hub_connection_id: msg.hub_connection_id,
         hub_transfer_channel_id: msg.hub_transfer_channel_id,
         icq_update_period: msg.icq_update_period,
-        is_in_pilot_mode: msg.is_in_pilot_mode,
         max_deployment_duration: msg.max_deployment_duration,
         paused: false,
+        round_lock_power_schedule: msg.round_lock_power_schedule,
     };
 
     CONSTANTS.save(deps.storage, &state)?;
@@ -246,12 +247,11 @@ fn lock_tokens(
     let constants = CONSTANTS.load(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
-
-    if constants.is_in_pilot_mode {
-        pilot_round_validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
-    } else {
-        validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
-    }
+    validate_lock_duration(
+        &constants.round_lock_power_schedule,
+        constants.lock_epoch_length,
+        lock_duration,
+    )?;
 
     let current_round = compute_current_round_id(&env, &constants)?;
     initialize_validator_store(deps.storage, current_round)?;
@@ -353,11 +353,11 @@ fn refresh_lock_duration(
 
     validate_contract_is_not_paused(&constants)?;
 
-    if constants.is_in_pilot_mode {
-        pilot_round_validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
-    } else {
-        validate_lock_duration(constants.lock_epoch_length, lock_duration)?;
-    }
+    validate_lock_duration(
+        &constants.round_lock_power_schedule,
+        constants.lock_epoch_length,
+        lock_duration,
+    )?;
 
     // if there are no lock_ids, return an error
     if lock_ids.is_empty() {
@@ -457,6 +457,7 @@ fn refresh_single_lock(
 
             let old_lockup_length = old_lock_end - round_end.nanos();
             scale_lockup_power(
+                &constants.round_lock_power_schedule,
                 constants.lock_epoch_length,
                 old_lockup_length,
                 locked_amount,
@@ -467,42 +468,20 @@ fn refresh_single_lock(
 }
 
 // Validate that the lock duration (given in nanos) is either 1, 2, 3, 6, or 12 epochs
-fn validate_lock_duration(lock_epoch_length: u64, lock_duration: u64) -> Result<(), ContractError> {
-    if lock_duration != lock_epoch_length
-        && lock_duration != lock_epoch_length * 2
-        && lock_duration != lock_epoch_length * 3
-        && lock_duration != lock_epoch_length * 6
-        && lock_duration != lock_epoch_length * 12
-    {
-        return Err(ContractError::Std(StdError::generic_err(format!(
-            "Lock duration must be 1, 2, 3, 6, or 12 epochs: {}, {}, {}, {}, or {}; but was: {}",
-            lock_epoch_length,
-            lock_epoch_length * 2,
-            lock_epoch_length * 3,
-            lock_epoch_length * 6,
-            lock_epoch_length * 12,
-            lock_duration
-        ))));
-    }
-
-    Ok(())
-}
-// This is a separate validation function which will be used in the pilot rounds
-// of the contract, making sure that only lockups of 1, 2 or 3 epochs are allowed.
-fn pilot_round_validate_lock_duration(
+fn validate_lock_duration(
+    round_lock_power_schedule: &[(u64, Decimal)],
     lock_epoch_length: u64,
     lock_duration: u64,
 ) -> Result<(), ContractError> {
-    if lock_duration != lock_epoch_length
-        && lock_duration != lock_epoch_length * 2
-        && lock_duration != lock_epoch_length * 3
-    {
+    let lock_times = round_lock_power_schedule
+        .iter()
+        .map(|(lock_time, _)| *lock_time * lock_epoch_length)
+        .collect::<Vec<u64>>();
+
+    if !lock_times.contains(&lock_duration) {
         return Err(ContractError::Std(StdError::generic_err(format!(
-            "Lock duration must be 1, 2 or 3 epochs: {}, {} or {}; but was: {}",
-            lock_epoch_length,
-            lock_epoch_length * 2,
-            lock_epoch_length * 3,
-            lock_duration
+            "Lock duration must be one of: {:?}; but was: {}",
+            lock_times, lock_duration
         ))));
     }
 
@@ -690,28 +669,30 @@ fn create_proposal(
         ))
 }
 
-pub fn scale_lockup_power(lock_epoch_length: u64, lockup_time: u64, raw_power: Uint128) -> Uint128 {
-    let two: Uint128 = 2u16.into();
-
-    // Scale lockup power
-    // 1x if lockup is between 0 and 1 epochs
-    // 1.25x if lockup is between 1 and 2 epochs
-    // 1.5x if lockup is between 2 and 3 epochs
-    // 2x if lockup is between 3 and 6 epochs
-    // 4x if lockup is between 6 and 12 epochs
-    // TODO: is there a less funky way to do Uint128 math???
-    match lockup_time {
-        // 4x if lockup is over 6 epochs
-        _ if lockup_time > lock_epoch_length * 6 => raw_power * two * two,
-        // 2x if lockup is between 3 and 6 epochs
-        _ if lockup_time > lock_epoch_length * 3 => raw_power * two,
-        // 1.5x if lockup is between 2 and 3 epochs
-        _ if lockup_time > lock_epoch_length * 2 => raw_power + (raw_power / two),
-        // 1.25x if lockup is between 1 and 2 epochs
-        _ if lockup_time > lock_epoch_length => raw_power + (raw_power / (two * two)),
-        // Covers 0 and 1 epoch which have no scaling
-        _ => raw_power,
+pub fn scale_lockup_power(
+    round_lock_power_schedule: &[(u64, Decimal)],
+    lock_epoch_length: u64,
+    lockup_time: u64,
+    raw_power: Uint128,
+) -> Uint128 {
+    // if lockup has expired, it has no power
+    if lockup_time < 0 {
+        return Uint128::zero();
     }
+
+    for (lock_time, power_ratio) in round_lock_power_schedule.iter() {
+        let needed_lock_time = lock_time * lock_epoch_length;
+        if lockup_time <= needed_lock_time {
+            let power = power_ratio.saturating_mul(Decimal::from_ratio(raw_power, Uint128::one()));
+            return power.to_uint_floor();
+        }
+    }
+
+    // if lockup time is longer than the longest lock time, return the maximum power
+    let largest_multiplier = round_lock_power_schedule.last().unwrap().1;
+    largest_multiplier
+        .saturating_mul(Decimal::new(raw_power))
+        .to_uint_floor()
 }
 
 fn vote(
@@ -910,7 +891,12 @@ fn vote(
             };
 
             let scaled_shares = Decimal::from_ratio(
-                get_lock_time_weighted_shares(round_end, lock_entry.clone(), lock_epoch_length),
+                get_lock_time_weighted_shares(
+                    round_end,
+                    lock_entry.clone(),
+                    lock_epoch_length,
+                    &constants.round_lock_power_schedule,
+                ),
                 Uint128::one(),
             );
 
@@ -984,12 +970,18 @@ pub fn get_lock_time_weighted_shares(
     round_end: Timestamp,
     lock_entry: LockEntry,
     lock_epoch_length: u64,
+    round_lock_power_schedule: &[(u64, Decimal)],
 ) -> Uint128 {
     if round_end.nanos() > lock_entry.lock_end.nanos() {
         return Uint128::zero();
     }
     let lockup_length = lock_entry.lock_end.nanos() - round_end.nanos();
-    scale_lockup_power(lock_epoch_length, lockup_length, lock_entry.funds.amount)
+    scale_lockup_power(
+        round_lock_power_schedule,
+        lock_epoch_length,
+        lockup_length,
+        lock_entry.funds.amount,
+    )
 }
 
 // Adds a new account address to the whitelist.
@@ -2078,12 +2070,19 @@ fn update_voting_power_on_proposals(
 
     let old_scaled_shares = match old_lock_entry.as_ref() {
         None => Uint128::zero(),
-        Some(lock_entry) => {
-            get_lock_time_weighted_shares(round_end, lock_entry.clone(), lock_epoch_length)
-        }
+        Some(lock_entry) => get_lock_time_weighted_shares(
+            round_end,
+            lock_entry.clone(),
+            lock_epoch_length,
+            &constants.round_lock_power_schedule,
+        ),
     };
-    let new_scaled_shares =
-        get_lock_time_weighted_shares(round_end, new_lock_entry.clone(), lock_epoch_length);
+    let new_scaled_shares = get_lock_time_weighted_shares(
+        round_end,
+        new_lock_entry.clone(),
+        lock_epoch_length,
+        &constants.round_lock_power_schedule,
+    );
 
     // With a future code changes, it could happen that the new power becomes less than
     // the old one. This calculation will cover both power increase and decrease scenarios.
@@ -2314,7 +2313,12 @@ where
     for round in start_round_id..=end_round_id {
         let round_end = compute_round_end(constants, round)?;
         let lockup_length = lock_end - round_end.nanos();
-        let scaled_amount = scale_lockup_power(constants.lock_epoch_length, lockup_length, amount);
+        let scaled_amount = scale_lockup_power(
+            &constants.round_lock_power_schedule,
+            constants.lock_epoch_length,
+            lockup_length,
+            amount,
+        );
         let old_voting_power = get_old_voting_power(round, round_end, amount);
         let scaled_shares = Decimal::from_ratio(scaled_amount, Uint128::one())
             - Decimal::from_ratio(old_voting_power, Uint128::one());
@@ -2379,6 +2383,7 @@ fn to_lockup_with_power(
                         round_end,
                         lock_entry.clone(),
                         constants.lock_epoch_length,
+                        &constants.round_lock_power_schedule,
                     );
 
                     let current_voting_power = validator_power_ratio

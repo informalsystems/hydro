@@ -35,9 +35,9 @@ fn query_user_lockups_test() {
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
 
-    let msg = get_default_instantiate_msg(&deps.api);
+    let instantiate_msg = get_default_instantiate_msg(&deps.api);
 
-    let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
+    let res = instantiate(deps.as_mut(), env.clone(), info, instantiate_msg.clone());
     assert!(res.is_ok());
 
     // simulate user locking 1000 tokens for 1 month, one day after the round started
@@ -104,6 +104,7 @@ fn query_user_lockups_test() {
     assert_eq!(
         // adjust for the 3 month lockup
         scale_lockup_power(
+            &instantiate_msg.round_lock_power_schedule,
             ONE_MONTH_IN_NANO_SECONDS,
             3 * ONE_MONTH_IN_NANO_SECONDS,
             Uint128::new(second_lockup_amount),
@@ -150,6 +151,7 @@ fn query_user_lockups_test() {
     assert_eq!(
         // adjust for the remaining 2 month lockup
         scale_lockup_power(
+            &instantiate_msg.round_lock_power_schedule,
             ONE_MONTH_IN_NANO_SECONDS,
             2 * ONE_MONTH_IN_NANO_SECONDS,
             Uint128::new(second_lockup_amount),
