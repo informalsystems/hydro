@@ -2,6 +2,7 @@
 set -eux
 
 CONFIG_FILE="$1"
+IS_GITHUB_WORKFLOW=$2
 
 NEUTRON_CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
 NEUTRON_BINARY=$(jq -r '.binary_name' $CONFIG_FILE)
@@ -72,6 +73,10 @@ instantiate_hydro() {
     INSTANTIATE_HYDRO_TX_HASH=$(grep -o '{.*}' ./instantiate_hydro_res.json | jq -r '.txhash')
     $NEUTRON_BINARY q tx $INSTANTIATE_HYDRO_TX_HASH $NEUTRON_NODE_FLAG --output json &> ./instantiate_hydro_tx.json
     HYDRO_CONTRACT_ADDRESS=$(jq -r '.events[] | select(.type == "instantiate") | .attributes[] | select(.key == "_contract_address") | .value' ./instantiate_hydro_tx.json)
+
+    if $IS_GITHUB_WORKFLOW; then
+        echo "HYDRO_CONTRACT_ADDRESS=$HYDRO_CONTRACT_ADDRESS" >> $GITHUB_ENV
+    fi
 }
 
 instantiate_tribute() {
