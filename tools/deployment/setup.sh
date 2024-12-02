@@ -6,7 +6,7 @@ IS_GITHUB_WORKFLOW=$2
 
 NEUTRON_CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
 NEUTRON_BINARY=$(jq -r '.binary_name' $CONFIG_FILE)
-NEUTRON_NODE=$(jq -r '.rpc_node' $CONFIG_FILE)
+NEUTRON_NODE=$(jq -r '.neutron_rpc_node' $CONFIG_FILE)
 TX_SENDER_WALLET=$(jq -r '.tx_sender_wallet' $CONFIG_FILE)
 TX_SENDER_ADDRESS=$(jq -r '.tx_sender_address' $CONFIG_FILE)
 HUB_CONNECTION_ID=$(jq -r '.hub_connection_id' $CONFIG_FILE)
@@ -116,19 +116,19 @@ add_tributes() {
     echo 'Adding proposal 1 tribute...'
 
     EXECUTE='{"add_tribute":{"round_id":0,"tranche_id":1,"proposal_id":0}}'
-    $NEUTRON_BINARY tx wasm execute $TRIBUTE_CONTRACT_ADDRESS "$EXECUTE" --amount 100000untrn --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
+    $NEUTRON_BINARY tx wasm execute $TRIBUTE_CONTRACT_ADDRESS "$EXECUTE" --amount 10000untrn --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
     sleep 7
 
     echo 'Adding proposal 2 tribute...'
 
     EXECUTE='{"add_tribute":{"round_id":0,"tranche_id":1,"proposal_id":1}}'
-    $NEUTRON_BINARY tx wasm execute $TRIBUTE_CONTRACT_ADDRESS "$EXECUTE" --amount 100000untrn --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
+    $NEUTRON_BINARY tx wasm execute $TRIBUTE_CONTRACT_ADDRESS "$EXECUTE" --amount 10000untrn --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
     sleep 7
 
     echo 'Adding proposal 3 tribute...'
 
     EXECUTE='{"add_tribute":{"round_id":0,"tranche_id":1,"proposal_id":2}}'
-    $NEUTRON_BINARY tx wasm execute $TRIBUTE_CONTRACT_ADDRESS "$EXECUTE" --amount 100000untrn --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
+    $NEUTRON_BINARY tx wasm execute $TRIBUTE_CONTRACT_ADDRESS "$EXECUTE" --amount 10000untrn --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
     sleep 7
 }
 

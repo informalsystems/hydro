@@ -1,7 +1,10 @@
 {
     "chain_id": "neutron-1",
     "binary_name": "neutrond",
-    "rpc_node": "https://neutron-rpc.polkachu.com",
+    "neutron_rpc_node": "https://neutron-rpc.polkachu.com",
+    "neutron_api_node": "https://neutron-rest.publicnode.com",
+    "hub_rpc_node": "https://cosmos-rpc.publicnode.com:443",
+    "hub_api_node": "https://api.cosmos.nodestake.org",
     "tx_sender_wallet": "hs",
     "tx_sender_address": "neutron14fmxw54lgvheyn7m0p9efpr82fac68ysph96ch",
     "hub_connection_id": "connection-0",
