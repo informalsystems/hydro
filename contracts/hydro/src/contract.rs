@@ -619,7 +619,7 @@ fn validate_previous_round_vote(
 // It will:
 // * validate that the contract is not paused
 // * validate that the creator of the proposal is on the whitelist
-// Then, it will create the proposal in the specified tranche and in the specified round (which can be at most one round in the future).
+// Then, it will create the proposal in the specified tranche and in the specified round.
 // If no round_id is specified, the function will use the current round id.
 #[allow(clippy::too_many_arguments)]
 fn create_proposal(
