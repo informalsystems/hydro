@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::os::unix::raw;
 
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 #[allow(unused_imports)]
@@ -675,11 +674,6 @@ pub fn scale_lockup_power(
     lockup_time: u64,
     raw_power: Uint128,
 ) -> Uint128 {
-    // if lockup has expired, it has no power
-    if lockup_time < 0 {
-        return Uint128::zero();
-    }
-
     for (lock_time, power_ratio) in round_lock_power_schedule.iter() {
         let needed_lock_time = lock_time * lock_epoch_length;
         if lockup_time <= needed_lock_time {

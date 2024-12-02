@@ -2359,7 +2359,7 @@ pub fn pilot_round_lock_duration_test() {
 
             let expected_error = "Lock duration must be one of";
             let err = res.err().unwrap().to_string();
-            assert!(err.contains(&expected_error), "Error: {}", err);
+            assert!(err.contains(expected_error), "Error: {}", err);
         } else {
             assert!(
                 res.is_ok(),
