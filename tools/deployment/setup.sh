@@ -44,7 +44,7 @@ store_hydro() {
     echo 'Storing Hydro wasm...'
 
     $NEUTRON_BINARY tx wasm store $HYDRO_WASM_PATH --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS --output json &> ./store_hydro_res.json
-    sleep 7
+    sleep 10
 
     STORE_HYDRO_TX_HASH=$(grep -o '{.*}' ./store_hydro_res.json | jq -r '.txhash')
     $NEUTRON_BINARY q tx $STORE_HYDRO_TX_HASH $NEUTRON_NODE_FLAG --output json &> ./store_hydro_tx.json
@@ -55,7 +55,7 @@ store_tribute() {
     echo 'Storing Tribute wasm...'
 
     $NEUTRON_BINARY tx wasm store $TRIBUTE_WASM_PATH --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS --output json &> ./store_tribute_res.json
-    sleep 7
+    sleep 10
 
     STORE_TRIBUTE_TX_HASH=$(grep -o '{.*}' ./store_tribute_res.json | jq -r '.txhash')
     $NEUTRON_BINARY q tx $STORE_TRIBUTE_TX_HASH $NEUTRON_NODE_FLAG --output json &> ./store_tribute_tx.json
@@ -68,7 +68,7 @@ instantiate_hydro() {
     INIT_HYDRO='{"round_length":'$ROUND_LENGTH',"lock_epoch_length":'$ROUND_LENGTH', "tranches":[{"name": "ATOM Bucket", "metadata": "A bucket of ATOM to deploy as PoL"}],"first_round_start":"'$FIRST_ROUND_START_TIME'","max_locked_tokens":"20000000000","whitelist_admins":["'$HYDRO_COMMITTEE_DAODAO'","'$TX_SENDER_ADDRESS'"],"initial_whitelist":["'$TX_SENDER_ADDRESS'"],"max_validator_shares_participating":500,"hub_connection_id":"'$HUB_CONNECTION_ID'","hub_transfer_channel_id":"'$HUB_CHANNEL_ID'","icq_update_period":109000,"icq_managers":["'$TX_SENDER_ADDRESS'"],"is_in_pilot_mode":'$IS_IN_PILOT_MODE',"max_deployment_duration":'$MAX_DEPLOYMENT_DURATION'}'
 
     $NEUTRON_BINARY tx wasm instantiate $HYDRO_CODE_ID "$INIT_HYDRO" --admin $TX_SENDER_ADDRESS --label "'$HYDRO_SC_LABEL'" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS --output json &> ./instantiate_hydro_res.json
-    sleep 7
+    sleep 10
 
     INSTANTIATE_HYDRO_TX_HASH=$(grep -o '{.*}' ./instantiate_hydro_res.json | jq -r '.txhash')
     $NEUTRON_BINARY q tx $INSTANTIATE_HYDRO_TX_HASH $NEUTRON_NODE_FLAG --output json &> ./instantiate_hydro_tx.json
@@ -85,7 +85,7 @@ instantiate_tribute() {
     INIT_TRIBUTE='{"hydro_contract":"'$HYDRO_CONTRACT_ADDRESS'"}'
 
     $NEUTRON_BINARY tx wasm instantiate $TRIBUTE_CODE_ID "$INIT_TRIBUTE" --admin $TX_SENDER_ADDRESS --label "'$TRIBUTE_SC_LABEL'" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS --output json &> ./instantiate_tribute_res.json
-    sleep 7
+    sleep 10
 
     INSTANTIATE_TRIBUTE_TX_HASH=$(grep -o '{.*}' ./instantiate_tribute_res.json | jq -r '.txhash')
     $NEUTRON_BINARY q tx $INSTANTIATE_TRIBUTE_TX_HASH $NEUTRON_NODE_FLAG --output json &> ./instantiate_tribute_tx.json
@@ -97,19 +97,19 @@ submit_proposals() {
 
     EXECUTE='{"create_proposal": {"tranche_id": 1,"title": "Proposal 1 Title", "description": "Proposal 1 Description", "deployment_duration": 1,"minimum_atom_liquidity_request":"1000"}}'
     $NEUTRON_BINARY tx wasm execute $HYDRO_CONTRACT_ADDRESS "$EXECUTE" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-    sleep 7
+    sleep 10
 
     echo 'Submitting proposal 2...'
 
     EXECUTE='{"create_proposal": {"tranche_id": 1,"title": "Proposal 2 Title", "description": "Proposal 2 Description", "deployment_duration": 1,"minimum_atom_liquidity_request":"2000"}}'
     $NEUTRON_BINARY tx wasm execute $HYDRO_CONTRACT_ADDRESS "$EXECUTE" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-    sleep 7
+    sleep 10
 
     echo 'Submitting proposal 3...'
 
     EXECUTE='{"create_proposal": {"tranche_id": 1,"title": "Proposal 3 Title", "description": "Proposal 3 Description", "deployment_duration": 1,"minimum_atom_liquidity_request":"3000"}}'
     $NEUTRON_BINARY tx wasm execute $HYDRO_CONTRACT_ADDRESS "$EXECUTE" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-    sleep 7
+    sleep 10
 }
 
 add_tributes() {
@@ -117,19 +117,19 @@ add_tributes() {
 
     EXECUTE='{"add_tribute":{"round_id":0,"tranche_id":1,"proposal_id":0}}'
     $NEUTRON_BINARY tx wasm execute $TRIBUTE_CONTRACT_ADDRESS "$EXECUTE" --amount 10000untrn --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-    sleep 7
+    sleep 10
 
     echo 'Adding proposal 2 tribute...'
 
     EXECUTE='{"add_tribute":{"round_id":0,"tranche_id":1,"proposal_id":1}}'
     $NEUTRON_BINARY tx wasm execute $TRIBUTE_CONTRACT_ADDRESS "$EXECUTE" --amount 10000untrn --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-    sleep 7
+    sleep 10
 
     echo 'Adding proposal 3 tribute...'
 
     EXECUTE='{"add_tribute":{"round_id":0,"tranche_id":1,"proposal_id":2}}'
     $NEUTRON_BINARY tx wasm execute $TRIBUTE_CONTRACT_ADDRESS "$EXECUTE" --amount 10000untrn --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-    sleep 7
+    sleep 10
 }
 
 store_hydro
