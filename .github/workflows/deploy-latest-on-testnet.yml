@@ -52,7 +52,7 @@ jobs:
           HUB_RPC_NODE=$(jq -r '.hub_rpc_node' $CONFIG_FILE)
           HUB_API_NODE=$(jq -r '.hub_api_node' $CONFIG_FILE)
 
-          sed -i "s|^RELAYER_REPO_PATH=.*$|RELAYER_REPO_PATH=./neutron-query-relayer|" ./script.sh
+          sed -i "s|^RELAYER_REPO_PATH=.*$|RELAYER_REPO_PATH=\.\/neutron-query-relayer|" ./script.sh
           sed -i "s/^export NEUTRON_CHAIN_ID=.*$/export NEUTRON_CHAIN_ID=$CHAIN_ID/" ./script.sh
           sed -i "s/^export RELAYER_NEUTRON_CHAIN_RPC_ADDR=.*$/export RELAYER_NEUTRON_CHAIN_RPC_ADDR=$NEUTRON_RPC_NODE/" ./script.sh
           sed -i "s/^export RELAYER_NEUTRON_CHAIN_REST_ADDR=.*$/export RELAYER_NEUTRON_CHAIN_REST_ADDR=$NEUTRON_API_NODE/" ./script.sh

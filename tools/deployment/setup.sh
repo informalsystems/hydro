@@ -144,7 +144,7 @@ instantiate_tribute
 echo 'Hydro contract address:' $HYDRO_CONTRACT_ADDRESS
 echo 'Tribute contract address:'  $TRIBUTE_CONTRACT_ADDRESS
 
-submit_proposals
-add_tributes
+# submit_proposals
+# add_tributes
 
 echo 'Done!'
