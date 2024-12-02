@@ -307,11 +307,16 @@ fn create_proposal_basic_test() {
     let user_address = "addr0000";
     let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
 
-    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    let (mut deps, mut env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
-    let msg = get_default_instantiate_msg(&deps.api);
+    let instantiate_message = get_default_instantiate_msg(&deps.api);
 
-    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    let res = instantiate(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        instantiate_message.clone(),
+    );
     assert!(res.is_ok());
 
     let msg1 = ExecuteMsg::CreateProposal {
@@ -359,7 +364,7 @@ fn create_proposal_basic_test() {
     let res = res.unwrap();
     assert_eq!(0, res.proposals.len());
 
-    // create a proposal in a future round
+    // create a proposal in a future round; this should work
     let msg3 = ExecuteMsg::CreateProposal {
         round_id: Some(5),
         tranche_id: 1,
@@ -377,6 +382,31 @@ fn create_proposal_basic_test() {
 
     let res = res.unwrap();
     assert_eq!(1, res.proposals.len());
+
+    // advance time to round 1
+    env.block.time = env
+        .block
+        .time
+        .plus_nanos(instantiate_message.round_length + 1);
+
+    // create a proposal in a past round; this should fail
+    let msg4 = ExecuteMsg::CreateProposal {
+        round_id: Some(0),
+        tranche_id: 1,
+        title: "proposal title 4".to_string(),
+        description: "proposal description 4".to_string(),
+        deployment_duration: 1,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg4.clone());
+
+    assert!(res.is_err());
+    assert!(res
+        .err()
+        .unwrap()
+        .to_string()
+        .contains("cannot create a proposal in a round that ended in the past"),);
 }
 
 #[test]

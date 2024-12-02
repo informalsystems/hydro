@@ -643,6 +643,12 @@ fn create_proposal(
     // if no round_id is provided, use the current round
     let round_id = round_id.unwrap_or(current_round_id);
 
+    if current_round_id > round_id {
+        return Err(ContractError::Std(StdError::generic_err(
+            "cannot create a proposal in a round that ended in the past",
+        )));
+    }
+
     // validate that the sender is on the whitelist
     let whitelist = WHITELIST.load(deps.storage)?;
 
