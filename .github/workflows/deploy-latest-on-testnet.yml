@@ -17,6 +17,7 @@ jobs:
         run: |
           curl -L -o neutrond https://github.com/neutron-org/neutron/releases/download/v5.0.2/neutrond-linux-amd64
           chmod +x neutrond
+          echo "$(pwd)" >> $GITHUB_PATH
       
       - name: Checkout Neutron ICQ relayer repository
         uses: actions/checkout@v4
@@ -56,7 +57,6 @@ jobs:
           sed -i "s/^export NEUTRON_CHAIN_ID=.*$/export NEUTRON_CHAIN_ID=$CHAIN_ID/" ./script.sh
           sed -i "s/^export RELAYER_NEUTRON_CHAIN_RPC_ADDR=.*$/export RELAYER_NEUTRON_CHAIN_RPC_ADDR=$NEUTRON_RPC_NODE/" ./script.sh
           sed -i "s/^export RELAYER_NEUTRON_CHAIN_REST_ADDR=.*$/export RELAYER_NEUTRON_CHAIN_REST_ADDR=$NEUTRON_API_NODE/" ./script.sh
-          sed -i "s/^export RELAYER_NEUTRON_CHAIN_HOME_DIR=.*$/export RELAYER_NEUTRON_CHAIN_HOME_DIR=\.\/.neutrond/" ./script.sh
           sed -i "s/^export RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=.*$/export RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=$TX_SENDER_WALLET/" ./script.sh
           sed -i "s/^export RELAYER_NEUTRON_CHAIN_CONNECTION_ID=.*$/export RELAYER_NEUTRON_CHAIN_CONNECTION_ID=$HUB_CONNECTION_ID/" ./script.sh
           sed -i "s/^export RELAYER_TARGET_CHAIN_RPC_ADDR=.*$/export RELAYER_TARGET_CHAIN_RPC_ADDR=$HUB_RPC_NODE/" ./script.sh
