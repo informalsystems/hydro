@@ -44,6 +44,7 @@ pub enum ExecuteMsg {
     },
     UnlockTokens {},
     CreateProposal {
+        round_id: Option<u64>,
         tranche_id: u64,
         title: String,
         description: String,
