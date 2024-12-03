@@ -1,11 +1,11 @@
-use cosmwasm_std::{Decimal, Deps, Env, Order, StdError, StdResult, Storage};
+use cosmwasm_std::{Decimal, Deps, Env, Order, StdError, StdResult, Storage, Uint128};
 
 use neutron_sdk::bindings::query::NeutronQuery;
 use neutron_std::types::ibc::applications::transfer::v1::{DenomTrace, TransferQuerier};
 
 use crate::state::{
-    ValidatorInfo, SCALED_ROUND_POWER_SHARES_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
-    VALIDATORS_STORE_INITIALIZED,
+    ValidatorInfo, SCALED_ROUND_POWER_SHARES_MAP, TOTAL_VOTING_POWER_PER_ROUND, VALIDATORS_INFO,
+    VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
 };
 use crate::{
     contract::compute_current_round_id,
@@ -239,7 +239,20 @@ pub fn add_validator_shares_to_round_total(
 ) -> StdResult<()> {
     let current_shares = get_validator_shares_for_round(storage, round_id, validator.clone())?;
     let new_shares = current_shares + num_shares;
-    SCALED_ROUND_POWER_SHARES_MAP.save(storage, (round_id, validator), &new_shares)
+    SCALED_ROUND_POWER_SHARES_MAP.save(storage, (round_id, validator), &new_shares)?;
+
+    // update the total power for the round
+    let total_power_before = TOTAL_VOTING_POWER_PER_ROUND
+        .may_load(storage, round_id)?
+        .unwrap_or(Uint128::zero());
+
+    let val_power_ratio =
+        get_validator_power_ratio_for_round(storage, round_id, validator.clone())?;
+
+    let new_total_power =
+        num_shares * val_power_ratio + Decimal::from_ratio(total_power_before, Uint128::one());
+
+    TOTAL_VOTING_POWER_PER_ROUND.save(storage, round_id, &new_total_power.to_uint_floor())?;
 }
 
 pub fn get_validator_shares_for_round(

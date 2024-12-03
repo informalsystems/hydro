@@ -17,12 +17,12 @@ export RELAYER_NEUTRON_CHAIN_OUTPUT_FORMAT=json
 export RELAYER_TARGET_CHAIN_RPC_ADDR=https://cosmos-rpc.publicnode.com:443
 export RELAYER_TARGET_CHAIN_API_ADDR=https://api.cosmos.nodestake.org
 # this needs to be the address of the contract
-export RELAYER_REGISTRY_ADDRESSES=neutron13w6sagl4clacx4c8drhuwfl20cesn3pnllhf37e65ls8zwf6gcgq93t2lp
+export RELAYER_REGISTRY_ADDRESSES=neutron19hrdlfxndhmzy6xmfx98cn3mhnk2qa488flcfzxy8mn4dufpxqzqmgmrjp
 # maximum number of validator queries to submit in a single block.
 # lower this if you get errors about exceeding the max block size
 export BATCH_SIZE=30
 # the number of top validators to add queries for
-export NUM_VALIDATORS_TO_ADD=300
+export NUM_VALIDATORS_TO_ADD=10
 
 #####
 # typically, no need to modify these  

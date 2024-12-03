@@ -1,6 +1,6 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
-use cw_storage_plus::{Item, Map};
+use cw_storage_plus::{Item, Map, SnapshotMap, Strategy};
 
 use crate::msg::LiquidityDeployment;
 
@@ -39,6 +39,26 @@ pub struct LockEntry {
     pub lock_start: Timestamp,
     pub lock_end: Timestamp,
 }
+
+// Note that this is a snapshot map, so that we can later query the status of this at certain block heights.
+// This should be the users total voting power, i.e. the sum of the powers of all their lockups.
+// USER_VOTING_POWER_PER_ROUND: key(user_address, round_id) -> voting_power
+pub const USER_VOTING_POWER_PER_ROUND: SnapshotMap<(Addr, u64), Uint128> = SnapshotMap::new(
+    "user_voting_power_per_round",
+    "user_voting_power_per_round__checkpoints",
+    "user_voting_power_per_round__changelog",
+    Strategy::EveryBlock,
+);
+
+// This is the total voting power of all users combined.
+// This should be the sum of all the values in USER_VOTING_POWER_PER_ROUND.
+// TOTAL_VOTING_POWER_PER_ROUND: key(round_id) -> total_voting_power
+pub const TOTAL_VOTING_POWER_PER_ROUND: SnapshotMap<u64, Uint128> = SnapshotMap::new(
+    "total_voting_power_per_round",
+    "total_voting_power_per_round__checkpoints",
+    "total_voting_power_per_round__changelog",
+    Strategy::EveryBlock,
+);
 
 // PROPOSAL_MAP: key(round_id, tranche_id, prop_id) -> Proposal
 pub const PROPOSAL_MAP: Map<(u64, u64, u64), Proposal> = Map::new("prop_map");
