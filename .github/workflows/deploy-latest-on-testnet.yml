@@ -29,7 +29,7 @@ jobs:
           path: ./neutron-query-relayer  # directory to checkout the repo into
           ref: 'refs/tags/v0.3.0' # tag to checkout
 
-      # Runs scripts to store the codes, instantiate contracts and create proposals with tributes
+      # Run scripts to store the codes, instantiate contracts and create proposals with tributes
       - name: Deploy contracts
         env:
           TESTNET_MNEMONIC: ${{ secrets.E2E_TESTS_MNEMONIC }}
@@ -39,8 +39,11 @@ jobs:
           TX_SENDER_WALLET=$(jq -r '.tx_sender_wallet' $CONFIG_FILE)
           echo $TESTNET_MNEMONIC | neutrond keys add $TX_SENDER_WALLET --keyring-backend test --recover
 
-          chmod +x ./tools/deployment/setup.sh
-          bash ./tools/deployment/setup.sh $CONFIG_FILE true
+          chmod +x ./tools/deployment/store_instantiate.sh
+          chmod +x ./tools/deployment/populate_contracts.sh
+
+          source ./tools/deployment/store_instantiate.sh $CONFIG_FILE true
+          source ./tools/deployment/populate_contracts.sh $CONFIG_FILE
       
       # Run tools/script.sh to create validator ICQs in the contract and run the ICQ relayer to
       # get the results into the contract

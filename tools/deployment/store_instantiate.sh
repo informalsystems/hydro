@@ -37,8 +37,8 @@ TRIBUTE_WASM_PATH="./artifacts/tribute.wasm"
 HYDRO_CODE_ID=""
 TRIBUTE_CODE_ID=""
 
-HYDRO_SC_LABEL="Hydro V2.0.2- Round End Testing"
-TRIBUTE_SC_LABEL="Tribute V2.0.2- Round End Testing"
+HYDRO_SC_LABEL="Hydro"
+TRIBUTE_SC_LABEL="Tribute"
 
 store_hydro() {
     echo 'Storing Hydro wasm...'
@@ -72,7 +72,7 @@ instantiate_hydro() {
 
     INSTANTIATE_HYDRO_TX_HASH=$(grep -o '{.*}' ./instantiate_hydro_res.json | jq -r '.txhash')
     $NEUTRON_BINARY q tx $INSTANTIATE_HYDRO_TX_HASH $NEUTRON_NODE_FLAG --output json &> ./instantiate_hydro_tx.json
-    HYDRO_CONTRACT_ADDRESS=$(jq -r '.events[] | select(.type == "instantiate") | .attributes[] | select(.key == "_contract_address") | .value' ./instantiate_hydro_tx.json)
+    export HYDRO_CONTRACT_ADDRESS=$(jq -r '.events[] | select(.type == "instantiate") | .attributes[] | select(.key == "_contract_address") | .value' ./instantiate_hydro_tx.json)
 
     if $IS_GITHUB_WORKFLOW; then
         echo "HYDRO_CONTRACT_ADDRESS=$HYDRO_CONTRACT_ADDRESS" >> $GITHUB_ENV
@@ -89,47 +89,11 @@ instantiate_tribute() {
 
     INSTANTIATE_TRIBUTE_TX_HASH=$(grep -o '{.*}' ./instantiate_tribute_res.json | jq -r '.txhash')
     $NEUTRON_BINARY q tx $INSTANTIATE_TRIBUTE_TX_HASH $NEUTRON_NODE_FLAG --output json &> ./instantiate_tribute_tx.json
-    TRIBUTE_CONTRACT_ADDRESS=$(jq -r '.events[] | select(.type == "instantiate") | .attributes[] | select(.key == "_contract_address") | .value' ./instantiate_tribute_tx.json)
-}
+    export TRIBUTE_CONTRACT_ADDRESS=$(jq -r '.events[] | select(.type == "instantiate") | .attributes[] | select(.key == "_contract_address") | .value' ./instantiate_tribute_tx.json)
 
-submit_proposals() {
-    echo 'Submitting proposal 1...'
-
-    EXECUTE='{"create_proposal": {"tranche_id": 1,"title": "Proposal 1 Title", "description": "Proposal 1 Description", "deployment_duration": 1,"minimum_atom_liquidity_request":"1000"}}'
-    $NEUTRON_BINARY tx wasm execute $HYDRO_CONTRACT_ADDRESS "$EXECUTE" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-    sleep 10
-
-    echo 'Submitting proposal 2...'
-
-    EXECUTE='{"create_proposal": {"tranche_id": 1,"title": "Proposal 2 Title", "description": "Proposal 2 Description", "deployment_duration": 1,"minimum_atom_liquidity_request":"2000"}}'
-    $NEUTRON_BINARY tx wasm execute $HYDRO_CONTRACT_ADDRESS "$EXECUTE" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-    sleep 10
-
-    echo 'Submitting proposal 3...'
-
-    EXECUTE='{"create_proposal": {"tranche_id": 1,"title": "Proposal 3 Title", "description": "Proposal 3 Description", "deployment_duration": 1,"minimum_atom_liquidity_request":"3000"}}'
-    $NEUTRON_BINARY tx wasm execute $HYDRO_CONTRACT_ADDRESS "$EXECUTE" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-    sleep 10
-}
-
-add_tributes() {
-    echo 'Adding proposal 1 tribute...'
-
-    EXECUTE='{"add_tribute":{"round_id":0,"tranche_id":1,"proposal_id":0}}'
-    $NEUTRON_BINARY tx wasm execute $TRIBUTE_CONTRACT_ADDRESS "$EXECUTE" --amount 10000untrn --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-    sleep 10
-
-    echo 'Adding proposal 2 tribute...'
-
-    EXECUTE='{"add_tribute":{"round_id":0,"tranche_id":1,"proposal_id":1}}'
-    $NEUTRON_BINARY tx wasm execute $TRIBUTE_CONTRACT_ADDRESS "$EXECUTE" --amount 10000untrn --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-    sleep 10
-
-    echo 'Adding proposal 3 tribute...'
-
-    EXECUTE='{"add_tribute":{"round_id":0,"tranche_id":1,"proposal_id":2}}'
-    $NEUTRON_BINARY tx wasm execute $TRIBUTE_CONTRACT_ADDRESS "$EXECUTE" --amount 10000untrn --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-    sleep 10
+    if $IS_GITHUB_WORKFLOW; then
+        echo "TRIBUTE_CONTRACT_ADDRESS=$TRIBUTE_CONTRACT_ADDRESS" >> $GITHUB_ENV
+    fi
 }
 
 store_hydro
@@ -144,7 +108,4 @@ instantiate_tribute
 echo 'Hydro contract address:' $HYDRO_CONTRACT_ADDRESS
 echo 'Tribute contract address:'  $TRIBUTE_CONTRACT_ADDRESS
 
-# submit_proposals
-# add_tributes
-
-echo 'Done!'
+echo 'Contracts instantiated successfully!'
