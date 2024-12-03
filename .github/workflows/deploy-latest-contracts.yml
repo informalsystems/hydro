@@ -1,4 +1,4 @@
-name: Deploy contracts on Neutron testnet
+name: Deploy latest contracts
 
 on:
   push:
