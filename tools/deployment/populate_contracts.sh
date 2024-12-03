@@ -23,13 +23,13 @@ submit_proposals() {
 
     echo 'Submitting proposal 2...'
 
-    EXECUTE='{"create_proposal": {"tranche_id": 1,"title": "Proposal 2 Title", "description": "Proposal 2 Description", "deployment_duration": 1,"minimum_atom_liquidity_request":"2000"}}'
+    EXECUTE='{"create_proposal": {"tranche_id": 1,"title": "Proposal 2 Title", "description": "Proposal 2 Description", "deployment_duration": 2,"minimum_atom_liquidity_request":"2000"}}'
     $NEUTRON_BINARY tx wasm execute $HYDRO_CONTRACT_ADDRESS "$EXECUTE" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
     sleep 10
 
     echo 'Submitting proposal 3...'
 
-    EXECUTE='{"create_proposal": {"tranche_id": 1,"title": "Proposal 3 Title", "description": "Proposal 3 Description", "deployment_duration": 1,"minimum_atom_liquidity_request":"3000"}}'
+    EXECUTE='{"create_proposal": {"tranche_id": 1,"title": "Proposal 3 Title", "description": "Proposal 3 Description", "deployment_duration": 3,"minimum_atom_liquidity_request":"3000"}}'
     $NEUTRON_BINARY tx wasm execute $HYDRO_CONTRACT_ADDRESS "$EXECUTE" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
     sleep 10
 }
