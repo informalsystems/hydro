@@ -5,13 +5,13 @@ CONFIG_FILE="$1"
 IS_GITHUB_WORKFLOW=$2
 
 NEUTRON_CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
-NEUTRON_BINARY=$(jq -r '.binary_name' $CONFIG_FILE)
 NEUTRON_NODE=$(jq -r '.neutron_rpc_node' $CONFIG_FILE)
 TX_SENDER_WALLET=$(jq -r '.tx_sender_wallet' $CONFIG_FILE)
 TX_SENDER_ADDRESS=$(jq -r '.tx_sender_address' $CONFIG_FILE)
 HUB_CONNECTION_ID=$(jq -r '.hub_connection_id' $CONFIG_FILE)
 HUB_CHANNEL_ID=$(jq -r '.hub_channel_id' $CONFIG_FILE)
 
+NEUTRON_BINARY="neutrond"
 NEUTRON_CHAIN_ID_FLAG="--chain-id $NEUTRON_CHAIN_ID"
 KEYRING_TEST_FLAG="--keyring-backend test"
 TX_FLAG="--gas auto --gas-adjustment 1.3"

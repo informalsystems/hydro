@@ -8,17 +8,20 @@ on:
 jobs:
   deploy-latest-contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
+      # Checkout Hydro repository
       - name: Checkout repository
         uses: actions/checkout@v4
       
+      # Download specific neutrond binary and add it to the PATH so it can be used by other scripts
       - name: Download Neutron chain binary
         run: |
           curl -L -o neutrond https://github.com/neutron-org/neutron/releases/download/v5.0.2/neutrond-linux-amd64
           chmod +x neutrond
           echo "$(pwd)" >> $GITHUB_PATH
       
+      # Checkout Neutron ICQ relayer repository
       - name: Checkout Neutron ICQ relayer repository
         uses: actions/checkout@v4
         with:
@@ -26,6 +29,7 @@ jobs:
           path: ./neutron-query-relayer  # directory to checkout the repo into
           ref: 'refs/tags/v0.3.0' # tag to checkout
 
+      # Runs scripts to store the codes, instantiate contracts and create proposals with tributes
       - name: Deploy contracts
         env:
           TESTNET_MNEMONIC: ${{ secrets.E2E_TESTS_MNEMONIC }}
@@ -33,14 +37,15 @@ jobs:
           CONFIG_FILE="./tools/deployment/config_testnet.json"
 
           TX_SENDER_WALLET=$(jq -r '.tx_sender_wallet' $CONFIG_FILE)
-          echo $TESTNET_MNEMONIC | ./neutrond keys add $TX_SENDER_WALLET --keyring-backend test --recover
+          echo $TESTNET_MNEMONIC | neutrond keys add $TX_SENDER_WALLET --keyring-backend test --recover
 
           chmod +x ./tools/deployment/setup.sh
           bash ./tools/deployment/setup.sh $CONFIG_FILE true
       
+      # Run tools/script.sh to create validator ICQs in the contract and run the ICQ relayer to
+      # get the results into the contract
       - name: Run ICQs setup script
         run: |
-          echo $HYDRO_CONTRACT_ADDRESS
           cp ./tools/script.sh .
           chmod +x script.sh
 
@@ -66,5 +71,12 @@ jobs:
           sed -i "s/^export NUM_VALIDATORS_TO_ADD=.*$/export NUM_VALIDATORS_TO_ADD=5/" ./script.sh
           sed -i "s/^export RELAYER_STORAGE_PATH=.*$/export RELAYER_STORAGE_PATH=\.neutron_queries_relayer\/leveldb/" ./script.sh
           sed -i "s|^go run main\.go.*$|go run \./tools/main\.go|" ./script.sh
+
+          stop_icq_relayer() {
+            sleep 300
+            killall neutron_query_relayer
+          }
+
+          stop_icq_relayer &
 
           bash ./script.sh

@@ -1,6 +1,5 @@
 {
     "chain_id": "neutron-1",
-    "binary_name": "neutrond",
     "neutron_rpc_node": "https://neutron-rpc.polkachu.com",
     "neutron_api_node": "https://neutron-rest.publicnode.com",
     "hub_rpc_node": "https://cosmos-rpc.publicnode.com:443",

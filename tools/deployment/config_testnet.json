@@ -1,6 +1,5 @@
 {
     "chain_id": "pion-1",
-    "binary_name": "./neutrond",
     "neutron_rpc_node": "https://rpc-falcron.pion-1.ntrn.tech:443",
     "neutron_api_node": "https://rest-falcron.pion-1.ntrn.tech:443",
     "hub_rpc_node": "https://rpc-rs.cosmos.nodestake.top:443",
