@@ -106,6 +106,6 @@ instantiate_hydro
 instantiate_tribute
 
 echo 'Hydro contract address:' $HYDRO_CONTRACT_ADDRESS
-echo 'Tribute contract address:'  $TRIBUTE_CONTRACT_ADDRESS
+echo 'Tribute contract address:' $TRIBUTE_CONTRACT_ADDRESS
 
 echo 'Contracts instantiated successfully!'

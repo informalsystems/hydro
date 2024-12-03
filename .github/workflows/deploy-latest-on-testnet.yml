@@ -8,7 +8,7 @@ on:
 jobs:
   deploy-latest-contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 7
     steps:
       # Checkout Hydro repository
       - name: Checkout repository
@@ -76,10 +76,14 @@ jobs:
           sed -i "s|^go run main\.go.*$|go run \./tools/main\.go|" ./script.sh
 
           stop_icq_relayer() {
-            sleep 300
+            sleep 240
             killall neutron_query_relayer
           }
 
           stop_icq_relayer &
 
           bash ./script.sh
+
+          echo 'Latest contracts are deployed and ready for testing!'
+          echo 'Hydro contract address:' $HYDRO_CONTRACT_ADDRESS
+          echo 'Tribute contract address:' $TRIBUTE_CONTRACT_ADDRESS
