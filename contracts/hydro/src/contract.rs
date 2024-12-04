@@ -33,11 +33,11 @@ use crate::score_keeper::{
     remove_validator_shares_from_proposal,
 };
 use crate::state::{
-    Constants, LockEntry, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo,
-    Vote, VoteWithPower, CONSTANTS, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS,
-    LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP,
-    VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID,
-    VOTE_MAP, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
+    Constants, LockEntry, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo, Vote,
+    VoteWithPower, CONSTANTS, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP,
+    LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, VALIDATORS_INFO,
+    VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP,
+    VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
@@ -82,7 +82,7 @@ pub fn instantiate(
         icq_update_period: msg.icq_update_period,
         max_deployment_duration: msg.max_deployment_duration,
         paused: false,
-        round_lock_power_schedule: msg.round_lock_power_schedule,
+        round_lock_power_schedule: RoundLockPowerSchedule::new(msg.round_lock_power_schedule),
     };
 
     CONSTANTS.save(deps.storage, &state)?;
