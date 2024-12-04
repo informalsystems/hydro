@@ -33,11 +33,11 @@ use crate::score_keeper::{
     remove_validator_shares_from_proposal,
 };
 use crate::state::{
-    Constants, LockEntry, Proposal, Tranche, ValidatorInfo, Vote, VoteWithPower, CONSTANTS,
-    ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP,
-    PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
-    VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP, VOTING_ALLOWED_ROUND, WHITELIST,
-    WHITELIST_ADMINS,
+    Constants, LockEntry, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo,
+    Vote, VoteWithPower, CONSTANTS, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS,
+    LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP,
+    VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID,
+    VOTE_MAP, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
@@ -468,13 +468,14 @@ fn refresh_single_lock(
 
 // Validate that the lock duration (given in nanos) is either 1, 2, 3, 6, or 12 epochs
 fn validate_lock_duration(
-    round_lock_power_schedule: &[(u64, Decimal)],
+    round_lock_power_schedule: &RoundLockPowerSchedule,
     lock_epoch_length: u64,
     lock_duration: u64,
 ) -> Result<(), ContractError> {
     let lock_times = round_lock_power_schedule
+        .round_lock_power_schedule
         .iter()
-        .map(|(lock_time, _)| *lock_time * lock_epoch_length)
+        .map(|entry| entry.locked_rounds * lock_epoch_length)
         .collect::<Vec<u64>>();
 
     if !lock_times.contains(&lock_duration) {
@@ -669,21 +670,27 @@ fn create_proposal(
 }
 
 pub fn scale_lockup_power(
-    round_lock_power_schedule: &[(u64, Decimal)],
+    round_lock_power_schedule: &RoundLockPowerSchedule,
     lock_epoch_length: u64,
     lockup_time: u64,
     raw_power: Uint128,
 ) -> Uint128 {
-    for (lock_time, power_ratio) in round_lock_power_schedule.iter() {
-        let needed_lock_time = lock_time * lock_epoch_length;
+    for entry in round_lock_power_schedule.round_lock_power_schedule.iter() {
+        let needed_lock_time = entry.locked_rounds * lock_epoch_length;
         if lockup_time <= needed_lock_time {
-            let power = power_ratio.saturating_mul(Decimal::from_ratio(raw_power, Uint128::one()));
+            let power = entry
+                .power_scaling_factor
+                .saturating_mul(Decimal::from_ratio(raw_power, Uint128::one()));
             return power.to_uint_floor();
         }
     }
 
     // if lockup time is longer than the longest lock time, return the maximum power
-    let largest_multiplier = round_lock_power_schedule.last().unwrap().1;
+    let largest_multiplier = round_lock_power_schedule
+        .round_lock_power_schedule
+        .last()
+        .unwrap()
+        .power_scaling_factor;
     largest_multiplier
         .saturating_mul(Decimal::new(raw_power))
         .to_uint_floor()
@@ -886,10 +893,10 @@ fn vote(
 
             let scaled_shares = Decimal::from_ratio(
                 get_lock_time_weighted_shares(
+                    &constants.round_lock_power_schedule,
                     round_end,
                     lock_entry.clone(),
                     lock_epoch_length,
-                    &constants.round_lock_power_schedule,
                 ),
                 Uint128::one(),
             );
@@ -961,10 +968,10 @@ fn vote(
 // Returns the time-weighted amount of shares locked in the given lock entry in a round with the given end time,
 // and using the given lock epoch length.
 pub fn get_lock_time_weighted_shares(
+    round_lock_power_schedule: &RoundLockPowerSchedule,
     round_end: Timestamp,
     lock_entry: LockEntry,
     lock_epoch_length: u64,
-    round_lock_power_schedule: &[(u64, Decimal)],
 ) -> Uint128 {
     if round_end.nanos() > lock_entry.lock_end.nanos() {
         return Uint128::zero();
@@ -2065,17 +2072,17 @@ fn update_voting_power_on_proposals(
     let old_scaled_shares = match old_lock_entry.as_ref() {
         None => Uint128::zero(),
         Some(lock_entry) => get_lock_time_weighted_shares(
+            &constants.round_lock_power_schedule,
             round_end,
             lock_entry.clone(),
             lock_epoch_length,
-            &constants.round_lock_power_schedule,
         ),
     };
     let new_scaled_shares = get_lock_time_weighted_shares(
+        &constants.round_lock_power_schedule,
         round_end,
         new_lock_entry.clone(),
         lock_epoch_length,
-        &constants.round_lock_power_schedule,
     );
 
     // With a future code changes, it could happen that the new power becomes less than
@@ -2374,10 +2381,10 @@ fn to_lockup_with_power(
                 }
                 Ok(validator_power_ratio) => {
                     let time_weighted_shares = get_lock_time_weighted_shares(
+                        &constants.round_lock_power_schedule,
                         round_end,
                         lock_entry.clone(),
                         constants.lock_epoch_length,
-                        &constants.round_lock_power_schedule,
                     );
 
                     let current_voting_power = validator_power_ratio

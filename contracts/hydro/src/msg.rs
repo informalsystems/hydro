@@ -2,6 +2,8 @@ use cosmwasm_std::{Coin, Decimal, Timestamp, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::state::RoundLockPowerSchedule;
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
     pub round_length: u64,
@@ -21,19 +23,9 @@ pub struct InstantiateMsg {
     // they can however not withdraw user funds that were locked for voting.
     pub icq_managers: Vec<String>,
     pub max_deployment_duration: u64,
-    // A vector of tuples, where each tuple contains a round number and the power scaling factor
-    // that a lockup has when it has this many rounds left at the end of the round.
-    // The vector should be sorted by round number in ascending order.
-    // It will always be implicit that 0 rounds lock left corresponds to 0 voting power.
-    // Otherwise, it implicitly assumes that between two entries, the larger entries power is used.
-    // For example, if the vector is [(1, 1), (2, 1.25), (3, 1.5), (6, 2), (12, 4)],
-    // then the power scaling factors are
-    // 0x if lockup has expires before the end of the round
-    // 1x if lockup has between 0 and 1 epochs left at the end of the round
-    // 1.25x if lockup has between 1 and 2 epochs left at the end of the round
-    // 1.5x if lockup has between 2 and 3 epochs left at the end of the round
-    // 2x if lockup has between 3 and 6 epochs left at the end of the round
-    // 4x if lockup has between 6 and 12 epochs left at the end of the round
+    // A schedule of how the lock power changes over time.
+    // The first element is the round number, the second element is the lock power.
+    // See the RoundLockPowerSchedule struct for more information.
     pub round_lock_power_schedule: Vec<(u64, Decimal)>,
 }
 

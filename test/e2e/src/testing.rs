@@ -1,18 +1,28 @@
 use std::{
+    str::FromStr,
     thread,
     time::{Duration, UNIX_EPOCH},
 };
 
-use cosmwasm_std::{Timestamp, Uint128};
+use cosmwasm_std::{Decimal, Timestamp, Uint128};
 
 use cw_orch::{anyhow, prelude::*};
 
 use hydro::{
-    migration::unreleased::get_default_power_schedule, msg::TrancheInfo,
-    query::QueryMsgFns as HydroQueryMsgFns,
+    msg::TrancheInfo, query::QueryMsgFns as HydroQueryMsgFns, state::RoundLockPowerSchedule,
 };
 use interface::{hydro::*, tribute::*};
 use tribute::query::QueryMsgFns as TributeQueryMsgFns;
+
+pub fn get_default_power_schedule() -> RoundLockPowerSchedule {
+    RoundLockPowerSchedule::new(vec![
+        (1, Decimal::from_str("1").unwrap()),
+        (2, Decimal::from_str("1.25").unwrap()),
+        (3, Decimal::from_str("1.5").unwrap()),
+        (6, Decimal::from_str("2").unwrap()),
+        (12, Decimal::from_str("4").unwrap()),
+    ])
+}
 
 #[test]
 pub fn e2e_basic_test() -> anyhow::Result<()> {
