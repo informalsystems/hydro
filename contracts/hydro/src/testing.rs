@@ -67,14 +67,18 @@ pub fn set_default_validator_for_rounds(
     }
 }
 
-pub fn get_default_power_schedule() -> RoundLockPowerSchedule {
-    RoundLockPowerSchedule::new(vec![
+pub fn get_default_power_schedule_vec() -> Vec<(u64, Decimal)> {
+    vec![
         (1, Decimal::from_str("1").unwrap()),
         (2, Decimal::from_str("1.25").unwrap()),
         (3, Decimal::from_str("1.5").unwrap()),
         (6, Decimal::from_str("2").unwrap()),
         (12, Decimal::from_str("4").unwrap()),
-    ])
+    ]
+}
+
+pub fn get_default_power_schedule() -> RoundLockPowerSchedule {
+    RoundLockPowerSchedule::new(get_default_power_schedule_vec())
 }
 
 pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
@@ -97,7 +101,7 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         icq_update_period: 100,
         icq_managers: vec![user_address],
         max_deployment_duration: 12,
-        round_lock_power_schedule: get_default_power_schedule(),
+        round_lock_power_schedule: get_default_power_schedule_vec(),
     }
 }
 
@@ -2326,11 +2330,11 @@ pub fn pilot_round_lock_duration_test() {
         msg.whitelist_admins = vec![get_address_as_str(&deps.api, whitelist_admin)];
         msg.round_length = ONE_DAY_IN_NANO_SECONDS;
         msg.lock_epoch_length = ONE_MONTH_IN_NANO_SECONDS;
-        msg.round_lock_power_schedule = RoundLockPowerSchedule::new(vec![
+        msg.round_lock_power_schedule = vec![
             (1, Decimal::from_str("1").unwrap()),
             (2, Decimal::from_str("1.25").unwrap()),
             (3, Decimal::from_str("1.5").unwrap()),
-        ]);
+        ];
 
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());

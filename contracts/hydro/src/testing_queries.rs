@@ -4,7 +4,9 @@ use std::str::FromStr;
 use crate::contract::{
     compute_current_round_id, query_all_user_lockups, query_user_votes, scale_lockup_power,
 };
-use crate::state::{ValidatorInfo, Vote, CONSTANTS, VALIDATORS_INFO, VOTE_MAP};
+use crate::state::{
+    RoundLockPowerSchedule, ValidatorInfo, Vote, CONSTANTS, VALIDATORS_INFO, VOTE_MAP,
+};
 use crate::testing::{
     get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds, IBC_DENOM_1,
     ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_3,
@@ -35,7 +37,9 @@ fn query_user_lockups_test() {
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
 
-    let instantiate_msg = get_default_instantiate_msg(&deps.api);
+    let instantiate_msg: crate::msg::InstantiateMsg = get_default_instantiate_msg(&deps.api);
+    let round_lock_power_schedule =
+        RoundLockPowerSchedule::new(instantiate_msg.clone().round_lock_power_schedule);
 
     let res = instantiate(deps.as_mut(), env.clone(), info, instantiate_msg.clone());
     assert!(res.is_ok());
@@ -104,7 +108,7 @@ fn query_user_lockups_test() {
     assert_eq!(
         // adjust for the 3 month lockup
         scale_lockup_power(
-            &instantiate_msg.round_lock_power_schedule,
+            &round_lock_power_schedule,
             ONE_MONTH_IN_NANO_SECONDS,
             3 * ONE_MONTH_IN_NANO_SECONDS,
             Uint128::new(second_lockup_amount),
@@ -151,7 +155,7 @@ fn query_user_lockups_test() {
     assert_eq!(
         // adjust for the remaining 2 month lockup
         scale_lockup_power(
-            &instantiate_msg.round_lock_power_schedule,
+            &round_lock_power_schedule,
             ONE_MONTH_IN_NANO_SECONDS,
             2 * ONE_MONTH_IN_NANO_SECONDS,
             Uint128::new(second_lockup_amount),
