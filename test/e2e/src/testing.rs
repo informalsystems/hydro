@@ -8,20 +8,18 @@ use cosmwasm_std::{Decimal, Timestamp, Uint128};
 
 use cw_orch::{anyhow, prelude::*};
 
-use hydro::{
-    msg::TrancheInfo, query::QueryMsgFns as HydroQueryMsgFns, state::RoundLockPowerSchedule,
-};
+use hydro::{msg::TrancheInfo, query::QueryMsgFns as HydroQueryMsgFn};
 use interface::{hydro::*, tribute::*};
 use tribute::query::QueryMsgFns as TributeQueryMsgFns;
 
-pub fn get_default_power_schedule() -> RoundLockPowerSchedule {
-    RoundLockPowerSchedule::new(vec![
+pub fn get_default_power_schedule_vec() -> Vec<(u64, Decimal)> {
+    vec![
         (1, Decimal::from_str("1").unwrap()),
         (2, Decimal::from_str("1.25").unwrap()),
         (3, Decimal::from_str("1.5").unwrap()),
         (6, Decimal::from_str("2").unwrap()),
         (12, Decimal::from_str("4").unwrap()),
-    ])
+    ]
 }
 
 #[test]
@@ -82,7 +80,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             icq_update_period: 10000,
             icq_managers: vec![],
             max_deployment_duration: 12,
-            round_lock_power_schedule: get_default_power_schedule(),
+            round_lock_power_schedule: get_default_power_schedule_vec(),
         },
         Some(&Addr::unchecked(whitelist_admin_address.clone())),
         &[],

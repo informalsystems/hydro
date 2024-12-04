@@ -39,7 +39,14 @@ export interface Constants {
   max_validator_shares_participating: number;
   paused: boolean;
   round_length: number;
-  round_lock_power_schedule: [number, Decimal][];
+  round_lock_power_schedule: RoundLockPowerSchedule;
+}
+export interface RoundLockPowerSchedule {
+  round_lock_power_schedule: LockPowerEntry[];
+}
+export interface LockPowerEntry {
+  locked_rounds: number;
+  power_scaling_factor: Decimal;
 }
 export interface CurrentRoundResponse {
   round_end: Timestamp;
