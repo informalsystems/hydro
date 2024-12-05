@@ -88,3 +88,12 @@ jobs:
           echo 'Latest contracts are deployed and ready for testing!'
           echo 'Hydro contract address:' $HYDRO_CONTRACT_ADDRESS
           echo 'Tribute contract address:' $TRIBUTE_CONTRACT_ADDRESS
+
+      - name: Archive log files
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: |
+            *_res.json
+            *_tx.json
+
