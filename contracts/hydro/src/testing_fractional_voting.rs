@@ -450,6 +450,7 @@ fn fractional_voting_test() {
 
         let proposal_msgs = vec![
             ExecuteMsg::CreateProposal {
+                round_id: None,
                 tranche_id: tranche_id_1,
                 title: "proposal title 1".to_string(),
                 description: "proposal description 1".to_string(),
@@ -457,6 +458,7 @@ fn fractional_voting_test() {
                 deployment_duration: 1,
             },
             ExecuteMsg::CreateProposal {
+                round_id: None,
                 tranche_id: tranche_id_1,
                 title: "proposal title 2".to_string(),
                 description: "proposal description 2".to_string(),
