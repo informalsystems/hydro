@@ -97,6 +97,14 @@
             "minimum_atom_liquidity_request": {
               "$ref": "#/definitions/Uint128"
             },
+            "round_id": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "title": {
               "type": "string"
             },

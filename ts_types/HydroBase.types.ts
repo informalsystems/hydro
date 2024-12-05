@@ -68,6 +68,7 @@ export type ExecuteMsg = {
     deployment_duration: number;
     description: string;
     minimum_atom_liquidity_request: Uint128;
+    round_id?: number | null;
     title: string;
     tranche_id: number;
   };

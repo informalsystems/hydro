@@ -322,14 +322,20 @@ fn create_proposal_basic_test() {
     let user_address = "addr0000";
     let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
 
-    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    let (mut deps, mut env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
-    let msg = get_default_instantiate_msg(&deps.api);
+    let instantiate_message = get_default_instantiate_msg(&deps.api);
 
-    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    let res = instantiate(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        instantiate_message.clone(),
+    );
     assert!(res.is_ok());
 
     let msg1 = ExecuteMsg::CreateProposal {
+        round_id: None,
         tranche_id: 1,
         title: "proposal title 1".to_string(),
         description: "proposal description 1".to_string(),
@@ -340,6 +346,7 @@ fn create_proposal_basic_test() {
     assert!(res.is_ok());
 
     let msg2 = ExecuteMsg::CreateProposal {
+        round_id: None,
         tranche_id: 1,
         title: "proposal title 2".to_string(),
         description: "proposal description 2".to_string(),
@@ -371,6 +378,50 @@ fn create_proposal_basic_test() {
 
     let res = res.unwrap();
     assert_eq!(0, res.proposals.len());
+
+    // create a proposal in a future round; this should work
+    let msg3 = ExecuteMsg::CreateProposal {
+        round_id: Some(5),
+        tranche_id: 1,
+        title: "proposal title 3".to_string(),
+        description: "proposal description 3".to_string(),
+        deployment_duration: 1,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg3.clone());
+    assert!(res.is_ok());
+
+    let res = query_round_tranche_proposals(deps.as_ref(), 5, 1, 0, 3000);
+
+    assert!(res.is_ok(), "error: {:?}", res);
+
+    let res = res.unwrap();
+    assert_eq!(1, res.proposals.len());
+
+    // advance time to round 1
+    env.block.time = env
+        .block
+        .time
+        .plus_nanos(instantiate_message.round_length + 1);
+
+    // create a proposal in a past round; this should fail
+    let msg4 = ExecuteMsg::CreateProposal {
+        round_id: Some(0),
+        tranche_id: 1,
+        title: "proposal title 4".to_string(),
+        description: "proposal description 4".to_string(),
+        deployment_duration: 1,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg4.clone());
+
+    assert!(res.is_err());
+    assert!(res
+        .err()
+        .unwrap()
+        .to_string()
+        .contains("cannot create a proposal in a round that ended in the past"),);
 }
 
 #[test]
@@ -445,6 +496,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
 
     for prop_info in prop_infos {
         let msg = ExecuteMsg::CreateProposal {
+            round_id: None,
             tranche_id: prop_info.0,
             title: prop_info.1,
             description: prop_info.2,
@@ -692,6 +744,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
 
     // create a new proposal in this round
     let msg = ExecuteMsg::CreateProposal {
+        round_id: None,
         tranche_id: first_tranche_id,
         title: "proposal title 4".to_string(),
         description: "proposal description 4".to_string(),
@@ -760,6 +813,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
 
     // create a new (fifth) proposal that requires liquidity for 3 rounds
     let msg = ExecuteMsg::CreateProposal {
+        round_id: None,
         tranche_id: first_tranche_id,
         title: "proposal title 5".to_string(),
         description: "proposal description 5".to_string(),
@@ -899,6 +953,7 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
 
     for prop_info in prop_infos {
         let msg = ExecuteMsg::CreateProposal {
+            round_id: None,
             tranche_id: prop_info.0,
             title: prop_info.1,
             description: prop_info.2,
@@ -1079,6 +1134,7 @@ fn vote_extended_proposals_test() {
 
     for prop_info in &prop_infos {
         let msg = ExecuteMsg::CreateProposal {
+            round_id: None,
             tranche_id,
             title: prop_info.0.clone(),
             description: prop_info.1.clone(),
@@ -1174,6 +1230,7 @@ fn vote_extended_proposals_test() {
 
     // create new proposal p(4) (successor of p(1))
     let msg = ExecuteMsg::CreateProposal {
+        round_id: None,
         tranche_id,
         title: prop_infos[0].0.clone(),
         description: prop_infos[0].1.clone(),
@@ -1219,6 +1276,7 @@ fn vote_extended_proposals_test() {
 
     // create new proposal p(5), successor of p(4)
     let msg = ExecuteMsg::CreateProposal {
+        round_id: None,
         tranche_id,
         title: prop_infos[0].0.clone(),
         description: prop_infos[0].1.clone(),
@@ -1283,6 +1341,7 @@ fn multi_tranches_test() {
 
     // create two proposals for tranche 1
     let msg1 = ExecuteMsg::CreateProposal {
+        round_id: None,
         tranche_id: 1,
         title: "proposal title 1".to_string(),
         description: "proposal description 1".to_string(),
@@ -1293,6 +1352,7 @@ fn multi_tranches_test() {
     assert!(res.is_ok());
 
     let msg2 = ExecuteMsg::CreateProposal {
+        round_id: None,
         tranche_id: 1,
         title: "proposal title 2".to_string(),
         description: "proposal description 2".to_string(),
@@ -1304,6 +1364,7 @@ fn multi_tranches_test() {
 
     // create two proposals for tranche 2
     let msg3 = ExecuteMsg::CreateProposal {
+        round_id: None,
         tranche_id: 2,
         title: "proposal title 3".to_string(),
         description: "proposal description 3".to_string(),
@@ -1314,6 +1375,7 @@ fn multi_tranches_test() {
     assert!(res.is_ok());
 
     let msg4 = ExecuteMsg::CreateProposal {
+        round_id: None,
         tranche_id: 2,
         title: "proposal title 4".to_string(),
         description: "proposal description 4".to_string(),
@@ -1458,6 +1520,7 @@ fn test_query_round_tranche_proposals_pagination() {
     let num_proposals = 5;
     for i in 0..num_proposals {
         let create_proposal_msg = ExecuteMsg::CreateProposal {
+            round_id: None,
             tranche_id: 1,
             title: format!("proposal title {}", i),
             description: format!("proposal description {}", i),
@@ -2129,6 +2192,7 @@ fn contract_pausing_test() {
         },
         ExecuteMsg::UnlockTokens {},
         ExecuteMsg::CreateProposal {
+            round_id: None,
             tranche_id: 0,
             title: "".to_string(),
             description: "".to_string(),
@@ -2214,6 +2278,7 @@ pub fn whitelist_proposal_submission_test() {
     // try to submit a proposal with a non-whitelisted address
     info = get_message_info(&deps.api, "addr0002", &[]);
     let proposal_msg = ExecuteMsg::CreateProposal {
+        round_id: None,
         tranche_id: 1,
         title: "proposal title".to_string(),
         description: "proposal description".to_string(),

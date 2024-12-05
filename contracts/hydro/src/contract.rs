@@ -161,6 +161,7 @@ pub fn execute(
         } => refresh_lock_duration(deps, env, info, lock_ids, lock_duration),
         ExecuteMsg::UnlockTokens {} => unlock_tokens(deps, env, info),
         ExecuteMsg::CreateProposal {
+            round_id,
             tranche_id,
             title,
             description,
@@ -170,6 +171,7 @@ pub fn execute(
             deps,
             env,
             info,
+            round_id,
             tranche_id,
             title,
             description,
@@ -596,12 +598,14 @@ fn validate_previous_round_vote(
 // It will:
 // * validate that the contract is not paused
 // * validate that the creator of the proposal is on the whitelist
-// Then, it will create the proposal in the specified tranche and in the current round.
+// Then, it will create the proposal in the specified tranche and in the specified round.
+// If no round_id is specified, the function will use the current round id.
 #[allow(clippy::too_many_arguments)]
 fn create_proposal(
     deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
+    round_id: Option<u64>,
     tranche_id: u64,
     title: String,
     description: String,
@@ -611,8 +615,18 @@ fn create_proposal(
     let constants = CONSTANTS.load(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
-    let round_id = compute_current_round_id(&env, &constants)?;
-    initialize_validator_store(deps.storage, round_id)?;
+    let current_round_id = compute_current_round_id(&env, &constants)?;
+    // this is just to initialize the store on the first action in each round
+    initialize_validator_store(deps.storage, current_round_id)?;
+
+    // if no round_id is provided, use the current round
+    let round_id = round_id.unwrap_or(current_round_id);
+
+    if current_round_id > round_id {
+        return Err(ContractError::Std(StdError::generic_err(
+            "cannot create a proposal in a round that ended in the past",
+        )));
+    }
 
     // validate that the sender is on the whitelist
     let whitelist = WHITELIST.load(deps.storage)?;

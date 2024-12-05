@@ -675,6 +675,7 @@ fn lock_tokens_multiple_validators_and_vote() {
 
     // create two proposals
     let msg1 = ExecuteMsg::CreateProposal {
+        round_id: None,
         tranche_id: 1,
         title: "proposal title 1".to_string(),
         description: "proposal description 1".to_string(),
@@ -685,6 +686,7 @@ fn lock_tokens_multiple_validators_and_vote() {
     assert!(res.is_ok());
 
     let msg2 = ExecuteMsg::CreateProposal {
+        round_id: None,
         tranche_id: 1,
         title: "proposal title 2".to_string(),
         description: "proposal description 2".to_string(),
@@ -783,6 +785,7 @@ fn validator_set_initialization_test() {
         ValidatorSetInitializationTestCase {
             description: "Create proposal".to_string(),
             message: ExecuteMsg::CreateProposal {
+                round_id: None,
                 tranche_id: 1,
                 title: "proposal title".to_string(),
                 description: "proposal description".to_string(),
@@ -865,6 +868,7 @@ fn validator_set_initialization_test() {
 
         // create a proposal that can be voted on
         let msg = ExecuteMsg::CreateProposal {
+            round_id: None,
             tranche_id: 1,
             title: "proposal title".to_string(),
             description: "proposal description".to_string(),
