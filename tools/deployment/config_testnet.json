@@ -7,5 +7,8 @@
     "tx_sender_wallet": "testnet_deployer",
     "tx_sender_address": "neutron1e68032v8dr8rfeg9wuhd3jjsun83vvla2fsrfs",
     "hub_connection_id": "connection-42",
-    "hub_channel_id": "channel-96"
+    "hub_channel_id": "channel-96",
+    "tribute_token_1": "untrn",
+    "tribute_token_2": "untrn",
+    "tribute_token_3": "untrn"
 }

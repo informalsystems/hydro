@@ -21,7 +21,7 @@ NEUTRON_TX_FLAGS="$TX_FLAG --gas-prices 0.0053untrn --chain-id $NEUTRON_CHAIN_ID
 MAINNET_ROUND_LENGTH="2628000000000000" # 365 / 12
 ROUND_END_TEST_ROUND_LENGTH="172800000000000" # 2 days
 
-CURRENT_TIME_NO_MINS_AND_SECS=$(date -d "$(date +"%Y-%m-%d %H:00:00")" +"%s000000000")
+CURRENT_TIME_NO_MINS_AND_SECS=$(date -j -f "%Y-%m-%d %H:%M:%S" "$(date +%Y-%m-%d\ %H:00:00)" +"%s000000000")
 SPECIFIC_TIMESTAMP=""
 
 # these ones are used in the InstantiateMsg
