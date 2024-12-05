@@ -1,11 +1,12 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use crate::contract::{
     get_vote_for_update, query_current_round_id, query_tranches, query_user_votes, query_whitelist,
     query_whitelist_admins, MAX_LOCK_ENTRIES,
 };
 use crate::msg::{ProposalToLockups, TrancheInfo};
-use crate::state::{LockEntry, Vote, VOTE_MAP};
+use crate::state::{LockEntry, RoundLockPowerSchedule, Vote, VOTE_MAP};
 use crate::testing_lsm_integration::set_validator_infos_for_round;
 use crate::testing_mocks::{
     denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
@@ -66,6 +67,20 @@ pub fn set_default_validator_for_rounds(
     }
 }
 
+pub fn get_default_power_schedule_vec() -> Vec<(u64, Decimal)> {
+    vec![
+        (1, Decimal::from_str("1").unwrap()),
+        (2, Decimal::from_str("1.25").unwrap()),
+        (3, Decimal::from_str("1.5").unwrap()),
+        (6, Decimal::from_str("2").unwrap()),
+        (12, Decimal::from_str("4").unwrap()),
+    ]
+}
+
+pub fn get_default_power_schedule() -> RoundLockPowerSchedule {
+    RoundLockPowerSchedule::new(get_default_power_schedule_vec())
+}
+
 pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
     let user_address = get_address_as_str(mock_api, "addr0000");
 
@@ -85,8 +100,8 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         hub_transfer_channel_id: "channel-0".to_string(),
         icq_update_period: 100,
         icq_managers: vec![user_address],
-        is_in_pilot_mode: false,
         max_deployment_duration: 12,
+        round_lock_power_schedule: get_default_power_schedule_vec(),
     }
 }
 
@@ -2378,9 +2393,13 @@ pub fn pilot_round_lock_duration_test() {
         let whitelist_admin = "addr0001";
         let mut msg = get_default_instantiate_msg(&deps.api);
         msg.whitelist_admins = vec![get_address_as_str(&deps.api, whitelist_admin)];
-        msg.is_in_pilot_mode = true;
         msg.round_length = ONE_DAY_IN_NANO_SECONDS;
         msg.lock_epoch_length = ONE_MONTH_IN_NANO_SECONDS;
+        msg.round_lock_power_schedule = vec![
+            (1, Decimal::from_str("1").unwrap()),
+            (2, Decimal::from_str("1.25").unwrap()),
+            (3, Decimal::from_str("1.5").unwrap()),
+        ];
 
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
@@ -2407,15 +2426,9 @@ pub fn pilot_round_lock_duration_test() {
                 case.lock_duration
             );
 
-            let expected_error = format!(
-                "Lock duration must be 1, 2 or 3 epochs: {}, {} or {}; but was: {}",
-                msg.lock_epoch_length,
-                2 * msg.lock_epoch_length,
-                3 * msg.lock_epoch_length,
-                case.lock_duration
-            )
-            .to_string();
-            assert!(res.err().unwrap().to_string().contains(&expected_error),);
+            let expected_error = "Lock duration must be one of";
+            let err = res.err().unwrap().to_string();
+            assert!(err.contains(expected_error), "Error: {}", err);
         } else {
             assert!(
                 res.is_ok(),
@@ -2513,7 +2526,6 @@ fn test_refresh_multiple_locks() {
     for case in test_cases {
         println!("Running test case: {}", case.name);
         let mut msg = get_default_instantiate_msg(&deps.api);
-        msg.is_in_pilot_mode = false;
         msg.lock_epoch_length = ONE_MONTH_IN_NANO_SECONDS;
         msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
 

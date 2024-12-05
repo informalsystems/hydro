@@ -210,7 +210,12 @@ fn migrate_votes(deps: &mut DepsMut<NeutronQuery>) -> Result<(), ContractError> 
             // dropped out from the top N, this lock's power would remain in user's vote, which is the same we do in
             // this migration. Votes with tokens from dropped-out validators will be filtered out in query_votes().
             let scaled_shares = Decimal::from_ratio(
-                get_lock_time_weighted_shares(round_end, lock_entry.clone(), lock_epoch_length),
+                get_lock_time_weighted_shares(
+                    &constants.round_lock_power_schedule,
+                    round_end,
+                    lock_entry.clone(),
+                    lock_epoch_length,
+                ),
                 Uint128::one(),
             );
 
