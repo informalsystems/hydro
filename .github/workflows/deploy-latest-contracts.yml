@@ -3,6 +3,8 @@ name: Deploy latest contracts
 on:
   push:
     branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
   deploy-latest-contracts:
