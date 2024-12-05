@@ -7,6 +7,53 @@ use crate::msg::LiquidityDeployment;
 pub const CONSTANTS: Item<Constants> = Item::new("constants");
 
 #[cw_serde]
+pub struct LockPowerEntry {
+    pub locked_rounds: u64,
+    pub power_scaling_factor: Decimal,
+}
+
+// A vector of LockPowerEntries, where each entry contains a round number and the power scaling factor
+// that a lockup has when it has this many rounds left at the end of the round.
+// It will always be implicit that 0 rounds lock left corresponds to 0 voting power.
+// Otherwise, it implicitly assumes that between two entries, the larger entries power is used.
+// For example, if the schedule is [(1, 1), (2, 1.25), (3, 1.5), (6, 2), (12, 4)],
+// where (i, j) means locked_rounds i, power_scaling_factor j,
+// then the power scaling factors are
+// 0x if lockup expires before the end of the round
+// 1x if lockup has between 0 and 1 epochs left at the end of the round
+// 1.25x if lockup has between 1 and 2 epochs left at the end of the round
+// 1.5x if lockup has between 2 and 3 epochs left at the end of the round
+// 2x if lockup has between 3 and 6 epochs left at the end of the round
+// 4x if lockup has between 6 and 12 epochs left at the end of the round
+#[cw_serde]
+pub struct RoundLockPowerSchedule {
+    pub round_lock_power_schedule: Vec<LockPowerEntry>,
+}
+
+impl RoundLockPowerSchedule {
+    // This creates a new RoundLockPowerSchedule from a vector of tuples.
+    // It will deduplicate the tuples by taking the first one if a round id appears twice.
+    // It will also sort the tuples by round id.
+    pub fn new(tuples: Vec<(u64, Decimal)>) -> Self {
+        // deduplicate & sort
+        let mut tuples = tuples;
+        tuples.sort_by_key(|x| x.0);
+        tuples.dedup_by_key(|x| x.0); // if a round id appears twice, only the first one will be used
+
+        let round_lock_power_schedule = tuples
+            .into_iter()
+            .map(|d| LockPowerEntry {
+                locked_rounds: d.0,
+                power_scaling_factor: d.1,
+            })
+            .collect();
+        RoundLockPowerSchedule {
+            round_lock_power_schedule,
+        }
+    }
+}
+
+#[cw_serde]
 pub struct Constants {
     pub round_length: u64,
     pub lock_epoch_length: u64,
@@ -17,8 +64,8 @@ pub struct Constants {
     pub hub_transfer_channel_id: String,
     pub icq_update_period: u64,
     pub paused: bool,
-    pub is_in_pilot_mode: bool,
     pub max_deployment_duration: u64,
+    pub round_lock_power_schedule: RoundLockPowerSchedule,
 }
 
 // the total number of tokens locked in the contract

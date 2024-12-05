@@ -21,10 +21,10 @@ use crate::{
     msg::{ExecuteMsg, ProposalToLockups},
     state::{ValidatorInfo, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED},
     testing::{
-        get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
-        IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3, ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS,
-        VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3,
-        VALIDATOR_3_LST_DENOM_1,
+        get_default_instantiate_msg, get_default_power_schedule, get_message_info,
+        set_default_validator_for_rounds, IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3,
+        ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
+        VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3, VALIDATOR_3_LST_DENOM_1,
     },
     testing_mocks::{
         custom_interchain_query_mock, denom_trace_grpc_query_mock, mock_dependencies,
@@ -45,8 +45,8 @@ fn get_default_constants() -> crate::state::Constants {
         hub_connection_id: "connection-0".to_string(),
         hub_transfer_channel_id: "channel-0".to_string(),
         icq_update_period: 100,
-        is_in_pilot_mode: false,
         max_deployment_duration: 12,
+        round_lock_power_schedule: get_default_power_schedule(),
     }
 }
 

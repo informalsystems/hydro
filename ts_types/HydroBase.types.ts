@@ -24,6 +24,7 @@ export interface Coin {
   amount: Uint128;
   denom: string;
 }
+export type Decimal = string;
 export interface ConstantsResponse {
   constants: Constants;
 }
@@ -32,13 +33,20 @@ export interface Constants {
   hub_connection_id: string;
   hub_transfer_channel_id: string;
   icq_update_period: number;
-  is_in_pilot_mode: boolean;
   lock_epoch_length: number;
   max_deployment_duration: number;
   max_locked_tokens: number;
   max_validator_shares_participating: number;
   paused: boolean;
   round_length: number;
+  round_lock_power_schedule: RoundLockPowerSchedule;
+}
+export interface RoundLockPowerSchedule {
+  round_lock_power_schedule: LockPowerEntry[];
+}
+export interface LockPowerEntry {
+  locked_rounds: number;
+  power_scaling_factor: Decimal;
 }
 export interface CurrentRoundResponse {
   round_end: Timestamp;
@@ -150,12 +158,12 @@ export interface InstantiateMsg {
   icq_managers: string[];
   icq_update_period: number;
   initial_whitelist: string[];
-  is_in_pilot_mode: boolean;
   lock_epoch_length: number;
   max_deployment_duration: number;
   max_locked_tokens: Uint128;
   max_validator_shares_participating: number;
   round_length: number;
+  round_lock_power_schedule: [number, Decimal][];
   tranches: TrancheInfo[];
   whitelist_admins: string[];
 }
@@ -299,7 +307,6 @@ export interface Tranche {
   metadata: string;
   name: string;
 }
-export type Decimal = string;
 export interface UserVotesResponse {
   votes: VoteWithPower[];
 }
