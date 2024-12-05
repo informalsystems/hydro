@@ -24,3 +24,6 @@ Cargo.toml.orig
 
 # macOS specific
 **/.DS_Store
+
+# log files from deployments
+*_res.json
