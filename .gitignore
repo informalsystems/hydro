@@ -27,3 +27,4 @@ Cargo.toml.orig
 
 # log files from deployments
 *_res.json
+*_tx.json
