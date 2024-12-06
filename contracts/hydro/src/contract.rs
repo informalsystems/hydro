@@ -849,6 +849,9 @@ fn vote(
                     ((round_id, tranche_id), info.sender.clone(), lock_id),
                 );
 
+                // Delete voting round allowed info
+                VOTING_ALLOWED_ROUND.remove(deps.storage, (tranche_id, lock_id));
+
                 response = response.add_attribute(
                     format!("lock_id_{}_old_proposal_id", lock_id),
                     vote.prop_id.to_string(),
