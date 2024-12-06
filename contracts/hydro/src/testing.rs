@@ -1372,6 +1372,7 @@ fn switch_vote_between_short_and_long_props_test() {
 
     for prop_info in prop_infos {
         let msg = ExecuteMsg::CreateProposal {
+            round_id: None,
             tranche_id: 1,
             title: prop_info.0,
             description: prop_info.1,
