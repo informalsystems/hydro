@@ -17,7 +17,7 @@ pub const CONTRACT_VERSION_UNRELEASED: &str = "3.0.0";
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(
     mut deps: DepsMut<NeutronQuery>,
-    _env: Env,
+    env: Env,
     msg: MigrateMsgUNRELEASED,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let contract_version = get_contract_version(deps.storage)?;
@@ -29,7 +29,7 @@ pub fn migrate(
     }
 
     if contract_version.version == CONTRACT_VERSION_V2_0_2 {
-        migrate_v2_0_2_to_unreleased(&mut deps, msg)?;
+        migrate_v2_0_2_to_unreleased(&mut deps, env.clone(), msg)?;
     }
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
