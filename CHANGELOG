@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## v2.0.3
+
+Date: December 9th, 2024
+
+### BUG FIXES
+
+- Fix a bug that would prevent users from switching their vote under specific circumstances.
+  ([\#195](https://github.com/informalsystems/hydro/pull/195))
+
 ## v2.0.2
 
 Date: November 28th, 2024
