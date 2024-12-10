@@ -35,18 +35,6 @@ NEUTRON_TX_FLAGS="$TX_FLAG --gas-prices 0.0053untrn --chain-id $NEUTRON_CHAIN_ID
 LIMIT=1000        # maximum number of proposals to retrieve at once
 START_FROM=0       # where to start from if pagination is needed
 
-# Query all proposals in the given round/tranche
-QUERY_MSG=$(jq -n \
-  --argjson limit $LIMIT \
-  --argjson round_id $ROUND_ID \
-  --argjson start_from $START_FROM \
-  --argjson tranche_id $TRANCHE_ID \
-  '{ "round_proposals": { "limit": $limit, "round_id": $round_id, "start_from": $start_from, "tranche_id": $tranche_id }}'
-)
-
-# Query all proposals for the specified round & tranche
-RESPONSE=$($NEUTRON_BINARY query wasm contract-state smart "$HYDRO_CONTRACT_ADDRESS" "$QUERY_MSG" $NEUTRON_CHAIN_ID_FLAG $NEUTRON_NODE_FLAG --output json)
-
 if [ "$DEPLOYED_FUND_AMOUNT" -eq 0 ]; then
   DEPLOYED_FUNDS="[]"
 else
