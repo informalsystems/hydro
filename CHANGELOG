@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## v2.0.4
+
+Date: December 9th, 2024
+
+### BUG FIXES
+
+- Remove contracts migration code from version v1.1.x to version v2.0.2 and bump contracts version to v2.0.4.
+  ([\#200](https://github.com/informalsystems/hydro/pull/200))
+
 ## v2.0.3
 
 Date: December 9th, 2024
