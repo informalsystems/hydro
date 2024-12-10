@@ -224,7 +224,7 @@ func (s *HydroSuite) InstantiateHydroContract(
 		"icq_update_period":                  10,
 		"icq_managers":                       []string{adminAddr},
 		"max_deployment_duration":            12,
-		"round_lock_power_schedule":          [][]string{{"1", "1"}, {"2", "1.25"}, {"3", "1.5"}, {"6", "2"}, {"12", "4"}},
+		"round_lock_power_schedule":          [][]interface{}{{1, "1"}, {2, "1.25"}, {3, "1.5"}, {6, "2"}, {12, "4"}},
 	}
 	initHydroJson, err := json.Marshal(initHydro)
 	s.Require().NoError(err)
