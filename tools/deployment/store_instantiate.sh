@@ -7,7 +7,7 @@ IS_GITHUB_WORKFLOW=$2
 NEUTRON_CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
 NEUTRON_NODE=$(jq -r '.neutron_rpc_node' $CONFIG_FILE)
 TX_SENDER_WALLET=$(jq -r '.tx_sender_wallet' $CONFIG_FILE)
-TX_SENDER_ADDRESS=$(jq -r '.tx_sender_address' $CONFIG_FILE)
+TX_SENDER_ADDRESS=$(neutrond keys show submitter | grep "address:" | sed 's/.*address: //')
 HUB_CONNECTION_ID=$(jq -r '.hub_connection_id' $CONFIG_FILE)
 HUB_CHANNEL_ID=$(jq -r '.hub_channel_id' $CONFIG_FILE)
 

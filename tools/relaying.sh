@@ -1,7 +1,5 @@
 set -eux
 
-RELAYER_REPO_PATH=../../neutron-query-relayer
-
 if [ "$#" -ne 2 ]; then
     echo "Usage: $0 HYDRO_CONTRACT_ADDRESS NUM_OF_VALIDATORS"
     exit 1
@@ -43,8 +41,7 @@ export LOGGER_LEVEL=debug
 #####
 
 # Create the ICQ queries by running the go script in this folder
-go run main.go
+icq-population
 
 # Run the relayer
-cd $RELAYER_REPO_PATH
-go run ./cmd/neutron_query_relayer start
+neutron_query_relayer start

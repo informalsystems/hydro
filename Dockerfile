@@ -27,9 +27,14 @@
     
     # Build the neutron-query-relayer binary with Alpine-compatible settings
     RUN go build -ldflags "${LDFLAGS}" -o build/neutron_query_relayer ./cmd/neutron_query_relayer/*.go
-    
+
+    COPY tools /app/tools
+
+    # build the icq population tool
+    RUN go build -o build/icq-population /app/tools/*.go
+
     # --------------------------------------------------------
-    # Stage 2: Final image with all dependencies
+    # Stage 3: Final image with all dependencies
     # --------------------------------------------------------
     FROM alpine:3.21.0
 
@@ -54,6 +59,9 @@
     
     # Add the neutron-query-relayer binary from the builder stage
     COPY --from=builder /app/build/neutron_query_relayer /usr/local/bin/neutron_query_relayer
+
+    # Add the icq-population binary from the builder stage
+    COPY --from=builder /app/build/icq-population /usr/local/bin/icq-population
     
     # Add CosmWasm libraries
     ADD https://github.com/CosmWasm/wasmvm/releases/download/v1.5.2/libwasmvm.x86_64.so /lib/
