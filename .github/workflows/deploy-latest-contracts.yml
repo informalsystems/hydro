@@ -44,12 +44,12 @@ jobs:
           source ./tools/deployment/store_instantiate.sh $CONFIG_FILE true
           source ./tools/deployment/populate_contracts.sh $CONFIG_FILE
       
-      # Run tools/script.sh to create validator ICQs in the contract and run the ICQ relayer to
+      # Run tools/relaying.sh to create validator ICQs in the contract and run the ICQ relayer to
       # get the results into the contract
       - name: Run ICQs setup script
         run: |
-          cp ./tools/script.sh .
-          chmod +x script.sh
+          cp ./tools/relaying.sh .
+          chmod +x relaying.sh
 
           CONFIG_FILE="./tools/deployment/config_testnet.json"
           CHAIN_ID=$(echo $(jq -r '.chain_id' $CONFIG_FILE) | sed -E 's/([][\/.*?$^&|])/\\\1/g')
@@ -60,19 +60,17 @@ jobs:
           HUB_RPC_NODE=$(echo $(jq -r '.hub_rpc_node' $CONFIG_FILE) | sed -E 's/([][\/.*?$^&|])/\\\1/g')
           HUB_API_NODE=$(echo $(jq -r '.hub_api_node' $CONFIG_FILE) | sed -E 's/([][\/.*?$^&|])/\\\1/g')
 
-          sed -i "s|^RELAYER_REPO_PATH=.*$|RELAYER_REPO_PATH=\.\/neutron-query-relayer|" ./script.sh
-          sed -i "s/^export NEUTRON_CHAIN_ID=.*$/export NEUTRON_CHAIN_ID=$CHAIN_ID/" ./script.sh
-          sed -i "s/^export RELAYER_NEUTRON_CHAIN_RPC_ADDR=.*$/export RELAYER_NEUTRON_CHAIN_RPC_ADDR=$NEUTRON_RPC_NODE/" ./script.sh
-          sed -i "s/^export RELAYER_NEUTRON_CHAIN_REST_ADDR=.*$/export RELAYER_NEUTRON_CHAIN_REST_ADDR=$NEUTRON_API_NODE/" ./script.sh
-          sed -i "s/^export RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=.*$/export RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=$TX_SENDER_WALLET/" ./script.sh
-          sed -i "s/^export RELAYER_NEUTRON_CHAIN_CONNECTION_ID=.*$/export RELAYER_NEUTRON_CHAIN_CONNECTION_ID=$HUB_CONNECTION_ID/" ./script.sh
-          sed -i "s/^export RELAYER_TARGET_CHAIN_RPC_ADDR=.*$/export RELAYER_TARGET_CHAIN_RPC_ADDR=$HUB_RPC_NODE/" ./script.sh
-          sed -i "s/^export RELAYER_TARGET_CHAIN_API_ADDR=.*$/export RELAYER_TARGET_CHAIN_API_ADDR=$HUB_API_NODE/" ./script.sh
-          sed -i "s/^export RELAYER_REGISTRY_ADDRESSES=.*$/export RELAYER_REGISTRY_ADDRESSES=$HYDRO_CONTRACT_ADDRESS/" ./script.sh
-          sed -i "s/^export BATCH_SIZE=.*$/export BATCH_SIZE=5/" ./script.sh
-          sed -i "s/^export NUM_VALIDATORS_TO_ADD=.*$/export NUM_VALIDATORS_TO_ADD=5/" ./script.sh
-          sed -i "s/^export RELAYER_STORAGE_PATH=.*$/export RELAYER_STORAGE_PATH=\.neutron_queries_relayer\/leveldb/" ./script.sh
-          sed -i "s|^go run main\.go.*$|go run \./tools/main\.go|" ./script.sh
+          sed -i "s|^RELAYER_REPO_PATH=.*$|RELAYER_REPO_PATH=\.\/neutron-query-relayer|" ./relaying.sh
+          sed -i "s/^export NEUTRON_CHAIN_ID=.*$/export NEUTRON_CHAIN_ID=$CHAIN_ID/" ./relaying.sh
+          sed -i "s/^export RELAYER_NEUTRON_CHAIN_RPC_ADDR=.*$/export RELAYER_NEUTRON_CHAIN_RPC_ADDR=$NEUTRON_RPC_NODE/" ./relaying.sh
+          sed -i "s/^export RELAYER_NEUTRON_CHAIN_REST_ADDR=.*$/export RELAYER_NEUTRON_CHAIN_REST_ADDR=$NEUTRON_API_NODE/" ./relaying.sh
+          sed -i "s/^export RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=.*$/export RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=$TX_SENDER_WALLET/" ./relaying.sh
+          sed -i "s/^export RELAYER_NEUTRON_CHAIN_CONNECTION_ID=.*$/export RELAYER_NEUTRON_CHAIN_CONNECTION_ID=$HUB_CONNECTION_ID/" ./relaying.sh
+          sed -i "s/^export RELAYER_TARGET_CHAIN_RPC_ADDR=.*$/export RELAYER_TARGET_CHAIN_RPC_ADDR=$HUB_RPC_NODE/" ./relaying.sh
+          sed -i "s/^export RELAYER_TARGET_CHAIN_API_ADDR=.*$/export RELAYER_TARGET_CHAIN_API_ADDR=$HUB_API_NODE/" ./relaying.sh
+          sed -i "s/^export BATCH_SIZE=.*$/export BATCH_SIZE=5/" ./relaying.sh
+          sed -i "s/^export RELAYER_STORAGE_PATH=.*$/export RELAYER_STORAGE_PATH=\.neutron_queries_relayer\/leveldb/" ./relaying.sh
+          sed -i "s|^go run main\.go.*$|go run \./tools/main\.go|" ./relaying.sh
 
           stop_icq_relayer() {
             sleep 240
@@ -81,7 +79,7 @@ jobs:
 
           stop_icq_relayer &
 
-          bash ./script.sh
+          bash ./relaying.sh $HYDRO_CONTRACT_ADDRESS 5
 
           echo 'Latest contracts are deployed and ready for testing!'
           echo 'Hydro contract address:' $HYDRO_CONTRACT_ADDRESS
