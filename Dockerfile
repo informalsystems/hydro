@@ -3,28 +3,37 @@
 # --------------------------------------------------------
 # Stage 1: Build neutron-query-relayer
 # --------------------------------------------------------
-    FROM golang:1.22-bullseye AS builder
+    FROM golang:alpine3.21 AS builder
 
     # Set up build arguments
     ARG LDFLAGS
     
-    # Prepare the build environment
+    # Install dependencies for Go build and musl compatibility
+    RUN apk add --no-cache \
+        git \
+        gcc \
+        musl-dev \
+        libc-dev \
+        make
+    
+    # Set up the build environment
     WORKDIR /app
     
     # Clone the neutron-query-relayer repository
-    RUN apt-get update && apt-get install -y git && \
-        git clone --depth 1 https://github.com/neutron-org/neutron-query-relayer.git /app
+    RUN git clone --depth 1 https://github.com/neutron-org/neutron-query-relayer.git /app
     
     # Download Go modules
     RUN go mod download
     
-    # Build the neutron-query-relayer binary
-    RUN go build -ldflags "${LDFLAGS}" -a -o build/neutron_query_relayer ./cmd/neutron_query_relayer/*.go
+    # Build the neutron-query-relayer binary with Alpine-compatible settings
+    RUN go build -ldflags "${LDFLAGS}" -o build/neutron_query_relayer ./cmd/neutron_query_relayer/*.go
     
     # --------------------------------------------------------
     # Stage 2: Final image with all dependencies
     # --------------------------------------------------------
     FROM alpine:3.21.0
+
+    RUN apk add --no-cache file
     
     # Install dependencies
     RUN apk add --no-cache \
