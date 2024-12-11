@@ -47,6 +47,12 @@ HYDRO_SC_LABEL="Hydro"
 TRIBUTE_SC_LABEL="Tribute"
 
 store_hydro() {
+    error_handler() {
+        echo "Content of store_hydro_res.json:"
+        cat ./store_hydro_res.json
+    }
+    trap error_handler ERR
+
     echo 'Storing Hydro wasm...'
 
     $NEUTRON_BINARY tx wasm store $HYDRO_WASM_PATH --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS --output json &> ./store_hydro_res.json
@@ -58,6 +64,13 @@ store_hydro() {
 }
 
 store_tribute() {
+    error_handler() {
+        echo "Content of store_hydro_res.json:"
+        cat ./store_tribute_res.json
+    }
+    trap error_handler ERR
+
+    echo 'Storing Hydro wasm...'
     echo 'Storing Tribute wasm...'
 
     $NEUTRON_BINARY tx wasm store $TRIBUTE_WASM_PATH --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS --output json &> ./store_tribute_res.json
@@ -69,9 +82,16 @@ store_tribute() {
 }
 
 instantiate_hydro() {
+    error_handler() {
+        echo "Content of store_hydro_res.json:"
+        cat ./instantiate_hydro_res.json
+    }
+    trap error_handler ERR
+
+    echo 'Storing Hydro wasm...'
     echo 'Instantiating Hydro contract...'
 
-    INIT_HYDRO='{"round_length":'$ROUND_LENGTH',"lock_epoch_length":'$ROUND_LENGTH', "tranches":[{"name": "ATOM Bucket", "metadata": "A bucket of ATOM to deploy as PoL"}],"first_round_start":"'$FIRST_ROUND_START_TIME'","max_locked_tokens":"20000000000","whitelist_admins":["'$HYDRO_COMMITTEE_DAODAO'","'$TX_SENDER_ADDRESS'"],"initial_whitelist":["'$TX_SENDER_ADDRESS'"],"max_validator_shares_participating":500,"hub_connection_id":"'$HUB_CONNECTION_ID'","hub_transfer_channel_id":"'$HUB_CHANNEL_ID'","icq_update_period":109000,"icq_managers":["'$TX_SENDER_ADDRESS'"],"is_in_pilot_mode": true,"max_deployment_duration":'$MAX_DEPLOYMENT_DURATION'}'
+    INIT_HYDRO='{"round_length":'$ROUND_LENGTH',"lock_epoch_length":'$ROUND_LENGTH', "tranches":[{"name": "ATOM Bucket", "metadata": "A bucket of ATOM to deploy as PoL"}],"first_round_start":"'$FIRST_ROUND_START_TIME'","max_locked_tokens":"20000000000","whitelist_admins":["'$HYDRO_COMMITTEE_DAODAO'","'$TX_SENDER_ADDRESS'"],"initial_whitelist":["'$TX_SENDER_ADDRESS'"],"max_validator_shares_participating":500,"hub_connection_id":"'$HUB_CONNECTION_ID'","hub_transfer_channel_id":"'$HUB_CHANNEL_ID'","icq_update_period":109000,"icq_managers":["'$TX_SENDER_ADDRESS'"],"round_lock_power_schedule": [[1, "1"], [2, "1.25"], [3, "1.5"], [6, "2"], [12, "4"]],"max_deployment_duration":'$MAX_DEPLOYMENT_DURATION'}'
 
     $NEUTRON_BINARY tx wasm instantiate $HYDRO_CODE_ID "$INIT_HYDRO" --admin $TX_SENDER_ADDRESS --label "'$HYDRO_SC_LABEL'" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS --output json &> ./instantiate_hydro_res.json
     sleep 10
@@ -86,6 +106,11 @@ instantiate_hydro() {
 }
 
 instantiate_tribute() {
+    error_handler() {
+        echo "Content of store_hydro_res.json:"
+        cat ./instantiate_tribute_res.json
+    }
+    trap error_handler ERR
     echo 'Instantiating Tribute contract...'
 
     INIT_TRIBUTE='{"hydro_contract":"'$HYDRO_CONTRACT_ADDRESS'"}'

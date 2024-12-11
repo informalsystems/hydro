@@ -21,6 +21,12 @@ NEUTRON_NODE_FLAG="--node $NEUTRON_NODE"
 NEUTRON_TX_FLAGS="$TX_FLAG --gas-prices 0.0053untrn --chain-id $NEUTRON_CHAIN_ID $NEUTRON_NODE_FLAG $KEYRING_TEST_FLAG -y"
 
 submit_proposals() {
+    error_handler() {
+        echo "Content of store_hydro_res.json:"
+        cat ./execute_res.json
+    }
+    trap error_handler ERR
+
     echo 'Submitting proposal 1...'
 
     EXECUTE='{"create_proposal": {"tranche_id": 1,"title": "Proposal 1 Title", "description": "Proposal 1 Description", "deployment_duration": 1,"minimum_atom_liquidity_request":"1000"}}'
