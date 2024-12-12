@@ -16,11 +16,12 @@ use crate::{
     },
 };
 
+// Message to migrate the contract from v2.0.4 to v2.1.0
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct MigrateMsgUNRELEASED {}
+pub struct MigrateMsgV2_1_0 {}
 
 #[cw_serde]
-pub struct ConstantsV2_0_2 {
+pub struct ConstantsV2_0_4 {
     pub round_length: u64,
     pub lock_epoch_length: u64,
     pub first_round_start: Timestamp,
@@ -35,7 +36,7 @@ pub struct ConstantsV2_0_2 {
 }
 
 #[cw_serde]
-pub struct ConstantsUNRELEASED {
+pub struct ConstantsV2_1_0 {
     pub round_length: u64,
     pub lock_epoch_length: u64,
     pub first_round_start: Timestamp,
@@ -49,8 +50,8 @@ pub struct ConstantsUNRELEASED {
     pub round_lock_power_schedule: RoundLockPowerSchedule,
 }
 
-impl ConstantsUNRELEASED {
-    pub fn from(old_constants: ConstantsV2_0_2) -> Self {
+impl ConstantsV2_1_0 {
+    pub fn from(old_constants: ConstantsV2_0_4) -> Self {
         Self {
             round_length: old_constants.round_length,
             lock_epoch_length: old_constants.lock_epoch_length,
@@ -62,25 +63,23 @@ impl ConstantsUNRELEASED {
             icq_update_period: old_constants.icq_update_period,
             paused: old_constants.paused,
             max_deployment_duration: old_constants.max_deployment_duration,
-            round_lock_power_schedule: RoundLockPowerSchedule::new(get_default_power_schedule()),
+            round_lock_power_schedule: RoundLockPowerSchedule::new(get_round_2_power_schedule()),
         }
     }
 }
 
-pub fn get_default_power_schedule() -> Vec<(u64, Decimal)> {
+pub fn get_round_2_power_schedule() -> Vec<(u64, Decimal)> {
     vec![
         (1, Decimal::from_str("1").unwrap()),
         (2, Decimal::from_str("1.25").unwrap()),
         (3, Decimal::from_str("1.5").unwrap()),
-        (6, Decimal::from_str("2").unwrap()),
-        (12, Decimal::from_str("4").unwrap()),
     ]
 }
 
-pub fn migrate_v2_0_2_to_unreleased(
+pub fn migrate_v2_0_4_to_v2_1_0(
     deps: &mut DepsMut<NeutronQuery>,
     env: Env,
-    _msg: MigrateMsgUNRELEASED,
+    _msg: MigrateMsgV2_1_0,
 ) -> Result<(), ContractError> {
     migrate_constants(deps.storage)?;
     migrate_voting_allowed_info(deps, &env)?;
@@ -89,11 +88,11 @@ pub fn migrate_v2_0_2_to_unreleased(
 }
 
 fn migrate_constants(storage: &mut dyn Storage) -> Result<(), ContractError> {
-    const OLD_CONSTANTS: Item<ConstantsV2_0_2> = Item::new("constants");
-    const NEW_CONSTANTS: Item<ConstantsUNRELEASED> = Item::new("constants");
+    const OLD_CONSTANTS: Item<ConstantsV2_0_4> = Item::new("constants");
+    const NEW_CONSTANTS: Item<ConstantsV2_1_0> = Item::new("constants");
 
     let old_constants = OLD_CONSTANTS.load(storage)?;
-    let new_constants = ConstantsUNRELEASED::from(old_constants);
+    let new_constants = ConstantsV2_1_0::from(old_constants);
     NEW_CONSTANTS.save(storage, &new_constants)?;
 
     Ok(())

@@ -7,8 +7,8 @@ use cw_storage_plus::Item;
 use crate::{
     contract::{instantiate, CONTRACT_NAME},
     migration::{
-        migrate::{migrate, CONTRACT_VERSION_UNRELEASED, CONTRACT_VERSION_V2_0_2},
-        unreleased::{ConstantsUNRELEASED, ConstantsV2_0_2, MigrateMsgUNRELEASED},
+        migrate::{migrate, CONTRACT_VERSION_V2_0_4, CONTRACT_VERSION_V2_1_0},
+        v2_1_0::{ConstantsV2_0_4, ConstantsV2_1_0, MigrateMsgV2_1_0},
     },
     state::{Proposal, RoundLockPowerSchedule, Vote, PROPOSAL_MAP, VOTE_MAP, VOTING_ALLOWED_ROUND},
     testing::{
@@ -17,7 +17,7 @@ use crate::{
     testing_mocks::{mock_dependencies, no_op_grpc_query_mock},
 };
 
-use super::unreleased::VoteMigrationInfo;
+use super::v2_1_0::VoteMigrationInfo;
 
 #[test]
 fn test_constants_migration() {
@@ -42,17 +42,17 @@ fn test_constants_migration() {
     .unwrap();
 
     // Override contract version so that we can run the migration
-    let res = set_contract_version(&mut deps.storage, CONTRACT_NAME, CONTRACT_VERSION_V2_0_2);
+    let res = set_contract_version(&mut deps.storage, CONTRACT_NAME, CONTRACT_VERSION_V2_0_4);
     assert!(
         res.is_ok(),
         "failed to set contract version before running the migration"
     );
 
-    const OLD_CONSTANTS: Item<ConstantsV2_0_2> = Item::new("constants");
-    const NEW_CONSTANTS: Item<ConstantsUNRELEASED> = Item::new("constants");
+    const OLD_CONSTANTS: Item<ConstantsV2_0_4> = Item::new("constants");
+    const NEW_CONSTANTS: Item<ConstantsV2_1_0> = Item::new("constants");
 
     // Override the constants so that they have old data structure stored before running the migration
-    let old_constants = ConstantsV2_0_2 {
+    let old_constants = ConstantsV2_0_4 {
         round_length: 2628000000000000,
         lock_epoch_length: 2628000000000000,
         first_round_start,
@@ -76,12 +76,12 @@ fn test_constants_migration() {
     env.block.time = env.block.time.plus_nanos(instantiate_msg.round_length + 1);
 
     // Run the migration
-    let migrate_msg = MigrateMsgUNRELEASED {};
+    let migrate_msg = MigrateMsgV2_1_0 {};
     let res = migrate(deps.as_mut(), env.clone(), migrate_msg.clone());
     assert!(res.is_ok(), "migration failed: {}", res.unwrap_err());
 
     // Verify that the Constants got migrated properly
-    let expected_new_constants = ConstantsUNRELEASED {
+    let expected_new_constants = ConstantsV2_1_0 {
         round_length: old_constants.round_length,
         lock_epoch_length: old_constants.lock_epoch_length,
         first_round_start: old_constants.first_round_start,
@@ -96,8 +96,6 @@ fn test_constants_migration() {
             (1, Decimal::from_str("1").unwrap()),
             (2, Decimal::from_str("1.25").unwrap()),
             (3, Decimal::from_str("1.5").unwrap()),
-            (6, Decimal::from_str("2").unwrap()),
-            (12, Decimal::from_str("4").unwrap()),
         ]),
     };
     let res = NEW_CONSTANTS.load(&deps.storage);
@@ -113,10 +111,7 @@ fn test_constants_migration() {
 
     // Verify the contract version after running the migration
     let res = get_contract_version(&deps.storage);
-    assert_eq!(
-        res.unwrap().version,
-        CONTRACT_VERSION_UNRELEASED.to_string()
-    );
+    assert_eq!(res.unwrap().version, CONTRACT_VERSION_V2_1_0.to_string());
 }
 
 #[test]
@@ -143,16 +138,16 @@ fn test_voting_allowed_info_migration() {
     .unwrap();
 
     // Override contract version so that we can run the migration
-    let res = set_contract_version(&mut deps.storage, CONTRACT_NAME, CONTRACT_VERSION_V2_0_2);
+    let res = set_contract_version(&mut deps.storage, CONTRACT_NAME, CONTRACT_VERSION_V2_0_4);
     assert!(
         res.is_ok(),
         "failed to set contract version before running the migration"
     );
 
-    const OLD_CONSTANTS: Item<ConstantsV2_0_2> = Item::new("constants");
+    const OLD_CONSTANTS: Item<ConstantsV2_0_4> = Item::new("constants");
 
     // Override the constants so that they have old data structure stored before running the migration
-    let old_constants = ConstantsV2_0_2 {
+    let old_constants = ConstantsV2_0_4 {
         round_length: 2628000000000000,
         lock_epoch_length: 2628000000000000,
         first_round_start,
@@ -351,7 +346,7 @@ fn test_voting_allowed_info_migration() {
     }
 
     // Run the migration
-    let migrate_msg = MigrateMsgUNRELEASED {};
+    let migrate_msg = MigrateMsgV2_1_0 {};
     let res = migrate(deps.as_mut(), env.clone(), migrate_msg.clone());
     assert!(res.is_ok(), "migration failed: {}", res.unwrap_err());
 
