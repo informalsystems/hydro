@@ -7,7 +7,8 @@ This directory contains a set of shell scripts and JSON configuration files that
 To get started, you will need to have the following installed:
 * [Docker](https://docs.docker.com/get-docker/)
 
-You will need to prepare the `.seed` file with the seed phrase of the test account.
+You will need to create and prepare the `.seed` file in the repo root with the seed phrase of the test account; see the `.seed.example` file for an example.
+
 This account will deploy the contracts, and send the transactions to populate the contracts.
 
 Then, you need to build the dockerfile. Run the following command:
@@ -38,10 +39,7 @@ where you will need to replace the contract addresses with the addresses of the 
 This will create 3 bids with tributes in the current round of the contract.
 
 Notice that the `.seed` file will need to contain the passphrase of the account that created the contracts.
-
-===========
-TIP: When you switch out the phrase in the `.seed` file, you will need to rebuild the docker image.
-===========
+> **TIP:** When you switch out the phrase in the `.seed` file, you will need to rebuild the docker image.
 
 ## Adding liquidity deployments
 
