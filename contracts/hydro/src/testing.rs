@@ -1512,8 +1512,6 @@ fn disable_voting_in_next_round_with_auto_voted_lock_test() {
     );
     assert!(res.is_ok());
 
-    env.block.time = env.block.time.plus_hours(12);
-
     // lock some tokens to get voting power
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 12 * ONE_MONTH_IN_NANO_SECONDS,
