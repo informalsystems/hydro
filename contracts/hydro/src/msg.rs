@@ -1,4 +1,4 @@
-use cosmwasm_std::{Coin, Timestamp, Uint128};
+use cosmwasm_std::{Coin, Decimal, Timestamp, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -20,8 +20,11 @@ pub struct InstantiateMsg {
     // and they can also withdraw funds in the *native token denom* from the contract;
     // they can however not withdraw user funds that were locked for voting.
     pub icq_managers: Vec<String>,
-    pub is_in_pilot_mode: bool,
     pub max_deployment_duration: u64,
+    // A schedule of how the lock power changes over time.
+    // The first element is the round number, the second element is the lock power.
+    // See the RoundLockPowerSchedule struct for more information.
+    pub round_lock_power_schedule: Vec<(u64, Decimal)>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -44,6 +47,7 @@ pub enum ExecuteMsg {
     },
     UnlockTokens {},
     CreateProposal {
+        round_id: Option<u64>,
         tranche_id: u64,
         title: String,
         description: String,

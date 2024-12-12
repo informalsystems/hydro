@@ -9,12 +9,12 @@
     "icq_managers",
     "icq_update_period",
     "initial_whitelist",
-    "is_in_pilot_mode",
     "lock_epoch_length",
     "max_deployment_duration",
     "max_locked_tokens",
     "max_validator_shares_participating",
     "round_length",
+    "round_lock_power_schedule",
     "tranches",
     "whitelist_admins"
   ],
@@ -45,9 +45,6 @@
         "type": "string"
       }
     },
-    "is_in_pilot_mode": {
-      "type": "boolean"
-    },
     "lock_epoch_length": {
       "type": "integer",
       "format": "uint64",
@@ -71,6 +68,24 @@
       "format": "uint64",
       "minimum": 0.0
     },
+    "round_lock_power_schedule": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": [
+          {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          {
+            "$ref": "#/definitions/Decimal"
+          }
+        ],
+        "maxItems": 2,
+        "minItems": 2
+      }
+    },
     "tranches": {
       "type": "array",
       "items": {
@@ -86,6 +101,10 @@
   },
   "additionalProperties": false,
   "definitions": {
+    "Decimal": {
+      "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
+      "type": "string"
+    },
     "Timestamp": {
       "description": "A point in time in nanosecond precision.\n\nThis type can represent times from 1970-01-01T00:00:00Z to 2554-07-21T23:34:33Z.\n\n## Examples\n\n``` # use cosmwasm_std::Timestamp; let ts = Timestamp::from_nanos(1_000_000_202); assert_eq!(ts.nanos(), 1_000_000_202); assert_eq!(ts.seconds(), 1); assert_eq!(ts.subsec_nanos(), 202);\n\nlet ts = ts.plus_seconds(2); assert_eq!(ts.nanos(), 3_000_000_202); assert_eq!(ts.seconds(), 3); assert_eq!(ts.subsec_nanos(), 202); ```",
       "allOf": [

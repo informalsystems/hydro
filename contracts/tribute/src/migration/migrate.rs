@@ -6,17 +6,15 @@ use crate::{
     error::ContractError,
 };
 
-use super::v2_0_4::MigrateMsgV2_0_4;
+use super::v2_1_0::MigrateMsgV2_1_0;
 
-pub const CONTRACT_VERSION_V1_1_1: &str = "1.1.1";
-pub const CONTRACT_VERSION_V2_0_1: &str = "2.0.1";
-pub const CONTRACT_VERSION_V2_0_2: &str = "2.0.2";
+pub const CONTRACT_VERSION_V2_1_0: &str = "2.1.0";
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(
     deps: DepsMut,
     _env: Env,
-    _msg: MigrateMsgV2_0_4,
+    _msg: MigrateMsgV2_1_0,
 ) -> Result<Response, ContractError> {
     let contract_version = get_contract_version(deps.storage)?;
 

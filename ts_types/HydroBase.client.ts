@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Uint128, Timestamp, Uint64, AllUserLockupsResponse, LockEntryWithPower, LockEntry, Coin, ConstantsResponse, Constants, CurrentRoundResponse, ExecuteMsg, ProposalToLockups, TrancheInfo, ExpiredUserLockupsResponse, Addr, ICQManagersResponse, InstantiateMsg, LiquidityDeploymentResponse, LiquidityDeployment, ProposalResponse, Proposal, QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse, Tranche, Decimal, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, ValidatorPowerRatioResponse, WhitelistAdminsResponse, WhitelistResponse } from "./HydroBase.types";
+import { Uint128, Timestamp, Uint64, AllUserLockupsResponse, LockEntryWithPower, LockEntry, Coin, Decimal, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExecuteMsg, ProposalToLockups, TrancheInfo, ExpiredUserLockupsResponse, Addr, ICQManagersResponse, InstantiateMsg, LiquidityDeploymentResponse, LiquidityDeployment, ProposalResponse, Proposal, QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse, Tranche, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, ValidatorPowerRatioResponse, WhitelistAdminsResponse, WhitelistResponse } from "./HydroBase.types";
 export interface HydroBaseReadOnlyInterface {
   contractAddress: string;
   constants: () => Promise<ConstantsResponse>;
@@ -393,12 +393,14 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
     deploymentDuration,
     description,
     minimumAtomLiquidityRequest,
+    roundId,
     title,
     trancheId
   }: {
     deploymentDuration: number;
     description: string;
     minimumAtomLiquidityRequest: Uint128;
+    roundId?: number;
     title: string;
     trancheId: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
@@ -551,12 +553,14 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     deploymentDuration,
     description,
     minimumAtomLiquidityRequest,
+    roundId,
     title,
     trancheId
   }: {
     deploymentDuration: number;
     description: string;
     minimumAtomLiquidityRequest: Uint128;
+    roundId?: number;
     title: string;
     trancheId: number;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
@@ -565,6 +569,7 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
         deployment_duration: deploymentDuration,
         description,
         minimum_atom_liquidity_request: minimumAtomLiquidityRequest,
+        round_id: roundId,
         title,
         tranche_id: trancheId
       }

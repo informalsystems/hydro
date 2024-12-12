@@ -1,0 +1,14 @@
+{
+    "chain_id": "pion-1",
+    "neutron_rpc_node": "https://rpc-falcron.pion-1.ntrn.tech:443",
+    "neutron_api_node": "https://rest-falcron.pion-1.ntrn.tech:443",
+    "hub_rpc_node": "https://rpc-rs.cosmos.nodestake.top:443",
+    "hub_api_node": "https://api-rs.cosmos.nodestake.top:443",
+    "tx_sender_wallet": "testnet_deployer",
+    "tx_sender_address": "neutron1e68032v8dr8rfeg9wuhd3jjsun83vvla2fsrfs",
+    "hub_connection_id": "connection-42",
+    "hub_channel_id": "channel-96",
+    "tribute_token_1": "untrn",
+    "tribute_token_2": "untrn",
+    "tribute_token_3": "untrn"
+}
