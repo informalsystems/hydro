@@ -10,12 +10,12 @@
       "icq_managers",
       "icq_update_period",
       "initial_whitelist",
-      "is_in_pilot_mode",
       "lock_epoch_length",
       "max_deployment_duration",
       "max_locked_tokens",
       "max_validator_shares_participating",
       "round_length",
+      "round_lock_power_schedule",
       "tranches",
       "whitelist_admins"
     ],
@@ -46,9 +46,6 @@
           "type": "string"
         }
       },
-      "is_in_pilot_mode": {
-        "type": "boolean"
-      },
       "lock_epoch_length": {
         "type": "integer",
         "format": "uint64",
@@ -72,6 +69,24 @@
         "format": "uint64",
         "minimum": 0.0
       },
+      "round_lock_power_schedule": {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": [
+            {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            {
+              "$ref": "#/definitions/Decimal"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
       "tranches": {
         "type": "array",
         "items": {
@@ -87,6 +102,10 @@
     },
     "additionalProperties": false,
     "definitions": {
+      "Decimal": {
+        "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
+        "type": "string"
+      },
       "Timestamp": {
         "description": "A point in time in nanosecond precision.\n\nThis type can represent times from 1970-01-01T00:00:00Z to 2554-07-21T23:34:33Z.\n\n## Examples\n\n``` # use cosmwasm_std::Timestamp; let ts = Timestamp::from_nanos(1_000_000_202); assert_eq!(ts.nanos(), 1_000_000_202); assert_eq!(ts.seconds(), 1); assert_eq!(ts.subsec_nanos(), 202);\n\nlet ts = ts.plus_seconds(2); assert_eq!(ts.nanos(), 3_000_000_202); assert_eq!(ts.seconds(), 3); assert_eq!(ts.subsec_nanos(), 202); ```",
         "allOf": [
@@ -219,6 +238,14 @@
               },
               "minimum_atom_liquidity_request": {
                 "$ref": "#/definitions/Uint128"
+              },
+              "round_id": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
               },
               "title": {
                 "type": "string"
@@ -1478,13 +1505,13 @@
             "hub_connection_id",
             "hub_transfer_channel_id",
             "icq_update_period",
-            "is_in_pilot_mode",
             "lock_epoch_length",
             "max_deployment_duration",
             "max_locked_tokens",
             "max_validator_shares_participating",
             "paused",
-            "round_length"
+            "round_length",
+            "round_lock_power_schedule"
           ],
           "properties": {
             "first_round_start": {
@@ -1500,9 +1527,6 @@
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
-            },
-            "is_in_pilot_mode": {
-              "type": "boolean"
             },
             "lock_epoch_length": {
               "type": "integer",
@@ -1531,6 +1555,46 @@
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
+            },
+            "round_lock_power_schedule": {
+              "$ref": "#/definitions/RoundLockPowerSchedule"
+            }
+          },
+          "additionalProperties": false
+        },
+        "Decimal": {
+          "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
+          "type": "string"
+        },
+        "LockPowerEntry": {
+          "type": "object",
+          "required": [
+            "locked_rounds",
+            "power_scaling_factor"
+          ],
+          "properties": {
+            "locked_rounds": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "power_scaling_factor": {
+              "$ref": "#/definitions/Decimal"
+            }
+          },
+          "additionalProperties": false
+        },
+        "RoundLockPowerSchedule": {
+          "type": "object",
+          "required": [
+            "round_lock_power_schedule"
+          ],
+          "properties": {
+            "round_lock_power_schedule": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/LockPowerEntry"
+              }
             }
           },
           "additionalProperties": false
