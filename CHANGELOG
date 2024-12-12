@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## v2.1.0
+
+Date: December 12th, 2024
+
+### BUG FIXES
+
+- Disable voting in next round with locks that were used in previous round to vote for longer deployment proposal through the "auto-voting" mechanism.
+  ([\#203](https://github.com/informalsystems/hydro/pull/203))
+
+### FEATURES
+
+- Allow proposals to be created in future rounds.
+  ([\#193](https://github.com/informalsystems/hydro/pull/193))
+- Store the lockup schedule as a constant to allow programmatic updates.
+  ([\#194](https://github.com/informalsystems/hydro/pull/194))
+
 ## v2.0.4
 
 Date: December 9th, 2024
