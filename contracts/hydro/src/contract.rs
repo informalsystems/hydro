@@ -2170,6 +2170,18 @@ fn update_voting_power_on_proposals(
                 &vote,
             )?;
 
+            // We are creating a new vote only if user creates a new lockup (i.e. locks more tokens) and
+            // in this case we should insert voting allowed info as well. If user is refreshing a lockup
+            // that was already used for voting, then this information is already saved in the store.
+            if old_lock_entry.is_none() {
+                let voting_allowed_round = current_round + proposal.deployment_duration;
+                VOTING_ALLOWED_ROUND.save(
+                    deps.storage,
+                    (tranche_id, new_lock_entry.lock_id),
+                    &voting_allowed_round,
+                )?;
+            }
+
             if power_change.is_increased {
                 add_validator_shares_to_proposal(
                     deps.storage,
