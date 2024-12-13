@@ -21,7 +21,7 @@ pub enum QueryMsg {
         limit: u32,
     },
     // Returns all the tributes a certain user address has claimed.
-    #[returns(HistoricalTributeClaimsResponse)]
+    #[returns(Vec<TributeClaim>)]
     HistoricalTributeClaims {
         user_address: String,
         start_from: u32,
