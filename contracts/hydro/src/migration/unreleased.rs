@@ -1,13 +1,20 @@
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Decimal, DepsMut, Storage, Timestamp};
+use cosmwasm_std::{Decimal, DepsMut, Env, Order, Storage, Timestamp};
 use cw_storage_plus::Item;
 use neutron_sdk::bindings::query::NeutronQuery;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::error::ContractError;
+use crate::{
+    contract::compute_current_round_id,
+    error::ContractError,
+    state::{
+        RoundLockPowerSchedule, CONSTANTS, PROPOSAL_MAP, TRANCHE_MAP, VOTE_MAP,
+        VOTING_ALLOWED_ROUND,
+    },
+};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct MigrateMsgUNRELEASED {}
@@ -39,7 +46,7 @@ pub struct ConstantsUNRELEASED {
     pub icq_update_period: u64,
     pub paused: bool,
     pub max_deployment_duration: u64,
-    pub round_lock_power_schedule: Vec<(u64, Decimal)>,
+    pub round_lock_power_schedule: RoundLockPowerSchedule,
 }
 
 impl ConstantsUNRELEASED {
@@ -55,7 +62,7 @@ impl ConstantsUNRELEASED {
             icq_update_period: old_constants.icq_update_period,
             paused: old_constants.paused,
             max_deployment_duration: old_constants.max_deployment_duration,
-            round_lock_power_schedule: get_default_power_schedule(),
+            round_lock_power_schedule: RoundLockPowerSchedule::new(get_default_power_schedule()),
         }
     }
 }
@@ -72,9 +79,11 @@ pub fn get_default_power_schedule() -> Vec<(u64, Decimal)> {
 
 pub fn migrate_v2_0_2_to_unreleased(
     deps: &mut DepsMut<NeutronQuery>,
+    env: Env,
     _msg: MigrateMsgUNRELEASED,
 ) -> Result<(), ContractError> {
     migrate_constants(deps.storage)?;
+    migrate_voting_allowed_info(deps, &env)?;
 
     Ok(())
 }
@@ -88,4 +97,78 @@ fn migrate_constants(storage: &mut dyn Storage) -> Result<(), ContractError> {
     NEW_CONSTANTS.save(storage, &new_constants)?;
 
     Ok(())
+}
+
+fn migrate_voting_allowed_info(
+    deps: &mut DepsMut<NeutronQuery>,
+    env: &Env,
+) -> Result<(), ContractError> {
+    // migrate_constants() must be executed first
+    let constants = CONSTANTS.load(deps.storage)?;
+
+    let tranche_ids: Vec<u64> = TRANCHE_MAP
+        .keys(deps.storage, None, None, Order::Ascending)
+        .filter_map(|tranche_id| match tranche_id {
+            Ok(tranche_id) => Some(tranche_id),
+            Err(_) => None,
+        })
+        .collect();
+
+    // don't rely on migration being run in round 1, even though it probably will
+    let current_round_id = compute_current_round_id(env, &constants)?;
+
+    // to cache proposal deployment durations once we load them; saves some gas
+    let mut deployment_durations: HashMap<u64, u64> = HashMap::new();
+
+    // no need to populate this info for round 0 since we only had 1-round-long deployment proposals
+    for round_id in 1..=current_round_id {
+        for &tranche_id in tranche_ids.iter() {
+            let votes: Vec<VoteMigrationInfo> = VOTE_MAP
+                .sub_prefix((round_id, tranche_id))
+                .range(deps.storage, None, None, Order::Ascending)
+                .filter_map(|vote| match vote {
+                    Err(_) => None,
+                    Ok(vote) => Some(VoteMigrationInfo {
+                        lock_id: vote.0 .1,
+                        proposal_id: vote.1.prop_id,
+                    }),
+                })
+                .collect();
+
+            for vote in votes {
+                if VOTING_ALLOWED_ROUND
+                    .may_load(deps.storage, (tranche_id, vote.lock_id))?
+                    .is_some()
+                {
+                    continue;
+                }
+
+                let deployment_duration = match deployment_durations.get(&vote.proposal_id) {
+                    Some(deployment_duration) => *deployment_duration,
+                    None => {
+                        let proposal = PROPOSAL_MAP
+                            .load(deps.storage, (round_id, tranche_id, vote.proposal_id))?;
+                        deployment_durations
+                            .insert(proposal.proposal_id, proposal.deployment_duration);
+
+                        proposal.deployment_duration
+                    }
+                };
+
+                let voting_allowed_round = round_id + deployment_duration;
+                VOTING_ALLOWED_ROUND.save(
+                    deps.storage,
+                    (tranche_id, vote.lock_id),
+                    &voting_allowed_round,
+                )?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub struct VoteMigrationInfo {
+    pub lock_id: u64,
+    pub proposal_id: u64,
 }

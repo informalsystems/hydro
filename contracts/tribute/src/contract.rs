@@ -10,8 +10,8 @@ use hydro::msg::LiquidityDeployment;
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::{
-    ConfigResponse, OutstandingTributeClaimsResponse, ProposalTributesResponse, QueryMsg,
-    RoundTributesResponse, TributeClaim,
+    ConfigResponse, HistoricalTributeClaimsResponse, OutstandingTributeClaimsResponse,
+    ProposalTributesResponse, QueryMsg, RoundTributesResponse, TributeClaim,
 };
 use crate::state::{
     Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP,
@@ -522,31 +522,33 @@ pub fn query_historical_tribute_claims(
     address: String,
     start_from: u32,
     limit: u32,
-) -> StdResult<Vec<TributeClaim>> {
+) -> StdResult<HistoricalTributeClaimsResponse> {
     // go through all TRIBUTE_CLAIMS for the address
     let address = deps.api.addr_validate(&address)?;
-    Ok(TRIBUTE_CLAIMS
-        .prefix(address)
-        .range(deps.storage, None, None, Order::Ascending)
-        .skip(start_from as usize)
-        .take(limit as usize)
-        .filter_map(|l| {
-            if l.is_err() {
-                // log an error and skip this entry
-                deps.api.debug("Error reading tribute claim");
-                return None;
-            }
-            let (tribute_id, amount) = l.unwrap();
-            let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap();
-            Some(TributeClaim {
-                round_id: tribute.round_id,
-                tranche_id: tribute.tranche_id,
-                proposal_id: tribute.proposal_id,
-                tribute_id,
-                amount,
+    Ok(HistoricalTributeClaimsResponse {
+        claims: TRIBUTE_CLAIMS
+            .prefix(address)
+            .range(deps.storage, None, None, Order::Ascending)
+            .skip(start_from as usize)
+            .take(limit as usize)
+            .filter_map(|l| {
+                if l.is_err() {
+                    // log an error and skip this entry
+                    deps.api.debug("Error reading tribute claim");
+                    return None;
+                }
+                let (tribute_id, amount) = l.unwrap();
+                let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id).unwrap();
+                Some(TributeClaim {
+                    round_id: tribute.round_id,
+                    tranche_id: tribute.tranche_id,
+                    proposal_id: tribute.proposal_id,
+                    tribute_id,
+                    amount,
+                })
             })
-        })
-        .collect())
+            .collect(),
+    })
 }
 
 pub fn query_round_tributes(
