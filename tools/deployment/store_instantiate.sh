@@ -65,7 +65,7 @@ store_hydro() {
 
 store_tribute() {
     error_handler() {
-        echo "Content of store_hydro_res.json:"
+        echo "Content of store_tribute_res.json:"
         cat ./store_tribute_res.json
     }
     trap error_handler ERR
@@ -83,7 +83,7 @@ store_tribute() {
 
 instantiate_hydro() {
     error_handler() {
-        echo "Content of store_hydro_res.json:"
+        echo "Content of instantiate_hydro_res.json:"
         cat ./instantiate_hydro_res.json
     }
     trap error_handler ERR
@@ -107,7 +107,7 @@ instantiate_hydro() {
 
 instantiate_tribute() {
     error_handler() {
-        echo "Content of store_hydro_res.json:"
+        echo "Content of instantiate_tribute_res.json:"
         cat ./instantiate_tribute_res.json
     }
     trap error_handler ERR

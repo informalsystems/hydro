@@ -22,7 +22,7 @@ NEUTRON_TX_FLAGS="$TX_FLAG --gas-prices 0.0053untrn --chain-id $NEUTRON_CHAIN_ID
 
 submit_proposals() {
     error_handler() {
-        echo "Content of store_hydro_res.json:"
+        echo "Content of execute_res.json:"
         cat ./execute_res.json
     }
     trap error_handler ERR
