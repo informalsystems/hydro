@@ -1,2 +1,2 @@
-- Disable voting in next round with locks that were used in previous round to vote for longer deployment proposal through the "auto-voting" mechanism.
-  ([\#203](https://github.com/informalsystems/hydro/pull/203))
+- Fix the return type of the `HistoricalTributeClaims` query to be `HistoricalTributeClaimsResponse` instead of `Vec<TributeClaim>`
+  ([\#206](https://github.com/informalsystems/hydro/pull/206))
