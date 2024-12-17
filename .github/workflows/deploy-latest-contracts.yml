@@ -42,7 +42,7 @@ jobs:
           chmod +x ./tools/deployment/populate_contracts.sh
 
           source ./tools/deployment/store_instantiate.sh $CONFIG_FILE true
-          source ./tools/deployment/populate_contracts.sh $CONFIG_FILE
+          source ./tools/deployment/populate_contracts.sh $CONFIG_FILE $HYDRO_CONTRACT_ADDRESS $TRIBUTE_CONTRACT_ADDRESS
       
       # Run tools/relaying.sh to create validator ICQs in the contract and run the ICQ relayer to
       # get the results into the contract
