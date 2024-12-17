@@ -57,6 +57,7 @@ Don't worry about the non-zero number - this script isn't actually sending funds
 ### Setting the Neutron Interchain Queries (ICQ) Relayer locally (optional)
 
 If you want to run the relayer locally instead of through Docker, clone the [ICQ Relayer](https://github.com/neutron-org/neutron-query-relayer) repository and switch to the latest tag (v0.3.0 at the time of writing), then build the relayer.
+Make sure that `neutron_query_relayer` is in the path and executable. 
 
 ### Setting up variables (optional)
 
