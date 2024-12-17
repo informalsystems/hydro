@@ -22,7 +22,7 @@ docker build -t hydro-docker .
 To deploy a new set of contracts to mainnet, run the following command:
 
 ```bash
-./tools/deployment/setup_on_mainnet.sh
+docker run hydro-docker ./tools/deployment/setup_on_mainnet.sh
 ```
 
 Take note of the contract addresses outputted by the script. You will need them to interact with the contracts.
