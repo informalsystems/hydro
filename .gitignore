@@ -12,6 +12,7 @@ Cargo.toml.orig
 .idea/
 
 # Ignore build artifacts
+tools/build/*
 
 *.rs.bk
 
@@ -30,3 +31,5 @@ Cargo.toml.orig
 *_tx.json
 
 .seed
+
+
