@@ -22,11 +22,12 @@ use crate::lsm_integration::{
 use crate::msg::{ExecuteMsg, InstantiateMsg, LiquidityDeployment, ProposalToLockups, TrancheInfo};
 use crate::query::{
     AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    ICQManagersResponse, LiquidityDeploymentResponse, LockEntryWithPower, ProposalResponse,
-    QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
-    RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse,
-    TotalLockedTokensResponse, TranchesResponse, UserVotesResponse, UserVotingPowerResponse,
-    ValidatorPowerRatioResponse, WhitelistAdminsResponse, WhitelistResponse,
+    ICQManagersResponse, LiquidityDeploymentResponse, LockEntryWithPower, LockupWithPerTrancheInfo,
+    PerTrancheLockupInfo, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
+    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
+    RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse, TotalLockedTokensResponse,
+    TranchesResponse, UserVotesResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
+    WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, get_total_power_for_proposal,
@@ -1681,12 +1682,19 @@ pub fn query_all_user_lockups(
         limit,
     );
 
+    let converted_addr = deps.api.addr_validate(&address)?;
+
+    let tranche_ids = TRANCHE_MAP
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|tranche| tranche.unwrap().1.id)
+        .collect::<Vec<u64>>();
+
     let constants = CONSTANTS.load(deps.storage)?;
     let current_round_id = compute_current_round_id(&env, &constants)?;
     let round_end = compute_round_end(&constants, current_round_id)?;
 
     // enrich the lockups by computing the voting power for each lockup
-    let enriched_lockups = raw_lockups
+    let locks_with_power: Vec<LockEntryWithPower> = raw_lockups
         .iter()
         .map(|lock| {
             to_lockup_with_power(
@@ -1700,8 +1708,52 @@ pub fn query_all_user_lockups(
         })
         .collect();
 
+    // enrich lockups with some info per tranche
+    let lockups_with_per_tranche_info: Vec<LockupWithPerTrancheInfo> = locks_with_power
+        .iter()
+        .map(|lock| {
+            // iterate all tranches
+            let tranche_infos = tranche_ids
+                .iter()
+                .map(|tranche_id| {
+                    // add in which round the lockup can next vote
+                    let next_round_voting_allowed = VOTING_ALLOWED_ROUND
+                        .may_load(deps.storage, (*tranche_id, lock.lock_entry.lock_id))
+                        .unwrap_or_default()
+                        .unwrap_or(0);
+
+                    // add which proposal the lock voted for
+                    let voted_for_proposal: Option<u64> = VOTE_MAP
+                        .may_load(
+                            deps.storage,
+                            (
+                                (current_round_id, *tranche_id),
+                                converted_addr.clone(),
+                                lock.lock_entry.lock_id,
+                            ),
+                        )
+                        .unwrap_or(None)
+                        .map(|vote| vote.prop_id);
+
+                    // return the info for this tranche
+                    PerTrancheLockupInfo {
+                        tranche_id: *tranche_id,
+                        next_round_lockup_can_vote: next_round_voting_allowed,
+                        current_voted_on_proposal: voted_for_proposal,
+                    }
+                })
+                .collect::<Vec<PerTrancheLockupInfo>>();
+            // combine the info for all tranches
+            LockupWithPerTrancheInfo {
+                lock_with_power: lock.clone(),
+                per_tranche_info: tranche_infos,
+            }
+        })
+        .collect();
+
+    // return the enriched lockups
     Ok(AllUserLockupsResponse {
-        lockups: enriched_lockups,
+        lockups: lockups_with_per_tranche_info,
     })
 }
 

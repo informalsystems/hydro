@@ -93,17 +93,27 @@ fn query_user_lockups_test() {
     assert_eq!(2, res.lockups.len());
     assert_eq!(
         first_lockup_amount,
-        res.lockups[0].lock_entry.funds.amount.u128()
+        res.lockups[0]
+            .lock_with_power
+            .lock_entry
+            .funds
+            .amount
+            .u128()
     );
     assert_eq!(
         second_lockup_amount,
-        res.lockups[1].lock_entry.funds.amount.u128()
+        res.lockups[1]
+            .lock_with_power
+            .lock_entry
+            .funds
+            .amount
+            .u128()
     );
 
     // check that the voting powers match
     assert_eq!(
         first_lockup_amount,
-        res.lockups[0].current_voting_power.u128()
+        res.lockups[0].lock_with_power.current_voting_power.u128()
     );
     assert_eq!(
         // adjust for the 3 month lockup
@@ -114,7 +124,7 @@ fn query_user_lockups_test() {
             Uint128::new(second_lockup_amount),
         )
         .u128(),
-        res.lockups[1].current_voting_power.u128()
+        res.lockups[1].lock_with_power.current_voting_power.u128()
     );
 
     // advance the chain for a month and verify that the first lockup has expired
@@ -141,15 +151,31 @@ fn query_user_lockups_test() {
     assert_eq!(2, all_lockups.lockups.len()); // still 2 lockups
     assert_eq!(
         first_lockup_amount,
-        all_lockups.lockups[0].lock_entry.funds.amount.u128()
+        all_lockups.lockups[0]
+            .lock_with_power
+            .lock_entry
+            .funds
+            .amount
+            .u128()
     );
     assert_eq!(
         second_lockup_amount,
-        all_lockups.lockups[1].lock_entry.funds.amount.u128()
+        all_lockups.lockups[1]
+            .lock_with_power
+            .lock_entry
+            .funds
+            .amount
+            .u128()
     );
 
     // check that the first lockup has power 0
-    assert_eq!(0, all_lockups.lockups[0].current_voting_power.u128());
+    assert_eq!(
+        0,
+        all_lockups.lockups[0]
+            .lock_with_power
+            .current_voting_power
+            .u128()
+    );
 
     // second lockup still has 2 months left, so has power
     assert_eq!(
@@ -162,7 +188,10 @@ fn query_user_lockups_test() {
         )
         .u128()
             / 2, // adjusted for the 50% power ratio,
-        all_lockups.lockups[1].current_voting_power.u128()
+        all_lockups.lockups[1]
+            .lock_with_power
+            .current_voting_power
+            .u128()
     );
 
     // advance the chain for 3 more months and verify that the second lockup has expired as well
@@ -181,16 +210,38 @@ fn query_user_lockups_test() {
     assert_eq!(2, all_lockups.lockups.len()); // still 2 lockups
     assert_eq!(
         first_lockup_amount,
-        all_lockups.lockups[0].lock_entry.funds.amount.u128()
+        all_lockups.lockups[0]
+            .lock_with_power
+            .lock_entry
+            .funds
+            .amount
+            .u128()
     );
     assert_eq!(
         second_lockup_amount,
-        all_lockups.lockups[1].lock_entry.funds.amount.u128()
+        all_lockups.lockups[1]
+            .lock_with_power
+            .lock_entry
+            .funds
+            .amount
+            .u128()
     );
 
     // check that both lockups have 0 voting power
-    assert_eq!(0, all_lockups.lockups[0].current_voting_power.u128());
-    assert_eq!(0, all_lockups.lockups[1].current_voting_power.u128());
+    assert_eq!(
+        0,
+        all_lockups.lockups[0]
+            .lock_with_power
+            .current_voting_power
+            .u128()
+    );
+    assert_eq!(
+        0,
+        all_lockups.lockups[1]
+            .lock_with_power
+            .current_voting_power
+            .u128()
+    );
 
     // unlock the tokens and verify that the user doesn't have any expired lockups after that
     let msg = ExecuteMsg::UnlockTokens {};
