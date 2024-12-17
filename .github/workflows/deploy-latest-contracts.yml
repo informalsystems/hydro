@@ -48,6 +48,12 @@ jobs:
       # get the results into the contract
       - name: Run ICQs setup script
         run: |
+          cd ./tools
+          go build -o build/icq-tool ./*.go
+          cd ..
+
+          cp ./tools/build/icq-tool .
+
           cp ./tools/relaying.sh .
           chmod +x relaying.sh
 
