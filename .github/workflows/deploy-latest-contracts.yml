@@ -84,7 +84,7 @@ jobs:
           sed -i "s|^go run main\.go.*$|go run \./tools/main\.go|" ./relaying.sh
 
           stop_icq_relayer() {
-            sleep 240
+            sleep 60
             killall neutron_query_relayer
           }
 
