@@ -60,11 +60,11 @@ If you want to run the relayer locally instead of through Docker, clone the [ICQ
 
 ### Setting up variables (optional)
 
-You can adjust parameters like the RPC nodes to connect to for relaying by modifying the exports in `relaying.sh`.
+You can adjust parameters like the RPC nodes to connect to for relaying by modifying the exports in `./tools/relaying.sh`.
 
 ## Run the script
 
-Simply run the script by running `docker run hydro-docker ./relaying.sh HYDRO_CONTRACT_ADDRESS NUM_OF_VALIDATORS_TO_ADD`.
+Simply run the script by running `docker run hydro-docker ./tools/relaying.sh HYDRO_CONTRACT_ADDRESS NUM_OF_VALIDATORS_TO_ADD`.
 
 It will not stop on its own, but the script will eventually print out the relayer logs, and once there are no more regular changes in those, you can stop the container.
 
