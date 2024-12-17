@@ -2,7 +2,7 @@ name: Deploy latest contracts
 
 on:
   push:
-    branches: [ "main", "ph/improve-deployment-scripts" ]
+    branches: [ "main" ]
 
 jobs:
   deploy-latest-contracts:
