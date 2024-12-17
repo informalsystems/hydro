@@ -70,7 +70,6 @@ store_tribute() {
     }
     trap error_handler ERR
 
-    echo 'Storing Hydro wasm...'
     echo 'Storing Tribute wasm...'
 
     $NEUTRON_BINARY tx wasm store $TRIBUTE_WASM_PATH --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS --output json &> ./store_tribute_res.json
@@ -88,7 +87,6 @@ instantiate_hydro() {
     }
     trap error_handler ERR
 
-    echo 'Storing Hydro wasm...'
     echo 'Instantiating Hydro contract...'
 
     INIT_HYDRO='{"round_length":'$ROUND_LENGTH',"lock_epoch_length":'$ROUND_LENGTH', "tranches":[{"name": "ATOM Bucket", "metadata": "A bucket of ATOM to deploy as PoL"}],"first_round_start":"'$FIRST_ROUND_START_TIME'","max_locked_tokens":"20000000000","whitelist_admins":["'$HYDRO_COMMITTEE_DAODAO'","'$TX_SENDER_ADDRESS'"],"initial_whitelist":["'$TX_SENDER_ADDRESS'"],"max_validator_shares_participating":500,"hub_connection_id":"'$HUB_CONNECTION_ID'","hub_transfer_channel_id":"'$HUB_CHANNEL_ID'","icq_update_period":109000,"icq_managers":["'$TX_SENDER_ADDRESS'"],"round_lock_power_schedule": [[1, "1"], [2, "1.25"], [3, "1.5"], [6, "2"], [12, "4"]],"max_deployment_duration":'$MAX_DEPLOYMENT_DURATION'}'
