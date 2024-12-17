@@ -48,11 +48,16 @@ jobs:
       # get the results into the contract
       - name: Run ICQs setup script
         run: |
+          cd neutron-query-relayer
+          go build -ldflags "${LDFLAGS}" -o build/neutron_query_relayer ./cmd/neutron_query_relayer/*.go
+          cd ..
+
           cd ./tools
           go build -o build/icq-tool ./*.go
           cd ..
 
           cp ./tools/build/icq-tool .
+          cp ./neutron-query-relayer/build/neutron_query_relayer .
 
           cp ./tools/relaying.sh .
           chmod +x relaying.sh
