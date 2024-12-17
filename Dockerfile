@@ -31,7 +31,7 @@
     COPY tools /app/tools
 
     # build the icq population tool
-    RUN go build -o build/icq-population /app/tools/*.go
+    RUN go build -o build/icq-tool /app/tools/*.go
 
     # --------------------------------------------------------
     # Stage 3: Final image with all dependencies
@@ -60,8 +60,8 @@
     # Add the neutron-query-relayer binary from the builder stage
     COPY --from=builder /app/build/neutron_query_relayer /usr/local/bin/neutron_query_relayer
 
-    # Add the icq-population binary from the builder stage
-    COPY --from=builder /app/build/icq-population /usr/local/bin/icq-population
+    # Add the icq-tool binary from the builder stage
+    COPY --from=builder /app/build/icq-tool /usr/local/bin/icq-tool
     
     # Add CosmWasm libraries
     ADD https://github.com/CosmWasm/wasmvm/releases/download/v1.5.2/libwasmvm.x86_64.so /lib/

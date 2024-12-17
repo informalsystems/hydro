@@ -41,7 +41,7 @@ export LOGGER_LEVEL=debug
 #####
 
 # Create the ICQ queries by running the go script in this folder
-icq-population
+icq-tool
 
 # Run the relayer
 neutron_query_relayer start

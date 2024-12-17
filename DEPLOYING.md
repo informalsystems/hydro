@@ -51,3 +51,20 @@ docker run hydro-docker ./tools/deployment/add_liquidity_deployments.sh "./tools
 ```
 FUNDS should be 0 if the tribute for the bid should become refundable; and non-zero if it should become claimable.
 Don't worry about the non-zero number - this script isn't actually sending funds over. It only matters whether the number is zero or not.
+
+## Issuing interchain queries and relaying
+
+### Setting the Neutron Interchain Queries (ICQ) Relayer locally (optional)
+
+If you want to run the relayer locally instead of through Docker, clone the [ICQ Relayer](https://github.com/neutron-org/neutron-query-relayer) repository and switch to the latest tag (v0.3.0 at the time of writing), then build the relayer.
+
+### Setting up variables (optional)
+
+You can adjust parameters like the RPC nodes to connect to for relaying by modifying the exports in `relaying.sh`.
+
+## Run the script
+
+Simply run the script by running `docker run hydro-docker ./relaying.sh HYDRO_CONTRACT_ADDRESS NUM_OF_VALIDATORS_TO_ADD`.
+
+It will not stop on its own, but the script will eventually print out the relayer logs, and once there is no more regular change in those, you can stop the script.
+
