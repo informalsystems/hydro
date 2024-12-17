@@ -12,6 +12,7 @@ Cargo.toml.orig
 .idea/
 
 # Ignore build artifacts
+tools/build/*
 
 *.rs.bk
 
@@ -28,3 +29,7 @@ Cargo.toml.orig
 # log files from deployments
 *_res.json
 *_tx.json
+
+.seed
+
+

@@ -4,11 +4,11 @@
     "neutron_api_node": "https://rest-falcron.pion-1.ntrn.tech:443",
     "hub_rpc_node": "https://rpc-rs.cosmos.nodestake.top:443",
     "hub_api_node": "https://api-rs.cosmos.nodestake.top:443",
-    "tx_sender_wallet": "testnet_deployer",
-    "tx_sender_address": "neutron1e68032v8dr8rfeg9wuhd3jjsun83vvla2fsrfs",
+    "tx_sender_wallet": "submitter",
+    "tx_sender_address": "neutron1r6rv879netg009eh6ty23v57qrq29afecuehlm",
     "hub_connection_id": "connection-42",
     "hub_channel_id": "channel-96",
     "tribute_token_1": "untrn",
-    "tribute_token_2": "untrn",
-    "tribute_token_3": "untrn"
+    "tribute_token_2": "ibc/D1283F23CC25C39F16BCFB2DFFA9997AE7A101B92810D0F9F0AA092F6FE332D0",
+    "tribute_token_3": "ibc/D1283F23CC25C39F16BCFB2DFFA9997AE7A101B92810D0F9F0AA092F6FE332D0"
 }

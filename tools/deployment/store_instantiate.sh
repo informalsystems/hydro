@@ -7,7 +7,7 @@ IS_GITHUB_WORKFLOW=$2
 NEUTRON_CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
 NEUTRON_NODE=$(jq -r '.neutron_rpc_node' $CONFIG_FILE)
 TX_SENDER_WALLET=$(jq -r '.tx_sender_wallet' $CONFIG_FILE)
-TX_SENDER_ADDRESS=$(jq -r '.tx_sender_address' $CONFIG_FILE)
+TX_SENDER_ADDRESS=$(neutrond keys show $TX_SENDER_WALLET --keyring-backend test | grep "address:" | sed 's/.*address: //')
 HUB_CONNECTION_ID=$(jq -r '.hub_connection_id' $CONFIG_FILE)
 HUB_CHANNEL_ID=$(jq -r '.hub_channel_id' $CONFIG_FILE)
 
@@ -19,7 +19,7 @@ NEUTRON_NODE_FLAG="--node $NEUTRON_NODE"
 NEUTRON_TX_FLAGS="$TX_FLAG --gas-prices 0.0053untrn --chain-id $NEUTRON_CHAIN_ID $NEUTRON_NODE_FLAG $KEYRING_TEST_FLAG -y"
 
 MAINNET_ROUND_LENGTH="2628000000000000" # 365 / 12
-ROUND_END_TEST_ROUND_LENGTH="172800000000000" # 2 days
+ROUND_END_TEST_ROUND_LENGTH="86400000000000" # 1 day
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS
@@ -33,7 +33,7 @@ SPECIFIC_TIMESTAMP=""
 # these ones are used in the InstantiateMsg
 ROUND_LENGTH=$ROUND_END_TEST_ROUND_LENGTH
 FIRST_ROUND_START_TIME=$CURRENT_TIME_NO_MINS_AND_SECS
-HYDRO_COMMITTEE_DAODAO="neutron1w7f40hgfc505a2wnjsl5pg35yl8qpawv48w5yekax4xj2m43j09s5fa44f"
+HYDRO_COMMITTEE_DAODAO="neutron1xd6z4nwmfeamv089fr9s4hlp3vq00l0tn9j9ysauc2j5pcmlm6vsk7nf7q"
 
 IS_IN_PILOT_MODE=true
 MAX_DEPLOYMENT_DURATION=3
@@ -47,6 +47,12 @@ HYDRO_SC_LABEL="Hydro"
 TRIBUTE_SC_LABEL="Tribute"
 
 store_hydro() {
+    error_handler() {
+        echo "Content of store_hydro_res.json:"
+        cat ./store_hydro_res.json
+    }
+    trap error_handler ERR
+
     echo 'Storing Hydro wasm...'
 
     $NEUTRON_BINARY tx wasm store $HYDRO_WASM_PATH --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS --output json &> ./store_hydro_res.json
@@ -58,6 +64,12 @@ store_hydro() {
 }
 
 store_tribute() {
+    error_handler() {
+        echo "Content of store_tribute_res.json:"
+        cat ./store_tribute_res.json
+    }
+    trap error_handler ERR
+
     echo 'Storing Tribute wasm...'
 
     $NEUTRON_BINARY tx wasm store $TRIBUTE_WASM_PATH --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS --output json &> ./store_tribute_res.json
@@ -69,9 +81,15 @@ store_tribute() {
 }
 
 instantiate_hydro() {
+    error_handler() {
+        echo "Content of instantiate_hydro_res.json:"
+        cat ./instantiate_hydro_res.json
+    }
+    trap error_handler ERR
+
     echo 'Instantiating Hydro contract...'
 
-    INIT_HYDRO='{"round_length":'$ROUND_LENGTH',"lock_epoch_length":'$ROUND_LENGTH', "tranches":[{"name": "ATOM Bucket", "metadata": "A bucket of ATOM to deploy as PoL"}],"first_round_start":"'$FIRST_ROUND_START_TIME'","max_locked_tokens":"20000000000","whitelist_admins":["'$HYDRO_COMMITTEE_DAODAO'","'$TX_SENDER_ADDRESS'"],"initial_whitelist":["'$TX_SENDER_ADDRESS'"],"max_validator_shares_participating":500,"hub_connection_id":"'$HUB_CONNECTION_ID'","hub_transfer_channel_id":"'$HUB_CHANNEL_ID'","icq_update_period":109000,"icq_managers":["'$TX_SENDER_ADDRESS'"],"round_lock_power_schedule":[[1, "1"], [2, "1.25"], [3, "1.5"], [6, "2"], [12, "4"]],"max_deployment_duration":'$MAX_DEPLOYMENT_DURATION'}'
+    INIT_HYDRO='{"round_length":'$ROUND_LENGTH',"lock_epoch_length":'$ROUND_LENGTH', "tranches":[{"name": "ATOM Bucket", "metadata": "A bucket of ATOM to deploy as PoL"}],"first_round_start":"'$FIRST_ROUND_START_TIME'","max_locked_tokens":"20000000000","whitelist_admins":["'$HYDRO_COMMITTEE_DAODAO'","'$TX_SENDER_ADDRESS'"],"initial_whitelist":["'$TX_SENDER_ADDRESS'"],"max_validator_shares_participating":500,"hub_connection_id":"'$HUB_CONNECTION_ID'","hub_transfer_channel_id":"'$HUB_CHANNEL_ID'","icq_update_period":109000,"icq_managers":["'$TX_SENDER_ADDRESS'"],"round_lock_power_schedule": [[1, "1"], [2, "1.25"], [3, "1.5"], [6, "2"], [12, "4"]],"max_deployment_duration":'$MAX_DEPLOYMENT_DURATION'}'
 
     $NEUTRON_BINARY tx wasm instantiate $HYDRO_CODE_ID "$INIT_HYDRO" --admin $TX_SENDER_ADDRESS --label "'$HYDRO_SC_LABEL'" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS --output json &> ./instantiate_hydro_res.json
     sleep 10
@@ -86,6 +104,11 @@ instantiate_hydro() {
 }
 
 instantiate_tribute() {
+    error_handler() {
+        echo "Content of instantiate_tribute_res.json:"
+        cat ./instantiate_tribute_res.json
+    }
+    trap error_handler ERR
     echo 'Instantiating Tribute contract...'
 
     INIT_TRIBUTE='{"hydro_contract":"'$HYDRO_CONTRACT_ADDRESS'"}'
