@@ -66,5 +66,5 @@ You can adjust parameters like the RPC nodes to connect to for relaying by modif
 
 Simply run the script by running `docker run hydro-docker ./relaying.sh HYDRO_CONTRACT_ADDRESS NUM_OF_VALIDATORS_TO_ADD`.
 
-It will not stop on its own, but the script will eventually print out the relayer logs, and once there is no more regular change in those, you can stop the script.
+It will not stop on its own, but the script will eventually print out the relayer logs, and once there are no more regular changes in those, you can stop the container.
 
