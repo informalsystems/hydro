@@ -752,6 +752,39 @@
       {
         "type": "object",
         "required": [
+          "all_user_lockups_with_tranche_infos"
+        ],
+        "properties": {
+          "all_user_lockups_with_tranche_infos": {
+            "type": "object",
+            "required": [
+              "address",
+              "limit",
+              "start_from"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              "start_from": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
           "expired_user_lockups"
         ],
         "properties": {
@@ -1574,7 +1607,7 @@
         "lockups": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/LockupWithPerTrancheInfo"
+            "$ref": "#/definitions/LockEntryWithPower"
           }
         }
       },
@@ -1634,53 +1667,6 @@
             },
             "lock_entry": {
               "$ref": "#/definitions/LockEntry"
-            }
-          },
-          "additionalProperties": false
-        },
-        "LockupWithPerTrancheInfo": {
-          "type": "object",
-          "required": [
-            "lock_with_power",
-            "per_tranche_info"
-          ],
-          "properties": {
-            "lock_with_power": {
-              "$ref": "#/definitions/LockEntryWithPower"
-            },
-            "per_tranche_info": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/PerTrancheLockupInfo"
-              }
-            }
-          },
-          "additionalProperties": false
-        },
-        "PerTrancheLockupInfo": {
-          "type": "object",
-          "required": [
-            "next_round_lockup_can_vote",
-            "tranche_id"
-          ],
-          "properties": {
-            "current_voted_on_proposal": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "next_round_lockup_can_vote": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "tranche_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
             }
           },
           "additionalProperties": false
