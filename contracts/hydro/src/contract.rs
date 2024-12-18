@@ -1715,9 +1715,9 @@ pub fn query_all_user_lockups(
             // iterate all tranches
             let tranche_infos = tranche_ids
                 .iter()
-                .map(|tranche_id| {
+                .filter_map(|tranche_id| {
                     // add which proposal the lock voted for
-                    let voted_for_proposal: Option<u64> = VOTE_MAP
+                    let voted_for_proposal_res: StdResult<Option<u64>> = VOTE_MAP
                         .may_load(
                             deps.storage,
                             (
@@ -1726,29 +1726,46 @@ pub fn query_all_user_lockups(
                                 lock.lock_entry.lock_id,
                             ),
                         )
-                        .unwrap_or(None)
-                        .map(|vote| vote.prop_id);
+                        .map(|vote| vote.map(|v| v.prop_id));
 
-                    let next_round_voting_allowed: u64 = if voted_for_proposal.is_some() {
-                        // if the proposal voted in this round, we ignore the VOTING_ALLOWED_ROUND map,
-                        // since it just contains the future information on when the lockup will be able to vote again
-                        // if it doesn't change the vote, but it can vote in the current round either way
-                        current_round_id
-                    } else {
-                        // if the lockup has not voted in this round, VOTING_ALLOWED_ROUND does contain
-                        // current information on whether the lockup can vote right now or not
-                        VOTING_ALLOWED_ROUND
-                            .may_load(deps.storage, (*tranche_id, lock.lock_entry.lock_id))
-                            .unwrap_or(None)
-                            .unwrap_or(current_round_id)
-                    };
+                    // if there was an error in the store while loading the vote for the lockup,
+                    // we filter out the tranche by returning None
+                    if voted_for_proposal_res.is_err() {
+                        return None;
+                    }
+
+                    let voted_for_proposal = voted_for_proposal_res.unwrap();
+
+                    let next_round_voting_allowed_res: StdResult<u64> =
+                        if voted_for_proposal.is_some() {
+                            // if the proposal voted in this round, we ignore the VOTING_ALLOWED_ROUND map,
+                            // since it just contains the future information on when the lockup will be able to vote again
+                            // if it doesn't change the vote, but it can vote in the current round either way
+                            Ok(current_round_id)
+                        } else {
+                            // if the lockup has not voted in this round, VOTING_ALLOWED_ROUND does contain
+                            // current information on whether the lockup can vote right now or not
+                            VOTING_ALLOWED_ROUND
+                                .may_load(deps.storage, (*tranche_id, lock.lock_entry.lock_id))
+                                .map(|voting_allowed_round| {
+                                    voting_allowed_round.unwrap_or(current_round_id)
+                                })
+                        };
+
+                    // if there was an error in the store while loading the next allowed round for voting,
+                    // we filter out the tranche by returning None
+                    if next_round_voting_allowed_res.is_err() {
+                        return None;
+                    }
+
+                    let next_round_voting_allowed = next_round_voting_allowed_res.unwrap();
 
                     // return the info for this tranche
-                    PerTrancheLockupInfo {
+                    Some(PerTrancheLockupInfo {
                         tranche_id: *tranche_id,
                         next_round_lockup_can_vote: next_round_voting_allowed,
                         current_voted_on_proposal: voted_for_proposal,
-                    }
+                    })
                 })
                 .collect::<Vec<PerTrancheLockupInfo>>();
             // combine the info for all tranches
