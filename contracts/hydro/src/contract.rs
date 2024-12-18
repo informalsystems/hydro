@@ -1729,21 +1729,19 @@ pub fn query_all_user_lockups(
                         .unwrap_or(None)
                         .map(|vote| vote.prop_id);
 
-                    let next_round_voting_allowed: u64;
-
-                    if voted_for_proposal.is_some() {
+                    let next_round_voting_allowed: u64 = if voted_for_proposal.is_some() {
                         // if the proposal voted in this round, we ignore the VOTING_ALLOWED_ROUND map,
                         // since it just contains the future information on when the lockup will be able to vote again
                         // if it doesn't change the vote, but it can vote in the current round either way
-                        next_round_voting_allowed = current_round_id;
+                        current_round_id
                     } else {
                         // if the lockup has not voted in this round, VOTING_ALLOWED_ROUND does contain
                         // current information on whether the votup can vote right now or not
-                        next_round_voting_allowed = VOTING_ALLOWED_ROUND
+                        VOTING_ALLOWED_ROUND
                             .may_load(deps.storage, (*tranche_id, lock.lock_entry.lock_id))
                             .unwrap_or_default()
-                            .unwrap_or(0);
-                    }
+                            .unwrap_or(0)
+                    };
 
                     // return the info for this tranche
                     PerTrancheLockupInfo {
