@@ -1736,11 +1736,11 @@ pub fn query_all_user_lockups(
                         current_round_id
                     } else {
                         // if the lockup has not voted in this round, VOTING_ALLOWED_ROUND does contain
-                        // current information on whether the votup can vote right now or not
+                        // current information on whether the lockup can vote right now or not
                         VOTING_ALLOWED_ROUND
                             .may_load(deps.storage, (*tranche_id, lock.lock_entry.lock_id))
-                            .unwrap_or_default()
-                            .unwrap_or(0)
+                            .unwrap_or(None)
+                            .unwrap_or(current_round_id)
                     };
 
                     // return the info for this tranche
