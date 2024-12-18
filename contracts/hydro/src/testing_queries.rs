@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use crate::contract::{
-    compute_current_round_id, query_all_user_lockups, query_user_votes, scale_lockup_power,
+    compute_current_round_id, query_all_user_lockups, query_all_user_lockups_with_tranche_infos,
+    query_user_votes, scale_lockup_power,
 };
 use crate::msg::ProposalToLockups;
 use crate::state::{
@@ -131,14 +132,20 @@ fn query_user_lockups_test() {
     assert_eq!(0, expired_lockups.len());
 
     // but they should have 2 lockups
-    let res = query_all_user_lockups(deps.as_ref(), env.clone(), info.sender.to_string(), 0, 2000);
+    let res = query_all_user_lockups_with_tranche_infos(
+        deps.as_ref(),
+        env.clone(),
+        info.sender.to_string(),
+        0,
+        2000,
+    );
     assert!(res.is_ok());
     let res = res.unwrap();
 
-    assert_eq!(2, res.lockups.len());
+    assert_eq!(2, res.lockups_with_per_tranche_infos.len());
     assert_eq!(
         first_lockup_amount,
-        res.lockups[0]
+        res.lockups_with_per_tranche_infos[0]
             .lock_with_power
             .lock_entry
             .funds
@@ -147,7 +154,7 @@ fn query_user_lockups_test() {
     );
     assert_eq!(
         second_lockup_amount,
-        res.lockups[1]
+        res.lockups_with_per_tranche_infos[1]
             .lock_with_power
             .lock_entry
             .funds
@@ -158,7 +165,10 @@ fn query_user_lockups_test() {
     // check that the voting powers match
     assert_eq!(
         first_lockup_amount,
-        res.lockups[0].lock_with_power.current_voting_power.u128()
+        res.lockups_with_per_tranche_infos[0]
+            .lock_with_power
+            .current_voting_power
+            .u128()
     );
     assert_eq!(
         // adjust for the 3 month lockup
@@ -169,14 +179,17 @@ fn query_user_lockups_test() {
             Uint128::new(second_lockup_amount),
         )
         .u128(),
-        res.lockups[1].lock_with_power.current_voting_power.u128()
+        res.lockups_with_per_tranche_infos[1]
+            .lock_with_power
+            .current_voting_power
+            .u128()
     );
 
     // check that the votes on the lockups are correct
-    assert!(res.lockups[0].per_tranche_info[0]
+    assert!(res.lockups_with_per_tranche_infos[0].per_tranche_info[0]
         .current_voted_on_proposal
         .is_some_and(|x| x == 0),);
-    assert!(res.lockups[1].per_tranche_info[0]
+    assert!(res.lockups_with_per_tranche_infos[1].per_tranche_info[0]
         .current_voted_on_proposal
         .is_some_and(|x| x == 1),);
 
@@ -196,15 +209,20 @@ fn query_user_lockups_test() {
         Decimal::percent(50),
     );
 
-    let all_lockups =
-        query_all_user_lockups(deps.as_ref(), env.clone(), info.sender.to_string(), 0, 2000);
+    let all_lockups = query_all_user_lockups_with_tranche_infos(
+        deps.as_ref(),
+        env.clone(),
+        info.sender.to_string(),
+        0,
+        2000,
+    );
     assert!(all_lockups.is_ok());
 
     let all_lockups = all_lockups.unwrap();
-    assert_eq!(2, all_lockups.lockups.len()); // still 2 lockups
+    assert_eq!(2, all_lockups.lockups_with_per_tranche_infos.len()); // still 2 lockups
     assert_eq!(
         first_lockup_amount,
-        all_lockups.lockups[0]
+        all_lockups.lockups_with_per_tranche_infos[0]
             .lock_with_power
             .lock_entry
             .funds
@@ -213,7 +231,7 @@ fn query_user_lockups_test() {
     );
     assert_eq!(
         second_lockup_amount,
-        all_lockups.lockups[1]
+        all_lockups.lockups_with_per_tranche_infos[1]
             .lock_with_power
             .lock_entry
             .funds
@@ -224,7 +242,7 @@ fn query_user_lockups_test() {
     // check that the first lockup has power 0
     assert_eq!(
         0,
-        all_lockups.lockups[0]
+        all_lockups.lockups_with_per_tranche_infos[0]
             .lock_with_power
             .current_voting_power
             .u128()
@@ -241,7 +259,7 @@ fn query_user_lockups_test() {
         )
         .u128()
             / 2, // adjusted for the 50% power ratio,
-        all_lockups.lockups[1]
+        all_lockups.lockups_with_per_tranche_infos[1]
             .lock_with_power
             .current_voting_power
             .u128()
@@ -251,21 +269,27 @@ fn query_user_lockups_test() {
 
     // check that neither lockup has voted on a proposal
     // check that the votes on the lockups are correct
-    assert!(all_lockups.lockups[0].per_tranche_info[0]
-        .current_voted_on_proposal
-        .is_none(),);
-    assert!(all_lockups.lockups[1].per_tranche_info[0]
-        .current_voted_on_proposal
-        .is_none(),);
+    assert!(
+        all_lockups.lockups_with_per_tranche_infos[0].per_tranche_info[0]
+            .current_voted_on_proposal
+            .is_none(),
+    );
+    assert!(
+        all_lockups.lockups_with_per_tranche_infos[1].per_tranche_info[0]
+            .current_voted_on_proposal
+            .is_none(),
+    );
 
     // check that the next voting rounds are correct
     assert_eq!(
         1,
-        all_lockups.lockups[0].per_tranche_info[0].next_round_lockup_can_vote
+        all_lockups.lockups_with_per_tranche_infos[0].per_tranche_info[0]
+            .next_round_lockup_can_vote
     );
     assert_eq!(
         3,
-        all_lockups.lockups[1].per_tranche_info[0].next_round_lockup_can_vote
+        all_lockups.lockups_with_per_tranche_infos[1].per_tranche_info[0]
+            .next_round_lockup_can_vote
     );
 
     // advance the chain for 3 more months and verify that the second lockup has expired as well
@@ -275,16 +299,21 @@ fn query_user_lockups_test() {
     assert_eq!(first_lockup_amount, expired_lockups[0].funds.amount.u128());
     assert_eq!(second_lockup_amount, expired_lockups[1].funds.amount.u128());
 
-    let all_lockups =
-        query_all_user_lockups(deps.as_ref(), env.clone(), info.sender.to_string(), 0, 2000);
+    let all_lockups = query_all_user_lockups_with_tranche_infos(
+        deps.as_ref(),
+        env.clone(),
+        info.sender.to_string(),
+        0,
+        2000,
+    );
 
     assert!(all_lockups.is_ok());
 
     let all_lockups = all_lockups.unwrap();
-    assert_eq!(2, all_lockups.lockups.len()); // still 2 lockups
+    assert_eq!(2, all_lockups.lockups_with_per_tranche_infos.len()); // still 2 lockups
     assert_eq!(
         first_lockup_amount,
-        all_lockups.lockups[0]
+        all_lockups.lockups_with_per_tranche_infos[0]
             .lock_with_power
             .lock_entry
             .funds
@@ -293,7 +322,7 @@ fn query_user_lockups_test() {
     );
     assert_eq!(
         second_lockup_amount,
-        all_lockups.lockups[1]
+        all_lockups.lockups_with_per_tranche_infos[1]
             .lock_with_power
             .lock_entry
             .funds
@@ -304,14 +333,14 @@ fn query_user_lockups_test() {
     // check that both lockups have 0 voting power
     assert_eq!(
         0,
-        all_lockups.lockups[0]
+        all_lockups.lockups_with_per_tranche_infos[0]
             .lock_with_power
             .current_voting_power
             .u128()
     );
     assert_eq!(
         0,
-        all_lockups.lockups[1]
+        all_lockups.lockups_with_per_tranche_infos[1]
             .lock_with_power
             .current_voting_power
             .u128()
