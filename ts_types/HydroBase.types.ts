@@ -8,7 +8,11 @@ export type Uint128 = string;
 export type Timestamp = Uint64;
 export type Uint64 = string;
 export interface AllUserLockupsResponse {
-  lockups: LockEntryWithPower[];
+  lockups: LockupWithPerTrancheInfo[];
+}
+export interface LockupWithPerTrancheInfo {
+  lock_with_power: LockEntryWithPower;
+  per_tranche_info: PerTrancheLockupInfo[];
 }
 export interface LockEntryWithPower {
   current_voting_power: Uint128;
@@ -23,6 +27,11 @@ export interface LockEntry {
 export interface Coin {
   amount: Uint128;
   denom: string;
+}
+export interface PerTrancheLockupInfo {
+  current_voted_on_proposal?: number | null;
+  next_round_lockup_can_vote: number;
+  tranche_id: number;
 }
 export type Decimal = string;
 export interface ConstantsResponse {

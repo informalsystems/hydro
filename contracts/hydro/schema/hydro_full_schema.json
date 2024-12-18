@@ -1574,7 +1574,7 @@
         "lockups": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/LockEntryWithPower"
+            "$ref": "#/definitions/LockupWithPerTrancheInfo"
           }
         }
       },
@@ -1634,6 +1634,53 @@
             },
             "lock_entry": {
               "$ref": "#/definitions/LockEntry"
+            }
+          },
+          "additionalProperties": false
+        },
+        "LockupWithPerTrancheInfo": {
+          "type": "object",
+          "required": [
+            "lock_with_power",
+            "per_tranche_info"
+          ],
+          "properties": {
+            "lock_with_power": {
+              "$ref": "#/definitions/LockEntryWithPower"
+            },
+            "per_tranche_info": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/PerTrancheLockupInfo"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "PerTrancheLockupInfo": {
+          "type": "object",
+          "required": [
+            "next_round_lockup_can_vote",
+            "tranche_id"
+          ],
+          "properties": {
+            "current_voted_on_proposal": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "next_round_lockup_can_vote": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
             }
           },
           "additionalProperties": false
