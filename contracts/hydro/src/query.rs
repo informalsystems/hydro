@@ -25,6 +25,15 @@ pub enum QueryMsg {
         limit: u32,
     },
 
+    // a version of the AllUserLockups query where additional information
+    // is returned
+    #[returns(AllUserLockupsWithTrancheInfosResponse)]
+    AllUserLockupsWithTrancheInfos {
+        address: String,
+        start_from: u32,
+        limit: u32,
+    },
+
     #[returns(ExpiredUserLockupsResponse)]
     ExpiredUserLockups {
         address: String,
@@ -148,7 +157,13 @@ pub struct LockupWithPerTrancheInfo {
 
 #[cw_serde]
 pub struct AllUserLockupsResponse {
-    pub lockups: Vec<LockupWithPerTrancheInfo>,
+    pub lockups: Vec<LockEntryWithPower>,
+}
+
+// A version of AllUserLockupsResponse that includes the per-tranche information for each lockup.
+#[cw_serde]
+pub struct AllUserLockupsWithTrancheInfosResponse {
+    pub lockups_with_per_tranche_infos: Vec<LockupWithPerTrancheInfo>,
 }
 
 #[cw_serde]

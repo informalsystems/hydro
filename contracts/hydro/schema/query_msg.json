@@ -64,6 +64,39 @@
     {
       "type": "object",
       "required": [
+        "all_user_lockups_with_tranche_infos"
+      ],
+      "properties": {
+        "all_user_lockups_with_tranche_infos": {
+          "type": "object",
+          "required": [
+            "address",
+            "limit",
+            "start_from"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "start_from": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
         "expired_user_lockups"
       ],
       "properties": {
