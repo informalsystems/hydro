@@ -24,6 +24,18 @@ export interface Coin {
   amount: Uint128;
   denom: string;
 }
+export interface AllUserLockupsWithTrancheInfosResponse {
+  lockups_with_per_tranche_infos: LockupWithPerTrancheInfo[];
+}
+export interface LockupWithPerTrancheInfo {
+  lock_with_power: LockEntryWithPower;
+  per_tranche_info: PerTrancheLockupInfo[];
+}
+export interface PerTrancheLockupInfo {
+  current_voted_on_proposal?: number | null;
+  next_round_lockup_can_vote: number;
+  tranche_id: number;
+}
 export type Decimal = string;
 export interface ConstantsResponse {
   constants: Constants;
