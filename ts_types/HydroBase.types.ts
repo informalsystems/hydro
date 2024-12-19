@@ -8,11 +8,7 @@ export type Uint128 = string;
 export type Timestamp = Uint64;
 export type Uint64 = string;
 export interface AllUserLockupsResponse {
-  lockups: LockupWithPerTrancheInfo[];
-}
-export interface LockupWithPerTrancheInfo {
-  lock_with_power: LockEntryWithPower;
-  per_tranche_info: PerTrancheLockupInfo[];
+  lockups: LockEntryWithPower[];
 }
 export interface LockEntryWithPower {
   current_voting_power: Uint128;
@@ -27,6 +23,13 @@ export interface LockEntry {
 export interface Coin {
   amount: Uint128;
   denom: string;
+}
+export interface AllUserLockupsWithTrancheInfosResponse {
+  lockups_with_per_tranche_infos: LockupWithPerTrancheInfo[];
+}
+export interface LockupWithPerTrancheInfo {
+  lock_with_power: LockEntryWithPower;
+  per_tranche_info: PerTrancheLockupInfo[];
 }
 export interface PerTrancheLockupInfo {
   current_voted_on_proposal?: number | null;
@@ -209,6 +212,12 @@ export type QueryMsg = {
   tranches: {};
 } | {
   all_user_lockups: {
+    address: string;
+    limit: number;
+    start_from: number;
+  };
+} | {
+  all_user_lockups_with_tranche_infos: {
     address: string;
     limit: number;
     start_from: number;
