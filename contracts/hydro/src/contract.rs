@@ -21,8 +21,9 @@ use crate::lsm_integration::{
 };
 use crate::msg::{ExecuteMsg, InstantiateMsg, LiquidityDeployment, ProposalToLockups, TrancheInfo};
 use crate::query::{
-    AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    ICQManagersResponse, LiquidityDeploymentResponse, LockEntryWithPower, LockupWithPerTrancheInfo,
+    AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, ConstantsResponse,
+    CurrentRoundResponse, ExpiredUserLockupsResponse, ICQManagersResponse,
+    LiquidityDeploymentResponse, LockEntryWithPower, LockupWithPerTrancheInfo,
     PerTrancheLockupInfo, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
     RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
     RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse, TotalLockedTokensResponse,
@@ -1540,6 +1541,13 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         } => to_json_binary(&query_all_user_lockups(
             deps, env, address, start_from, limit,
         )?),
+        QueryMsg::AllUserLockupsWithTrancheInfos {
+            address,
+            start_from,
+            limit,
+        } => to_json_binary(&query_all_user_lockups_with_tranche_infos(
+            deps, env, address, start_from, limit,
+        )?),
         QueryMsg::ExpiredUserLockups {
             address,
             start_from,
@@ -1682,19 +1690,12 @@ pub fn query_all_user_lockups(
         limit,
     );
 
-    let converted_addr = deps.api.addr_validate(&address)?;
-
-    let tranche_ids = TRANCHE_MAP
-        .range(deps.storage, None, None, Order::Ascending)
-        .map(|tranche| tranche.unwrap().1.id)
-        .collect::<Vec<u64>>();
-
     let constants = CONSTANTS.load(deps.storage)?;
     let current_round_id = compute_current_round_id(&env, &constants)?;
     let round_end = compute_round_end(&constants, current_round_id)?;
 
     // enrich the lockups by computing the voting power for each lockup
-    let locks_with_power: Vec<LockEntryWithPower> = raw_lockups
+    let enriched_lockups = raw_lockups
         .iter()
         .map(|lock| {
             to_lockup_with_power(
@@ -1708,8 +1709,33 @@ pub fn query_all_user_lockups(
         })
         .collect();
 
+    Ok(AllUserLockupsResponse {
+        lockups: enriched_lockups,
+    })
+}
+
+pub fn query_all_user_lockups_with_tranche_infos(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    address: String,
+    start_from: u32,
+    limit: u32,
+) -> StdResult<AllUserLockupsWithTrancheInfosResponse> {
+    let converted_addr = deps.api.addr_validate(&address)?;
+
+    let tranche_ids = TRANCHE_MAP
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|tranche| tranche.unwrap().1.id)
+        .collect::<Vec<u64>>();
+
+    let constants = CONSTANTS.load(deps.storage)?;
+    let current_round_id = compute_current_round_id(&env, &constants)?;
+
+    let lockups = query_all_user_lockups(deps, env, address, start_from, limit);
+
     // enrich lockups with some info per tranche
-    let lockups_with_per_tranche_info: Vec<LockupWithPerTrancheInfo> = locks_with_power
+    let lockups_with_per_tranche_info: Vec<LockupWithPerTrancheInfo> = lockups?
+        .lockups
         .iter()
         .map(|lock| {
             // iterate all tranches
@@ -1777,8 +1803,8 @@ pub fn query_all_user_lockups(
         .collect();
 
     // return the enriched lockups
-    Ok(AllUserLockupsResponse {
-        lockups: lockups_with_per_tranche_info,
+    Ok(AllUserLockupsWithTrancheInfosResponse {
+        lockups_with_per_tranche_infos: lockups_with_per_tranche_info,
     })
 }
 
