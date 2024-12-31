@@ -4,9 +4,7 @@ use std::str::FromStr;
 use crate::contract::{
     compute_current_round_id, query_all_user_lockups, query_user_votes, scale_lockup_power,
 };
-use crate::state::{
-    RoundLockPowerSchedule, ValidatorInfo, Vote, CONSTANTS, VALIDATORS_INFO, VOTE_MAP,
-};
+use crate::state::{RoundLockPowerSchedule, ValidatorInfo, Vote, VALIDATORS_INFO, VOTE_MAP};
 use crate::testing::{
     get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds, IBC_DENOM_1,
     ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_3,
@@ -15,6 +13,7 @@ use crate::testing_lsm_integration::set_validator_power_ratio;
 use crate::testing_mocks::{
     denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
 };
+use crate::utils::load_current_constants;
 use crate::{
     contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
     msg::ExecuteMsg,
@@ -124,7 +123,7 @@ fn query_user_lockups_test() {
     assert_eq!(first_lockup_amount, expired_lockups[0].funds.amount.u128());
 
     // adjust the validator power ratios to check that they are reflected properly in the result
-    let constants = CONSTANTS.load(deps.as_ref().storage).unwrap();
+    let constants = load_current_constants(&deps.as_ref(), &env).unwrap();
     let current_round_id = compute_current_round_id(&env, &constants).unwrap();
     set_validator_power_ratio(
         deps.as_mut().storage,

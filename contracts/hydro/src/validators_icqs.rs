@@ -22,9 +22,10 @@ use crate::{
     error::ContractError,
     lsm_integration::{initialize_validator_store, update_scores_due_to_power_ratio_change},
     state::{
-        Constants, ValidatorInfo, CONSTANTS, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO,
-        VALIDATORS_PER_ROUND, VALIDATOR_TO_QUERY_ID,
+        Constants, ValidatorInfo, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
+        VALIDATOR_TO_QUERY_ID,
     },
+    utils::load_current_constants,
 };
 
 // A multiplier to normalize shares, such that when a validator has just been created
@@ -121,7 +122,7 @@ pub fn handle_delivered_interchain_query_result(
             );
         }
     };
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
     let current_round = compute_current_round_id(&env, &constants)?;
     initialize_validator_store(deps.storage, current_round)?;
 

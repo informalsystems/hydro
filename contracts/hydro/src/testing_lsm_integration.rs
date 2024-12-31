@@ -40,6 +40,7 @@ fn get_default_constants() -> crate::state::Constants {
         lock_epoch_length: 1,
         first_round_start: Timestamp::from_seconds(0),
         max_locked_tokens: 1,
+        current_users_extra_cap: 0,
         paused: false,
         max_validator_shares_participating: 2,
         hub_connection_id: "connection-0".to_string(),
@@ -290,9 +291,9 @@ fn test_validate_denom() {
             description: "happy path".to_string(),
             denom: IBC_DENOM_1.to_string(),
             expected_result: Ok(VALIDATOR_1.to_string()),
-            setup: Box::new(|storage, _env| {
+            setup: Box::new(|storage, env| {
                 let constants = get_default_constants();
-                crate::state::CONSTANTS.save(storage, &constants).unwrap();
+                crate::state::CONSTANTS.save(storage, env.block.time.nanos(), &constants).unwrap();
                 let round_id = 0;
                 let res = set_validator_infos_for_round(
                         storage,
@@ -319,7 +320,7 @@ fn test_validate_denom() {
 
         let constants = get_default_constants();
         crate::state::CONSTANTS
-            .save(&mut deps.storage, &constants)
+            .save(&mut deps.storage, env.block.time.nanos(), &constants)
             .unwrap();
 
         env.block.time = Timestamp::from_seconds(0);

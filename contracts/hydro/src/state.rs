@@ -4,7 +4,8 @@ use cw_storage_plus::{Item, Map};
 
 use crate::msg::LiquidityDeployment;
 
-pub const CONSTANTS: Item<Constants> = Item::new("constants");
+// CONSTANTS: key(activation_timestamp) -> Constants
+pub const CONSTANTS: Map<u64, Constants> = Map::new("constants");
 
 #[cw_serde]
 pub struct LockPowerEntry {
@@ -58,7 +59,15 @@ pub struct Constants {
     pub round_length: u64,
     pub lock_epoch_length: u64,
     pub first_round_start: Timestamp,
+    // The maximum number of tokens that can be locked by any users (currently known and the future ones)
     pub max_locked_tokens: u128,
+    // The maximum number of tokens (out of the max_locked_tokens) that is reserved for locking only
+    // for currently known users. This field is intended to be set to some value greater than zero at
+    // the begining of the round, and such Constants would apply only for predefined period of time.
+    // After this period has expired, a new Constants would be activated that would set this value to
+    // zero, which would allow any user to lock any amount that possibly wasn't filled, but was reserved
+    // for this cap.
+    pub current_users_extra_cap: u128,
     pub max_validator_shares_participating: u64,
     pub hub_connection_id: String,
     pub hub_transfer_channel_id: String,
@@ -70,6 +79,16 @@ pub struct Constants {
 
 // the total number of tokens locked in the contract
 pub const LOCKED_TOKENS: Item<u128> = Item::new("locked_tokens");
+
+// Tracks the total number of tokens locked in extra cap, for the given round
+// EXTRA_LOCKED_TOKENS_ROUND_TOTAL: key(round_id) -> uint128
+pub const EXTRA_LOCKED_TOKENS_ROUND_TOTAL: Map<u64, u128> =
+    Map::new("extra_locked_tokens_round_total");
+
+// Tracks the number of tokens locked in extra cap by specific user, for the given round
+// EXTRA_LOCKED_TOKENS_CURRENT_USERS: key(round_id, sender_address) -> uint128
+pub const EXTRA_LOCKED_TOKENS_CURRENT_USERS: Map<(u64, Addr), u128> =
+    Map::new("extra_locked_tokens_current_users");
 
 pub const LOCK_ID: Item<u64> = Item::new("lock_id");
 

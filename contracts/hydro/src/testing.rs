@@ -123,10 +123,10 @@ fn instantiate_test() {
 
     let msg = get_default_instantiate_msg(&deps.api);
 
-    let res = instantiate(deps.as_mut(), env, info, msg.clone());
+    let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
     assert!(res.is_ok());
 
-    let res = query_constants(deps.as_ref());
+    let res = query_constants(deps.as_ref(), env);
     assert!(res.is_ok());
 
     let constants = res.unwrap().constants;
@@ -2066,14 +2066,14 @@ fn test_round_id_computation() {
         msg.first_round_start = Timestamp::from_nanos(contract_start_time);
 
         let mut env = mock_env();
-        env.block.time = Timestamp::from_nanos(contract_start_time);
+        env.block.time = Timestamp::from_nanos(current_time);
         let info = get_message_info(&deps.api, "addr0000", &[]);
         let _ = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone()).unwrap();
 
         // set the time to the current time
         env.block.time = Timestamp::from_nanos(current_time);
 
-        let constants = query_constants(deps.as_ref());
+        let constants = query_constants(deps.as_ref(), env.clone());
         assert!(constants.is_ok());
 
         let round_id = compute_current_round_id(&env, &constants.unwrap().constants);
@@ -2431,6 +2431,7 @@ fn max_locked_tokens_test() {
     // a privileged user can update the maximum allowed locked tokens
     info = get_message_info(&deps.api, "addr0001", &[]);
     let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
+        activate_at: env.block.time,
         max_locked_tokens: Some(3000),
         max_deployment_duration: None,
     };
@@ -2488,7 +2489,7 @@ fn contract_pausing_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    let constants = query_constants(deps.as_ref());
+    let constants = query_constants(deps.as_ref(), env.clone());
     assert!(constants.is_ok());
     assert!(constants.unwrap().constants.paused);
 
@@ -2522,6 +2523,7 @@ fn contract_pausing_test() {
             address: whitelist_admin.to_string(),
         },
         ExecuteMsg::UpdateConfig {
+            activate_at: env.block.time,
             max_locked_tokens: None,
             max_deployment_duration: None,
         },

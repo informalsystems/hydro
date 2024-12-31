@@ -39,6 +39,10 @@ use crate::state::{
     VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP,
     VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
+use crate::utils::{
+    load_constants_active_at_timestamp, load_current_constants, update_locked_tokens_info,
+    validate_locked_tokens_caps,
+};
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
     handle_submsg_reply, query_min_interchain_query_deposit,
@@ -58,7 +62,7 @@ pub const MIN_DEPLOYMENT_DURATION: u64 = 1;
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut<NeutronQuery>,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
@@ -76,6 +80,7 @@ pub fn instantiate(
         lock_epoch_length: msg.lock_epoch_length,
         first_round_start: msg.first_round_start,
         max_locked_tokens: msg.max_locked_tokens.u128(),
+        current_users_extra_cap: 0,
         max_validator_shares_participating: msg.max_validator_shares_participating,
         hub_connection_id: msg.hub_connection_id,
         hub_transfer_channel_id: msg.hub_transfer_channel_id,
@@ -85,7 +90,7 @@ pub fn instantiate(
         round_lock_power_schedule: RoundLockPowerSchedule::new(msg.round_lock_power_schedule),
     };
 
-    CONSTANTS.save(deps.storage, &state)?;
+    CONSTANTS.save(deps.storage, env.block.time.nanos(), &state)?;
     LOCKED_TOKENS.save(deps.storage, &0)?;
     LOCK_ID.save(deps.storage, &0)?;
     PROP_ID.save(deps.storage, &0)?;
@@ -187,22 +192,30 @@ pub fn execute(
             remove_from_whitelist(deps, env, info, address)
         }
         ExecuteMsg::UpdateConfig {
+            activate_at,
             max_locked_tokens,
             max_deployment_duration,
-        } => update_config(deps, info, max_locked_tokens, max_deployment_duration),
-        ExecuteMsg::Pause {} => pause_contract(deps, info),
-        ExecuteMsg::AddTranche { tranche } => add_tranche(deps, info, tranche),
+        } => update_config(
+            deps,
+            env,
+            info,
+            activate_at,
+            max_locked_tokens,
+            max_deployment_duration,
+        ),
+        ExecuteMsg::Pause {} => pause_contract(deps, &env, info),
+        ExecuteMsg::AddTranche { tranche } => add_tranche(deps, env, info, tranche),
         ExecuteMsg::EditTranche {
             tranche_id,
             tranche_name,
             tranche_metadata,
-        } => edit_tranche(deps, info, tranche_id, tranche_name, tranche_metadata),
+        } => edit_tranche(deps, env, info, tranche_id, tranche_name, tranche_metadata),
         ExecuteMsg::CreateICQsForValidators { validators } => {
             create_icqs_for_validators(deps, env, info, validators)
         }
-        ExecuteMsg::AddICQManager { address } => add_icq_manager(deps, info, address),
-        ExecuteMsg::RemoveICQManager { address } => remove_icq_manager(deps, info, address),
-        ExecuteMsg::WithdrawICQFunds { amount } => withdraw_icq_funds(deps, info, amount),
+        ExecuteMsg::AddICQManager { address } => add_icq_manager(deps, env, info, address),
+        ExecuteMsg::RemoveICQManager { address } => remove_icq_manager(deps, env, info, address),
+        ExecuteMsg::WithdrawICQFunds { amount } => withdraw_icq_funds(deps, env, info, amount),
         ExecuteMsg::AddLiquidityDeployment {
             round_id,
             tranche_id,
@@ -229,7 +242,7 @@ pub fn execute(
             round_id,
             tranche_id,
             proposal_id,
-        } => remove_liquidity_deployment(deps, info, round_id, tranche_id, proposal_id),
+        } => remove_liquidity_deployment(deps, env, info, round_id, tranche_id, proposal_id),
     }
 }
 
@@ -240,12 +253,12 @@ pub fn execute(
 //     Update total round power
 //     Create entry in LocksMap
 fn lock_tokens(
-    deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     lock_duration: u64,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_lock_duration(
@@ -270,15 +283,17 @@ fn lock_tokens(
             ContractError::Std(StdError::generic_err(format!("validating denom: {}", err)))
         })?;
 
-    // validate that this wouldn't cause the contract to have more locked tokens than the limit
+    let total_locked_tokens = LOCKED_TOKENS.load(deps.storage)?;
     let amount_to_lock = info.funds[0].amount.u128();
-    let locked_tokens = LOCKED_TOKENS.load(deps.storage)?;
-
-    if locked_tokens + amount_to_lock > constants.max_locked_tokens {
-        return Err(ContractError::Std(StdError::generic_err(
-            "The limit for locking tokens has been reached. No more tokens can be locked.",
-        )));
-    }
+    let locking_info = validate_locked_tokens_caps(
+        &deps,
+        &env,
+        &constants,
+        current_round,
+        &info.sender,
+        total_locked_tokens,
+        amount_to_lock,
+    )?;
 
     // validate that the user does not have too many locks
     if get_lock_count(deps.as_ref(), info.sender.clone()) >= MAX_LOCK_ENTRIES {
@@ -298,10 +313,15 @@ fn lock_tokens(
     };
     let lock_end = lock_entry.lock_end.nanos();
     LOCKS_MAP.save(deps.storage, (info.sender.clone(), lock_id), &lock_entry)?;
-    LOCKED_TOKENS.save(deps.storage, &(locked_tokens + amount_to_lock))?;
+    update_locked_tokens_info(
+        &mut deps,
+        current_round,
+        &info.sender,
+        total_locked_tokens,
+        locking_info,
+    )?;
 
     // If user already voted for some proposals in the current round, update the voting power on those proposals.
-    let mut deps = deps;
     update_voting_power_on_proposals(
         &mut deps,
         &info.sender,
@@ -350,7 +370,7 @@ fn refresh_lock_duration(
     lock_ids: Vec<u64>,
     lock_duration: u64,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
 
     validate_contract_is_not_paused(&constants)?;
 
@@ -501,7 +521,7 @@ fn unlock_tokens(
     env: Env,
     info: MessageInfo,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
 
     validate_contract_is_not_paused(&constants)?;
     // TODO: reenable this when we implement slashing
@@ -573,7 +593,7 @@ fn validate_previous_round_vote(
     env: &Env,
     sender: Addr,
 ) -> Result<(), ContractError> {
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), env)?;
     let current_round_id = compute_current_round_id(env, &constants)?;
     if current_round_id > 0 {
         let previous_round_id = current_round_id - 1;
@@ -612,7 +632,7 @@ fn create_proposal(
     deployment_duration: u64,
     minimum_atom_liquidity_request: Uint128,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
     validate_contract_is_not_paused(&constants)?;
 
     let current_round_id = compute_current_round_id(&env, &constants)?;
@@ -728,7 +748,7 @@ fn vote(
     // - To enable switching votes (and for other stuff too), we store the vote in VOTE_MAP.
     // - When a user votes the second time in a round, the information about their previous vote from VOTE_MAP is used to reverse the effect of their previous vote.
     // - This leads to slightly higher gas costs for each vote, in exchange for a much lower gas cost at the end of the round.
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
     validate_contract_is_not_paused(&constants)?;
 
     let round_id = compute_current_round_id(&env, &constants)?;
@@ -1005,11 +1025,11 @@ pub fn get_lock_time_weighted_shares(
 // Adds a new account address to the whitelist.
 fn add_to_whitelist(
     deps: DepsMut<NeutronQuery>,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     address: String,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
@@ -1037,11 +1057,11 @@ fn add_to_whitelist(
 // Removes an account address from the whitelist.
 fn remove_from_whitelist(
     deps: DepsMut<NeutronQuery>,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     address: String,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
@@ -1062,11 +1082,19 @@ fn remove_from_whitelist(
 
 fn update_config(
     deps: DepsMut<NeutronQuery>,
+    env: Env,
     info: MessageInfo,
+    activate_at: Timestamp,
     max_locked_tokens: Option<u128>,
     max_deployment_duration: Option<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let mut constants = CONSTANTS.load(deps.storage)?;
+    if env.block.time > activate_at {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Can not update config in the past.",
+        )));
+    }
+
+    let mut constants = load_current_constants(&deps.as_ref(), &env)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
@@ -1088,7 +1116,7 @@ fn update_config(
         );
     }
 
-    CONSTANTS.save(deps.storage, &constants)?;
+    CONSTANTS.save(deps.storage, activate_at.nanos(), &constants)?;
 
     Ok(response)
 }
@@ -1099,15 +1127,17 @@ fn update_config(
 //     Set paused to true and save the changes
 fn pause_contract(
     deps: DepsMut<NeutronQuery>,
+    env: &Env,
     info: MessageInfo,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let mut constants = CONSTANTS.load(deps.storage)?;
+    let (timestamp, mut constants) =
+        load_constants_active_at_timestamp(&deps.as_ref(), env.block.time)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
     constants.paused = true;
-    CONSTANTS.save(deps.storage, &constants)?;
+    CONSTANTS.save(deps.storage, timestamp, &constants)?;
 
     Ok(Response::new()
         .add_attribute("action", "pause_contract")
@@ -1122,10 +1152,11 @@ fn pause_contract(
 //     Add new tranche to the store
 fn add_tranche(
     deps: DepsMut<NeutronQuery>,
+    env: Env,
     info: MessageInfo,
     tranche: TrancheInfo,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
     let tranche_name = tranche.name.trim().to_string();
 
     validate_contract_is_not_paused(&constants)?;
@@ -1158,12 +1189,13 @@ fn add_tranche(
 //     Update the tranche in the store
 fn edit_tranche(
     deps: DepsMut<NeutronQuery>,
+    env: Env,
     info: MessageInfo,
     tranche_id: u64,
     tranche_name: Option<String>,
     tranche_metadata: Option<String>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
@@ -1207,7 +1239,7 @@ fn create_icqs_for_validators(
     info: MessageInfo,
     validators: Vec<String>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
     validate_contract_is_not_paused(&constants)?;
     // This function will return error if the first round hasn't started yet. It is necessarry
     // that it has started, since handling the results of the interchain queries relies on this.
@@ -1291,10 +1323,11 @@ fn validate_icq_deposit_funds_sent(
 
 fn add_icq_manager(
     deps: DepsMut<NeutronQuery>,
+    env: Env,
     info: MessageInfo,
     address: String,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
@@ -1318,10 +1351,11 @@ fn add_icq_manager(
 
 fn remove_icq_manager(
     deps: DepsMut<NeutronQuery>,
+    env: Env,
     info: MessageInfo,
     address: String,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
@@ -1350,10 +1384,11 @@ fn remove_icq_manager(
 // top validators.
 fn withdraw_icq_funds(
     deps: DepsMut<NeutronQuery>,
+    env: Env,
     info: MessageInfo,
     amount: Uint128,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_address_is_icq_manager(&deps, info.sender.clone())?;
@@ -1388,7 +1423,7 @@ pub fn add_liquidity_deployment(
     info: MessageInfo,
     deployment: LiquidityDeployment,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
@@ -1455,12 +1490,13 @@ pub fn add_liquidity_deployment(
 // This will return an error if the deployment does not exist.
 pub fn remove_liquidity_deployment(
     deps: DepsMut<NeutronQuery>,
+    env: Env,
     info: MessageInfo,
     round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
@@ -1530,7 +1566,7 @@ fn validate_tranche_name_uniqueness(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
-        QueryMsg::Constants {} => to_json_binary(&query_constants(deps)?),
+        QueryMsg::Constants {} => to_json_binary(&query_constants(deps, env)?),
         QueryMsg::Tranches {} => to_json_binary(&query_tranches(deps)?),
         QueryMsg::AllUserLockups {
             address,
@@ -1571,7 +1607,7 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
             deps, round_id, tranche_id, start_from, limit,
         )?),
         QueryMsg::CurrentRound {} => to_json_binary(&query_current_round_id(deps, env)?),
-        QueryMsg::RoundEnd { round_id } => to_json_binary(&query_round_end(deps, round_id)?),
+        QueryMsg::RoundEnd { round_id } => to_json_binary(&query_round_end(deps, env, round_id)?),
         QueryMsg::TopNProposals {
             round_id,
             tranche_id,
@@ -1660,9 +1696,9 @@ pub fn query_round_total_power(
     })
 }
 
-pub fn query_constants(deps: Deps<NeutronQuery>) -> StdResult<ConstantsResponse> {
+pub fn query_constants(deps: Deps<NeutronQuery>, env: Env) -> StdResult<ConstantsResponse> {
     Ok(ConstantsResponse {
-        constants: CONSTANTS.load(deps.storage)?,
+        constants: load_current_constants(&deps, &env)?,
     })
 }
 
@@ -1681,7 +1717,7 @@ pub fn query_all_user_lockups(
         limit,
     );
 
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps, &env)?;
     let current_round_id = compute_current_round_id(&env, &constants)?;
     let round_end = compute_round_end(&constants, current_round_id)?;
 
@@ -1742,19 +1778,28 @@ pub fn query_user_voting_power(
     env: Env,
     address: String,
 ) -> StdResult<UserVotingPowerResponse> {
-    let user_address = deps.api.addr_validate(&address)?;
-    let constants = CONSTANTS.load(deps.storage)?;
-    let current_round_id = compute_current_round_id(&env, &constants)?;
+    Ok(UserVotingPowerResponse {
+        voting_power: get_user_voting_power(&deps, &env, deps.api.addr_validate(&address)?)?,
+    })
+}
+
+pub fn get_user_voting_power(
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
+    address: Addr,
+) -> StdResult<u128> {
+    let constants = load_current_constants(deps, env)?;
+    let current_round_id = compute_current_round_id(env, &constants)?;
     let round_end = compute_round_end(&constants, current_round_id)?;
 
-    let voting_power = LOCKS_MAP
-        .prefix(user_address)
+    Ok(LOCKS_MAP
+        .prefix(address)
         .range(deps.storage, None, None, Order::Ascending)
         .map(|l| l.unwrap().1)
         .filter(|l| l.lock_end > round_end)
         .map(|lockup| {
             to_lockup_with_power(
-                deps,
+                *deps,
                 env.clone(),
                 &constants,
                 current_round_id,
@@ -1764,9 +1809,7 @@ pub fn query_user_voting_power(
             .current_voting_power
             .u128()
         })
-        .sum();
-
-    Ok(UserVotingPowerResponse { voting_power })
+        .sum())
 }
 
 // This function queries user votes for the given round and tranche.
@@ -1861,7 +1904,7 @@ pub fn query_current_round_id(
     deps: Deps<NeutronQuery>,
     env: Env,
 ) -> StdResult<CurrentRoundResponse> {
-    let constants = &CONSTANTS.load(deps.storage)?;
+    let constants = &load_current_constants(&deps, &env)?;
     let round_id = compute_round_id_for_timestamp(constants, env.block.time.nanos())?;
 
     let round_end = compute_round_end(constants, round_id)?;
@@ -1872,8 +1915,12 @@ pub fn query_current_round_id(
     })
 }
 
-pub fn query_round_end(deps: Deps<NeutronQuery>, round_id: u64) -> StdResult<RoundEndResponse> {
-    let constants = &CONSTANTS.load(deps.storage)?;
+pub fn query_round_end(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    round_id: u64,
+) -> StdResult<RoundEndResponse> {
+    let constants = &load_current_constants(&deps, &env)?;
     let round_end = compute_round_end(constants, round_id)?;
 
     Ok(RoundEndResponse { round_end })
