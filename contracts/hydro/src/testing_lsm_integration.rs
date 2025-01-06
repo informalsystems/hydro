@@ -488,7 +488,7 @@ fn unlock_tokens_multiple_denoms() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::UnlockTokens {},
+        ExecuteMsg::UnlockTokens { lock_ids: None },
     );
     assert!(res.is_ok(), "unlocking tokens: {:?}", res);
 
@@ -564,7 +564,7 @@ fn unlock_tokens_multiple_users() {
         deps.as_mut(),
         env.clone(),
         info1.clone(),
-        ExecuteMsg::UnlockTokens {},
+        ExecuteMsg::UnlockTokens { lock_ids: None },
     );
     assert!(res.is_ok(), "unlocking tokens: {:?}", res);
 
@@ -590,7 +590,7 @@ fn unlock_tokens_multiple_users() {
         deps.as_mut(),
         env.clone(),
         info2.clone(),
-        ExecuteMsg::UnlockTokens {},
+        ExecuteMsg::UnlockTokens { lock_ids: None },
     );
     assert!(res.is_ok());
 
