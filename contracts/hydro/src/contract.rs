@@ -518,7 +518,7 @@ fn unlock_tokens(
         locks_iter
             .filter(|lock| {
                 if let Ok((id, _)) = lock {
-                    ids.contains(&id)
+                    ids.contains(id)
                 } else {
                     false
                 }

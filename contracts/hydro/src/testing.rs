@@ -336,7 +336,7 @@ fn unlock_specific_tokens_test() {
     set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     // Create 4 locks with specific durations
-    let durations = vec![
+    let durations = [
         ONE_MONTH_IN_NANO_SECONDS,     // Lock 1
         ONE_MONTH_IN_NANO_SECONDS * 2, // Lock 2
         ONE_MONTH_IN_NANO_SECONDS,     // Lock 3
