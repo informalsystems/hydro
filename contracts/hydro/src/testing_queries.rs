@@ -193,7 +193,7 @@ fn query_user_lockups_test() {
     assert_eq!(0, all_lockups.lockups[1].current_voting_power.u128());
 
     // unlock the tokens and verify that the user doesn't have any expired lockups after that
-    let msg = ExecuteMsg::UnlockTokens {};
+    let msg = ExecuteMsg::UnlockTokens { lock_ids: None };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 

@@ -279,7 +279,7 @@ fn unlock_tokens_basic_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::UnlockTokens {},
+        ExecuteMsg::UnlockTokens { lock_ids: None },
     );
     assert!(res.is_ok());
 
@@ -293,7 +293,7 @@ fn unlock_tokens_basic_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::UnlockTokens {},
+        ExecuteMsg::UnlockTokens { lock_ids: None },
     );
     assert!(res.is_ok());
 
@@ -315,6 +315,165 @@ fn unlock_tokens_basic_test() {
             _ => panic!("expected CosmosMsg::Bank msg"),
         }
     }
+}
+
+#[test]
+fn unlock_specific_tokens_test() {
+    let user_address = "addr0000";
+    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let msg = get_default_instantiate_msg(&deps.api);
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+
+    // Create 4 locks with specific durations
+    let durations = [
+        ONE_MONTH_IN_NANO_SECONDS,     // Lock 1
+        ONE_MONTH_IN_NANO_SECONDS * 2, // Lock 2
+        ONE_MONTH_IN_NANO_SECONDS,     // Lock 3
+        ONE_MONTH_IN_NANO_SECONDS,     // Lock 4
+    ];
+
+    // Store the lock IDs as we create them
+    let mut lock_ids = vec![];
+    for duration in durations.iter() {
+        let msg = ExecuteMsg::LockTokens {
+            lock_duration: *duration,
+        };
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+        assert!(res.is_ok());
+
+        let lock_id = res
+            .unwrap()
+            .attributes
+            .iter()
+            .find(|attr| attr.key == "lock_id")
+            .map(|attr| attr.value.parse::<u64>().unwrap())
+            .expect("lock_id not found in response");
+
+        lock_ids.push(lock_id);
+    }
+
+    // Advance time by one month + 1 nanosecond
+    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
+
+    // First attempt: unlock locks 1 and 4
+    let unlock_msg = ExecuteMsg::UnlockTokens {
+        lock_ids: Some(vec![lock_ids[0], lock_ids[3]]),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), unlock_msg);
+    assert!(res.is_ok());
+
+    let res = res.unwrap();
+    // Should have 2 messages (one for each unlocked token)
+    assert_eq!(2, res.messages.len());
+
+    // Verify the first attempt's messages and unlocked IDs
+    let unlocked_ids: Vec<u64> = res
+        .attributes
+        .iter()
+        .find(|attr| attr.key == "unlocked_lock_ids")
+        .map(|attr| {
+            attr.value
+                .split(", ")
+                .map(|id| id.parse::<u64>().unwrap())
+                .collect()
+        })
+        .expect("unlocked_lock_ids not found in response");
+
+    assert_eq!(unlocked_ids.len(), 2);
+    assert!(unlocked_ids.contains(&lock_ids[0]));
+    assert!(unlocked_ids.contains(&lock_ids[3]));
+
+    // Verify first attempt's bank messages
+    for msg in res.messages.iter() {
+        match msg.msg.clone() {
+            CosmosMsg::Bank(bank_msg) => match bank_msg {
+                BankMsg::Send { to_address, amount } => {
+                    assert_eq!(info.sender.to_string(), to_address);
+                    assert_eq!(1, amount.len());
+                    assert_eq!(user_token.denom, amount[0].denom);
+                    assert_eq!(user_token.amount.u128(), amount[0].amount.u128());
+                }
+                _ => panic!("expected BankMsg::Send message"),
+            },
+            _ => panic!("expected CosmosMsg::Bank msg"),
+        }
+    }
+
+    // Second attempt: unlock locks 2 and 3
+    let unlock_msg = ExecuteMsg::UnlockTokens {
+        lock_ids: Some(vec![lock_ids[1], lock_ids[2]]),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), unlock_msg);
+    assert!(res.is_ok());
+
+    let res = res.unwrap();
+    // Should have 1 message (only lock 3 should be unlockable)
+    assert_eq!(1, res.messages.len());
+
+    // Verify the second attempt's unlocked IDs
+    let unlocked_ids: Vec<u64> = res
+        .attributes
+        .iter()
+        .find(|attr| attr.key == "unlocked_lock_ids")
+        .map(|attr| {
+            attr.value
+                .split(", ")
+                .map(|id| id.parse::<u64>().unwrap())
+                .collect()
+        })
+        .expect("unlocked_lock_ids not found in response");
+
+    assert_eq!(unlocked_ids.len(), 1);
+    assert!(unlocked_ids.contains(&lock_ids[2]));
+    assert!(!unlocked_ids.contains(&lock_ids[1])); // Lock 2 shouldn't be unlocked yet
+
+    // Verify second attempt's bank message
+    for msg in res.messages.iter() {
+        match msg.msg.clone() {
+            CosmosMsg::Bank(bank_msg) => match bank_msg {
+                BankMsg::Send { to_address, amount } => {
+                    assert_eq!(info.sender.to_string(), to_address);
+                    assert_eq!(1, amount.len());
+                    assert_eq!(user_token.denom, amount[0].denom);
+                    assert_eq!(user_token.amount.u128(), amount[0].amount.u128());
+                }
+                _ => panic!("expected BankMsg::Send message"),
+            },
+            _ => panic!("expected CosmosMsg::Bank msg"),
+        }
+    }
+
+    // Third attempt: try to unlock lock 2 again (should succeed but unlock nothing)
+    let unlock_msg = ExecuteMsg::UnlockTokens {
+        lock_ids: Some(vec![lock_ids[1]]),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), unlock_msg);
+    assert!(res.is_ok());
+
+    let res = res.unwrap();
+    // Should have 0 messages (lock 2 is still not expired)
+    assert_eq!(0, res.messages.len());
+
+    // Verify the third attempt's unlocked IDs (should be empty)
+    let unlocked_ids = res
+        .attributes
+        .iter()
+        .find(|attr| attr.key == "unlocked_lock_ids")
+        .map(|attr| attr.value.trim())
+        .expect("unlocked_lock_ids not found in response");
+
+    assert!(unlocked_ids.is_empty());
 }
 
 #[test]
@@ -1028,7 +1187,7 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::UnlockTokens {},
+        ExecuteMsg::UnlockTokens { lock_ids: None },
     );
 
     // user voted for a proposal in previous round, but can unlock tokens
@@ -2335,7 +2494,7 @@ fn test_too_many_locks() {
 
     // now test that the first user can unlock tokens after we have passed enough time so that they are unlocked
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
-    let unlock_msg = ExecuteMsg::UnlockTokens {};
+    let unlock_msg = ExecuteMsg::UnlockTokens { lock_ids: None };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), unlock_msg.clone());
     assert!(res.is_ok());
 
@@ -2415,7 +2574,7 @@ fn max_locked_tokens_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::UnlockTokens {},
+        ExecuteMsg::UnlockTokens { lock_ids: None },
     );
     assert!(res.is_ok());
 
@@ -2499,7 +2658,7 @@ fn contract_pausing_test() {
             lock_ids: vec![0],
             lock_duration: 0,
         },
-        ExecuteMsg::UnlockTokens {},
+        ExecuteMsg::UnlockTokens { lock_ids: None },
         ExecuteMsg::CreateProposal {
             round_id: None,
             tranche_id: 0,

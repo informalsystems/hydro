@@ -159,7 +159,7 @@ pub fn execute(
             lock_ids,
             lock_duration,
         } => refresh_lock_duration(deps, env, info, lock_ids, lock_duration),
-        ExecuteMsg::UnlockTokens {} => unlock_tokens(deps, env, info),
+        ExecuteMsg::UnlockTokens { lock_ids } => unlock_tokens(deps, env, info, lock_ids),
         ExecuteMsg::CreateProposal {
             round_id,
             tranche_id,
@@ -500,6 +500,7 @@ fn unlock_tokens(
     deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
+    lock_ids: Option<Vec<u64>>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = CONSTANTS.load(deps.storage)?;
 
@@ -507,11 +508,25 @@ fn unlock_tokens(
     // TODO: reenable this when we implement slashing
     // validate_previous_round_vote(&deps, &env, info.sender.clone())?;
 
-    // Iterate all locks for the caller and unlock them if lock_end < now
-    let locks =
+    let locks_iter =
         LOCKS_MAP
             .prefix(info.sender.clone())
             .range(deps.storage, None, None, Order::Ascending);
+
+    // If lock_ids is provided, filter locks to only those IDs
+    let locks: Vec<Result<(u64, LockEntry), StdError>> = if let Some(ids) = lock_ids {
+        locks_iter
+            .filter(|lock| {
+                if let Ok((id, _)) = lock {
+                    ids.contains(id)
+                } else {
+                    false
+                }
+            })
+            .collect()
+    } else {
+        locks_iter.collect()
+    };
 
     let mut to_delete = vec![];
     let mut total_unlocked_amount = Uint128::zero();
@@ -522,6 +537,7 @@ fn unlock_tokens(
 
     let mut unlocked_lock_ids = vec![];
     let mut unlocked_tokens = vec![];
+
     for lock in locks {
         let (lock_id, lock_entry) = lock?;
         if lock_entry.lock_end < env.block.time {

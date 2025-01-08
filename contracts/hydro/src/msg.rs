@@ -45,7 +45,9 @@ pub enum ExecuteMsg {
         lock_ids: Vec<u64>,
         lock_duration: u64,
     },
-    UnlockTokens {},
+    UnlockTokens {
+        lock_ids: Option<Vec<u64>>,
+    },
     CreateProposal {
         round_id: Option<u64>,
         tranche_id: u64,
