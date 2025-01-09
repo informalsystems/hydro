@@ -74,7 +74,9 @@ export type ExecuteMsg = {
     lock_ids: number[];
   };
 } | {
-  unlock_tokens: {};
+  unlock_tokens: {
+    lock_ids?: number[] | null;
+  };
 } | {
   create_proposal: {
     deployment_duration: number;

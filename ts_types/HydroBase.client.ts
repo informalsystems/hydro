@@ -415,7 +415,11 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
     lockDuration: number;
     lockIds: number[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
-  unlockTokens: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  unlockTokens: ({
+    lockIds
+  }: {
+    lockIds?: number[];
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   createProposal: ({
     deploymentDuration,
     description,
@@ -571,9 +575,15 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
       }
     }, fee, memo, _funds);
   };
-  unlockTokens = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+  unlockTokens = async ({
+    lockIds
+  }: {
+    lockIds?: number[];
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      unlock_tokens: {}
+      unlock_tokens: {
+        lock_ids: lockIds
+      }
     }, fee, memo, _funds);
   };
   createProposal = async ({

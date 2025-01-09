@@ -207,6 +207,19 @@
         "properties": {
           "unlock_tokens": {
             "type": "object",
+            "properties": {
+              "lock_ids": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                }
+              }
+            },
             "additionalProperties": false
           }
         },
