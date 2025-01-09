@@ -25,6 +25,15 @@ pub enum QueryMsg {
         limit: u32,
     },
 
+    // a version of the AllUserLockups query where additional information
+    // is returned
+    #[returns(AllUserLockupsWithTrancheInfosResponse)]
+    AllUserLockupsWithTrancheInfos {
+        address: String,
+        start_from: u32,
+        limit: u32,
+    },
+
     #[returns(ExpiredUserLockupsResponse)]
     ExpiredUserLockups {
         address: String,
@@ -126,9 +135,35 @@ pub struct LockEntryWithPower {
     pub current_voting_power: Uint128,
 }
 
+// PerTrancheLockupInfo is used to store the lockup information for a specific tranche.
+#[cw_serde]
+pub struct PerTrancheLockupInfo {
+    pub tranche_id: u64,
+    // If this number is less or equal to the current round, it means the lockup can vote in the current round.
+    pub next_round_lockup_can_vote: u64,
+    // This is the proposal that the lockup is voting for in the current round, if any.
+    // In particular, if the lockup is blocked from voting in the current round (because it voted for a
+    // proposal with a long deployment duration in a previous round), this will be None.
+    pub current_voted_on_proposal: Option<u64>,
+}
+
+// LockupWithPerTrancheInfo is used to store the lockup information for a specific lockup,
+// together with lockup-specific information for each tranche.
+#[cw_serde]
+pub struct LockupWithPerTrancheInfo {
+    pub lock_with_power: LockEntryWithPower,
+    pub per_tranche_info: Vec<PerTrancheLockupInfo>,
+}
+
 #[cw_serde]
 pub struct AllUserLockupsResponse {
     pub lockups: Vec<LockEntryWithPower>,
+}
+
+// A version of AllUserLockupsResponse that includes the per-tranche information for each lockup.
+#[cw_serde]
+pub struct AllUserLockupsWithTrancheInfosResponse {
+    pub lockups_with_per_tranche_infos: Vec<LockupWithPerTrancheInfo>,
 }
 
 #[cw_serde]

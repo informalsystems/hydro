@@ -21,12 +21,14 @@ use crate::lsm_integration::{
 };
 use crate::msg::{ExecuteMsg, InstantiateMsg, LiquidityDeployment, ProposalToLockups, TrancheInfo};
 use crate::query::{
-    AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    ICQManagersResponse, LiquidityDeploymentResponse, LockEntryWithPower, ProposalResponse,
-    QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
-    RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse,
-    TotalLockedTokensResponse, TranchesResponse, UserVotesResponse, UserVotingPowerResponse,
-    ValidatorPowerRatioResponse, WhitelistAdminsResponse, WhitelistResponse,
+    AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, ConstantsResponse,
+    CurrentRoundResponse, ExpiredUserLockupsResponse, ICQManagersResponse,
+    LiquidityDeploymentResponse, LockEntryWithPower, LockupWithPerTrancheInfo,
+    PerTrancheLockupInfo, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
+    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
+    RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse, TotalLockedTokensResponse,
+    TranchesResponse, UserVotesResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
+    WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, get_total_power_for_proposal,
@@ -1555,6 +1557,13 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         } => to_json_binary(&query_all_user_lockups(
             deps, env, address, start_from, limit,
         )?),
+        QueryMsg::AllUserLockupsWithTrancheInfos {
+            address,
+            start_from,
+            limit,
+        } => to_json_binary(&query_all_user_lockups_with_tranche_infos(
+            deps, env, address, start_from, limit,
+        )?),
         QueryMsg::ExpiredUserLockups {
             address,
             start_from,
@@ -1718,6 +1727,100 @@ pub fn query_all_user_lockups(
 
     Ok(AllUserLockupsResponse {
         lockups: enriched_lockups,
+    })
+}
+
+pub fn query_all_user_lockups_with_tranche_infos(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    address: String,
+    start_from: u32,
+    limit: u32,
+) -> StdResult<AllUserLockupsWithTrancheInfosResponse> {
+    let converted_addr = deps.api.addr_validate(&address)?;
+
+    let tranche_ids = TRANCHE_MAP
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|tranche| tranche.unwrap().1.id)
+        .collect::<Vec<u64>>();
+
+    let constants = CONSTANTS.load(deps.storage)?;
+    let current_round_id = compute_current_round_id(&env, &constants)?;
+
+    let lockups = query_all_user_lockups(deps, env, address, start_from, limit);
+
+    // enrich lockups with some info per tranche
+    let lockups_with_per_tranche_info: Vec<LockupWithPerTrancheInfo> = lockups?
+        .lockups
+        .iter()
+        .map(|lock| {
+            // iterate all tranches
+            let tranche_infos = tranche_ids
+                .iter()
+                .filter_map(|tranche_id| {
+                    // add which proposal the lock voted for
+                    let voted_for_proposal_res: StdResult<Option<u64>> = VOTE_MAP
+                        .may_load(
+                            deps.storage,
+                            (
+                                (current_round_id, *tranche_id),
+                                converted_addr.clone(),
+                                lock.lock_entry.lock_id,
+                            ),
+                        )
+                        .map(|vote| vote.map(|v| v.prop_id));
+
+                    // if there was an error in the store while loading the vote for the lockup,
+                    // we filter out the tranche by returning None
+                    if voted_for_proposal_res.is_err() {
+                        return None;
+                    }
+
+                    let voted_for_proposal = voted_for_proposal_res.unwrap();
+
+                    let next_round_voting_allowed_res: StdResult<u64> =
+                        if voted_for_proposal.is_some() {
+                            // if the proposal voted in this round, we ignore the VOTING_ALLOWED_ROUND map,
+                            // since it just contains the future information on when the lockup will be able to vote again
+                            // if it doesn't change the vote, but it can vote in the current round either way
+                            Ok(current_round_id)
+                        } else {
+                            // if the lockup has not voted in this round, VOTING_ALLOWED_ROUND does contain
+                            // current information on whether the lockup can vote right now or not
+                            VOTING_ALLOWED_ROUND
+                                .may_load(deps.storage, (*tranche_id, lock.lock_entry.lock_id))
+                                .map(|voting_allowed_round| {
+                                    voting_allowed_round.unwrap_or(current_round_id)
+                                })
+                        };
+
+                    // if there was an error in the store while loading the next allowed round for voting,
+                    // we filter out the tranche by returning None
+                    if next_round_voting_allowed_res.is_err() {
+                        return None;
+                    }
+
+                    let next_round_voting_allowed = next_round_voting_allowed_res.unwrap();
+
+                    // return the info for this tranche
+                    Some(PerTrancheLockupInfo {
+                        tranche_id: *tranche_id,
+                        next_round_lockup_can_vote: next_round_voting_allowed,
+                        current_voted_on_proposal: voted_for_proposal,
+                    })
+                })
+                .collect::<Vec<PerTrancheLockupInfo>>();
+            // combine the info for all tranches
+            LockupWithPerTrancheInfo {
+                lock_with_power: lock.clone(),
+                per_tranche_info: tranche_infos,
+            }
+        })
+        .collect();
+
+    // return the enriched lockups
+    Ok(AllUserLockupsWithTrancheInfosResponse {
+        lockups_with_per_tranche_infos: lockups_with_per_tranche_info,
     })
 }
 
