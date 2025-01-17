@@ -25,6 +25,9 @@ pub enum QueryMsg {
         limit: u32,
     },
 
+    #[returns(SomeUserLockupsResponse)]
+    SomeUserLockups { address: String, lock_ids: Vec<u64> },
+
     // a version of the AllUserLockups query where additional information
     // is returned
     #[returns(AllUserLockupsWithTrancheInfosResponse)]
@@ -33,6 +36,9 @@ pub enum QueryMsg {
         start_from: u32,
         limit: u32,
     },
+
+    #[returns(SomeUserLockupsWithTrancheInfosResponse)]
+    SomeUserLockupsWithTrancheInfos { address: String, lock_ids: Vec<u64> },
 
     #[returns(ExpiredUserLockupsResponse)]
     ExpiredUserLockups {
@@ -160,9 +166,23 @@ pub struct AllUserLockupsResponse {
     pub lockups: Vec<LockEntryWithPower>,
 }
 
+// This is necessary because otherwise, cosmwasm-ts-codegen does not generate SomeUserLockupsResponse
+// pub type SomeUserLockupsResponse = AllUserLockupsResponse; does not seem to work
+#[cw_serde]
+pub struct SomeUserLockupsResponse {
+    pub lockups: Vec<LockEntryWithPower>,
+}
+
 // A version of AllUserLockupsResponse that includes the per-tranche information for each lockup.
 #[cw_serde]
 pub struct AllUserLockupsWithTrancheInfosResponse {
+    pub lockups_with_per_tranche_infos: Vec<LockupWithPerTrancheInfo>,
+}
+
+// This is necessary because otherwise, cosmwasm-ts-codegen does not generate SomeUserLockupsWithTrancheInfosResponse
+// pub type SomeUserLockupsWithTrancheInfosResponse = AllUserLockupsWithTrancheInfosResponse; does not seem to work
+#[cw_serde]
+pub struct SomeUserLockupsWithTrancheInfosResponse {
     pub lockups_with_per_tranche_infos: Vec<LockupWithPerTrancheInfo>,
 }
 

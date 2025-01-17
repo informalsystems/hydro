@@ -26,7 +26,8 @@ use crate::query::{
     LiquidityDeploymentResponse, LockEntryWithPower, LockupWithPerTrancheInfo,
     PerTrancheLockupInfo, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
     RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
-    RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse, TotalLockedTokensResponse,
+    RoundTrancheLiquidityDeploymentsResponse, SomeUserLockupsResponse,
+    SomeUserLockupsWithTrancheInfosResponse, TopNProposalsResponse, TotalLockedTokensResponse,
     TranchesResponse, UserVotesResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
     WhitelistAdminsResponse, WhitelistResponse,
 };
@@ -1557,6 +1558,9 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         } => to_json_binary(&query_all_user_lockups(
             deps, env, address, start_from, limit,
         )?),
+        QueryMsg::SomeUserLockups { address, lock_ids } => {
+            to_json_binary(&query_some_user_lockups(deps, env, address, lock_ids)?)
+        }
         QueryMsg::AllUserLockupsWithTrancheInfos {
             address,
             start_from,
@@ -1564,6 +1568,9 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         } => to_json_binary(&query_all_user_lockups_with_tranche_infos(
             deps, env, address, start_from, limit,
         )?),
+        QueryMsg::SomeUserLockupsWithTrancheInfos { address, lock_ids } => to_json_binary(
+            &query_some_user_lockups_with_tranche_infos(deps, env, address, lock_ids)?,
+        ),
         QueryMsg::ExpiredUserLockups {
             address,
             start_from,
@@ -1691,20 +1698,17 @@ pub fn query_constants(deps: Deps<NeutronQuery>) -> StdResult<ConstantsResponse>
     })
 }
 
-pub fn query_all_user_lockups(
+fn get_user_lockups_with_predicate(
     deps: Deps<NeutronQuery>,
     env: Env,
     address: String,
+    predicate: impl FnMut(&LockEntry) -> bool,
     start_from: u32,
     limit: u32,
-) -> StdResult<AllUserLockupsResponse> {
-    let raw_lockups = query_user_lockups(
-        deps,
-        deps.api.addr_validate(&address)?,
-        |_| true,
-        start_from,
-        limit,
-    );
+) -> StdResult<Vec<LockEntryWithPower>> {
+    let addr = deps.api.addr_validate(&address)?;
+
+    let raw_lockups = query_user_lockups(deps, addr, predicate, start_from, limit);
 
     let constants = CONSTANTS.load(deps.storage)?;
     let current_round_id = compute_current_round_id(&env, &constants)?;
@@ -1725,18 +1729,47 @@ pub fn query_all_user_lockups(
         })
         .collect();
 
-    Ok(AllUserLockupsResponse {
-        lockups: enriched_lockups,
-    })
+    Ok(enriched_lockups)
 }
 
-pub fn query_all_user_lockups_with_tranche_infos(
+pub fn query_all_user_lockups(
     deps: Deps<NeutronQuery>,
     env: Env,
     address: String,
     start_from: u32,
     limit: u32,
-) -> StdResult<AllUserLockupsWithTrancheInfosResponse> {
+) -> StdResult<AllUserLockupsResponse> {
+    let lockups = get_user_lockups_with_predicate(deps, env, address, |_| true, start_from, limit)?;
+    Ok(AllUserLockupsResponse { lockups })
+}
+
+pub fn query_some_user_lockups(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    address: String,
+    lock_ids: Vec<u64>,
+) -> StdResult<SomeUserLockupsResponse> {
+    let lock_ids_set: HashSet<u64> = lock_ids.into_iter().collect();
+
+    let lockups = get_user_lockups_with_predicate(
+        deps,
+        env,
+        address,
+        |lock| lock_ids_set.contains(&lock.lock_id),
+        0,
+        lock_ids_set.len() as u32,
+    )?;
+
+    Ok(SomeUserLockupsResponse { lockups })
+}
+
+// Helper function to handle the common logic for both query functions
+fn enrich_lockups_with_tranche_infos(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    address: String,
+    lockups: Vec<LockEntryWithPower>,
+) -> StdResult<Vec<LockupWithPerTrancheInfo>> {
     let converted_addr = deps.api.addr_validate(&address)?;
 
     let tranche_ids = TRANCHE_MAP
@@ -1747,11 +1780,8 @@ pub fn query_all_user_lockups_with_tranche_infos(
     let constants = CONSTANTS.load(deps.storage)?;
     let current_round_id = compute_current_round_id(&env, &constants)?;
 
-    let lockups = query_all_user_lockups(deps, env, address, start_from, limit);
-
     // enrich lockups with some info per tranche
-    let lockups_with_per_tranche_info: Vec<LockupWithPerTrancheInfo> = lockups?
-        .lockups
+    let lockups_with_per_tranche_info: Vec<LockupWithPerTrancheInfo> = lockups
         .iter()
         .map(|lock| {
             // iterate all tranches
@@ -1819,8 +1849,34 @@ pub fn query_all_user_lockups_with_tranche_infos(
         .collect();
 
     // return the enriched lockups
+    Ok(lockups_with_per_tranche_info)
+}
+
+pub fn query_all_user_lockups_with_tranche_infos(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    address: String,
+    start_from: u32,
+    limit: u32,
+) -> StdResult<AllUserLockupsWithTrancheInfosResponse> {
+    let lockups = query_all_user_lockups(deps, env.clone(), address.clone(), start_from, limit)?;
+    let enriched_lockups = enrich_lockups_with_tranche_infos(deps, env, address, lockups.lockups)?;
     Ok(AllUserLockupsWithTrancheInfosResponse {
-        lockups_with_per_tranche_infos: lockups_with_per_tranche_info,
+        lockups_with_per_tranche_infos: enriched_lockups,
+    })
+}
+
+pub fn query_some_user_lockups_with_tranche_infos(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    address: String,
+    lock_ids: Vec<u64>,
+) -> StdResult<SomeUserLockupsWithTrancheInfosResponse> {
+    let lockups = query_some_user_lockups(deps, env.clone(), address.clone(), lock_ids)?;
+    let enriched_lockups = enrich_lockups_with_tranche_infos(deps, env, address, lockups.lockups)?;
+
+    Ok(SomeUserLockupsWithTrancheInfosResponse {
+        lockups_with_per_tranche_infos: enriched_lockups,
     })
 }
 

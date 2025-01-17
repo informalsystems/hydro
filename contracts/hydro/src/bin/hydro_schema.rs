@@ -9,7 +9,8 @@ use hydro::query::{
     CurrentRoundResponse, ExpiredUserLockupsResponse, ICQManagersResponse,
     LiquidityDeploymentResponse, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
     RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
-    RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse, TotalLockedTokensResponse,
+    RoundTrancheLiquidityDeploymentsResponse, SomeUserLockupsResponse,
+    SomeUserLockupsWithTrancheInfosResponse, TopNProposalsResponse, TotalLockedTokensResponse,
     TranchesResponse, UserVotesResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
     WhitelistAdminsResponse, WhitelistResponse,
 };
@@ -30,6 +31,11 @@ fn main() {
     export_schema(&schema_for!(AllUserLockupsResponse), &out_dir);
     export_schema(
         &schema_for!(AllUserLockupsWithTrancheInfosResponse),
+        &out_dir,
+    );
+    export_schema(&schema_for!(SomeUserLockupsResponse), &out_dir);
+    export_schema(
+        &schema_for!(SomeUserLockupsWithTrancheInfosResponse),
         &out_dir,
     );
     export_schema(&schema_for!(ExpiredUserLockupsResponse), &out_dir);
