@@ -338,7 +338,9 @@ fn lock_tokens(
 
     update_total_time_weighted_shares(
         &mut deps,
+        env.block.height,
         &constants,
+        current_round,
         current_round,
         last_round_with_power,
         lock_end,
@@ -465,7 +467,9 @@ fn refresh_single_lock(
     let new_last_round_with_power = compute_round_id_for_timestamp(constants, new_lock_end)? - 1;
     update_total_time_weighted_shares(
         deps,
+        env.block.height,
         constants,
+        current_round_id,
         current_round_id,
         new_last_round_with_power,
         new_lock_end,
@@ -2376,7 +2380,9 @@ fn update_proposal_and_props_by_score_maps(
 #[allow(clippy::too_many_arguments)] // complex function that needs a lot of arguments
 fn update_total_time_weighted_shares<T>(
     deps: &mut DepsMut<NeutronQuery>,
+    current_height: u64,
     constants: &Constants,
+    current_round: u64,
     start_round_id: u64,
     end_round_id: u64,
     lock_end: u64,
@@ -2387,6 +2393,12 @@ fn update_total_time_weighted_shares<T>(
 where
     T: Fn(u64, Timestamp, Uint128) -> Uint128,
 {
+    // We need the validator power ratio to update the total voting power of current and possibly future rounds.
+    // It is loaded outside of the loop to save some gas. We use the validator power ratio from the current round,
+    // since it is not populated for future rounds yet.
+    let validator_power_ratio =
+        get_validator_power_ratio_for_round(deps.storage, current_round, shares_validator.clone())?;
+
     for round in start_round_id..=end_round_id {
         let round_end = compute_round_end(constants, round)?;
         let lockup_length = lock_end - round_end.nanos();
@@ -2408,8 +2420,10 @@ where
         // add the shares to the total power in the round
         add_validator_shares_to_round_total(
             deps.storage,
+            current_height,
             round,
             shares_validator.clone(),
+            validator_power_ratio,
             scaled_shares,
         )?;
     }

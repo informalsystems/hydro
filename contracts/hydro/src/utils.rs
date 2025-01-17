@@ -43,7 +43,7 @@ pub fn load_constants_active_at_timestamp(
         1 => current_constants[0].clone(),
         _ => {
             return Err(StdError::generic_err(
-                "Failed to load constants aactive at the given timestamp.",
+                "Failed to load constants active at the given timestamp.",
             ));
         }
     })

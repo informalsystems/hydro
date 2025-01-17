@@ -1,11 +1,11 @@
-use cosmwasm_std::{Decimal, Deps, Env, Order, StdError, StdResult, Storage};
+use cosmwasm_std::{Decimal, Deps, Env, Order, StdError, StdResult, Storage, Uint128};
 
 use neutron_sdk::bindings::query::NeutronQuery;
 use neutron_std::types::ibc::applications::transfer::v1::{DenomTrace, TransferQuerier};
 
 use crate::state::{
-    ValidatorInfo, SCALED_ROUND_POWER_SHARES_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
-    VALIDATORS_STORE_INITIALIZED,
+    ValidatorInfo, SCALED_ROUND_POWER_SHARES_MAP, TOTAL_VOTING_POWER_PER_ROUND, VALIDATORS_INFO,
+    VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
 };
 use crate::{
     contract::compute_current_round_id,
@@ -133,6 +133,35 @@ fn query_ibc_denom_trace(deps: &Deps<NeutronQuery>, denom: String) -> StdResult<
         .ok_or(StdError::generic_err("Failed to obtain IBC denom trace"))
 }
 
+/// Updates all the required stores each time some validator's power ratio is changed
+pub fn update_stores_due_to_power_ratio_change(
+    storage: &mut dyn Storage,
+    current_height: u64,
+    validator: &str,
+    current_round_id: u64,
+    old_power_ratio: Decimal,
+    new_power_ratio: Decimal,
+) -> StdResult<()> {
+    update_scores_due_to_power_ratio_change(
+        storage,
+        validator,
+        current_round_id,
+        old_power_ratio,
+        new_power_ratio,
+    )?;
+
+    update_total_power_due_to_power_ratio_change(
+        storage,
+        current_height,
+        validator,
+        current_round_id,
+        old_power_ratio,
+        new_power_ratio,
+    )?;
+
+    Ok(())
+}
+
 // Applies the new power ratio for the validator to score keepers.
 // It updates:
 // * all proposals of that round
@@ -215,6 +244,54 @@ pub fn update_scores_due_to_power_ratio_change(
     Ok(())
 }
 
+// Updates the total voting power for the current and future rounds when the given validator power ratio changes.
+pub fn update_total_power_due_to_power_ratio_change(
+    storage: &mut dyn Storage,
+    current_height: u64,
+    validator: &str,
+    current_round_id: u64,
+    old_power_ratio: Decimal,
+    new_power_ratio: Decimal,
+) -> StdResult<()> {
+    let mut round_id = current_round_id;
+
+    // Try to update the total voting power starting from the current round id and moving to next rounds until
+    // we reach the round for which there is no entry in the TOTAL_VOTING_POWER_PER_ROUND. This implies the first
+    // round in which no lock entry gives voting power, which also must be true for all rounds after that round,
+    // so we break the loop at that point.
+    loop {
+        let old_total_voting_power =
+            match TOTAL_VOTING_POWER_PER_ROUND.may_load(storage, round_id)? {
+                None => break,
+                Some(total_voting_power) => Decimal::from_ratio(total_voting_power, Uint128::one()),
+            };
+
+        let validator_shares =
+            get_validator_shares_for_round(storage, round_id, validator.to_owned())?;
+        if validator_shares == Decimal::zero() {
+            continue;
+        }
+
+        let old_validator_shares_power = validator_shares * old_power_ratio;
+        let new_validator_shares_power = validator_shares * new_power_ratio;
+
+        let new_total_voting_power = old_total_voting_power
+            .checked_add(new_validator_shares_power)?
+            .checked_sub(old_validator_shares_power)?;
+
+        TOTAL_VOTING_POWER_PER_ROUND.save(
+            storage,
+            round_id,
+            &new_total_voting_power.to_uint_floor(),
+            current_height,
+        )?;
+
+        round_id += 1;
+    }
+
+    Ok(())
+}
+
 pub fn get_total_power_for_round(deps: Deps<NeutronQuery>, round_id: u64) -> StdResult<Decimal> {
     // get the current validators for that round
     let validators = get_round_validators(deps, round_id);
@@ -233,13 +310,35 @@ pub fn get_total_power_for_round(deps: Deps<NeutronQuery>, round_id: u64) -> Std
 
 pub fn add_validator_shares_to_round_total(
     storage: &mut dyn Storage,
+    current_height: u64,
     round_id: u64,
     validator: String,
+    val_power_ratio: Decimal,
     num_shares: Decimal,
 ) -> StdResult<()> {
+    // Update validator shares for the round
     let current_shares = get_validator_shares_for_round(storage, round_id, validator.clone())?;
     let new_shares = current_shares + num_shares;
-    SCALED_ROUND_POWER_SHARES_MAP.save(storage, (round_id, validator), &new_shares)
+    SCALED_ROUND_POWER_SHARES_MAP.save(storage, (round_id, validator.clone()), &new_shares)?;
+
+    // Update total voting power for the round
+    TOTAL_VOTING_POWER_PER_ROUND.update(
+        storage,
+        round_id,
+        current_height,
+        |total_power_before| -> Result<Uint128, StdError> {
+            let total_power_before = match total_power_before {
+                None => Decimal::zero(),
+                Some(total_power_before) => Decimal::from_ratio(total_power_before, Uint128::one()),
+            };
+
+            Ok(total_power_before
+                .checked_add(num_shares.checked_mul(val_power_ratio)?)?
+                .to_uint_floor())
+        },
+    )?;
+
+    Ok(())
 }
 
 pub fn get_validator_shares_for_round(

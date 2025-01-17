@@ -1,6 +1,6 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
-use cw_storage_plus::{Item, Map};
+use cw_storage_plus::{Item, Map, SnapshotMap, Strategy};
 
 use crate::msg::LiquidityDeployment;
 
@@ -105,6 +105,15 @@ pub struct LockEntry {
     pub lock_start: Timestamp,
     pub lock_end: Timestamp,
 }
+
+// This is the total voting power of all users combined.
+// TOTAL_VOTING_POWER_PER_ROUND: key(round_id) -> total_voting_power
+pub const TOTAL_VOTING_POWER_PER_ROUND: SnapshotMap<u64, Uint128> = SnapshotMap::new(
+    "total_voting_power_per_round",
+    "total_voting_power_per_round__checkpoints",
+    "total_voting_power_per_round__changelog",
+    Strategy::EveryBlock,
+);
 
 // PROPOSAL_MAP: key(round_id, tranche_id, prop_id) -> Proposal
 pub const PROPOSAL_MAP: Map<(u64, u64, u64), Proposal> = Map::new("prop_map");
