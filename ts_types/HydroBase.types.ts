@@ -219,7 +219,7 @@ export type QueryMsg = {
     start_from: number;
   };
 } | {
-  some_user_lockups: {
+  specific_user_lockups: {
     address: string;
     lock_ids: number[];
   };
@@ -230,7 +230,7 @@ export type QueryMsg = {
     start_from: number;
   };
 } | {
-  some_user_lockups_with_tranche_infos: {
+  specific_user_lockups_with_tranche_infos: {
     address: string;
     lock_ids: number[];
   };
@@ -323,10 +323,10 @@ export interface RoundTotalVotingPowerResponse {
 export interface RoundTrancheLiquidityDeploymentsResponse {
   liquidity_deployments: LiquidityDeployment[];
 }
-export interface SomeUserLockupsResponse {
+export interface SpecificUserLockupsResponse {
   lockups: LockEntryWithPower[];
 }
-export interface SomeUserLockupsWithTrancheInfosResponse {
+export interface SpecificUserLockupsWithTrancheInfosResponse {
   lockups_with_per_tranche_infos: LockupWithPerTrancheInfo[];
 }
 export interface TopNProposalsResponse {

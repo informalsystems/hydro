@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "SomeUserLockupsWithTrancheInfosResponse",
+  "title": "SpecificUserLockupsWithTrancheInfosResponse",
   "type": "object",
   "required": [
     "lockups_with_per_tranche_infos"

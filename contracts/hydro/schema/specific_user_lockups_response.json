@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "SomeUserLockupsResponse",
+  "title": "SpecificUserLockupsResponse",
   "type": "object",
   "required": [
     "lockups"

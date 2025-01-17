@@ -64,10 +64,10 @@
     {
       "type": "object",
       "required": [
-        "some_user_lockups"
+        "specific_user_lockups"
       ],
       "properties": {
-        "some_user_lockups": {
+        "specific_user_lockups": {
           "type": "object",
           "required": [
             "address",
@@ -127,10 +127,10 @@
     {
       "type": "object",
       "required": [
-        "some_user_lockups_with_tranche_infos"
+        "specific_user_lockups_with_tranche_infos"
       ],
       "properties": {
-        "some_user_lockups_with_tranche_infos": {
+        "specific_user_lockups_with_tranche_infos": {
           "type": "object",
           "required": [
             "address",
