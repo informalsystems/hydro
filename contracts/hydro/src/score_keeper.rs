@@ -1,5 +1,6 @@
 use cosmwasm_std::{Decimal, StdError, StdResult, Storage};
 use cw_storage_plus::Map;
+use std::collections::HashMap;
 
 use crate::{
     lsm_integration::get_validator_power_ratio_for_round,
@@ -170,6 +171,76 @@ pub fn remove_many_validator_shares_from_proposal(
     }
 
     PROPOSAL_TOTAL_MAP.save(storage, prop_id, &total_power)
+}
+
+// Helper function to batch add validator shares to proposals
+pub fn add_many_validator_shares_to_proposal(
+    storage: &mut dyn Storage,
+    round_id: u64,
+    proposal_id: u64,
+    vals_and_shares: Vec<(String, Decimal)>,
+) -> StdResult<()> {
+    let mut total_power = get_total_power_for_proposal(storage, proposal_id)?;
+
+    for (validator, num_shares) in vals_and_shares {
+        let power_ratio =
+            get_validator_power_ratio_for_round(storage, round_id, validator.clone())?;
+
+        // Update the shares map
+        let current_shares = SCALED_PROPOSAL_SHARES_MAP
+            .may_load(storage, (proposal_id, validator.clone()))?
+            .unwrap_or_else(Decimal::zero);
+
+        let updated_shares = current_shares + num_shares;
+        SCALED_PROPOSAL_SHARES_MAP.save(storage, (proposal_id, validator), &updated_shares)?;
+
+        // Update the total power
+        let added_power = num_shares * power_ratio;
+        total_power += added_power;
+    }
+
+    PROPOSAL_TOTAL_MAP.save(storage, proposal_id, &total_power)
+}
+
+// Struct to track voting power changes for a proposal
+#[derive(Debug, Default)]
+pub struct ProposalPowerUpdate {
+    pub validator_shares: HashMap<String, Decimal>, // validator -> shares
+}
+
+pub fn apply_proposal_changes(
+    storage: &mut dyn Storage,
+    round_id: u64,
+    changes: HashMap<u64, ProposalPowerUpdate>,
+    is_addition: bool,
+) -> StdResult<()> {
+    for (proposal_id, changes) in changes {
+        let vals_and_shares: Vec<(String, Decimal)> = changes
+            .validator_shares
+            .into_iter()
+            .filter(|(_, shares)| !shares.is_zero())
+            .collect();
+
+        if !vals_and_shares.is_empty() {
+            if is_addition {
+                add_many_validator_shares_to_proposal(
+                    storage,
+                    round_id,
+                    proposal_id,
+                    vals_and_shares,
+                )?;
+            } else {
+                remove_many_validator_shares_from_proposal(
+                    storage,
+                    round_id,
+                    proposal_id,
+                    vals_and_shares,
+                )?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 // Update the power ratio for a validator and recomputes

@@ -7,6 +7,7 @@ pub mod query;
 pub mod score_keeper;
 pub mod state;
 pub mod validators_icqs;
+pub mod vote;
 
 #[cfg(test)]
 mod testing;
