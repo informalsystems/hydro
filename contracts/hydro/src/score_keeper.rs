@@ -1,6 +1,7 @@
-use cosmwasm_std::{Decimal, StdError, StdResult, Storage};
+use cosmwasm_std::{Decimal, SignedDecimal, StdError, StdResult, Storage};
 use cw_storage_plus::Map;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 
 use crate::{
     lsm_integration::get_validator_power_ratio_for_round,
@@ -174,69 +175,129 @@ pub fn remove_many_validator_shares_from_proposal(
 }
 
 // Helper function to batch add validator shares to proposals
+// This function takes a SignedDecimal in shares so it is possible to use it to "remove" shares
+// The function remove_many_validator_shares_from_proposal should not be needed anymore.
+// The below allow is necesary to avoid clippy warning about redundant closure
+// Otherwise, it throws another error: expected an `FnOnce()` closure, found `cosmwasm_std::Decimal`
+// and suggests to wrap the Decimal in a closure with no arguments: `|| { /* code */ }`
+#[allow(clippy::redundant_closure)]
 pub fn add_many_validator_shares_to_proposal(
     storage: &mut dyn Storage,
     round_id: u64,
     proposal_id: u64,
-    vals_and_shares: Vec<(String, Decimal)>,
+    vals_and_shares: Vec<(String, SignedDecimal)>,
 ) -> StdResult<()> {
-    let mut total_power = get_total_power_for_proposal(storage, proposal_id)?;
+    let total_power_decimal = get_total_power_for_proposal(storage, proposal_id)?;
+
+    // Convert total_power to SignedDecimal for computation
+    let mut total_power = SignedDecimal::try_from(total_power_decimal).map_err(|_| {
+        StdError::generic_err("Failed to convert Decimal to SignedDecimal for total_power")
+    })?;
 
     for (validator, num_shares) in vals_and_shares {
-        let power_ratio =
+        let power_ratio_decimal =
             get_validator_power_ratio_for_round(storage, round_id, validator.clone())?;
 
-        // Update the shares map
+        let power_ratio = SignedDecimal::try_from(power_ratio_decimal).map_err(|_| {
+            StdError::generic_err("Failed to convert Decimal to SignedDecimal for power_ratio")
+        })?;
+
         let current_shares = SCALED_PROPOSAL_SHARES_MAP
             .may_load(storage, (proposal_id, validator.clone()))?
-            .unwrap_or_else(Decimal::zero);
+            .unwrap_or_else(|| Decimal::zero());
 
-        let updated_shares = current_shares + num_shares;
-        SCALED_PROPOSAL_SHARES_MAP.save(storage, (proposal_id, validator), &updated_shares)?;
+        // Convert current shares to SignedDecimal for computation
+        let current_shares_signed = SignedDecimal::try_from(current_shares).map_err(|_| {
+            StdError::generic_err("Failed to convert Decimal to SignedDecimal for current_shares")
+        })?;
+
+        // Compute the updated shares as SignedDecimal
+        let updated_shares_signed = current_shares_signed + num_shares;
+
+        // Ensure updated shares cannot go negative
+        if updated_shares_signed.is_negative() {
+            return Err(StdError::generic_err(
+                "Shares for a validator cannot be negative",
+            ));
+        }
+
+        // Convert updated shares back to Decimal for storage
+        let updated_shares = Decimal::try_from(updated_shares_signed).map_err(|_| {
+            StdError::generic_err("Failed to convert SignedDecimal to Decimal for updated_shares")
+        })?;
+
+        // Save updated shares
+        SCALED_PROPOSAL_SHARES_MAP.save(
+            storage,
+            (proposal_id, validator.clone()),
+            &updated_shares,
+        )?;
 
         // Update the total power
-        let added_power = num_shares * power_ratio;
-        total_power += added_power;
+        let delta_power = num_shares * power_ratio;
+        let new_total_power = total_power + delta_power;
+
+        // Ensure total power cannot be negative
+        if new_total_power.is_negative() {
+            return Err(StdError::generic_err("Total power cannot be negative"));
+        }
+
+        total_power = new_total_power;
     }
 
-    PROPOSAL_TOTAL_MAP.save(storage, proposal_id, &total_power)
+    // Convert total_power back to Decimal for storage
+    let final_total_power = Decimal::try_from(total_power).map_err(|_| {
+        StdError::generic_err("Failed to convert SignedDecimal to Decimal for total_power")
+    })?;
+
+    // Save updated total power
+    PROPOSAL_TOTAL_MAP.save(storage, proposal_id, &final_total_power)
 }
 
 // Struct to track voting power changes for a proposal
 #[derive(Debug, Default)]
 pub struct ProposalPowerUpdate {
-    pub validator_shares: HashMap<String, Decimal>, // validator -> shares
+    pub validator_shares: HashMap<String, SignedDecimal>, // validator -> shares
+}
+
+pub fn combine_proposal_power_updates(
+    updates1: HashMap<u64, ProposalPowerUpdate>,
+    updates2: HashMap<u64, ProposalPowerUpdate>,
+) -> HashMap<u64, ProposalPowerUpdate> {
+    let mut combined_updates = updates1;
+
+    for (proposal_id, mut update2) in updates2 {
+        combined_updates
+            .entry(proposal_id)
+            .and_modify(|update1| {
+                for (validator, shares) in update2.validator_shares.drain() {
+                    update1
+                        .validator_shares
+                        .entry(validator)
+                        .and_modify(|existing| *existing += shares)
+                        .or_insert(shares);
+                }
+            })
+            .or_insert(update2);
+    }
+
+    combined_updates
 }
 
 pub fn apply_proposal_changes(
     storage: &mut dyn Storage,
     round_id: u64,
     changes: HashMap<u64, ProposalPowerUpdate>,
-    is_addition: bool,
 ) -> StdResult<()> {
     for (proposal_id, changes) in changes {
-        let vals_and_shares: Vec<(String, Decimal)> = changes
+        let vals_and_shares: Vec<(String, SignedDecimal)> = changes
             .validator_shares
             .into_iter()
             .filter(|(_, shares)| !shares.is_zero())
             .collect();
 
         if !vals_and_shares.is_empty() {
-            if is_addition {
-                add_many_validator_shares_to_proposal(
-                    storage,
-                    round_id,
-                    proposal_id,
-                    vals_and_shares,
-                )?;
-            } else {
-                remove_many_validator_shares_from_proposal(
-                    storage,
-                    round_id,
-                    proposal_id,
-                    vals_and_shares,
-                )?;
-            }
+            add_many_validator_shares_to_proposal(storage, round_id, proposal_id, vals_and_shares)?;
         }
     }
 

@@ -31,8 +31,8 @@ use crate::query::{
     WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
-    add_validator_shares_to_proposal, apply_proposal_changes, get_total_power_for_proposal,
-    remove_validator_shares_from_proposal,
+    add_validator_shares_to_proposal, apply_proposal_changes, combine_proposal_power_updates,
+    get_total_power_for_proposal, remove_validator_shares_from_proposal,
 };
 use crate::state::{
     Constants, LockEntry, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo, Vote,
@@ -45,7 +45,9 @@ use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
     handle_submsg_reply, query_min_interchain_query_deposit,
 };
-use crate::vote::{process_unvotes, process_votes, validate_proposals_and_locks};
+use crate::vote::{
+    process_unvotes, process_votes, validate_proposals_and_locks, VoteProcessingContext,
+};
 
 /// Contract name that is used for migration.
 pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -762,27 +764,26 @@ fn vote(
         &target_votes,
     )?;
 
-    deps.api
-        .debug(&format!("unvotes_result: {:?}", unvotes_result));
-
-    // Apply power changes from unvotes
-    apply_proposal_changes(deps.storage, round_id, unvotes_result.power_changes, false)?;
+    // Prepare context for voting
+    let context = VoteProcessingContext {
+        env: &env,
+        constants: &constants,
+        sender: &info.sender,
+        round_id,
+        tranche_id,
+    };
 
     // Process new votes
     let votes_result = process_votes(
         &deps,
-        &env,
-        &constants,
-        &info.sender,
-        round_id,
-        tranche_id,
+        context,
         &proposals_votes,
         &lock_entries,
         unvotes_result.locks_skipped,
     )?;
 
-    // Apply power changes from votes
-    apply_proposal_changes(deps.storage, round_id, votes_result.power_changes, true)?;
+    let combined_power_changes =
+        combine_proposal_power_updates(unvotes_result.power_changes, votes_result.power_changes);
 
     // Save new votes
     for (key, vote) in votes_result.new_votes {
@@ -801,7 +802,11 @@ fn vote(
         .chain(unvotes_result.unvoted_proposals)
         .collect();
 
-    // Update maps after all changes
+    // Apply power combined changes from unvotes and votes
+    apply_proposal_changes(deps.storage, round_id, combined_power_changes)?;
+
+    // Update maps after all changes. We can use update_proposal_and_props_by_score_maps
+    // because we already applied the proposal power changes
     for &proposal_id in &unique_proposals_to_update {
         let proposal = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
         update_proposal_and_props_by_score_maps(deps.storage, round_id, tranche_id, &proposal)?;
@@ -871,7 +876,7 @@ fn unvote(
     )?;
 
     // Apply power changes
-    apply_proposal_changes(deps.storage, round_id, unvotes_result.power_changes, false)?;
+    apply_proposal_changes(deps.storage, round_id, unvotes_result.power_changes)?;
 
     // Update maps after changes
     for proposal_id in unvotes_result.unvoted_proposals {
