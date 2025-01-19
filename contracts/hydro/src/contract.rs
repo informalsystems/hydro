@@ -782,9 +782,6 @@ fn vote(
         unvotes_result.locks_skipped,
     )?;
 
-    let combined_power_changes =
-        combine_proposal_power_updates(unvotes_result.power_changes, votes_result.power_changes);
-
     // Save new votes
     for (key, vote) in votes_result.new_votes {
         VOTE_MAP.save(deps.storage, key, &vote)?;
@@ -795,12 +792,10 @@ fn vote(
         VOTING_ALLOWED_ROUND.save(deps.storage, (tranche_id, lock_id), &round)?;
     }
 
-    let unique_proposals_to_update: HashSet<u64> = votes_result
-        .voted_proposals
-        .clone()
-        .into_iter()
-        .chain(unvotes_result.unvoted_proposals)
-        .collect();
+    let combined_power_changes =
+        combine_proposal_power_updates(unvotes_result.power_changes, votes_result.power_changes);
+
+    let unique_proposals_to_update: HashSet<u64> = combined_power_changes.keys().copied().collect();
 
     // Apply power combined changes from unvotes and votes
     apply_proposal_changes(deps.storage, round_id, combined_power_changes)?;
@@ -875,11 +870,14 @@ fn unvote(
         &target_votes,
     )?;
 
+    let unique_proposals_to_update: HashSet<u64> =
+        unvotes_result.power_changes.keys().copied().collect();
+
     // Apply power changes
     apply_proposal_changes(deps.storage, round_id, unvotes_result.power_changes)?;
 
     // Update maps after changes
-    for proposal_id in unvotes_result.unvoted_proposals {
+    for proposal_id in unique_proposals_to_update {
         let proposal = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
         update_proposal_and_props_by_score_maps(deps.storage, round_id, tranche_id, &proposal)?;
     }

@@ -86,7 +86,6 @@ pub fn validate_proposals_and_locks(
 pub struct ProcessUnvotesResult {
     pub power_changes: HashMap<u64, ProposalPowerUpdate>, // prop_id -> ProposalPowerUpdate
     pub removed_votes: HashMap<u64, Vote>,                // lock_id -> Previous vote
-    pub unvoted_proposals: HashSet<u64>,
     pub locks_skipped: Vec<u64>,
 }
 pub fn process_unvotes(
@@ -98,7 +97,6 @@ pub fn process_unvotes(
 ) -> Result<ProcessUnvotesResult, ContractError> {
     let mut power_changes: HashMap<u64, ProposalPowerUpdate> = HashMap::new();
     let mut removed_votes: HashMap<u64, Vote> = HashMap::new();
-    let mut unvoted_proposals: HashSet<u64> = HashSet::new();
     let mut locks_skipped = Vec::new();
 
     for (&lock_id, &target_proposal_id) in target_votes {
@@ -127,25 +125,20 @@ pub fn process_unvotes(
                     )
                 })?;
 
-            // Store removed vote only if there was no target proposal (pure unvote)
-            if target_proposal_id.is_none() {
-                removed_votes.insert(lock_id, existing_vote.clone());
-            }
+            removed_votes.insert(lock_id, existing_vote.clone());
 
-            // Remove vote
+            // Always remove vote from Vote Map.
+            // We cannot rely on it being overriden by the new vote (if any), as we don't know if it won't be skipped
             VOTE_MAP.remove(storage, ((round_id, tranche_id), sender.clone(), lock_id));
 
             // Remove voting round allowed info
             VOTING_ALLOWED_ROUND.remove(storage, (tranche_id, lock_id));
-
-            unvoted_proposals.insert(existing_vote.prop_id);
         }
     }
 
     Ok(ProcessUnvotesResult {
         power_changes,
         removed_votes,
-        unvoted_proposals,
         locks_skipped,
     })
 }
