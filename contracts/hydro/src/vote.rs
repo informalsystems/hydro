@@ -19,13 +19,11 @@ type LockEntries = HashMap<u64, LockEntry>; // Maps lock IDs to their correspond
 // Validate input proposals and locks
 // Returns target votes: lock_id -> proposal_id
 // and lock entries: lock_id -> lock entry
-pub fn validate_proposals_and_locks(
+pub fn validate_proposals_and_locks_for_voting(
     storage: &dyn Storage,
     sender: &Addr,
     proposals_votes: &Vec<ProposalToLockups>,
 ) -> Result<(TargetVotes, LockEntries), ContractError> {
-    // Return type aliases for improved readability
-
     if proposals_votes.is_empty() {
         return Err(ContractError::Std(StdError::generic_err(
             "Must provide at least one proposal and lockup to vote",
@@ -62,7 +60,8 @@ pub fn validate_proposals_and_locks(
                 ))));
             }
 
-            // Validate lock belongs to sender and store entry
+            // If any of the lock_ids doesn't exist, or it belongs to a different user
+            // then error out.
             let lock_entry = LOCKS_MAP.load(storage, (sender.clone(), lock_id))?;
             lock_entries.insert(lock_id, lock_entry);
 
@@ -86,8 +85,12 @@ pub fn validate_proposals_and_locks(
 pub struct ProcessUnvotesResult {
     pub power_changes: HashMap<u64, ProposalPowerUpdate>, // prop_id -> ProposalPowerUpdate
     pub removed_votes: HashMap<u64, Vote>,                // lock_id -> Previous vote
-    pub locks_skipped: Vec<u64>,
+    pub locks_to_skip: HashSet<u64>, // lock_ids to skip when voting because already vote on same proposal
 }
+
+// Process unvotes
+// It receives an argument as Target votes: lock_id -> Optional(proposal_id).
+// If proposal_id is None, it means that the user only intends to unvote.
 pub fn process_unvotes(
     storage: &mut dyn Storage,
     sender: &Addr,
@@ -97,16 +100,17 @@ pub fn process_unvotes(
 ) -> Result<ProcessUnvotesResult, ContractError> {
     let mut power_changes: HashMap<u64, ProposalPowerUpdate> = HashMap::new();
     let mut removed_votes: HashMap<u64, Vote> = HashMap::new();
-    let mut locks_skipped = Vec::new();
+    let mut locks_to_skip = HashSet::new();
 
     for (&lock_id, &target_proposal_id) in target_votes {
         if let Some(existing_vote) =
             VOTE_MAP.may_load(storage, ((round_id, tranche_id), sender.clone(), lock_id))?
         {
             // Skip if we have a target proposal and it matches the current vote
+            // We also add to locks_to_skip, to inform process_votes to skip this lock when voting
             if let Some(target_id) = target_proposal_id {
                 if existing_vote.prop_id == target_id {
-                    locks_skipped.push(lock_id);
+                    locks_to_skip.insert(lock_id);
                     continue;
                 }
             }
@@ -139,7 +143,7 @@ pub fn process_unvotes(
     Ok(ProcessUnvotesResult {
         power_changes,
         removed_votes,
-        locks_skipped,
+        locks_to_skip,
     })
 }
 
@@ -164,17 +168,23 @@ pub struct VoteProcessingContext<'a> {
     pub tranche_id: u64,
 }
 
+// Process votes (after unvote was processed)
+// It receives an argument as ProposalToLockups, which is a struct that contains a proposal_id and a list of lock_ids.
+// It also receives a list of lock_entries, which is a mapping of lock_id -> lock_entry.
+// It also receives a list of locks_to_skip, which is a list of lock_ids that should be skipped
+//  (as it was determined during process_unvotes that ).
 pub fn process_votes(
     deps: &DepsMut<NeutronQuery>,
     context: VoteProcessingContext,
     proposals_votes: &[ProposalToLockups],
     lock_entries: &LockEntries,
-    mut locks_skipped: Vec<u64>,
+    locks_to_skip: HashSet<u64>,
 ) -> Result<ProcessVotesResult, ContractError> {
     let round_end = compute_round_end(context.constants, context.round_id)?;
     let lock_epoch_length = context.constants.lock_epoch_length;
 
     let mut locks_voted = vec![];
+    let mut locks_skipped = vec![];
     let mut voted_proposals = vec![];
     let mut power_changes: HashMap<u64, ProposalPowerUpdate> = HashMap::new();
     let mut new_votes = vec![];
@@ -188,13 +198,17 @@ pub fn process_votes(
         )?;
 
         for &lock_id in &proposal_to_lockups.lock_ids {
-            if locks_skipped.contains(&lock_id) {
+            if locks_to_skip.contains(&lock_id) {
+                locks_skipped.push(lock_id);
                 continue;
             }
 
             let lock_entry = &lock_entries[&lock_id];
 
             // If user didn't yet vote with the given lock in the given round and tranche, check
+            // if they voted in previous rounds for some proposal that spans multiple rounds.
+            // This means that users can change their vote during a round, because we don't
+            // check this if users already voted in the current round.
             let voting_allowed_round =
                 VOTING_ALLOWED_ROUND.may_load(deps.storage, (context.tranche_id, lock_id))?;
 
@@ -217,9 +231,11 @@ pub fn process_votes(
                 Ok(validator) => validator,
                 Err(_) => {
                     deps.api.debug(&format!(
-                        "Denom {} is not a valid validator denom",
+                        "Denom {} is not a valid validator denom; validator might not be in the current set of top validators by delegation",
                         lock_entry.funds.denom
                     ));
+
+                    // skip this lock entry, since the locked shares do not belong to a validator that we want to take into account
                     locks_skipped.push(lock_id);
                     continue;
                 }
@@ -235,11 +251,13 @@ pub fn process_votes(
                 Uint128::one(),
             );
 
+            // skip the lock entries that give zero voting power
             if scaled_shares.is_zero() {
                 locks_skipped.push(lock_id);
                 continue;
             }
 
+            // skip lock entries that don't span long enough to be allowed to vote for this proposal
             if !can_lock_vote_for_proposal(
                 context.round_id,
                 context.constants,

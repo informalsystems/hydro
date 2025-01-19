@@ -177,7 +177,7 @@ pub fn remove_many_validator_shares_from_proposal(
 // Helper function to batch add validator shares to proposals
 // This function takes a SignedDecimal in shares so it is possible to use it to "remove" shares
 // The function remove_many_validator_shares_from_proposal should not be needed anymore.
-// The below allow is necesary to avoid clippy warning about redundant closure
+// Note: The below allow is necesary to avoid clippy warning about redundant closure
 // Otherwise, it throws another error: expected an `FnOnce()` closure, found `cosmwasm_std::Decimal`
 // and suggests to wrap the Decimal in a closure with no arguments: `|| { /* code */ }`
 #[allow(clippy::redundant_closure)]
@@ -260,6 +260,8 @@ pub struct ProposalPowerUpdate {
     pub validator_shares: HashMap<String, SignedDecimal>, // validator -> shares
 }
 
+// This function combines 2 proposal power updates into a single one.
+// It sums the shares for each validator in the updates.
 pub fn combine_proposal_power_updates(
     updates1: HashMap<u64, ProposalPowerUpdate>,
     updates2: HashMap<u64, ProposalPowerUpdate>,
@@ -284,6 +286,9 @@ pub fn combine_proposal_power_updates(
     combined_updates
 }
 
+// This function applies the changes in the proposal power updates to the storage.
+// As it is basically a wrapper around add_many_validator_shares_to_proposal function,
+//  it will update SCALED_PROPOSAL_SHARES_MAP and TOTAL_PROPOSAL_MAP.
 pub fn apply_proposal_changes(
     storage: &mut dyn Storage,
     round_id: u64,

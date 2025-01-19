@@ -46,7 +46,7 @@ use crate::validators_icqs::{
     handle_submsg_reply, query_min_interchain_query_deposit,
 };
 use crate::vote::{
-    process_unvotes, process_votes, validate_proposals_and_locks, VoteProcessingContext,
+    process_unvotes, process_votes, validate_proposals_and_locks_for_voting, VoteProcessingContext,
 };
 
 /// Contract name that is used for migration.
@@ -742,18 +742,33 @@ fn vote(
     tranche_id: u64,
     proposals_votes: Vec<ProposalToLockups>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
+    // This voting system is designed to allow for an unlimited number of proposals and an unlimited number of votes
+    // to be created, without being vulnerable to DOS. A naive implementation, where all votes or all proposals were iterated
+    // at the end of the round could be DOSed by creating a large number of votes or proposals. This is not a problem
+    // for this implementation, but this leads to some subtlety in the implementation.
+    // I will explain the overall principle here:
+    // - The information on which proposal is winning is updated each time someone votes, instead of being calculated at the end of the round.
+    // - This information is stored in a map called PROPS_BY_SCORE, which maps the score of a proposal to the proposal id.
+    // - At the end of the round, a single access to PROPS_BY_SCORE is made to get the winning proposal.
+    // - To enable switching votes (and for other stuff too), we store the vote in VOTE_MAP.
+    // - When a user votes the second time in a round, the information about their previous vote from VOTE_MAP is used to reverse the effect of their previous vote.
+    // - This leads to slightly higher gas costs for each vote, in exchange for a much lower gas cost at the end of the round.
     let constants = CONSTANTS.load(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
     let round_id = compute_current_round_id(&env, &constants)?;
+    // voting can never be the first action in a round (since one can only vote on proposals in the current round, and a proposal must be created first)
+    // however, to be safe, we initialize the validator store here, since this is more robust in case we change something about voting later
     initialize_validator_store(deps.storage, round_id)?;
 
-    // Check that the tranche exists
+    // check that the tranche with the given id exists
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
-    // Validate input proposals and locks, and get target votes map
+    // Validate input proposals and locks, and receive:
+    // - target votes map with lock_id -> proposal_id,
+    // - lock entries map with lock_id -> lock_entry
     let (target_votes, lock_entries) =
-        validate_proposals_and_locks(deps.storage, &info.sender, &proposals_votes)?;
+        validate_proposals_and_locks_for_voting(deps.storage, &info.sender, &proposals_votes)?;
 
     // Process unvotes first
     let unvotes_result = process_unvotes(
@@ -779,15 +794,15 @@ fn vote(
         context,
         &proposals_votes,
         &lock_entries,
-        unvotes_result.locks_skipped,
+        unvotes_result.locks_to_skip,
     )?;
 
-    // Save new votes
+    // Save new votes in the store
     for (key, vote) in votes_result.new_votes {
         VOTE_MAP.save(deps.storage, key, &vote)?;
     }
 
-    // Save voting allowed rounds
+    // Save voting allowed rounds in the store
     for ((tranche_id, lock_id), round) in votes_result.voting_allowed_rounds {
         VOTING_ALLOWED_ROUND.save(deps.storage, (tranche_id, lock_id), &round)?;
     }
@@ -797,12 +812,12 @@ fn vote(
 
     let unique_proposals_to_update: HashSet<u64> = combined_power_changes.keys().copied().collect();
 
-    // Apply power combined changes from unvotes and votes
+    // Apply combined proposal power changes from unvotes and votes
     apply_proposal_changes(deps.storage, round_id, combined_power_changes)?;
 
-    // Update maps after all changes. We can use update_proposal_and_props_by_score_maps
-    // because we already applied the proposal power changes
-    for &proposal_id in &unique_proposals_to_update {
+    // Update the proposal in the proposal map, as well as the props by score map, after all changes
+    // We can use update_proposal_and_props_by_score_maps as we already applied the proposal power changes
+    for proposal_id in unique_proposals_to_update {
         let proposal = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
         update_proposal_and_props_by_score_maps(deps.storage, round_id, tranche_id, &proposal)?;
     }
@@ -850,7 +865,8 @@ fn unvote(
     // Check that the tranche exists
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
-    // Validate lock IDs exist and belong to sender
+    // If any of the lock_ids doesn't exist, or it belongs to a different user
+    // then error out.
     for &lock_id in &lock_ids {
         LOCKS_MAP.load(deps.storage, (info.sender.clone(), lock_id))?;
     }
@@ -873,10 +889,11 @@ fn unvote(
     let unique_proposals_to_update: HashSet<u64> =
         unvotes_result.power_changes.keys().copied().collect();
 
-    // Apply power changes
+    // Apply proposal power changes from unvotes
     apply_proposal_changes(deps.storage, round_id, unvotes_result.power_changes)?;
 
-    // Update maps after changes
+    // Update the proposal in the proposal map, as well as the props by score map, after all changes
+    // We can use update_proposal_and_props_by_score_maps as we already applied the proposal power changes
     for proposal_id in unique_proposals_to_update {
         let proposal = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
         update_proposal_and_props_by_score_maps(deps.storage, round_id, tranche_id, &proposal)?;
