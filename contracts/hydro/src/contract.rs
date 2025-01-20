@@ -1559,7 +1559,7 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
             deps, env, address, start_from, limit,
         )?),
         QueryMsg::SpecificUserLockups { address, lock_ids } => {
-            to_json_binary(&query_some_user_lockups(deps, env, address, lock_ids)?)
+            to_json_binary(&query_specific_user_lockups(deps, env, address, lock_ids)?)
         }
         QueryMsg::AllUserLockupsWithTrancheInfos {
             address,
@@ -1569,7 +1569,7 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
             deps, env, address, start_from, limit,
         )?),
         QueryMsg::SpecificUserLockupsWithTrancheInfos { address, lock_ids } => to_json_binary(
-            &query_some_user_lockups_with_tranche_infos(deps, env, address, lock_ids)?,
+            &query_specific_user_lockups_with_tranche_infos(deps, env, address, lock_ids)?,
         ),
         QueryMsg::ExpiredUserLockups {
             address,
@@ -1743,7 +1743,7 @@ pub fn query_all_user_lockups(
     Ok(AllUserLockupsResponse { lockups })
 }
 
-pub fn query_some_user_lockups(
+pub fn query_specific_user_lockups(
     deps: Deps<NeutronQuery>,
     env: Env,
     address: String,
@@ -1866,13 +1866,13 @@ pub fn query_all_user_lockups_with_tranche_infos(
     })
 }
 
-pub fn query_some_user_lockups_with_tranche_infos(
+pub fn query_specific_user_lockups_with_tranche_infos(
     deps: Deps<NeutronQuery>,
     env: Env,
     address: String,
     lock_ids: Vec<u64>,
 ) -> StdResult<SpecificUserLockupsWithTrancheInfosResponse> {
-    let lockups = query_some_user_lockups(deps, env.clone(), address.clone(), lock_ids)?;
+    let lockups = query_specific_user_lockups(deps, env.clone(), address.clone(), lock_ids)?;
     let enriched_lockups = enrich_lockups_with_tranche_infos(deps, env, address, lockups.lockups)?;
 
     Ok(SpecificUserLockupsWithTrancheInfosResponse {

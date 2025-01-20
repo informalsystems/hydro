@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use crate::contract::{
     compute_current_round_id, query_all_user_lockups, query_all_user_lockups_with_tranche_infos,
-    query_some_user_lockups, query_some_user_lockups_with_tranche_infos, query_user_votes,
+    query_specific_user_lockups, query_specific_user_lockups_with_tranche_infos, query_user_votes,
     scale_lockup_power,
 };
 use crate::msg::ProposalToLockups;
@@ -84,8 +84,8 @@ fn query_user_lockups_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
-    // Query specific lockup by ID using query_some_user_lockups
-    let res = query_some_user_lockups(
+    // Query specific lockup by ID using query_specific_user_lockups
+    let res = query_specific_user_lockups(
         deps.as_ref(),
         env.clone(),
         info.sender.to_string(),
@@ -101,7 +101,7 @@ fn query_user_lockups_test() {
     );
 
     // Query for a non-existent lockup ID
-    let res = query_some_user_lockups(
+    let res = query_specific_user_lockups(
         deps.as_ref(),
         env.clone(),
         info.sender.to_string(),
@@ -221,8 +221,8 @@ fn query_user_lockups_test() {
         .current_voted_on_proposal
         .is_some_and(|x| x == 1),);
 
-    // Query specific lockup by ID using query_some_user_lockups_with_tranche_infos
-    let res = query_some_user_lockups_with_tranche_infos(
+    // Query specific lockup by ID using query_specific_user_lockups_with_tranche_infos
+    let res = query_specific_user_lockups_with_tranche_infos(
         deps.as_ref(),
         env.clone(),
         info.sender.to_string(),
@@ -248,7 +248,7 @@ fn query_user_lockups_test() {
             .u128()
     );
 
-    let res = query_some_user_lockups_with_tranche_infos(
+    let res = query_specific_user_lockups_with_tranche_infos(
         deps.as_ref(),
         env.clone(),
         info.sender.to_string(),
