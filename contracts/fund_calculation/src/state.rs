@@ -45,3 +45,13 @@ pub enum VenueType {
     // Lending out principal assets on money markets, e.g. Nolus, Mars.
     Lending,
 }
+
+pub struct GlobalConfig {
+    // For each venue type, the existing TVL factor is multiplied by this factor
+    // to determine the maximum amount of funds that can be deployed into a venue.
+    pub venue_type_to_existing_tvl_factor: HashMap<VenueType, u64>,
+
+    // The minimal amount of funds we want to deploy into venues, even if the
+    // existing TVL factor would allow for less, to "bootstrap" venues.
+    pub bootstrap_limit: u64,
+}
