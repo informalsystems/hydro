@@ -224,10 +224,20 @@ export type QueryMsg = {
     start_from: number;
   };
 } | {
+  specific_user_lockups: {
+    address: string;
+    lock_ids: number[];
+  };
+} | {
   all_user_lockups_with_tranche_infos: {
     address: string;
     limit: number;
     start_from: number;
+  };
+} | {
+  specific_user_lockups_with_tranche_infos: {
+    address: string;
+    lock_ids: number[];
   };
 } | {
   expired_user_lockups: {
@@ -317,6 +327,12 @@ export interface RoundTotalVotingPowerResponse {
 }
 export interface RoundTrancheLiquidityDeploymentsResponse {
   liquidity_deployments: LiquidityDeployment[];
+}
+export interface SpecificUserLockupsResponse {
+  lockups: LockEntryWithPower[];
+}
+export interface SpecificUserLockupsWithTrancheInfosResponse {
+  lockups_with_per_tranche_infos: LockupWithPerTrancheInfo[];
 }
 export interface TopNProposalsResponse {
   proposals: Proposal[];
