@@ -1813,6 +1813,130 @@ fn unvote_and_revote_test() {
 }
 
 // Test case:
+//      1. User votes with 1-round-long-lock for proposal with deployment_duration = 1
+//      2. User tries to unvote a non-existing lock ID, should fail
+//      3. Another user votes for the same proposal creating a new lock ID
+//      4. User tries to unvote the other user's vote, should fail
+#[test]
+fn unvote_forbidden_locks() {
+    let user_address = "addr0000";
+    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    let current_round_id = 0;
+    let tranche_id = 1;
+    let proposal_id = 0;
+    let lock_id = 0;
+    let other_user_lock_id = 1;
+    let deployment_duration = 1;
+
+    // Setup validator for the round
+    let res = set_validator_infos_for_round(
+        &mut deps.storage,
+        current_round_id,
+        vec![VALIDATOR_1.to_string()],
+    );
+    assert!(res.is_ok());
+
+    env.block.time = env.block.time.plus_hours(12);
+
+    // Lock tokens for one round to get voting power
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    // Create proposal with deployment_duration = 1
+    let msg = ExecuteMsg::CreateProposal {
+        round_id: None,
+        tranche_id: 1,
+        title: "proposal title".to_string(),
+        description: "proposal description".to_string(),
+        deployment_duration,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // First vote
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id,
+            lock_ids: vec![lock_id],
+        }],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // Verify initial proposal power
+    let initial_proposal = query_proposal(deps.as_ref(), current_round_id, tranche_id, proposal_id)
+        .unwrap()
+        .proposal;
+    assert_eq!(info.funds[0].amount, initial_proposal.power);
+
+    // Try to unvote a non-existing lock ID, should fail
+    let msg = ExecuteMsg::Unvote {
+        tranche_id: 1,
+        lock_ids: vec![other_user_lock_id],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_err());
+
+    // Another user votes for the same proposal creating a new lock ID
+    let other_user_address = "addr0001";
+    let other_user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let other_user_info =
+        get_message_info(&deps.api, other_user_address, &[other_user_token.clone()]);
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), other_user_info.clone(), msg);
+    assert!(res.is_ok());
+
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id,
+            lock_ids: vec![other_user_lock_id],
+        }],
+    };
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        other_user_info.clone(),
+        msg.clone(),
+    );
+    assert!(res.is_ok());
+
+    // Try to unvote the other user's vote, should fail
+    let msg = ExecuteMsg::Unvote {
+        tranche_id: 1,
+        lock_ids: vec![other_user_lock_id],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_err());
+
+    // Verify proposal power is equal to 2 * funds amount (both users voted on the same proposal with same funds)
+    let final_proposal = query_proposal(deps.as_ref(), current_round_id, tranche_id, proposal_id)
+        .unwrap()
+        .proposal;
+    assert_eq!(info.funds[0].amount.u128() * 2, final_proposal.power.u128());
+}
+
+// Test case:
 //      1. User locks tokens and votes for some proposal with longer deployment duration
 //      2. User locks more tokens, which automatically votes for proposal from step #1
 //      3. When the next round starts, user tries to vote for some proposal with the lockup created in step #2
