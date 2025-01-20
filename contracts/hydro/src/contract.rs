@@ -736,7 +736,7 @@ pub fn scale_lockup_power(
 }
 
 fn vote(
-    deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     tranche_id: u64,
@@ -790,22 +790,12 @@ fn vote(
 
     // Process new votes
     let votes_result = process_votes(
-        &deps,
+        &mut deps,
         context,
         &proposals_votes,
         &lock_entries,
         unvotes_result.locks_to_skip,
     )?;
-
-    // Save new votes in the store
-    for (key, vote) in votes_result.new_votes {
-        VOTE_MAP.save(deps.storage, key, &vote)?;
-    }
-
-    // Save voting allowed rounds in the store
-    for ((tranche_id, lock_id), round) in votes_result.voting_allowed_rounds {
-        VOTING_ALLOWED_ROUND.save(deps.storage, (tranche_id, lock_id), &round)?;
-    }
 
     let combined_power_changes =
         combine_proposal_power_updates(unvotes_result.power_changes, votes_result.power_changes);

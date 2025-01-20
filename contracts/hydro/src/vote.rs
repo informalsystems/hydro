@@ -147,13 +147,9 @@ pub fn process_unvotes(
     })
 }
 
-type VoteMapKey = ((u64, u64), Addr, u64); // ((round_id, tranche_id), sender, lock_id)
-
 #[derive(Debug)]
 pub struct ProcessVotesResult {
     pub power_changes: HashMap<u64, ProposalPowerUpdate>, // prop_id -> ProposalPowerUpdate
-    pub new_votes: Vec<(VoteMapKey, Vote)>, // ((round_id, tranche_id), sender, lock_id) -> Vote
-    pub voting_allowed_rounds: Vec<((u64, u64), u64)>, // (tranche_id, lock_id) -> round
     pub voted_proposals: Vec<u64>,
     pub locks_voted: Vec<u64>,
     pub locks_skipped: Vec<u64>,
@@ -174,7 +170,7 @@ pub struct VoteProcessingContext<'a> {
 // It also receives a list of locks_to_skip, which is a list of lock_ids that should be skipped
 //  (as it was determined during process_unvotes that ).
 pub fn process_votes(
-    deps: &DepsMut<NeutronQuery>,
+    deps: &mut DepsMut<NeutronQuery>,
     context: VoteProcessingContext,
     proposals_votes: &[ProposalToLockups],
     lock_entries: &LockEntries,
@@ -187,8 +183,6 @@ pub fn process_votes(
     let mut locks_skipped = vec![];
     let mut voted_proposals = vec![];
     let mut power_changes: HashMap<u64, ProposalPowerUpdate> = HashMap::new();
-    let mut new_votes = vec![];
-    let mut voting_allowed_rounds = vec![];
 
     for proposal_to_lockups in proposals_votes {
         let proposal_id = proposal_to_lockups.proposal_id;
@@ -198,6 +192,7 @@ pub fn process_votes(
         )?;
 
         for &lock_id in &proposal_to_lockups.lock_ids {
+            // When instructed to skip the lock_id by process_unvotes, skip it and record as skipped
             if locks_to_skip.contains(&lock_id) {
                 locks_skipped.push(lock_id);
                 continue;
@@ -274,19 +269,24 @@ pub fn process_votes(
                 time_weighted_shares: (validator.clone(), scaled_shares),
             };
 
-            // Store vote to be saved later
-            new_votes.push((
+            // Store the vote in VOTE_MAP
+            VOTE_MAP.save(
+                deps.storage,
                 (
                     (context.round_id, context.tranche_id),
                     context.sender.clone(),
                     lock_id,
                 ),
-                vote,
-            ));
+                &vote,
+            )?;
 
-            // Store voting allowed round to be saved later
+            // Store voting allowed round in VOTING_ALLOWED_ROUND
             let voting_allowed_round = context.round_id + proposal.deployment_duration;
-            voting_allowed_rounds.push(((context.tranche_id, lock_id), voting_allowed_round));
+            VOTING_ALLOWED_ROUND.save(
+                deps.storage,
+                (context.tranche_id, lock_id),
+                &voting_allowed_round,
+            )?;
 
             // Add to power changes
             let change = power_changes.entry(proposal_id).or_default();
@@ -305,8 +305,6 @@ pub fn process_votes(
 
     Ok(ProcessVotesResult {
         power_changes,
-        new_votes,
-        voting_allowed_rounds,
         voted_proposals,
         locks_voted,
         locks_skipped,
