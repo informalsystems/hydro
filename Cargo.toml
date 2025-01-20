@@ -1,5 +1,11 @@
 [workspace]
-members = ["contracts/hydro", "contracts/tribute", "packages/interface", "test/e2e"]
+members = [
+    "contracts/hydro",
+    "contracts/tribute",
+    "contracts/fund_calculation",
+    "packages/interface",
+    "test/e2e"
+]
 
 [profile.release]
 opt-level = 3
