@@ -293,19 +293,12 @@ pub fn update_total_power_due_to_power_ratio_change(
 }
 
 pub fn get_total_power_for_round(deps: Deps<NeutronQuery>, round_id: u64) -> StdResult<Decimal> {
-    // get the current validators for that round
-    let validators = get_round_validators(deps, round_id);
-
-    // compute the total power
-    let mut total = Decimal::zero();
-    for validator in validators {
-        let shares = SCALED_ROUND_POWER_SHARES_MAP
-            .may_load(deps.storage, (round_id, validator.address.clone()))?
-            .unwrap_or(Decimal::zero());
-        total += shares * validator.power_ratio;
-    }
-
-    Ok(total)
+    Ok(
+        match TOTAL_VOTING_POWER_PER_ROUND.may_load(deps.storage, round_id)? {
+            None => Decimal::zero(),
+            Some(total_voting_power) => Decimal::from_ratio(total_voting_power, Uint128::one()),
+        },
+    )
 }
 
 pub fn add_validator_shares_to_round_total(

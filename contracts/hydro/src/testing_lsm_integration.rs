@@ -737,7 +737,30 @@ fn lock_tokens_multiple_validators_and_vote() {
     }
 
     // update the power ratio for validator 1 to become 0.5
-    set_validator_power_ratio(deps.as_mut().storage, 0, VALIDATOR_1, Decimal::percent(50));
+    let mock_tokens = Uint128::new(500);
+    let mock_shares = Uint128::new(1000) * TOKENS_TO_SHARES_MULTIPLIER;
+    let mock_validator = get_mock_validator(VALIDATOR_1, mock_tokens, mock_shares);
+
+    let mock_data = HashMap::from([(
+        1,
+        ICQMockData {
+            query_type: QueryType::KV,
+            should_query_return_error: false,
+            should_query_result_return_error: false,
+            kv_results: vec![StorageValue {
+                storage_prefix: STAKING_STORE_KEY.to_string(),
+                key: Binary::default(),
+                value: Binary::from(mock_validator.encode_to_vec()),
+            }],
+        },
+    )]);
+
+    deps.querier = deps
+        .querier
+        .with_custom_handler(custom_interchain_query_mock(mock_data));
+
+    let res = sudo(deps.as_mut(), env, SudoMsg::KVQueryResult { query_id: 1 });
+    assert!(res.is_ok());
 
     // Check the proposal scores
     {

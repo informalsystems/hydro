@@ -97,7 +97,13 @@ pub const LOCK_ID: Item<u64> = Item::new("lock_id");
 pub const PROP_ID: Item<u64> = Item::new("prop_id");
 
 // LOCKS_MAP: key(sender_address, lock_id) -> LockEntry
-pub const LOCKS_MAP: Map<(Addr, u64), LockEntry> = Map::new("locks_map");
+pub const LOCKS_MAP: SnapshotMap<(Addr, u64), LockEntry> = SnapshotMap::new(
+    "locks_map",
+    "locks_map__checkpoints",
+    "locks_map__changelog",
+    Strategy::EveryBlock,
+);
+
 #[cw_serde]
 pub struct LockEntry {
     pub lock_id: u64,
@@ -256,3 +262,23 @@ impl ValidatorInfo {
 // LIQUIDITY_DEPLOYMENTS_MAP: key(round_id, tranche_id, prop_id) -> deployment
 pub const LIQUIDITY_DEPLOYMENTS_MAP: Map<(u64, u64, u64), LiquidityDeployment> =
     Map::new("liquidity_deployments_map");
+
+// Stores the mapping between the round_id and the range of known block heights for that round.
+// The lowest_known_height is the height at which the first transaction was executed, and the
+// highest_known_height is the height at which the last transaction was executed against the smart
+// contract in the given round.
+// Notice that the round could span beyond these boundaries, but we don't have a way to know that.
+// Besides, the info we store here is sufficient for our needs.
+// ROUND_TO_HEIGHT_RANGE: key(round_id) -> HeightRange
+pub const ROUND_TO_HEIGHT_RANGE: Map<u64, HeightRange> = Map::new("round_to_height_range");
+
+// Stores the mapping between the block height and round. It gets populated
+// each time a transaction is executed against the smart contract.
+// HEIGHT_TO_ROUND: key(block_height) -> round_id
+pub const HEIGHT_TO_ROUND: Map<u64, u64> = Map::new("height_to_round");
+
+#[cw_serde]
+pub struct HeightRange {
+    pub lowest_known_height: u64,
+    pub highest_known_height: u64,
+}

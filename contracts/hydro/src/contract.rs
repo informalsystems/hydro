@@ -16,8 +16,7 @@ use neutron_sdk::sudo::msg::SudoMsg;
 use crate::error::ContractError;
 use crate::lsm_integration::{
     add_validator_shares_to_round_total, get_total_power_for_round,
-    get_validator_power_ratio_for_round, initialize_validator_store, validate_denom,
-    COSMOS_VALIDATOR_PREFIX,
+    get_validator_power_ratio_for_round, validate_denom, COSMOS_VALIDATOR_PREFIX,
 };
 use crate::msg::{ExecuteMsg, InstantiateMsg, LiquidityDeployment, ProposalToLockups, TrancheInfo};
 use crate::query::{
@@ -35,13 +34,13 @@ use crate::score_keeper::{
 use crate::state::{
     Constants, LockEntry, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo, Vote,
     VoteWithPower, CONSTANTS, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP,
-    LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, TRANCHE_ID, TRANCHE_MAP, VALIDATORS_INFO,
-    VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP,
-    VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
+    LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, ROUND_TO_HEIGHT_RANGE, TRANCHE_ID, TRANCHE_MAP,
+    VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID,
+    VOTE_MAP, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::utils::{
-    load_constants_active_at_timestamp, load_current_constants, update_locked_tokens_info,
-    validate_locked_tokens_caps,
+    load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
+    update_locked_tokens_info, validate_locked_tokens_caps,
 };
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
@@ -268,7 +267,7 @@ fn lock_tokens(
     )?;
 
     let current_round = compute_current_round_id(&env, &constants)?;
-    initialize_validator_store(deps.storage, current_round)?;
+    run_on_each_transaction(deps.storage, &env, current_round)?;
 
     if info.funds.len() != 1 {
         return Err(ContractError::Std(StdError::generic_err(
@@ -312,7 +311,12 @@ fn lock_tokens(
         lock_end: env.block.time.plus_nanos(lock_duration),
     };
     let lock_end = lock_entry.lock_end.nanos();
-    LOCKS_MAP.save(deps.storage, (info.sender.clone(), lock_id), &lock_entry)?;
+    LOCKS_MAP.save(
+        deps.storage,
+        (info.sender.clone(), lock_id),
+        &lock_entry,
+        env.block.height,
+    )?;
     update_locked_tokens_info(
         &mut deps,
         current_round,
@@ -390,7 +394,7 @@ fn refresh_lock_duration(
     }
 
     let current_round_id = compute_current_round_id(&env, &constants)?;
-    initialize_validator_store(deps.storage, current_round_id)?;
+    run_on_each_transaction(deps.storage, &env, current_round_id)?;
 
     let mut response = Response::new()
         .add_attribute("action", "refresh_lock_duration")
@@ -441,7 +445,12 @@ fn refresh_single_lock(
         )));
     }
     lock_entry.lock_end = Timestamp::from_nanos(new_lock_end);
-    LOCKS_MAP.save(deps.storage, (info.sender.clone(), lock_id), &lock_entry)?;
+    LOCKS_MAP.save(
+        deps.storage,
+        (info.sender.clone(), lock_id),
+        &lock_entry,
+        env.block.height,
+    )?;
     let validator_result = validate_denom(
         deps.as_ref(),
         env.clone(),
@@ -572,7 +581,7 @@ fn unlock_tokens(
 
     // Delete unlocked locks
     for (addr, lock_id) in to_delete {
-        LOCKS_MAP.remove(deps.storage, (addr, lock_id));
+        LOCKS_MAP.remove(deps.storage, (addr, lock_id), env.block.height)?;
     }
 
     if !total_unlocked_amount.is_zero() {
@@ -641,7 +650,7 @@ fn create_proposal(
 
     let current_round_id = compute_current_round_id(&env, &constants)?;
     // this is just to initialize the store on the first action in each round
-    initialize_validator_store(deps.storage, current_round_id)?;
+    run_on_each_transaction(deps.storage, &env, current_round_id)?;
 
     // if no round_id is provided, use the current round
     let round_id = round_id.unwrap_or(current_round_id);
@@ -758,7 +767,7 @@ fn vote(
     let round_id = compute_current_round_id(&env, &constants)?;
     // voting can never be the first action in a round (since one can only vote on proposals in the current round, and a proposal must be created first)
     // however, to be safe, we initialize the validator store here, since this is more robust in case we change something about voting later
-    initialize_validator_store(deps.storage, round_id)?;
+    run_on_each_transaction(deps.storage, &env, round_id)?;
 
     // check that the tranche with the given id exists
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
@@ -1248,7 +1257,7 @@ fn create_icqs_for_validators(
     // This function will return error if the first round hasn't started yet. It is necessarry
     // that it has started, since handling the results of the interchain queries relies on this.
     let round_id = compute_current_round_id(&env, &constants)?;
-    initialize_validator_store(deps.storage, round_id)?;
+    run_on_each_transaction(deps.storage, &env, round_id)?;
 
     let mut valid_addresses = HashSet::new();
     for validator in validators
@@ -1783,11 +1792,15 @@ pub fn query_user_voting_power(
     address: String,
 ) -> StdResult<UserVotingPowerResponse> {
     Ok(UserVotingPowerResponse {
-        voting_power: get_user_voting_power(&deps, &env, deps.api.addr_validate(&address)?)?,
+        voting_power: get_current_user_voting_power(
+            &deps,
+            &env,
+            deps.api.addr_validate(&address)?,
+        )?,
     })
 }
 
-pub fn get_user_voting_power(
+pub fn get_current_user_voting_power(
     deps: &Deps<NeutronQuery>,
     env: &Env,
     address: Addr,
@@ -1796,22 +1809,84 @@ pub fn get_user_voting_power(
     let current_round_id = compute_current_round_id(env, &constants)?;
     let round_end = compute_round_end(&constants, current_round_id)?;
 
+    let filter = |lock_res: Result<(u64, LockEntry), StdError>| match lock_res {
+        Err(_) => None,
+        Ok(lock_tuple) => {
+            if lock_tuple.1.lock_end > round_end {
+                Some(lock_tuple.1)
+            } else {
+                None
+            }
+        }
+    };
+
+    get_user_voting_power(
+        deps,
+        env,
+        &constants,
+        address.clone(),
+        current_round_id,
+        round_end,
+        filter,
+    )
+}
+
+pub fn get_user_voting_power_for_past_round(
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
+    constants: &Constants,
+    address: Addr,
+    round_id: u64,
+) -> StdResult<u128> {
+    let round_end = compute_round_end(constants, round_id)?;
+    let load_height = ROUND_TO_HEIGHT_RANGE
+        .load(deps.storage, round_id)?
+        .highest_known_height;
+
+    let filter = |lock_res: Result<(u64, LockEntry), StdError>| match lock_res {
+        Err(_) => None,
+        Ok(lock_tuple) => {
+            if lock_tuple.1.lock_end <= round_end {
+                return None;
+            }
+
+            LOCKS_MAP
+                .may_load_at_height(deps.storage, (address.clone(), lock_tuple.0), load_height)
+                .unwrap_or_default()
+        }
+    };
+
+    get_user_voting_power(
+        deps,
+        env,
+        constants,
+        address.clone(),
+        round_id,
+        round_end,
+        filter,
+    )
+}
+
+pub fn get_user_voting_power<T>(
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
+    constants: &Constants,
+    address: Addr,
+    round_id: u64,
+    round_end: Timestamp,
+    filter: T,
+) -> StdResult<u128>
+where
+    T: FnMut(Result<(u64, LockEntry), StdError>) -> Option<LockEntry>,
+{
     Ok(LOCKS_MAP
         .prefix(address)
         .range(deps.storage, None, None, Order::Ascending)
-        .map(|l| l.unwrap().1)
-        .filter(|l| l.lock_end > round_end)
+        .filter_map(filter)
         .map(|lockup| {
-            to_lockup_with_power(
-                *deps,
-                env.clone(),
-                &constants,
-                current_round_id,
-                round_end,
-                lockup,
-            )
-            .current_voting_power
-            .u128()
+            to_lockup_with_power(*deps, env.clone(), constants, round_id, round_end, lockup)
+                .current_voting_power
+                .u128()
         })
         .sum())
 }

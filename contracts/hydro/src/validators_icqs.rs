@@ -20,12 +20,12 @@ use serde::{Deserialize, Serialize};
 use crate::{
     contract::{compute_current_round_id, NATIVE_TOKEN_DENOM},
     error::ContractError,
-    lsm_integration::{initialize_validator_store, update_stores_due_to_power_ratio_change},
+    lsm_integration::update_stores_due_to_power_ratio_change,
     state::{
         Constants, ValidatorInfo, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
         VALIDATOR_TO_QUERY_ID,
     },
-    utils::load_current_constants,
+    utils::{load_current_constants, run_on_each_transaction},
 };
 
 // A multiplier to normalize shares, such that when a validator has just been created
@@ -124,7 +124,7 @@ pub fn handle_delivered_interchain_query_result(
     };
     let constants = load_current_constants(&deps.as_ref(), &env)?;
     let current_round = compute_current_round_id(&env, &constants)?;
-    initialize_validator_store(deps.storage, current_round)?;
+    run_on_each_transaction(deps.storage, &env, current_round)?;
 
     let validator_address = validator.operator_address.clone();
     let new_tokens = Uint128::from_str(&validator.tokens)?;

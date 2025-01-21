@@ -1,16 +1,16 @@
 use cosmwasm_std::{
-    Addr, Decimal, Deps, DepsMut, Env, Order, StdError, StdResult, Timestamp, Uint128,
+    Addr, Decimal, Deps, DepsMut, Env, Order, StdError, StdResult, Storage, Timestamp, Uint128,
 };
 use cw_storage_plus::Bound;
 use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
-    contract::get_user_voting_power,
+    contract::get_user_voting_power_for_past_round,
     error::ContractError,
-    lsm_integration::get_total_power_for_round,
+    lsm_integration::{get_total_power_for_round, initialize_validator_store},
     state::{
-        Constants, CONSTANTS, EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL,
-        LOCKED_TOKENS, LOCKS_MAP,
+        Constants, HeightRange, CONSTANTS, EXTRA_LOCKED_TOKENS_CURRENT_USERS,
+        EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND, LOCKED_TOKENS, ROUND_TO_HEIGHT_RANGE,
     },
 };
 
@@ -49,7 +49,19 @@ pub fn load_constants_active_at_timestamp(
     })
 }
 
-// TODO: add desc
+// This function validates if user should be allowed to lock more tokens, depending on the total amount of
+// currently locked tokens, existence of the extra cap and the number of tokens user already locked in that cap.
+// Caps that we consider:
+//      1) Total cap: the maximum number of tokens that can be locked in the contract, regardless of the
+//         extra cap existence.
+//      2) Extra cap: the number of tokens reserved for users that had some voting power in previous round.
+//         It will be available to those users to lock additional tokens even if the public cap is filled.
+//         The extra cap will be available only for certain time frame at the beginning of the round. Duration
+//         will be determined through governance. After the extra cap duration has expired, any tokens left up
+//         to the total cap are allowed to be locked by any Hydro user.
+//      3) Public cap: during the existence of extra cap, new Hydro users will be allowed to lock tokens only
+//         in public cap, where public_cap = total_cap - extra_cap.
+//         After the extra cap duration expires, public cap becomes equal to the total cap.
 pub fn validate_locked_tokens_caps(
     deps: &DepsMut<NeutronQuery>,
     env: &Env,
@@ -145,22 +157,31 @@ fn can_user_lock_in_extra_cap(
         return Ok(false);
     }
 
-    let user_has_lockups = LOCKS_MAP
-        .prefix(sender.clone())
-        .range(deps.storage, None, None, Order::Ascending)
-        .count()
-        > 0;
-
-    if !user_has_lockups {
-        return Ok(false);
-    }
+    // Determine if user has the right to lock in extra_cap by looking at its voting power in previous round.
+    // If we are in round 0 then check the current round.
+    let round_to_check = match current_round {
+        0 => current_round,
+        _ => current_round - 1,
+    };
 
     // Calculate user's voting power share in the total voting power
     let users_voting_power = Decimal::from_ratio(
-        get_user_voting_power(&deps.as_ref(), env, sender.clone())?,
+        get_user_voting_power_for_past_round(
+            &deps.as_ref(),
+            env,
+            constants,
+            sender.clone(),
+            round_to_check,
+        )?,
         Uint128::one(),
     );
-    let total_voting_power = get_total_power_for_round(deps.as_ref(), current_round)?;
+    let total_voting_power = get_total_power_for_round(deps.as_ref(), round_to_check)?;
+
+    // Prevent division by zero or break early in case user had no voting power in previous round.
+    if total_voting_power == Decimal::zero() || users_voting_power == Decimal::zero() {
+        return Ok(false);
+    }
+
     let users_voting_power_share = users_voting_power.checked_div(total_voting_power)?;
 
     // Calculate what would be users share of extra locked tokens in the maximum allowed extra locked tokens
@@ -182,7 +203,10 @@ fn can_user_lock_in_extra_cap(
     Ok(true)
 }
 
-// TODO: add desc
+// Whenever a users locks more tokens this function will update the necessary stores,
+// depending on the amounts that user locked in public_cap and extra_cap.
+// Stores that will (potentially) be updated:
+//      LOCKED_TOKENS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, EXTRA_LOCKED_TOKENS_CURRENT_USERS
 pub fn update_locked_tokens_info(
     deps: &mut DepsMut<NeutronQuery>,
     current_round: u64,
@@ -225,6 +249,43 @@ pub fn update_locked_tokens_info(
     }
 
     Ok(())
+}
+
+// Calls other functions that will update various stores whenever a transaction is executed against the contract.
+pub fn run_on_each_transaction(
+    storage: &mut dyn Storage,
+    env: &Env,
+    round_id: u64,
+) -> StdResult<()> {
+    initialize_validator_store(storage, round_id)?;
+    update_round_to_height_maps(storage, env, round_id)
+}
+
+// Updates round_id -> height_range and block_height -> round_id maps, for later use.
+pub fn update_round_to_height_maps(
+    storage: &mut dyn Storage,
+    env: &Env,
+    round_id: u64,
+) -> StdResult<()> {
+    ROUND_TO_HEIGHT_RANGE.update(
+        storage,
+        round_id,
+        |height_range| -> Result<HeightRange, StdError> {
+            match height_range {
+                None => Ok(HeightRange {
+                    lowest_known_height: env.block.height,
+                    highest_known_height: env.block.height,
+                }),
+                Some(mut height_range) => {
+                    height_range.highest_known_height = env.block.height;
+
+                    Ok(height_range)
+                }
+            }
+        },
+    )?;
+
+    HEIGHT_TO_ROUND.save(storage, env.block.height, &round_id)
 }
 
 pub struct LockingInfo {
