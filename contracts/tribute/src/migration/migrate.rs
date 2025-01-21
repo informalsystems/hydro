@@ -14,7 +14,7 @@ pub const CONTRACT_VERSION_V3_0_0: &str = "3.0.0";
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(
-    mut deps: DepsMut,
+    deps: DepsMut,
     _env: Env,
     _msg: MigrateMsgV3_0_0,
 ) -> Result<Response, ContractError> {
