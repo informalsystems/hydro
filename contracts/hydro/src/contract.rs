@@ -35,8 +35,8 @@ use crate::state::{
     Constants, LockEntry, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo, Vote,
     VoteWithPower, CONSTANTS, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP,
     LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, ROUND_TO_HEIGHT_RANGE, TRANCHE_ID, TRANCHE_MAP,
-    VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID,
-    VOTE_MAP, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
+    USER_LOCKS, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
+    VALIDATOR_TO_QUERY_ID, VOTE_MAP, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::utils::{
     load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
@@ -304,6 +304,7 @@ fn lock_tokens(
 
     let lock_id = LOCK_ID.load(deps.storage)?;
     LOCK_ID.save(deps.storage, &(lock_id + 1))?;
+
     let lock_entry = LockEntry {
         lock_id,
         funds: info.funds[0].clone(),
@@ -317,6 +318,22 @@ fn lock_tokens(
         &lock_entry,
         env.block.height,
     )?;
+
+    USER_LOCKS.update(
+        deps.storage,
+        info.sender.clone(),
+        env.block.height,
+        |current_locks| -> Result<Vec<u64>, StdError> {
+            match current_locks {
+                None => Ok(vec![lock_id]),
+                Some(mut current_locks) => {
+                    current_locks.push(lock_id);
+                    Ok(current_locks)
+                }
+            }
+        },
+    )?;
+
     update_locked_tokens_info(
         &mut deps,
         current_round,
@@ -571,8 +588,7 @@ fn unlock_tokens(
 
             total_unlocked_amount += send.amount;
 
-            // Delete entry from LocksMap
-            to_delete.push((info.sender.clone(), lock_id));
+            to_delete.push(lock_id);
 
             unlocked_lock_ids.push(lock_id.to_string());
             unlocked_tokens.push(send.to_string());
@@ -580,9 +596,29 @@ fn unlock_tokens(
     }
 
     // Delete unlocked locks
-    for (addr, lock_id) in to_delete {
-        LOCKS_MAP.remove(deps.storage, (addr, lock_id), env.block.height)?;
+    for lock_id in to_delete.iter() {
+        LOCKS_MAP.remove(
+            deps.storage,
+            (info.sender.clone(), *lock_id),
+            env.block.height,
+        )?;
     }
+
+    let to_delete: HashSet<u64> = to_delete.into_iter().collect();
+    USER_LOCKS.update(
+        deps.storage,
+        info.sender.clone(),
+        env.block.height,
+        |current_locks| -> Result<Vec<u64>, StdError> {
+            match current_locks {
+                None => Ok(vec![]),
+                Some(mut current_locks) => {
+                    current_locks.retain(|lock_id| !to_delete.contains(lock_id));
+                    Ok(current_locks)
+                }
+            }
+        },
+    )?;
 
     if !total_unlocked_amount.is_zero() {
         LOCKED_TOKENS.update(
@@ -1843,28 +1879,37 @@ pub fn get_user_voting_power_for_past_round(
         .load(deps.storage, round_id)?
         .highest_known_height;
 
-    let filter = |lock_res: Result<(u64, LockEntry), StdError>| match lock_res {
-        Err(_) => None,
-        Ok(lock_tuple) => {
-            if lock_tuple.1.lock_end <= round_end {
-                return None;
+    let user_locks_ids = USER_LOCKS
+        .may_load_at_height(deps.storage, address.clone(), load_height)?
+        .unwrap_or_default();
+
+    Ok(user_locks_ids
+        .into_iter()
+        .filter_map(|lock_id| {
+            match LOCKS_MAP.may_load_at_height(
+                deps.storage,
+                (address.clone(), lock_id),
+                load_height,
+            ) {
+                Err(_) => None,
+                Ok(lock) => match lock {
+                    None => None,
+                    Some(lock) => {
+                        if lock.lock_end <= round_end {
+                            None
+                        } else {
+                            Some(lock)
+                        }
+                    }
+                },
             }
-
-            LOCKS_MAP
-                .may_load_at_height(deps.storage, (address.clone(), lock_tuple.0), load_height)
-                .unwrap_or_default()
-        }
-    };
-
-    get_user_voting_power(
-        deps,
-        env,
-        constants,
-        address.clone(),
-        round_id,
-        round_end,
-        filter,
-    )
+        })
+        .map(|lockup| {
+            to_lockup_with_power(*deps, env.clone(), constants, round_id, round_end, lockup)
+                .current_voting_power
+                .u128()
+        })
+        .sum())
 }
 
 pub fn get_user_voting_power<T>(

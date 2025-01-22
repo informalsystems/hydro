@@ -112,6 +112,16 @@ pub struct LockEntry {
     pub lock_end: Timestamp,
 }
 
+// Stores the lockup IDs that belong to a user. Snapshoted so that we can determine which lockups
+// user had at a given height and use this info to compute users voting power at that height.
+// USER_LOCKS: key(user_address) -> Vec<lock_ids>
+pub const USER_LOCKS: SnapshotMap<Addr, Vec<u64>> = SnapshotMap::new(
+    "user_locks",
+    "user_locks__checkpoints",
+    "user_locks__changelog",
+    Strategy::EveryBlock,
+);
+
 // This is the total voting power of all users combined.
 // TOTAL_VOTING_POWER_PER_ROUND: key(round_id) -> total_voting_power
 pub const TOTAL_VOTING_POWER_PER_ROUND: SnapshotMap<u64, Uint128> = SnapshotMap::new(

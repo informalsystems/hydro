@@ -20,6 +20,7 @@ pub fn migrate_v2_1_0_to_unreleased(
     //         the past rounds as well, we can use that in our queries instead of on-the-fly computation
     //         e.g. query_round_total_power(), query_top_n_proposals().
     //      3) LOCKS_MAP needs to be migrated to SnapshotMap.
+    //      4) Populate USER_LOCKS for existing lockups.
     //      4) Populate ROUND_TO_HEIGHT_RANGE and HEIGHT_TO_ROUND for previous rounds?
     Ok(())
 }
