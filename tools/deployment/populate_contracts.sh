@@ -1,6 +1,11 @@
 #!/bin/bash
 set -eux
 
+if [ "$#" -ne 3 ]; then
+    echo "Usage: $0 <config_file> <hydro_contract_address> <tribute_contract_address>"
+    exit 1
+fi
+
 CONFIG_FILE="$1"
 HYDRO_CONTRACT_ADDRESS="$2"
 TRIBUTE_CONTRACT_ADDRESS="$3"
