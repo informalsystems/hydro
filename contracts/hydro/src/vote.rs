@@ -200,10 +200,7 @@ pub fn process_votes(
 
             let lock_entry = &lock_entries[&lock_id];
 
-            // If user didn't yet vote with the given lock in the given round and tranche, check
-            // if they voted in previous rounds for some proposal that spans multiple rounds.
-            // This means that users can change their vote during a round, because we don't
-            // check this if users already voted in the current round.
+            // Check if user voted in previous rounds for some proposal that spans multiple rounds.
             let voting_allowed_round =
                 VOTING_ALLOWED_ROUND.may_load(deps.storage, (context.tranche_id, lock_id))?;
 
