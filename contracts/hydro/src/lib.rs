@@ -35,3 +35,6 @@ mod testing_utils;
 
 #[cfg(test)]
 mod testing_compounder_cap;
+
+#[cfg(test)]
+mod testing_snapshoting;

@@ -288,6 +288,7 @@ pub const ROUND_TO_HEIGHT_RANGE: Map<u64, HeightRange> = Map::new("round_to_heig
 pub const HEIGHT_TO_ROUND: Map<u64, u64> = Map::new("height_to_round");
 
 #[cw_serde]
+#[derive(Default)]
 pub struct HeightRange {
     pub lowest_known_height: u64,
     pub highest_known_height: u64,

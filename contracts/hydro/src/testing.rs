@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 use crate::contract::{
@@ -6,7 +6,7 @@ use crate::contract::{
     query_whitelist_admins, MAX_LOCK_ENTRIES,
 };
 use crate::msg::{ProposalToLockups, TrancheInfo};
-use crate::state::{LockEntry, RoundLockPowerSchedule, Vote, VOTE_MAP};
+use crate::state::{LockEntry, RoundLockPowerSchedule, Vote, USER_LOCKS, VOTE_MAP};
 use crate::testing_lsm_integration::set_validator_infos_for_round;
 use crate::testing_mocks::{
     denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
@@ -243,6 +243,17 @@ fn lock_tokens_basic_test() {
     // check that the power is correct: 3000 tokens locked for three epochs
     // so power is 3000 * 1.5 = 4500
     assert_eq!(4500, lockup.current_voting_power.u128());
+
+    // check that the USER_LOCKS are updated as expected
+    let expected_lock_ids = HashSet::from([
+        res.lockups[0].lock_entry.lock_id,
+        res.lockups[1].lock_entry.lock_id,
+    ]);
+    let mut user_lock_ids = USER_LOCKS
+        .load(&deps.storage, info2.sender.clone())
+        .unwrap();
+    user_lock_ids.retain(|lock_id| !expected_lock_ids.contains(lock_id));
+    assert!(user_lock_ids.is_empty());
 }
 
 #[test]
@@ -2587,8 +2598,26 @@ fn max_locked_tokens_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_ok());
 
-    // a privileged user can update the maximum allowed locked tokens
+    // a privileged user can update the maximum allowed locked tokens, but only for the future
     info = get_message_info(&deps.api, "addr0001", &[]);
+    let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
+        activate_at: env.block.time.minus_hours(1),
+        max_locked_tokens: Some(3000),
+        current_users_extra_cap: None,
+        max_deployment_duration: None,
+    };
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        update_max_locked_tokens_msg.clone(),
+    );
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .contains("Can not update config in the past."));
+
+    // this time with a valid activation timestamp
     let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
         activate_at: env.block.time,
         max_locked_tokens: Some(3000),
@@ -2599,7 +2628,7 @@ fn max_locked_tokens_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        update_max_locked_tokens_msg,
+        update_max_locked_tokens_msg.clone(),
     );
     assert!(res.is_ok());
 
