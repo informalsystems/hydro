@@ -32,3 +32,6 @@ mod testing_deployments;
 
 #[cfg(test)]
 mod testing_utils;
+
+#[cfg(test)]
+mod testing_compounder_cap;

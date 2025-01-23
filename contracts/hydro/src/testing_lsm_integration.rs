@@ -13,7 +13,10 @@ use neutron_sdk::{
 use neutron_std::types::ibc::applications::transfer::v1::QueryDenomTraceResponse;
 
 use crate::{
-    contract::{execute, instantiate, query_round_tranche_proposals, query_top_n_proposals, sudo},
+    contract::{
+        compute_current_round_id, execute, instantiate, query_round_tranche_proposals,
+        query_top_n_proposals, sudo,
+    },
     lsm_integration::{
         get_total_power_for_round, get_validator_power_ratio_for_round,
         update_scores_due_to_power_ratio_change, validate_denom,
@@ -329,7 +332,7 @@ fn test_validate_denom() {
 
         let result = validate_denom(
             deps.as_ref(),
-            env.clone(),
+            compute_current_round_id(&env, &constants).unwrap(),
             &constants,
             test_case.denom.clone(),
         );

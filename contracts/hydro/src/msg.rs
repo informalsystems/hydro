@@ -67,6 +67,7 @@ pub enum ExecuteMsg {
     UpdateConfig {
         activate_at: Timestamp,
         max_locked_tokens: Option<u128>,
+        current_users_extra_cap: Option<u128>,
         max_deployment_duration: Option<u64>,
     },
     Pause {},

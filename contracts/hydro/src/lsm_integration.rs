@@ -1,4 +1,4 @@
-use cosmwasm_std::{Decimal, Deps, Env, Order, StdError, StdResult, Storage, Uint128};
+use cosmwasm_std::{Decimal, Deps, Order, StdError, StdResult, Storage, Uint128};
 
 use neutron_sdk::bindings::query::NeutronQuery;
 use neutron_std::types::ibc::applications::transfer::v1::{DenomTrace, TransferQuerier};
@@ -8,7 +8,6 @@ use crate::state::{
     VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
 };
 use crate::{
-    contract::compute_current_round_id,
     score_keeper::{get_total_power_for_proposal, update_power_ratio_for_proposal},
     state::{Constants, Proposal, PROPOSAL_MAP, PROPS_BY_SCORE, TRANCHE_MAP},
 };
@@ -22,16 +21,15 @@ pub const COSMOS_VALIDATOR_ADDR_LENGTH: usize = 52; // e.g. cosmosvaloper15w6ra6
 
 // Returns OK if the denom is a valid IBC denom representing LSM
 // tokenized share transferred directly from the Cosmos Hub
-// of a validator that is also currently among the top
-// max_validators validators, and returns the address of that validator.
+// of a validator that is also among the top max_validators validators
+// for the given round, and returns the address of that validator.
 pub fn validate_denom(
     deps: Deps<NeutronQuery>,
-    env: Env,
+    round_id: u64,
     constants: &Constants,
     denom: String,
 ) -> StdResult<String> {
     let validator = resolve_validator_from_denom(&deps, constants, denom)?;
-    let round_id = compute_current_round_id(&env, constants)?;
     let max_validators = constants.max_validator_shares_participating;
 
     if is_active_round_validator(deps.storage, round_id, &validator) {
@@ -269,7 +267,9 @@ pub fn update_total_power_due_to_power_ratio_change(
         let validator_shares =
             get_validator_shares_for_round(storage, round_id, validator.to_owned())?;
         if validator_shares == Decimal::zero() {
-            continue;
+            // If we encounter a round that doesn't have this validator shares, then no subsequent
+            // round could also have its shares, so break early to save some gas.
+            break;
         }
 
         let old_validator_shares_power = validator_shares * old_power_ratio;

@@ -157,6 +157,10 @@ pub fn execute(
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
+    let current_round = compute_current_round_id(&env, &constants)?;
+    run_on_each_transaction(deps.storage, &env, current_round)?;
+
     match msg {
         ExecuteMsg::LockTokens { lock_duration } => lock_tokens(deps, env, info, lock_duration),
         ExecuteMsg::RefreshLockDuration {
@@ -193,6 +197,7 @@ pub fn execute(
         ExecuteMsg::UpdateConfig {
             activate_at,
             max_locked_tokens,
+            current_users_extra_cap,
             max_deployment_duration,
         } => update_config(
             deps,
@@ -200,6 +205,7 @@ pub fn execute(
             info,
             activate_at,
             max_locked_tokens,
+            current_users_extra_cap,
             max_deployment_duration,
         ),
         ExecuteMsg::Pause {} => pause_contract(deps, &env, info),
@@ -267,7 +273,6 @@ fn lock_tokens(
     )?;
 
     let current_round = compute_current_round_id(&env, &constants)?;
-    run_on_each_transaction(deps.storage, &env, current_round)?;
 
     if info.funds.len() != 1 {
         return Err(ContractError::Std(StdError::generic_err(
@@ -278,7 +283,7 @@ fn lock_tokens(
     let funds = info.funds[0].clone();
 
     let validator =
-        validate_denom(deps.as_ref(), env.clone(), &constants, funds.denom).map_err(|err| {
+        validate_denom(deps.as_ref(), current_round, &constants, funds.denom).map_err(|err| {
             ContractError::Std(StdError::generic_err(format!("validating denom: {}", err)))
         })?;
 
@@ -286,7 +291,6 @@ fn lock_tokens(
     let amount_to_lock = info.funds[0].amount.u128();
     let locking_info = validate_locked_tokens_caps(
         &deps,
-        &env,
         &constants,
         current_round,
         &info.sender,
@@ -411,7 +415,6 @@ fn refresh_lock_duration(
     }
 
     let current_round_id = compute_current_round_id(&env, &constants)?;
-    run_on_each_transaction(deps.storage, &env, current_round_id)?;
 
     let mut response = Response::new()
         .add_attribute("action", "refresh_lock_duration")
@@ -470,7 +473,7 @@ fn refresh_single_lock(
     )?;
     let validator_result = validate_denom(
         deps.as_ref(),
-        env.clone(),
+        current_round_id,
         constants,
         lock_entry.funds.denom.clone(),
     );
@@ -685,8 +688,6 @@ fn create_proposal(
     validate_contract_is_not_paused(&constants)?;
 
     let current_round_id = compute_current_round_id(&env, &constants)?;
-    // this is just to initialize the store on the first action in each round
-    run_on_each_transaction(deps.storage, &env, current_round_id)?;
 
     // if no round_id is provided, use the current round
     let round_id = round_id.unwrap_or(current_round_id);
@@ -801,9 +802,6 @@ fn vote(
     validate_contract_is_not_paused(&constants)?;
 
     let round_id = compute_current_round_id(&env, &constants)?;
-    // voting can never be the first action in a round (since one can only vote on proposals in the current round, and a proposal must be created first)
-    // however, to be safe, we initialize the validator store here, since this is more robust in case we change something about voting later
-    run_on_each_transaction(deps.storage, &env, round_id)?;
 
     // check that the tranche with the given id exists
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
@@ -959,7 +957,7 @@ fn vote(
             // get the validator from the denom
             let validator = match validate_denom(
                 deps.as_ref(),
-                env.clone(),
+                round_id,
                 &constants,
                 lock_entry.clone().funds.denom,
             ) {
@@ -1135,6 +1133,7 @@ fn update_config(
     info: MessageInfo,
     activate_at: Timestamp,
     max_locked_tokens: Option<u128>,
+    current_users_extra_cap: Option<u128>,
     max_deployment_duration: Option<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     if env.block.time > activate_at {
@@ -1143,7 +1142,11 @@ fn update_config(
         )));
     }
 
-    let mut constants = load_current_constants(&deps.as_ref(), &env)?;
+    // Load the Constants active at the given timestamp and base the updates on them.
+    // This allows us to update the Constants in arbitrary order. E.g. at the similar block
+    // height we can schedule multiple updates for the future, where each new Constants will
+    // have the changes introduced by earlier ones.
+    let mut constants = load_constants_active_at_timestamp(&deps.as_ref(), activate_at)?.1;
 
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
@@ -1155,6 +1158,14 @@ fn update_config(
     if let Some(max_locked_tokens) = max_locked_tokens {
         constants.max_locked_tokens = max_locked_tokens;
         response = response.add_attribute("new_max_locked_tokens", max_locked_tokens.to_string());
+    }
+
+    if let Some(current_users_extra_cap) = current_users_extra_cap {
+        constants.current_users_extra_cap = current_users_extra_cap;
+        response = response.add_attribute(
+            "new_current_users_extra_cap",
+            current_users_extra_cap.to_string(),
+        );
     }
 
     if let Some(max_deployment_duration) = max_deployment_duration {
@@ -1292,8 +1303,7 @@ fn create_icqs_for_validators(
     validate_contract_is_not_paused(&constants)?;
     // This function will return error if the first round hasn't started yet. It is necessarry
     // that it has started, since handling the results of the interchain queries relies on this.
-    let round_id = compute_current_round_id(&env, &constants)?;
-    run_on_each_transaction(deps.storage, &env, round_id)?;
+    compute_current_round_id(&env, &constants)?;
 
     let mut valid_addresses = HashSet::new();
     for validator in validators
@@ -1774,14 +1784,7 @@ pub fn query_all_user_lockups(
     let enriched_lockups = raw_lockups
         .iter()
         .map(|lock| {
-            to_lockup_with_power(
-                deps,
-                env.clone(),
-                &constants,
-                current_round_id,
-                round_end,
-                lock.clone(),
-            )
+            to_lockup_with_power(deps, &constants, current_round_id, round_end, lock.clone())
         })
         .collect();
 
@@ -1858,7 +1861,6 @@ pub fn get_current_user_voting_power(
 
     get_user_voting_power(
         deps,
-        env,
         &constants,
         address.clone(),
         current_round_id,
@@ -1869,7 +1871,6 @@ pub fn get_current_user_voting_power(
 
 pub fn get_user_voting_power_for_past_round(
     deps: &Deps<NeutronQuery>,
-    env: &Env,
     constants: &Constants,
     address: Addr,
     round_id: u64,
@@ -1905,7 +1906,7 @@ pub fn get_user_voting_power_for_past_round(
             }
         })
         .map(|lockup| {
-            to_lockup_with_power(*deps, env.clone(), constants, round_id, round_end, lockup)
+            to_lockup_with_power(*deps, constants, round_id, round_end, lockup)
                 .current_voting_power
                 .u128()
         })
@@ -1914,7 +1915,6 @@ pub fn get_user_voting_power_for_past_round(
 
 pub fn get_user_voting_power<T>(
     deps: &Deps<NeutronQuery>,
-    env: &Env,
     constants: &Constants,
     address: Addr,
     round_id: u64,
@@ -1929,7 +1929,7 @@ where
         .range(deps.storage, None, None, Order::Ascending)
         .filter_map(filter)
         .map(|lockup| {
-            to_lockup_with_power(*deps, env.clone(), constants, round_id, round_end, lockup)
+            to_lockup_with_power(*deps, constants, round_id, round_end, lockup)
                 .current_voting_power
                 .u128()
         })
@@ -2561,13 +2561,12 @@ fn get_lock_count(deps: Deps<NeutronQuery>, user_address: Addr) -> usize {
 
 fn to_lockup_with_power(
     deps: Deps<NeutronQuery>,
-    env: Env,
     constants: &Constants,
     round_id: u64,
     round_end: Timestamp,
     lock_entry: LockEntry,
 ) -> LockEntryWithPower {
-    match validate_denom(deps, env.clone(), constants, lock_entry.funds.denom.clone()) {
+    match validate_denom(deps, round_id, constants, lock_entry.funds.denom.clone()) {
         Err(_) => {
             // If we fail to resove the denom, or the validator has dropped
             // from the top N, then this lockup has zero voting power.

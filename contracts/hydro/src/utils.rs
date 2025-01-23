@@ -64,7 +64,6 @@ pub fn load_constants_active_at_timestamp(
 //         After the extra cap duration expires, public cap becomes equal to the total cap.
 pub fn validate_locked_tokens_caps(
     deps: &DepsMut<NeutronQuery>,
-    env: &Env,
     constants: &Constants,
     current_round: u64,
     sender: &Addr,
@@ -105,7 +104,6 @@ pub fn validate_locked_tokens_caps(
         // is a user that should be allowed to use the extra_cap.
         if !can_user_lock_in_extra_cap(
             deps,
-            env,
             constants,
             current_round,
             sender,
@@ -131,7 +129,7 @@ pub fn validate_locked_tokens_caps(
 
     // If there is still room in extra_cap, then check if this
     // is a user that should be allowed to use the extra_cap.
-    if !can_user_lock_in_extra_cap(deps, env, constants, current_round, sender, amount_to_lock)? {
+    if !can_user_lock_in_extra_cap(deps, constants, current_round, sender, amount_to_lock)? {
         return lock_limit_reached_error;
     }
 
@@ -143,7 +141,6 @@ pub fn validate_locked_tokens_caps(
 
 fn can_user_lock_in_extra_cap(
     deps: &DepsMut<NeutronQuery>,
-    env: &Env,
     constants: &Constants,
     current_round: u64,
     sender: &Addr,
@@ -168,7 +165,6 @@ fn can_user_lock_in_extra_cap(
     let users_voting_power = Decimal::from_ratio(
         get_user_voting_power_for_past_round(
             &deps.as_ref(),
-            env,
             constants,
             sender.clone(),
             round_to_check,

@@ -2433,6 +2433,7 @@ fn max_locked_tokens_test() {
     let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
         activate_at: env.block.time,
         max_locked_tokens: Some(3000),
+        current_users_extra_cap: None,
         max_deployment_duration: None,
     };
     let res = execute(
@@ -2464,6 +2465,42 @@ fn max_locked_tokens_test() {
         .unwrap_err()
         .to_string()
         .contains("The limit for locking tokens has been reached. No more tokens can be locked."));
+
+    // increase the maximum allowed locked tokens by 500, starting in 1 hour
+    info = get_message_info(&deps.api, "addr0001", &[]);
+    let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
+        activate_at: env.block.time.plus_hours(1),
+        max_locked_tokens: Some(3500),
+        current_users_extra_cap: None,
+        max_deployment_duration: None,
+    };
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        update_max_locked_tokens_msg,
+    );
+    assert!(res.is_ok());
+
+    // try to lock additional 500 tokens before the time is reached to increase the cap
+    info = get_message_info(
+        &deps.api,
+        "addr0002",
+        &[Coin::new(500u64, IBC_DENOM_1.to_string())],
+    );
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
+    assert!(res.is_err());
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .contains("The limit for locking tokens has been reached. No more tokens can be locked."));
+
+    // advance the chain by 1h 0m 1s and verify user can lock additional 500 tokens
+    env.block.time = env.block.time.plus_seconds(3601);
+
+    // now a user can lock up to additional 500 tokens
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
+    assert!(res.is_ok());
 }
 
 #[test]
@@ -2525,6 +2562,7 @@ fn contract_pausing_test() {
         ExecuteMsg::UpdateConfig {
             activate_at: env.block.time,
             max_locked_tokens: None,
+            current_users_extra_cap: None,
             max_deployment_duration: None,
         },
         ExecuteMsg::Pause {},
