@@ -1865,7 +1865,7 @@ fn enrich_lockups_with_tranche_infos(
         .map(|tranche| tranche.unwrap().1.id)
         .collect::<Vec<u64>>();
 
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps, &env)?;
     let current_round_id = compute_current_round_id(&env, &constants)?;
 
     // enrich lockups with some info per tranche

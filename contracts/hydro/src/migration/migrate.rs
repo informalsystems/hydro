@@ -7,6 +7,7 @@ use cw2::{get_contract_version, set_contract_version};
 use neutron_sdk::bindings::msg::NeutronMsg;
 use neutron_sdk::bindings::query::NeutronQuery;
 
+use super::unreleased::migrate_v3_0_0_to_unreleased;
 use super::v3_0_0::MigrateMsgV3_0_0;
 
 pub const CONTRACT_VERSION_V1_1_0: &str = "1.1.0";
@@ -18,8 +19,8 @@ pub const CONTRACT_VERSION_UNRELEASED: &str = "4.0.0";
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(
-    deps: DepsMut<NeutronQuery>,
-    _env: Env,
+    mut deps: DepsMut<NeutronQuery>,
+    env: Env,
     _msg: MigrateMsgV3_0_0,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let contract_version = get_contract_version(deps.storage)?;
@@ -30,7 +31,7 @@ pub fn migrate(
         )));
     }
 
-    // no migration necessary from 2.1.0 to 3.0.0
+    migrate_v3_0_0_to_unreleased(&mut deps, env)?;
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 

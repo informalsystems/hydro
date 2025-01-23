@@ -7,9 +7,7 @@ use crate::contract::{
     scale_lockup_power,
 };
 use crate::msg::ProposalToLockups;
-use crate::state::{
-    RoundLockPowerSchedule, ValidatorInfo, Vote, CONSTANTS, VALIDATORS_INFO, VOTE_MAP,
-};
+use crate::state::{RoundLockPowerSchedule, ValidatorInfo, Vote, VALIDATORS_INFO, VOTE_MAP};
 use crate::testing::{
     get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds, IBC_DENOM_1,
     ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_3,

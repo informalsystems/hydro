@@ -290,7 +290,9 @@ fn test_compounder_cap() {
 
     // 5.  Round 1: Have the first known user unlock the expired lockup.
     let info = get_message_info(&deps.api, user1, &[]);
-    let msg = ExecuteMsg::UnlockTokens {};
+    let msg = ExecuteMsg::UnlockTokens {
+        lock_ids: Some(vec![0]),
+    };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok(), "error: {:?}", res);
     assert_eq!(res.unwrap().messages.len(), 1);
