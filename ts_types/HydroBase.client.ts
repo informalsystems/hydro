@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Uint128, Timestamp, Uint64, AllUserLockupsResponse, LockEntryWithPower, LockEntry, Coin, Decimal, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExecuteMsg, ProposalToLockups, TrancheInfo, ExpiredUserLockupsResponse, Addr, ICQManagersResponse, InstantiateMsg, LiquidityDeploymentResponse, LiquidityDeployment, ProposalResponse, Proposal, QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse, Tranche, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, ValidatorPowerRatioResponse, WhitelistAdminsResponse, WhitelistResponse } from "./HydroBase.types";
+import { Uint128, Timestamp, Uint64, AllUserLockupsResponse, LockEntryWithPower, LockEntry, Coin, AllUserLockupsWithTrancheInfosResponse, LockupWithPerTrancheInfo, PerTrancheLockupInfo, Decimal, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExecuteMsg, ProposalToLockups, TrancheInfo, ExpiredUserLockupsResponse, Addr, ICQManagersResponse, InstantiateMsg, LiquidityDeploymentResponse, LiquidityDeployment, ProposalResponse, Proposal, QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse, Tranche, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, ValidatorPowerRatioResponse, WhitelistAdminsResponse, WhitelistResponse } from "./HydroBase.types";
 export interface HydroBaseReadOnlyInterface {
   contractAddress: string;
   constants: () => Promise<ConstantsResponse>;
@@ -20,6 +20,29 @@ export interface HydroBaseReadOnlyInterface {
     limit: number;
     startFrom: number;
   }) => Promise<AllUserLockupsResponse>;
+  specificUserLockups: ({
+    address,
+    lockIds
+  }: {
+    address: string;
+    lockIds: number[];
+  }) => Promise<SpecificUserLockupsResponse>;
+  allUserLockupsWithTrancheInfos: ({
+    address,
+    limit,
+    startFrom
+  }: {
+    address: string;
+    limit: number;
+    startFrom: number;
+  }) => Promise<AllUserLockupsWithTrancheInfosResponse>;
+  specificUserLockupsWithTrancheInfos: ({
+    address,
+    lockIds
+  }: {
+    address: string;
+    lockIds: number[];
+  }) => Promise<SpecificUserLockupsWithTrancheInfosResponse>;
   expiredUserLockups: ({
     address,
     limit,
@@ -125,6 +148,9 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     this.constants = this.constants.bind(this);
     this.tranches = this.tranches.bind(this);
     this.allUserLockups = this.allUserLockups.bind(this);
+    this.specificUserLockups = this.specificUserLockups.bind(this);
+    this.allUserLockupsWithTrancheInfos = this.allUserLockupsWithTrancheInfos.bind(this);
+    this.specificUserLockupsWithTrancheInfos = this.specificUserLockupsWithTrancheInfos.bind(this);
     this.expiredUserLockups = this.expiredUserLockups.bind(this);
     this.userVotingPower = this.userVotingPower.bind(this);
     this.userVotes = this.userVotes.bind(this);
@@ -167,6 +193,51 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
         address,
         limit,
         start_from: startFrom
+      }
+    });
+  };
+  specificUserLockups = async ({
+    address,
+    lockIds
+  }: {
+    address: string;
+    lockIds: number[];
+  }): Promise<SpecificUserLockupsResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      specific_user_lockups: {
+        address,
+        lock_ids: lockIds
+      }
+    });
+  };
+  allUserLockupsWithTrancheInfos = async ({
+    address,
+    limit,
+    startFrom
+  }: {
+    address: string;
+    limit: number;
+    startFrom: number;
+  }): Promise<AllUserLockupsWithTrancheInfosResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      all_user_lockups_with_tranche_infos: {
+        address,
+        limit,
+        start_from: startFrom
+      }
+    });
+  };
+  specificUserLockupsWithTrancheInfos = async ({
+    address,
+    lockIds
+  }: {
+    address: string;
+    lockIds: number[];
+  }): Promise<SpecificUserLockupsWithTrancheInfosResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      specific_user_lockups_with_tranche_infos: {
+        address,
+        lock_ids: lockIds
       }
     });
   };
@@ -388,7 +459,11 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
     lockDuration: number;
     lockIds: number[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
-  unlockTokens: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  unlockTokens: ({
+    lockIds
+  }: {
+    lockIds?: number[];
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   createProposal: ({
     deploymentDuration,
     description,
@@ -544,9 +619,15 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
       }
     }, fee, memo, _funds);
   };
-  unlockTokens = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+  unlockTokens = async ({
+    lockIds
+  }: {
+    lockIds?: number[];
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      unlock_tokens: {}
+      unlock_tokens: {
+        lock_ids: lockIds
+      }
     }, fee, memo, _funds);
   };
   createProposal = async ({

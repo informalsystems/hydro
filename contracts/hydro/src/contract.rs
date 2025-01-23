@@ -20,12 +20,15 @@ use crate::lsm_integration::{
 };
 use crate::msg::{ExecuteMsg, InstantiateMsg, LiquidityDeployment, ProposalToLockups, TrancheInfo};
 use crate::query::{
-    AllUserLockupsResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    ICQManagersResponse, LiquidityDeploymentResponse, LockEntryWithPower, ProposalResponse,
-    QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
-    RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, TopNProposalsResponse,
-    TotalLockedTokensResponse, TranchesResponse, UserVotesResponse, UserVotingPowerResponse,
-    ValidatorPowerRatioResponse, WhitelistAdminsResponse, WhitelistResponse,
+    AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, ConstantsResponse,
+    CurrentRoundResponse, ExpiredUserLockupsResponse, ICQManagersResponse,
+    LiquidityDeploymentResponse, LockEntryWithPower, LockupWithPerTrancheInfo,
+    PerTrancheLockupInfo, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
+    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
+    RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse,
+    SpecificUserLockupsWithTrancheInfosResponse, TopNProposalsResponse, TotalLockedTokensResponse,
+    TranchesResponse, UserVotesResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
+    WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, get_total_power_for_proposal,
@@ -167,7 +170,7 @@ pub fn execute(
             lock_ids,
             lock_duration,
         } => refresh_lock_duration(deps, env, info, lock_ids, lock_duration),
-        ExecuteMsg::UnlockTokens {} => unlock_tokens(deps, env, info),
+        ExecuteMsg::UnlockTokens { lock_ids } => unlock_tokens(deps, env, info, lock_ids),
         ExecuteMsg::CreateProposal {
             round_id,
             tranche_id,
@@ -553,6 +556,7 @@ fn unlock_tokens(
     deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
+    lock_ids: Option<Vec<u64>>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = load_current_constants(&deps.as_ref(), &env)?;
 
@@ -560,11 +564,25 @@ fn unlock_tokens(
     // TODO: reenable this when we implement slashing
     // validate_previous_round_vote(&deps, &env, info.sender.clone())?;
 
-    // Iterate all locks for the caller and unlock them if lock_end < now
-    let locks =
+    let locks_iter =
         LOCKS_MAP
             .prefix(info.sender.clone())
             .range(deps.storage, None, None, Order::Ascending);
+
+    // If lock_ids is provided, filter locks to only those IDs
+    let locks: Vec<Result<(u64, LockEntry), StdError>> = if let Some(ids) = lock_ids {
+        locks_iter
+            .filter(|lock| {
+                if let Ok((id, _)) = lock {
+                    ids.contains(id)
+                } else {
+                    false
+                }
+            })
+            .collect()
+    } else {
+        locks_iter.collect()
+    };
 
     let mut to_delete = vec![];
     let mut total_unlocked_amount = Uint128::zero();
@@ -575,6 +593,7 @@ fn unlock_tokens(
 
     let mut unlocked_lock_ids = vec![];
     let mut unlocked_tokens = vec![];
+
     for lock in locks {
         let (lock_id, lock_entry) = lock?;
         if lock_entry.lock_end < env.block.time {
@@ -1634,6 +1653,19 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         } => to_json_binary(&query_all_user_lockups(
             deps, env, address, start_from, limit,
         )?),
+        QueryMsg::SpecificUserLockups { address, lock_ids } => {
+            to_json_binary(&query_specific_user_lockups(deps, env, address, lock_ids)?)
+        }
+        QueryMsg::AllUserLockupsWithTrancheInfos {
+            address,
+            start_from,
+            limit,
+        } => to_json_binary(&query_all_user_lockups_with_tranche_infos(
+            deps, env, address, start_from, limit,
+        )?),
+        QueryMsg::SpecificUserLockupsWithTrancheInfos { address, lock_ids } => to_json_binary(
+            &query_specific_user_lockups_with_tranche_infos(deps, env, address, lock_ids)?,
+        ),
         QueryMsg::ExpiredUserLockups {
             address,
             start_from,
@@ -1761,20 +1793,17 @@ pub fn query_constants(deps: Deps<NeutronQuery>, env: Env) -> StdResult<Constant
     })
 }
 
-pub fn query_all_user_lockups(
+fn get_user_lockups_with_predicate(
     deps: Deps<NeutronQuery>,
     env: Env,
     address: String,
+    predicate: impl FnMut(&LockEntry) -> bool,
     start_from: u32,
     limit: u32,
-) -> StdResult<AllUserLockupsResponse> {
-    let raw_lockups = query_user_lockups(
-        deps,
-        deps.api.addr_validate(&address)?,
-        |_| true,
-        start_from,
-        limit,
-    );
+) -> StdResult<Vec<LockEntryWithPower>> {
+    let addr = deps.api.addr_validate(&address)?;
+
+    let raw_lockups = query_user_lockups(deps, addr, predicate, start_from, limit);
 
     let constants = load_current_constants(&deps, &env)?;
     let current_round_id = compute_current_round_id(&env, &constants)?;
@@ -1788,8 +1817,154 @@ pub fn query_all_user_lockups(
         })
         .collect();
 
-    Ok(AllUserLockupsResponse {
-        lockups: enriched_lockups,
+    Ok(enriched_lockups)
+}
+
+pub fn query_all_user_lockups(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    address: String,
+    start_from: u32,
+    limit: u32,
+) -> StdResult<AllUserLockupsResponse> {
+    let lockups = get_user_lockups_with_predicate(deps, env, address, |_| true, start_from, limit)?;
+    Ok(AllUserLockupsResponse { lockups })
+}
+
+pub fn query_specific_user_lockups(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    address: String,
+    lock_ids: Vec<u64>,
+) -> StdResult<SpecificUserLockupsResponse> {
+    let lock_ids_set: HashSet<u64> = lock_ids.into_iter().collect();
+
+    let lockups = get_user_lockups_with_predicate(
+        deps,
+        env,
+        address,
+        |lock| lock_ids_set.contains(&lock.lock_id),
+        0,
+        lock_ids_set.len() as u32,
+    )?;
+
+    Ok(SpecificUserLockupsResponse { lockups })
+}
+
+// Helper function to handle the common logic for both query functions
+fn enrich_lockups_with_tranche_infos(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    address: String,
+    lockups: Vec<LockEntryWithPower>,
+) -> StdResult<Vec<LockupWithPerTrancheInfo>> {
+    let converted_addr = deps.api.addr_validate(&address)?;
+
+    let tranche_ids = TRANCHE_MAP
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|tranche| tranche.unwrap().1.id)
+        .collect::<Vec<u64>>();
+
+    let constants = CONSTANTS.load(deps.storage)?;
+    let current_round_id = compute_current_round_id(&env, &constants)?;
+
+    // enrich lockups with some info per tranche
+    let lockups_with_per_tranche_info: Vec<LockupWithPerTrancheInfo> = lockups
+        .iter()
+        .map(|lock| {
+            // iterate all tranches
+            let tranche_infos = tranche_ids
+                .iter()
+                .filter_map(|tranche_id| {
+                    // add which proposal the lock voted for
+                    let voted_for_proposal_res: StdResult<Option<u64>> = VOTE_MAP
+                        .may_load(
+                            deps.storage,
+                            (
+                                (current_round_id, *tranche_id),
+                                converted_addr.clone(),
+                                lock.lock_entry.lock_id,
+                            ),
+                        )
+                        .map(|vote| vote.map(|v| v.prop_id));
+
+                    // if there was an error in the store while loading the vote for the lockup,
+                    // we filter out the tranche by returning None
+                    if voted_for_proposal_res.is_err() {
+                        return None;
+                    }
+
+                    let voted_for_proposal = voted_for_proposal_res.unwrap();
+
+                    let next_round_voting_allowed_res: StdResult<u64> =
+                        if voted_for_proposal.is_some() {
+                            // if the proposal voted in this round, we ignore the VOTING_ALLOWED_ROUND map,
+                            // since it just contains the future information on when the lockup will be able to vote again
+                            // if it doesn't change the vote, but it can vote in the current round either way
+                            Ok(current_round_id)
+                        } else {
+                            // if the lockup has not voted in this round, VOTING_ALLOWED_ROUND does contain
+                            // current information on whether the lockup can vote right now or not
+                            VOTING_ALLOWED_ROUND
+                                .may_load(deps.storage, (*tranche_id, lock.lock_entry.lock_id))
+                                .map(|voting_allowed_round| {
+                                    voting_allowed_round.unwrap_or(current_round_id)
+                                })
+                        };
+
+                    // if there was an error in the store while loading the next allowed round for voting,
+                    // we filter out the tranche by returning None
+                    if next_round_voting_allowed_res.is_err() {
+                        return None;
+                    }
+
+                    let next_round_voting_allowed = next_round_voting_allowed_res.unwrap();
+
+                    // return the info for this tranche
+                    Some(PerTrancheLockupInfo {
+                        tranche_id: *tranche_id,
+                        next_round_lockup_can_vote: next_round_voting_allowed,
+                        current_voted_on_proposal: voted_for_proposal,
+                    })
+                })
+                .collect::<Vec<PerTrancheLockupInfo>>();
+            // combine the info for all tranches
+            LockupWithPerTrancheInfo {
+                lock_with_power: lock.clone(),
+                per_tranche_info: tranche_infos,
+            }
+        })
+        .collect();
+
+    // return the enriched lockups
+    Ok(lockups_with_per_tranche_info)
+}
+
+pub fn query_all_user_lockups_with_tranche_infos(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    address: String,
+    start_from: u32,
+    limit: u32,
+) -> StdResult<AllUserLockupsWithTrancheInfosResponse> {
+    let lockups = query_all_user_lockups(deps, env.clone(), address.clone(), start_from, limit)?;
+    let enriched_lockups = enrich_lockups_with_tranche_infos(deps, env, address, lockups.lockups)?;
+    Ok(AllUserLockupsWithTrancheInfosResponse {
+        lockups_with_per_tranche_infos: enriched_lockups,
+    })
+}
+
+pub fn query_specific_user_lockups_with_tranche_infos(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    address: String,
+    lock_ids: Vec<u64>,
+) -> StdResult<SpecificUserLockupsWithTrancheInfosResponse> {
+    let lockups = query_specific_user_lockups(deps, env.clone(), address.clone(), lock_ids)?;
+    let enriched_lockups = enrich_lockups_with_tranche_infos(deps, env, address, lockups.lockups)?;
+
+    Ok(SpecificUserLockupsWithTrancheInfosResponse {
+        lockups_with_per_tranche_infos: enriched_lockups,
     })
 }
 

@@ -24,6 +24,18 @@ export interface Coin {
   amount: Uint128;
   denom: string;
 }
+export interface AllUserLockupsWithTrancheInfosResponse {
+  lockups_with_per_tranche_infos: LockupWithPerTrancheInfo[];
+}
+export interface LockupWithPerTrancheInfo {
+  lock_with_power: LockEntryWithPower;
+  per_tranche_info: PerTrancheLockupInfo[];
+}
+export interface PerTrancheLockupInfo {
+  current_voted_on_proposal?: number | null;
+  next_round_lockup_can_vote: number;
+  tranche_id: number;
+}
 export type Decimal = string;
 export interface ConstantsResponse {
   constants: Constants;
@@ -62,7 +74,9 @@ export type ExecuteMsg = {
     lock_ids: number[];
   };
 } | {
-  unlock_tokens: {};
+  unlock_tokens: {
+    lock_ids?: number[] | null;
+  };
 } | {
   create_proposal: {
     deployment_duration: number;
@@ -205,6 +219,22 @@ export type QueryMsg = {
     start_from: number;
   };
 } | {
+  specific_user_lockups: {
+    address: string;
+    lock_ids: number[];
+  };
+} | {
+  all_user_lockups_with_tranche_infos: {
+    address: string;
+    limit: number;
+    start_from: number;
+  };
+} | {
+  specific_user_lockups_with_tranche_infos: {
+    address: string;
+    lock_ids: number[];
+  };
+} | {
   expired_user_lockups: {
     address: string;
     limit: number;
@@ -292,6 +322,12 @@ export interface RoundTotalVotingPowerResponse {
 }
 export interface RoundTrancheLiquidityDeploymentsResponse {
   liquidity_deployments: LiquidityDeployment[];
+}
+export interface SpecificUserLockupsResponse {
+  lockups: LockEntryWithPower[];
+}
+export interface SpecificUserLockupsWithTrancheInfosResponse {
+  lockups_with_per_tranche_infos: LockupWithPerTrancheInfo[];
 }
 export interface TopNProposalsResponse {
   proposals: Proposal[];
