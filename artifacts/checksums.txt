@@ -1,2 +1,3 @@
+5ead182fb85fccf8310903b1e7838d3c01de109ed84de31455fa4052def35dd8  fund_calculation.wasm
 2bf5874dcfd7cf369ec908ece734ed1b34f5cfa4b0ebe6400d218801c343730a  hydro.wasm
 fc14f3b75361e6518c45f51a66d14ba91ec13c489ce0afb7c597c92fe43bca9e  tribute.wasm

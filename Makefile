@@ -33,27 +33,21 @@ compile-inner:
 		--mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
 		cosmwasm/optimizer:0.16.0
 
+CONTRACTS := hydro tribute fund_calculation
+
 schema:
 	# to install ts tooling see here: https://docs.cosmology.zone/ts-codegen
-	cd contracts/hydro && cargo run --bin hydro_schema
-	cd contracts/tribute && cargo run --bin tribute_schema
+	$(foreach contract,$(CONTRACTS),cd contracts/$(contract) && cargo run --bin $(contract)_schema && cd ../../;)
 
+	$(foreach contract,$(CONTRACTS),\
+		cosmwasm-ts-codegen generate \
+		--plugin client \
+		--schema ./contracts/$(contract)/schema \
+		--out ./ts_types \
+		--name $(shell echo '$(contract)' | sed 's/\b\(.\)/\u\1/g')Base \
+		--no-bundle;)
 
-	cosmwasm-ts-codegen generate \
-          --plugin client \
-          --schema ./contracts/hydro/schema \
-          --out ./ts_types \
-          --name HydroBase \
-          --no-bundle
-	cosmwasm-ts-codegen generate \
-          --plugin client \
-          --schema ./contracts/tribute/schema \
-          --out ./ts_types \
-          --name TributeBase \
-          --no-bundle
-
-	cd contracts/hydro/schema && python3 generate_full_schema.py
-	cd contracts/tribute/schema && python3 generate_full_schema.py
+	$(foreach contract,$(CONTRACTS),cd contracts/$(contract)/schema && python3 generate_full_schema.py && cd ../../../;)
 
 build-docker-relayer:
 	docker build -t neutron-org/neutron-query-relayer https://github.com/neutron-org/neutron-query-relayer.git#main
