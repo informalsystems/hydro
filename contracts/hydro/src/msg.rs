@@ -72,6 +72,9 @@ pub enum ExecuteMsg {
         current_users_extra_cap: Option<u128>,
         max_deployment_duration: Option<u64>,
     },
+    DeleteConfigs {
+        timestamps: Vec<Timestamp>,
+    },
     Pause {},
     AddTranche {
         tranche: TrancheInfo,

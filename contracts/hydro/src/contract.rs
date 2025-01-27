@@ -211,6 +211,7 @@ pub fn execute(
             current_users_extra_cap,
             max_deployment_duration,
         ),
+        ExecuteMsg::DeleteConfigs { timestamps } => delete_configs(deps, &env, info, timestamps),
         ExecuteMsg::Pause {} => pause_contract(deps, &env, info),
         ExecuteMsg::AddTranche { tranche } => add_tranche(deps, env, info, tranche),
         ExecuteMsg::EditTranche {
@@ -1161,13 +1162,16 @@ fn update_config(
         )));
     }
 
+    // Validate that the contract is not paused based on the current constants
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
+    validate_contract_is_not_paused(&constants)?;
+
     // Load the Constants active at the given timestamp and base the updates on them.
     // This allows us to update the Constants in arbitrary order. E.g. at the similar block
     // height we can schedule multiple updates for the future, where each new Constants will
     // have the changes introduced by earlier ones.
     let mut constants = load_constants_active_at_timestamp(&deps.as_ref(), activate_at)?.1;
 
-    validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
     let mut response = Response::new()
@@ -1198,6 +1202,45 @@ fn update_config(
     CONSTANTS.save(deps.storage, activate_at.nanos(), &constants)?;
 
     Ok(response)
+}
+
+fn delete_configs(
+    deps: DepsMut<NeutronQuery>,
+    env: &Env,
+    info: MessageInfo,
+    timestamps: Vec<Timestamp>,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = load_current_constants(&deps.as_ref(), env)?;
+
+    validate_contract_is_not_paused(&constants)?;
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    let timestamps_to_delete: Vec<u64> = timestamps
+        .into_iter()
+        .filter_map(|timestamp| {
+            if CONSTANTS.has(deps.storage, timestamp.nanos()) {
+                Some(timestamp.nanos())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    for timestamp in &timestamps_to_delete {
+        CONSTANTS.remove(deps.storage, *timestamp);
+    }
+
+    Ok(Response::new()
+        .add_attribute("action", "delete_configs")
+        .add_attribute("sender", info.sender)
+        .add_attribute(
+            "deleted_configs_at_timestamps",
+            timestamps_to_delete
+                .into_iter()
+                .map(|timestamp| timestamp.to_string())
+                .collect::<Vec<String>>()
+                .join(", "),
+        ))
 }
 
 // Pause:

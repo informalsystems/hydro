@@ -6,7 +6,7 @@ use crate::contract::{
     query_whitelist_admins, MAX_LOCK_ENTRIES,
 };
 use crate::msg::{ProposalToLockups, TrancheInfo};
-use crate::state::{LockEntry, RoundLockPowerSchedule, Vote, USER_LOCKS, VOTE_MAP};
+use crate::state::{LockEntry, RoundLockPowerSchedule, Vote, CONSTANTS, USER_LOCKS, VOTE_MAP};
 use crate::testing_lsm_integration::set_validator_infos_for_round;
 use crate::testing_mocks::{
     denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
@@ -2692,6 +2692,57 @@ fn max_locked_tokens_test() {
 }
 
 #[test]
+fn delete_configs_test() {
+    let first_round_start_time = Timestamp::from_nanos(1737540000000000000);
+    let initial_block_height = 19_185_000;
+
+    let (mut deps, mut env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    let info = get_message_info(&deps.api, "addr0000", &[]);
+
+    env.block.time = first_round_start_time;
+    env.block.height = initial_block_height;
+
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.whitelist_admins = vec![get_address_as_str(&deps.api, "addr0000")];
+    msg.first_round_start = first_round_start_time;
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    let mut configs_timestamps = vec![];
+    for i in 1..=5 {
+        let timestamp = env.block.time.plus_days(i);
+        configs_timestamps.push(timestamp);
+
+        let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
+            activate_at: timestamp,
+            max_locked_tokens: Some((i * 1000) as u128),
+            current_users_extra_cap: None,
+            max_deployment_duration: None,
+        };
+        let res = execute(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            update_max_locked_tokens_msg.clone(),
+        );
+        assert!(res.is_ok());
+    }
+
+    env.block.time = env.block.time.plus_days(2);
+
+    let msg = ExecuteMsg::DeleteConfigs {
+        timestamps: configs_timestamps.clone(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    for timestamp in configs_timestamps {
+        assert!(!CONSTANTS.has(&deps.storage, timestamp.nanos()));
+    }
+}
+
+#[test]
 fn contract_pausing_test() {
     let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let mut info = get_message_info(&deps.api, "addr0000", &[]);
@@ -2753,6 +2804,7 @@ fn contract_pausing_test() {
             current_users_extra_cap: None,
             max_deployment_duration: None,
         },
+        ExecuteMsg::DeleteConfigs { timestamps: vec![] },
         ExecuteMsg::Pause {},
         ExecuteMsg::AddTranche {
             tranche: TrancheInfo {
