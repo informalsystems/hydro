@@ -402,7 +402,7 @@ pub fn initialize_validator_store_helper(
     }
 
     // copy the information from the previous round
-    let val_infos = load_validators_infos(storage, round_id - 1)?;
+    let val_infos = load_validators_infos(storage, round_id - 1);
 
     for val_info in val_infos {
         let address = val_info.clone().address;
@@ -426,10 +426,13 @@ pub fn initialize_validator_store_helper(
 }
 
 // load_validators_infos needs to be its own function to borrow the storage
-fn load_validators_infos(storage: &dyn Storage, round_id: u64) -> StdResult<Vec<ValidatorInfo>> {
+pub fn load_validators_infos(storage: &dyn Storage, round_id: u64) -> Vec<ValidatorInfo> {
     VALIDATORS_INFO
         .prefix(round_id)
         .range(storage, None, None, Order::Ascending)
-        .map(|val_info_res| val_info_res.map(|val_info| val_info.1))
+        .filter_map(|val_info| match val_info {
+            Err(_) => None,
+            Ok(val_info) => Some(val_info.1),
+        })
         .collect()
 }

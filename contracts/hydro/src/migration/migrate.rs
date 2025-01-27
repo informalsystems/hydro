@@ -13,7 +13,7 @@ use super::v3_0_0::MigrateMsgV3_0_0;
 pub const CONTRACT_VERSION_V1_1_0: &str = "1.1.0";
 pub const CONTRACT_VERSION_V2_0_1: &str = "2.0.1";
 pub const CONTRACT_VERSION_V2_0_2: &str = "2.0.2";
-pub const CONTRACT_VERSION_V2_1_0: &str = "2.0.2";
+pub const CONTRACT_VERSION_V2_1_0: &str = "2.1.0";
 pub const CONTRACT_VERSION_V3_0_0: &str = "3.0.0";
 pub const CONTRACT_VERSION_UNRELEASED: &str = "4.0.0";
 
