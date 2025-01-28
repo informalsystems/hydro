@@ -38,23 +38,23 @@ const INITIAL_BLOCK_HEIGHT: u64 = 19_185_000;
 const BLOCKS_PER_DAY: u64 = 35_000;
 
 // 1.  Round 0: Have 3 users fill the total cap by locking 3 different tokens for different duration (1, 6, 12 rounds).
-// 2.  Round 0: Update config to increase total_cap and set extra_cap starting from round 1.
-// 3.  Round 0: Update config to close the extra_cap after some time in round 1.
+// 2.  Round 0: Update config to increase total_cap and set known_users_cap starting from round 1.
+// 3.  Round 0: Update config to close the known_users_cap after some time in round 1.
 // 4.  Round 0: Update all validator power ratios to verify that the total voting power changes, and users
 //     voting power also gets updated proportinally.
 // 5.  Round 1: Have the first known user unlock the expired lockup, to test voting power computation for previous round.
 // 6.  Round 1: Have the first known user lock some tokens in public_cap, then a completely new user lock tokens
 //     in public cap (try more than allowed, then lock below public_cap).
-// 7.  Round 1: Have the known user from previous step lock more to fill the public_cap and some more into extra_cap.
-// 8.  Round 1: Have the same known user try to lock in extra_cap more than it should be allowed.
-// 9.  Round 1: Have the same known user lock the most it should be allowed in the extra_cap.
-// 10. Round 1: Have other two known users lock as much as they should be allowed in the extra_cap.
-// 11. Round 1: Update config to increase total_cap and set extra_cap starting from round 2.
-// 12. Round 1: Update config to close the extra_cap after some time in round 2.
+// 7.  Round 1: Have the known user from previous step lock more to fill the public_cap and some more into known_users_cap.
+// 8.  Round 1: Have the same known user try to lock in known_users_cap more than it should be allowed.
+// 9.  Round 1: Have the same known user lock the most it should be allowed in the known_users_cap.
+// 10. Round 1: Have other two known users lock as much as they should be allowed in the known_users_cap.
+// 11. Round 1: Update config to increase total_cap and set known_users_cap starting from round 2.
+// 12. Round 1: Update config to close the known_users_cap after some time in round 2.
 // 13. Round 2: Have a completely new user lock tokens to fill up the public_cap, then try to lock more.
-// 14. Round 2: Have a known user lock maximum allowed in extra cap.
-// 15. Round 2: Advance the chain to end the extra_cap duration and have a user from step #13 lock
-//     additional amount that matches the entire amount previously reserved for extra_cap.
+// 14. Round 2: Have a known user lock maximum allowed in known users cap.
+// 15. Round 2: Advance the chain to end the known_users_cap duration and have a user from step #13 lock
+//     additional amount that matches the entire amount previously reserved for known_users_cap.
 #[test]
 fn test_compounder_cap() {
     let whitelist_admin = "addr0000";
@@ -162,7 +162,7 @@ fn test_compounder_cap() {
         assert_eq!(res.unwrap().to_uint_ceil().u128(), expected_round_power.1);
     }
 
-    // 2.  Round 0: Update config to increase total_cap and set extra_cap starting from round 1.
+    // 2.  Round 0: Update config to increase total_cap and set known_users_cap starting from round 1.
 
     // Advance the chain by 1 day
     env.block.time = env.block.time.plus_days(1);
@@ -171,14 +171,14 @@ fn test_compounder_cap() {
     let msg = ExecuteMsg::UpdateConfig {
         activate_at: FIRST_ROUND_START.plus_nanos(ROUND_LENGTH + 1),
         max_locked_tokens: Some(40000),
-        current_users_extra_cap: Some(2000),
+        known_users_cap: Some(2000),
         max_deployment_duration: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
     assert!(res.is_ok(), "error: {:?}", res);
 
-    // 3.  Round 0: Update config to close the extra_cap after some time in round 1.
+    // 3.  Round 0: Update config to close the known_users_cap after some time in round 1.
 
     // Advance the chain by 1 day
     env.block.time = env.block.time.plus_days(1);
@@ -187,7 +187,7 @@ fn test_compounder_cap() {
     let msg = ExecuteMsg::UpdateConfig {
         activate_at: FIRST_ROUND_START.plus_nanos(ROUND_LENGTH + TEN_DAYS_IN_NANOS + 1),
         max_locked_tokens: None,
-        current_users_extra_cap: Some(0),
+        known_users_cap: Some(0),
         max_deployment_duration: None,
     };
 
@@ -317,7 +317,9 @@ fn test_compounder_cap() {
             user4,
             LOCK_EPOCH_LENGTH,
             Coin::new(8001u64, IBC_DENOM_1.to_string()),
-            Some("The limit for locking tokens has been reached. No more tokens can be locked."),
+            Some(
+                "Can not lock 1 tokens in known users cap. User had zero voting power in previous round.",
+            ),
         ),
         // Completely new user locks 5_000 tokens in public_cap; the total locked tokens will be 35_000
         (
@@ -338,35 +340,35 @@ fn test_compounder_cap() {
         vec![(user1_addr.clone(), 0), (user4_addr.clone(), 0)],
     );
 
-    // 7.  Round 1: Have the known user from previous step lock more to fill the public_cap and some more into extra_cap.
-    // 8.  Round 1: Have the same user try to lock in extra_cap more than it should be allowed.
-    // 9.  Round 1: Have the same user lock the most it should be allowed in the extra_cap.
-    // 10. Round 1: Have other two known users lock as much as they should be allowed in the extra_cap.
+    // 7.  Round 1: Have the known user from previous step lock more to fill the public_cap and some more into known_users_cap.
+    // 8.  Round 1: Have the same user try to lock in known_users_cap more than it should be allowed.
+    // 9.  Round 1: Have the same user lock the most it should be allowed in the known_users_cap.
+    // 10. Round 1: Have other two known users lock as much as they should be allowed in the known_users_cap.
 
     // Advance the chain by 1 day
     env.block.time = env.block.time.plus_days(1);
     env.block.height += BLOCKS_PER_DAY;
 
     let locking_infos = vec![
-        // User 1 locks 3100 tokens, 3000 in public_cap, 100 in extra_cap
+        // User 1 locks 3100 tokens, 3000 in public_cap, 100 in known_users_cap
         // After this action the total locked tokens will be 38_100
-        // 38_000 locked in public_cap and 100 locked in extra_cap
+        // 38_000 locked in public_cap and 100 locked in known_users_cap
         (
             user1,
             LOCK_EPOCH_LENGTH,
             Coin::new(3100u64, IBC_DENOM_1.to_string()),
             None,
         ),
-        // User 1 tries to lock in extra_cap more than it should be allowed.
+        // User 1 tries to lock in known_users_cap more than it should be allowed.
         // By the voting power in previous round it should be allowed to
         // lock 285 tokens, and in previous step it already locked 100.
         (
             user1,
             LOCK_EPOCH_LENGTH,
             Coin::new(186u64, IBC_DENOM_1.to_string()),
-            Some("The limit for locking tokens has been reached. No more tokens can be locked."),
+            Some("Can not lock 186 tokens in known users cap. User reached the personal cap for locking tokens in the known users cap."),
         ),
-        // User 1 locks in extra_cap the maximum it should be allowed (285)
+        // User 1 locks in known_users_cap the maximum it should be allowed (285)
         // After this action the total locked tokens will be 38_285
         (
             user1,
@@ -374,7 +376,7 @@ fn test_compounder_cap() {
             Coin::new(185u64, IBC_DENOM_1.to_string()),
             None,
         ),
-        // User 2 locks in extra_cap the maximum it should be allowed (571)
+        // User 2 locks in known_users_cap the maximum it should be allowed (571)
         // After this action the total locked tokens will be 38_856
         (
             user2,
@@ -382,7 +384,7 @@ fn test_compounder_cap() {
             Coin::new(571u64, IBC_DENOM_1.to_string()),
             None,
         ),
-        // User 3 locks in extra_cap the maximum it should be allowed (1142)
+        // User 3 locks in known_users_cap the maximum it should be allowed (1142)
         // After this action the total locked tokens will be 39_998
         (
             user3,
@@ -406,7 +408,7 @@ fn test_compounder_cap() {
         ],
     );
 
-    // 11. Round 1: Update config to increase total_cap and set extra_cap starting from round 2.
+    // 11. Round 1: Update config to increase total_cap and set known_users_cap starting from round 2.
 
     // Advance the chain by 1 day
     env.block.time = env.block.time.plus_days(1);
@@ -415,18 +417,18 @@ fn test_compounder_cap() {
     let msg = ExecuteMsg::UpdateConfig {
         activate_at: FIRST_ROUND_START.plus_nanos(2 * ROUND_LENGTH + 1),
         max_locked_tokens: Some(50000),
-        current_users_extra_cap: Some(5000),
+        known_users_cap: Some(5000),
         max_deployment_duration: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
     assert!(res.is_ok(), "error: {:?}", res);
 
-    // 12. Round 1: Update config to close the extra_cap after some time in round 2.
+    // 12. Round 1: Update config to close the known_users_cap after some time in round 2.
     let msg = ExecuteMsg::UpdateConfig {
         activate_at: FIRST_ROUND_START.plus_nanos(2 * ROUND_LENGTH + TEN_DAYS_IN_NANOS + 1),
         max_locked_tokens: None,
-        current_users_extra_cap: Some(0),
+        known_users_cap: Some(0),
         max_deployment_duration: None,
     };
 
@@ -438,7 +440,7 @@ fn test_compounder_cap() {
     env.block.height = INITIAL_BLOCK_HEIGHT + BLOCKS_PER_DAY * 61;
 
     // 13. Round 2: Have a completely new user lock tokens to fill up the public_cap, then try to lock more.
-    // 14. Round 2: Have a known user lock maximum allowed in extra cap.
+    // 14. Round 2: Have a known user lock maximum allowed in known users cap.
 
     let locking_infos = vec![
         // Completely new user locks up to the public_cap
@@ -449,15 +451,17 @@ fn test_compounder_cap() {
             Coin::new(5002u64, IBC_DENOM_1.to_string()),
             None,
         ),
-        // Then the same user tries to lock more than allowed in public_cap, while extra_cap is still active
+        // Then the same user tries to lock more than allowed in public_cap, while known_users_cap is still active
         (
             user5,
             LOCK_EPOCH_LENGTH,
             Coin::new(1u64, IBC_DENOM_1.to_string()),
-            Some("The limit for locking tokens has been reached. No more tokens can be locked."),
+            Some(
+                "Can not lock 1 tokens in known users cap. User had zero voting power in previous round.",
+            ),
         ),
         // User 4 had voting power 4_500 out of 71_996 total voting power in round 1
-        // With the extra_cap of 5_000, it is allowed to lock 312 tokens in it
+        // With the known_users_cap of 5_000, it is allowed to lock 312 tokens in it
         // After this action total locked tokens will be 45_312
         (
             user4,
@@ -469,8 +473,8 @@ fn test_compounder_cap() {
 
     execute_locking_and_verify(&mut deps, &env, locking_infos);
 
-    // 15. Round 2: Advance the chain to end the extra_cap duration and have a user from step #13 lock
-    //     additional amount that matches the entire amount previously reserved for extra_cap.
+    // 15. Round 2: Advance the chain to end the known_users_cap duration and have a user from step #13 lock
+    //     additional amount that matches the entire amount previously reserved for known_users_cap.
     env.block.time = FIRST_ROUND_START.plus_nanos(2 * ROUND_LENGTH + TEN_DAYS_IN_NANOS + 1);
     env.block.height = INITIAL_BLOCK_HEIGHT + BLOCKS_PER_DAY * 70;
 

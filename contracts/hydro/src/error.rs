@@ -26,3 +26,7 @@ pub enum ContractError {
     #[error("Paused")]
     Paused,
 }
+
+pub fn new_generic_error(msg: impl Into<String>) -> ContractError {
+    ContractError::Std(StdError::generic_err(msg))
+}

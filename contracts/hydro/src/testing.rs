@@ -2603,7 +2603,7 @@ fn max_locked_tokens_test() {
     let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
         activate_at: env.block.time.minus_hours(1),
         max_locked_tokens: Some(3000),
-        current_users_extra_cap: None,
+        known_users_cap: None,
         max_deployment_duration: None,
     };
     let res = execute(
@@ -2621,7 +2621,7 @@ fn max_locked_tokens_test() {
     let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
         activate_at: env.block.time,
         max_locked_tokens: Some(3000),
-        current_users_extra_cap: None,
+        known_users_cap: None,
         max_deployment_duration: None,
     };
     let res = execute(
@@ -2659,7 +2659,7 @@ fn max_locked_tokens_test() {
     let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
         activate_at: env.block.time.plus_hours(1),
         max_locked_tokens: Some(3500),
-        current_users_extra_cap: None,
+        known_users_cap: None,
         max_deployment_duration: None,
     };
     let res = execute(
@@ -2717,7 +2717,7 @@ fn delete_configs_test() {
         let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
             activate_at: timestamp,
             max_locked_tokens: Some((i * 1000) as u128),
-            current_users_extra_cap: None,
+            known_users_cap: None,
             max_deployment_duration: None,
         };
         let res = execute(
@@ -2801,7 +2801,7 @@ fn contract_pausing_test() {
         ExecuteMsg::UpdateConfig {
             activate_at: env.block.time,
             max_locked_tokens: None,
-            current_users_extra_cap: None,
+            known_users_cap: None,
             max_deployment_duration: None,
         },
         ExecuteMsg::DeleteConfigs { timestamps: vec![] },

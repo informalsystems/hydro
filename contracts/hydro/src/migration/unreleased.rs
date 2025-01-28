@@ -31,7 +31,7 @@ pub fn migrate_v3_0_0_to_unreleased(
 }
 
 // Convert CONSTANTS storage from Item to Map and insert single constants instance
-// under the timestamp of the first round start time, and set the extra_cap to zero.
+// under the timestamp of the first round start time, and set the known_users_cap to zero.
 fn migrate_constants(deps: &mut DepsMut<NeutronQuery>) -> StdResult<Constants> {
     const OLD_CONSTANTS: Item<ConstantsV3_0_0> = Item::new("constants");
     let old_constants = OLD_CONSTANTS.load(deps.storage)?;
@@ -48,7 +48,7 @@ fn migrate_constants(deps: &mut DepsMut<NeutronQuery>) -> StdResult<Constants> {
         paused: old_constants.paused,
         max_deployment_duration: old_constants.max_deployment_duration,
         round_lock_power_schedule: old_constants.round_lock_power_schedule,
-        current_users_extra_cap: 0, // set the extra cap to 0 during the migration
+        known_users_cap: 0, // set the known users cap to 0 during the migration
     };
 
     OLD_CONSTANTS.remove(deps.storage);

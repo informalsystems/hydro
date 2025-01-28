@@ -82,7 +82,7 @@ pub fn instantiate(
         lock_epoch_length: msg.lock_epoch_length,
         first_round_start: msg.first_round_start,
         max_locked_tokens: msg.max_locked_tokens.u128(),
-        current_users_extra_cap: 0,
+        known_users_cap: 0,
         max_validator_shares_participating: msg.max_validator_shares_participating,
         hub_connection_id: msg.hub_connection_id,
         hub_transfer_channel_id: msg.hub_transfer_channel_id,
@@ -200,7 +200,7 @@ pub fn execute(
         ExecuteMsg::UpdateConfig {
             activate_at,
             max_locked_tokens,
-            current_users_extra_cap,
+            known_users_cap,
             max_deployment_duration,
         } => update_config(
             deps,
@@ -208,7 +208,7 @@ pub fn execute(
             info,
             activate_at,
             max_locked_tokens,
-            current_users_extra_cap,
+            known_users_cap,
             max_deployment_duration,
         ),
         ExecuteMsg::DeleteConfigs { timestamps } => delete_configs(deps, &env, info, timestamps),
@@ -1153,7 +1153,7 @@ fn update_config(
     info: MessageInfo,
     activate_at: Timestamp,
     max_locked_tokens: Option<u128>,
-    current_users_extra_cap: Option<u128>,
+    known_users_cap: Option<u128>,
     max_deployment_duration: Option<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     if env.block.time > activate_at {
@@ -1183,12 +1183,9 @@ fn update_config(
         response = response.add_attribute("new_max_locked_tokens", max_locked_tokens.to_string());
     }
 
-    if let Some(current_users_extra_cap) = current_users_extra_cap {
-        constants.current_users_extra_cap = current_users_extra_cap;
-        response = response.add_attribute(
-            "new_current_users_extra_cap",
-            current_users_extra_cap.to_string(),
-        );
+    if let Some(known_users_cap) = known_users_cap {
+        constants.known_users_cap = known_users_cap;
+        response = response.add_attribute("new_known_users_cap", known_users_cap.to_string());
     }
 
     if let Some(max_deployment_duration) = max_deployment_duration {

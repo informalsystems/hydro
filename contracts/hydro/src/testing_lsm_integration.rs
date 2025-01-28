@@ -43,7 +43,7 @@ fn get_default_constants() -> crate::state::Constants {
         lock_epoch_length: 1,
         first_round_start: Timestamp::from_seconds(0),
         max_locked_tokens: 1,
-        current_users_extra_cap: 0,
+        known_users_cap: 0,
         paused: false,
         max_validator_shares_participating: 2,
         hub_connection_id: "connection-0".to_string(),

@@ -21,7 +21,7 @@ fn load_current_constants_test() {
         lock_epoch_length: ONE_DAY_IN_NANO_SECONDS,
         first_round_start: Timestamp::from_seconds(0),
         max_locked_tokens: 0,
-        current_users_extra_cap: 0,
+        known_users_cap: 0,
         paused: false,
         max_validator_shares_participating: 500,
         hub_connection_id: "connection-0".to_string(),
@@ -81,14 +81,23 @@ fn load_current_constants_test() {
         assert!(res.is_ok());
     }
 
-    // Verify that we receive expected constants by setting the block time to activate_at_timestamp + 1 hour
+    // Verify that we receive expected constants by setting the block time to activate_at_timestamp
+    // in first atempt, and then setting it to activate_at_timestamp + 1 hour in second atempt.
+    // In both cases we should get the same constants.
     for test_case in test_cases.iter() {
-        env.block.time = Timestamp::from_nanos(test_case.activate_at_timestamp).plus_seconds(3600);
+        let timestamps_to_check = vec![
+            Timestamp::from_nanos(test_case.activate_at_timestamp),
+            Timestamp::from_nanos(test_case.activate_at_timestamp).plus_seconds(3600),
+        ];
 
-        let res = load_current_constants(&deps.as_ref(), &env);
-        assert!(res.is_ok());
-        let constants = res.unwrap();
+        for timestamp_to_check in timestamps_to_check {
+            env.block.time = timestamp_to_check;
 
-        assert_eq!(constants, test_case.constants_to_insert);
+            let res = load_current_constants(&deps.as_ref(), &env);
+            assert!(res.is_ok());
+            let constants = res.unwrap();
+
+            assert_eq!(constants, test_case.constants_to_insert);
+        }
     }
 }
