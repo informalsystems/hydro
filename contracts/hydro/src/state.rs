@@ -289,6 +289,12 @@ pub const ROUND_TO_HEIGHT_RANGE: Map<u64, HeightRange> = Map::new("round_to_heig
 // HEIGHT_TO_ROUND: key(block_height) -> round_id
 pub const HEIGHT_TO_ROUND: Map<u64, u64> = Map::new("height_to_round");
 
+// The height at which the snapshot maps such as LOCKS_MAP, USER_LOCKS, TOTAL_VOTING_POWER_PER_ROUND, etc.
+// were populated for the first time, making some historical queries available.
+// Required because the initial implementation of the contract didn't have this maps, and the deployed
+// contracts will be able to handle some queries only after the migration to the newest code is done.
+pub const SNAPSHOTS_ACTIVATION_HEIGHT: Item<u64> = Item::new("snapshots_activation_height");
+
 #[cw_serde]
 #[derive(Default)]
 pub struct HeightRange {

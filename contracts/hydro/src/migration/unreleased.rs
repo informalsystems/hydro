@@ -11,8 +11,8 @@ use crate::{
     migration::v3_0_0::ConstantsV3_0_0,
     state::{
         Constants, HeightRange, LockEntry, CONSTANTS, HEIGHT_TO_ROUND, LOCKS_MAP,
-        ROUND_TO_HEIGHT_RANGE, SCALED_ROUND_POWER_SHARES_MAP, TOTAL_VOTING_POWER_PER_ROUND,
-        USER_LOCKS,
+        ROUND_TO_HEIGHT_RANGE, SCALED_ROUND_POWER_SHARES_MAP, SNAPSHOTS_ACTIVATION_HEIGHT,
+        TOTAL_VOTING_POWER_PER_ROUND, USER_LOCKS,
     },
 };
 
@@ -26,6 +26,8 @@ pub fn migrate_v3_0_0_to_unreleased(
     populate_total_power_for_rounds(deps, &env, round_id)?;
     migrate_user_lockups(deps, &env)?;
     populate_round_height_mappings(deps, &env, round_id)?;
+
+    SNAPSHOTS_ACTIVATION_HEIGHT.save(deps.storage, &env.block.height)?;
 
     Ok(())
 }

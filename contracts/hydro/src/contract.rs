@@ -37,9 +37,10 @@ use crate::score_keeper::{
 use crate::state::{
     Constants, LockEntry, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo, Vote,
     VoteWithPower, CONSTANTS, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP,
-    LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, ROUND_TO_HEIGHT_RANGE, TRANCHE_ID, TRANCHE_MAP,
-    USER_LOCKS, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
-    VALIDATOR_TO_QUERY_ID, VOTE_MAP, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
+    LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, ROUND_TO_HEIGHT_RANGE,
+    SNAPSHOTS_ACTIVATION_HEIGHT, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS, VALIDATORS_INFO,
+    VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP,
+    VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::utils::{
     load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
@@ -147,6 +148,8 @@ pub fn instantiate(
 
     // the store for the first round is already initialized, since there is no previous round to copy information over from.
     VALIDATORS_STORE_INITIALIZED.save(deps.storage, 0, &true)?;
+
+    SNAPSHOTS_ACTIVATION_HEIGHT.save(deps.storage, &env.block.height)?;
 
     Ok(Response::new()
         .add_attribute("action", "initialisation")
@@ -2092,8 +2095,17 @@ pub fn get_user_voting_power_for_past_round(
 ) -> StdResult<u128> {
     let round_end = compute_round_end(constants, round_id)?;
     let load_height = ROUND_TO_HEIGHT_RANGE
-        .load(deps.storage, round_id)?
+        .may_load(deps.storage, round_id)?
+        .unwrap_or_default()
         .highest_known_height;
+
+    let snapshot_activation_height = SNAPSHOTS_ACTIVATION_HEIGHT.load(deps.storage)?;
+    if load_height < snapshot_activation_height {
+        return Err(StdError::generic_err(format!(
+            "Can not query historical data before height: {}.",
+            snapshot_activation_height
+        )));
+    }
 
     let user_locks_ids = USER_LOCKS
         .may_load_at_height(deps.storage, address.clone(), load_height)?
