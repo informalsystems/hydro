@@ -2,18 +2,17 @@ use std::collections::HashMap;
 
 use cosmos_sdk_proto::prost::Message;
 use cosmwasm_std::{
-    testing::mock_env, BankMsg, Binary, Coin, CosmosMsg, Decimal, DepsMut, Env, StdError,
-    StdResult, Storage, SystemError, SystemResult, Timestamp, Uint128,
+    testing::mock_env, BankMsg, Coin, CosmosMsg, Decimal, DepsMut, Env, StdError, StdResult,
+    Storage, SystemError, SystemResult, Timestamp, Uint128,
 };
-use neutron_sdk::{
-    bindings::{query::NeutronQuery, types::StorageValue},
-    interchain_queries::{types::QueryType, v047::types::STAKING_STORE_KEY},
-    sudo::msg::SudoMsg,
-};
+use neutron_sdk::{bindings::query::NeutronQuery, sudo::msg::SudoMsg};
 use neutron_std::types::ibc::applications::transfer::v1::QueryDenomTraceResponse;
 
 use crate::{
-    contract::{execute, instantiate, query_round_tranche_proposals, query_top_n_proposals, sudo},
+    contract::{
+        compute_current_round_id, execute, instantiate, query_round_tranche_proposals,
+        query_top_n_proposals, sudo,
+    },
     lsm_integration::{
         get_total_power_for_round, get_validator_power_ratio_for_round,
         update_scores_due_to_power_ratio_change, validate_denom,
@@ -28,10 +27,9 @@ use crate::{
     },
     testing_mocks::{
         custom_interchain_query_mock, denom_trace_grpc_query_mock, mock_dependencies,
-        no_op_grpc_query_mock, system_result_ok_from, GrpcQueryFunc, ICQMockData,
+        no_op_grpc_query_mock, system_result_ok_from, GrpcQueryFunc,
     },
-    testing_validators_icqs::get_mock_validator,
-    validators_icqs::TOKENS_TO_SHARES_MULTIPLIER,
+    testing_validators_icqs::mock_get_icq_result_for_validator,
 };
 
 fn get_default_constants() -> crate::state::Constants {
@@ -40,6 +38,7 @@ fn get_default_constants() -> crate::state::Constants {
         lock_epoch_length: 1,
         first_round_start: Timestamp::from_seconds(0),
         max_locked_tokens: 1,
+        known_users_cap: 0,
         paused: false,
         max_validator_shares_participating: 2,
         hub_connection_id: "connection-0".to_string(),
@@ -290,9 +289,9 @@ fn test_validate_denom() {
             description: "happy path".to_string(),
             denom: IBC_DENOM_1.to_string(),
             expected_result: Ok(VALIDATOR_1.to_string()),
-            setup: Box::new(|storage, _env| {
+            setup: Box::new(|storage, env| {
                 let constants = get_default_constants();
-                crate::state::CONSTANTS.save(storage, &constants).unwrap();
+                crate::state::CONSTANTS.save(storage, env.block.time.nanos(), &constants).unwrap();
                 let round_id = 0;
                 let res = set_validator_infos_for_round(
                         storage,
@@ -319,7 +318,7 @@ fn test_validate_denom() {
 
         let constants = get_default_constants();
         crate::state::CONSTANTS
-            .save(&mut deps.storage, &constants)
+            .save(&mut deps.storage, env.block.time.nanos(), &constants)
             .unwrap();
 
         env.block.time = Timestamp::from_seconds(0);
@@ -328,7 +327,7 @@ fn test_validate_denom() {
 
         let result = validate_denom(
             deps.as_ref(),
-            env.clone(),
+            compute_current_round_id(&env, &constants).unwrap(),
             &constants,
             test_case.denom.clone(),
         );
@@ -736,7 +735,14 @@ fn lock_tokens_multiple_validators_and_vote() {
     }
 
     // update the power ratio for validator 1 to become 0.5
-    set_validator_power_ratio(deps.as_mut().storage, 0, VALIDATOR_1, Decimal::percent(50));
+    let mock_data = mock_get_icq_result_for_validator(VALIDATOR_1, 500, 1000);
+
+    deps.querier = deps
+        .querier
+        .with_custom_handler(custom_interchain_query_mock(mock_data));
+
+    let res = sudo(deps.as_mut(), env, SudoMsg::KVQueryResult { query_id: 1 });
+    assert!(res.is_ok());
 
     // Check the proposal scores
     {
@@ -1001,22 +1007,7 @@ fn icq_validator_set_initialization_test() {
     }
 
     // Mock data for the interchain query result
-    let mock_tokens = Uint128::new(1000);
-    let mock_shares = Uint128::new(2000) * TOKENS_TO_SHARES_MULTIPLIER;
-    let mock_validator = get_mock_validator(VALIDATOR_1, mock_tokens, mock_shares);
-    let mock_data = HashMap::from([(
-        1,
-        ICQMockData {
-            query_type: QueryType::KV,
-            should_query_return_error: false,
-            should_query_result_return_error: false,
-            kv_results: vec![StorageValue {
-                storage_prefix: STAKING_STORE_KEY.to_string(),
-                key: Binary::default(),
-                value: Binary::from(mock_validator.encode_to_vec()),
-            }],
-        },
-    )]);
+    let mock_data = mock_get_icq_result_for_validator(VALIDATOR_1, 1000, 2000);
 
     deps.querier = deps
         .querier

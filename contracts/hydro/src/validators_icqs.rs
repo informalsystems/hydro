@@ -20,11 +20,12 @@ use serde::{Deserialize, Serialize};
 use crate::{
     contract::{compute_current_round_id, NATIVE_TOKEN_DENOM},
     error::ContractError,
-    lsm_integration::{initialize_validator_store, update_scores_due_to_power_ratio_change},
+    lsm_integration::update_stores_due_to_power_ratio_change,
     state::{
-        Constants, ValidatorInfo, CONSTANTS, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO,
-        VALIDATORS_PER_ROUND, VALIDATOR_TO_QUERY_ID,
+        Constants, ValidatorInfo, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
+        VALIDATOR_TO_QUERY_ID,
     },
+    utils::{load_current_constants, run_on_each_transaction},
 };
 
 // A multiplier to normalize shares, such that when a validator has just been created
@@ -121,9 +122,9 @@ pub fn handle_delivered_interchain_query_result(
             );
         }
     };
-    let constants = CONSTANTS.load(deps.storage)?;
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
     let current_round = compute_current_round_id(&env, &constants)?;
-    initialize_validator_store(deps.storage, current_round)?;
+    run_on_each_transaction(deps.storage, &env, current_round)?;
 
     let validator_address = validator.operator_address.clone();
     let new_tokens = Uint128::from_str(&validator.tokens)?;
@@ -140,6 +141,7 @@ pub fn handle_delivered_interchain_query_result(
         Some(validator_info) => {
             top_n_validator_update(
                 &mut deps,
+                &env,
                 current_round,
                 validator_info,
                 new_tokens,
@@ -154,7 +156,7 @@ pub fn handle_delivered_interchain_query_result(
             match get_last_validator(&mut deps, current_round, &constants) {
                 None => {
                     // if there are currently less than top N validators, add this one to the top N
-                    top_n_validator_add(&mut deps, current_round, validator_info)?;
+                    top_n_validator_add(&mut deps, &env, current_round, validator_info)?;
                 }
                 Some(last_validator) => {
                     // there are top N validators already, so check if the new one has more
@@ -164,8 +166,13 @@ pub fn handle_delivered_interchain_query_result(
                         let other_validator_info = VALIDATORS_INFO
                             .load(deps.storage, (current_round, last_validator.1.clone()))?;
 
-                        top_n_validator_remove(&mut deps, current_round, other_validator_info)?;
-                        top_n_validator_add(&mut deps, current_round, validator_info)?;
+                        top_n_validator_remove(
+                            &mut deps,
+                            &env,
+                            current_round,
+                            other_validator_info,
+                        )?;
+                        top_n_validator_add(&mut deps, &env, current_round, validator_info)?;
 
                         // remove ICQ of the validator that was dropped from the top N
                         let last_validator_query_id =
@@ -187,15 +194,15 @@ pub fn handle_delivered_interchain_query_result(
 
 fn top_n_validator_add(
     deps: &mut DepsMut<NeutronQuery>,
+    env: &Env,
     current_round: u64,
     validator_info: ValidatorInfo,
 ) -> Result<(), NeutronError> {
     // this call only makes difference if some validator was in the top N,
     // then was droped out, and then got back in the top N again
-
-    // update the power ratio for the validator in the scores of proposals
-    update_scores_due_to_power_ratio_change(
+    update_stores_due_to_power_ratio_change(
         deps.storage,
+        env.block.height,
         &validator_info.address.clone(),
         current_round,
         Decimal::zero(),
@@ -220,6 +227,7 @@ fn top_n_validator_add(
 
 fn top_n_validator_update(
     deps: &mut DepsMut<NeutronQuery>,
+    env: &Env,
     current_round: u64,
     mut validator_info: ValidatorInfo,
     new_tokens: Uint128,
@@ -250,8 +258,9 @@ fn top_n_validator_update(
     }
 
     if validator_info.power_ratio != new_power_ratio {
-        update_scores_due_to_power_ratio_change(
+        update_stores_due_to_power_ratio_change(
             deps.storage,
+            env.block.height,
             &validator_info.address.clone(),
             current_round,
             validator_info.power_ratio,
@@ -275,11 +284,13 @@ fn top_n_validator_update(
 
 fn top_n_validator_remove(
     deps: &mut DepsMut<NeutronQuery>,
+    env: &Env,
     current_round: u64,
     validator_info: ValidatorInfo,
 ) -> Result<(), NeutronError> {
-    update_scores_due_to_power_ratio_change(
+    update_stores_due_to_power_ratio_change(
         deps.storage,
+        env.block.height,
         &validator_info.address.clone(),
         current_round,
         validator_info.power_ratio,

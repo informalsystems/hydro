@@ -1,10 +1,13 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
-use cw_storage_plus::{Item, Map};
+use cw_storage_plus::{Item, Map, SnapshotMap, Strategy};
 
 use crate::msg::LiquidityDeployment;
 
-pub const CONSTANTS: Item<Constants> = Item::new("constants");
+// The currently-active constants are always those with the largest activation_timestamp
+// such that activation_timestamp <= current_block.timestamp
+// CONSTANTS: key(activation_timestamp) -> Constants
+pub const CONSTANTS: Map<u64, Constants> = Map::new("constants");
 
 #[cw_serde]
 pub struct LockPowerEntry {
@@ -58,7 +61,15 @@ pub struct Constants {
     pub round_length: u64,
     pub lock_epoch_length: u64,
     pub first_round_start: Timestamp,
+    // The maximum number of tokens that can be locked by any users (currently known and the future ones)
     pub max_locked_tokens: u128,
+    // The maximum number of tokens (out of the max_locked_tokens) that is reserved for locking only
+    // for currently known users. This field is intended to be set to some value greater than zero at
+    // the begining of the round, and such Constants would apply only for a predefined period of time.
+    // After this period has expired, a new Constants would be activated that would set this value to
+    // zero, which would allow any user to lock any amount that possibly wasn't filled, but was reserved
+    // for this cap.
+    pub known_users_cap: u128,
     pub max_validator_shares_participating: u64,
     pub hub_connection_id: String,
     pub hub_transfer_channel_id: String,
@@ -71,6 +82,16 @@ pub struct Constants {
 // the total number of tokens locked in the contract
 pub const LOCKED_TOKENS: Item<u128> = Item::new("locked_tokens");
 
+// Tracks the total number of tokens locked in known users cap, for the given round
+// EXTRA_LOCKED_TOKENS_ROUND_TOTAL: key(round_id) -> uint128
+pub const EXTRA_LOCKED_TOKENS_ROUND_TOTAL: Map<u64, u128> =
+    Map::new("extra_locked_tokens_round_total");
+
+// Tracks the number of tokens locked in known users cap by specific user, for the given round
+// EXTRA_LOCKED_TOKENS_CURRENT_USERS: key(round_id, sender_address) -> uint128
+pub const EXTRA_LOCKED_TOKENS_CURRENT_USERS: Map<(u64, Addr), u128> =
+    Map::new("extra_locked_tokens_current_users");
+
 pub const LOCK_ID: Item<u64> = Item::new("lock_id");
 
 // stores the current PROP_ID, in order to ensure that each proposal has a unique ID
@@ -78,7 +99,13 @@ pub const LOCK_ID: Item<u64> = Item::new("lock_id");
 pub const PROP_ID: Item<u64> = Item::new("prop_id");
 
 // LOCKS_MAP: key(sender_address, lock_id) -> LockEntry
-pub const LOCKS_MAP: Map<(Addr, u64), LockEntry> = Map::new("locks_map");
+pub const LOCKS_MAP: SnapshotMap<(Addr, u64), LockEntry> = SnapshotMap::new(
+    "locks_map",
+    "locks_map__checkpoints",
+    "locks_map__changelog",
+    Strategy::EveryBlock,
+);
+
 #[cw_serde]
 pub struct LockEntry {
     pub lock_id: u64,
@@ -86,6 +113,25 @@ pub struct LockEntry {
     pub lock_start: Timestamp,
     pub lock_end: Timestamp,
 }
+
+// Stores the lockup IDs that belong to a user. Snapshoted so that we can determine which lockups
+// user had at a given height and use this info to compute users voting power at that height.
+// USER_LOCKS: key(user_address) -> Vec<lock_ids>
+pub const USER_LOCKS: SnapshotMap<Addr, Vec<u64>> = SnapshotMap::new(
+    "user_locks",
+    "user_locks__checkpoints",
+    "user_locks__changelog",
+    Strategy::EveryBlock,
+);
+
+// This is the total voting power of all users combined.
+// TOTAL_VOTING_POWER_PER_ROUND: key(round_id) -> total_voting_power
+pub const TOTAL_VOTING_POWER_PER_ROUND: SnapshotMap<u64, Uint128> = SnapshotMap::new(
+    "total_voting_power_per_round",
+    "total_voting_power_per_round__checkpoints",
+    "total_voting_power_per_round__changelog",
+    Strategy::EveryBlock,
+);
 
 // PROPOSAL_MAP: key(round_id, tranche_id, prop_id) -> Proposal
 pub const PROPOSAL_MAP: Map<(u64, u64, u64), Proposal> = Map::new("prop_map");
@@ -228,3 +274,30 @@ impl ValidatorInfo {
 // LIQUIDITY_DEPLOYMENTS_MAP: key(round_id, tranche_id, prop_id) -> deployment
 pub const LIQUIDITY_DEPLOYMENTS_MAP: Map<(u64, u64, u64), LiquidityDeployment> =
     Map::new("liquidity_deployments_map");
+
+// Stores the mapping between the round_id and the range of known block heights for that round.
+// The lowest_known_height is the height at which the first transaction was executed, and the
+// highest_known_height is the height at which the last transaction was executed against the smart
+// contract in the given round.
+// Notice that the round could span beyond these boundaries, but we don't have a way to know that.
+// Besides, the info we store here is sufficient for our needs.
+// ROUND_TO_HEIGHT_RANGE: key(round_id) -> HeightRange
+pub const ROUND_TO_HEIGHT_RANGE: Map<u64, HeightRange> = Map::new("round_to_height_range");
+
+// Stores the mapping between the block height and round. It gets populated
+// each time a transaction is executed against the smart contract.
+// HEIGHT_TO_ROUND: key(block_height) -> round_id
+pub const HEIGHT_TO_ROUND: Map<u64, u64> = Map::new("height_to_round");
+
+// The height at which the snapshot maps such as LOCKS_MAP, USER_LOCKS, TOTAL_VOTING_POWER_PER_ROUND, etc.
+// were populated for the first time, making some historical queries available.
+// Required because the initial implementation of the contract didn't have this maps, and the deployed
+// contracts will be able to handle some queries only after the migration to the newest code is done.
+pub const SNAPSHOTS_ACTIVATION_HEIGHT: Item<u64> = Item::new("snapshots_activation_height");
+
+#[cw_serde]
+#[derive(Default)]
+pub struct HeightRange {
+    pub lowest_known_height: u64,
+    pub highest_known_height: u64,
+}
