@@ -490,6 +490,30 @@ fn icq_results_state_update_test() {
     }
 }
 
+pub fn mock_get_icq_result_for_validator(
+    validator: &str,
+    mock_tokens: u128,
+    mock_shares_tokens: u128,
+) -> HashMap<u64, ICQMockData> {
+    let mock_tokens = Uint128::new(mock_tokens);
+    let mock_shares = Uint128::new(mock_shares_tokens) * TOKENS_TO_SHARES_MULTIPLIER;
+    let mock_validator = get_mock_validator(validator, mock_tokens, mock_shares);
+
+    HashMap::from([(
+        1,
+        ICQMockData {
+            query_type: QueryType::KV,
+            should_query_return_error: false,
+            should_query_result_return_error: false,
+            kv_results: vec![StorageValue {
+                storage_prefix: STAKING_STORE_KEY.to_string(),
+                key: Binary::default(),
+                value: Binary::from(mock_validator.encode_to_vec()),
+            }],
+        },
+    )])
+}
+
 pub fn get_mock_validator(address: &str, tokens: Uint128, shares: Uint128) -> CosmosValidator {
     CosmosValidator {
         operator_address: address.to_string(),
