@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use cosmwasm_std::{Addr, Decimal, DepsMut, Env, Order, StdResult};
 use cw_storage_plus::{Item, Map};
 use neutron_sdk::bindings::query::NeutronQuery;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     contract::compute_current_round_id,
@@ -16,6 +18,9 @@ use crate::{
     },
 };
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct MigrateMsgUnreleased {}
+
 pub fn migrate_v3_0_0_to_unreleased(
     deps: &mut DepsMut<NeutronQuery>,
     env: Env,
@@ -23,7 +28,7 @@ pub fn migrate_v3_0_0_to_unreleased(
     let constants = migrate_constants(deps)?;
     let round_id = compute_current_round_id(&env, &constants)?;
 
-    populate_total_power_for_rounds(deps, &env, round_id)?;
+    populate_rounds_total_voting_powers(deps, &env, round_id)?;
     migrate_user_lockups(deps, &env)?;
     populate_round_height_mappings(deps, &env, round_id)?;
 
@@ -65,7 +70,7 @@ fn migrate_constants(deps: &mut DepsMut<NeutronQuery>) -> StdResult<Constants> {
 
 // Populate round total power starting from round 0 and all the way to the last round
 // in which any existing lock gives voting power.
-fn populate_total_power_for_rounds(
+fn populate_rounds_total_voting_powers(
     deps: &mut DepsMut<NeutronQuery>,
     env: &Env,
     current_round_id: u64,
