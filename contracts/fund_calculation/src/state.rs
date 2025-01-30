@@ -6,8 +6,7 @@ use cw_storage_plus::Item;
 
 pub const CONFIG: Item<Config> = Item::new("config");
 
-// The principal denom that funds are calculated and allocated in.
-pub const BASE_DENOM: &str = "uatom";
+pub const BASE_ASSET_DENOM: &str = "uatom";
 
 #[cw_serde]
 pub struct Config {
@@ -25,7 +24,11 @@ pub struct Proposal {
     pub id: u64,
     pub power: u64,
     pub venues: Vec<Venue>,
+    pub minimum_liquidity_request: u64,
 }
+
+#[cw_serde]
+pub struct ExistingProposalAllocation {}
 
 // A venue is a target liquidity allocation for a specific proposal
 // to deploy funds into one specific liquidity location, i.e. a DEX pool or a lending protocol.
@@ -33,7 +36,7 @@ pub struct Proposal {
 #[cw_serde]
 pub struct Venue {
     pub id: u64,
-    // the target liquidity allocation in the base denom
+    // the target liquidity allocation, given in the base asset.
     pub target_allocation: u64,
     // the weight by which extra funds, after all target allocations are fulfilled, are distributed
     pub surplus_allocation_weight: u64,
@@ -71,7 +74,7 @@ pub struct GlobalConfig {
     // existing TVL factor would allow for less, to "bootstrap" venues.
     pub bootstrap_limit: u64,
 
-    // The total amount of funds that will be distributed.
+    // The total amount of funds that will be distributed, in the base asset.
     pub total_allocated: u64,
 }
 
@@ -98,5 +101,8 @@ pub struct VenueAllocation {
 #[cw_serde]
 pub struct ProposalAllocation {
     pub proposal: Proposal,
-    pub allocations: Vec<VenueAllocation>,
+    // the latest deployments that have been performed for this proposal.
+    pub deployments: Vec<VenueAllocation>,
+    // the total amount that has been allocated for this proposal
+    pub total_allocated: u64,
 }

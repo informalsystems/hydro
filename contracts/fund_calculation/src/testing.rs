@@ -1,13 +1,19 @@
 use crate::msg::InstantiateMsg;
+use crate::state::{GlobalConfig, VenueType};
 use cosmwasm_std::Coin;
 use cosmwasm_std::{testing::MockApi, MessageInfo};
 
-pub fn get_instantiate_msg(hydro_contract: String, tribute_contract: String) -> InstantiateMsg {
-    InstantiateMsg {
-        hydro_contract,
-        tribute_contract,
-    }
-}
+// pub fn get_instantiate_msg(hydro_contract: String, tribute_contract: String) -> InstantiateMsg {
+//     InstantiateMsg {
+//         hydro_contract,
+//         tribute_contract,
+//         global_config: GlobalConfig {
+//             bootstrap_limit: 10000,
+//             total_allocated: 100000,
+//             venue_type_to_existing_tvl_factor: vec![(VenueType, 0.3), ("Lending".to_string(), 0.5)],
+//         },
+//     }
+// }
 
 pub fn get_message_info(mock_api: &MockApi, sender: &str, funds: &[Coin]) -> MessageInfo {
     MessageInfo {

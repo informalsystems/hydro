@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use cosmwasm_std::{
     entry_point, to_json_binary, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Response, StdError,
-    StdResult,
+    StdResult, Uint128,
 };
 use cw2::set_contract_version;
 
@@ -78,11 +78,15 @@ impl Config {
             .map(|(_, factor)| *factor)
     }
 
+    // Compute the maximum amount of funds that can be deployed into a venue
+    // based on the current TVL, how much of that TVL is owned by Hydro, and the global and venue-specific configuration.
+    // Both the return value, as well as the TVL, are given in the base denom.
     pub fn compute_deployment_limit(
         &self,
         venue: &Venue,
-        current_tvl: u64,
-    ) -> Result<u64, StdError> {
+        current_tvl: Uint128,
+        current_hydro_holdings: Uint128,
+    ) -> Result<Uint128, StdError> {
         let venue_config = self
             .get_venue_config(&venue.id)
             .ok_or_else(|| StdError::generic_err("No venue config found for venue"))?;
@@ -98,7 +102,7 @@ impl Config {
             })?;
 
         // Calculate max deployment based on TVL factor
-        let max_by_tvl = (current_tvl as f64 * tvl_factor) as u64;
+        let max_by_tvl = (current_tvl * tvl_factor) as u64;
 
         // Use venue-specific bootstrap limit if set, otherwise use global
         let bootstrap_limit = venue_config
@@ -106,28 +110,74 @@ impl Config {
             .unwrap_or(self.global_config.bootstrap_limit);
 
         // Return max of TVL-based limit and bootstrap limit
-        Ok(std::cmp::max(max_by_tvl, bootstrap_limit))
+        Ok(Uint128::from(std::cmp::max(max_by_tvl, bootstrap_limit)))
     }
 
     pub fn compute_liquidity_allocations(
-        config: Config,
+        &self,
         proposals: Vec<Proposal>,
         // an oracle that is given denoms to be queried and returns their price in the base denom
-        price_oracle: &dyn Fn(String) -> u64,
+        price_oracle: &dyn Fn(String) -> Uint128,
         current_holdings_oracle: &dyn Fn(u64) -> Vec<Coin>,
         current_total_venue_liquidity_oracle: &dyn Fn(u64) -> Vec<Coin>,
-    ) -> Vec<ProposalAllocation> {
+    ) -> Result<Vec<ProposalAllocation>, StdError> {
         // Calculate total power
         let total_power: u64 = proposals.iter().map(|p| p.power).sum();
         if total_power == 0 {
-            return Ok((vec![], self.global_config.total_allocated));
+            return Ok(vec![]);
         }
 
-        // Initialize allocation tracking
-        let mut proposal_allocations = Vec::new();
-        let mut venue_group_used = HashMap::new();
-        for group in self.venue_groups.values() {
-            venue_group_used.insert(group.id, 0u64);
+        // for each venue, compute the deployment limit for that venue
+        let mut venue_limits: HashMap<u64, Uint128> = HashMap::new();
+        for proposal in &proposals {
+            for venue in &proposal.venues {
+                // get current tvl as a vector of coins
+                let current_tvl = current_total_venue_liquidity_oracle(venue.id);
+                // resolve to the base denom by getting prices for each denom
+                let current_tvl: Uint128 = current_tvl
+                    .iter()
+                    .map(|coin| price_oracle(coin.denom.clone()) * coin.amount)
+                    .sum();
+
+                // get current hydro holdings as vector of coins
+                let current_hydro_holdings = current_holdings_oracle(venue.id);
+                // resolve to the base denom by getting prices for each denom
+                let current_hydro_holdings: Uint128 = current_hydro_holdings
+                    .iter()
+                    .map(|coin| price_oracle(coin.denom.clone()) * coin.amount)
+                    .sum();
+
+                let deployment_limit =
+                    self.compute_deployment_limit(venue, current_tvl, current_hydro_holdings)?;
+                venue_limits.insert(venue.id, deployment_limit);
+            }
         }
+
+        // sort proposals by power in descending order
+        let mut sorted_proposals = proposals.clone();
+        sorted_proposals.sort_by(|a, b| b.power.cmp(&a.power));
+
+        let mut proposal_allocations: Vec<ProposalAllocation> = vec![];
+
+        for proposal in &sorted_proposals {
+            let proposal_allocation = self.compute_proposal_liquidity_allocation(
+                proposal,
+                total_power,
+                &mut venue_limits,
+            );
+
+            proposal_allocations.push(proposal_allocation);
+        }
+
+        Ok(proposal_allocations)
+    }
+
+    // note: subtracts from the current_venue_limits
+    pub fn compute_proposal_liquidity_allocation(
+        &self,
+        proposal: &Proposal,
+        total_power: u64,
+        current_venue_limits: &mut HashMap<u64, Uint128>,
+    ) -> ProposalAllocation {
     }
 }
