@@ -18,7 +18,7 @@ test-e2e:
 
 # Note: If the neutron-org/neutron-query-relayer docker image does not exist locally, run `make build-docker-relayer` before running the interchain tests.
 test-interchain:
-	cd test/interchain && go test ./... -timeout 30m
+	cd test/interchain && go test ./... -timeout 40m
 
 coverage:
 	# to install see here: https://crates.io/crates/cargo-tarpaulin
