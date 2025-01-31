@@ -1159,15 +1159,15 @@ fn update_config(
     known_users_cap: Option<u128>,
     max_deployment_duration: Option<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
+    // Validate that the contract is not paused based on the current constants
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
+    validate_contract_is_not_paused(&constants)?;
+
     if env.block.time > activate_at {
         return Err(ContractError::Std(StdError::generic_err(
             "Can not update config in the past.",
         )));
     }
-
-    // Validate that the contract is not paused based on the current constants
-    let constants = load_current_constants(&deps.as_ref(), &env)?;
-    validate_contract_is_not_paused(&constants)?;
 
     // Load the Constants active at the given timestamp and base the updates on them.
     // This allows us to update the Constants in arbitrary order. E.g. at the similar block

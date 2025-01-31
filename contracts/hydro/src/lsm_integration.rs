@@ -282,7 +282,7 @@ pub fn update_total_power_due_to_power_ratio_change(
         TOTAL_VOTING_POWER_PER_ROUND.save(
             storage,
             round_id,
-            &new_total_voting_power.to_uint_floor(),
+            &new_total_voting_power.to_uint_ceil(),
             current_height,
         )?;
 
@@ -327,7 +327,7 @@ pub fn add_validator_shares_to_round_total(
 
             Ok(total_power_before
                 .checked_add(num_shares.checked_mul(val_power_ratio)?)?
-                .to_uint_floor())
+                .to_uint_ceil())
         },
     )?;
 
