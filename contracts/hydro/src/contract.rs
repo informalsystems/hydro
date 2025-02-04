@@ -289,8 +289,8 @@ fn lock_tokens(
 
     let funds = info.funds[0].clone();
 
-    let validator =
-        validate_denom(deps.as_ref(), current_round, &constants, funds.denom).map_err(|err| {
+    let validator = validate_denom(&deps.as_ref(), current_round, &constants, funds.denom)
+        .map_err(|err| {
             ContractError::Std(StdError::generic_err(format!("validating denom: {}", err)))
         })?;
 
@@ -306,7 +306,7 @@ fn lock_tokens(
     )?;
 
     // validate that the user does not have too many locks
-    if get_lock_count(deps.as_ref(), info.sender.clone()) >= MAX_LOCK_ENTRIES {
+    if get_lock_count(&deps.as_ref(), info.sender.clone()) >= MAX_LOCK_ENTRIES {
         return Err(ContractError::Std(StdError::generic_err(format!(
             "User has too many locks, only {} locks allowed",
             MAX_LOCK_ENTRIES
@@ -453,7 +453,7 @@ fn refresh_lock_duration(
 }
 
 fn refresh_single_lock(
-    deps: &mut DepsMut<'_, NeutronQuery>,
+    deps: &mut DepsMut<NeutronQuery>,
     info: &MessageInfo,
     env: &Env,
     constants: &Constants,
@@ -479,7 +479,7 @@ fn refresh_single_lock(
         env.block.height,
     )?;
     let validator_result = validate_denom(
-        deps.as_ref(),
+        &deps.as_ref(),
         current_round_id,
         constants,
         lock_entry.funds.denom.clone(),
@@ -666,7 +666,7 @@ fn unlock_tokens(
 fn validate_previous_round_vote(
     deps: &DepsMut<NeutronQuery>,
     env: &Env,
-    sender: Addr,
+    sender: &Addr,
 ) -> Result<(), ContractError> {
     let constants = load_current_constants(&deps.as_ref(), env)?;
     let current_round_id = compute_current_round_id(env, &constants)?;
@@ -907,7 +907,7 @@ fn vote(
                 // save the new power into the proposal
                 let total_power =
                     get_total_power_for_proposal(deps.as_ref().storage, vote.prop_id)?;
-                proposal.power = total_power.to_uint_ceil(); // TODO: decide whether we need to round or represent as decimals
+                proposal.power = total_power.to_uint_ceil();
 
                 // Save the proposal
                 PROPOSAL_MAP.save(
@@ -979,7 +979,7 @@ fn vote(
 
             // get the validator from the denom
             let validator = match validate_denom(
-                deps.as_ref(),
+                &deps.as_ref(),
                 round_id,
                 &constants,
                 lock_entry.clone().funds.denom,
@@ -1002,7 +1002,7 @@ fn vote(
                 get_lock_time_weighted_shares(
                     &constants.round_lock_power_schedule,
                     round_end,
-                    lock_entry.clone(),
+                    &lock_entry,
                     lock_epoch_length,
                 ),
                 Uint128::one(),
@@ -1077,7 +1077,7 @@ fn vote(
 pub fn get_lock_time_weighted_shares(
     round_lock_power_schedule: &RoundLockPowerSchedule,
     round_end: Timestamp,
-    lock_entry: LockEntry,
+    lock_entry: &LockEntry,
     lock_epoch_length: u64,
 ) -> Uint128 {
     if round_end.nanos() > lock_entry.lock_end.nanos() {
@@ -1427,7 +1427,7 @@ fn create_icqs_for_validators(
 
 // Validates that enough funds were sent to create ICQs for the given validator addresses.
 fn validate_icq_deposit_funds_sent(
-    deps: DepsMut<'_, NeutronQuery>,
+    deps: DepsMut<NeutronQuery>,
     info: &MessageInfo,
     num_created_icqs: u64,
 ) -> Result<(), ContractError> {
@@ -1694,27 +1694,27 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
             start_from,
             limit,
         } => to_json_binary(&query_all_user_lockups(
-            deps, env, address, start_from, limit,
+            &deps, &env, address, start_from, limit,
         )?),
-        QueryMsg::SpecificUserLockups { address, lock_ids } => {
-            to_json_binary(&query_specific_user_lockups(deps, env, address, lock_ids)?)
-        }
+        QueryMsg::SpecificUserLockups { address, lock_ids } => to_json_binary(
+            &query_specific_user_lockups(&deps, &env, address, lock_ids)?,
+        ),
         QueryMsg::AllUserLockupsWithTrancheInfos {
             address,
             start_from,
             limit,
         } => to_json_binary(&query_all_user_lockups_with_tranche_infos(
-            deps, env, address, start_from, limit,
+            &deps, &env, address, start_from, limit,
         )?),
         QueryMsg::SpecificUserLockupsWithTrancheInfos { address, lock_ids } => to_json_binary(
-            &query_specific_user_lockups_with_tranche_infos(deps, env, address, lock_ids)?,
+            &query_specific_user_lockups_with_tranche_infos(&deps, &env, address, lock_ids)?,
         ),
         QueryMsg::ExpiredUserLockups {
             address,
             start_from,
             limit,
         } => to_json_binary(&query_expired_user_lockups(
-            deps, env, address, start_from, limit,
+            &deps, &env, address, start_from, limit,
         )?),
         QueryMsg::UserVotingPower { address } => {
             to_json_binary(&query_user_voting_power(deps, env, address)?)
@@ -1824,9 +1824,9 @@ pub fn query_round_total_power(
     deps: Deps<NeutronQuery>,
     round_id: u64,
 ) -> StdResult<RoundTotalVotingPowerResponse> {
-    let total_round_power = get_total_power_for_round(deps, round_id)?;
+    let total_round_power = get_total_power_for_round(&deps, round_id)?;
     Ok(RoundTotalVotingPowerResponse {
-        total_voting_power: total_round_power.to_uint_ceil(), // TODO: decide on rounding
+        total_voting_power: total_round_power.to_uint_ceil(),
     })
 }
 
@@ -1837,8 +1837,8 @@ pub fn query_constants(deps: Deps<NeutronQuery>, env: Env) -> StdResult<Constant
 }
 
 fn get_user_lockups_with_predicate(
-    deps: Deps<NeutronQuery>,
-    env: Env,
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
     address: String,
     predicate: impl FnMut(&LockEntry) -> bool,
     start_from: u32,
@@ -1848,8 +1848,8 @@ fn get_user_lockups_with_predicate(
 
     let raw_lockups = query_user_lockups(deps, addr, predicate, start_from, limit);
 
-    let constants = load_current_constants(&deps, &env)?;
-    let current_round_id = compute_current_round_id(&env, &constants)?;
+    let constants = load_current_constants(deps, env)?;
+    let current_round_id = compute_current_round_id(env, &constants)?;
     let round_end = compute_round_end(&constants, current_round_id)?;
 
     // enrich the lockups by computing the voting power for each lockup
@@ -1864,8 +1864,8 @@ fn get_user_lockups_with_predicate(
 }
 
 pub fn query_all_user_lockups(
-    deps: Deps<NeutronQuery>,
-    env: Env,
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
     address: String,
     start_from: u32,
     limit: u32,
@@ -1875,8 +1875,8 @@ pub fn query_all_user_lockups(
 }
 
 pub fn query_specific_user_lockups(
-    deps: Deps<NeutronQuery>,
-    env: Env,
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
     address: String,
     lock_ids: Vec<u64>,
 ) -> StdResult<SpecificUserLockupsResponse> {
@@ -1896,8 +1896,8 @@ pub fn query_specific_user_lockups(
 
 // Helper function to handle the common logic for both query functions
 fn enrich_lockups_with_tranche_infos(
-    deps: Deps<NeutronQuery>,
-    env: Env,
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
     address: String,
     lockups: Vec<LockEntryWithPower>,
 ) -> StdResult<Vec<LockupWithPerTrancheInfo>> {
@@ -1908,8 +1908,8 @@ fn enrich_lockups_with_tranche_infos(
         .map(|tranche| tranche.unwrap().1.id)
         .collect::<Vec<u64>>();
 
-    let constants = load_current_constants(&deps, &env)?;
-    let current_round_id = compute_current_round_id(&env, &constants)?;
+    let constants = load_current_constants(deps, env)?;
+    let current_round_id = compute_current_round_id(env, &constants)?;
 
     // enrich lockups with some info per tranche
     let lockups_with_per_tranche_info: Vec<LockupWithPerTrancheInfo> = lockups
@@ -1984,13 +1984,13 @@ fn enrich_lockups_with_tranche_infos(
 }
 
 pub fn query_all_user_lockups_with_tranche_infos(
-    deps: Deps<NeutronQuery>,
-    env: Env,
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
     address: String,
     start_from: u32,
     limit: u32,
 ) -> StdResult<AllUserLockupsWithTrancheInfosResponse> {
-    let lockups = query_all_user_lockups(deps, env.clone(), address.clone(), start_from, limit)?;
+    let lockups = query_all_user_lockups(deps, env, address.clone(), start_from, limit)?;
     let enriched_lockups = enrich_lockups_with_tranche_infos(deps, env, address, lockups.lockups)?;
     Ok(AllUserLockupsWithTrancheInfosResponse {
         lockups_with_per_tranche_infos: enriched_lockups,
@@ -1998,12 +1998,12 @@ pub fn query_all_user_lockups_with_tranche_infos(
 }
 
 pub fn query_specific_user_lockups_with_tranche_infos(
-    deps: Deps<NeutronQuery>,
-    env: Env,
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
     address: String,
     lock_ids: Vec<u64>,
 ) -> StdResult<SpecificUserLockupsWithTrancheInfosResponse> {
-    let lockups = query_specific_user_lockups(deps, env.clone(), address.clone(), lock_ids)?;
+    let lockups = query_specific_user_lockups(deps, env, address.clone(), lock_ids)?;
     let enriched_lockups = enrich_lockups_with_tranche_infos(deps, env, address, lockups.lockups)?;
 
     Ok(SpecificUserLockupsWithTrancheInfosResponse {
@@ -2012,8 +2012,8 @@ pub fn query_specific_user_lockups_with_tranche_infos(
 }
 
 pub fn query_expired_user_lockups(
-    deps: Deps<NeutronQuery>,
-    env: Env,
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
     address: String,
     start_from: u32,
     limit: u32,
@@ -2133,7 +2133,7 @@ pub fn get_user_voting_power_for_past_round(
             }
         })
         .map(|lockup| {
-            to_lockup_with_power(*deps, constants, round_id, round_end, lockup)
+            to_lockup_with_power(deps, constants, round_id, round_end, lockup)
                 .current_voting_power
                 .u128()
         })
@@ -2156,7 +2156,7 @@ where
         .range(deps.storage, None, None, Order::Ascending)
         .filter_map(filter)
         .map(|lockup| {
-            to_lockup_with_power(*deps, constants, round_id, round_end, lockup)
+            to_lockup_with_power(deps, constants, round_id, round_end, lockup)
                 .current_voting_power
                 .u128()
         })
@@ -2306,7 +2306,7 @@ pub fn query_top_n_proposals(
     }
 
     // get total voting power for the round
-    let total_voting_power = get_total_power_for_round(deps, round_id)?.to_uint_ceil(); // TODO: decide on rounding
+    let total_voting_power = get_total_power_for_round(&deps, round_id)?.to_uint_ceil();
 
     let top_proposals = top_props
         .into_iter()
@@ -2338,7 +2338,7 @@ pub fn query_tranches(deps: Deps<NeutronQuery>) -> StdResult<TranchesResponse> {
 }
 
 fn query_user_lockups(
-    deps: Deps<NeutronQuery>,
+    deps: &Deps<NeutronQuery>,
     user_address: Addr,
     predicate: impl FnMut(&LockEntry) -> bool,
     start_from: u32,
@@ -2489,14 +2489,14 @@ fn update_voting_power_on_proposals(
         Some(lock_entry) => get_lock_time_weighted_shares(
             &constants.round_lock_power_schedule,
             round_end,
-            lock_entry.clone(),
+            lock_entry,
             lock_epoch_length,
         ),
     };
     let new_scaled_shares = get_lock_time_weighted_shares(
         &constants.round_lock_power_schedule,
         round_end,
-        new_lock_entry.clone(),
+        &new_lock_entry,
         lock_epoch_length,
     );
 
@@ -2779,7 +2779,7 @@ where
 }
 
 // Returns the number of locks for a given user
-fn get_lock_count(deps: Deps<NeutronQuery>, user_address: Addr) -> usize {
+fn get_lock_count(deps: &Deps<NeutronQuery>, user_address: Addr) -> usize {
     LOCKS_MAP
         .prefix(user_address)
         .range(deps.storage, None, None, Order::Ascending)
@@ -2787,7 +2787,7 @@ fn get_lock_count(deps: Deps<NeutronQuery>, user_address: Addr) -> usize {
 }
 
 fn to_lockup_with_power(
-    deps: Deps<NeutronQuery>,
+    deps: &Deps<NeutronQuery>,
     constants: &Constants,
     round_id: u64,
     round_end: Timestamp,
@@ -2819,7 +2819,7 @@ fn to_lockup_with_power(
                     let time_weighted_shares = get_lock_time_weighted_shares(
                         &constants.round_lock_power_schedule,
                         round_end,
-                        lock_entry.clone(),
+                        &lock_entry,
                         constants.lock_epoch_length,
                     );
 

@@ -85,8 +85,8 @@ fn query_user_lockups_test() {
 
     // Query specific lockup by ID using query_specific_user_lockups
     let res = query_specific_user_lockups(
-        deps.as_ref(),
-        env.clone(),
+        &deps.as_ref(),
+        &env,
         info.sender.to_string(),
         vec![0], // Query only the first lockup
     );
@@ -101,8 +101,8 @@ fn query_user_lockups_test() {
 
     // Query for a non-existent lockup ID
     let res = query_specific_user_lockups(
-        deps.as_ref(),
-        env.clone(),
+        &deps.as_ref(),
+        &env,
         info.sender.to_string(),
         vec![999], // Non-existent lockup ID
     );
@@ -160,8 +160,8 @@ fn query_user_lockups_test() {
 
     // but they should have 2 lockups
     let res = query_all_user_lockups_with_tranche_infos(
-        deps.as_ref(),
-        env.clone(),
+        &deps.as_ref(),
+        &env,
         info.sender.to_string(),
         0,
         2000,
@@ -222,8 +222,8 @@ fn query_user_lockups_test() {
 
     // Query specific lockup by ID using query_specific_user_lockups_with_tranche_infos
     let res = query_specific_user_lockups_with_tranche_infos(
-        deps.as_ref(),
-        env.clone(),
+        &deps.as_ref(),
+        &env,
         info.sender.to_string(),
         vec![1], // Query only the second lockup
     );
@@ -248,8 +248,8 @@ fn query_user_lockups_test() {
     );
 
     let res = query_specific_user_lockups_with_tranche_infos(
-        deps.as_ref(),
-        env.clone(),
+        &deps.as_ref(),
+        &env,
         info.sender.to_string(),
         vec![999], // Non-existent lockup ID
     );
@@ -274,8 +274,8 @@ fn query_user_lockups_test() {
     );
 
     let all_lockups = query_all_user_lockups_with_tranche_infos(
-        deps.as_ref(),
-        env.clone(),
+        &deps.as_ref(),
+        &env,
         info.sender.to_string(),
         0,
         2000,
@@ -362,8 +362,8 @@ fn query_user_lockups_test() {
     assert_eq!(second_lockup_amount, expired_lockups[1].funds.amount.u128());
 
     let all_lockups = query_all_user_lockups_with_tranche_infos(
-        deps.as_ref(),
-        env.clone(),
+        &deps.as_ref(),
+        &env,
         info.sender.to_string(),
         0,
         2000,
@@ -417,7 +417,7 @@ fn query_user_lockups_test() {
     assert_eq!(0, expired_lockups.len());
 
     let all_lockups =
-        query_all_user_lockups(deps.as_ref(), env.clone(), info.sender.to_string(), 0, 2000);
+        query_all_user_lockups(&deps.as_ref(), &env, info.sender.to_string(), 0, 2000);
     assert!(all_lockups.is_ok());
 
     let all_lockups = all_lockups.unwrap();
@@ -852,13 +852,7 @@ fn get_expired_user_lockups(
     env: Env,
     user_address: String,
 ) -> Vec<LockEntry> {
-    let res = query_expired_user_lockups(
-        deps.as_ref(),
-        env.clone(),
-        user_address.to_string(),
-        0,
-        2000,
-    );
+    let res = query_expired_user_lockups(&deps.as_ref(), &env, user_address.to_string(), 0, 2000);
     assert!(res.is_ok());
     let res = res.unwrap();
 

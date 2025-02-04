@@ -157,7 +157,7 @@ fn test_compounder_cap() {
         (12, 0),
     ];
     for expected_round_power in expected_round_powers {
-        let res = get_total_power_for_round(deps.as_ref(), expected_round_power.0);
+        let res = get_total_power_for_round(&deps.as_ref(), expected_round_power.0);
         assert!(res.is_ok());
         assert_eq!(res.unwrap().to_uint_ceil().u128(), expected_round_power.1);
     }
@@ -279,7 +279,7 @@ fn test_compounder_cap() {
     ];
 
     for expected_round_power in expected_round_powers {
-        let res = get_total_power_for_round(deps.as_ref(), expected_round_power.0);
+        let res = get_total_power_for_round(&deps.as_ref(), expected_round_power.0);
         assert!(res.is_ok());
         assert_eq!(res.unwrap().to_uint_ceil().u128(), expected_round_power.1);
     }

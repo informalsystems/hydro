@@ -205,7 +205,7 @@ fn lock_tokens_basic_test() {
     let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
     assert!(res.is_ok());
 
-    let res = query_all_user_lockups(deps.as_ref(), env.clone(), info.sender.to_string(), 0, 2000);
+    let res = query_all_user_lockups(&deps.as_ref(), &env, info.sender.to_string(), 0, 2000);
     assert!(res.is_ok());
     let res = res.unwrap();
     assert_eq!(2, res.lockups.len());
@@ -3190,8 +3190,8 @@ fn test_refresh_multiple_locks() {
         // Verify the new lock durations
         for (sender, expected_durations) in &case.expected_new_lock_durations {
             let lockups = query_all_user_lockups(
-                deps.as_ref(),
-                env.clone(),
+                &deps.as_ref(),
+                &env,
                 get_address_as_str(&deps.api, sender),
                 0,
                 100,

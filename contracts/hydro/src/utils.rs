@@ -102,7 +102,7 @@ pub fn validate_locked_tokens_caps(
         // If there is still room in known_users_cap, then check if this
         // is a user that should be allowed to use the known_users_cap.
         can_user_lock_in_known_users_cap(
-            deps,
+            &deps.as_ref(),
             constants,
             current_round,
             sender,
@@ -126,7 +126,13 @@ pub fn validate_locked_tokens_caps(
 
     // If there is still room in known_users_cap, then check if this
     // is a user that should be allowed to use the known_users_cap.
-    can_user_lock_in_known_users_cap(deps, constants, current_round, sender, amount_to_lock)?;
+    can_user_lock_in_known_users_cap(
+        &deps.as_ref(),
+        constants,
+        current_round,
+        sender,
+        amount_to_lock,
+    )?;
 
     Ok(LockingInfo {
         lock_in_public_cap: None,
@@ -135,7 +141,7 @@ pub fn validate_locked_tokens_caps(
 }
 
 fn can_user_lock_in_known_users_cap(
-    deps: &DepsMut<NeutronQuery>,
+    deps: &Deps<NeutronQuery>,
     constants: &Constants,
     current_round: u64,
     sender: &Addr,
@@ -164,15 +170,10 @@ fn can_user_lock_in_known_users_cap(
 
     // Calculate user's voting power share in the total voting power
     let users_voting_power = Decimal::from_ratio(
-        get_user_voting_power_for_past_round(
-            &deps.as_ref(),
-            constants,
-            sender.clone(),
-            round_to_check,
-        )?,
+        get_user_voting_power_for_past_round(deps, constants, sender.clone(), round_to_check)?,
         Uint128::one(),
     );
-    let total_voting_power = get_total_power_for_round(deps.as_ref(), round_to_check)?;
+    let total_voting_power = get_total_power_for_round(deps, round_to_check)?;
 
     // Prevent division by zero or break early in case user had no voting power in previous round.
     if total_voting_power == Decimal::zero() || users_voting_power == Decimal::zero() {

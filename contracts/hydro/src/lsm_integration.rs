@@ -24,12 +24,12 @@ pub const COSMOS_VALIDATOR_ADDR_LENGTH: usize = 52; // e.g. cosmosvaloper15w6ra6
 // of a validator that is also among the top max_validators validators
 // for the given round, and returns the address of that validator.
 pub fn validate_denom(
-    deps: Deps<NeutronQuery>,
+    deps: &Deps<NeutronQuery>,
     round_id: u64,
     constants: &Constants,
     denom: String,
 ) -> StdResult<String> {
-    let validator = resolve_validator_from_denom(&deps, constants, denom)?;
+    let validator = resolve_validator_from_denom(deps, constants, denom)?;
     let max_validators = constants.max_validator_shares_participating;
 
     if is_active_round_validator(deps.storage, round_id, &validator) {
@@ -85,7 +85,7 @@ pub fn is_active_round_validator(storage: &dyn Storage, round_id: u64, validator
 }
 
 // Gets the current list of active validators for the given round
-pub fn get_round_validators(deps: Deps<NeutronQuery>, round_id: u64) -> Vec<ValidatorInfo> {
+pub fn get_round_validators(deps: &Deps<NeutronQuery>, round_id: u64) -> Vec<ValidatorInfo> {
     VALIDATORS_INFO
         .prefix(round_id)
         .range(deps.storage, None, None, Order::Ascending)
@@ -292,7 +292,7 @@ pub fn update_total_power_due_to_power_ratio_change(
     Ok(())
 }
 
-pub fn get_total_power_for_round(deps: Deps<NeutronQuery>, round_id: u64) -> StdResult<Decimal> {
+pub fn get_total_power_for_round(deps: &Deps<NeutronQuery>, round_id: u64) -> StdResult<Decimal> {
     Ok(
         match TOTAL_VOTING_POWER_PER_ROUND.may_load(deps.storage, round_id)? {
             None => Decimal::zero(),
