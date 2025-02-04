@@ -486,6 +486,13 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
     proposalsVotes: ProposalToLockups[];
     trancheId: number;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  unvote: ({
+    lockIds,
+    trancheId
+  }: {
+    lockIds: number[];
+    trancheId: number;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
   addAccountToWhitelist: ({
     address
   }: {
@@ -590,6 +597,7 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.unlockTokens = this.unlockTokens.bind(this);
     this.createProposal = this.createProposal.bind(this);
     this.vote = this.vote.bind(this);
+    this.unvote = this.unvote.bind(this);
     this.addAccountToWhitelist = this.addAccountToWhitelist.bind(this);
     this.removeAccountFromWhitelist = this.removeAccountFromWhitelist.bind(this);
     this.updateConfig = this.updateConfig.bind(this);
@@ -676,6 +684,20 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     return await this.client.execute(this.sender, this.contractAddress, {
       vote: {
         proposals_votes: proposalsVotes,
+        tranche_id: trancheId
+      }
+    }, fee_, memo_, funds_);
+  };
+  unvote = async ({
+    lockIds,
+    trancheId
+  }: {
+    lockIds: number[];
+    trancheId: number;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      unvote: {
+        lock_ids: lockIds,
         tranche_id: trancheId
       }
     }, fee_, memo_, funds_);

@@ -2,12 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 use crate::contract::{
-    get_vote_for_update, query_current_round_id, query_tranches, query_user_votes, query_whitelist,
-    query_whitelist_admins, MAX_LOCK_ENTRIES,
+    get_vote_for_update, query_all_user_lockups_with_tranche_infos, query_current_round_id,
+    query_tranches, query_user_votes, query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES,
 };
 use crate::msg::{ProposalToLockups, TrancheInfo};
 use crate::state::{LockEntry, RoundLockPowerSchedule, Vote, CONSTANTS, USER_LOCKS, VOTE_MAP};
 use crate::testing_lsm_integration::set_validator_infos_for_round;
+
 use crate::testing_mocks::{
     denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
 };
@@ -1638,6 +1639,312 @@ fn switch_vote_between_short_and_long_props_test() {
         info.funds[0].amount.u128(),
         res.unwrap().proposal.power.u128()
     );
+}
+
+// Test case:
+//      1. User votes with 1-round-long-lock for proposal with deployment_duration = 1
+//      2. User unvotes with the same lock (old vote gets deleted)
+//      3. User votes for proposal from step #1 again
+//         (or any other with deployment_duration that it should be allowed to vote)
+#[test]
+fn unvote_and_revote_test() {
+    let user_address = "addr0000";
+    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    let current_round_id = 0;
+    let tranche_id = 1;
+    let proposal_id = 0;
+    let lock_id = 0;
+    let deployment_duration = 1;
+
+    // Setup validator for the round
+    let res = set_validator_infos_for_round(
+        &mut deps.storage,
+        current_round_id,
+        vec![VALIDATOR_1.to_string()],
+    );
+    assert!(res.is_ok());
+
+    env.block.time = env.block.time.plus_hours(12);
+
+    // Lock tokens for one round to get voting power
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    // Create proposal with deployment_duration = 1
+    let msg = ExecuteMsg::CreateProposal {
+        round_id: None,
+        tranche_id: 1,
+        title: "proposal title".to_string(),
+        description: "proposal description".to_string(),
+        deployment_duration,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // First vote
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id,
+            lock_ids: vec![lock_id],
+        }],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // Verify initial vote state
+    let res = query_all_user_lockups_with_tranche_infos(
+        &deps.as_ref(),
+        &env,
+        info.sender.to_string(),
+        0,
+        10,
+    )
+    .unwrap();
+
+    let lockup_info = &res.lockups_with_per_tranche_infos[0];
+    let tranche_info = lockup_info
+        .per_tranche_info
+        .iter()
+        .find(|info| info.tranche_id == tranche_id)
+        .unwrap();
+    assert_eq!(
+        Some(proposal_id),
+        tranche_info.current_voted_on_proposal,
+        "Lock should be voting on proposal after initial vote"
+    );
+    assert_eq!(
+        current_round_id, tranche_info.next_round_lockup_can_vote,
+        "Next voting round should be current_round when lock is currently voting"
+    );
+
+    // Verify initial proposal power
+    let initial_proposal = query_proposal(deps.as_ref(), current_round_id, tranche_id, proposal_id)
+        .unwrap()
+        .proposal;
+    assert_eq!(info.funds[0].amount, initial_proposal.power);
+
+    // Unvote
+    let msg = ExecuteMsg::Unvote {
+        tranche_id: 1,
+        lock_ids: vec![lock_id],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    // Verify state after unvote
+    let res = query_all_user_lockups_with_tranche_infos(
+        &deps.as_ref(),
+        &env,
+        info.sender.to_string(),
+        0,
+        10,
+    )
+    .unwrap();
+    let lockup_info = &res.lockups_with_per_tranche_infos[0];
+    let tranche_info = lockup_info
+        .per_tranche_info
+        .iter()
+        .find(|info| info.tranche_id == tranche_id)
+        .unwrap();
+    assert_eq!(
+        None, tranche_info.current_voted_on_proposal,
+        "Lock should not be voting after unvote"
+    );
+    assert_eq!(
+        current_round_id, tranche_info.next_round_lockup_can_vote,
+        "Lock should be able to vote again in current round after unvote"
+    );
+
+    // Verify proposal power was reduced to zero
+    let proposal_after_unvote =
+        query_proposal(deps.as_ref(), current_round_id, tranche_id, proposal_id)
+            .unwrap()
+            .proposal;
+    assert_eq!(Uint128::zero(), proposal_after_unvote.power);
+
+    // Vote again
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id,
+            lock_ids: vec![lock_id],
+        }],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    // Verify state after revote
+    let res = query_all_user_lockups_with_tranche_infos(
+        &deps.as_ref(),
+        &env,
+        info.sender.to_string(),
+        0,
+        10,
+    )
+    .unwrap();
+    let lockup_info = &res.lockups_with_per_tranche_infos[0];
+    let tranche_info = lockup_info
+        .per_tranche_info
+        .iter()
+        .find(|info| info.tranche_id == tranche_id)
+        .unwrap();
+    assert_eq!(
+        Some(proposal_id),
+        tranche_info.current_voted_on_proposal,
+        "Lock should be voting on proposal after revote"
+    );
+    assert_eq!(
+        current_round_id, tranche_info.next_round_lockup_can_vote,
+        "Next voting round should be current_round when lock is currently voting"
+    );
+
+    // Verify proposal power was restored
+    let final_proposal = query_proposal(deps.as_ref(), current_round_id, tranche_id, proposal_id)
+        .unwrap()
+        .proposal;
+    assert_eq!(info.funds[0].amount.u128(), final_proposal.power.u128());
+}
+
+// Test case:
+//      1. User votes with 1-round-long-lock for proposal with deployment_duration = 1
+//      2. User tries to unvote a non-existing lock ID, should fail
+//      3. Another user votes for the same proposal creating a new lock ID
+//      4. User tries to unvote the other user's vote, should fail
+#[test]
+fn unvote_forbidden_locks() {
+    let user_address = "addr0000";
+    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    let current_round_id = 0;
+    let tranche_id = 1;
+    let proposal_id = 0;
+    let lock_id = 0;
+    let other_user_lock_id = 1;
+    let deployment_duration = 1;
+
+    // Setup validator for the round
+    let res = set_validator_infos_for_round(
+        &mut deps.storage,
+        current_round_id,
+        vec![VALIDATOR_1.to_string()],
+    );
+    assert!(res.is_ok());
+
+    env.block.time = env.block.time.plus_hours(12);
+
+    // Lock tokens for one round to get voting power
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    // Create proposal with deployment_duration = 1
+    let msg = ExecuteMsg::CreateProposal {
+        round_id: None,
+        tranche_id: 1,
+        title: "proposal title".to_string(),
+        description: "proposal description".to_string(),
+        deployment_duration,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // First vote
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id,
+            lock_ids: vec![lock_id],
+        }],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // Verify initial proposal power
+    let initial_proposal = query_proposal(deps.as_ref(), current_round_id, tranche_id, proposal_id)
+        .unwrap()
+        .proposal;
+    assert_eq!(info.funds[0].amount, initial_proposal.power);
+
+    // Try to unvote a non-existing lock ID, should fail
+    let msg = ExecuteMsg::Unvote {
+        tranche_id: 1,
+        lock_ids: vec![other_user_lock_id],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_err());
+
+    // Another user votes for the same proposal creating a new lock ID
+    let other_user_address = "addr0001";
+    let other_user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let other_user_info =
+        get_message_info(&deps.api, other_user_address, &[other_user_token.clone()]);
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), other_user_info.clone(), msg);
+    assert!(res.is_ok());
+
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id,
+            lock_ids: vec![other_user_lock_id],
+        }],
+    };
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        other_user_info.clone(),
+        msg.clone(),
+    );
+    assert!(res.is_ok());
+
+    // Try to unvote the other user's vote, should fail
+    let msg = ExecuteMsg::Unvote {
+        tranche_id: 1,
+        lock_ids: vec![other_user_lock_id],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_err());
+
+    // Verify proposal power is equal to 2 * funds amount (both users voted on the same proposal with same funds)
+    let final_proposal = query_proposal(deps.as_ref(), current_round_id, tranche_id, proposal_id)
+        .unwrap()
+        .proposal;
+    assert_eq!(info.funds[0].amount.u128() * 2, final_proposal.power.u128());
 }
 
 // Test case:

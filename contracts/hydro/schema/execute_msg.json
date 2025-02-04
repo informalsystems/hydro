@@ -165,6 +165,38 @@
     {
       "type": "object",
       "required": [
+        "unvote"
+      ],
+      "properties": {
+        "unvote": {
+          "type": "object",
+          "required": [
+            "lock_ids",
+            "tranche_id"
+          ],
+          "properties": {
+            "lock_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
         "add_account_to_whitelist"
       ],
       "properties": {

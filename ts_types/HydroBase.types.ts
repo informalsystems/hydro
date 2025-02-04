@@ -93,6 +93,11 @@ export type ExecuteMsg = {
     tranche_id: number;
   };
 } | {
+  unvote: {
+    lock_ids: number[];
+    tranche_id: number;
+  };
+} | {
   add_account_to_whitelist: {
     address: string;
   };
