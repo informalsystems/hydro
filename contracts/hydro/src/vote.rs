@@ -181,7 +181,7 @@ pub fn process_votes(
 
     let mut locks_voted = vec![];
     let mut locks_skipped = vec![];
-    let mut voted_proposals = vec![];
+    let mut voted_proposals = HashSet::new();
     let mut power_changes: HashMap<u64, ProposalPowerUpdate> = HashMap::new();
 
     for proposal_to_lockups in proposals_votes {
@@ -295,14 +295,13 @@ pub fn process_votes(
             })?;
 
             locks_voted.push(lock_id);
+            voted_proposals.insert(proposal_id);
         }
-
-        voted_proposals.push(proposal_id);
     }
 
     Ok(ProcessVotesResult {
         power_changes,
-        voted_proposals,
+        voted_proposals: voted_proposals.into_iter().collect(),
         locks_voted,
         locks_skipped,
     })

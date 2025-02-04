@@ -269,6 +269,15 @@ pub fn combine_proposal_power_updates(
     let mut combined_updates = updates1;
 
     for (proposal_id, mut update2) in updates2 {
+        // Clean up any zero entries in update2 before inserting
+        update2
+            .validator_shares
+            .retain(|_, shares| !shares.is_zero());
+
+        if update2.validator_shares.is_empty() {
+            continue;
+        }
+
         combined_updates
             .entry(proposal_id)
             .and_modify(|update1| {
@@ -276,12 +285,22 @@ pub fn combine_proposal_power_updates(
                     update1
                         .validator_shares
                         .entry(validator)
-                        .and_modify(|existing| *existing += shares)
+                        .and_modify(|existing| {
+                            *existing += shares;
+                        })
                         .or_insert(shares);
                 }
+
+                // Remove any validator entries that sum to zero
+                update1
+                    .validator_shares
+                    .retain(|_, shares| !shares.is_zero());
             })
             .or_insert(update2);
     }
+
+    // Remove any proposals that end up with no validator shares
+    combined_updates.retain(|_, update| !update.validator_shares.is_empty());
 
     combined_updates
 }
