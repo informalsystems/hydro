@@ -6,6 +6,7 @@ pub mod msg;
 pub mod query;
 pub mod score_keeper;
 pub mod state;
+pub mod utils;
 pub mod validators_icqs;
 pub mod vote;
 
@@ -29,3 +30,12 @@ mod testing_fractional_voting;
 
 #[cfg(test)]
 mod testing_deployments;
+
+#[cfg(test)]
+mod testing_utils;
+
+#[cfg(test)]
+mod testing_compounder_cap;
+
+#[cfg(test)]
+mod testing_snapshoting;

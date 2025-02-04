@@ -504,11 +504,20 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
     address: string;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
   updateConfig: ({
+    activateAt,
+    knownUsersCap,
     maxDeploymentDuration,
     maxLockedTokens
   }: {
+    activateAt: Timestamp;
+    knownUsersCap?: number;
     maxDeploymentDuration?: number;
     maxLockedTokens?: number;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  deleteConfigs: ({
+    timestamps
+  }: {
+    timestamps: Timestamp[];
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
   pause: (fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
   addTranche: ({
@@ -592,6 +601,7 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.addAccountToWhitelist = this.addAccountToWhitelist.bind(this);
     this.removeAccountFromWhitelist = this.removeAccountFromWhitelist.bind(this);
     this.updateConfig = this.updateConfig.bind(this);
+    this.deleteConfigs = this.deleteConfigs.bind(this);
     this.pause = this.pause.bind(this);
     this.addTranche = this.addTranche.bind(this);
     this.editTranche = this.editTranche.bind(this);
@@ -715,16 +725,33 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     }, fee_, memo_, funds_);
   };
   updateConfig = async ({
+    activateAt,
+    knownUsersCap,
     maxDeploymentDuration,
     maxLockedTokens
   }: {
+    activateAt: Timestamp;
+    knownUsersCap?: number;
     maxDeploymentDuration?: number;
     maxLockedTokens?: number;
   }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       update_config: {
+        activate_at: activateAt,
+        known_users_cap: knownUsersCap,
         max_deployment_duration: maxDeploymentDuration,
         max_locked_tokens: maxLockedTokens
+      }
+    }, fee_, memo_, funds_);
+  };
+  deleteConfigs = async ({
+    timestamps
+  }: {
+    timestamps: Timestamp[];
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      delete_configs: {
+        timestamps
       }
     }, fee_, memo_, funds_);
   };

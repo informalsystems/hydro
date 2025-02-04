@@ -45,6 +45,7 @@ export interface Constants {
   hub_connection_id: string;
   hub_transfer_channel_id: string;
   icq_update_period: number;
+  known_users_cap: number;
   lock_epoch_length: number;
   max_deployment_duration: number;
   max_locked_tokens: number;
@@ -106,8 +107,14 @@ export type ExecuteMsg = {
   };
 } | {
   update_config: {
+    activate_at: Timestamp;
+    known_users_cap?: number | null;
     max_deployment_duration?: number | null;
     max_locked_tokens?: number | null;
+  };
+} | {
+  delete_configs: {
+    timestamps: Timestamp[];
   };
 } | {
   pause: {};

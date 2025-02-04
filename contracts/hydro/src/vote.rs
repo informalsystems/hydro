@@ -215,8 +215,8 @@ pub fn process_votes(
 
             // Validate and get validator
             let validator = match validate_denom(
-                deps.as_ref(),
-                context.env.clone(),
+                &deps.as_ref(),
+                context.round_id,
                 context.constants,
                 lock_entry.clone().funds.denom,
             ) {
@@ -237,7 +237,7 @@ pub fn process_votes(
                 get_lock_time_weighted_shares(
                     &context.constants.round_lock_power_schedule,
                     round_end,
-                    lock_entry.clone(),
+                    lock_entry,
                     lock_epoch_length,
                 ),
                 Uint128::one(),

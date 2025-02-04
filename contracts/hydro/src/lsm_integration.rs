@@ -1,14 +1,13 @@
-use cosmwasm_std::{Decimal, Deps, Env, Order, StdError, StdResult, Storage};
+use cosmwasm_std::{Decimal, Deps, Order, StdError, StdResult, Storage, Uint128};
 
 use neutron_sdk::bindings::query::NeutronQuery;
 use neutron_std::types::ibc::applications::transfer::v1::{DenomTrace, TransferQuerier};
 
 use crate::state::{
-    ValidatorInfo, SCALED_ROUND_POWER_SHARES_MAP, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
-    VALIDATORS_STORE_INITIALIZED,
+    ValidatorInfo, SCALED_ROUND_POWER_SHARES_MAP, TOTAL_VOTING_POWER_PER_ROUND, VALIDATORS_INFO,
+    VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
 };
 use crate::{
-    contract::compute_current_round_id,
     score_keeper::{get_total_power_for_proposal, update_power_ratio_for_proposal},
     state::{Constants, Proposal, PROPOSAL_MAP, PROPS_BY_SCORE, TRANCHE_MAP},
 };
@@ -22,16 +21,15 @@ pub const COSMOS_VALIDATOR_ADDR_LENGTH: usize = 52; // e.g. cosmosvaloper15w6ra6
 
 // Returns OK if the denom is a valid IBC denom representing LSM
 // tokenized share transferred directly from the Cosmos Hub
-// of a validator that is also currently among the top
-// max_validators validators, and returns the address of that validator.
+// of a validator that is also among the top max_validators validators
+// for the given round, and returns the address of that validator.
 pub fn validate_denom(
-    deps: Deps<NeutronQuery>,
-    env: Env,
+    deps: &Deps<NeutronQuery>,
+    round_id: u64,
     constants: &Constants,
     denom: String,
 ) -> StdResult<String> {
-    let validator = resolve_validator_from_denom(&deps, constants, denom)?;
-    let round_id = compute_current_round_id(&env, constants)?;
+    let validator = resolve_validator_from_denom(deps, constants, denom)?;
     let max_validators = constants.max_validator_shares_participating;
 
     if is_active_round_validator(deps.storage, round_id, &validator) {
@@ -87,7 +85,7 @@ pub fn is_active_round_validator(storage: &dyn Storage, round_id: u64, validator
 }
 
 // Gets the current list of active validators for the given round
-pub fn get_round_validators(deps: Deps<NeutronQuery>, round_id: u64) -> Vec<ValidatorInfo> {
+pub fn get_round_validators(deps: &Deps<NeutronQuery>, round_id: u64) -> Vec<ValidatorInfo> {
     VALIDATORS_INFO
         .prefix(round_id)
         .range(deps.storage, None, None, Order::Ascending)
@@ -131,6 +129,35 @@ fn query_ibc_denom_trace(deps: &Deps<NeutronQuery>, denom: String) -> StdResult<
         .map_err(|err| StdError::generic_err(format!("Failed to obtain IBC denom trace: {}", err)))?
         .denom_trace
         .ok_or(StdError::generic_err("Failed to obtain IBC denom trace"))
+}
+
+/// Updates all the required stores each time some validator's power ratio is changed
+pub fn update_stores_due_to_power_ratio_change(
+    storage: &mut dyn Storage,
+    current_height: u64,
+    validator: &str,
+    current_round_id: u64,
+    old_power_ratio: Decimal,
+    new_power_ratio: Decimal,
+) -> StdResult<()> {
+    update_scores_due_to_power_ratio_change(
+        storage,
+        validator,
+        current_round_id,
+        old_power_ratio,
+        new_power_ratio,
+    )?;
+
+    update_total_power_due_to_power_ratio_change(
+        storage,
+        current_height,
+        validator,
+        current_round_id,
+        old_power_ratio,
+        new_power_ratio,
+    )?;
+
+    Ok(())
 }
 
 // Applies the new power ratio for the validator to score keepers.
@@ -215,31 +242,96 @@ pub fn update_scores_due_to_power_ratio_change(
     Ok(())
 }
 
-pub fn get_total_power_for_round(deps: Deps<NeutronQuery>, round_id: u64) -> StdResult<Decimal> {
-    // get the current validators for that round
-    let validators = get_round_validators(deps, round_id);
+// Updates the total voting power for the current and future rounds when the given validator power ratio changes.
+pub fn update_total_power_due_to_power_ratio_change(
+    storage: &mut dyn Storage,
+    current_height: u64,
+    validator: &str,
+    current_round_id: u64,
+    old_power_ratio: Decimal,
+    new_power_ratio: Decimal,
+) -> StdResult<()> {
+    let mut round_id = current_round_id;
 
-    // compute the total power
-    let mut total = Decimal::zero();
-    for validator in validators {
-        let shares = SCALED_ROUND_POWER_SHARES_MAP
-            .may_load(deps.storage, (round_id, validator.address.clone()))?
-            .unwrap_or(Decimal::zero());
-        total += shares * validator.power_ratio;
+    // Try to update the total voting power starting from the current round id and moving to next rounds until
+    // we reach the round for which there is no entry in the TOTAL_VOTING_POWER_PER_ROUND. This implies the first
+    // round in which no lock entry gives voting power, which also must be true for all rounds after that round,
+    // so we break the loop at that point.
+    loop {
+        let old_total_voting_power =
+            match TOTAL_VOTING_POWER_PER_ROUND.may_load(storage, round_id)? {
+                None => break,
+                Some(total_voting_power) => Decimal::from_ratio(total_voting_power, Uint128::one()),
+            };
+
+        let validator_shares =
+            get_validator_shares_for_round(storage, round_id, validator.to_owned())?;
+        if validator_shares == Decimal::zero() {
+            // If we encounter a round that doesn't have this validator shares, then no subsequent
+            // round could also have its shares, so break early to save some gas.
+            break;
+        }
+
+        let old_validator_shares_power = validator_shares * old_power_ratio;
+        let new_validator_shares_power = validator_shares * new_power_ratio;
+
+        let new_total_voting_power = old_total_voting_power
+            .checked_add(new_validator_shares_power)?
+            .checked_sub(old_validator_shares_power)?;
+
+        TOTAL_VOTING_POWER_PER_ROUND.save(
+            storage,
+            round_id,
+            &new_total_voting_power.to_uint_ceil(),
+            current_height,
+        )?;
+
+        round_id += 1;
     }
 
-    Ok(total)
+    Ok(())
+}
+
+pub fn get_total_power_for_round(deps: &Deps<NeutronQuery>, round_id: u64) -> StdResult<Decimal> {
+    Ok(
+        match TOTAL_VOTING_POWER_PER_ROUND.may_load(deps.storage, round_id)? {
+            None => Decimal::zero(),
+            Some(total_voting_power) => Decimal::from_ratio(total_voting_power, Uint128::one()),
+        },
+    )
 }
 
 pub fn add_validator_shares_to_round_total(
     storage: &mut dyn Storage,
+    current_height: u64,
     round_id: u64,
     validator: String,
+    val_power_ratio: Decimal,
     num_shares: Decimal,
 ) -> StdResult<()> {
+    // Update validator shares for the round
     let current_shares = get_validator_shares_for_round(storage, round_id, validator.clone())?;
     let new_shares = current_shares + num_shares;
-    SCALED_ROUND_POWER_SHARES_MAP.save(storage, (round_id, validator), &new_shares)
+    SCALED_ROUND_POWER_SHARES_MAP.save(storage, (round_id, validator.clone()), &new_shares)?;
+
+    // Update total voting power for the round
+    TOTAL_VOTING_POWER_PER_ROUND.update(
+        storage,
+        round_id,
+        current_height,
+        |total_power_before| -> Result<Uint128, StdError> {
+            let total_power_before = match total_power_before {
+                None => Decimal::zero(),
+                Some(total_power_before) => Decimal::from_ratio(total_power_before, Uint128::one()),
+            };
+
+            Ok(total_power_before
+                .checked_add(num_shares.checked_mul(val_power_ratio)?)?
+                .to_uint_ceil())
+        },
+    )?;
+
+    Ok(())
 }
 
 pub fn get_validator_shares_for_round(
@@ -310,7 +402,7 @@ pub fn initialize_validator_store_helper(
     }
 
     // copy the information from the previous round
-    let val_infos = load_validators_infos(storage, round_id - 1)?;
+    let val_infos = load_validators_infos(storage, round_id - 1);
 
     for val_info in val_infos {
         let address = val_info.clone().address;
@@ -334,10 +426,13 @@ pub fn initialize_validator_store_helper(
 }
 
 // load_validators_infos needs to be its own function to borrow the storage
-fn load_validators_infos(storage: &dyn Storage, round_id: u64) -> StdResult<Vec<ValidatorInfo>> {
+pub fn load_validators_infos(storage: &dyn Storage, round_id: u64) -> Vec<ValidatorInfo> {
     VALIDATORS_INFO
         .prefix(round_id)
         .range(storage, None, None, Order::Ascending)
-        .map(|val_info_res| val_info_res.map(|val_info| val_info.1))
+        .filter_map(|val_info| match val_info {
+            Err(_) => None,
+            Ok(val_info) => Some(val_info.1),
+        })
         .collect()
 }

@@ -574,9 +574,10 @@ func (s *HydroSuite) RefreshLock(contractAddr string, new_lock_duration, lock_id
 	return nil
 }
 
-func (s *HydroSuite) UpdateMaxLockedTokens(contractAddr string, newMaxLockedTokens int64) error {
+func (s *HydroSuite) UpdateMaxLockedTokens(contractAddr string, newMaxLockedTokens, activate_at int64) error {
 	updateMaxLockedTokensTxData := map[string]interface{}{
 		"update_config": map[string]interface{}{
+			"activate_at":       strconv.FormatInt(activate_at, 10),
 			"max_locked_tokens": newMaxLockedTokens,
 		},
 	}

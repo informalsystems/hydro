@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"hydro/test/interchain/chainsuite"
 
@@ -196,7 +197,7 @@ func (s *HydroSuite) TestPauseContract() {
 	err = s.RemoveICQManager(contractAddr, s.NeutronChain.ValidatorWallets[1].Address)
 	RequirePaused(s, err)
 
-	err = s.UpdateMaxLockedTokens(contractAddr, 100000000000)
+	err = s.UpdateMaxLockedTokens(contractAddr, 100000000000, time.Now().UTC().Add(time.Hour).UnixNano())
 	RequirePaused(s, err)
 }
 

@@ -19,6 +19,7 @@
         "hub_connection_id",
         "hub_transfer_channel_id",
         "icq_update_period",
+        "known_users_cap",
         "lock_epoch_length",
         "max_deployment_duration",
         "max_locked_tokens",
@@ -40,6 +41,11 @@
         "icq_update_period": {
           "type": "integer",
           "format": "uint64",
+          "minimum": 0.0
+        },
+        "known_users_cap": {
+          "type": "integer",
+          "format": "uint128",
           "minimum": 0.0
         },
         "lock_epoch_length": {

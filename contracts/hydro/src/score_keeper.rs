@@ -386,7 +386,7 @@ mod tests {
         let deps = mock_dependencies(no_op_grpc_query_mock());
         let index_key = 5;
 
-        let total_power = get_total_power_for_round(deps.as_ref(), index_key).unwrap();
+        let total_power = get_total_power_for_round(&deps.as_ref(), index_key).unwrap();
         assert_eq!(total_power, Decimal::zero());
 
         let total_power = get_total_power_for_proposal(deps.as_ref().storage, index_key).unwrap();
