@@ -14,6 +14,7 @@ use neutron_sdk::interchain_queries::v047::register_queries::new_register_stakin
 use neutron_sdk::sudo::msg::SudoMsg;
 
 use crate::error::ContractError;
+use crate::governance::{query_total_power_at_height, query_voting_power_at_height};
 use crate::lsm_integration::{
     add_validator_shares_to_round_total, get_total_power_for_round,
     get_validator_power_ratio_for_round, validate_denom, COSMOS_VALIDATOR_PREFIX,
@@ -37,14 +38,15 @@ use crate::score_keeper::{
 use crate::state::{
     Constants, LockEntry, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo, Vote,
     VoteWithPower, CONSTANTS, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP,
-    LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, ROUND_TO_HEIGHT_RANGE,
-    SNAPSHOTS_ACTIVATION_HEIGHT, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS, VALIDATORS_INFO,
-    VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP,
-    VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
+    LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, SNAPSHOTS_ACTIVATION_HEIGHT, TRANCHE_ID,
+    TRANCHE_MAP, USER_LOCKS, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
+    VALIDATOR_TO_QUERY_ID, VOTE_MAP, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::utils::{
+    get_current_user_voting_power, get_lock_time_weighted_shares,
     load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
-    update_locked_tokens_info, validate_locked_tokens_caps,
+    scale_lockup_power, to_lockup_with_power, update_locked_tokens_info,
+    validate_locked_tokens_caps,
 };
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
@@ -783,33 +785,6 @@ fn create_proposal(
         ))
 }
 
-pub fn scale_lockup_power(
-    round_lock_power_schedule: &RoundLockPowerSchedule,
-    lock_epoch_length: u64,
-    lockup_time: u64,
-    raw_power: Uint128,
-) -> Uint128 {
-    for entry in round_lock_power_schedule.round_lock_power_schedule.iter() {
-        let needed_lock_time = entry.locked_rounds * lock_epoch_length;
-        if lockup_time <= needed_lock_time {
-            let power = entry
-                .power_scaling_factor
-                .saturating_mul(Decimal::from_ratio(raw_power, Uint128::one()));
-            return power.to_uint_floor();
-        }
-    }
-
-    // if lockup time is longer than the longest lock time, return the maximum power
-    let largest_multiplier = round_lock_power_schedule
-        .round_lock_power_schedule
-        .last()
-        .unwrap()
-        .power_scaling_factor;
-    largest_multiplier
-        .saturating_mul(Decimal::new(raw_power))
-        .to_uint_floor()
-}
-
 fn vote(
     mut deps: DepsMut<NeutronQuery>,
     env: Env,
@@ -975,26 +950,6 @@ fn unvote(
     }
 
     Ok(response)
-}
-
-// Returns the time-weighted amount of shares locked in the given lock entry in a round with the given end time,
-// and using the given lock epoch length.
-pub fn get_lock_time_weighted_shares(
-    round_lock_power_schedule: &RoundLockPowerSchedule,
-    round_end: Timestamp,
-    lock_entry: &LockEntry,
-    lock_epoch_length: u64,
-) -> Uint128 {
-    if round_end.nanos() > lock_entry.lock_end.nanos() {
-        return Uint128::zero();
-    }
-    let lockup_length = lock_entry.lock_end.nanos() - round_end.nanos();
-    scale_lockup_power(
-        round_lock_power_schedule,
-        lock_epoch_length,
-        lockup_length,
-        lock_entry.funds.amount,
-    )
 }
 
 // Adds a new account address to the whitelist.
@@ -1686,6 +1641,12 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         } => to_json_binary(&query_round_tranche_liquidity_deployments(
             deps, round_id, tranche_id, start_from, limit,
         )?),
+        QueryMsg::TotalPowerAtHeight { height } => {
+            to_json_binary(&query_total_power_at_height(&deps, &env, height)?)
+        }
+        QueryMsg::VotingPowerAtHeight { address, height } => {
+            to_json_binary(&query_voting_power_at_height(&deps, &env, address, height)?)
+        }
     }
 }
 
@@ -1960,112 +1921,6 @@ pub fn query_user_voting_power(
             deps.api.addr_validate(&address)?,
         )?,
     })
-}
-
-pub fn get_current_user_voting_power(
-    deps: &Deps<NeutronQuery>,
-    env: &Env,
-    address: Addr,
-) -> StdResult<u128> {
-    let constants = load_current_constants(deps, env)?;
-    let current_round_id = compute_current_round_id(env, &constants)?;
-    let round_end = compute_round_end(&constants, current_round_id)?;
-
-    let filter = |lock_res: Result<(u64, LockEntry), StdError>| match lock_res {
-        Err(_) => None,
-        Ok(lock_tuple) => {
-            if lock_tuple.1.lock_end > round_end {
-                Some(lock_tuple.1)
-            } else {
-                None
-            }
-        }
-    };
-
-    get_user_voting_power(
-        deps,
-        &constants,
-        address.clone(),
-        current_round_id,
-        round_end,
-        filter,
-    )
-}
-
-pub fn get_user_voting_power_for_past_round(
-    deps: &Deps<NeutronQuery>,
-    constants: &Constants,
-    address: Addr,
-    round_id: u64,
-) -> StdResult<u128> {
-    let round_end = compute_round_end(constants, round_id)?;
-    let load_height = ROUND_TO_HEIGHT_RANGE
-        .may_load(deps.storage, round_id)?
-        .unwrap_or_default()
-        .highest_known_height;
-
-    let snapshot_activation_height = SNAPSHOTS_ACTIVATION_HEIGHT.load(deps.storage)?;
-    if load_height < snapshot_activation_height {
-        return Err(StdError::generic_err(format!(
-            "Can not query historical data before height: {}.",
-            snapshot_activation_height
-        )));
-    }
-
-    let user_locks_ids = USER_LOCKS
-        .may_load_at_height(deps.storage, address.clone(), load_height)?
-        .unwrap_or_default();
-
-    Ok(user_locks_ids
-        .into_iter()
-        .filter_map(|lock_id| {
-            match LOCKS_MAP.may_load_at_height(
-                deps.storage,
-                (address.clone(), lock_id),
-                load_height,
-            ) {
-                Err(_) => None,
-                Ok(lock) => match lock {
-                    None => None,
-                    Some(lock) => {
-                        if lock.lock_end <= round_end {
-                            None
-                        } else {
-                            Some(lock)
-                        }
-                    }
-                },
-            }
-        })
-        .map(|lockup| {
-            to_lockup_with_power(deps, constants, round_id, round_end, lockup)
-                .current_voting_power
-                .u128()
-        })
-        .sum())
-}
-
-pub fn get_user_voting_power<T>(
-    deps: &Deps<NeutronQuery>,
-    constants: &Constants,
-    address: Addr,
-    round_id: u64,
-    round_end: Timestamp,
-    filter: T,
-) -> StdResult<u128>
-where
-    T: FnMut(Result<(u64, LockEntry), StdError>) -> Option<LockEntry>,
-{
-    Ok(LOCKS_MAP
-        .prefix(address)
-        .range(deps.storage, None, None, Order::Ascending)
-        .filter_map(filter)
-        .map(|lockup| {
-            to_lockup_with_power(deps, constants, round_id, round_end, lockup)
-                .current_voting_power
-                .u128()
-        })
-        .sum())
 }
 
 // This function queries user votes for the given round and tranche.
@@ -2689,70 +2544,6 @@ fn get_lock_count(deps: &Deps<NeutronQuery>, user_address: Addr) -> usize {
         .prefix(user_address)
         .range(deps.storage, None, None, Order::Ascending)
         .count()
-}
-
-fn to_lockup_with_power(
-    deps: &Deps<NeutronQuery>,
-    constants: &Constants,
-    round_id: u64,
-    round_end: Timestamp,
-    lock_entry: LockEntry,
-) -> LockEntryWithPower {
-    match validate_denom(deps, round_id, constants, lock_entry.funds.denom.clone()) {
-        Err(_) => {
-            // If we fail to resove the denom, or the validator has dropped
-            // from the top N, then this lockup has zero voting power.
-            LockEntryWithPower {
-                lock_entry,
-                current_voting_power: Uint128::zero(),
-            }
-        }
-        Ok(validator) => {
-            match get_validator_power_ratio_for_round(deps.storage, round_id, validator) {
-                Err(_) => {
-                    deps.api.debug(&format!(
-                        "An error occured while computing voting power for lock: {:?}",
-                        lock_entry,
-                    ));
-
-                    LockEntryWithPower {
-                        lock_entry,
-                        current_voting_power: Uint128::zero(),
-                    }
-                }
-                Ok(validator_power_ratio) => {
-                    let time_weighted_shares = get_lock_time_weighted_shares(
-                        &constants.round_lock_power_schedule,
-                        round_end,
-                        &lock_entry,
-                        constants.lock_epoch_length,
-                    );
-
-                    let current_voting_power = validator_power_ratio
-                        .checked_mul(Decimal::from_ratio(time_weighted_shares, Uint128::one()));
-
-                    match current_voting_power {
-                        Err(_) => {
-                            // if there was an overflow error, log this but return 0
-                            deps.api.debug(&format!(
-                                "Overflow error when computing voting power for lock: {:?}",
-                                lock_entry
-                            ));
-
-                            LockEntryWithPower {
-                                lock_entry: lock_entry.clone(),
-                                current_voting_power: Uint128::zero(),
-                            }
-                        }
-                        Ok(current_voting_power) => LockEntryWithPower {
-                            lock_entry,
-                            current_voting_power: current_voting_power.to_uint_ceil(),
-                        },
-                    }
-                }
-            }
-        }
-    }
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]

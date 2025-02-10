@@ -4,7 +4,6 @@ use std::str::FromStr;
 use crate::contract::{
     compute_current_round_id, query_all_user_lockups, query_all_user_lockups_with_tranche_infos,
     query_specific_user_lockups, query_specific_user_lockups_with_tranche_infos, query_user_votes,
-    scale_lockup_power,
 };
 use crate::msg::ProposalToLockups;
 use crate::state::{RoundLockPowerSchedule, ValidatorInfo, Vote, VALIDATORS_INFO, VOTE_MAP};
@@ -16,7 +15,7 @@ use crate::testing_lsm_integration::set_validator_power_ratio;
 use crate::testing_mocks::{
     denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
 };
-use crate::utils::load_current_constants;
+use crate::utils::{load_current_constants, scale_lockup_power};
 use crate::{
     contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
     msg::ExecuteMsg,

@@ -4,13 +4,9 @@ use crate::{
 };
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 
-#[derive(
-    Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, QueryResponses, cw_orch::QueryFns,
-)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
+#[derive(QueryResponses, cw_orch::QueryFns)]
 pub enum QueryMsg {
     #[returns(ConstantsResponse)]
     Constants {},
@@ -119,6 +115,13 @@ pub enum QueryMsg {
         tranche_id: u64,
         start_from: u64,
         limit: u64,
+    },
+    #[returns(TotalPowerAtHeightResponse)]
+    TotalPowerAtHeight { height: Option<u64> },
+    #[returns(VotingPowerAtHeightResponse)]
+    VotingPowerAtHeight {
+        address: String,
+        height: Option<u64>,
     },
 }
 
@@ -271,4 +274,19 @@ pub struct LiquidityDeploymentResponse {
 #[cw_serde]
 pub struct RoundTrancheLiquidityDeploymentsResponse {
     pub liquidity_deployments: Vec<LiquidityDeployment>,
+}
+
+// TotalPowerAtHeightResponse and VotingPowerAtHeightResponse are defined instead of using the ones from dao-interface
+// so that we can use them in tests and other places without having to convert Uint128 from v1 to v2 and other way round
+// because DAO DAO currently uses CosmWasm 1.5, and we are on version 2.
+#[cw_serde]
+pub struct TotalPowerAtHeightResponse {
+    pub power: Uint128,
+    pub height: u64,
+}
+
+#[cw_serde]
+pub struct VotingPowerAtHeightResponse {
+    pub power: Uint128,
+    pub height: u64,
 }

@@ -319,6 +319,15 @@ export type QueryMsg = {
     start_from: number;
     tranche_id: number;
   };
+} | {
+  total_power_at_height: {
+    height?: number | null;
+  };
+} | {
+  voting_power_at_height: {
+    address: string;
+    height?: number | null;
+  };
 };
 export interface RegisteredValidatorQueriesResponse {
   query_ids: [string, number][];
@@ -347,6 +356,10 @@ export interface TopNProposalsResponse {
 export interface TotalLockedTokensResponse {
   total_locked_tokens: number;
 }
+export interface TotalPowerAtHeightResponse {
+  height: number;
+  power: Uint128;
+}
 export interface TranchesResponse {
   tranches: Tranche[];
 }
@@ -367,6 +380,10 @@ export interface UserVotingPowerResponse {
 }
 export interface ValidatorPowerRatioResponse {
   ratio: Decimal;
+}
+export interface VotingPowerAtHeightResponse {
+  height: number;
+  power: Uint128;
 }
 export interface WhitelistAdminsResponse {
   admins: Addr[];

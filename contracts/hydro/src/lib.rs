@@ -1,5 +1,6 @@
 pub mod contract;
 mod error;
+pub mod governance;
 pub mod lsm_integration;
 pub mod migration;
 pub mod msg;
@@ -39,3 +40,6 @@ mod testing_compounder_cap;
 
 #[cfg(test)]
 mod testing_snapshoting;
+
+#[cfg(test)]
+mod testing_governance;
