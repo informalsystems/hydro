@@ -12,8 +12,8 @@ use crate::{
     contract::{instantiate, CONTRACT_NAME},
     migration::{
         migrate::{migrate, CONTRACT_VERSION_V3_0_0},
-        unreleased::MigrateMsgUnreleased,
         v3_0_0::ConstantsV3_0_0,
+        v3_1_0::MigrateMsgV3_1_0,
     },
     state::{
         LockEntry, HEIGHT_TO_ROUND, LOCKS_MAP, ROUND_TO_HEIGHT_RANGE,
@@ -45,7 +45,7 @@ fn test_constants_and_height_mappings_migration() {
     let current_round_id = 3;
     let migration_height = env.block.height;
 
-    let res = migrate(deps.as_mut(), env.clone(), MigrateMsgUnreleased {});
+    let res = migrate(deps.as_mut(), env.clone(), MigrateMsgV3_1_0 {});
     assert!(
         res.is_ok(),
         "failed to migrate contract to the newest version"
@@ -203,7 +203,7 @@ fn test_total_voting_power_migration() {
         .plus_nanos(4 * old_constants.round_length + 1);
     env.block.height += 400_000;
 
-    let res = migrate(deps.as_mut(), env.clone(), MigrateMsgUnreleased {});
+    let res = migrate(deps.as_mut(), env.clone(), MigrateMsgV3_1_0 {});
     assert!(
         res.is_ok(),
         "failed to migrate contract to the newest version"
@@ -286,7 +286,7 @@ fn test_user_lockups_migration() {
         .plus_nanos(4 * old_constants.round_length + 1);
     env.block.height += 400_000;
 
-    let res = migrate(deps.as_mut(), env.clone(), MigrateMsgUnreleased {});
+    let res = migrate(deps.as_mut(), env.clone(), MigrateMsgV3_1_0 {});
     assert!(
         res.is_ok(),
         "failed to migrate contract to the newest version"
