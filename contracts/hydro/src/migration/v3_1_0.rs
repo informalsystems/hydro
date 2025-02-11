@@ -19,9 +19,9 @@ use crate::{
 };
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct MigrateMsgUnreleased {}
+pub struct MigrateMsgV3_1_0 {}
 
-pub fn migrate_v3_0_0_to_unreleased(
+pub fn migrate_v3_0_0_to_v3_1_0(
     deps: &mut DepsMut<NeutronQuery>,
     env: Env,
 ) -> Result<(), ContractError> {
