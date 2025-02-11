@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## v3.1.0
+
+<!--
+    Add a summary for the release here.
+
+    If you don't change this message, or if this file is empty, the release
+    will not be created. -->
+
+Date: February 11th, 2025
+
+### FEATURES
+
+- Allow users / aggregators to unvote without having to switch votes.
+  ([\#218](https://github.com/informalsystems/hydro/pull/218))
+- Introduced the compounder cap- a reserved portion of the maximum token lock limit that is allocated exclusively for known users from the previous round.
+  ([\#220](https://github.com/informalsystems/hydro/pull/220))
+- Introduced SnapshotMaps for tracking the historical voting power for each user as well as the round total voting power.
+  ([\#220](https://github.com/informalsystems/hydro/pull/220))
+- Added support for integrating Hydro as a voting module in DAO DAO governance smart contracts.
+  ([\#226](https://github.com/informalsystems/hydro/pull/226))
+
 ## v3.0.0
 
 Date: January 20th, 2025
