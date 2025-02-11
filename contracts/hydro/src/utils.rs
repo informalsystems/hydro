@@ -304,6 +304,8 @@ pub fn update_round_height_maps(
     HEIGHT_TO_ROUND.save(storage, env.block.height, &round_id)
 }
 
+/// Returns the round ID in which Hydro was at the given height. Note that if the required height is after the end
+/// of round N, but before the first transaction is issued in round N+1, this would return N, not N+1.
 pub fn get_round_id_for_height(storage: &dyn Storage, height: u64) -> StdResult<u64> {
     verify_historical_data_availability(storage, height)?;
 

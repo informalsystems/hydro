@@ -276,6 +276,8 @@ pub struct RoundTrancheLiquidityDeploymentsResponse {
     pub liquidity_deployments: Vec<LiquidityDeployment>,
 }
 
+//TotalPowerAtHeightResponse and VotingPowerAtHeightResponse conform to the DAODAO interface for a voting power module:
+// https://github.com/DA0-DA0/dao-contracts/blob/development/packages/dao-interface/src/voting.rs
 // TotalPowerAtHeightResponse and VotingPowerAtHeightResponse are defined instead of using the ones from dao-interface
 // so that we can use them in tests and other places without having to convert Uint128 from v1 to v2 and other way round
 // because DAO DAO currently uses CosmWasm 1.5, and we are on version 2.
