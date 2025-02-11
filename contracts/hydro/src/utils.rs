@@ -5,12 +5,17 @@ use cw_storage_plus::Bound;
 use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
-    contract::get_user_voting_power_for_past_round,
+    contract::{compute_current_round_id, compute_round_end},
     error::{new_generic_error, ContractError},
-    lsm_integration::{get_total_power_for_round, initialize_validator_store},
+    lsm_integration::{
+        get_total_power_for_round, get_validator_power_ratio_for_round, initialize_validator_store,
+        validate_denom,
+    },
+    query::LockEntryWithPower,
     state::{
-        Constants, HeightRange, CONSTANTS, EXTRA_LOCKED_TOKENS_CURRENT_USERS,
-        EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND, LOCKED_TOKENS, ROUND_TO_HEIGHT_RANGE,
+        Constants, HeightRange, LockEntry, RoundLockPowerSchedule, CONSTANTS,
+        EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND,
+        LOCKED_TOKENS, LOCKS_MAP, ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS,
     },
 };
 
@@ -297,6 +302,241 @@ pub fn update_round_height_maps(
     )?;
 
     HEIGHT_TO_ROUND.save(storage, env.block.height, &round_id)
+}
+
+/// Returns the round ID in which Hydro was at the given height. Note that if the required height is after the end
+/// of round N, but before the first transaction is issued in round N+1, this would return N, not N+1.
+pub fn get_round_id_for_height(storage: &dyn Storage, height: u64) -> StdResult<u64> {
+    verify_historical_data_availability(storage, height)?;
+
+    let round_id: Vec<u64> = HEIGHT_TO_ROUND
+        .range(
+            storage,
+            None,
+            Some(Bound::inclusive(height)),
+            Order::Descending,
+        )
+        .take(1)
+        .filter_map(|round| match round {
+            Ok(round) => Some(round.1),
+            Err(_) => None,
+        })
+        .collect();
+
+    Ok(match round_id.len() {
+        1 => round_id[0],
+        _ => {
+            return Err(StdError::generic_err(format!(
+                "Failed to load round ID for height {}.",
+                height
+            )));
+        }
+    })
+}
+
+fn get_highest_known_height_for_round_id(storage: &dyn Storage, round_id: u64) -> StdResult<u64> {
+    Ok(ROUND_TO_HEIGHT_RANGE
+        .may_load(storage, round_id)?
+        .unwrap_or_default()
+        .highest_known_height)
+}
+
+pub fn verify_historical_data_availability(storage: &dyn Storage, height: u64) -> StdResult<()> {
+    let snapshot_activation_height = SNAPSHOTS_ACTIVATION_HEIGHT.load(storage)?;
+    if height < snapshot_activation_height {
+        return Err(StdError::generic_err(format!(
+            "Historical data not available before height: {}. Height requested: {}",
+            snapshot_activation_height, height,
+        )));
+    }
+
+    Ok(())
+}
+
+pub fn get_current_user_voting_power(
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
+    address: Addr,
+) -> StdResult<u128> {
+    let constants = load_current_constants(deps, env)?;
+    let current_round_id = compute_current_round_id(env, &constants)?;
+    let round_end = compute_round_end(&constants, current_round_id)?;
+
+    Ok(LOCKS_MAP
+        .prefix(address)
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter_map(|lockup| match lockup {
+            Err(_) => None,
+            Ok(lockup) => Some(
+                to_lockup_with_power(deps, &constants, current_round_id, round_end, lockup.1)
+                    .current_voting_power
+                    .u128(),
+            ),
+        })
+        .sum())
+}
+
+/// Utility function intended to be used by get_user_voting_power_for_past_round() and get_user_voting_power_for_past_height().
+/// Both of these functions will ensure that the provided height indeed matches the given round, and vice versa.
+/// If the function is used in different context, the caller is responsible for ensuring this condition is satisifed.
+fn get_past_user_voting_power(
+    deps: &Deps<NeutronQuery>,
+    constants: &Constants,
+    address: Addr,
+    height: u64,
+    round_id: u64,
+) -> StdResult<u128> {
+    let round_end = compute_round_end(constants, round_id)?;
+
+    let user_locks_ids = USER_LOCKS
+        .may_load_at_height(deps.storage, address.clone(), height)?
+        .unwrap_or_default();
+
+    Ok(user_locks_ids
+        .into_iter()
+        .filter_map(|lock_id| {
+            LOCKS_MAP
+                .may_load_at_height(deps.storage, (address.clone(), lock_id), height)
+                .unwrap_or_default()
+        })
+        .map(|lockup| {
+            to_lockup_with_power(deps, constants, round_id, round_end, lockup)
+                .current_voting_power
+                .u128()
+        })
+        .sum())
+}
+
+pub fn get_user_voting_power_for_past_round(
+    deps: &Deps<NeutronQuery>,
+    constants: &Constants,
+    address: Addr,
+    round_id: u64,
+) -> StdResult<u128> {
+    let height = get_highest_known_height_for_round_id(deps.storage, round_id)?;
+    verify_historical_data_availability(deps.storage, height)?;
+    get_past_user_voting_power(deps, constants, address, height, round_id)
+}
+
+pub fn get_user_voting_power_for_past_height(
+    deps: &Deps<NeutronQuery>,
+    constants: &Constants,
+    address: Addr,
+    height: u64,
+) -> StdResult<u128> {
+    let round_id = get_round_id_for_height(deps.storage, height)?;
+    get_past_user_voting_power(deps, constants, address, height, round_id)
+}
+
+pub fn to_lockup_with_power(
+    deps: &Deps<NeutronQuery>,
+    constants: &Constants,
+    round_id: u64,
+    round_end: Timestamp,
+    lock_entry: LockEntry,
+) -> LockEntryWithPower {
+    match validate_denom(deps, round_id, constants, lock_entry.funds.denom.clone()) {
+        Err(_) => {
+            // If we fail to resove the denom, or the validator has dropped
+            // from the top N, then this lockup has zero voting power.
+            LockEntryWithPower {
+                lock_entry,
+                current_voting_power: Uint128::zero(),
+            }
+        }
+        Ok(validator) => {
+            match get_validator_power_ratio_for_round(deps.storage, round_id, validator) {
+                Err(_) => {
+                    deps.api.debug(&format!(
+                        "An error occured while computing voting power for lock: {:?}",
+                        lock_entry,
+                    ));
+
+                    LockEntryWithPower {
+                        lock_entry,
+                        current_voting_power: Uint128::zero(),
+                    }
+                }
+                Ok(validator_power_ratio) => {
+                    let time_weighted_shares = get_lock_time_weighted_shares(
+                        &constants.round_lock_power_schedule,
+                        round_end,
+                        &lock_entry,
+                        constants.lock_epoch_length,
+                    );
+
+                    let current_voting_power = validator_power_ratio
+                        .checked_mul(Decimal::from_ratio(time_weighted_shares, Uint128::one()));
+
+                    match current_voting_power {
+                        Err(_) => {
+                            // if there was an overflow error, log this but return 0
+                            deps.api.debug(&format!(
+                                "Overflow error when computing voting power for lock: {:?}",
+                                lock_entry
+                            ));
+
+                            LockEntryWithPower {
+                                lock_entry: lock_entry.clone(),
+                                current_voting_power: Uint128::zero(),
+                            }
+                        }
+                        Ok(current_voting_power) => LockEntryWithPower {
+                            lock_entry,
+                            current_voting_power: current_voting_power.to_uint_ceil(),
+                        },
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Returns the time-weighted amount of shares locked in the given lock entry in a round with the given end time,
+// and using the given lock epoch length.
+pub fn get_lock_time_weighted_shares(
+    round_lock_power_schedule: &RoundLockPowerSchedule,
+    round_end: Timestamp,
+    lock_entry: &LockEntry,
+    lock_epoch_length: u64,
+) -> Uint128 {
+    if round_end.nanos() > lock_entry.lock_end.nanos() {
+        return Uint128::zero();
+    }
+    let lockup_length = lock_entry.lock_end.nanos() - round_end.nanos();
+    scale_lockup_power(
+        round_lock_power_schedule,
+        lock_epoch_length,
+        lockup_length,
+        lock_entry.funds.amount,
+    )
+}
+
+pub fn scale_lockup_power(
+    round_lock_power_schedule: &RoundLockPowerSchedule,
+    lock_epoch_length: u64,
+    lockup_time: u64,
+    raw_power: Uint128,
+) -> Uint128 {
+    for entry in round_lock_power_schedule.round_lock_power_schedule.iter() {
+        let needed_lock_time = entry.locked_rounds * lock_epoch_length;
+        if lockup_time <= needed_lock_time {
+            let power = entry
+                .power_scaling_factor
+                .saturating_mul(Decimal::from_ratio(raw_power, Uint128::one()));
+            return power.to_uint_floor();
+        }
+    }
+
+    // if lockup time is longer than the longest lock time, return the maximum power
+    let largest_multiplier = round_lock_power_schedule
+        .round_lock_power_schedule
+        .last()
+        .unwrap()
+        .power_scaling_factor;
+    largest_multiplier
+        .saturating_mul(Decimal::new(raw_power))
+        .to_uint_floor()
 }
 
 pub struct LockingInfo {

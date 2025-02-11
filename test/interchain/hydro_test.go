@@ -3,9 +3,11 @@ package interchain
 import (
 	"fmt"
 	"log"
+
 	"strconv"
 	"strings"
 	"testing"
+
 	"time"
 
 	"hydro/test/interchain/chainsuite"
@@ -31,7 +33,6 @@ func TestHydroSuite(t *testing.T) {
 // registering of interchain queries for validators
 // locking of liquid staked tokens on hydro contract
 // creating and voting/revoting for hydro proposals
-// pausing/disabling contract
 func (s *HydroSuite) TestHappyPath() {
 	log.Println("==== Running happy path test")
 	hubNode := s.HubChain.GetNode()
@@ -642,4 +643,83 @@ func (s *HydroSuite) TestTributeContract() {
 	// expect no error when refunding tribute 6 since it was for a proposal that didn't receive any liquidity
 	err = s.RefundTribute(0, tributeContractAddr, proposal4.RoundID, proposal4.TrancheID, tribute6Id, proposal3.ProposalID)
 	s.Require().NoError(err)
+}
+
+// TestDaoVotingAdapter tests:
+// deployment of Hydro contract
+// deployment of DAO Voting Adapter contract
+// locking of tokens by two different users in Hydro contract
+// querying historical voting power on the DAO Voting Adapter contract
+func (s *HydroSuite) TestDaoVotingAdapter() {
+	log.Println("==== Running DAO voting adapter test")
+	hubNode0 := s.HubChain.Validators[0]
+	hubNode1 := s.HubChain.Validators[1]
+
+	// delegate tokens
+	log.Println("==== Delegating tokens")
+	s.DelegateTokens(hubNode0, s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[0].ValoperAddress, txAmountUatom(1000))
+	s.DelegateTokens(hubNode1, s.HubChain.ValidatorWallets[1].Moniker, s.HubChain.ValidatorWallets[1].ValoperAddress, txAmountUatom(1000))
+
+	// liquid stake tokens
+	log.Println("==== Tokenizing shares")
+	recordId1 := s.LiquidStakeTokens(hubNode0, s.HubChain.ValidatorWallets[0].Moniker, s.HubChain.ValidatorWallets[0].ValoperAddress,
+		s.HubChain.ValidatorWallets[0].Address, txAmountUatom(500))
+	recordId2 := s.LiquidStakeTokens(hubNode1, s.HubChain.ValidatorWallets[1].Moniker, s.HubChain.ValidatorWallets[1].ValoperAddress,
+		s.HubChain.ValidatorWallets[1].Address, txAmountUatom(500))
+
+	// transfer share tokens to neutron chain
+	log.Println("==== Transferring tokenized shares to Neutron")
+	sourceIbcDenom1 := fmt.Sprintf("%s/%s", strings.ToLower(s.HubChain.ValidatorWallets[0].ValoperAddress), recordId1)
+	dstIbcDenom1 := s.HubToNeutronShareTokenTransfer(0, math.NewInt(400), sourceIbcDenom1, s.NeutronChain.ValidatorWallets[0].Address)
+	sourceIbcDenom2 := fmt.Sprintf("%s/%s", strings.ToLower(s.HubChain.ValidatorWallets[1].ValoperAddress), recordId2)
+	dstIbcDenom2 := s.HubToNeutronShareTokenTransfer(1, math.NewInt(400), sourceIbcDenom2, s.NeutronChain.ValidatorWallets[1].Address)
+
+	// instantiate hydro contract
+	log.Println("==== Instantiating Hydro contract")
+	hydroContractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 3, 86400000000000)
+
+	// instantiate DAO voting power adapter contract
+	log.Println("==== Instantiating DAO Voting Power Adapter contract")
+	daoVotingAdapterContractAddr := s.InstantiateDaoVotingAdapterContract(daoVotingAdapterCodeId, hydroContractAddr, s.NeutronChain.ValidatorWallets[0].Address)
+
+	// register interchain query
+	log.Println("==== Registering interchain queries")
+	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[0].ValoperAddress, s.HubChain.ValidatorWallets[1].ValoperAddress},
+		hydroContractAddr, s.NeutronChain.ValidatorWallets[0].Moniker)
+
+	// first user locks tokens
+	log.Println("==== Locking tokens in Hydro")
+	err := s.LockTokens(0, 86400000000000, "10", dstIbcDenom1, hydroContractAddr)
+	s.Require().NoError(err)
+	err = s.LockTokens(0, 3*86400000000000, "10", dstIbcDenom1, hydroContractAddr)
+	s.Require().NoError(err)
+
+	historicalHeight, err := s.NeutronChain.Height(s.ctx)
+	s.Require().NoError(err)
+
+	var expectedTotalPower int64 = 25
+	expectedUserPowers := map[string]int64{
+		s.NeutronChain.ValidatorWallets[0].Address: 25,
+		s.NeutronChain.ValidatorWallets[1].Address: 0,
+	}
+
+	s.VerifyHistoricalVotingPowers(daoVotingAdapterContractAddr, historicalHeight, expectedTotalPower, expectedUserPowers)
+
+	// second user locks tokens
+	log.Println("==== Locking tokens in Hydro")
+	err = s.LockTokens(1, 86400000000000, "20", dstIbcDenom2, hydroContractAddr)
+	s.Require().NoError(err)
+	err = s.LockTokens(1, 3*86400000000000, "20", dstIbcDenom2, hydroContractAddr)
+	s.Require().NoError(err)
+
+	historicalHeight, err = s.NeutronChain.Height(s.ctx)
+	s.Require().NoError(err)
+
+	expectedTotalPower = 75
+	expectedUserPowers = map[string]int64{
+		s.NeutronChain.ValidatorWallets[0].Address: 25,
+		s.NeutronChain.ValidatorWallets[1].Address: 50,
+	}
+
+	s.VerifyHistoricalVotingPowers(daoVotingAdapterContractAddr, historicalHeight, expectedTotalPower, expectedUserPowers)
 }

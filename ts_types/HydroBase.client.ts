@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Uint128, Timestamp, Uint64, AllUserLockupsResponse, LockEntryWithPower, LockEntry, Coin, AllUserLockupsWithTrancheInfosResponse, LockupWithPerTrancheInfo, PerTrancheLockupInfo, Decimal, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExecuteMsg, ProposalToLockups, TrancheInfo, ExpiredUserLockupsResponse, Addr, ICQManagersResponse, InstantiateMsg, LiquidityDeploymentResponse, LiquidityDeployment, ProposalResponse, Proposal, QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse, Tranche, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, ValidatorPowerRatioResponse, WhitelistAdminsResponse, WhitelistResponse } from "./HydroBase.types";
+import { Uint128, Timestamp, Uint64, AllUserLockupsResponse, LockEntryWithPower, LockEntry, Coin, AllUserLockupsWithTrancheInfosResponse, LockupWithPerTrancheInfo, PerTrancheLockupInfo, Decimal, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExecuteMsg, ProposalToLockups, TrancheInfo, ExpiredUserLockupsResponse, Addr, ICQManagersResponse, InstantiateMsg, LiquidityDeploymentResponse, LiquidityDeployment, ProposalResponse, Proposal, QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, ValidatorPowerRatioResponse, VotingPowerAtHeightResponse, WhitelistAdminsResponse, WhitelistResponse } from "./HydroBase.types";
 export interface HydroBaseReadOnlyInterface {
   contractAddress: string;
   constants: () => Promise<ConstantsResponse>;
@@ -138,6 +138,18 @@ export interface HydroBaseReadOnlyInterface {
     startFrom: number;
     trancheId: number;
   }) => Promise<RoundTrancheLiquidityDeploymentsResponse>;
+  totalPowerAtHeight: ({
+    height
+  }: {
+    height?: number;
+  }) => Promise<TotalPowerAtHeightResponse>;
+  votingPowerAtHeight: ({
+    address,
+    height
+  }: {
+    address: string;
+    height?: number;
+  }) => Promise<VotingPowerAtHeightResponse>;
 }
 export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
   client: CosmWasmClient;
@@ -168,6 +180,8 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     this.validatorPowerRatio = this.validatorPowerRatio.bind(this);
     this.liquidityDeployment = this.liquidityDeployment.bind(this);
     this.roundTrancheLiquidityDeployments = this.roundTrancheLiquidityDeployments.bind(this);
+    this.totalPowerAtHeight = this.totalPowerAtHeight.bind(this);
+    this.votingPowerAtHeight = this.votingPowerAtHeight.bind(this);
   }
   constants = async (): Promise<ConstantsResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -440,6 +454,31 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
         round_id: roundId,
         start_from: startFrom,
         tranche_id: trancheId
+      }
+    });
+  };
+  totalPowerAtHeight = async ({
+    height
+  }: {
+    height?: number;
+  }): Promise<TotalPowerAtHeightResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      total_power_at_height: {
+        height
+      }
+    });
+  };
+  votingPowerAtHeight = async ({
+    address,
+    height
+  }: {
+    address: string;
+    height?: number;
+  }): Promise<VotingPowerAtHeightResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      voting_power_at_height: {
+        address,
+        height
       }
     });
   };

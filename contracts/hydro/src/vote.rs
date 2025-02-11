@@ -1,6 +1,4 @@
-use crate::contract::{
-    can_lock_vote_for_proposal, compute_round_end, get_lock_time_weighted_shares,
-};
+use crate::contract::{can_lock_vote_for_proposal, compute_round_end};
 use crate::error::ContractError;
 use crate::lsm_integration::validate_denom;
 use crate::msg::ProposalToLockups;
@@ -8,6 +6,7 @@ use crate::score_keeper::ProposalPowerUpdate;
 use crate::state::{
     Constants, LockEntry, Vote, LOCKS_MAP, PROPOSAL_MAP, VOTE_MAP, VOTING_ALLOWED_ROUND,
 };
+use crate::utils::get_lock_time_weighted_shares;
 use cosmwasm_std::{Addr, Decimal, DepsMut, Env, SignedDecimal, StdError, Storage, Uint128};
 use neutron_sdk::bindings::query::NeutronQuery;
 use std::collections::{HashMap, HashSet};
