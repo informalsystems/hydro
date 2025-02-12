@@ -23,8 +23,9 @@ import (
 )
 
 var (
-	hydroCodeId   string
-	tributeCodeId string
+	hydroCodeId            string
+	tributeCodeId          string
+	daoVotingAdapterCodeId string
 )
 
 type HydroSuite struct {
@@ -56,7 +57,7 @@ func (s *HydroSuite) SetupSuite() {
 	s.Require().NoError(err)
 	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, relayer, 1_000_000, 0))
 
-	// copy hydro and tribute contracts to neutron validator
+	// copy hydro, tribute and dao_voting_adapter contracts to neutron validator
 	hydroContract, err := os.ReadFile("../../artifacts/hydro.wasm")
 	s.Require().NoError(err)
 	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), hydroContract, "hydro.wasm"))
@@ -65,10 +66,16 @@ func (s *HydroSuite) SetupSuite() {
 	s.Require().NoError(err)
 	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), tributeContract, "tribute.wasm"))
 
+	daoVotingAdapterContract, err := os.ReadFile("../../artifacts/dao_voting_adapter.wasm")
+	s.Require().NoError(err)
+	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), daoVotingAdapterContract, "dao_voting_adapter.wasm"))
+
 	// store hydro contract code
-	hydroCodeId = s.StoreCode(s.GetHydroContractPath())
+	hydroCodeId = s.StoreCode(s.GetContractCodePath("hydro.wasm"))
 	// store tribute contract code
-	tributeCodeId = s.StoreCode(s.GetTributeContractPath())
+	tributeCodeId = s.StoreCode(s.GetContractCodePath("tribute.wasm"))
+	// store dao_voting_adapter contract code
+	daoVotingAdapterCodeId = s.StoreCode(s.GetContractCodePath("dao_voting_adapter.wasm"))
 
 	// start icq relayer
 	sidecarConfig := chainsuite.GetIcqSidecarConfig(s.HubChain, s.NeutronChain)
@@ -226,34 +233,39 @@ func (s *HydroSuite) InstantiateHydroContract(
 		"max_deployment_duration":            12,
 		"round_lock_power_schedule":          [][]interface{}{{1, "1"}, {2, "1.25"}, {3, "1.5"}, {6, "2"}, {12, "4"}},
 	}
-	initHydroJson, err := json.Marshal(initHydro)
-	s.Require().NoError(err)
 
-	txHash, err := s.NeutronChain.Validators[0].ExecTx(
-		s.GetContext(),
-		s.NeutronChain.ValidatorWallets[0].Moniker,
-		"wasm", "instantiate", codeId, string(initHydroJson), "--admin", adminAddr, "--label", "Hydro Smart Contract", "--gas", "auto",
-	)
-	s.Require().NoError(err)
-	response, err := s.NeutronChain.Validators[0].TxHashToResponse(s.GetContext(), txHash)
-	s.Require().NoError(err)
-	contractAddr, found := getEvtAttribute(response.Events, wasmtypes.EventTypeInstantiate, wasmtypes.AttributeKeyContractAddr)
-	s.Require().True(found)
-
-	return contractAddr
+	return s.InstantiateContract(codeId, initHydro, adminAddr, "Hydro Smart Contract")
 }
 
 func (s *HydroSuite) InstantiateTributeContract(codeId, hydroContractAddress, adminAddr string) string {
 	initTribute := map[string]interface{}{
 		"hydro_contract": hydroContractAddress,
 	}
-	initTributeJson, err := json.Marshal(initTribute)
+
+	return s.InstantiateContract(codeId, initTribute, adminAddr, "Tribute Smart Contract")
+}
+
+func (s *HydroSuite) InstantiateDaoVotingAdapterContract(codeId, hydroContractAddress, adminAddr string) string {
+	initDaoVotingAdapter := map[string]interface{}{
+		"hydro_contract": hydroContractAddress,
+	}
+
+	return s.InstantiateContract(codeId, initDaoVotingAdapter, adminAddr, "DAO Voting Adapter Smart Contract")
+}
+
+func (s *HydroSuite) InstantiateContract(
+	codeId string,
+	initMsg map[string]interface{},
+	adminAddr string,
+	label string,
+) string {
+	initJson, err := json.Marshal(initMsg)
 	s.Require().NoError(err)
 
 	txHash, err := s.NeutronChain.Validators[0].ExecTx(
 		s.GetContext(),
 		s.NeutronChain.ValidatorWallets[0].Moniker,
-		"wasm", "instantiate", codeId, string(initTributeJson), "--admin", adminAddr, "--label", "Tribute Smart Contract", "--gas", "auto",
+		"wasm", "instantiate", codeId, string(initJson), "--admin", adminAddr, "--label", label, "--gas", "auto",
 	)
 	s.Require().NoError(err)
 	response, err := s.NeutronChain.Validators[0].TxHashToResponse(s.GetContext(), txHash)
@@ -574,9 +586,10 @@ func (s *HydroSuite) RefreshLock(contractAddr string, new_lock_duration, lock_id
 	return nil
 }
 
-func (s *HydroSuite) UpdateMaxLockedTokens(contractAddr string, newMaxLockedTokens int64) error {
+func (s *HydroSuite) UpdateMaxLockedTokens(contractAddr string, newMaxLockedTokens, activate_at int64) error {
 	updateMaxLockedTokensTxData := map[string]interface{}{
 		"update_config": map[string]interface{}{
+			"activate_at":       strconv.FormatInt(activate_at, 10),
 			"max_locked_tokens": newMaxLockedTokens,
 		},
 	}
@@ -823,12 +836,50 @@ func (s *HydroSuite) WasmExecuteTx(validatorIndex int, txData map[string]interfa
 	return response, nil
 }
 
-func (s *HydroSuite) GetHydroContractPath() string {
-	return path.Join(s.NeutronChain.GetNode().HomeDir(), "hydro.wasm")
+func (s *HydroSuite) GetContractCodePath(wasmCodeName string) string {
+	return path.Join(s.NeutronChain.GetNode().HomeDir(), wasmCodeName)
 }
 
-func (s *HydroSuite) GetTributeContractPath() string {
-	return path.Join(s.NeutronChain.GetNode().HomeDir(), "tribute.wasm")
+func (s *HydroSuite) VerifyHistoricalVotingPowers(
+	daoVotingAdapterContractAddr string,
+	historicalHeight int64,
+	expectedTotalPower int64,
+	expectedUserPowers map[string]int64,
+) {
+	queryInput := map[string]interface{}{
+		"total_power_at_height": map[string]interface{}{
+			"height": historicalHeight,
+		},
+	}
+
+	response := s.QueryContractState(queryInput, daoVotingAdapterContractAddr)
+	var totalPowerAtHeight chainsuite.TotalPowerAtHeight
+	err := json.Unmarshal([]byte(response), &totalPowerAtHeight)
+	s.Require().NoError(err)
+
+	totalPower, err := strconv.ParseInt(totalPowerAtHeight.Data.Power, 10, 64)
+	s.Require().NoError(err)
+	s.Require().Equal(expectedTotalPower, totalPower)
+	s.Require().Equal(historicalHeight, totalPowerAtHeight.Data.Height)
+
+	for userAddress, expectedVotingPower := range expectedUserPowers {
+		queryInput := map[string]interface{}{
+			"voting_power_at_height": map[string]interface{}{
+				"address": userAddress,
+				"height":  historicalHeight,
+			},
+		}
+
+		response := s.QueryContractState(queryInput, daoVotingAdapterContractAddr)
+		var votingPowerAtHeight chainsuite.VotingPowerAtHeight
+		err = json.Unmarshal([]byte(response), &votingPowerAtHeight)
+		s.Require().NoError(err)
+
+		votingPower, err := strconv.ParseInt(votingPowerAtHeight.Data.Power, 10, 64)
+		s.Require().NoError(err)
+		s.Require().Equal(expectedVotingPower, votingPower)
+		s.Require().Equal(historicalHeight, votingPowerAtHeight.Data.Height)
+	}
 }
 
 func getEvtAttribute(events []abci.Event, evtType string, key string) (string, bool) {

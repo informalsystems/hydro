@@ -86,3 +86,17 @@ type UserVotingPower struct {
 		VotingPower int64 `json:"voting_power"`
 	} `json:"data"`
 }
+
+type TotalPowerAtHeight struct {
+	Data struct {
+		Power  string `json:"power"`
+		Height int64  `json:"height"`
+	} `json:"data"`
+}
+
+type VotingPowerAtHeight struct {
+	Data struct {
+		Power  string `json:"power"`
+		Height int64  `json:"height"`
+	} `json:"data"`
+}

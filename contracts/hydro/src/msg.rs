@@ -60,6 +60,10 @@ pub enum ExecuteMsg {
         tranche_id: u64,
         proposals_votes: Vec<ProposalToLockups>,
     },
+    Unvote {
+        tranche_id: u64,
+        lock_ids: Vec<u64>,
+    },
     AddAccountToWhitelist {
         address: String,
     },
@@ -67,8 +71,13 @@ pub enum ExecuteMsg {
         address: String,
     },
     UpdateConfig {
+        activate_at: Timestamp,
         max_locked_tokens: Option<u128>,
+        known_users_cap: Option<u128>,
         max_deployment_duration: Option<u64>,
+    },
+    DeleteConfigs {
+        timestamps: Vec<Timestamp>,
     },
     Pause {},
     AddTranche {

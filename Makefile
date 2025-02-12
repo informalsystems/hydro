@@ -18,7 +18,7 @@ test-e2e:
 
 # Note: If the neutron-org/neutron-query-relayer docker image does not exist locally, run `make build-docker-relayer` before running the interchain tests.
 test-interchain:
-	cd test/interchain && go test ./... -timeout 30m
+	cd test/interchain && go test ./... -timeout 40m
 
 coverage:
 	# to install see here: https://crates.io/crates/cargo-tarpaulin
@@ -37,7 +37,7 @@ schema:
 	# to install ts tooling see here: https://docs.cosmology.zone/ts-codegen
 	cd contracts/hydro && cargo run --bin hydro_schema
 	cd contracts/tribute && cargo run --bin tribute_schema
-
+	cd contracts/dao-voting-adapter && cargo run --bin dao_voting_adapter_schema
 
 	cosmwasm-ts-codegen generate \
           --plugin client \
@@ -51,9 +51,16 @@ schema:
           --out ./ts_types \
           --name TributeBase \
           --no-bundle
+	cosmwasm-ts-codegen generate \
+          --plugin client \
+          --schema ./contracts/dao-voting-adapter/schema \
+          --out ./ts_types \
+          --name DAOVotingAdapterBase \
+          --no-bundle
 
 	cd contracts/hydro/schema && python3 generate_full_schema.py
 	cd contracts/tribute/schema && python3 generate_full_schema.py
+	cd contracts/dao-voting-adapter/schema && python3 generate_full_schema.py
 
 build-docker-relayer:
 	docker build -t neutron-org/neutron-query-relayer https://github.com/neutron-org/neutron-query-relayer.git#main

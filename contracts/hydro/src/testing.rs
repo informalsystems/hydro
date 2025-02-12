@@ -1,13 +1,14 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 use crate::contract::{
-    get_vote_for_update, query_current_round_id, query_tranches, query_user_votes, query_whitelist,
-    query_whitelist_admins, MAX_LOCK_ENTRIES,
+    get_vote_for_update, query_all_user_lockups_with_tranche_infos, query_current_round_id,
+    query_tranches, query_user_votes, query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES,
 };
 use crate::msg::{ProposalToLockups, TrancheInfo};
-use crate::state::{LockEntry, RoundLockPowerSchedule, Vote, VOTE_MAP};
+use crate::state::{LockEntry, RoundLockPowerSchedule, Vote, CONSTANTS, USER_LOCKS, VOTE_MAP};
 use crate::testing_lsm_integration::set_validator_infos_for_round;
+
 use crate::testing_mocks::{
     denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
 };
@@ -123,10 +124,10 @@ fn instantiate_test() {
 
     let msg = get_default_instantiate_msg(&deps.api);
 
-    let res = instantiate(deps.as_mut(), env, info, msg.clone());
+    let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
     assert!(res.is_ok());
 
-    let res = query_constants(deps.as_ref());
+    let res = query_constants(deps.as_ref(), env);
     assert!(res.is_ok());
 
     let constants = res.unwrap().constants;
@@ -205,7 +206,7 @@ fn lock_tokens_basic_test() {
     let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
     assert!(res.is_ok());
 
-    let res = query_all_user_lockups(deps.as_ref(), env.clone(), info.sender.to_string(), 0, 2000);
+    let res = query_all_user_lockups(&deps.as_ref(), &env, info.sender.to_string(), 0, 2000);
     assert!(res.is_ok());
     let res = res.unwrap();
     assert_eq!(2, res.lockups.len());
@@ -243,6 +244,17 @@ fn lock_tokens_basic_test() {
     // check that the power is correct: 3000 tokens locked for three epochs
     // so power is 3000 * 1.5 = 4500
     assert_eq!(4500, lockup.current_voting_power.u128());
+
+    // check that the USER_LOCKS are updated as expected
+    let expected_lock_ids = HashSet::from([
+        res.lockups[0].lock_entry.lock_id,
+        res.lockups[1].lock_entry.lock_id,
+    ]);
+    let mut user_lock_ids = USER_LOCKS
+        .load(&deps.storage, info2.sender.clone())
+        .unwrap();
+    user_lock_ids.retain(|lock_id| !expected_lock_ids.contains(lock_id));
+    assert!(user_lock_ids.is_empty());
 }
 
 #[test]
@@ -1630,6 +1642,312 @@ fn switch_vote_between_short_and_long_props_test() {
 }
 
 // Test case:
+//      1. User votes with 1-round-long-lock for proposal with deployment_duration = 1
+//      2. User unvotes with the same lock (old vote gets deleted)
+//      3. User votes for proposal from step #1 again
+//         (or any other with deployment_duration that it should be allowed to vote)
+#[test]
+fn unvote_and_revote_test() {
+    let user_address = "addr0000";
+    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    let current_round_id = 0;
+    let tranche_id = 1;
+    let proposal_id = 0;
+    let lock_id = 0;
+    let deployment_duration = 1;
+
+    // Setup validator for the round
+    let res = set_validator_infos_for_round(
+        &mut deps.storage,
+        current_round_id,
+        vec![VALIDATOR_1.to_string()],
+    );
+    assert!(res.is_ok());
+
+    env.block.time = env.block.time.plus_hours(12);
+
+    // Lock tokens for one round to get voting power
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    // Create proposal with deployment_duration = 1
+    let msg = ExecuteMsg::CreateProposal {
+        round_id: None,
+        tranche_id: 1,
+        title: "proposal title".to_string(),
+        description: "proposal description".to_string(),
+        deployment_duration,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // First vote
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id,
+            lock_ids: vec![lock_id],
+        }],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // Verify initial vote state
+    let res = query_all_user_lockups_with_tranche_infos(
+        &deps.as_ref(),
+        &env,
+        info.sender.to_string(),
+        0,
+        10,
+    )
+    .unwrap();
+
+    let lockup_info = &res.lockups_with_per_tranche_infos[0];
+    let tranche_info = lockup_info
+        .per_tranche_info
+        .iter()
+        .find(|info| info.tranche_id == tranche_id)
+        .unwrap();
+    assert_eq!(
+        Some(proposal_id),
+        tranche_info.current_voted_on_proposal,
+        "Lock should be voting on proposal after initial vote"
+    );
+    assert_eq!(
+        current_round_id, tranche_info.next_round_lockup_can_vote,
+        "Next voting round should be current_round when lock is currently voting"
+    );
+
+    // Verify initial proposal power
+    let initial_proposal = query_proposal(deps.as_ref(), current_round_id, tranche_id, proposal_id)
+        .unwrap()
+        .proposal;
+    assert_eq!(info.funds[0].amount, initial_proposal.power);
+
+    // Unvote
+    let msg = ExecuteMsg::Unvote {
+        tranche_id: 1,
+        lock_ids: vec![lock_id],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    // Verify state after unvote
+    let res = query_all_user_lockups_with_tranche_infos(
+        &deps.as_ref(),
+        &env,
+        info.sender.to_string(),
+        0,
+        10,
+    )
+    .unwrap();
+    let lockup_info = &res.lockups_with_per_tranche_infos[0];
+    let tranche_info = lockup_info
+        .per_tranche_info
+        .iter()
+        .find(|info| info.tranche_id == tranche_id)
+        .unwrap();
+    assert_eq!(
+        None, tranche_info.current_voted_on_proposal,
+        "Lock should not be voting after unvote"
+    );
+    assert_eq!(
+        current_round_id, tranche_info.next_round_lockup_can_vote,
+        "Lock should be able to vote again in current round after unvote"
+    );
+
+    // Verify proposal power was reduced to zero
+    let proposal_after_unvote =
+        query_proposal(deps.as_ref(), current_round_id, tranche_id, proposal_id)
+            .unwrap()
+            .proposal;
+    assert_eq!(Uint128::zero(), proposal_after_unvote.power);
+
+    // Vote again
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id,
+            lock_ids: vec![lock_id],
+        }],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    // Verify state after revote
+    let res = query_all_user_lockups_with_tranche_infos(
+        &deps.as_ref(),
+        &env,
+        info.sender.to_string(),
+        0,
+        10,
+    )
+    .unwrap();
+    let lockup_info = &res.lockups_with_per_tranche_infos[0];
+    let tranche_info = lockup_info
+        .per_tranche_info
+        .iter()
+        .find(|info| info.tranche_id == tranche_id)
+        .unwrap();
+    assert_eq!(
+        Some(proposal_id),
+        tranche_info.current_voted_on_proposal,
+        "Lock should be voting on proposal after revote"
+    );
+    assert_eq!(
+        current_round_id, tranche_info.next_round_lockup_can_vote,
+        "Next voting round should be current_round when lock is currently voting"
+    );
+
+    // Verify proposal power was restored
+    let final_proposal = query_proposal(deps.as_ref(), current_round_id, tranche_id, proposal_id)
+        .unwrap()
+        .proposal;
+    assert_eq!(info.funds[0].amount.u128(), final_proposal.power.u128());
+}
+
+// Test case:
+//      1. User votes with 1-round-long-lock for proposal with deployment_duration = 1
+//      2. User tries to unvote a non-existing lock ID, should fail
+//      3. Another user votes for the same proposal creating a new lock ID
+//      4. User tries to unvote the other user's vote, should fail
+#[test]
+fn unvote_forbidden_locks() {
+    let user_address = "addr0000";
+    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    let current_round_id = 0;
+    let tranche_id = 1;
+    let proposal_id = 0;
+    let lock_id = 0;
+    let other_user_lock_id = 1;
+    let deployment_duration = 1;
+
+    // Setup validator for the round
+    let res = set_validator_infos_for_round(
+        &mut deps.storage,
+        current_round_id,
+        vec![VALIDATOR_1.to_string()],
+    );
+    assert!(res.is_ok());
+
+    env.block.time = env.block.time.plus_hours(12);
+
+    // Lock tokens for one round to get voting power
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    // Create proposal with deployment_duration = 1
+    let msg = ExecuteMsg::CreateProposal {
+        round_id: None,
+        tranche_id: 1,
+        title: "proposal title".to_string(),
+        description: "proposal description".to_string(),
+        deployment_duration,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // First vote
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id,
+            lock_ids: vec![lock_id],
+        }],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // Verify initial proposal power
+    let initial_proposal = query_proposal(deps.as_ref(), current_round_id, tranche_id, proposal_id)
+        .unwrap()
+        .proposal;
+    assert_eq!(info.funds[0].amount, initial_proposal.power);
+
+    // Try to unvote a non-existing lock ID, should fail
+    let msg = ExecuteMsg::Unvote {
+        tranche_id: 1,
+        lock_ids: vec![other_user_lock_id],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_err());
+
+    // Another user votes for the same proposal creating a new lock ID
+    let other_user_address = "addr0001";
+    let other_user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let other_user_info =
+        get_message_info(&deps.api, other_user_address, &[other_user_token.clone()]);
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), other_user_info.clone(), msg);
+    assert!(res.is_ok());
+
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id,
+            lock_ids: vec![other_user_lock_id],
+        }],
+    };
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        other_user_info.clone(),
+        msg.clone(),
+    );
+    assert!(res.is_ok());
+
+    // Try to unvote the other user's vote, should fail
+    let msg = ExecuteMsg::Unvote {
+        tranche_id: 1,
+        lock_ids: vec![other_user_lock_id],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_err());
+
+    // Verify proposal power is equal to 2 * funds amount (both users voted on the same proposal with same funds)
+    let final_proposal = query_proposal(deps.as_ref(), current_round_id, tranche_id, proposal_id)
+        .unwrap()
+        .proposal;
+    assert_eq!(info.funds[0].amount.u128() * 2, final_proposal.power.u128());
+}
+
+// Test case:
 //      1. User locks tokens and votes for some proposal with longer deployment duration
 //      2. User locks more tokens, which automatically votes for proposal from step #1
 //      3. When the next round starts, user tries to vote for some proposal with the lockup created in step #2
@@ -2225,14 +2543,14 @@ fn test_round_id_computation() {
         msg.first_round_start = Timestamp::from_nanos(contract_start_time);
 
         let mut env = mock_env();
-        env.block.time = Timestamp::from_nanos(contract_start_time);
+        env.block.time = Timestamp::from_nanos(current_time);
         let info = get_message_info(&deps.api, "addr0000", &[]);
         let _ = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone()).unwrap();
 
         // set the time to the current time
         env.block.time = Timestamp::from_nanos(current_time);
 
-        let constants = query_constants(deps.as_ref());
+        let constants = query_constants(deps.as_ref(), env.clone());
         assert!(constants.is_ok());
 
         let round_id = compute_current_round_id(&env, &constants.unwrap().constants);
@@ -2587,17 +2905,37 @@ fn max_locked_tokens_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_ok());
 
-    // a privileged user can update the maximum allowed locked tokens
+    // a privileged user can update the maximum allowed locked tokens, but only for the future
     info = get_message_info(&deps.api, "addr0001", &[]);
     let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
+        activate_at: env.block.time.minus_hours(1),
         max_locked_tokens: Some(3000),
+        known_users_cap: None,
         max_deployment_duration: None,
     };
     let res = execute(
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        update_max_locked_tokens_msg,
+        update_max_locked_tokens_msg.clone(),
+    );
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .contains("Can not update config in the past."));
+
+    // this time with a valid activation timestamp
+    let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
+        activate_at: env.block.time,
+        max_locked_tokens: Some(3000),
+        known_users_cap: None,
+        max_deployment_duration: None,
+    };
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        update_max_locked_tokens_msg.clone(),
     );
     assert!(res.is_ok());
 
@@ -2622,6 +2960,93 @@ fn max_locked_tokens_test() {
         .unwrap_err()
         .to_string()
         .contains("The limit for locking tokens has been reached. No more tokens can be locked."));
+
+    // increase the maximum allowed locked tokens by 500, starting in 1 hour
+    info = get_message_info(&deps.api, "addr0001", &[]);
+    let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
+        activate_at: env.block.time.plus_hours(1),
+        max_locked_tokens: Some(3500),
+        known_users_cap: None,
+        max_deployment_duration: None,
+    };
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        update_max_locked_tokens_msg,
+    );
+    assert!(res.is_ok());
+
+    // try to lock additional 500 tokens before the time is reached to increase the cap
+    info = get_message_info(
+        &deps.api,
+        "addr0002",
+        &[Coin::new(500u64, IBC_DENOM_1.to_string())],
+    );
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
+    assert!(res.is_err());
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .contains("The limit for locking tokens has been reached. No more tokens can be locked."));
+
+    // advance the chain by 1h 0m 1s and verify user can lock additional 500 tokens
+    env.block.time = env.block.time.plus_seconds(3601);
+
+    // now a user can lock up to additional 500 tokens
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
+    assert!(res.is_ok());
+}
+
+#[test]
+fn delete_configs_test() {
+    let first_round_start_time = Timestamp::from_nanos(1737540000000000000);
+    let initial_block_height = 19_185_000;
+
+    let (mut deps, mut env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    let info = get_message_info(&deps.api, "addr0000", &[]);
+
+    env.block.time = first_round_start_time;
+    env.block.height = initial_block_height;
+
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.whitelist_admins = vec![get_address_as_str(&deps.api, "addr0000")];
+    msg.first_round_start = first_round_start_time;
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    let mut configs_timestamps = vec![];
+    for i in 1..=5 {
+        let timestamp = env.block.time.plus_days(i);
+        configs_timestamps.push(timestamp);
+
+        let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
+            activate_at: timestamp,
+            max_locked_tokens: Some((i * 1000) as u128),
+            known_users_cap: None,
+            max_deployment_duration: None,
+        };
+        let res = execute(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            update_max_locked_tokens_msg.clone(),
+        );
+        assert!(res.is_ok());
+    }
+
+    env.block.time = env.block.time.plus_days(2);
+
+    let msg = ExecuteMsg::DeleteConfigs {
+        timestamps: configs_timestamps.clone(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    for timestamp in configs_timestamps {
+        assert!(!CONSTANTS.has(&deps.storage, timestamp.nanos()));
+    }
 }
 
 #[test]
@@ -2647,7 +3072,7 @@ fn contract_pausing_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    let constants = query_constants(deps.as_ref());
+    let constants = query_constants(deps.as_ref(), env.clone());
     assert!(constants.is_ok());
     assert!(constants.unwrap().constants.paused);
 
@@ -2681,9 +3106,12 @@ fn contract_pausing_test() {
             address: whitelist_admin.to_string(),
         },
         ExecuteMsg::UpdateConfig {
+            activate_at: env.block.time,
             max_locked_tokens: None,
+            known_users_cap: None,
             max_deployment_duration: None,
         },
+        ExecuteMsg::DeleteConfigs { timestamps: vec![] },
         ExecuteMsg::Pause {},
         ExecuteMsg::AddTranche {
             tranche: TrancheInfo {
@@ -3069,8 +3497,8 @@ fn test_refresh_multiple_locks() {
         // Verify the new lock durations
         for (sender, expected_durations) in &case.expected_new_lock_durations {
             let lockups = query_all_user_lockups(
-                deps.as_ref(),
-                env.clone(),
+                &deps.as_ref(),
+                &env,
                 get_address_as_str(&deps.api, sender),
                 0,
                 100,
