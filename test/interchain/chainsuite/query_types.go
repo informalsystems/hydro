@@ -86,3 +86,7 @@ type UserVotingPower struct {
 		VotingPower int64 `json:"voting_power"`
 	} `json:"data"`
 }
+
+type ContractAddress struct {
+	Address string `json:"address"`
+}

@@ -9,9 +9,9 @@ import (
 	"github.com/strangelove-ventures/interchaintest/v8"
 )
 
-func GetHubSpec() *interchaintest.ChainSpec {
+func GetHubSpec(validatorCount int) *interchaintest.ChainSpec {
 	fullNodes := FullNodeCount
-	validators := ValidatorCount
+	validators := validatorCount
 
 	return &interchaintest.ChainSpec{
 		Name:          HubChainID,

@@ -11,9 +11,9 @@ import (
 	"github.com/strangelove-ventures/interchaintest/v8/testutil"
 )
 
-func GetNeutronSpec(ctx context.Context, hubChain *Chain, proposalWaiter *proposalWaiter, spawnTime time.Time) *interchaintest.ChainSpec {
+func GetNeutronSpec(ctx context.Context, hubChain *Chain, validatorCount int, proposalWaiter *proposalWaiter, spawnTime time.Time) *interchaintest.ChainSpec {
 	fullNodes := FullNodeCount
-	validators := ValidatorCount
+	validators := validatorCount
 
 	return &interchaintest.ChainSpec{
 		ChainName:     NeutronChainID,

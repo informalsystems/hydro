@@ -22,6 +22,7 @@ import (
 
 // This moniker is hardcoded into interchaintest
 const validatorMoniker = "validator"
+const AdminMoniker = "admin"
 
 type Chain struct {
 	*cosmos.CosmosChain
@@ -35,7 +36,7 @@ type ValidatorWallet struct {
 	ValoperAddress string
 }
 
-type consumerSpecGetter func(ctx context.Context, providerChain *Chain, proposalWaiter *proposalWaiter, spawnTime time.Time) *interchaintest.ChainSpec
+type consumerSpecGetter func(ctx context.Context, providerChain *Chain, nodeNum int, proposalWaiter *proposalWaiter, spawnTime time.Time) *interchaintest.ChainSpec
 
 func chainFromCosmosChain(cosmos *cosmos.CosmosChain, relayerWallet ibc.Wallet) (*Chain, error) {
 	c := &Chain{CosmosChain: cosmos}
@@ -88,7 +89,7 @@ func CreateChain(ctx context.Context, testName interchaintest.TestName, spec *in
 	return chain, nil
 }
 
-func (p *Chain) AddConsumerChain(ctx context.Context, relayer *Relayer, chainId string, chainSpecGetter consumerSpecGetter) (*Chain, error) {
+func (p *Chain) AddConsumerChain(ctx context.Context, relayer *Relayer, nodeNum int, chainId string, chainSpecGetter consumerSpecGetter) (*Chain, error) {
 	dockerClient, dockerNetwork := GetDockerContext(ctx)
 
 	spawnTime := time.Now().Add(ChainSpawnWait)
@@ -97,7 +98,7 @@ func (p *Chain) AddConsumerChain(ctx context.Context, relayer *Relayer, chainId 
 		return nil, err
 	}
 
-	chainSpec := chainSpecGetter(ctx, p, proposalWaiter, spawnTime)
+	chainSpec := chainSpecGetter(ctx, p, nodeNum, proposalWaiter, spawnTime)
 
 	cf := interchaintest.NewBuiltinChainFactory(
 		GetLogger(ctx),
@@ -126,7 +127,7 @@ func (p *Chain) AddConsumerChain(ctx context.Context, relayer *Relayer, chainId 
 			return nil, err
 		}
 	}
-	walletAmounts := make([]ibc.WalletAmount, len(wallets)+1)
+	walletAmounts := make([]ibc.WalletAmount, len(wallets))
 	for i, wallet := range wallets {
 		walletAmounts[i] = ibc.WalletAmount{
 			Address: wallet.FormattedAddress(),
@@ -136,11 +137,17 @@ func (p *Chain) AddConsumerChain(ctx context.Context, relayer *Relayer, chainId 
 	}
 
 	// fund icq relayer
-	walletAmounts[len(wallets)] = ibc.WalletAmount{
+	walletAmounts = append(walletAmounts, ibc.WalletAmount{
 		Address: IcqRelayerAddress,
 		Denom:   cosmosConsumer.Config().Denom,
 		Amount:  sdkmath.NewInt(TotalValidatorFunds),
-	}
+	})
+	// fund admin address
+	walletAmounts = append(walletAmounts, ibc.WalletAmount{
+		Address: NeutronAdminAddress,
+		Denom:   cosmosConsumer.Config().Denom,
+		Amount:  sdkmath.NewInt(TotalValidatorFunds),
+	})
 
 	ic := interchaintest.NewInterchain().
 		AddChain(cosmosConsumer, walletAmounts...).
@@ -161,6 +168,9 @@ func (p *Chain) AddConsumerChain(ctx context.Context, relayer *Relayer, chainId 
 
 	for i, val := range cosmosConsumer.Validators {
 		if err := val.RecoverKey(ctx, validatorMoniker, wallets[i+1].Mnemonic()); err != nil {
+			return nil, err
+		}
+		if err := val.RecoverKey(ctx, AdminMoniker, NeutronAdminMnemonic); err != nil {
 			return nil, err
 		}
 	}

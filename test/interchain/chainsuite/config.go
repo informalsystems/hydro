@@ -26,6 +26,8 @@ const (
 	NeutronChainID         = "neutron"
 	NeutronMinQueryDeposit = 1000000
 	Untrn                  = "untrn"
+	NeutronAdminAddress    = "neutron1jtdje5vq42sknl22r4wu9sahryu5wcrdqsccjh"
+	NeutronAdminMnemonic   = "category fine rapid trumpet dune early wish under nothing dance property wreck"
 	// relayer params
 	RelayerImageName    = "ghcr.io/informalsystems/hermes"
 	RelayerImageVersion = "v1.8.0"

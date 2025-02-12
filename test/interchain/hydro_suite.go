@@ -41,7 +41,7 @@ func (s *HydroSuite) SetupSuite() {
 	s.ctx = ctx
 
 	// create and start hub chain
-	s.HubChain, err = chainsuite.CreateChain(s.GetContext(), s.T(), chainsuite.GetHubSpec())
+	s.HubChain, err = chainsuite.CreateChain(s.GetContext(), s.T(), chainsuite.GetHubSpec(4))
 	s.Require().NoError(err)
 
 	// setup hermes relayer
@@ -52,7 +52,7 @@ func (s *HydroSuite) SetupSuite() {
 	s.Require().NoError(err)
 
 	// create and start neutron chain
-	s.NeutronChain, err = s.HubChain.AddConsumerChain(s.GetContext(), relayer, chainsuite.NeutronChainID, chainsuite.GetNeutronSpec)
+	s.NeutronChain, err = s.HubChain.AddConsumerChain(s.GetContext(), relayer, 4, chainsuite.NeutronChainID, chainsuite.GetNeutronSpec)
 	s.Require().NoError(err)
 	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, relayer, 1_000_000, 0))
 
@@ -66,9 +66,9 @@ func (s *HydroSuite) SetupSuite() {
 	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), tributeContract, "tribute.wasm"))
 
 	// store hydro contract code
-	hydroCodeId = s.StoreCode(s.GetHydroContractPath())
+	hydroCodeId = s.StoreCode(s.GetHydroContractPath(), s.NeutronChain.ValidatorWallets[0].Moniker)
 	// store tribute contract code
-	tributeCodeId = s.StoreCode(s.GetTributeContractPath())
+	tributeCodeId = s.StoreCode(s.GetTributeContractPath(), s.NeutronChain.ValidatorWallets[0].Moniker)
 
 	// start icq relayer
 	sidecarConfig := chainsuite.GetIcqSidecarConfig(s.HubChain, s.NeutronChain)
@@ -173,9 +173,8 @@ func (s *HydroSuite) HubToNeutronShareTokenTransfer(
 	return dstIbcDenom
 }
 
-func (s *HydroSuite) StoreCode(contractPath string) string {
+func (s *HydroSuite) StoreCode(contractPath, keyMoniker string) string {
 	node := s.NeutronChain.Validators[0]
-	keyMoniker := s.NeutronChain.ValidatorWallets[0].Moniker
 	txHash, err := node.ExecTx(s.GetContext(), keyMoniker, "wasm", "store", contractPath, "--gas", "auto")
 	s.Require().NoError(err)
 
