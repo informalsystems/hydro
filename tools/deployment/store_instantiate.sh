@@ -39,9 +39,11 @@ IS_IN_PILOT_MODE=true
 MAX_DEPLOYMENT_DURATION=3
 HYDRO_WASM_PATH="./artifacts/hydro.wasm"
 TRIBUTE_WASM_PATH="./artifacts/tribute.wasm"
+DAO_VOTING_ADAPTER_WASM_PATH="./artifacts/dao_voting_adapter.wasm"
 
 HYDRO_CODE_ID=""
 TRIBUTE_CODE_ID=""
+DAO_VOTING_ADAPTER_CODE_ID=""
 
 HYDRO_SC_LABEL="Hydro"
 TRIBUTE_SC_LABEL="Tribute"
@@ -78,6 +80,23 @@ store_tribute() {
     STORE_TRIBUTE_TX_HASH=$(grep -o '{.*}' ./store_tribute_res.json | jq -r '.txhash')
     $NEUTRON_BINARY q tx $STORE_TRIBUTE_TX_HASH $NEUTRON_NODE_FLAG --output json &> ./store_tribute_tx.json
     TRIBUTE_CODE_ID=$(jq -r '.events[] | select(.type == "store_code") | .attributes[] | select(.key == "code_id") | .value' ./store_tribute_tx.json)
+}
+
+store_dao_voting_adapter() {
+    error_handler() {
+        echo "Content of store_dao_voting_adapter_res.json:"
+        cat ./store_dao_voting_adapter_res.json
+    }
+    trap error_handler ERR
+
+    echo 'Storing dao_voting_adapter wasm...'
+
+    $NEUTRON_BINARY tx wasm store $DAO_VOTING_ADAPTER_WASM_PATH --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS --output json &> ./store_dao_voting_adapter_res.json
+    sleep 10
+
+    STORE_DAO_VOTING_ADAPTER_TX_HASH=$(grep -o '{.*}' ./store_dao_voting_adapter_res.json | jq -r '.txhash')
+    $NEUTRON_BINARY q tx $STORE_DAO_VOTING_ADAPTER_TX_HASH $NEUTRON_NODE_FLAG --output json &> ./store_dao_voting_adapter_tx.json
+    DAO_VOTING_ADAPTER_CODE_ID=$(jq -r '.events[] | select(.type == "store_code") | .attributes[] | select(.key == "code_id") | .value' ./store_dao_voting_adapter_tx.json)
 }
 
 instantiate_hydro() {
@@ -127,9 +146,11 @@ instantiate_tribute() {
 
 store_hydro
 store_tribute
+store_dao_voting_adapter
 
 echo 'Hydro code ID:' $HYDRO_CODE_ID
 echo 'Tribute code ID:' $TRIBUTE_CODE_ID
+echo 'DAO Voting Adapter code ID:' $DAO_VOTING_ADAPTER_CODE_ID
 
 instantiate_hydro
 instantiate_tribute
