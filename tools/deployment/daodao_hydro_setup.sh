@@ -29,6 +29,7 @@ ALLOWED_PROPOSAL_SUBMITTER=$(jq -r '.allowed_proposal_submitter' $DAO_DEPLOYMENT
 UUSDC_DEPOSIT_AMOUNT=$(jq -r '.uusdc_deposit_amount' $DAO_DEPLOYMENT_CONFIG_PATH)
 MAX_VOTING_PERIOD=$(jq -r '.max_voting_period' $DAO_DEPLOYMENT_CONFIG_PATH)
 QUORUM_PERCENT=$(jq -r '.quorum_percent' $DAO_DEPLOYMENT_CONFIG_PATH)
+ONLY_MEMBERS_EXECUTE=$(jq -r '.only_members_execute' $DAO_DEPLOYMENT_CONFIG_PATH)
 
 # https://github.com/DA0-DA0/dao-dao-ui/blob/development/packages/utils/constants/codeIds.json
 DAO_CORE_CODE_ID="2346"
@@ -60,7 +61,7 @@ echo ""
 PRE_PROPOSE_APPROVAL_INIT_MSG=$(echo -n $PRE_PROPOSE_APPROVAL_INIT_MSG | base64 | tr -d '[:space:]')
 
 PRE_PROPOSE_MODULE_INSTANTIATE_INFO='{"module_may_propose": {"info": {"admin": {"core_module": {}}, "code_id": '$DAO_PREPROPOSE_APPROVAL_SINGLE_CODE_ID', "label": "Hydro pre-propose-single with Approver", "msg": "'$PRE_PROPOSE_APPROVAL_INIT_MSG'", "funds": []}}}'
-DAO_PROPOSAL_SINGLE_INIT_MSG='{"threshold": {"threshold_quorum": {"quorum": {"percent": "'$QUORUM_PERCENT'"}, "threshold": {"majority": {}}}}, "max_voting_period":{"time":'$MAX_VOTING_PERIOD'}, "only_members_execute":true, "allow_revoting":false, "close_proposal_on_execution_failure":true, "pre_propose_info":'$PRE_PROPOSE_MODULE_INSTANTIATE_INFO'}'
+DAO_PROPOSAL_SINGLE_INIT_MSG='{"threshold": {"threshold_quorum": {"quorum": {"percent": "'$QUORUM_PERCENT'"}, "threshold": {"majority": {}}}}, "max_voting_period":{"time":'$MAX_VOTING_PERIOD'}, "only_members_execute": '$ONLY_MEMBERS_EXECUTE', "allow_revoting":false, "close_proposal_on_execution_failure":true, "pre_propose_info":'$PRE_PROPOSE_MODULE_INSTANTIATE_INFO'}'
 echo 'DAO Proposal Single init msg:' $DAO_PROPOSAL_SINGLE_INIT_MSG
 echo ""
 DAO_PROPOSAL_SINGLE_INIT_MSG=$(echo -n $DAO_PROPOSAL_SINGLE_INIT_MSG | base64 | tr -d '[:space:]')

@@ -2,10 +2,11 @@
     "dao_name": "Hydro Governance DAO",
     "dao_description": "Hydro Governance DAO",
     "dao_voting_adapter_code_id": "3144",
-    "hydro_contract_address": "neutron1m3z8rez9kxjrx6hxne42u32kn2f3cznga2qfgqnyuvy5kzsttxjqqgd97r",
-    "proposal_submission_approver": "neutron1xd6z4nwmfeamv089fr9s4hlp3vq00l0tn9j9ysauc2j5pcmlm6vsk7nf7q",
-    "allowed_proposal_submitter": "neutron14fmxw54lgvheyn7m0p9efpr82fac68ysph96ch",
-    "uusdc_deposit_amount": "",
-    "max_voting_period": "604800",
-    "quorum_percent": "0.2"
+    "hydro_contract_address": "neutron13w6sagl4clacx4c8drhuwfl20cesn3pnllhf37e65ls8zwf6gcgq93t2lp",
+    "proposal_submission_approver": "neutron1w7f40hgfc505a2wnjsl5pg35yl8qpawv48w5yekax4xj2m43j09s5fa44f",
+    "allowed_proposal_submitter": "",
+    "uusdc_deposit_amount": "50000000",
+    "max_voting_period": "345600",
+    "quorum_percent": "0.1",
+    "only_members_execute": "false"
 }
