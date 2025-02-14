@@ -8,6 +8,7 @@ import (
 	"path"
 	"strconv"
 
+	"cosmossdk.io/math"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 )
 
@@ -17,14 +18,16 @@ var (
 	astroPairCodeId    int
 	astroTokenCodeId   int
 	factoryAddr        string
-	astroTokenAAddr    string
-	astroTokenBAddr    string
+	ibcUatomDenom      string
 	poolTokenATokenB   string
 	// valence
-	valenceAuthCodeId      int
-	valenceProcessorCodeId int
-	valenceProcessorAddr   string
-	valenceAuthAddress     string
+	valenceAuthCodeId         int
+	valenceProcessorCodeId    int
+	valenceBaseAccCodeId      int
+	valenceAstroLperLibCodeId int
+	valenceSplitLibCodeId     int
+	valenceProcessorAddr      string
+	valenceAuthAddress        string
 )
 
 const (
@@ -57,15 +60,17 @@ func (s *DeploymentSuite) SetupSuite() {
 	s.Require().NoError(err)
 	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, relayer, 1_000_000, 0))
 
+	// //Copy liquidity-deployment-tool
+	// s.Require().NoError(s.NeutronChain.GetNode().CopyFile(s.GetContext(), "./testdata/liquidity-deployment-tool", "/bin/liquidity-deployment-tool"))
+
 	// Astroport setup
 	s.storeAstroportContracts()
 	s.initFactoryAndCreateTestPair()
-	s.ProvideLiquidityForTokenPair(poolTokenATokenB, astroTokenAAddr, astroTokenBAddr, "5000")
+	s.ProvideLiquidityForTokenPair(poolTokenATokenB, chainsuite.Untrn, ibcUatomDenom, "5000")
 
 	// Valence setup
 	s.storeValenceContracts()
 	s.initValenceContracts()
-
 }
 
 func (s *DeploymentSuite) GetContext() context.Context {
@@ -91,6 +96,18 @@ func (s *DeploymentSuite) getValenceAuthContractPath() string {
 
 func (s *DeploymentSuite) getValenceProcessorContractPath() string {
 	return path.Join(s.NeutronChain.GetNode().HomeDir(), "valence_processor.wasm")
+}
+
+func (s *DeploymentSuite) getValenceBaseAccContractPath() string {
+	return path.Join(s.NeutronChain.GetNode().HomeDir(), "valence_base_account.wasm")
+}
+
+func (s *DeploymentSuite) getValenceAstroLperContractPath() string {
+	return path.Join(s.NeutronChain.GetNode().HomeDir(), "valence_astroport_lper.wasm")
+}
+
+func (s *DeploymentSuite) getValenceSplitterLibContractPath() string {
+	return path.Join(s.NeutronChain.GetNode().HomeDir(), "valence_splitter_library.wasm")
 }
 
 func (s *DeploymentSuite) storeAstroportContracts() {
@@ -128,23 +145,38 @@ func (s *DeploymentSuite) storeValenceContracts() {
 	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), processorContract, "valence_processor.wasm"))
 	valenceProcessorCodeId, err = strconv.Atoi(s.StoreCode(s.getValenceProcessorContractPath(), chainsuite.AdminMoniker))
 	s.Require().NoError(err)
+
+	// base account contract
+	baseAccountContract, err := os.ReadFile("./testdata/valence_base_account.wasm")
+	s.Require().NoError(err)
+	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), baseAccountContract, "valence_base_account.wasm"))
+	valenceBaseAccCodeId, err = strconv.Atoi(s.StoreCode(s.getValenceBaseAccContractPath(), chainsuite.AdminMoniker))
+	s.Require().NoError(err)
+
+	// astroport lper contract
+	astroLperContract, err := os.ReadFile("./testdata/valence_astroport_lper.wasm")
+	s.Require().NoError(err)
+	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), astroLperContract, "valence_astroport_lper.wasm"))
+	valenceAstroLperLibCodeId, err = strconv.Atoi(s.StoreCode(s.getValenceAstroLperContractPath(), chainsuite.AdminMoniker))
+	s.Require().NoError(err)
+
+	// splitter contract
+	splitterLibContract, err := os.ReadFile("./testdata/valence_splitter_library.wasm")
+	s.Require().NoError(err)
+	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), splitterLibContract, "valence_splitter_library.wasm"))
+	valenceSplitLibCodeId, err = strconv.Atoi(s.StoreCode(s.getValenceSplitterLibContractPath(), chainsuite.AdminMoniker))
+	s.Require().NoError(err)
 }
 
 func (s *DeploymentSuite) initFactoryAndCreateTestPair() {
 	s.Suite.T().Log("Instantiating Astroport contracts")
 	adminAddr := chainsuite.NeutronAdminAddress
-	balances := []map[string]string{
-		{
-			"address": adminAddr,
-			"amount":  "1000000000",
-		},
-	}
-	astroTokenAAddr = s.InitTokenContract("Token A", "TKNA", adminAddr, balances)
-	astroTokenBAddr = s.InitTokenContract("Token B", "TKNB", adminAddr, balances)
+
+	ibcUatomDenom = s.HubToNeutronShareTokenTransfer(0, math.NewInt(1000000), chainsuite.Uatom, adminAddr)
 	factoryAddr = s.InitAstroFactoryContract(adminAddr)
 
-	s.Suite.T().Log("Create token A and token B pair")
-	poolTokenATokenB = s.CreateTokenPair(factoryAddr, astroTokenAAddr, astroTokenBAddr)
+	s.Suite.T().Log("Create token pairs: untrn and ibc uatom")
+	poolTokenATokenB = s.CreateTokenPair(factoryAddr, chainsuite.Untrn, ibcUatomDenom)
 }
 
 func (s *DeploymentSuite) initValenceContracts() {
@@ -157,12 +189,11 @@ func (s *DeploymentSuite) initValenceContracts() {
 	s.Require().Equal(predictedValenceAuthAddress, valenceAuthAddress)
 }
 
-func (s *DeploymentSuite) ProvideLiquidityForTokenPair(poolAddr, tokenAAddr, tokenBAddr, amount string) {
-	s.IncreaseTokenAllowance(tokenAAddr, poolAddr, amount) // we're using same amount for both token, if needed this can be changed
-	s.IncreaseTokenAllowance(tokenBAddr, poolAddr, amount)
-	s.ProvideLiquidity(poolAddr, tokenAAddr, tokenBAddr, amount)
+func (s *DeploymentSuite) ProvideLiquidityForTokenPair(poolAddr, tokenA, tokenB, amount string) {
+	s.ProvideLiquidity(poolAddr, tokenA, tokenB, amount)
 }
 
+// Init cw20 token
 func (s *DeploymentSuite) InitTokenContract(name, symbol, adminAddr string, balances []map[string]string) string {
 	initToken := map[string]interface{}{
 		"name":             name,
@@ -225,15 +256,15 @@ func (s *DeploymentSuite) InitAstroFactoryContract(ownerAddr string) string {
 	return contractAddr
 }
 
-func (s *DeploymentSuite) CreateTokenPair(tokenFactoryAddr, tokenAAddr, tokenBAddr string) string {
+func (s *DeploymentSuite) CreateTokenPair(tokenFactoryAddr, tokenA, tokenB string) string {
 	createPairMsg := map[string]interface{}{
 		"create_pair": map[string]interface{}{
 			"pair_type": map[string]interface{}{
 				"xyk": struct{}{},
 			},
 			"asset_infos": []map[string]map[string]string{
-				{"token": {"contract_addr": tokenAAddr}},
-				{"token": {"contract_addr": tokenBAddr}},
+				{"native_token": {"denom": tokenA}},
+				{"native_token": {"denom": tokenB}},
 			},
 		},
 	}
@@ -274,22 +305,22 @@ func (s *DeploymentSuite) IncreaseTokenAllowance(tokenAddr, spenderAddr, amount 
 	s.Require().NoError(err)
 }
 
-func (s *DeploymentSuite) ProvideLiquidity(poolAddr, tokenAAddr, tokenBAddr, amount string) {
+func (s *DeploymentSuite) ProvideLiquidity(poolAddr, tokenA, tokenB, amount string) {
 	msg := map[string]interface{}{
 		"provide_liquidity": map[string]interface{}{
 			"assets": []map[string]interface{}{
 				{
 					"info": map[string]interface{}{
-						"token": map[string]interface{}{
-							"contract_addr": tokenAAddr,
+						"native_token": map[string]interface{}{
+							"denom": tokenA,
 						},
 					},
 					"amount": amount,
 				},
 				{
 					"info": map[string]interface{}{
-						"token": map[string]interface{}{
-							"contract_addr": tokenBAddr,
+						"native_token": map[string]interface{}{
+							"denom": tokenB,
 						},
 					},
 					"amount": amount,
@@ -306,7 +337,7 @@ func (s *DeploymentSuite) ProvideLiquidity(poolAddr, tokenAAddr, tokenBAddr, amo
 	_, err = s.NeutronChain.Validators[0].ExecTx(
 		s.GetContext(),
 		chainsuite.AdminMoniker,
-		"wasm", "execute", poolAddr, string(msgJson), "--gas", "auto",
+		"wasm", "execute", poolAddr, string(msgJson), "--gas", "auto", "--amount", amount+tokenA+","+amount+tokenB,
 	)
 	s.Require().NoError(err)
 }
