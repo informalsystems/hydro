@@ -30,6 +30,8 @@ UUSDC_DEPOSIT_AMOUNT=$(jq -r '.uusdc_deposit_amount' $DAO_DEPLOYMENT_CONFIG_PATH
 MAX_VOTING_PERIOD=$(jq -r '.max_voting_period' $DAO_DEPLOYMENT_CONFIG_PATH)
 QUORUM_PERCENT=$(jq -r '.quorum_percent' $DAO_DEPLOYMENT_CONFIG_PATH)
 ONLY_MEMBERS_EXECUTE=$(jq -r '.only_members_execute' $DAO_DEPLOYMENT_CONFIG_PATH)
+IMAGE_URL=$(jq -r '.image_url' $DAO_DEPLOYMENT_CONFIG_PATH)
+BANNER=$(jq -r '.banner' $DAO_DEPLOYMENT_CONFIG_PATH)
 
 # https://github.com/DA0-DA0/dao-dao-ui/blob/development/packages/utils/constants/codeIds.json
 DAO_CORE_CODE_ID="2346"
@@ -52,7 +54,19 @@ fi
 if [ -z "$UUSDC_DEPOSIT_AMOUNT" ]; then
     DEPOSIT_INFO='null'
 else
-    DEPOSIT_INFO='{"denom": {"token": {"denom": {"native": "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81"}}}, "amount": "'$UUSDC_DEPOSIT_AMOUNT'", "refund_policy": "only_passed"}}'
+    DEPOSIT_INFO='{"denom": {"token": {"denom": {"native": "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81"}}}, "amount": "'$UUSDC_DEPOSIT_AMOUNT'", "refund_policy": "only_passed"}'
+fi
+
+if [ -z "$IMAGE_URL" ]; then
+    IMAGE_URL='null'
+else
+    IMAGE_URL='"'$IMAGE_URL'"'
+fi
+
+if [ -z "$BANNER" ]; then
+    INITIAL_ITEMS='null'
+else
+    INITIAL_ITEMS='[{"key": "banner", "value": "'$BANNER'"}]'
 fi
 
 PRE_PROPOSE_APPROVAL_INIT_MSG='{"deposit_info": '$DEPOSIT_INFO',"submission_policy": '$SUBMISSION_POLICY', "extension": { "approver": "'$PROPOSAL_SUBMISSION_APPROVER'"}}'
@@ -68,7 +82,7 @@ DAO_PROPOSAL_SINGLE_INIT_MSG=$(echo -n $DAO_PROPOSAL_SINGLE_INIT_MSG | base64 | 
 
 PROPOSAL_MODULE_INSTANTIATE_INFO='{"code_id":'$DAO_PROPOSAL_SINGLE_CODE_ID', "funds":[], "label":"Hydro DAO proposal-single", "msg":"'$DAO_PROPOSAL_SINGLE_INIT_MSG'"}'
 
-INIT_DAODAO='{"name":"'$DAO_NAME'", "description":"'$DAO_DESCRIPTION'", "automatically_add_cw20s":false, "automatically_add_cw721s":false, "voting_module_instantiate_info":'$VOTING_MODULE_INSTANTIATE_INFO',"proposal_modules_instantiate_info":['$PROPOSAL_MODULE_INSTANTIATE_INFO']}'
+INIT_DAODAO='{"name":"'$DAO_NAME'", "description":"'$DAO_DESCRIPTION'", "image_url": '$IMAGE_URL', "initial_items": '$INITIAL_ITEMS', "automatically_add_cw20s":false, "automatically_add_cw721s":false, "voting_module_instantiate_info":'$VOTING_MODULE_INSTANTIATE_INFO',"proposal_modules_instantiate_info":['$PROPOSAL_MODULE_INSTANTIATE_INFO']}'
 echo 'DAO Core init msg:' $INIT_DAODAO
 echo ""
 

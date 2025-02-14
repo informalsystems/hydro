@@ -1,6 +1,6 @@
 {
-    "dao_name": "Hydro Governance DAO",
-    "dao_description": "Hydro Governance DAO",
+    "dao_name": "Hydro Governance",
+    "dao_description": "Hydro governance is a decentralized decision-making system that allows Hydro participants to take part in the management & evolution of the protocol. It operates through on-chain voting, where Hydro-locked ATOM holders vote on governance proposals that impact the protocol's parameters, upgrades, and treasury management.",
     "dao_voting_adapter_code_id": "3144",
     "hydro_contract_address": "neutron13w6sagl4clacx4c8drhuwfl20cesn3pnllhf37e65ls8zwf6gcgq93t2lp",
     "proposal_submission_approver": "neutron1w7f40hgfc505a2wnjsl5pg35yl8qpawv48w5yekax4xj2m43j09s5fa44f",
@@ -8,5 +8,7 @@
     "uusdc_deposit_amount": "50000000",
     "max_voting_period": "345600",
     "quorum_percent": "0.1",
-    "only_members_execute": "false"
+    "only_members_execute": "false",
+    "image_url": "ipfs://QmNsj6WYt3WpyWT6jMG71uhZNj2UwnZn7S3B595RYZ1qyd",
+    "banner": "ipfs://QmScf4q2hADFBcTPBsGsuhvCUmFnVrz6DXdZUXB45KkYBu"
 }
