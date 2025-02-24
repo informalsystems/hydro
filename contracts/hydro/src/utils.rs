@@ -11,6 +11,7 @@ use crate::{
         get_total_power_for_round, get_validator_power_ratio_for_round, initialize_validator_store,
         validate_denom,
     },
+    msg::LiquidityDeployment,
     query::LockEntryWithPower,
     state::{
         Constants, HeightRange, LockEntry, RoundLockPowerSchedule, CONSTANTS,
@@ -542,4 +543,12 @@ pub fn scale_lockup_power(
 pub struct LockingInfo {
     pub lock_in_public_cap: Option<u128>,
     pub lock_in_known_users_cap: Option<u128>,
+}
+
+pub fn has_nonzero_funds(liquidity_deployment: LiquidityDeployment) -> bool {
+    !liquidity_deployment.deployed_funds.is_empty()
+        && liquidity_deployment
+            .deployed_funds
+            .iter()
+            .any(|coin| coin.amount > Uint128::zero())
 }

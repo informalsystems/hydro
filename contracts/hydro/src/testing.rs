@@ -3652,3 +3652,114 @@ fn test_get_vote_for_update() {
         }
     }
 }
+
+#[test]
+fn test_cannot_vote_while_long_deployment_ongoing() {
+    let user_address = "addr0000";
+    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+
+    // Initialize with 1 month round length
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
+    msg.whitelist_admins = vec![get_address_as_str(&deps.api, "admin")];
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // Setup validator for round 0
+    set_validator_infos_for_round(&mut deps.storage, 0, vec![VALIDATOR_1.to_string()]).unwrap();
+
+    // Lock tokens for 3 months to be able to vote on long proposals
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    // Create proposal with 3 month deployment duration
+    let long_proposal_msg = ExecuteMsg::CreateProposal {
+        round_id: None,
+        tranche_id: 1,
+        title: "long proposal".to_string(),
+        description: "3 month deployment".to_string(),
+        deployment_duration: 3,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), long_proposal_msg);
+    assert!(res.is_ok());
+
+    // Vote on long proposal
+    let msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id: 0,
+            lock_ids: vec![0],
+        }],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    // Advance to next round
+    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
+
+    // Setup validator for round 1
+    set_validator_infos_for_round(&mut deps.storage, 1, vec![VALIDATOR_1.to_string()]).unwrap();
+
+    // Create new proposal in round 1
+    let new_proposal_msg = ExecuteMsg::CreateProposal {
+        round_id: None,
+        tranche_id: 1,
+        title: "new proposal".to_string(),
+        description: "1 month deployment".to_string(),
+        deployment_duration: 1,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), new_proposal_msg);
+    assert!(res.is_ok());
+
+    // Try to vote on new proposal - should fail because user already voted on long proposal
+    let vote_msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id: 1,
+            lock_ids: vec![0],
+        }],
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), vote_msg.clone());
+
+    // Verify that voting fails
+    assert!(res.is_err());
+    let error = res.unwrap_err().to_string();
+    assert!(
+        error.contains("Cannot vote again with this lock_id until round"),
+        "Error: {}",
+        error
+    );
+
+    // Add zero liquidity deployment to first proposal
+    let msg = ExecuteMsg::AddLiquidityDeployment {
+        round_id: 0,
+        tranche_id: 1,
+        proposal_id: 0,
+        destinations: vec!["destination1".to_string()],
+        deployed_funds: vec![],
+        funds_before_deployment: vec![],
+        total_rounds: 3,
+        remaining_rounds: 3,
+    };
+    let admin_info = get_message_info(&deps.api, "admin", &[]);
+    let res = execute(deps.as_mut(), env.clone(), admin_info, msg);
+    assert!(res.is_ok(), "error: {:?}", res);
+
+    // now, voting should be possible
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), vote_msg);
+    assert!(res.is_ok());
+}

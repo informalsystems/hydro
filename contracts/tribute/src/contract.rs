@@ -6,6 +6,7 @@ use cosmwasm_std::{
 };
 use cw2::set_contract_version;
 use hydro::msg::LiquidityDeployment;
+use hydro::utils::has_nonzero_funds;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
@@ -386,11 +387,7 @@ fn get_proposal_tributes_info(
 
     if let Ok(liquidity_deployment) = liquidity_deployment_res {
         info.had_deployment_entered = true;
-        info.received_nonzero_funds = !liquidity_deployment.deployed_funds.is_empty()
-            && liquidity_deployment
-                .deployed_funds
-                .iter()
-                .any(|coin| coin.amount > Uint128::zero());
+        info.received_nonzero_funds = has_nonzero_funds(liquidity_deployment);
     }
 
     Ok(info)
