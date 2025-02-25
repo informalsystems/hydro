@@ -26,7 +26,7 @@ pub fn migrate(
         )));
     }
 
-    // no migration necessary from 2.0.2 to 3.0.0
+    // no migration necessary
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 

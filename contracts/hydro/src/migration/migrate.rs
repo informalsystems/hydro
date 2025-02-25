@@ -30,7 +30,7 @@ pub fn migrate(
         )));
     }
 
-    migrate_v3_0_0_to_v3_1_0(&mut deps, env)?;
+    // no migration necessary
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
