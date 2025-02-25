@@ -11,11 +11,13 @@ use crate::{
         get_total_power_for_round, get_validator_power_ratio_for_round, initialize_validator_store,
         validate_denom,
     },
+    msg::LiquidityDeployment,
     query::LockEntryWithPower,
     state::{
         Constants, HeightRange, LockEntry, RoundLockPowerSchedule, CONSTANTS,
         EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND,
-        LOCKED_TOKENS, LOCKS_MAP, ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS,
+        LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP, PROPOSAL_MAP, ROUND_TO_HEIGHT_RANGE,
+        SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, VOTE_MAP,
     },
 };
 
@@ -542,4 +544,71 @@ pub fn scale_lockup_power(
 pub struct LockingInfo {
     pub lock_in_public_cap: Option<u128>,
     pub lock_in_known_users_cap: Option<u128>,
+}
+
+// Finds the deployment for the last proposal the given lock has voted for.
+// This will return None if there is no deployment for the proposal.
+// It will return an error if the lock has not voted for any proposal,
+// or if the store entry for the proposals deployment cannot be parsed.
+pub fn find_deployment_for_voted_lock(
+    deps: &Deps<NeutronQuery>,
+    current_round_id: u64,
+    tranche_id: u64,
+    lock_voter: &Addr,
+    lock_id: u64,
+) -> Result<Option<LiquidityDeployment>, ContractError> {
+    if current_round_id == 0 {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Cannot find deployment for lock in round 0.",
+        )));
+    }
+
+    let mut check_round = current_round_id - 1;
+    loop {
+        if let Some(prev_vote) = VOTE_MAP.may_load(
+            deps.storage,
+            ((check_round, tranche_id), lock_voter.clone(), lock_id),
+        )? {
+            // Found a vote, so get the proposal and its deployment
+            let prev_proposal =
+                PROPOSAL_MAP.load(deps.storage, (check_round, tranche_id, prev_vote.prop_id))?;
+
+            // load the deployment for the prev_proposal
+            return LIQUIDITY_DEPLOYMENTS_MAP
+                .may_load(
+                    deps.storage,
+                    (
+                        prev_proposal.round_id,
+                        prev_proposal.tranche_id,
+                        prev_proposal.proposal_id,
+                    ),
+                )
+                .map_err(|_| {
+                    // if we cannot read the store, there is an error
+                    ContractError::Std(StdError::generic_err(format!(
+                        "Could not read deployment store for proposal {} in tranche {} and round {}",
+                        prev_proposal.proposal_id, prev_proposal.tranche_id, prev_proposal.round_id
+                    )))
+                });
+        }
+        // If we reached the beginning of the tranche, there is an error
+        if check_round == 0 {
+            return Err(ContractError::Std(StdError::generic_err(format!(
+                "Could not find previous vote for lock_id {} in tranche {}.",
+                lock_id, tranche_id,
+            ))));
+        }
+
+        check_round -= 1;
+    }
+}
+
+impl LiquidityDeployment {
+    pub fn has_nonzero_funds(&self) -> bool {
+        !self.deployed_funds.is_empty()
+            && self
+                .deployed_funds
+                .iter()
+                .any(|coin| coin.amount > Uint128::zero())
+    }
 }

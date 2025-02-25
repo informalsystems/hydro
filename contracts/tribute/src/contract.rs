@@ -386,11 +386,7 @@ fn get_proposal_tributes_info(
 
     if let Ok(liquidity_deployment) = liquidity_deployment_res {
         info.had_deployment_entered = true;
-        info.received_nonzero_funds = !liquidity_deployment.deployed_funds.is_empty()
-            && liquidity_deployment
-                .deployed_funds
-                .iter()
-                .any(|coin| coin.amount > Uint128::zero());
+        info.received_nonzero_funds = liquidity_deployment.has_nonzero_funds();
     }
 
     Ok(info)

@@ -43,7 +43,7 @@ use crate::state::{
     VALIDATOR_TO_QUERY_ID, VOTE_MAP, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::utils::{
-    get_current_user_voting_power, get_lock_time_weighted_shares,
+    find_deployment_for_voted_lock, get_current_user_voting_power, get_lock_time_weighted_shares,
     load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
     scale_lockup_power, to_lockup_with_power, update_locked_tokens_info,
     validate_locked_tokens_caps,
@@ -1827,7 +1827,35 @@ fn enrich_lockups_with_tranche_infos(
                         return None;
                     }
 
-                    let next_round_voting_allowed = next_round_voting_allowed_res.unwrap();
+                    let mut next_round_voting_allowed = next_round_voting_allowed_res.unwrap();
+
+                    // if the next round voting allowed is greater than the current round,
+                    // meaning the lockup has voted on a proposal in some previous round,
+                    // check whether there is a deployment associated with that proposal
+                    if next_round_voting_allowed > current_round_id {
+                        let deployment_res = find_deployment_for_voted_lock(
+                            deps,
+                            current_round_id,
+                            *tranche_id,
+                            &converted_addr,
+                            lock.lock_entry.lock_id,
+                        );
+
+                        // if there was an error in the store while loading the deployment,
+                        // we filter out the tranche by returning None
+                        if deployment_res.is_err() {
+                            return None;
+                        }
+
+                        let deployment = deployment_res.unwrap();
+
+                        // If the deployment for the proposals exists, and has zero funds, we ignore next_round_voting_allowed - the lockup can vote
+                        if deployment.is_some() && !(deployment.unwrap().has_nonzero_funds()) {
+                            next_round_voting_allowed = current_round_id;
+                        }
+
+                        // otherwise, next_round_voting_allowed stays unmodified
+                    }
 
                     // return the info for this tranche
                     Some(PerTrancheLockupInfo {
