@@ -44,8 +44,8 @@ use crate::state::{
 };
 use crate::utils::{
     find_deployment_for_voted_lock, get_current_user_voting_power, get_lock_time_weighted_shares,
-    has_nonzero_funds, load_constants_active_at_timestamp, load_current_constants,
-    run_on_each_transaction, scale_lockup_power, to_lockup_with_power, update_locked_tokens_info,
+    load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
+    scale_lockup_power, to_lockup_with_power, update_locked_tokens_info,
     validate_locked_tokens_caps,
 };
 use crate::validators_icqs::{
@@ -1840,10 +1840,11 @@ fn enrich_lockups_with_tranche_infos(
                             &converted_addr,
                             lock.lock_entry.lock_id,
                         )
-                        .expect("Failed to find deployment for voted lock");
+                        .ok() // discard any error and replace with None
+                        .unwrap();
 
                         // If the deployment for the proposals exists, and has zero funds, we ignore next_round_voting_allowed - the lockup can vote
-                        if deployment.is_some() && !has_nonzero_funds(deployment.unwrap()) {
+                        if deployment.is_some() && !(deployment.unwrap().has_nonzero_funds()) {
                             next_round_voting_allowed = current_round_id;
                         }
                         // otherwise, next_round_voting_allowed stays unmodified

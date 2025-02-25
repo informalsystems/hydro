@@ -546,14 +546,6 @@ pub struct LockingInfo {
     pub lock_in_known_users_cap: Option<u128>,
 }
 
-pub fn has_nonzero_funds(liquidity_deployment: LiquidityDeployment) -> bool {
-    !liquidity_deployment.deployed_funds.is_empty()
-        && liquidity_deployment
-            .deployed_funds
-            .iter()
-            .any(|coin| coin.amount > Uint128::zero())
-}
-
 // Finds the deployment for the last proposal the given lock has voted for.
 // This will return None if there is no deployment for the proposal.
 // It will return an error if the lock has not voted for any proposal,
@@ -565,6 +557,12 @@ pub fn find_deployment_for_voted_lock(
     lock_voter: &Addr,
     lock_id: u64,
 ) -> Result<Option<LiquidityDeployment>, ContractError> {
+    if current_round_id == 0 {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Cannot find deployment for lock in round 0.",
+        )));
+    }
+
     let mut check_round = current_round_id - 1;
     loop {
         if let Some(prev_vote) = VOTE_MAP.may_load(
@@ -588,8 +586,8 @@ pub fn find_deployment_for_voted_lock(
                 .map_err(|_| {
                     // if we cannot read the store, there is an error
                     ContractError::Std(StdError::generic_err(format!(
-                        "Could not read deployment store for proposal {} in tranche {}.",
-                        prev_proposal.proposal_id, prev_proposal.tranche_id
+                        "Could not read deployment store for proposal {} in tranche {} and round {}",
+                        prev_proposal.proposal_id, prev_proposal.tranche_id, prev_proposal.round_id
                     )))
                 });
         }
@@ -602,5 +600,15 @@ pub fn find_deployment_for_voted_lock(
         }
 
         check_round -= 1;
+    }
+}
+
+impl LiquidityDeployment {
+    pub fn has_nonzero_funds(&self) -> bool {
+        !self.deployed_funds.is_empty()
+            && self
+                .deployed_funds
+                .iter()
+                .any(|coin| coin.amount > Uint128::zero())
     }
 }

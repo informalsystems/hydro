@@ -6,7 +6,6 @@ use crate::score_keeper::ProposalPowerUpdate;
 use crate::state::{
     Constants, LockEntry, Vote, LOCKS_MAP, PROPOSAL_MAP, VOTE_MAP, VOTING_ALLOWED_ROUND,
 };
-use crate::utils::has_nonzero_funds;
 use crate::utils::{find_deployment_for_voted_lock, get_lock_time_weighted_shares};
 use cosmwasm_std::{Addr, Decimal, DepsMut, Env, SignedDecimal, StdError, Storage, Uint128};
 use neutron_sdk::bindings::query::NeutronQuery;
@@ -215,7 +214,7 @@ pub fn process_votes(
                     )?;
 
                     // If there is no deployment for this proposal yet, or it has non-zero funds, then should error out
-                    if deployment.is_none() || has_nonzero_funds(deployment.unwrap()) {
+                    if deployment.is_none() || deployment.unwrap().has_nonzero_funds() {
                         return Err(ContractError::Std(StdError::generic_err(format!(
                             "Not allowed to vote with lock_id {} in tranche {}. Cannot vote again with this lock_id until round {}.",
                             lock_id, context.tranche_id, voting_allowed_round
