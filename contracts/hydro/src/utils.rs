@@ -596,7 +596,7 @@ pub fn find_deployment_for_voted_lock(
         check_round -= 1;
 
         // If we reached the beginning of the tranche, there is an error
-        if check_round <= 0 {
+        if check_round == 0 {
             return Err(ContractError::Std(StdError::generic_err(format!(
                 "Could not find previous vote for lock_id {} in tranche {}.",
                 lock_id, tranche_id,

@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::convert;
 
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 #[allow(unused_imports)]

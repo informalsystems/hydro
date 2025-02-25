@@ -1,11 +1,10 @@
 use crate::contract::{can_lock_vote_for_proposal, compute_round_end};
 use crate::error::ContractError;
 use crate::lsm_integration::validate_denom;
-use crate::msg::{LiquidityDeployment, ProposalToLockups};
+use crate::msg::ProposalToLockups;
 use crate::score_keeper::ProposalPowerUpdate;
 use crate::state::{
-    Constants, LockEntry, Vote, LIQUIDITY_DEPLOYMENTS_MAP, LOCKS_MAP, PROPOSAL_MAP, VOTE_MAP,
-    VOTING_ALLOWED_ROUND,
+    Constants, LockEntry, Vote, LOCKS_MAP, PROPOSAL_MAP, VOTE_MAP, VOTING_ALLOWED_ROUND,
 };
 use crate::utils::has_nonzero_funds;
 use crate::utils::{find_deployment_for_voted_lock, get_lock_time_weighted_shares};
