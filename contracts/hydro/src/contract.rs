@@ -1847,6 +1847,7 @@ fn enrich_lockups_with_tranche_infos(
                         if deployment.is_some() && !(deployment.unwrap().has_nonzero_funds()) {
                             next_round_voting_allowed = current_round_id;
                         }
+
                         // otherwise, next_round_voting_allowed stays unmodified
                     }
 
