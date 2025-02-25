@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::convert;
 
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 #[allow(unused_imports)]
@@ -43,9 +44,9 @@ use crate::state::{
     VALIDATOR_TO_QUERY_ID, VOTE_MAP, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::utils::{
-    get_current_user_voting_power, get_lock_time_weighted_shares,
-    load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
-    scale_lockup_power, to_lockup_with_power, update_locked_tokens_info,
+    find_deployment_for_voted_lock, get_current_user_voting_power, get_lock_time_weighted_shares,
+    has_nonzero_funds, load_constants_active_at_timestamp, load_current_constants,
+    run_on_each_transaction, scale_lockup_power, to_lockup_with_power, update_locked_tokens_info,
     validate_locked_tokens_caps,
 };
 use crate::validators_icqs::{
@@ -1814,6 +1815,7 @@ fn enrich_lockups_with_tranche_infos(
                         } else {
                             // if the lockup has not voted in this round, VOTING_ALLOWED_ROUND does contain
                             // current information on whether the lockup can vote right now or not
+
                             VOTING_ALLOWED_ROUND
                                 .may_load(deps.storage, (*tranche_id, lock.lock_entry.lock_id))
                                 .map(|voting_allowed_round| {
@@ -1827,7 +1829,24 @@ fn enrich_lockups_with_tranche_infos(
                         return None;
                     }
 
-                    let next_round_voting_allowed = next_round_voting_allowed_res.unwrap();
+                    let mut next_round_voting_allowed = next_round_voting_allowed_res.unwrap();
+
+                    // if the next round voting allowed is greater than the current round,
+                    // meaning the lockup has voted on a proposal in some previous round,
+                    // check whether there is a deployment associated with that proposal
+                    let deployment = find_deployment_for_voted_lock(
+                        deps,
+                        current_round_id,
+                        *tranche_id,
+                        &converted_addr,
+                        lock.lock_entry.lock_id,
+                    )
+                    .expect("Failed to find deployment for voted lock");
+
+                    // If the deployment for the proposals exists, and has zero funds, we ignore next_round_voting_allowed - the lockup can vote
+                    if deployment.is_some() && !has_nonzero_funds(deployment.unwrap()) {
+                        next_round_voting_allowed = current_round_id;
+                    }
 
                     // return the info for this tranche
                     Some(PerTrancheLockupInfo {

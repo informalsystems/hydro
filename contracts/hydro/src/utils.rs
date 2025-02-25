@@ -16,7 +16,8 @@ use crate::{
     state::{
         Constants, HeightRange, LockEntry, RoundLockPowerSchedule, CONSTANTS,
         EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND,
-        LOCKED_TOKENS, LOCKS_MAP, ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS,
+        LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP, PROPOSAL_MAP, ROUND_TO_HEIGHT_RANGE,
+        SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, VOTE_MAP,
     },
 };
 
@@ -551,4 +552,55 @@ pub fn has_nonzero_funds(liquidity_deployment: LiquidityDeployment) -> bool {
             .deployed_funds
             .iter()
             .any(|coin| coin.amount > Uint128::zero())
+}
+
+// Finds the deployment for the last proposal the given lock has voted for.
+// This will return None if there is no deployment for the proposal.
+// It will return an error if the lock has not voted for any proposal,
+// or if the store entry for the proposals deployment cannot be parsed.
+pub fn find_deployment_for_voted_lock(
+    deps: &Deps<NeutronQuery>,
+    current_round_id: u64,
+    tranche_id: u64,
+    lock_voter: &Addr,
+    lock_id: u64,
+) -> Result<Option<LiquidityDeployment>, ContractError> {
+    let mut check_round = current_round_id - 1;
+    loop {
+        if let Some(prev_vote) = VOTE_MAP.may_load(
+            deps.storage,
+            ((check_round, tranche_id), lock_voter.clone(), lock_id),
+        )? {
+            // Found a vote, so get the proposal and its deployment
+            let prev_proposal =
+                PROPOSAL_MAP.load(deps.storage, (check_round, tranche_id, prev_vote.prop_id))?;
+
+            // load the deployment for the prev_proposal
+            return LIQUIDITY_DEPLOYMENTS_MAP
+                .may_load(
+                    deps.storage,
+                    (
+                        prev_proposal.round_id,
+                        prev_proposal.tranche_id,
+                        prev_proposal.proposal_id,
+                    ),
+                )
+                .map_err(|_| {
+                    // if we cannot read the store, there is an error
+                    ContractError::Std(StdError::generic_err(format!(
+                        "Could not read deployment store for proposal {} in tranche {}.",
+                        prev_proposal.proposal_id, prev_proposal.tranche_id
+                    )))
+                });
+        }
+        check_round -= 1;
+
+        // If we reached the beginning of the tranche, there is an error
+        if check_round <= 0 {
+            return Err(ContractError::Std(StdError::generic_err(format!(
+                "Could not find previous vote for lock_id {} in tranche {}.",
+                lock_id, tranche_id,
+            ))));
+        }
+    }
 }

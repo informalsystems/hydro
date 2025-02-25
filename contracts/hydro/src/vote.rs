@@ -1,14 +1,14 @@
 use crate::contract::{can_lock_vote_for_proposal, compute_round_end};
 use crate::error::ContractError;
 use crate::lsm_integration::validate_denom;
-use crate::msg::ProposalToLockups;
+use crate::msg::{LiquidityDeployment, ProposalToLockups};
 use crate::score_keeper::ProposalPowerUpdate;
 use crate::state::{
     Constants, LockEntry, Vote, LIQUIDITY_DEPLOYMENTS_MAP, LOCKS_MAP, PROPOSAL_MAP, VOTE_MAP,
     VOTING_ALLOWED_ROUND,
 };
-use crate::utils::get_lock_time_weighted_shares;
 use crate::utils::has_nonzero_funds;
+use crate::utils::{find_deployment_for_voted_lock, get_lock_time_weighted_shares};
 use cosmwasm_std::{Addr, Decimal, DepsMut, Env, SignedDecimal, StdError, Storage, Uint128};
 use neutron_sdk::bindings::query::NeutronQuery;
 use std::collections::{HashMap, HashSet};
@@ -207,45 +207,20 @@ pub fn process_votes(
 
             if let Some(voting_allowed_round) = voting_allowed_round {
                 if voting_allowed_round > context.round_id {
-                    // Search for votes in previous rounds in this tranche
-                    let mut check_round = voting_allowed_round - 1;
-                    loop {
-                        if let Some(prev_vote) = VOTE_MAP.may_load(
-                            deps.storage,
-                            (
-                                (check_round, context.tranche_id),
-                                context.sender.clone(),
-                                lock_id,
-                            ),
-                        )? {
-                            // Found a vote - check if the proposal has a deployment entered that has non-zero funds
-                            let prev_proposal = PROPOSAL_MAP.load(
-                                deps.storage,
-                                (check_round, context.tranche_id, prev_vote.prop_id),
-                            )?;
+                    let deployment = find_deployment_for_voted_lock(
+                        &deps.as_ref(),
+                        context.round_id,
+                        context.tranche_id,
+                        context.sender,
+                        lock_id,
+                    )?;
 
-                            // load the deployment for the prev_proposal
-                            let deployment = LIQUIDITY_DEPLOYMENTS_MAP.load(
-                                deps.storage,
-                                (
-                                    prev_proposal.round_id,
-                                    prev_proposal.tranche_id,
-                                    prev_proposal.proposal_id,
-                                ),
-                            );
-
-                            // If there is no deployment for this proposal yet, or it has non-zero funds, then should error out
-                            if deployment.is_err() || has_nonzero_funds(deployment.unwrap()) {
-                                return Err(ContractError::Std(StdError::generic_err(format!(
-                                    "Not allowed to vote with lock_id {} in tranche {}. Cannot vote again with this lock_id until round {}.",
-                                    lock_id, context.tranche_id, voting_allowed_round
-                                ))));
-                            }
-
-                            // If the deployment has zero funds, then we can vote again with this lock_id
-                            break;
-                        }
-                        check_round -= 1;
+                    // If there is no deployment for this proposal yet, or it has non-zero funds, then should error out
+                    if deployment.is_none() || has_nonzero_funds(deployment.unwrap()) {
+                        return Err(ContractError::Std(StdError::generic_err(format!(
+                            "Not allowed to vote with lock_id {} in tranche {}. Cannot vote again with this lock_id until round {}.",
+                            lock_id, context.tranche_id, voting_allowed_round
+                        ))));
                     }
                 }
             }
