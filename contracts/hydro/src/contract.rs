@@ -1814,7 +1814,6 @@ fn enrich_lockups_with_tranche_infos(
                         } else {
                             // if the lockup has not voted in this round, VOTING_ALLOWED_ROUND does contain
                             // current information on whether the lockup can vote right now or not
-
                             VOTING_ALLOWED_ROUND
                                 .may_load(deps.storage, (*tranche_id, lock.lock_entry.lock_id))
                                 .map(|voting_allowed_round| {
@@ -1833,18 +1832,21 @@ fn enrich_lockups_with_tranche_infos(
                     // if the next round voting allowed is greater than the current round,
                     // meaning the lockup has voted on a proposal in some previous round,
                     // check whether there is a deployment associated with that proposal
-                    let deployment = find_deployment_for_voted_lock(
-                        deps,
-                        current_round_id,
-                        *tranche_id,
-                        &converted_addr,
-                        lock.lock_entry.lock_id,
-                    )
-                    .expect("Failed to find deployment for voted lock");
+                    if next_round_voting_allowed > current_round_id {
+                        let deployment = find_deployment_for_voted_lock(
+                            deps,
+                            current_round_id,
+                            *tranche_id,
+                            &converted_addr,
+                            lock.lock_entry.lock_id,
+                        )
+                        .expect("Failed to find deployment for voted lock");
 
-                    // If the deployment for the proposals exists, and has zero funds, we ignore next_round_voting_allowed - the lockup can vote
-                    if deployment.is_some() && !has_nonzero_funds(deployment.unwrap()) {
-                        next_round_voting_allowed = current_round_id;
+                        // If the deployment for the proposals exists, and has zero funds, we ignore next_round_voting_allowed - the lockup can vote
+                        if deployment.is_some() && !has_nonzero_funds(deployment.unwrap()) {
+                            next_round_voting_allowed = current_round_id;
+                        }
+                        // otherwise, next_round_voting_allowed stays unmodified
                     }
 
                     // return the info for this tranche
