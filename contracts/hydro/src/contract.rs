@@ -1833,15 +1833,21 @@ fn enrich_lockups_with_tranche_infos(
                     // meaning the lockup has voted on a proposal in some previous round,
                     // check whether there is a deployment associated with that proposal
                     if next_round_voting_allowed > current_round_id {
-                        let deployment = find_deployment_for_voted_lock(
+                        let deployment_res = find_deployment_for_voted_lock(
                             deps,
                             current_round_id,
                             *tranche_id,
                             &converted_addr,
                             lock.lock_entry.lock_id,
-                        )
-                        .ok() // discard any error and replace with None
-                        .unwrap();
+                        );
+
+                        // if there was an error in the store while loading the deployment,
+                        // we filter out the tranche by returning None
+                        if deployment_res.is_err() {
+                            return None;
+                        }
+
+                        let deployment = deployment_res.unwrap();
 
                         // If the deployment for the proposals exists, and has zero funds, we ignore next_round_voting_allowed - the lockup can vote
                         if deployment.is_some() && !(deployment.unwrap().has_nonzero_funds()) {
