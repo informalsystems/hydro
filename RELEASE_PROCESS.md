@@ -19,3 +19,32 @@ unclog build > CHANGELOG
 Finally, commit and push the changes to the repo.
 The up-to-date changelog should be present on the release branch for the release you have just cut,
 and also on main. 
+
+### Updating versions
+
+Modify the versions in the `Cargo.toml` files for all contracts that the release is for.
+
+### Migration
+
+Make sure that the migration entrypoint in `contract/src/migration/migrate.rs` has the correct behaviour for the upgrade.
+That means it uses the right Migration message, and calls the right migration function.
+
+### Building/Releasing
+
+Run `make compile` to regenerate the contracts with the new version number.
+
+### Cutting the release
+
+Create a PR with these changes, in the usual cases targetting main.
+After the changes are merged into main, push the changes from main to the release branch, e.g. `release/v3.x`.
+Then, on Github, create a new tag from the branch, and release that tag.
+As summary, use the CHANGELOG entry for that release, e.g.
+```
+## v3.1.1
+Date: Feburary 25th, 2025
+
+### FEATURE
+
+- Allow voting with locks that voted for a proposal which did not receive any funds in its deployment
+  ([\#231](https://github.com/informalsystems/hydro/pull/231))
+```
