@@ -54,7 +54,6 @@ const (
 	CommitTimeout          = 4 * time.Second
 	TotalValidatorFunds    = 11_000_000_000
 	ValidatorFunds         = 30_000_000
-	ValidatorCount         = 4
 	FullNodeCount          = 0
 	ChainSpawnWait         = 155 * time.Second
 	CosmosChainType        = "cosmos"

@@ -21,13 +21,14 @@ var (
 	ibcUatomDenom      string
 	poolTokenATokenB   string
 	// valence
-	valenceAuthCodeId         int
-	valenceProcessorCodeId    int
-	valenceBaseAccCodeId      int
-	valenceAstroLperLibCodeId int
-	valenceSplitLibCodeId     int
-	valenceProcessorAddr      string
-	valenceAuthAddress        string
+	valenceAuthCodeId               int
+	valenceProcessorCodeId          int
+	valenceBaseAccCodeId            int
+	valenceAstroLperLibCodeId       int
+	valenceAstroWithdrawerLibCodeId int
+	valenceSplitLibCodeId           int
+	valenceProcessorAddr            string
+	valenceAuthAddress              string
 )
 
 const (
@@ -45,7 +46,7 @@ func (s *DeploymentSuite) SetupSuite() {
 	s.ctx = ctx
 
 	// create and start hub chain
-	s.HubChain, err = chainsuite.CreateChain(s.GetContext(), s.T(), chainsuite.GetHubSpec(4))
+	s.HubChain, err = chainsuite.CreateChain(s.GetContext(), s.T(), chainsuite.GetHubSpec(1))
 	s.Require().NoError(err)
 
 	// setup hermes relayer
@@ -56,7 +57,7 @@ func (s *DeploymentSuite) SetupSuite() {
 	s.Require().NoError(err)
 
 	// create and start neutron chain
-	s.NeutronChain, err = s.HubChain.AddConsumerChain(s.GetContext(), relayer, 4, chainsuite.NeutronChainID, chainsuite.GetNeutronSpec)
+	s.NeutronChain, err = s.HubChain.AddConsumerChain(s.GetContext(), relayer, 1, chainsuite.NeutronChainID, chainsuite.GetNeutronSpec)
 	s.Require().NoError(err)
 	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, relayer, 1_000_000, 0))
 
@@ -70,7 +71,7 @@ func (s *DeploymentSuite) SetupSuite() {
 
 	// Valence setup
 	s.storeValenceContracts()
-	s.initValenceContracts()
+	//s.InitValenceContracts()
 }
 
 func (s *DeploymentSuite) GetContext() context.Context {
@@ -78,36 +79,8 @@ func (s *DeploymentSuite) GetContext() context.Context {
 	return s.ctx
 }
 
-func (s *DeploymentSuite) getAstroportFactoryContractPath() string {
-	return path.Join(s.NeutronChain.GetNode().HomeDir(), "astroport_factory_cw20.wasm")
-}
-
-func (s *DeploymentSuite) getAstroportPairContractPath() string {
-	return path.Join(s.NeutronChain.GetNode().HomeDir(), "astroport_pair_cw20.wasm")
-}
-
-func (s *DeploymentSuite) getAstroportTokenContractPath() string {
-	return path.Join(s.NeutronChain.GetNode().HomeDir(), "astroport_token.wasm")
-}
-
-func (s *DeploymentSuite) getValenceAuthContractPath() string {
-	return path.Join(s.NeutronChain.GetNode().HomeDir(), "valence_authorization.wasm")
-}
-
-func (s *DeploymentSuite) getValenceProcessorContractPath() string {
-	return path.Join(s.NeutronChain.GetNode().HomeDir(), "valence_processor.wasm")
-}
-
-func (s *DeploymentSuite) getValenceBaseAccContractPath() string {
-	return path.Join(s.NeutronChain.GetNode().HomeDir(), "valence_base_account.wasm")
-}
-
-func (s *DeploymentSuite) getValenceAstroLperContractPath() string {
-	return path.Join(s.NeutronChain.GetNode().HomeDir(), "valence_astroport_lper.wasm")
-}
-
-func (s *DeploymentSuite) getValenceSplitterLibContractPath() string {
-	return path.Join(s.NeutronChain.GetNode().HomeDir(), "valence_splitter_library.wasm")
+func (s *DeploymentSuite) getContractPath(contractName string) string {
+	return path.Join(s.NeutronChain.GetNode().HomeDir(), contractName)
 }
 
 func (s *DeploymentSuite) storeAstroportContracts() {
@@ -115,19 +88,19 @@ func (s *DeploymentSuite) storeAstroportContracts() {
 	astroFactoryContract, err := os.ReadFile("./testdata/astroport_factory_cw20.wasm")
 	s.Require().NoError(err)
 	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), astroFactoryContract, "astroport_factory_cw20.wasm"))
-	astroFactoryCodeId, err = strconv.Atoi(s.StoreCode(s.getAstroportFactoryContractPath(), chainsuite.AdminMoniker))
+	astroFactoryCodeId, err = strconv.Atoi(s.StoreCode(s.getContractPath("astroport_factory_cw20.wasm"), chainsuite.AdminMoniker))
 	s.Require().NoError(err)
 	// token pair
 	astroPairContract, err := os.ReadFile("./testdata/astroport_pair_cw20.wasm")
 	s.Require().NoError(err)
 	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), astroPairContract, "astroport_pair_cw20.wasm"))
-	astroPairCodeId, err = strconv.Atoi(s.StoreCode(s.getAstroportPairContractPath(), chainsuite.AdminMoniker))
+	astroPairCodeId, err = strconv.Atoi(s.StoreCode(s.getContractPath("astroport_pair_cw20.wasm"), chainsuite.AdminMoniker))
 	s.Require().NoError(err)
 	// token
 	astroTokenContract, err := os.ReadFile("./testdata/astroport_token.wasm")
 	s.Require().NoError(err)
 	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), astroTokenContract, "astroport_token.wasm"))
-	astroTokenCodeId, err = strconv.Atoi(s.StoreCode(s.getAstroportTokenContractPath(), chainsuite.AdminMoniker))
+	astroTokenCodeId, err = strconv.Atoi(s.StoreCode(s.getContractPath("astroport_token.wasm"), chainsuite.AdminMoniker))
 	s.Require().NoError(err)
 }
 
@@ -136,35 +109,42 @@ func (s *DeploymentSuite) storeValenceContracts() {
 	authContract, err := os.ReadFile("./testdata/valence_authorization.wasm")
 	s.Require().NoError(err)
 	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), authContract, "valence_authorization.wasm"))
-	valenceAuthCodeId, err = strconv.Atoi(s.StoreCode(s.getValenceAuthContractPath(), chainsuite.AdminMoniker))
+	valenceAuthCodeId, err = strconv.Atoi(s.StoreCode(s.getContractPath("valence_authorization.wasm"), chainsuite.AdminMoniker))
 	s.Require().NoError(err)
 
 	// processor contract
 	processorContract, err := os.ReadFile("./testdata/valence_processor.wasm")
 	s.Require().NoError(err)
 	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), processorContract, "valence_processor.wasm"))
-	valenceProcessorCodeId, err = strconv.Atoi(s.StoreCode(s.getValenceProcessorContractPath(), chainsuite.AdminMoniker))
+	valenceProcessorCodeId, err = strconv.Atoi(s.StoreCode(s.getContractPath("valence_processor.wasm"), chainsuite.AdminMoniker))
 	s.Require().NoError(err)
 
 	// base account contract
 	baseAccountContract, err := os.ReadFile("./testdata/valence_base_account.wasm")
 	s.Require().NoError(err)
 	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), baseAccountContract, "valence_base_account.wasm"))
-	valenceBaseAccCodeId, err = strconv.Atoi(s.StoreCode(s.getValenceBaseAccContractPath(), chainsuite.AdminMoniker))
+	valenceBaseAccCodeId, err = strconv.Atoi(s.StoreCode(s.getContractPath("valence_base_account.wasm"), chainsuite.AdminMoniker))
 	s.Require().NoError(err)
 
 	// astroport lper contract
 	astroLperContract, err := os.ReadFile("./testdata/valence_astroport_lper.wasm")
 	s.Require().NoError(err)
 	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), astroLperContract, "valence_astroport_lper.wasm"))
-	valenceAstroLperLibCodeId, err = strconv.Atoi(s.StoreCode(s.getValenceAstroLperContractPath(), chainsuite.AdminMoniker))
+	valenceAstroLperLibCodeId, err = strconv.Atoi(s.StoreCode(s.getContractPath("valence_astroport_lper.wasm"), chainsuite.AdminMoniker))
+	s.Require().NoError(err)
+
+	// astroport withdrawer contract
+	astroWithdrawerContract, err := os.ReadFile("./testdata/valence_astroport_withdrawer.wasm")
+	s.Require().NoError(err)
+	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), astroWithdrawerContract, "valence_astroport_withdrawer.wasm"))
+	valenceAstroWithdrawerLibCodeId, err = strconv.Atoi(s.StoreCode(s.getContractPath("valence_astroport_withdrawer.wasm"), chainsuite.AdminMoniker))
 	s.Require().NoError(err)
 
 	// splitter contract
 	splitterLibContract, err := os.ReadFile("./testdata/valence_splitter_library.wasm")
 	s.Require().NoError(err)
 	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), splitterLibContract, "valence_splitter_library.wasm"))
-	valenceSplitLibCodeId, err = strconv.Atoi(s.StoreCode(s.getValenceSplitterLibContractPath(), chainsuite.AdminMoniker))
+	valenceSplitLibCodeId, err = strconv.Atoi(s.StoreCode(s.getContractPath("valence_splitter_library.wasm"), chainsuite.AdminMoniker))
 	s.Require().NoError(err)
 }
 
@@ -179,10 +159,8 @@ func (s *DeploymentSuite) initFactoryAndCreateTestPair() {
 	poolTokenATokenB = s.CreateTokenPair(factoryAddr, chainsuite.Untrn, ibcUatomDenom)
 }
 
-func (s *DeploymentSuite) initValenceContracts() {
+func (s *DeploymentSuite) InitValenceContracts() {
 	admin := chainsuite.NeutronAdminAddress
-	//predictedValenceAuthAddress := s.PredictContractAddress(valenceAuthCodeHash, admin, salt)
-	// build-address does not accept --node flag and until its fixed we're using hardcoded predicted address
 	predictedValenceAuthAddress := "neutron1fsr30ry0rgu8zm0e2dlpmpn4fj9m4p782kgnp08qe7evzu4m2e3scecfq9"
 	valenceProcessorAddr = s.InitValenceProcessor(predictedValenceAuthAddress, admin)
 	valenceAuthAddress = s.InitValenceAuthorization(valenceProcessorAddr, admin)
