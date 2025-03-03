@@ -112,6 +112,14 @@
           "format": "uint64",
           "minimum": 0.0
         },
+        "tied_to_proposal": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        },
         "tranche_id": {
           "type": "integer",
           "format": "uint64",
