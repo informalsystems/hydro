@@ -154,6 +154,10 @@ pub struct PerTrancheLockupInfo {
     // In particular, if the lockup is blocked from voting in the current round (because it voted for a
     // proposal with a long deployment duration in a previous round), this will be None.
     pub current_voted_on_proposal: Option<u64>,
+
+    // This is the id of the proposal that the lockup is tied to because it has voted for a proposal with a long deployment duration.
+    // In case the proposal can currently vote (and is not tied to a proposal), this will be None.
+    pub tied_to_proposal: Option<u64>,
 }
 
 // LockupWithPerTrancheInfo is used to store the lockup information for a specific lockup,
