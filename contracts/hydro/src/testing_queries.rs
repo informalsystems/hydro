@@ -353,6 +353,19 @@ fn query_user_lockups_test() {
             .next_round_lockup_can_vote
     );
 
+    // check that the lockups are tied to the right proposals
+    assert_eq!(
+        None,
+        all_lockups.lockups_with_per_tranche_infos[0].per_tranche_info[0].tied_to_proposal
+    );
+
+    assert_eq!(
+        1,
+        all_lockups.lockups_with_per_tranche_infos[1].per_tranche_info[0]
+            .tied_to_proposal
+            .unwrap()
+    );
+
     // advance the chain for 3 more months and verify that the second lockup has expired as well
     env.block.time = env.block.time.plus_nanos(3 * ONE_MONTH_IN_NANO_SECONDS);
     let expired_lockups = get_expired_user_lockups(&deps, env.clone(), info.sender.to_string());
@@ -405,6 +418,17 @@ fn query_user_lockups_test() {
             .lock_with_power
             .current_voting_power
             .u128()
+    );
+
+    // check that neither lockup is tied to a proposal
+    assert_eq!(
+        None,
+        all_lockups.lockups_with_per_tranche_infos[0].per_tranche_info[0].tied_to_proposal
+    );
+
+    assert_eq!(
+        None,
+        all_lockups.lockups_with_per_tranche_infos[1].per_tranche_info[0].tied_to_proposal
     );
 
     // unlock the tokens and verify that the user doesn't have any expired lockups after that
