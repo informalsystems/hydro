@@ -43,9 +43,9 @@ use crate::state::{
     VALIDATOR_TO_QUERY_ID, VOTE_MAP, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::utils::{
-    find_deployment_for_voted_lock, get_current_user_voting_power, get_lock_time_weighted_shares,
-    load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
-    scale_lockup_power, to_lockup_with_power, update_locked_tokens_info,
+    find_voted_proposal_for_lock, get_current_user_voting_power, get_deployment_for_proposal,
+    get_lock_time_weighted_shares, load_constants_active_at_timestamp, load_current_constants,
+    run_on_each_transaction, scale_lockup_power, to_lockup_with_power, update_locked_tokens_info,
     validate_locked_tokens_caps,
 };
 use crate::validators_icqs::{
@@ -1829,17 +1829,27 @@ fn enrich_lockups_with_tranche_infos(
 
                     let mut next_round_voting_allowed = next_round_voting_allowed_res.unwrap();
 
+                    let mut tied_to_proposal: Option<u64> = None;
+
                     // if the next round voting allowed is greater than the current round,
                     // meaning the lockup has voted on a proposal in some previous round,
                     // check whether there is a deployment associated with that proposal
                     if next_round_voting_allowed > current_round_id {
-                        let deployment_res = find_deployment_for_voted_lock(
+                        let proposal_res = find_voted_proposal_for_lock(
                             deps,
                             current_round_id,
                             *tranche_id,
                             &converted_addr,
                             lock.lock_entry.lock_id,
                         );
+                        // if there was an error in the store while loading the proposal, filter out this tranche
+                        if proposal_res.is_err() {
+                            return None;
+                        }
+
+                        let proposal = proposal_res.unwrap();
+
+                        let deployment_res = get_deployment_for_proposal(deps, &proposal);
 
                         // if there was an error in the store while loading the deployment,
                         // we filter out the tranche by returning None
@@ -1850,11 +1860,13 @@ fn enrich_lockups_with_tranche_infos(
                         let deployment = deployment_res.unwrap();
 
                         // If the deployment for the proposals exists, and has zero funds, we ignore next_round_voting_allowed - the lockup can vote
+                        // and is also not tied to a deployment
                         if deployment.is_some() && !(deployment.unwrap().has_nonzero_funds()) {
                             next_round_voting_allowed = current_round_id;
+                        } else {
+                            // otherwise, set the tied_to_proposal to the proposal ID
+                            tied_to_proposal = Some(proposal.proposal_id);
                         }
-
-                        // otherwise, next_round_voting_allowed stays unmodified
                     }
 
                     // return the info for this tranche
@@ -1862,6 +1874,7 @@ fn enrich_lockups_with_tranche_infos(
                         tranche_id: *tranche_id,
                         next_round_lockup_can_vote: next_round_voting_allowed,
                         current_voted_on_proposal: voted_for_proposal,
+                        tied_to_proposal,
                     })
                 })
                 .collect::<Vec<PerTrancheLockupInfo>>();

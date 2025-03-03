@@ -34,6 +34,7 @@ export interface LockupWithPerTrancheInfo {
 export interface PerTrancheLockupInfo {
   current_voted_on_proposal?: number | null;
   next_round_lockup_can_vote: number;
+  tied_to_proposal?: number | null;
   tranche_id: number;
 }
 export type Decimal = string;
