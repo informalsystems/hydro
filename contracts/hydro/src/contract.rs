@@ -21,13 +21,15 @@ use crate::lsm_integration::{
 };
 use crate::msg::{ExecuteMsg, InstantiateMsg, LiquidityDeployment, ProposalToLockups, TrancheInfo};
 use crate::query::{
-    AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, VoteEntry, ConstantsResponse, 
-    CurrentRoundResponse, ExpiredUserLockupsResponse, ICQManagersResponse, LiquidityDeploymentResponse, 
-    LockEntryWithPower, LockupWithPerTrancheInfo, PerTrancheLockupInfo, ProposalResponse, QueryMsg, 
-    RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, 
-    RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, 
-    TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse, UserVotesResponse, UserVotingPowerResponse, 
-    ValidatorPowerRatioResponse, WhitelistAdminsResponse, WhitelistResponse
+    AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse,
+    ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse, ICQManagersResponse,
+    LiquidityDeploymentResponse, LockEntryWithPower, LockupWithPerTrancheInfo,
+    PerTrancheLockupInfo, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
+    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
+    RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse,
+    SpecificUserLockupsWithTrancheInfosResponse, TopNProposalsResponse, TotalLockedTokensResponse,
+    TranchesResponse, UserVotesResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
+    VoteEntry, WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_validator_shares_to_proposal, apply_proposal_changes, combine_proposal_power_updates,
@@ -1582,16 +1584,17 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
             tranche_id,
             address,
         } => to_json_binary(&query_user_votes(deps, round_id, tranche_id, address)?),
-        QueryMsg::AllVotes {
-            start_from,
-            limit,
-        } => to_json_binary(&query_all_votes(deps, start_from, limit)?),
+        QueryMsg::AllVotes { start_from, limit } => {
+            to_json_binary(&query_all_votes(deps, start_from, limit)?)
+        }
         QueryMsg::AllVotesRoundTranche {
             round_id,
             tranche_id,
             start_from,
             limit,
-        } => to_json_binary(&query_all_votes_round_tranche(deps,round_id, tranche_id, start_from, limit)?),
+        } => to_json_binary(&query_all_votes_round_tranche(
+            deps, round_id, tranche_id, start_from, limit,
+        )?),
         QueryMsg::Proposal {
             round_id,
             tranche_id,
@@ -2040,20 +2043,20 @@ pub fn query_all_votes(
     limit: u32,
 ) -> StdResult<AllVotesResponse> {
     let votes = VOTE_MAP
-    .range(deps.storage, None, None, Order::Ascending)
-    .skip(start_from as usize)
-    .take(limit as usize)
-    .filter_map(|entry| match entry {
-        Err(_) => None,
-        Ok(((round_id_tranche, sender_addr, lock_id), vote)) => Some(VoteEntry {
-            round_id: round_id_tranche.0,
-            tranche_id: round_id_tranche.1,
-            sender_addr,
-            lock_id,
-            vote,
-        }),
-    })
-    .collect();
+        .range(deps.storage, None, None, Order::Ascending)
+        .skip(start_from as usize)
+        .take(limit as usize)
+        .filter_map(|entry| match entry {
+            Err(_) => None,
+            Ok(((round_id_tranche, sender_addr, lock_id), vote)) => Some(VoteEntry {
+                round_id: round_id_tranche.0,
+                tranche_id: round_id_tranche.1,
+                sender_addr,
+                lock_id,
+                vote,
+            }),
+        })
+        .collect();
 
     Ok(AllVotesResponse { votes })
 }
@@ -2088,7 +2091,7 @@ pub fn query_all_votes_round_tranche(
         .take(limit as usize)
         .collect();
 
-        Ok(AllVotesResponse { votes })
+    Ok(AllVotesResponse { votes })
 }
 
 pub fn query_round_tranche_proposals(
