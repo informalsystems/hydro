@@ -244,6 +244,76 @@
     {
       "type": "object",
       "required": [
+        "all_votes"
+      ],
+      "properties": {
+        "all_votes": {
+          "type": "object",
+          "required": [
+            "limit",
+            "start_from"
+          ],
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "start_from": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "all_votes_round_tranche"
+      ],
+      "properties": {
+        "all_votes_round_tranche": {
+          "type": "object",
+          "required": [
+            "limit",
+            "round_id",
+            "start_from",
+            "tranche_id"
+          ],
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "start_from": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
         "current_round"
       ],
       "properties": {

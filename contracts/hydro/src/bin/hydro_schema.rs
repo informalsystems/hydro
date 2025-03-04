@@ -5,15 +5,15 @@ use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
 use hydro::msg::{ExecuteMsg, InstantiateMsg};
 use hydro::query::{
-    AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, ConstantsResponse,
-    CurrentRoundResponse, ExpiredUserLockupsResponse, ICQManagersResponse,
-    LiquidityDeploymentResponse, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
-    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
-    RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse,
-    SpecificUserLockupsWithTrancheInfosResponse, TopNProposalsResponse, TotalLockedTokensResponse,
-    TotalPowerAtHeightResponse, TranchesResponse, UserVotesResponse, UserVotingPowerResponse,
-    ValidatorPowerRatioResponse, VotingPowerAtHeightResponse, WhitelistAdminsResponse,
-    WhitelistResponse,
+    AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse,
+    AllVotesRoundTrancheResponse, ConstantsResponse, CurrentRoundResponse,
+    ExpiredUserLockupsResponse, ICQManagersResponse, LiquidityDeploymentResponse, ProposalResponse,
+    QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
+    RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse,
+    SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse,
+    TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse,
+    UserVotesResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
+    VotingPowerAtHeightResponse, WhitelistAdminsResponse, WhitelistResponse,
 };
 
 fn main() {
@@ -42,6 +42,8 @@ fn main() {
     export_schema(&schema_for!(ExpiredUserLockupsResponse), &out_dir);
     export_schema(&schema_for!(UserVotingPowerResponse), &out_dir);
     export_schema(&schema_for!(UserVotesResponse), &out_dir);
+    export_schema(&schema_for!(AllVotesResponse), &out_dir);
+    export_schema(&schema_for!(AllVotesRoundTrancheResponse), &out_dir);
     export_schema(&schema_for!(CurrentRoundResponse), &out_dir);
     export_schema(&schema_for!(RoundEndResponse), &out_dir);
     export_schema(&schema_for!(RoundTotalVotingPowerResponse), &out_dir);
