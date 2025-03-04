@@ -1,6 +1,6 @@
 use crate::{
     msg::LiquidityDeployment,
-    state::{Constants, LockEntry, Proposal, Tranche, VoteWithPower},
+    state::{Constants, LockEntry, Proposal, Tranche, Vote, VoteWithPower},
 };
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
@@ -51,6 +51,17 @@ pub enum QueryMsg {
         round_id: u64,
         tranche_id: u64,
         address: String,
+    },
+
+    #[returns(AllVotesResponse)]
+    AllVotes { start_from: u32, limit: u32 },
+
+    #[returns(AllVotesResponse)]
+    AllVotesRoundTranche {
+        round_id: u64,
+        tranche_id: u64,
+        start_from: u32,
+        limit: u32,
     },
 
     #[returns(CurrentRoundResponse)]
@@ -207,6 +218,20 @@ pub struct UserVotingPowerResponse {
 #[cw_serde]
 pub struct UserVotesResponse {
     pub votes: Vec<VoteWithPower>,
+}
+
+#[cw_serde]
+pub struct VoteEntry {
+    pub round_id: u64,
+    pub tranche_id: u64,
+    pub sender_addr: Addr,
+    pub lock_id: u64,
+    pub vote: Vote,
+}
+
+#[cw_serde]
+pub struct AllVotesResponse {
+    pub votes: Vec<VoteEntry>,
 }
 
 #[cw_serde]
