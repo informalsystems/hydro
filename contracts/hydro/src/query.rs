@@ -56,7 +56,7 @@ pub enum QueryMsg {
     #[returns(AllVotesResponse)]
     AllVotes { start_from: u32, limit: u32 },
 
-    #[returns(AllVotesResponse)]
+    #[returns(AllVotesRoundTrancheResponse)]
     AllVotesRoundTranche {
         round_id: u64,
         tranche_id: u64,
@@ -231,6 +231,11 @@ pub struct VoteEntry {
 
 #[cw_serde]
 pub struct AllVotesResponse {
+    pub votes: Vec<VoteEntry>,
+}
+
+#[cw_serde]
+pub struct AllVotesRoundTrancheResponse {
     pub votes: Vec<VoteEntry>,
 }
 
