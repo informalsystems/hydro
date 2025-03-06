@@ -872,6 +872,8 @@ fn query_user_votes_test() {
     }
 }
 
+// Tests the `query_all_votes` function to ensure it correctly retrieves all stored votes,
+// along with voter information, round ID, tranche ID, and lock ID.
 #[test]
 fn query_all_votes_test() {
     struct VoteToCreate {
@@ -902,7 +904,7 @@ fn query_all_votes_test() {
                 prop_id: first_proposal_id,
                 time_weighted_shares: (
                     VALIDATOR_1.to_string(),
-                    Decimal::from_ratio(500u128, 1000u128), // Example ratio
+                    Decimal::from_ratio(500u128, 1000u128),
                 ),
             },
         },
@@ -949,8 +951,21 @@ fn query_all_votes_test() {
     assert!(res.is_ok());
     let response = res.unwrap();
     assert_eq!(response.votes.len(), votes_to_create.len());
+
+    for (i, vote_to_create) in votes_to_create.iter().enumerate() {
+        let expected_vote = VoteEntry {
+            round_id: vote_to_create.round_id,
+            tranche_id: vote_to_create.tranche_id,
+            sender_addr: voter.clone(),
+            lock_id: vote_to_create.lock_id,
+            vote: vote_to_create.vote.clone(),
+        };
+        assert_eq!(response.votes[i], expected_vote, "Mismatch at index {}", i);
+    }
 }
 
+// Tests the `query_all_votes_round_tranche` function to ensure it correctly retrieves votes alongside metadata
+// for a specific round ID and tranche ID.
 #[test]
 fn query_all_votes_round_tranche_test() {
     struct VoteToCreate {
@@ -984,7 +999,7 @@ fn query_all_votes_round_tranche_test() {
                 prop_id: first_proposal_id,
                 time_weighted_shares: (
                     VALIDATOR_1.to_string(),
-                    Decimal::from_ratio(500u128, 1000u128), // Example ratio
+                    Decimal::from_ratio(500u128, 1000u128),
                 ),
             },
         },
