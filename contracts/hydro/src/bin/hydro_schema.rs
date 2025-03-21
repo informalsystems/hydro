@@ -11,9 +11,10 @@ use hydro::query::{
     QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
     RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse,
     SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse,
-    TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse,
-    UserVotesResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
-    VotingPowerAtHeightResponse, WhitelistAdminsResponse, WhitelistResponse,
+    TokenGroupRatioResponse, TokenInfoProvidersResponse, TopNProposalsResponse,
+    TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, UserVotesResponse,
+    UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistAdminsResponse,
+    WhitelistResponse,
 };
 
 fn main() {
@@ -59,7 +60,8 @@ fn main() {
     );
     export_schema(&schema_for!(ICQManagersResponse), &out_dir);
     export_schema(&schema_for!(RegisteredValidatorQueriesResponse), &out_dir);
-    export_schema(&schema_for!(ValidatorPowerRatioResponse), &out_dir);
+    export_schema(&schema_for!(TokenGroupRatioResponse), &out_dir);
     export_schema(&schema_for!(TotalPowerAtHeightResponse), &out_dir);
     export_schema(&schema_for!(VotingPowerAtHeightResponse), &out_dir);
+    export_schema(&schema_for!(TokenInfoProvidersResponse), &out_dir);
 }

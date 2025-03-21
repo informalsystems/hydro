@@ -208,6 +208,13 @@ func (s *HydroSuite) InstantiateHydroContract(
 	neutronTransferChannel, err := s.Relayer.GetTransferChannel(s.GetContext(), s.NeutronChain, s.HubChain)
 	s.Require().NoError(err)
 
+	lsmTokenInfoProviderInit := map[string]interface{}{
+		"max_validator_shares_participating": maxValParticipating,
+		"hub_connection_id":                  neutronTransferChannel.ConnectionHops[0],
+		"hub_transfer_channel_id":            neutronTransferChannel.ChannelID,
+		"icq_update_period":                  10,
+	}
+
 	initHydro := map[string]interface{}{
 		"round_length":      roundLength,
 		"lock_epoch_length": roundLength,
@@ -221,17 +228,18 @@ func (s *HydroSuite) InstantiateHydroContract(
 				"metadata": "Consumer chains tranche metadata",
 			},
 		},
-		"first_round_start":                  strconv.FormatInt(firstRoundStartTime, 10),
-		"max_locked_tokens":                  "1000000000",
-		"whitelist_admins":                   []string{adminAddr},
-		"initial_whitelist":                  []string{adminAddr},
-		"max_validator_shares_participating": maxValParticipating,
-		"hub_connection_id":                  neutronTransferChannel.ConnectionHops[0],
-		"hub_transfer_channel_id":            neutronTransferChannel.ChannelID,
-		"icq_update_period":                  10,
-		"icq_managers":                       []string{adminAddr},
-		"max_deployment_duration":            12,
-		"round_lock_power_schedule":          [][]interface{}{{1, "1"}, {2, "1.25"}, {3, "1.5"}, {6, "2"}, {12, "4"}},
+		"first_round_start":         strconv.FormatInt(firstRoundStartTime, 10),
+		"max_locked_tokens":         "1000000000",
+		"whitelist_admins":          []string{adminAddr},
+		"initial_whitelist":         []string{adminAddr},
+		"icq_managers":              []string{adminAddr},
+		"max_deployment_duration":   12,
+		"round_lock_power_schedule": [][]interface{}{{1, "1"}, {2, "1.25"}, {3, "1.5"}, {6, "2"}, {12, "4"}},
+		"token_info_providers": []map[string]interface{}{
+			{
+				"lsm": lsmTokenInfoProviderInit,
+			},
+		},
 	}
 
 	return s.InstantiateContract(codeId, initHydro, adminAddr, "Hydro Smart Contract")

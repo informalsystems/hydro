@@ -1252,7 +1252,7 @@ dependencies = [
 
 [[package]]
 name = "dao-voting-adapter"
-version = "3.1.0"
+version = "3.2.0"
 dependencies = [
  "cosmwasm-schema 1.5.10",
  "cosmwasm-std 1.5.10",
@@ -1920,7 +1920,7 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hydro"
-version = "3.1.1"
+version = "3.2.0"
 dependencies = [
  "bech32 0.9.1",
  "cosmos-sdk-proto 0.20.0",
@@ -1939,6 +1939,7 @@ dependencies = [
  "serde",
  "serde-json-wasm 1.0.1",
  "thiserror",
+ "token-info-provider-interface",
 ]
 
 [[package]]
@@ -2255,7 +2256,7 @@ dependencies = [
 
 [[package]]
 name = "interface"
-version = "1.0.0"
+version = "3.2.0"
 dependencies = [
  "cw-orch",
  "hydro",
@@ -3692,6 +3693,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "st-token-info-provider"
+version = "3.2.0"
+dependencies = [
+ "cosmwasm-schema 2.2.1",
+ "cosmwasm-std 2.2.1",
+ "cw-storage-plus 2.0.0",
+ "cw2 2.0.0",
+ "schemars",
+ "serde",
+ "thiserror",
+ "token-info-provider-interface",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3961,7 +3976,7 @@ dependencies = [
 
 [[package]]
 name = "test-e2e"
-version = "1.0.0"
+version = "3.2.0"
 dependencies = [
  "cosmwasm-std 2.2.1",
  "cw-orch",
@@ -4028,6 +4043,14 @@ checksum = "9117f5d4db391c1cf6927e7bea3db74b9a1c1add8f7eda9ffd5364f40f57b82f"
 dependencies = [
  "displaydoc",
  "zerovec",
+]
+
+[[package]]
+name = "token-info-provider-interface"
+version = "3.2.0"
+dependencies = [
+ "cosmwasm-schema 2.2.1",
+ "cosmwasm-std 2.2.1",
 ]
 
 [[package]]
@@ -4259,7 +4282,7 @@ dependencies = [
 
 [[package]]
 name = "tribute"
-version = "3.1.1"
+version = "3.2.0"
 dependencies = [
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",

@@ -1,12 +1,12 @@
 use cw_orch::interface;
 
-use hydro::migration::migrate::MigrateMsgV3_1_1;
+use hydro::migration::migrate::MigrateMsgV3_2_0;
 pub use hydro::msg::{ExecuteMsg, InstantiateMsg};
 pub use hydro::query::QueryMsg;
 
 pub const CONTRACT_ID: &str = "hydro_contract";
 
-#[interface(InstantiateMsg, ExecuteMsg, QueryMsg, MigrateMsgV3_1_1 id = CONTRACT_ID)]
+#[interface(InstantiateMsg, ExecuteMsg, QueryMsg, MigrateMsgV3_2_0 id = CONTRACT_ID)]
 pub struct Hydro;
 
 #[cfg(not(target_arch = "wasm32"))]

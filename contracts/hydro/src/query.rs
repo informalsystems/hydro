@@ -1,6 +1,7 @@
 use crate::{
     msg::LiquidityDeployment,
     state::{Constants, LockEntry, Proposal, Tranche, Vote, VoteWithPower},
+    token_manager::TokenInfoProvider,
 };
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
@@ -10,6 +11,9 @@ use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
 pub enum QueryMsg {
     #[returns(ConstantsResponse)]
     Constants {},
+
+    #[returns(TokenInfoProvidersResponse)]
+    TokenInfoProviders {},
 
     #[returns(TranchesResponse)]
     Tranches {},
@@ -110,8 +114,11 @@ pub enum QueryMsg {
     #[returns(RegisteredValidatorQueriesResponse)]
     RegisteredValidatorQueries {},
 
-    #[returns(ValidatorPowerRatioResponse)]
-    ValidatorPowerRatio { validator: String, round_id: u64 },
+    #[returns(TokenGroupRatioResponse)]
+    TokenGroupRatio {
+        token_group_id: String,
+        round_id: u64,
+    },
 
     #[returns(LiquidityDeploymentResponse)]
     LiquidityDeployment {
@@ -139,6 +146,11 @@ pub enum QueryMsg {
 #[cw_serde]
 pub struct ConstantsResponse {
     pub constants: Constants,
+}
+
+#[cw_serde]
+pub struct TokenInfoProvidersResponse {
+    pub providers: Vec<TokenInfoProvider>,
 }
 
 #[cw_serde]
@@ -292,7 +304,7 @@ pub struct RegisteredValidatorQueriesResponse {
 }
 
 #[cw_serde]
-pub struct ValidatorPowerRatioResponse {
+pub struct TokenGroupRatioResponse {
     pub ratio: Decimal,
 }
 

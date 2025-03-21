@@ -8,15 +8,19 @@ use crate::contract::{
 };
 use crate::msg::ProposalToLockups;
 use crate::query::VoteEntry;
-use crate::state::{RoundLockPowerSchedule, ValidatorInfo, Vote, VALIDATORS_INFO, VOTE_MAP};
+use crate::state::{
+    RoundLockPowerSchedule, ValidatorInfo, Vote, TOKEN_INFO_PROVIDERS, VALIDATORS_INFO, VOTE_MAP,
+};
 use crate::testing::{
-    get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds, IBC_DENOM_1,
-    ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_3,
+    get_default_instantiate_msg, get_default_lsm_token_info_provider, get_message_info,
+    set_default_validator_for_rounds, IBC_DENOM_1, ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1,
+    VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_3,
 };
 use crate::testing_lsm_integration::set_validator_power_ratio;
 use crate::testing_mocks::{
     denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
 };
+use crate::token_manager::LSM_TOKEN_INFO_PROVIDER_ID;
 use crate::utils::{load_current_constants, scale_lockup_power};
 use crate::{
     contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
@@ -835,6 +839,13 @@ fn query_user_votes_test() {
             );
             assert!(res.is_ok(), "failed to save validator info");
         }
+
+        let res = TOKEN_INFO_PROVIDERS.save(
+            &mut deps.storage,
+            LSM_TOKEN_INFO_PROVIDER_ID.to_string(),
+            &get_default_lsm_token_info_provider(),
+        );
+        assert!(res.is_ok(), "failed to save token info provider");
 
         let res = query_user_votes(
             deps.as_ref(),
