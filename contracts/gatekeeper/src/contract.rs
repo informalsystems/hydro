@@ -1,14 +1,13 @@
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Order, Response,
+    entry_point, to_json_binary, Binary, Deps, DepsMut, Env, MessageInfo, Order, Response,
     StdResult, Uint128,
 };
 use cw2::set_contract_version;
-use cw_storage_plus::Bound;
 
 use crate::{
     error::ContractError,
     msg::{ExecuteMsg, InstantiateMsg},
-    query::{AdminsResponse, ConfigResponse, QueryMsg, RootHashResponse},
+    query::{AdminsResponse, ConfigResponse, QueryMsg},
     state::{Config, ADMINS, CONFIG, ROOT_HASHES},
 };
 
@@ -169,9 +168,6 @@ fn execute_lock(
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_json_binary(&query_config(deps)?),
-        QueryMsg::GetRootHash { timestamp } => {
-            to_json_binary(&query_get_root_hash(deps, timestamp)?)
-        }
         QueryMsg::GetAdmins {} => to_json_binary(&query_get_admins(deps)?),
     }
 }
@@ -180,30 +176,6 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     Ok(ConfigResponse {
         config: CONFIG.load(deps.storage)?,
     })
-}
-
-fn query_get_root_hash(deps: Deps, timestamp: u64) -> StdResult<RootHashResponse> {
-    // Get all root hashes with timestamp less than or equal to the provided timestamp
-    let root_hashes: Vec<(u64, String)> = ROOT_HASHES
-        .range(
-            deps.storage,
-            None,
-            Some(Bound::exclusive(timestamp + 1)),
-            Order::Ascending,
-        )
-        .collect::<StdResult<Vec<(u64, String)>>>()?;
-
-    // Get the root hash with the largest timestamp that is less than or equal to the provided timestamp
-    if let Some((ts, hash)) = root_hashes.into_iter().rev().next() {
-        Ok(RootHashResponse {
-            timestamp: ts,
-            root_hash: hash,
-        })
-    } else {
-        Err(cosmwasm_std::StdError::not_found(
-            "No root hash found for the given timestamp",
-        ))
-    }
 }
 
 fn query_get_admins(deps: Deps) -> StdResult<AdminsResponse> {
