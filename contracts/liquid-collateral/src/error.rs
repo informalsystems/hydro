@@ -9,12 +9,12 @@ pub enum ContractError {
     #[error("Unauthorized")]
     Unauthorized {},
 
-    #[error("Invalid tick range")]
-    InvalidTickRange {},
-
     #[error("Insufficient funds")]
     InsufficientFunds {},
 
     #[error("No position exists")]
     NoPosition {},
+
+    #[error("Unknown reply id: {id}")]
+    UnknownReplyId { id: u64 },
 } 

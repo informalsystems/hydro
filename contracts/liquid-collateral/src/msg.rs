@@ -10,8 +10,8 @@ pub struct InstantiateMsg {
 
 #[cw_serde]
 pub struct CreatePositionMsg {
-    pub lower_tick: i32,
-    pub upper_tick: i32,
+    pub lower_tick: i64,
+    pub upper_tick: i64,
     pub token0_amount: Uint128,
     pub token1_amount: Uint128,
 }

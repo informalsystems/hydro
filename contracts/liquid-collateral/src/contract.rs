@@ -1,18 +1,13 @@
 use cosmwasm_std::{
-    to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult,
-    entry_point, Uint128, coin, coins,
+    to_json_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult,
+    entry_point, Uint128, CosmosMsg, SubMsg, Reply,
 };
-use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::{
-    MsgCreatePosition, PositionByIdRequest,
-};
+use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::{MsgCreatePosition, MsgCreatePositionResponse};
 use osmosis_std::types::cosmos::base::v1beta1::Coin;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse, CreatePositionMsg};
 use crate::state::{State, STATE};
-
-const MIN_TICK: i32 = -1_000_000;
-const MAX_TICK: i32 = 1_000_000;
 
 #[entry_point]
 pub fn instantiate(
@@ -63,11 +58,6 @@ pub fn execute_create_position(
         return Err(ContractError::Unauthorized {});
     }
 
-    // Validate ticks
-    if msg.lower_tick < MIN_TICK || msg.upper_tick > MAX_TICK || msg.lower_tick >= msg.upper_tick {
-        return Err(ContractError::InvalidTickRange {});
-    }
-
     // Validate funds sent
     let token0 = info.funds.iter().find(|c| c.denom == state.token0_denom);
     let token1 = info.funds.iter().find(|c| c.denom == state.token1_denom);
@@ -103,8 +93,11 @@ pub fn execute_create_position(
         token_min_amount1: token1_amount.to_string(),
     };
 
+    // Wrap in SubMsg to handle response
+    let submsg = SubMsg::reply_on_success(create_position_msg, 1);
+
     Ok(Response::new()
-        .add_message(create_position_msg)
+        .add_submessage(submsg)
         .add_attribute("action", "create_position")
         .add_attribute("pool_id", state.pool_id.to_string())
         .add_attribute("lower_tick", msg.lower_tick.to_string())
@@ -133,27 +126,143 @@ pub fn execute_withdraw_position(
         liquidity_amount: "0".to_string(), // Withdraw all liquidity
     };
 
+    // Wrap in CosmosMsg::Stargate
+    let msg = CosmosMsg::Stargate { 
+        type_url: "/osmosis.concentratedliquidity.v1beta1.MsgWithdrawPosition".to_string(),
+        value: to_json_binary(&withdraw_msg)?,
+    };
+
     Ok(Response::new()
-        .add_message(withdraw_msg)
+        .add_message(msg)
         .add_attribute("action", "withdraw_position")
         .add_attribute("position_id", position_id.to_string()))
 }
 
 #[entry_point]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
-    match msg {
-        QueryMsg::GetState {} => to_binary(&query_state(deps)?),
+pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractError> {
+    match msg.id {
+        1 => handle_create_position_reply(deps, msg),
+        _ => Err(ContractError::UnknownReplyId { id: msg.id }),
     }
 }
 
-fn query_state(deps: Deps) -> StdResult<StateResponse> {
-    let state = STATE.load(deps.storage)?;
-    Ok(StateResponse {
-        owner: state.owner.to_string(),
-        pool_id: state.pool_id,
-        position_id: state.position_id,
-        token0_denom: state.token0_denom,
-        token1_denom: state.token1_denom,
-        initial_token0_amount: state.initial_token0_amount,
-    })
-} 
+fn handle_create_position_reply(deps: DepsMut, msg: Reply) -> Result<Response, ContractError> {
+    let response: MsgCreatePositionResponse = msg.result.try_into()?;
+    
+    // Update state with new position ID
+    STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
+        state.position_id = Some(response.position_id);
+        Ok(state)
+    })?;
+
+    Ok(Response::new()
+        .add_attribute("position_id", response.position_id.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::MsgCreatePosition;
+    // use crate::mock::mock::{PoolMockup, ContractInfo, ATOM_DENOM, OSMO_DENOM};
+    use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::MsgCreatePositionResponse;
+    use cosmwasm_std::Coin;
+    use osmosis_test_tube::{Account, Module, OsmosisTestApp, Gamm};
+
+    
+
+    #[test]
+    fn test_create_position() {
+        let app = OsmosisTestApp::default();
+        let alice = app
+            .init_account(&[
+                Coin::new(1_000_000_000_000u128, "uatom"),
+                Coin::new(1_000_000_000_000u128, "uosmo"),
+            ])
+            .unwrap();
+        
+        // create Gamm Module Wrapper
+        let gamm = Gamm::new(&app);
+        
+        // create balancer pool with basic configuration
+        let pool_liquidity = vec![Coin::new(1_000u128, "uatom"), Coin::new(1_000u128, "uosmo")];
+        let pool_id = gamm
+            .create_basic_pool(&pool_liquidity, &alice)
+            .unwrap()
+            .data
+            .pool_id;
+        
+        // query pool and assert if the pool is created successfully
+        let pool = gamm.query_pool(pool_id).unwrap();
+        assert_eq!(
+            pool_liquidity,
+            pool.pool_assets
+                .into_iter()
+                .map(|a| cosmwasm_std::Coin {
+                    denom: a.token.clone().unwrap().denom,
+                    amount: a.token.unwrap().amount.parse().unwrap()
+                })
+                .collect::<Vec<Coin>>()
+        );
+    }
+
+    // #[test]
+    // fn test_instantiate() {
+    //     let mut deps = mock_dependencies();
+    //     let env = mock_env();
+    //     let info = mock_info("creator", &[]);
+    //     let msg = InstantiateMsg {
+    //         pool_id: 1,
+    //         token0_denom: ATOM_DENOM.to_string(),
+    //         token1_denom: OSMO_DENOM.to_string(),
+    //     };
+
+    //     // Test instantiation
+    //     let res = instantiate(deps.as_mut(), env, info, msg).unwrap();
+    //     assert_eq!(0, res.messages.len());
+
+    //     // Test state
+    //     let state = STATE.load(&deps.storage).unwrap();
+    //     assert_eq!(state.pool_id, 1);
+    //     assert_eq!(state.token0_denom, ATOM_DENOM);
+    //     assert_eq!(state.token1_denom, OSMO_DENOM);
+    //     assert_eq!(state.position_id, None);
+    // }
+
+    // #[test]
+    // fn test_create_position() {
+    //     // Set up test environment
+    //     let pool_mockup = PoolMockup::new(100_000, 200_000); // Initial pool liquidity
+    //     let contract = ContractInfo::new(&pool_mockup);
+
+    //     // Create a position
+    //     let res = contract.create_position(
+    //         &pool_mockup,
+    //         -1000,  // lower tick
+    //         1000,   // upper tick
+    //         10_000, // ATOM amount
+    //         20_000, // OSMO amount
+    //         &pool_mockup.user1,
+    //     );
+
+    //     // Verify the response
+    //     let create_position_response: MsgCreatePositionResponse = res.data.unwrap().try_into().unwrap();
+    //     assert!(create_position_response.position_id > 0);
+
+    //     // Verify the user's balances were deducted
+    //     let bank = osmosis_test_tube::Bank::new(&pool_mockup.app);
+        
+    //     let atom_balance = bank.query_balance(&osmosis_std::types::cosmos::bank::v1beta1::QueryBalanceRequest {
+    //         address: pool_mockup.user1.address(),
+    //         denom: ATOM_DENOM.into(),
+    //     }).unwrap().balance.unwrap();
+        
+    //     let osmo_balance = bank.query_balance(&osmosis_std::types::cosmos::bank::v1beta1::QueryBalanceRequest {
+    //         address: pool_mockup.user1.address(),
+    //         denom: OSMO_DENOM.into(),
+    //     }).unwrap().balance.unwrap();
+
+    //     // Initial balance was 1_000_000_000_000, we spent 10_000 and 20_000 respectively
+    //     assert_eq!(atom_balance.amount, (1_000_000_000_000u128 - 10_000).to_string());
+    //     assert_eq!(osmo_balance.amount, (1_000_000_000_000u128 - 20_000).to_string());
+    }
