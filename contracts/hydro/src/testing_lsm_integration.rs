@@ -15,7 +15,9 @@ use crate::{
     },
     lsm_integration::get_validator_power_ratio_for_round,
     msg::{ExecuteMsg, ProposalToLockups},
-    score_keeper::{get_total_power_for_round, update_scores_due_to_token_ratio_change},
+    score_keeper::{
+        get_total_power_for_round, update_scores_due_to_tokens_ratio_changes, TokenGroupRatioChange,
+    },
     state::{ValidatorInfo, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED},
     testing::{
         get_default_instantiate_msg, get_default_lsm_token_info_provider,
@@ -84,13 +86,14 @@ pub fn set_validator_power_ratio(
         };
 
     if old_power_ratio != power_ratio {
-        let res = update_scores_due_to_token_ratio_change(
-            storage,
-            validator,
-            round_id,
-            old_power_ratio,
-            power_ratio,
-        );
+        let tokens_ratio_changes = vec![TokenGroupRatioChange {
+            token_group_id: validator.to_string(),
+            old_ratio: old_power_ratio,
+            new_ratio: power_ratio,
+        }];
+
+        let res =
+            update_scores_due_to_tokens_ratio_changes(storage, round_id, &tokens_ratio_changes);
         assert!(res.is_ok());
     }
     let res = VALIDATORS_INFO.save(

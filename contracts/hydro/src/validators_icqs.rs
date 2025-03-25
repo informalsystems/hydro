@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     contract::{compute_current_round_id, NATIVE_TOKEN_DENOM},
     error::{new_generic_error, ContractError},
-    score_keeper::apply_token_group_ratio_change,
+    score_keeper::{apply_token_groups_ratio_changes, TokenGroupRatioChange},
     state::{
         ValidatorInfo, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
         VALIDATOR_TO_QUERY_ID,
@@ -213,15 +213,18 @@ fn top_n_validator_add(
     current_round: u64,
     validator_info: ValidatorInfo,
 ) -> Result<(), NeutronError> {
+    let tokens_ratio_changes = vec![TokenGroupRatioChange {
+        token_group_id: validator_info.address.clone(),
+        old_ratio: Decimal::zero(),
+        new_ratio: validator_info.power_ratio,
+    }];
     // this call only makes difference if some validator was in the top N,
     // then was droped out, and then got back in the top N again
-    apply_token_group_ratio_change(
+    apply_token_groups_ratio_changes(
         deps.storage,
         env.block.height,
-        &validator_info.address.clone(),
         current_round,
-        Decimal::zero(),
-        validator_info.power_ratio,
+        &tokens_ratio_changes,
     )?;
     VALIDATORS_INFO.save(
         deps.storage,
@@ -273,13 +276,17 @@ fn top_n_validator_update(
     }
 
     if validator_info.power_ratio != new_power_ratio {
-        apply_token_group_ratio_change(
+        let tokens_ratio_changes = vec![TokenGroupRatioChange {
+            token_group_id: validator_info.address.clone(),
+            old_ratio: validator_info.power_ratio,
+            new_ratio: new_power_ratio,
+        }];
+
+        apply_token_groups_ratio_changes(
             deps.storage,
             env.block.height,
-            &validator_info.address.clone(),
             current_round,
-            validator_info.power_ratio,
-            new_power_ratio,
+            &tokens_ratio_changes,
         )?;
 
         validator_info.power_ratio = new_power_ratio;
@@ -303,13 +310,17 @@ fn top_n_validator_remove(
     current_round: u64,
     validator_info: ValidatorInfo,
 ) -> Result<(), NeutronError> {
-    apply_token_group_ratio_change(
+    let tokens_ratio_changes = vec![TokenGroupRatioChange {
+        token_group_id: validator_info.address.clone(),
+        old_ratio: validator_info.power_ratio,
+        new_ratio: Decimal::zero(),
+    }];
+
+    apply_token_groups_ratio_changes(
         deps.storage,
         env.block.height,
-        &validator_info.address.clone(),
         current_round,
-        validator_info.power_ratio,
-        Decimal::zero(),
+        &tokens_ratio_changes,
     )?;
 
     VALIDATORS_INFO.remove(

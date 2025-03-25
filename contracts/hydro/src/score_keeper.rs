@@ -367,47 +367,32 @@ pub fn apply_proposal_changes(
 }
 
 /// Updates all the required stores each time some token group ratio towards the base token is changed
-pub fn apply_token_group_ratio_change(
+pub fn apply_token_groups_ratio_changes(
     storage: &mut dyn Storage,
     current_height: u64,
-    token_group_id: &str,
     current_round_id: u64,
-    old_token_ratio: Decimal,
-    new_token_ratio: Decimal,
+    tokens_ratio_changes: &Vec<TokenGroupRatioChange>,
 ) -> StdResult<()> {
-    update_scores_due_to_token_ratio_change(
-        storage,
-        token_group_id,
-        current_round_id,
-        old_token_ratio,
-        new_token_ratio,
-    )?;
+    update_scores_due_to_tokens_ratio_changes(storage, current_round_id, tokens_ratio_changes)?;
 
-    update_total_power_due_to_token_ratio_change(
+    update_total_power_due_to_tokens_ratio_changes(
         storage,
         current_height,
-        token_group_id,
         current_round_id,
-        old_token_ratio,
-        new_token_ratio,
+        tokens_ratio_changes,
     )?;
 
     Ok(())
 }
 
-// Applies the new token ratio for the token group ID to score keepers.
-// It updates:
-// * all proposals of that round
-// * the total power for the round
-// For each proposal and for the total power,
-// it will recompute the new sum by subtracting the old power ratio*that token group shares and
-// adding the new power ratio*that token group shares.
-pub fn update_scores_due_to_token_ratio_change(
+// Applies the new token ratio for the list of provided token groups to the score keepers.
+// It updates all proposals of the given round. For each proposal, and each token group,
+// it will recompute the new power by subtracting the old_token_ratio*that token group shares
+// and adding the new_token_ratio*that token group shares.
+pub fn update_scores_due_to_tokens_ratio_changes(
     storage: &mut dyn Storage,
-    token_group_id: &str,
     round_id: u64,
-    old_token_ratio: Decimal,
-    new_token_ratio: Decimal,
+    tokens_ratio_changes: &Vec<TokenGroupRatioChange>,
 ) -> StdResult<()> {
     // go through each tranche in the TRANCHE_MAP and collect its tranche_id
     let tranche_ids: Vec<u64> = TRANCHE_MAP
@@ -431,14 +416,8 @@ pub fn update_scores_due_to_token_ratio_change(
             .collect();
 
         for proposal in proposals {
-            // update the power ratio for the proposal
-            update_power_ratio_for_proposal(
-                storage,
-                proposal.proposal_id,
-                token_group_id.to_string(),
-                old_token_ratio,
-                new_token_ratio,
-            )?;
+            // update the power ratios for the proposal
+            update_power_ratio_for_proposal(storage, proposal.proposal_id, tokens_ratio_changes)?;
 
             // create a mutable copy of the proposal that we can safely manipulate in this loop
             let mut proposal_copy = proposal.clone();
@@ -477,49 +456,71 @@ pub fn update_scores_due_to_token_ratio_change(
     Ok(())
 }
 
-/// Updates the total voting power for the current and future rounds when the given token group ID ratio changes.
-pub fn update_total_power_due_to_token_ratio_change(
+/// Updates the total voting power for the current and future rounds when the ratios of the given token groups are changed.
+pub fn update_total_power_due_to_tokens_ratio_changes(
     storage: &mut dyn Storage,
     current_height: u64,
-    token_group_id: &str,
     current_round_id: u64,
-    old_token_ratio: Decimal,
-    new_token_ratio: Decimal,
+    tokens_ratio_changes: &[TokenGroupRatioChange],
 ) -> StdResult<()> {
     let mut round_id = current_round_id;
+
+    // Convert to HashMap in order to remove the fully processed token groups more easily
+    let mut tokens_ratio_changes: HashMap<String, TokenGroupRatioChange> =
+        HashMap::from_iter(tokens_ratio_changes.iter().map(|token_ratio_change| {
+            (
+                token_ratio_change.token_group_id.clone(),
+                token_ratio_change.clone(),
+            )
+        }));
 
     // Try to update the total voting power starting from the current round id and moving to next rounds until
     // we reach the round for which there is no entry in the TOTAL_VOTING_POWER_PER_ROUND. This implies the first
     // round in which no lock entry gives voting power, which also must be true for all rounds after that round,
     // so we break the loop at that point.
     loop {
-        let old_total_voting_power =
+        let total_voting_power_initial =
             match TOTAL_VOTING_POWER_PER_ROUND.may_load(storage, round_id)? {
                 None => break,
                 Some(total_voting_power) => Decimal::from_ratio(total_voting_power, Uint128::one()),
             };
+        let mut total_voting_power_current = total_voting_power_initial;
 
-        let token_group_shares =
-            get_token_group_shares_for_round(storage, round_id, token_group_id.to_owned())?;
-        if token_group_shares == Decimal::zero() {
-            // If we encounter a round that doesn't have the token group ID shares, then no subsequent
-            // round could also have its shares, so break early to save some gas.
-            break;
+        let mut processed_token_groups = vec![];
+
+        for token_ratio_change in &tokens_ratio_changes {
+            let token_group_shares =
+                get_token_group_shares_for_round(storage, round_id, token_ratio_change.0.clone())?;
+
+            if token_group_shares == Decimal::zero() {
+                // If we encounter a round that doesn't have the token group ID shares, then no subsequent
+                // round could also have its shares, so mark this token group as processed.
+                processed_token_groups.push(token_ratio_change.0.clone());
+
+                continue;
+            }
+
+            let old_token_group_shares_power = token_group_shares * token_ratio_change.1.old_ratio;
+            let new_token_group_shares_power = token_group_shares * token_ratio_change.1.new_ratio;
+
+            total_voting_power_current = total_voting_power_current
+                .checked_add(new_token_group_shares_power)?
+                .checked_sub(old_token_group_shares_power)?;
         }
 
-        let old_token_group_shares_power = token_group_shares * old_token_ratio;
-        let new_token_group_shares_power = token_group_shares * new_token_ratio;
+        // Remove all processed token groups in order to save some gas for the next round execution
+        for token_group_id in processed_token_groups {
+            tokens_ratio_changes.remove(&token_group_id);
+        }
 
-        let new_total_voting_power = old_total_voting_power
-            .checked_add(new_token_group_shares_power)?
-            .checked_sub(old_token_group_shares_power)?;
-
-        TOTAL_VOTING_POWER_PER_ROUND.save(
-            storage,
-            round_id,
-            &new_total_voting_power.to_uint_ceil(),
-            current_height,
-        )?;
+        if total_voting_power_current != total_voting_power_initial {
+            TOTAL_VOTING_POWER_PER_ROUND.save(
+                storage,
+                round_id,
+                &total_voting_power_current.to_uint_ceil(),
+                current_height,
+            )?;
+        }
 
         round_id += 1;
     }
@@ -572,32 +573,48 @@ pub fn add_token_group_shares_to_round_total(
 
 pub fn update_power_ratio_for_proposal(
     storage: &mut dyn Storage,
-    prop_id: u64,
-    token_group_id: String,
-    old_token_ratio: Decimal,
-    new_token_ratio: Decimal,
+    proposal_id: u64,
+    tokens_ratio_changes: &Vec<TokenGroupRatioChange>,
 ) -> StdResult<()> {
-    // Load current shares
-    let current_shares = SCALED_PROPOSAL_SHARES_MAP
-        .may_load(storage, (prop_id, token_group_id))?
-        .unwrap_or_else(Decimal::zero);
-    if current_shares == Decimal::zero() {
-        return Ok(()); // No operation if the token group has no shares
+    // Load current power of proposal
+    let initial_power = PROPOSAL_TOTAL_MAP
+        .load(storage, proposal_id)
+        .unwrap_or(Decimal::zero());
+    let mut current_power = initial_power;
+
+    for token_ratio_change in tokens_ratio_changes {
+        // Load current shares
+        let current_shares = SCALED_PROPOSAL_SHARES_MAP
+            .may_load(
+                storage,
+                (proposal_id, token_ratio_change.token_group_id.clone()),
+            )?
+            .unwrap_or_else(Decimal::zero);
+
+        // No operation if the token group has no shares
+        if current_shares == Decimal::zero() {
+            continue;
+        }
+
+        // Compute old and new power of the given token group shares
+        let old_power = current_shares * token_ratio_change.old_ratio;
+        let new_power = current_shares * token_ratio_change.new_ratio;
+
+        current_power = current_power - old_power + new_power;
     }
 
-    // Store the power from this token group before the update
-    let old_power = current_shares * old_token_ratio;
-
-    // Update the total power
-    let mut current_power = PROPOSAL_TOTAL_MAP
-        .load(storage, prop_id)
-        .unwrap_or(Decimal::zero());
-    let new_power = current_shares * new_token_ratio;
-
-    current_power = current_power - old_power + new_power;
-    PROPOSAL_TOTAL_MAP.save(storage, prop_id, &current_power)?;
+    if current_power != initial_power {
+        PROPOSAL_TOTAL_MAP.save(storage, proposal_id, &current_power)?;
+    }
 
     Ok(())
+}
+
+#[derive(Clone)]
+pub struct TokenGroupRatioChange {
+    pub token_group_id: String,
+    pub old_ratio: Decimal,
+    pub new_ratio: Decimal,
 }
 
 #[cfg(test)]
@@ -764,13 +781,12 @@ mod tests {
         );
 
         // update the power ratio
-        let res = update_power_ratio_for_proposal(
-            storage,
-            key,
-            token_group.to_string(),
-            old_power_ratio,
-            new_power_ratio,
-        );
+        let tokens_ratio_changes = vec![TokenGroupRatioChange {
+            token_group_id: token_group.to_string(),
+            old_ratio: old_power_ratio,
+            new_ratio: new_power_ratio,
+        }];
+        let res = update_power_ratio_for_proposal(storage, key, &tokens_ratio_changes);
 
         assert!(res.is_ok());
 
@@ -806,10 +822,15 @@ mod tests {
             assert_eq!(total_power, num_shares * power_ratio);
 
             // set the power ratio
+            let tokens_ratio_changes = vec![TokenGroupRatioChange {
+                token_group_id: token_group.to_string(),
+                old_ratio: power_ratio,
+                new_ratio: power_ratio2,
+            }];
             let res = update_power_ratio_for_proposal(
                 storage,
                 key,
-                token_group.to_string(), power_ratio, power_ratio2);
+                &tokens_ratio_changes);
             assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
 
             // add the second shares
@@ -839,8 +860,12 @@ mod tests {
             assert_eq!(total_power, num_shares * power_ratio2);
 
             // set the power ratio
-            let res = update_power_ratio_for_proposal(storage, key,
-                token_group.to_string(), power_ratio2, power_ratio);
+            let tokens_ratio_changes = vec![TokenGroupRatioChange {
+                token_group_id: token_group.to_string(),
+                old_ratio: power_ratio2,
+                new_ratio: power_ratio,
+            }];
+            let res = update_power_ratio_for_proposal(storage, key, &tokens_ratio_changes);
             assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
 
             let (_, total_power) = get_shares_and_power_for_proposal(storage, key, token_group.to_string());
@@ -872,8 +897,12 @@ mod tests {
             let new_power_ratio = Decimal::from_ratio(new_power_ratio, 1u128);
 
             // set the power ratio
-            let res = update_power_ratio_for_proposal(storage, key,
-                token_group.to_string(), Decimal::zero(), old_power_ratio);
+            let tokens_ratio_changes = vec![TokenGroupRatioChange {
+                token_group_id: token_group.to_string(),
+                old_ratio: Decimal::zero(),
+                new_ratio: old_power_ratio,
+            }];
+            let res = update_power_ratio_for_proposal(storage, key, &tokens_ratio_changes);
             assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
 
             let res = add_token_group_shares(storage, key,
@@ -883,8 +912,12 @@ mod tests {
             assert!(res.is_ok(), "Error adding token group shares: {:?}", res);
 
             // set the power ratio
-            let res = update_power_ratio_for_proposal(storage, key,
-                token_group.to_string(), old_power_ratio, new_power_ratio);
+            let tokens_ratio_changes = vec![TokenGroupRatioChange {
+                token_group_id: token_group.to_string(),
+                old_ratio: old_power_ratio,
+                new_ratio: new_power_ratio,
+            }];
+            let res = update_power_ratio_for_proposal(storage, key, &tokens_ratio_changes);
             assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
 
             let (_, total_power) = get_shares_and_power_for_proposal(storage, key, token_group.to_string());

@@ -7,9 +7,8 @@ use crate::contract::{
 };
 use crate::msg::{ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo};
 use crate::state::{
-    LockEntry, Proposal, RoundLockPowerSchedule, Vote, CONSTANTS, PROPOSAL_MAP, PROPOSAL_TOTAL_MAP,
-    SCALED_PROPOSAL_SHARES_MAP, SCALED_ROUND_POWER_SHARES_MAP, TOKEN_INFO_PROVIDERS,
-    TOTAL_VOTING_POWER_PER_ROUND, VOTE_MAP,
+    LockEntry, RoundLockPowerSchedule, Vote, CONSTANTS, PROPOSAL_MAP, PROPOSAL_TOTAL_MAP,
+    TOKEN_INFO_PROVIDERS, TOTAL_VOTING_POWER_PER_ROUND, VOTE_MAP,
 };
 use crate::testing_lsm_integration::set_validator_infos_for_round;
 
@@ -30,7 +29,7 @@ use crate::{
     msg::{ExecuteMsg, InstantiateMsg},
 };
 use cosmwasm_std::testing::{mock_env, MockApi, MockStorage};
-use cosmwasm_std::{Addr, Coin, StdError, StdResult};
+use cosmwasm_std::{Addr, Coin, StdError, StdResult, Storage};
 use cosmwasm_std::{Decimal, Deps, DepsMut, MessageInfo, OwnedDeps, Timestamp, Uint128};
 use neutron_sdk::bindings::query::NeutronQuery;
 use proptest::prelude::*;
@@ -144,9 +143,10 @@ pub fn get_address_as_str(mock_api: &MockApi, addr: &str) -> String {
     mock_api.addr_make(addr).to_string()
 }
 
-pub fn add_st_atom_token_info_provider(
+pub fn setup_st_atom_token_info_provider_mock(
     deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
     token_info_provider_addr: Addr,
+    token_group_ratio: Decimal,
 ) {
     TOKEN_INFO_PROVIDERS
         .save(
@@ -164,7 +164,7 @@ pub fn add_st_atom_token_info_provider(
         DenomInfoResponse {
             denom: ST_ATOM_ON_NEUTRON.to_string(),
             token_group_id: ST_ATOM_TOKEN_GROUP.to_string(),
-            ratio: Decimal::one(),
+            ratio: token_group_ratio,
         },
     ));
 
@@ -838,7 +838,7 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
     assert!(res.is_ok());
 
     set_default_validator_for_rounds(deps.as_mut(), 0, 100);
-    add_st_atom_token_info_provider(&mut deps, token_info_provider_addr);
+    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
 
     // lock some tokens to get voting power
     let msg = ExecuteMsg::LockTokens {
@@ -3293,123 +3293,217 @@ fn test_cannot_vote_while_long_deployment_ongoing() {
     assert!(res.is_ok());
 }
 
+// This test verifies that the proposal powers and round total powers are updated as expected in two cases:
+//  1) When a token info provider executes transaction to update token group ratio in Hydro contract
+//  2) When a token info provider is removed from the list of all token info providers held by Hydro contract
 #[test]
-fn token_group_ratio_update_test() {
+fn token_group_ratio_updates_test() {
     let user_address = "addr0000";
-    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[]);
-    let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    let msg = get_default_instantiate_msg(&deps.api);
+    let token_info_provider = "token_info_provider_1";
 
-    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+        ]),
+    );
+
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+
+    let admin_info = get_message_info(&deps.api, user_address, &[]);
+    let token_info_provider_addr = deps.api.addr_make(token_info_provider);
+
+    let mut init_msg = get_default_instantiate_msg(&deps.api);
+    init_msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
+    init_msg
+        .whitelist_admins
+        .push(admin_info.sender.to_string());
+
+    let res = instantiate(
+        deps.as_mut(),
+        env.clone(),
+        admin_info.clone(),
+        init_msg.clone(),
+    );
     assert!(res.is_ok());
 
-    set_validator_infos_for_round(&mut deps.storage, 0, vec![VALIDATOR_1.to_string()]).unwrap();
-    add_st_atom_token_info_provider(&mut deps, token_info_provider_addr);
+    // Sets the token power ratio to 1 for each validator
+    set_validator_infos_for_round(
+        &mut deps.storage,
+        0,
+        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
+    )
+    .unwrap();
 
-    let token_info_provider = "token_info_provider_1";
-    let round_id = 0;
-    let proposal_id = 1;
+    // Sets the stATOM token group ratio to 1.5
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr.clone(),
+        Decimal::from_str("1.5").unwrap(),
+    );
+
+    env.block.time = env.block.time.plus_days(1);
+
+    let first_round_id = 0;
+    let second_round_id = 1;
     let tranche_id = 1;
+    let first_proposal_id = 0;
+    let second_proposal_id = 1;
 
-    // Populate stores as if users actually voted for some proposals. Assuming that
-    // the locking period is one round, and token group ratio for both token groups is 1.
-    PROPOSAL_MAP
-        .save(
-            &mut deps.storage,
-            (round_id, tranche_id, proposal_id),
-            &Proposal {
-                round_id,
-                tranche_id,
-                proposal_id,
-                title: "proposal 1".to_string(),
-                description: "proposal 1 desc".to_string(),
-                power: Uint128::new(4000),
-                percentage: Uint128::zero(),
-                deployment_duration: 1,
-                minimum_atom_liquidity_request: Uint128::zero(),
+    // Create two proposals
+    let msg = ExecuteMsg::CreateProposal {
+        round_id: None,
+        tranche_id,
+        title: "proposal 1".to_string(),
+        description: "proposal 1 desc".to_string(),
+        deployment_duration: 1,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), admin_info.clone(), msg);
+    assert!(res.is_ok());
+
+    let msg = ExecuteMsg::CreateProposal {
+        round_id: None,
+        tranche_id,
+        title: "proposal 2".to_string(),
+        description: "proposal 2 desc".to_string(),
+        deployment_duration: 1,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), admin_info.clone(), msg);
+    assert!(res.is_ok());
+
+    // Have user lock some tokens for 2 rounds
+    for token_to_lock in [
+        Coin::new(3000u128, IBC_DENOM_1),
+        Coin::new(5000u128, IBC_DENOM_2),
+        Coin::new(1000u128, ST_ATOM_ON_NEUTRON),
+        Coin::new(1000u128, IBC_DENOM_1),
+        Coin::new(2000u128, IBC_DENOM_2),
+        Coin::new(4000u128, ST_ATOM_ON_NEUTRON),
+    ] {
+        let locking_info = get_message_info(&deps.api, user_address, &[token_to_lock]);
+        let msg = ExecuteMsg::LockTokens {
+            lock_duration: init_msg.lock_epoch_length * 2,
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), locking_info.clone(), msg);
+        assert!(res.is_ok());
+    }
+
+    // Have user vote for both proposals with all of its lockups
+    let voting_info = get_message_info(&deps.api, user_address, &[]);
+    let msg = ExecuteMsg::Vote {
+        tranche_id,
+        proposals_votes: vec![
+            ProposalToLockups {
+                proposal_id: first_proposal_id,
+                lock_ids: vec![0, 1, 2],
             },
-        )
-        .unwrap();
+            ProposalToLockups {
+                proposal_id: second_proposal_id,
+                lock_ids: vec![3, 4, 5],
+            },
+        ],
+    };
 
-    SCALED_PROPOSAL_SHARES_MAP
-        .save(
-            &mut deps.storage,
-            (proposal_id, VALIDATOR_1.to_string()),
-            &Decimal::from_ratio(3000u128, 1u128),
-        )
-        .unwrap();
-    SCALED_PROPOSAL_SHARES_MAP
-        .save(
-            &mut deps.storage,
-            (proposal_id, ST_ATOM_TOKEN_GROUP.to_string()),
-            &Decimal::from_ratio(1000u128, 1u128),
-        )
-        .unwrap();
+    let res = execute(deps.as_mut(), env.clone(), voting_info.clone(), msg);
+    assert!(res.is_ok());
 
-    PROPOSAL_TOTAL_MAP
-        .save(
-            &mut deps.storage,
-            proposal_id,
-            &Decimal::from_ratio(4000u128, 1u128),
-        )
-        .unwrap();
+    verify_proposals_and_rounds_powers(
+        &deps.storage,
+        first_round_id,
+        tranche_id,
+        &[(first_proposal_id, 11875), (second_proposal_id, 11250)],
+        &[(first_round_id, 23125), (second_round_id, 18500)],
+    );
 
-    SCALED_ROUND_POWER_SHARES_MAP
-        .save(
-            &mut deps.storage,
-            (round_id, VALIDATOR_1.to_string()),
-            &Decimal::from_ratio(3000u128, 1u128),
-        )
-        .unwrap();
-    SCALED_ROUND_POWER_SHARES_MAP
-        .save(
-            &mut deps.storage,
-            (round_id, ST_ATOM_TOKEN_GROUP.to_string()),
-            &Decimal::from_ratio(1000u128, 1u128),
-        )
-        .unwrap();
+    // Mock that stATOM token group ratio changed to 1.6
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr.clone(),
+        Decimal::from_str("1.6").unwrap(),
+    );
 
-    TOTAL_VOTING_POWER_PER_ROUND
-        .save(
-            &mut deps.storage,
-            round_id,
-            &Uint128::new(4000),
-            env.block.height,
-        )
-        .unwrap();
-
+    // Update stATOM token ratio, which should update all proposal powers and round total powers
     let msg = ExecuteMsg::UpdateTokenGroupRatio {
         token_group_id: ST_ATOM_TOKEN_GROUP.to_string(),
-        old_ratio: Decimal::one(),
-        new_ratio: Decimal::from_str("0.9").unwrap(),
+        old_ratio: Decimal::from_str("1.5").unwrap(),
+        new_ratio: Decimal::from_str("1.6").unwrap(),
     };
 
     let info = get_message_info(&deps.api, token_info_provider, &[]);
-
     let res = execute(deps.as_mut(), env.clone(), info, msg);
     assert!(res.is_ok());
 
-    let expected_power = 3900;
-    let proposal = PROPOSAL_MAP
-        .load(&deps.storage, (round_id, tranche_id, proposal_id))
-        .unwrap();
-    assert_eq!(proposal.power.u128(), expected_power);
-
-    assert_eq!(
-        PROPOSAL_TOTAL_MAP
-            .load(&deps.storage, proposal_id)
-            .unwrap()
-            .to_uint_ceil()
-            .u128(),
-        expected_power
+    verify_proposals_and_rounds_powers(
+        &deps.storage,
+        first_round_id,
+        tranche_id,
+        &[(first_proposal_id, 12000), (second_proposal_id, 11750)],
+        &[(first_round_id, 23750), (second_round_id, 19000)],
     );
 
-    assert_eq!(
-        TOTAL_VOTING_POWER_PER_ROUND
-            .load(&deps.storage, round_id)
-            .unwrap()
-            .u128(),
-        expected_power
+    // Remove both stATOM and LSM token info provider. This should bring all proposal and round powers to zero
+    for token_provider in [
+        token_info_provider_addr.to_string(),
+        LSM_TOKEN_INFO_PROVIDER_ID.to_string(),
+    ] {
+        let msg = ExecuteMsg::RemoveTokenInfoProvider {
+            provider_id: token_provider,
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), admin_info.clone(), msg);
+        assert!(res.is_ok());
+    }
+
+    verify_proposals_and_rounds_powers(
+        &deps.storage,
+        first_round_id,
+        tranche_id,
+        &[(first_proposal_id, 0), (second_proposal_id, 0)],
+        &[(first_round_id, 0), (second_round_id, 0)],
     );
+}
+
+fn verify_proposals_and_rounds_powers(
+    storage: &dyn Storage,
+    proposals_round_id: u64,
+    proposals_tranche_id: u64,
+    expected_proposal_powers: &[(u64, u128)],
+    expected_round_powers: &[(u64, u128)],
+) {
+    for expected_proposal_power in expected_proposal_powers {
+        let proposal = PROPOSAL_MAP
+            .load(
+                storage,
+                (
+                    proposals_round_id,
+                    proposals_tranche_id,
+                    expected_proposal_power.0,
+                ),
+            )
+            .unwrap();
+        assert_eq!(proposal.power.u128(), expected_proposal_power.1);
+
+        assert_eq!(
+            PROPOSAL_TOTAL_MAP
+                .load(storage, expected_proposal_power.0)
+                .unwrap()
+                .to_uint_ceil()
+                .u128(),
+            expected_proposal_power.1
+        );
+    }
+
+    for expected_round_power in expected_round_powers {
+        assert_eq!(
+            TOTAL_VOTING_POWER_PER_ROUND
+                .load(storage, expected_round_power.0)
+                .unwrap()
+                .u128(),
+            expected_round_power.1
+        );
+    }
 }

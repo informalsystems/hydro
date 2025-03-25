@@ -1,15 +1,16 @@
 use std::collections::{HashMap, HashSet};
 
-use cosmwasm_std::{testing::mock_env, BankMsg, Coin, CosmosMsg, Uint128};
+use cosmwasm_std::{testing::mock_env, BankMsg, Coin, CosmosMsg, Decimal, Uint128};
 
 use crate::{
     contract::{execute, instantiate, query_all_user_lockups, MAX_LOCK_ENTRIES},
     msg::ExecuteMsg,
     state::USER_LOCKS,
     testing::{
-        add_st_atom_token_info_provider, get_address_as_str, get_default_instantiate_msg,
-        get_message_info, set_default_validator_for_rounds, IBC_DENOM_1, ONE_MONTH_IN_NANO_SECONDS,
-        ST_ATOM_ON_NEUTRON, THREE_MONTHS_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
+        get_address_as_str, get_default_instantiate_msg, get_message_info,
+        set_default_validator_for_rounds, setup_st_atom_token_info_provider_mock, IBC_DENOM_1,
+        ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, THREE_MONTHS_IN_NANO_SECONDS, VALIDATOR_1,
+        VALIDATOR_1_LST_DENOM_1,
     },
     testing_lsm_integration::set_validator_infos_for_round,
     testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies},
@@ -122,7 +123,7 @@ fn lock_tokens_various_denoms_test() {
     assert!(res.is_ok());
 
     set_validator_infos_for_round(&mut deps.storage, 0, vec![VALIDATOR_1.to_string()]).unwrap();
-    add_st_atom_token_info_provider(&mut deps, token_info_provider_addr);
+    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
 
     // Try to lock some unsupported token and verify this is not possible
     let info1 = get_message_info(

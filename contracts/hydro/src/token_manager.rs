@@ -11,7 +11,7 @@ use token_info_provider_interface::{DenomInfoResponse, TokenInfoProviderQueryMsg
 use crate::{
     error::{new_generic_error, ContractError},
     lsm_integration::{
-        get_validator_power_ratio_for_round, is_active_round_validator,
+        get_round_validators, get_validator_power_ratio_for_round, is_active_round_validator,
         resolve_validator_from_denom,
     },
     msg::{ReplyPayload, TokenInfoProviderInstantiateMsg},
@@ -144,6 +144,19 @@ impl TokenInfoProvider {
             }
         }
     }
+
+    pub fn get_all_token_group_ratios(
+        &mut self,
+        deps: &Deps<NeutronQuery>,
+        round_id: u64,
+    ) -> StdResult<HashMap<String, Decimal>> {
+        match self {
+            TokenInfoProvider::LSM(provider) => provider.get_all_token_group_ratios(deps, round_id),
+            TokenInfoProvider::Derivative(provider) => {
+                provider.get_all_token_group_ratios(deps, round_id)
+            }
+        }
+    }
 }
 
 #[cw_serde]
@@ -189,6 +202,22 @@ impl TokenInfoProviderDerivative {
                 "Input token group ID doesn't match expected token group ID.",
             )),
         }
+    }
+
+    pub fn get_all_token_group_ratios(
+        &mut self,
+        deps: &Deps<NeutronQuery>,
+        round_id: u64,
+    ) -> StdResult<HashMap<String, Decimal>> {
+        let denom_info = match self.cache.get(&round_id) {
+            Some(cache) => cache.clone(),
+            None => self.query_denom_info_with_caching(deps, round_id)?,
+        };
+
+        Ok(HashMap::from([(
+            denom_info.token_group_id,
+            denom_info.ratio,
+        )]))
     }
 
     fn query_denom_info_with_caching(
@@ -258,6 +287,19 @@ impl TokenInfoProviderLSM {
     ) -> StdResult<Decimal> {
         // No caching here either, for the same reason as with resolve_denom()
         get_validator_power_ratio_for_round(deps.storage, round_id, token_group_id)
+    }
+
+    pub fn get_all_token_group_ratios(
+        &mut self,
+        deps: &Deps<NeutronQuery>,
+        round_id: u64,
+    ) -> StdResult<HashMap<String, Decimal>> {
+        let round_validators: Vec<(String, Decimal)> = get_round_validators(deps, round_id)
+            .iter()
+            .map(|validator_info| (validator_info.address.clone(), validator_info.power_ratio))
+            .collect();
+
+        Ok(HashMap::from_iter(round_validators))
     }
 }
 

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use cosmwasm_std::{
-    testing::mock_env, to_json_vec, Binary, CosmosMsg, MsgResponse, Reply, SubMsgResponse,
+    testing::mock_env, to_json_vec, Binary, CosmosMsg, Decimal, MsgResponse, Reply, SubMsgResponse,
     SubMsgResult, WasmMsg,
 };
 
@@ -12,7 +12,10 @@ use crate::{
     },
     msg::{ReplyPayload, TokenInfoProviderInstantiateMsg},
     state::{Constants, RoundLockPowerSchedule, CONSTANTS, TOKEN_INFO_PROVIDERS, WHITELIST_ADMINS},
-    testing::{get_default_instantiate_msg, get_message_info},
+    testing::{
+        get_default_instantiate_msg, get_message_info, setup_st_atom_token_info_provider_mock,
+        ONE_MONTH_IN_NANO_SECONDS,
+    },
     testing_mocks::{mock_dependencies, no_op_grpc_query_mock},
     token_manager::{
         TokenInfoProvider, TokenInfoProviderDerivative, TokenInfoProviderLSM,
@@ -259,13 +262,13 @@ fn add_remove_token_info_provider_test() {
             &mut deps.storage,
             env.block.height,
             &Constants {
-                round_length: 0,
-                lock_epoch_length: 0,
+                round_length: ONE_MONTH_IN_NANO_SECONDS,
+                lock_epoch_length: ONE_MONTH_IN_NANO_SECONDS,
                 first_round_start: env.block.time,
-                max_locked_tokens: 0,
+                max_locked_tokens: 50000000,
                 known_users_cap: 0,
                 paused: false,
-                max_deployment_duration: 0,
+                max_deployment_duration: 3,
                 round_lock_power_schedule: RoundLockPowerSchedule::new(vec![]),
             },
         )
@@ -350,7 +353,7 @@ fn add_remove_token_info_provider_test() {
     }
 
     // Add one more provider into the store manually, in order to test the removal
-    let contract_address = deps.api.addr_make("token_info_provider_1").to_string();
+    let contract_address = deps.api.addr_make("token_info_provider_1");
     TOKEN_INFO_PROVIDERS
         .save(
             &mut deps.storage,
@@ -361,6 +364,8 @@ fn add_remove_token_info_provider_test() {
             }),
         )
         .unwrap();
+
+    setup_st_atom_token_info_provider_mock(&mut deps, contract_address.clone(), Decimal::one());
 
     assert_eq!(
         query_token_info_providers(deps.as_ref())
@@ -375,11 +380,11 @@ fn add_remove_token_info_provider_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        contract_address.clone(),
+        contract_address.to_string(),
     );
     assert!(res.is_ok(), "failed to remove token info provider");
 
-    assert!(!TOKEN_INFO_PROVIDERS.has(&deps.storage, contract_address.clone()));
+    assert!(!TOKEN_INFO_PROVIDERS.has(&deps.storage, contract_address.to_string()));
 
     // Remove LSM token info provider
     let res = remove_token_info_provider(

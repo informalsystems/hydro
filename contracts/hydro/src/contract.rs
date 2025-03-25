@@ -35,9 +35,9 @@ use crate::query::{
 };
 use crate::score_keeper::{
     add_token_group_shares_to_proposal, add_token_group_shares_to_round_total,
-    apply_proposal_changes, apply_token_group_ratio_change, combine_proposal_power_updates,
+    apply_proposal_changes, apply_token_groups_ratio_changes, combine_proposal_power_updates,
     get_total_power_for_proposal, get_total_power_for_round,
-    remove_token_group_shares_from_proposal,
+    remove_token_group_shares_from_proposal, TokenGroupRatioChange,
 };
 use crate::state::{
     Constants, LockEntry, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo, Vote,
@@ -1566,13 +1566,17 @@ pub fn update_token_group_ratio(
 
     let current_round_id = compute_current_round_id(&env, &constants)?;
 
-    apply_token_group_ratio_change(
-        deps.storage,
-        env.block.height,
-        &token_group_id,
-        current_round_id,
+    let tokens_ratio_changes = vec![TokenGroupRatioChange {
+        token_group_id: token_group_id.clone(),
         old_ratio,
         new_ratio,
+    }];
+
+    apply_token_groups_ratio_changes(
+        deps.storage,
+        env.block.height,
+        current_round_id,
+        &tokens_ratio_changes,
     )?;
 
     let response = Response::new()
@@ -1620,12 +1624,36 @@ pub fn remove_token_info_provider(
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
-    if !TOKEN_INFO_PROVIDERS.has(deps.storage, provider_id.clone()) {
-        return Err(new_generic_error(format!(
-            "Token info provider with ID: {} doesn't exist.",
-            provider_id.clone()
-        )));
-    }
+    let mut token_info_provider =
+        match TOKEN_INFO_PROVIDERS.may_load(deps.storage, provider_id.clone())? {
+            Some(provider) => provider,
+            None => {
+                return Err(new_generic_error(format!(
+                    "Token info provider with ID: {} doesn't exist.",
+                    provider_id.clone()
+                )))
+            }
+        };
+
+    let current_round_id = compute_current_round_id(&env, &constants)?;
+
+    let tokens_ratio_changes: Vec<TokenGroupRatioChange> = token_info_provider
+        .get_all_token_group_ratios(&deps.as_ref(), current_round_id)?
+        .iter()
+        .map(|token_group| TokenGroupRatioChange {
+            token_group_id: token_group.0.clone(),
+            old_ratio: *token_group.1,
+            new_ratio: Decimal::zero(),
+        })
+        .collect();
+
+    // Remove any voting power on proposals and rounds that comes from tokens of the given token info provider.
+    apply_token_groups_ratio_changes(
+        deps.storage,
+        env.block.height,
+        current_round_id,
+        &tokens_ratio_changes,
+    )?;
 
     TOKEN_INFO_PROVIDERS.remove(deps.storage, provider_id.clone());
 
