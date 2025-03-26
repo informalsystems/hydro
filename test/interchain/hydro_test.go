@@ -32,6 +32,7 @@ func TestHydroSuite(t *testing.T) {
 // deployment of hydro contract
 // registering of interchain queries for validators
 // locking of liquid staked tokens on hydro contract
+// locking of Stride derivative tokens on hydro contract
 // creating and voting/revoting for hydro proposals
 func (s *HydroSuite) TestHappyPath() {
 	log.Println("==== Running happy path test")
@@ -56,8 +57,20 @@ func (s *HydroSuite) TestHappyPath() {
 	sourceIbcDenom2 := fmt.Sprintf("%s/%s", strings.ToLower(s.HubChain.ValidatorWallets[1].ValoperAddress), recordId2)
 	dstIbcDenom2 := s.HubToNeutronShareTokenTransfer(0, math.NewInt(400), sourceIbcDenom2, s.NeutronChain.ValidatorWallets[0].Address)
 
+	// Transfer ATOMs to Neutron chain. For the purpose of this test, we will use ATOMs as a substitute for stATOMs and allow them to be locked in Hydro.
+	dstIbcDenom3 := s.HubToNeutronShareTokenTransfer(0, math.NewInt(400), chainsuite.GetHubSpec().Denom, s.NeutronChain.ValidatorWallets[0].Address)
+
+	stTokenInfoProviderInitMsg := s.GetContractTokenInfoProviderInitMsg(
+		stTokenInfoProviderCodeId,
+		map[string]any{
+			"st_token_denom": dstIbcDenom3,
+			"token_group_id": "statom",
+		},
+		"stATOM token info provider",
+		nil)
+
 	// deploy hydro contract - instantiate code
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 3, 86400000000000)
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(3), []any{stTokenInfoProviderInitMsg})
 
 	// register interchain query
 	log.Println("==== Registering interchain queries")
@@ -74,13 +87,15 @@ func (s *HydroSuite) TestHappyPath() {
 	s.Require().NoError(err)
 	err = s.LockTokens(0, 12*86400000000000, "10", dstIbcDenom2, contractAddr)
 	s.Require().NoError(err)
+	err = s.LockTokens(0, 86400000000000, "10", dstIbcDenom3, contractAddr)
+	s.Require().NoError(err)
 
 	// Scale lockup power
 	// 1x if lockup is between 0 and 1 epochs
 	// 1.5x if lockup is between 1 and 3 epochs
 	// 2x if lockup is between 3 and 6 epochs
 	// 4x if lockup is between 6 and 12 epochs
-	votingPower := "85" // 10*1+10*1.5+10*2+10*4
+	votingPower := "95" // 10*1 + 10*1.5 + 10*2 + 10*4 + 10*1
 
 	// create hydro proposals
 	log.Println("==== Creating proposals")
@@ -100,7 +115,7 @@ func (s *HydroSuite) TestHappyPath() {
 	proposalsVotes := []ProposalToLockups{
 		{
 			ProposalId: proposal.ProposalID,
-			LockIds:    []int{0, 1, 2, 3},
+			LockIds:    []int{0, 1, 2, 3, 4},
 		},
 	}
 	err = s.VoteForHydroProposal(0, contractAddr, 1, proposalsVotes)
@@ -163,7 +178,7 @@ func (s *HydroSuite) TestPauseContract() {
 	dstIbcDenom := s.HubToNeutronShareTokenTransfer(0, math.NewInt(400), sourceIbcDenom, s.NeutronChain.ValidatorWallets[0].Address)
 
 	// instantiate hydro contract
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 2, 86400000000000)
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(2), nil)
 
 	// pause the contract
 	log.Println("==== Pausing contract")
@@ -238,7 +253,7 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 
 	// deploy hydro contract - instantiate code
 	// active valset consists of 2 validators, currently val1 and val2
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 2, 86400000000000)
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(2), nil)
 
 	// register interchain query for val1 and val2
 	log.Println("==== Registering interchain queries for val1 and val2")
@@ -324,7 +339,7 @@ func (s *HydroSuite) TestValidatorSlashing() {
 	dstIbcDenom1 := s.HubToNeutronShareTokenTransfer(0, math.NewInt(400), sourceIbcDenom1, s.NeutronChain.ValidatorWallets[0].Address)
 
 	// deploy hydro contract - instantiate code
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 4, 86400000000000)
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(4), nil)
 
 	// register interchain query
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[3].ValoperAddress},
@@ -400,7 +415,7 @@ func (s *HydroSuite) TestTributeContract() {
 
 	// deploy hydro contract - instantiate code
 	roundLength := 300000000000
-	hydroContractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 4, roundLength)
+	hydroContractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, roundLength, s.GetLSMTokenInfoProviderInitMsg(4), nil)
 
 	// deploy tribute contract - instantiate code
 	tributeContractAddr := s.InstantiateTributeContract(tributeCodeId, hydroContractAddr, s.NeutronChain.ValidatorWallets[0].Address)
@@ -676,7 +691,7 @@ func (s *HydroSuite) TestDaoVotingAdapter() {
 
 	// instantiate hydro contract
 	log.Println("==== Instantiating Hydro contract")
-	hydroContractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 3, 86400000000000)
+	hydroContractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(3), nil)
 
 	// instantiate DAO voting power adapter contract
 	log.Println("==== Instantiating DAO Voting Power Adapter contract")
