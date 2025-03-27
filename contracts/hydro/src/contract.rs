@@ -321,9 +321,7 @@ fn lock_tokens(
     let mut token_manager = TokenManager::new(&deps.as_ref());
     let token_group_id = token_manager
         .validate_denom(&deps.as_ref(), current_round, funds.denom)
-        .map_err(|err| {
-            ContractError::Std(StdError::generic_err(format!("validating denom: {}", err)))
-        })?;
+        .map_err(|err| new_generic_error(format!("validating denom: {}", err)))?;
 
     let total_locked_tokens = LOCKED_TOKENS.load(deps.storage)?;
     let amount_to_lock = info.funds[0].amount.u128();
@@ -523,12 +521,7 @@ fn refresh_single_lock(
 
     let token_group_id = match validate_denom_result {
         Ok(token_group_id) => token_group_id,
-        Err(err) => {
-            return Err(new_generic_error(format!(
-                "Can't refresh lock. Error: {}",
-                err
-            )))
-        }
+        Err(err) => return Err(new_generic_error(format!("validating denom: {}", err))),
     };
 
     update_voting_power_on_proposals(
@@ -1272,9 +1265,11 @@ fn create_icqs_for_validators(
 
     let lsm_token_info_provider =
         match TokenManager::new(&deps.as_ref()).get_lsm_token_info_provider() {
-            None => return Err(new_generic_error(
-                "Can not create validator ICQs- contract doesn't support locking of LSM tokens.",
-            )),
+            None => {
+                return Err(new_generic_error(
+                    "Cannot create validator ICQs: contract doesn't support locking of LSM tokens.",
+                ))
+            }
             Some(provider) => provider,
         };
     // This function will return error if the first round hasn't started yet. It is necessarry

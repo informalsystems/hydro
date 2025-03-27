@@ -130,7 +130,7 @@ pub fn handle_delivered_interchain_query_result(
         .get_lsm_token_info_provider()
     {
         None => return Err(new_generic_error(
-            "Can not handle validator ICQ results- contract doesn't support locking of LSM tokens.",
+            "Cannot handle validator ICQ results: contract doesn't support locking of LSM tokens.",
         )),
         Some(provider) => provider,
     };
