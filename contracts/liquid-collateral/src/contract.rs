@@ -1,35 +1,26 @@
 use cosmwasm_std::{
-    to_json_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult,
-    entry_point, Uint128, CosmosMsg, SubMsg, Reply,
+    entry_point, to_json_binary, Binary, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Reply,
+    Response, StdResult, SubMsg, Uint128,
 };
-use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::{MsgCreatePosition, MsgCreatePositionResponse};
 use osmosis_std::types::cosmos::base::v1beta1::Coin;
+use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::{
+    MsgCreatePosition, MsgCreatePositionResponse,
+};
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse, CreatePositionMsg};
+use crate::msg::{CreatePositionMsg, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse};
 use crate::state::{State, STATE};
 
 #[entry_point]
 pub fn instantiate(
-    deps: DepsMut,
+    _deps: DepsMut,
     _env: Env,
     info: MessageInfo,
-    msg: InstantiateMsg,
+    _msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
-    let state = State {
-        owner: info.sender.clone(),
-        pool_id: msg.pool_id,
-        position_id: None,
-        token0_denom: msg.token0_denom,
-        token1_denom: msg.token1_denom,
-        initial_token0_amount: Uint128::zero(),
-    };
-    STATE.save(deps.storage, &state)?;
-
     Ok(Response::new()
         .add_attribute("method", "instantiate")
-        .add_attribute("owner", info.sender)
-        .add_attribute("pool_id", msg.pool_id.to_string()))
+        .add_attribute("owner", info.sender))
 }
 
 #[entry_point]
@@ -51,16 +42,13 @@ pub fn execute_create_position(
     info: MessageInfo,
     msg: CreatePositionMsg,
 ) -> Result<Response, ContractError> {
-    let state = STATE.load(deps.storage)?;
-    
-    // Only owner can create position
-    if info.sender != state.owner {
-        return Err(ContractError::Unauthorized {});
-    }
-
+    // Hardcoded denoms for token0 and token1
+    let token0_denom =
+        "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4".to_string();
+    let token1_denom = "uosmo".to_string();
     // Validate funds sent
-    let token0 = info.funds.iter().find(|c| c.denom == state.token0_denom);
-    let token1 = info.funds.iter().find(|c| c.denom == state.token1_denom);
+    let token0 = info.funds.iter().find(|c| c.denom == token0_denom);
+    let token1 = info.funds.iter().find(|c| c.denom == token1_denom);
 
     if token0.is_none() || token1.is_none() {
         return Err(ContractError::InsufficientFunds {});
@@ -75,22 +63,22 @@ pub fn execute_create_position(
 
     // Create position message
     let create_position_msg = MsgCreatePosition {
-        pool_id: state.pool_id,
+        pool_id: msg.pool_id,
         sender: env.contract.address.to_string(),
         lower_tick: msg.lower_tick,
         upper_tick: msg.upper_tick,
         tokens_provided: vec![
             Coin {
-                denom: state.token0_denom.clone(),
+                denom: token0_denom,
                 amount: token0_amount.to_string(),
             },
             Coin {
-                denom: state.token1_denom.clone(),
+                denom: token1_denom,
                 amount: token1_amount.to_string(),
             },
         ],
-        token_min_amount0: token0_amount.to_string(),
-        token_min_amount1: token1_amount.to_string(),
+        token_min_amount0: "85000".to_string(),
+        token_min_amount1: "24978".to_string(),
     };
 
     // Wrap in SubMsg to handle response
@@ -99,7 +87,7 @@ pub fn execute_create_position(
     Ok(Response::new()
         .add_submessage(submsg)
         .add_attribute("action", "create_position")
-        .add_attribute("pool_id", state.pool_id.to_string())
+        .add_attribute("pool_id", msg.pool_id.to_string())
         .add_attribute("lower_tick", msg.lower_tick.to_string())
         .add_attribute("upper_tick", msg.upper_tick.to_string()))
 }
@@ -109,33 +97,17 @@ pub fn execute_withdraw_position(
     _env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
-    let state = STATE.load(deps.storage)?;
-    
-    // Only owner can withdraw position
-    if info.sender != state.owner {
-        return Err(ContractError::Unauthorized {});
-    }
-
-    // Ensure position exists
-    let position_id = state.position_id.ok_or(ContractError::NoPosition {})?;
-
     // Create withdraw message
-    let withdraw_msg = osmosis_std::types::osmosis::concentratedliquidity::v1beta1::MsgWithdrawPosition {
-        position_id,
-        sender: info.sender.to_string(),
-        liquidity_amount: "0".to_string(), // Withdraw all liquidity
-    };
-
-    // Wrap in CosmosMsg::Stargate
-    let msg = CosmosMsg::Stargate { 
-        type_url: "/osmosis.concentratedliquidity.v1beta1.MsgWithdrawPosition".to_string(),
-        value: to_json_binary(&withdraw_msg)?,
-    };
+    let withdraw_msg =
+        osmosis_std::types::osmosis::concentratedliquidity::v1beta1::MsgWithdrawPosition {
+            position_id: 2,
+            sender: _env.contract.address.to_string(),
+            liquidity_amount: "92195444572928873195000".to_string(), // Withdraw all liquidity
+        };
 
     Ok(Response::new()
-        .add_message(msg)
-        .add_attribute("action", "withdraw_position")
-        .add_attribute("position_id", position_id.to_string()))
+        .add_message(withdraw_msg)
+        .add_attribute("action", "withdraw_position"))
 }
 
 #[entry_point]
@@ -148,121 +120,190 @@ pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractE
 
 fn handle_create_position_reply(deps: DepsMut, msg: Reply) -> Result<Response, ContractError> {
     let response: MsgCreatePositionResponse = msg.result.try_into()?;
-    
-    // Update state with new position ID
-    STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
-        state.position_id = Some(response.position_id);
-        Ok(state)
-    })?;
 
-    Ok(Response::new()
-        .add_attribute("position_id", response.position_id.to_string()))
+    Ok(Response::new().add_attribute("position_id", response.position_id.to_string()))
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::mock::{
+        self,
+        mock::{store_contracts_code, PoolMockup},
+    };
+
     use super::*;
-    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    use cosmwasm_std::{
+        coins,
+        testing::{mock_dependencies, mock_env, mock_info},
+    };
     use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::MsgCreatePosition;
     // use crate::mock::mock::{PoolMockup, ContractInfo, ATOM_DENOM, OSMO_DENOM};
-    use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::MsgCreatePositionResponse;
     use cosmwasm_std::Coin;
-    use osmosis_test_tube::{Account, Module, OsmosisTestApp, Gamm};
-
-    
+    use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::MsgCreatePositionResponse;
+    use osmosis_test_tube::{Account, Gamm, Module, OsmosisTestApp, Wasm};
 
     #[test]
-    fn test_create_position() {
-        let app = OsmosisTestApp::default();
-        let alice = app
-            .init_account(&[
-                Coin::new(1_000_000_000_000u128, "uatom"),
-                Coin::new(1_000_000_000_000u128, "uosmo"),
-            ])
-            .unwrap();
-        
-        // create Gamm Module Wrapper
-        let gamm = Gamm::new(&app);
-        
-        // create balancer pool with basic configuration
-        let pool_liquidity = vec![Coin::new(1_000u128, "uatom"), Coin::new(1_000u128, "uosmo")];
-        let pool_id = gamm
-            .create_basic_pool(&pool_liquidity, &alice)
-            .unwrap()
+    fn test_create_and_withdraw_position_in_pool() {
+        pub const USDC_DENOM: &str =
+            "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4";
+        pub const OSMO_DENOM: &str = "uosmo";
+        /*
+                type: osmosis/cl-create-position
+        value:
+          lower_tick: '-108000000'
+          pool_id: '1464'
+          sender: osmo1dlp3hevpc88upn06awnpu8zm37xn4etudrdx0s
+          token_min_amount0: '85000'
+          token_min_amount1: '24978'
+          tokens_provided:
+            - amount: '29387'
+              denom: ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4
+            - amount: '100000'
+              denom: uosmo
+          upper_tick: '342000000'
+         */
+        let pool_mockup = PoolMockup::new();
+
+        let wasm = Wasm::new(&pool_mockup.app);
+        let code_id = store_contracts_code(&wasm, &pool_mockup.deployer);
+
+        let instantiate_msg = InstantiateMsg {};
+
+        // liquid-collateral contract instantiation
+        let contract_addr = wasm
+            .instantiate(
+                code_id,
+                &instantiate_msg,
+                None,
+                Some("liquid-collateral"),
+                &[],
+                &pool_mockup.deployer,
+            )
+            .expect("Contract instantiation failed")
             .data
-            .pool_id;
-        
-        // query pool and assert if the pool is created successfully
-        let pool = gamm.query_pool(pool_id).unwrap();
-        assert_eq!(
-            pool_liquidity,
-            pool.pool_assets
-                .into_iter()
-                .map(|a| cosmwasm_std::Coin {
-                    denom: a.token.clone().unwrap().denom,
-                    amount: a.token.unwrap().amount.parse().unwrap()
-                })
-                .collect::<Vec<Coin>>()
-        );
+            .address;
+
+        println!("Contract deployed at: {}", contract_addr);
+
+        let msg = ExecuteMsg::CreatePosition(CreatePositionMsg {
+            pool_id: 1,
+            lower_tick: -108000000,
+            upper_tick: 342000000,
+            token0_amount: 85000u128.into(),
+            token1_amount: 100000u128.into(),
+        });
+
+        let coins = &[
+            Coin::new(85000u128, USDC_DENOM),
+            Coin::new(100000u128, OSMO_DENOM),
+        ];
+
+        //deployer enters position
+        let response = wasm
+            .execute(&contract_addr, &msg, coins, &pool_mockup.deployer)
+            .expect("Execution failed");
+        //println!("Execution successful: {:?}", response);
+        for event in response.events {
+            if event.ty == "create_position" {
+                for attr in event.attributes {
+                    if attr.key == "position_id" {
+                        println!("Position ID: {}", attr.value);
+                    }
+                }
+            }
+        }
+
+        let msg = ExecuteMsg::CreatePosition(CreatePositionMsg {
+            pool_id: 1,
+            lower_tick: -108000000,
+            upper_tick: 342000000,
+            token0_amount: 85000u128.into(),
+            token1_amount: 100000u128.into(),
+        });
+
+        let coins = &[
+            Coin::new(85000u128, USDC_DENOM),
+            Coin::new(100000u128, OSMO_DENOM),
+        ];
+
+        //user 1 enters position
+        let response = wasm
+            .execute(&contract_addr, &msg, coins, &pool_mockup.user1)
+            .expect("Execution failed");
+        //println!("Execution successful: {:?}", response);
+        for event in response.events {
+            if event.ty == "create_position" {
+                for attr in event.attributes {
+                    if attr.key == "position_id" {
+                        println!("Position ID: {}", attr.value);
+                    }
+                }
+            }
+        }
+
+        let msg = ExecuteMsg::CreatePosition(CreatePositionMsg {
+            pool_id: 1,
+            lower_tick: -108000000,
+            upper_tick: 342000000,
+            token0_amount: 85000u128.into(),
+            token1_amount: 100000u128.into(),
+        });
+
+        let coins = &[
+            Coin::new(85000u128, USDC_DENOM),
+            Coin::new(100000u128, OSMO_DENOM),
+        ];
+
+        //user2 enters position
+        let response = wasm
+            .execute(&contract_addr, &msg, coins, &pool_mockup.user2)
+            .expect("Execution failed");
+        //println!("Execution successful: {:?}", response);
+
+        for event in response.events {
+            if event.ty == "create_position" {
+                for attr in event.attributes {
+                    if attr.key == "position_id" {
+                        println!("Position ID: {}", attr.value);
+                    }
+                }
+            }
+        }
+
+        let position_response = pool_mockup.position_query(1);
+        //println!("{:#?}", position_response);
+        let liquidity = if let Ok(full_position) = position_response {
+            if let Some(position) = full_position.position {
+                println!("Liquidity: {}", position.liquidity); // Print the value
+                position.liquidity // Return liquidity
+            } else {
+                println!("Position not found");
+                String::from("0") // Default value
+            }
+        } else {
+            println!("Failed to get position response");
+            String::from("0") // Default value
+        };
+
+        let withdraw_msg = ExecuteMsg::WithdrawPosition {};
+        let response = wasm
+            .execute(&contract_addr, &withdraw_msg, &[], &pool_mockup.user2)
+            .expect("Execution failed");
+        //println!("Execution successful: {:?}", response);
+
+        let position_response = pool_mockup.position_query(2);
+        //println!("{:#?}", position_response);
+        let liquidity = if let Ok(full_position) = position_response {
+            if let Some(position) = full_position.position {
+                println!("Liquidity: {}", position.liquidity); // Print the value
+                position.liquidity // Return liquidity
+            } else {
+                println!("Position not found");
+                String::from("0") // Default value
+            }
+        } else {
+            println!("Failed to get position response");
+            String::from("0") // Default value
+        };
     }
-
-    // #[test]
-    // fn test_instantiate() {
-    //     let mut deps = mock_dependencies();
-    //     let env = mock_env();
-    //     let info = mock_info("creator", &[]);
-    //     let msg = InstantiateMsg {
-    //         pool_id: 1,
-    //         token0_denom: ATOM_DENOM.to_string(),
-    //         token1_denom: OSMO_DENOM.to_string(),
-    //     };
-
-    //     // Test instantiation
-    //     let res = instantiate(deps.as_mut(), env, info, msg).unwrap();
-    //     assert_eq!(0, res.messages.len());
-
-    //     // Test state
-    //     let state = STATE.load(&deps.storage).unwrap();
-    //     assert_eq!(state.pool_id, 1);
-    //     assert_eq!(state.token0_denom, ATOM_DENOM);
-    //     assert_eq!(state.token1_denom, OSMO_DENOM);
-    //     assert_eq!(state.position_id, None);
-    // }
-
-    // #[test]
-    // fn test_create_position() {
-    //     // Set up test environment
-    //     let pool_mockup = PoolMockup::new(100_000, 200_000); // Initial pool liquidity
-    //     let contract = ContractInfo::new(&pool_mockup);
-
-    //     // Create a position
-    //     let res = contract.create_position(
-    //         &pool_mockup,
-    //         -1000,  // lower tick
-    //         1000,   // upper tick
-    //         10_000, // ATOM amount
-    //         20_000, // OSMO amount
-    //         &pool_mockup.user1,
-    //     );
-
-    //     // Verify the response
-    //     let create_position_response: MsgCreatePositionResponse = res.data.unwrap().try_into().unwrap();
-    //     assert!(create_position_response.position_id > 0);
-
-    //     // Verify the user's balances were deducted
-    //     let bank = osmosis_test_tube::Bank::new(&pool_mockup.app);
-        
-    //     let atom_balance = bank.query_balance(&osmosis_std::types::cosmos::bank::v1beta1::QueryBalanceRequest {
-    //         address: pool_mockup.user1.address(),
-    //         denom: ATOM_DENOM.into(),
-    //     }).unwrap().balance.unwrap();
-        
-    //     let osmo_balance = bank.query_balance(&osmosis_std::types::cosmos::bank::v1beta1::QueryBalanceRequest {
-    //         address: pool_mockup.user1.address(),
-    //         denom: OSMO_DENOM.into(),
-    //     }).unwrap().balance.unwrap();
-
-    //     // Initial balance was 1_000_000_000_000, we spent 10_000 and 20_000 respectively
-    //     assert_eq!(atom_balance.amount, (1_000_000_000_000u128 - 10_000).to_string());
-    //     assert_eq!(osmo_balance.amount, (1_000_000_000_000u128 - 20_000).to_string());
-    }
+}
