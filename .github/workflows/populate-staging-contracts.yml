@@ -28,7 +28,7 @@ jobs:
         env:
           # The address derived from this mnemonic (neutron1r6rv879netg009eh6ty23v57qrq29afecuehlm)
           # is in the whitelist of the Staging Hydro contract, which means it can submit proposals.
-          WALLET_MNEMONIC: ${{ secrets.E2E_TESTS_MNEMONIC }}
+          WALLET_MNEMONIC: ${{ secrets.HYDRO_TEST_MNEMONIC }}
         run: |
           CONFIG_FILE="./tools/deployment/config_mainnet.json"
           TX_SENDER_WALLET=$(jq -r '.tx_sender_wallet' $CONFIG_FILE)
