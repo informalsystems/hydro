@@ -2,21 +2,29 @@ use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::Uint128;
 
 #[cw_serde]
-pub struct InstantiateMsg {}
+pub struct InstantiateMsg {
+    pub pool_id: u64,
+    pub base_denom: String,
+    pub counterparty_denom: String,
+}
 
 #[cw_serde]
 pub struct CreatePositionMsg {
-    pub pool_id: u64,
     pub lower_tick: i64,
     pub upper_tick: i64,
-    pub token0_amount: Uint128,
-    pub token1_amount: Uint128,
+    pub base_token_amount: Uint128,
+    pub counterparty_token_amount: Uint128,
+}
+
+#[cw_serde]
+pub struct WithdrawPositionMsg {
+    pub liquidity_amount: String,
 }
 
 #[cw_serde]
 pub enum ExecuteMsg {
     CreatePosition(CreatePositionMsg),
-    WithdrawPosition {},
+    WithdrawPosition(WithdrawPositionMsg),
 }
 
 #[cw_serde]
@@ -34,4 +42,5 @@ pub struct StateResponse {
     pub token0_denom: String,
     pub token1_denom: String,
     pub initial_token0_amount: Uint128,
+    pub initial_token1_amount: Uint128,
 }

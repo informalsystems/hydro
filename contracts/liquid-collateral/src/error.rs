@@ -17,4 +17,12 @@ pub enum ContractError {
 
     #[error("Unknown reply id: {id}")]
     UnknownReplyId { id: u64 },
-} 
+
+    #[error("Query for pool price failed")]
+    PriceQueryFailed {},
+
+    #[error("Ratio is still in the bounds")]
+    ThresholdNotMet {},
+    #[error("Invalid ratio format")]
+    InvalidRatioFormat {},
+}
