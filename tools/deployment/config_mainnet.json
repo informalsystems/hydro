@@ -1,14 +1,14 @@
 {
     "chain_id": "neutron-1",
-    "neutron_rpc_node": "https://neutron-rpc.polkachu.com",
+    "neutron_rpc_node": "https://rpc-pulsarix.neutron-1.neutron.org",
     "neutron_api_node": "https://neutron-rest.publicnode.com",
     "hub_rpc_node": "https://cosmos-rpc.publicnode.com:443",
     "hub_api_node": "https://api.cosmos.nodestake.org",
     "tx_sender_wallet": "submitter",
-    "tx_sender_address": "neutron1r6rv879netg009eh6ty23v57qrq29afecuehlm",
     "hub_connection_id": "connection-0",
     "hub_channel_id": "channel-1",
     "tribute_token_1": "untrn",
     "tribute_token_2": "ibc/C4CFF46FD6DE35CA4CF4CE031E643C8FDC9BA4B99AE598E9B0ED98FE3A2319F9",
-    "tribute_token_3": "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81"
+    "tribute_token_3": "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
+    "token_to_lock_1": "ibc/83311BD1F53AEBA1D1D4AE3F505606985E5F2A98C974FE064DC694A569B63F06"
 }
