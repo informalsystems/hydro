@@ -1,5 +1,5 @@
 #!/bin/bash
-set -ux
+set -eux
 
 CONFIG_FILE="$1"
 HYDRO_CONTRACT_ADDRESS="$2"
