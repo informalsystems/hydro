@@ -1,11 +1,9 @@
 name: Populate Staging Contracts
 
 on:
-  # Temporaray, to test the workflow
-  pull_request:
-  # schedule:
-  #   # run every day at 10:05 AM UTC (new round in Staging contract starts at 10 AM UTC time)
-  #   - cron: '5 10 * * *'
+  schedule:
+    # run every day at 10:05 AM UTC (new round in Staging contract starts at 10 AM UTC time)
+    - cron: '5 10 * * *'
 
 jobs:
   populate-new-round:
