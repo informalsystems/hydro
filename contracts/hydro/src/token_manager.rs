@@ -2,20 +2,23 @@ use std::collections::HashMap;
 
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{
-    to_json_vec, Decimal, Deps, DepsMut, Order, Reply, Response, StdError, StdResult, SubMsg,
+    to_json_vec, Decimal, Deps, DepsMut, Env, Order, Reply, Response, StdError, StdResult, SubMsg,
     WasmMsg,
 };
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 use token_info_provider_interface::{DenomInfoResponse, TokenInfoProviderQueryMsg};
 
 use crate::{
+    contract::compute_current_round_id,
     error::{new_generic_error, ContractError},
     lsm_integration::{
         get_round_validators, get_validator_power_ratio_for_round, is_active_round_validator,
         resolve_validator_from_denom,
     },
     msg::{ReplyPayload, TokenInfoProviderInstantiateMsg},
-    state::TOKEN_INFO_PROVIDERS,
+    score_keeper::{apply_token_groups_ratio_changes, TokenGroupRatioChange},
+    state::{Constants, TOKEN_INFO_PROVIDERS},
+    utils::load_current_constants,
 };
 
 // Until the LSM token info provider becommes a separate smart contract, we use this string
@@ -312,12 +315,13 @@ impl TokenInfoProviderLSM {
 pub fn add_token_info_providers(
     deps: &mut DepsMut<NeutronQuery>,
     token_info_provider_msgs: Vec<TokenInfoProviderInstantiateMsg>,
-) -> Result<Vec<SubMsg<NeutronMsg>>, ContractError> {
+) -> Result<(Vec<SubMsg<NeutronMsg>>, Option<TokenInfoProvider>), ContractError> {
     let token_manager = TokenManager::new(&deps.as_ref());
     let mut token_info_provider_num = token_manager.token_info_providers.len();
     let mut found_lsm_provider = token_manager.get_lsm_token_info_provider().is_some();
 
     let mut submsgs = vec![];
+    let mut lsm_provider = None;
 
     for token_info_provider_msg in token_info_provider_msgs {
         match token_info_provider_msg {
@@ -346,6 +350,7 @@ pub fn add_token_info_providers(
                     &lsm_token_info_provider,
                 )?;
 
+                lsm_provider = Some(lsm_token_info_provider);
                 found_lsm_provider = true;
                 token_info_provider_num += 1;
             }
@@ -390,11 +395,12 @@ pub fn add_token_info_providers(
         ));
     }
 
-    Ok(submsgs)
+    Ok((submsgs, lsm_provider))
 }
 
 pub fn token_manager_handle_submsg_reply(
-    deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut<NeutronQuery>,
+    env: &Env,
     token_info_provider: TokenInfoProvider,
     msg: Reply,
 ) -> Result<Response<NeutronMsg>, ContractError> {
@@ -422,12 +428,61 @@ pub fn token_manager_handle_submsg_reply(
             TOKEN_INFO_PROVIDERS.save(
                 deps.storage,
                 instantiate_msg_response.contract_address,
-                &TokenInfoProvider::Derivative(token_info_provider),
+                &TokenInfoProvider::Derivative(token_info_provider.clone()),
             )?;
+
+            let constants = load_current_constants(&deps.as_ref(), env)?;
+
+            // This function gets executed both on contract instantiation and a new token info provider addition.
+            // If the first round hasn't started yet, which can happen during contract instantiation, there are no
+            // proposals and rounds whose powers should be updated. Also, the handle_token_info_provider_add_remove()
+            // function tries to compute current round ID, which would error out if the first round hasn't started,
+            // hence the check is introduced here.
+            if env.block.time > constants.first_round_start {
+                handle_token_info_provider_add_remove(
+                    &mut deps,
+                    env,
+                    &constants,
+                    &mut TokenInfoProvider::Derivative(token_info_provider),
+                    |token_group| TokenGroupRatioChange {
+                        token_group_id: token_group.0.clone(),
+                        old_ratio: Decimal::zero(),
+                        new_ratio: *token_group.1,
+                    },
+                )?;
+            }
 
             Ok(Response::default())
         }
     }
+}
+
+pub fn handle_token_info_provider_add_remove<T>(
+    deps: &mut DepsMut<NeutronQuery>,
+    env: &Env,
+    constants: &Constants,
+    token_info_provider: &mut TokenInfoProvider,
+    map_to_token_ratio_change: T,
+) -> StdResult<()>
+where
+    T: Fn((&String, &Decimal)) -> TokenGroupRatioChange,
+{
+    let current_round_id = compute_current_round_id(env, constants)?;
+
+    let tokens_ratio_changes: Vec<TokenGroupRatioChange> = token_info_provider
+        .get_all_token_group_ratios(&deps.as_ref(), current_round_id)?
+        .iter()
+        .map(map_to_token_ratio_change)
+        .collect();
+
+    apply_token_groups_ratio_changes(
+        deps.storage,
+        env.block.height,
+        current_round_id,
+        &tokens_ratio_changes,
+    )?;
+
+    Ok(())
 }
 
 fn get_all_token_info_providers(deps: &Deps<NeutronQuery>) -> Vec<TokenInfoProvider> {

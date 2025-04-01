@@ -23,15 +23,14 @@ use crate::msg::{
 };
 use crate::query::{
     AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse,
-    ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse, ICQManagersResponse,
-    LiquidityDeploymentResponse, LockEntryWithPower, LockupWithPerTrancheInfo,
+    CanLockDenomResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
+    ICQManagersResponse, LiquidityDeploymentResponse, LockEntryWithPower, LockupWithPerTrancheInfo,
     PerTrancheLockupInfo, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
     RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
     RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse,
-    SpecificUserLockupsWithTrancheInfosResponse, TokenGroupRatioResponse,
-    TokenInfoProvidersResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse,
-    UserVotesResponse, UserVotingPowerResponse, VoteEntry, WhitelistAdminsResponse,
-    WhitelistResponse,
+    SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, TopNProposalsResponse,
+    TotalLockedTokensResponse, TranchesResponse, UserVotesResponse, UserVotingPowerResponse,
+    VoteEntry, WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_token_group_shares_to_proposal, add_token_group_shares_to_round_total,
@@ -48,7 +47,8 @@ use crate::state::{
     VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::token_manager::{
-    add_token_info_providers, token_manager_handle_submsg_reply, TokenManager,
+    add_token_info_providers, handle_token_info_provider_add_remove,
+    token_manager_handle_submsg_reply, TokenManager,
 };
 use crate::utils::{
     find_voted_proposal_for_lock, get_current_user_voting_power, get_deployment_for_proposal,
@@ -156,7 +156,7 @@ pub fn instantiate(
     TRANCHE_ID.save(deps.storage, &tranche_id)?;
 
     // Save token info providers into the store and build SubMsgs to instantiate contracts, if there are any needed
-    let token_info_provider_init_msgs =
+    let (token_info_provider_init_msgs, _) =
         add_token_info_providers(&mut deps, msg.token_info_providers)?;
 
     // the store for the first round is already initialized, since there is no previous round to copy information over from.
@@ -1596,8 +1596,23 @@ pub fn add_token_info_provider(
     validate_contract_is_not_paused(&constants)?;
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
-    let token_info_provider_init_msgs =
+    let (token_info_provider_init_msgs, lsm_token_info_provider) =
         add_token_info_providers(&mut deps, vec![provider_info.clone()])?;
+
+    // If LSM token info provider was added, apply proposal and round power changes immediately.
+    if let Some(mut lsm_token_info_provider) = lsm_token_info_provider {
+        handle_token_info_provider_add_remove(
+            &mut deps,
+            &env,
+            &constants,
+            &mut lsm_token_info_provider,
+            |token_group| TokenGroupRatioChange {
+                token_group_id: token_group.0.clone(),
+                old_ratio: Decimal::zero(),
+                new_ratio: *token_group.1,
+            },
+        )?;
+    }
 
     let response = Response::new()
         .add_attribute("action", "add_token_info_provider")
@@ -1609,7 +1624,7 @@ pub fn add_token_info_provider(
 }
 
 pub fn remove_token_info_provider(
-    deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     provider_id: String,
@@ -1630,24 +1645,17 @@ pub fn remove_token_info_provider(
             }
         };
 
-    let current_round_id = compute_current_round_id(&env, &constants)?;
-
-    let tokens_ratio_changes: Vec<TokenGroupRatioChange> = token_info_provider
-        .get_all_token_group_ratios(&deps.as_ref(), current_round_id)?
-        .iter()
-        .map(|token_group| TokenGroupRatioChange {
+    // Remove any voting power on proposals and rounds that comes from tokens of the given token info provider.
+    handle_token_info_provider_add_remove(
+        &mut deps,
+        &env,
+        &constants,
+        &mut token_info_provider,
+        |token_group| TokenGroupRatioChange {
             token_group_id: token_group.0.clone(),
             old_ratio: *token_group.1,
             new_ratio: Decimal::zero(),
-        })
-        .collect();
-
-    // Remove any voting power on proposals and rounds that comes from tokens of the given token info provider.
-    apply_token_groups_ratio_changes(
-        deps.storage,
-        env.block.height,
-        current_round_id,
-        &tokens_ratio_changes,
+        },
     )?;
 
     TOKEN_INFO_PROVIDERS.remove(deps.storage, provider_id.clone());
@@ -1803,10 +1811,9 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         QueryMsg::RegisteredValidatorQueries {} => {
             to_json_binary(&query_registered_validator_queries(deps)?)
         }
-        QueryMsg::TokenGroupRatio {
-            token_group_id,
-            round_id,
-        } => to_json_binary(&query_token_group_ratio(deps, token_group_id, round_id)?),
+        QueryMsg::CanLockDenom { token_denom } => {
+            to_json_binary(&query_can_lock_denom(&deps, &env, token_denom)?)
+        }
         QueryMsg::ICQManagers {} => to_json_binary(&query_icq_managers(deps)?),
         QueryMsg::LiquidityDeployment {
             round_id,
@@ -2467,15 +2474,38 @@ pub fn query_validators_per_round(
         .collect())
 }
 
-// Returns the ratio of a token group ID to base token for a given round
-pub fn query_token_group_ratio(
-    deps: Deps<NeutronQuery>,
-    token_group_id: String,
-    round_id: u64,
-) -> StdResult<TokenGroupRatioResponse> {
-    TokenManager::new(&deps)
-        .get_token_group_ratio(&deps, round_id, token_group_id)
-        .map(|r| TokenGroupRatioResponse { ratio: r }) // error can stay untouched
+// Checks whether the token with the given denom can be locked in Hydro. Denom can be locked if it belongs to
+// a known token group that has power ratio to base denom greater than zero.
+pub fn query_can_lock_denom(
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
+    token_denom: String,
+) -> StdResult<CanLockDenomResponse> {
+    let constants = load_current_constants(deps, env)?;
+    let current_round = compute_current_round_id(env, &constants)?;
+
+    let mut token_manager = TokenManager::new(deps);
+    let token_group_id =
+        match token_manager.validate_denom(deps, current_round, token_denom.clone()) {
+            Err(_) => {
+                return Ok(CanLockDenomResponse {
+                    denom: token_denom.clone(),
+                    can_be_locked: false,
+                })
+            }
+            Ok(token_group_id) => token_group_id,
+        };
+
+    match token_manager.get_token_group_ratio(deps, current_round, token_group_id) {
+        Err(_) => Ok(CanLockDenomResponse {
+            denom: token_denom.clone(),
+            can_be_locked: false,
+        }),
+        Ok(ratio) => Ok(CanLockDenomResponse {
+            denom: token_denom.clone(),
+            can_be_locked: ratio != Decimal::zero(),
+        }),
+    }
 }
 
 pub fn query_icq_managers(deps: Deps<NeutronQuery>) -> StdResult<ICQManagersResponse> {
@@ -2857,14 +2887,14 @@ fn get_lock_count(deps: &Deps<NeutronQuery>, user_address: Addr) -> usize {
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn reply(
     deps: DepsMut<NeutronQuery>,
-    _env: Env,
+    env: Env,
     msg: Reply,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let reply_paylod = from_json::<ReplyPayload>(&msg.payload);
     match reply_paylod {
         Ok(reply_payload) => match reply_payload {
             ReplyPayload::InstantiateTokenInfoProvider(token_info_provider) => {
-                token_manager_handle_submsg_reply(deps, token_info_provider, msg)
+                token_manager_handle_submsg_reply(deps, &env, token_info_provider, msg)
             }
         },
         Err(_) => handle_submsg_reply(deps, msg),

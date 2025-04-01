@@ -418,6 +418,8 @@ fn get_past_user_voting_power(
                 round_end,
                 lockup,
             )
+            // Current voting power in this context means the voting power that the lockup had in the
+            // given past round, with the applied token group ratios as they were in that round.
             .current_voting_power
             .u128()
         })

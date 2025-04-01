@@ -4,7 +4,7 @@ use crate::{
     token_manager::TokenInfoProvider,
 };
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
+use cosmwasm_std::{Addr, Timestamp, Uint128};
 
 #[cw_serde]
 #[derive(QueryResponses, cw_orch::QueryFns)]
@@ -114,11 +114,8 @@ pub enum QueryMsg {
     #[returns(RegisteredValidatorQueriesResponse)]
     RegisteredValidatorQueries {},
 
-    #[returns(TokenGroupRatioResponse)]
-    TokenGroupRatio {
-        token_group_id: String,
-        round_id: u64,
-    },
+    #[returns(CanLockDenomResponse)]
+    CanLockDenom { token_denom: String },
 
     #[returns(LiquidityDeploymentResponse)]
     LiquidityDeployment {
@@ -304,8 +301,9 @@ pub struct RegisteredValidatorQueriesResponse {
 }
 
 #[cw_serde]
-pub struct TokenGroupRatioResponse {
-    pub ratio: Decimal,
+pub struct CanLockDenomResponse {
+    pub denom: String,
+    pub can_be_locked: bool,
 }
 
 #[cw_serde]
