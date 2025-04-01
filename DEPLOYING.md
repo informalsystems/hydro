@@ -47,7 +47,7 @@ To make rewards claimable, liquidity deployments need to be added.
 For a certain proposal in a certain round and certain tranche, here is how you can add a liquidity deployment for it, to make tributes claimable or refundable:
 
 ```bash
-docker run hydro-docker ./tools/deployment/add_liquidity_deployments.sh "./tools/deployment/config_mainnet.json" $HYDRO_CONTRACT_ADDRESS $TRIBUTE_CONTRACT_ADDRESS $ROUND_ID $TRANCHE_ID $PROPOSAL_ID $FUNDS
+docker run hydro-docker ./tools/deployment/add_liquidity_deployments.sh "./tools/deployment/config_mainnet.json" $HYDRO_CONTRACT_ADDRESS $ROUND_ID $TRANCHE_ID $PROPOSAL_ID $FUNDS
 ```
 FUNDS should be 0 if the tribute for the bid should become refundable; and non-zero if it should become claimable.
 Don't worry about the non-zero number - this script isn't actually sending funds over. It only matters whether the number is zero or not.
