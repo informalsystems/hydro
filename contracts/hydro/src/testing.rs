@@ -1,16 +1,23 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use crate::contract::{
     get_vote_for_update, query_all_user_lockups_with_tranche_infos, query_current_round_id,
-    query_tranches, query_user_votes, query_whitelist, query_whitelist_admins, MAX_LOCK_ENTRIES,
+    query_tranches, query_user_votes, query_whitelist, query_whitelist_admins,
 };
-use crate::msg::{ProposalToLockups, TrancheInfo};
-use crate::state::{LockEntry, RoundLockPowerSchedule, Vote, CONSTANTS, USER_LOCKS, VOTE_MAP};
+use crate::msg::{ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo};
+use crate::state::{
+    LockEntry, RoundLockPowerSchedule, Vote, CONSTANTS, TOKEN_INFO_PROVIDERS, VOTE_MAP,
+};
 use crate::testing_lsm_integration::set_validator_infos_for_round;
 
 use crate::testing_mocks::{
-    denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
+    denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock,
+    token_info_provider_derivative_mock, MockQuerier, MockWasmQuerier,
+};
+use crate::token_manager::{
+    TokenInfoProvider, TokenInfoProviderDerivative, TokenInfoProviderLSM,
+    LSM_TOKEN_INFO_PROVIDER_ID,
 };
 use crate::{
     contract::{
@@ -21,12 +28,11 @@ use crate::{
     msg::{ExecuteMsg, InstantiateMsg},
 };
 use cosmwasm_std::testing::{mock_env, MockApi, MockStorage};
-use cosmwasm_std::{
-    BankMsg, CosmosMsg, Decimal, Deps, DepsMut, MessageInfo, OwnedDeps, Timestamp, Uint128,
-};
-use cosmwasm_std::{Coin, StdError, StdResult};
+use cosmwasm_std::{Addr, Coin, StdError, StdResult};
+use cosmwasm_std::{Decimal, Deps, DepsMut, MessageInfo, OwnedDeps, Timestamp, Uint128};
 use neutron_sdk::bindings::query::NeutronQuery;
 use proptest::prelude::*;
+use token_info_provider_interface::DenomInfoResponse;
 
 pub const VALIDATOR_1: &str = "cosmosvaloper157v7tczs40axfgejp2m43kwuzqe0wsy0rv8puv";
 pub const VALIDATOR_2: &str = "cosmosvaloper140l6y2gp3gxvay6qtn70re7z2s0gn57zfd832j";
@@ -50,6 +56,10 @@ pub const IBC_DENOM_2: &str =
     "ibc/0BADD323A0FE849BCF0034BA8329771737EB54F2B6EA6F314A80520366338CFC";
 pub const IBC_DENOM_3: &str =
     "ibc/0A5935F2493A9B8DE23899C4D30842B3E3DD69A147388D010F3C9BAA6D6C6D37";
+
+pub const ST_ATOM_ON_NEUTRON: &str =
+    "ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA5222815620B3C";
+pub const ST_ATOM_TOKEN_GROUP: &str = "stATOM";
 
 pub const ONE_DAY_IN_NANO_SECONDS: u64 = 24 * 60 * 60 * 1000000000;
 pub const TWO_WEEKS_IN_NANO_SECONDS: u64 = 14 * 24 * 60 * 60 * 1000000000;
@@ -82,6 +92,24 @@ pub fn get_default_power_schedule() -> RoundLockPowerSchedule {
     RoundLockPowerSchedule::new(get_default_power_schedule_vec())
 }
 
+pub fn get_default_lsm_token_info_provider_init_msg() -> TokenInfoProviderInstantiateMsg {
+    TokenInfoProviderInstantiateMsg::LSM {
+        max_validator_shares_participating: 100,
+        hub_connection_id: "connection-0".to_string(),
+        hub_transfer_channel_id: "channel-0".to_string(),
+        icq_update_period: 100,
+    }
+}
+
+pub fn get_default_lsm_token_info_provider() -> TokenInfoProvider {
+    TokenInfoProvider::LSM(TokenInfoProviderLSM {
+        max_validator_shares_participating: 100,
+        hub_connection_id: "connection-0".to_string(),
+        hub_transfer_channel_id: "channel-0".to_string(),
+        icq_update_period: 100,
+    })
+}
+
 pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
     let user_address = get_address_as_str(mock_api, "addr0000");
 
@@ -96,13 +124,10 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         max_locked_tokens: Uint128::new(1000000),
         initial_whitelist: vec![user_address.clone()],
         whitelist_admins: vec![],
-        max_validator_shares_participating: 100,
-        hub_connection_id: "connection-0".to_string(),
-        hub_transfer_channel_id: "channel-0".to_string(),
-        icq_update_period: 100,
         icq_managers: vec![user_address],
         max_deployment_duration: 12,
         round_lock_power_schedule: get_default_power_schedule_vec(),
+        token_info_providers: vec![get_default_lsm_token_info_provider_init_msg()],
     }
 }
 
@@ -115,6 +140,34 @@ pub fn get_message_info(mock_api: &MockApi, sender: &str, funds: &[Coin]) -> Mes
 
 pub fn get_address_as_str(mock_api: &MockApi, addr: &str) -> String {
     mock_api.addr_make(addr).to_string()
+}
+
+pub fn setup_st_atom_token_info_provider_mock(
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    token_info_provider_addr: Addr,
+    token_group_ratio: Decimal,
+) {
+    TOKEN_INFO_PROVIDERS
+        .save(
+            &mut deps.storage,
+            token_info_provider_addr.to_string(),
+            &TokenInfoProvider::Derivative(TokenInfoProviderDerivative {
+                contract: token_info_provider_addr.to_string(),
+                cache: HashMap::new(),
+            }),
+        )
+        .unwrap();
+
+    let wasm_querier = MockWasmQuerier::new(token_info_provider_derivative_mock(
+        token_info_provider_addr.to_string(),
+        DenomInfoResponse {
+            denom: ST_ATOM_ON_NEUTRON.to_string(),
+            token_group_id: ST_ATOM_TOKEN_GROUP.to_string(),
+            ratio: token_group_ratio,
+        },
+    ));
+
+    deps.querier.update_wasm(move |q| wasm_querier.handler(q));
 }
 
 #[test]
@@ -165,327 +218,6 @@ fn deduplicate_whitelist_admins_test() {
     assert_eq!(whitelist_admins.len(), 2);
     assert_eq!(whitelist_admins[0].as_str(), admin_address_1);
     assert_eq!(whitelist_admins[1].as_str(), admin_address_2);
-}
-
-#[test]
-fn lock_tokens_basic_test() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
-    );
-
-    let user_address = "addr0000";
-    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[]);
-    let msg = get_default_instantiate_msg(&deps.api);
-
-    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok());
-
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
-
-    let info1 = get_message_info(
-        &deps.api,
-        user_address,
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
-    );
-    let msg = ExecuteMsg::LockTokens {
-        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
-    };
-    let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
-
-    let info2 = get_message_info(
-        &deps.api,
-        user_address,
-        &[Coin::new(3000u64, IBC_DENOM_1.to_string())],
-    );
-    let msg = ExecuteMsg::LockTokens {
-        lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
-    };
-    let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
-    assert!(res.is_ok());
-
-    let res = query_all_user_lockups(&deps.as_ref(), &env, info.sender.to_string(), 0, 2000);
-    assert!(res.is_ok());
-    let res = res.unwrap();
-    assert_eq!(2, res.lockups.len());
-
-    let lockup = &res.lockups[0];
-    // check that the id is 0
-    assert_eq!(0, lockup.lock_entry.lock_id);
-    assert_eq!(
-        info1.funds[0].amount.u128(),
-        lockup.lock_entry.funds.amount.u128()
-    );
-    assert_eq!(info1.funds[0].denom, lockup.lock_entry.funds.denom);
-    assert_eq!(env.block.time, lockup.lock_entry.lock_start);
-    assert_eq!(
-        env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS),
-        lockup.lock_entry.lock_end
-    );
-    // check that the power is correct: 1000 tokens locked for one epoch
-    // so power is 1000 * 1
-    assert_eq!(1000, lockup.current_voting_power.u128());
-
-    let lockup = &res.lockups[1];
-    // check that the id is 1
-    assert_eq!(1, lockup.lock_entry.lock_id);
-    assert_eq!(
-        info2.funds[0].amount.u128(),
-        lockup.lock_entry.funds.amount.u128()
-    );
-    assert_eq!(info2.funds[0].denom, lockup.lock_entry.funds.denom);
-    assert_eq!(env.block.time, lockup.lock_entry.lock_start);
-    assert_eq!(
-        env.block.time.plus_nanos(THREE_MONTHS_IN_NANO_SECONDS),
-        lockup.lock_entry.lock_end
-    );
-    // check that the power is correct: 3000 tokens locked for three epochs
-    // so power is 3000 * 1.5 = 4500
-    assert_eq!(4500, lockup.current_voting_power.u128());
-
-    // check that the USER_LOCKS are updated as expected
-    let expected_lock_ids = HashSet::from([
-        res.lockups[0].lock_entry.lock_id,
-        res.lockups[1].lock_entry.lock_id,
-    ]);
-    let mut user_lock_ids = USER_LOCKS
-        .load(&deps.storage, info2.sender.clone())
-        .unwrap();
-    user_lock_ids.retain(|lock_id| !expected_lock_ids.contains(lock_id));
-    assert!(user_lock_ids.is_empty());
-}
-
-#[test]
-fn unlock_tokens_basic_test() {
-    let user_address = "addr0000";
-    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
-
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
-    );
-    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
-    let msg = get_default_instantiate_msg(&deps.api);
-
-    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok());
-
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
-
-    // lock 1000 tokens for one month
-    let msg = ExecuteMsg::LockTokens {
-        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
-    };
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok());
-
-    // lock another 1000 tokens for one month
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok());
-
-    // check that user can not unlock tokens immediately
-    let res = execute(
-        deps.as_mut(),
-        env.clone(),
-        info.clone(),
-        ExecuteMsg::UnlockTokens { lock_ids: None },
-    );
-    assert!(res.is_ok());
-
-    let res = res.unwrap();
-    assert_eq!(0, res.messages.len());
-
-    // advance the chain by one month + 1 nano second and check that user can unlock tokens
-    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
-
-    let res = execute(
-        deps.as_mut(),
-        env.clone(),
-        info.clone(),
-        ExecuteMsg::UnlockTokens { lock_ids: None },
-    );
-    assert!(res.is_ok());
-
-    let res = res.unwrap();
-    assert_eq!(2, res.messages.len());
-
-    // check that all messages are BankMsg::Send
-    for msg in res.messages.iter() {
-        match msg.msg.clone() {
-            CosmosMsg::Bank(bank_msg) => match bank_msg {
-                BankMsg::Send { to_address, amount } => {
-                    assert_eq!(info.sender.to_string(), *to_address);
-                    assert_eq!(1, amount.len());
-                    assert_eq!(user_token.denom, amount[0].denom);
-                    assert_eq!(user_token.amount.u128(), amount[0].amount.u128());
-                }
-                _ => panic!("expected BankMsg::Send message"),
-            },
-            _ => panic!("expected CosmosMsg::Bank msg"),
-        }
-    }
-}
-
-#[test]
-fn unlock_specific_tokens_test() {
-    let user_address = "addr0000";
-    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
-
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
-    );
-    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
-    let msg = get_default_instantiate_msg(&deps.api);
-
-    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok());
-
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
-
-    // Create 4 locks with specific durations
-    let durations = [
-        ONE_MONTH_IN_NANO_SECONDS,     // Lock 1
-        ONE_MONTH_IN_NANO_SECONDS * 2, // Lock 2
-        ONE_MONTH_IN_NANO_SECONDS,     // Lock 3
-        ONE_MONTH_IN_NANO_SECONDS,     // Lock 4
-    ];
-
-    // Store the lock IDs as we create them
-    let mut lock_ids = vec![];
-    for duration in durations.iter() {
-        let msg = ExecuteMsg::LockTokens {
-            lock_duration: *duration,
-        };
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-        assert!(res.is_ok());
-
-        let lock_id = res
-            .unwrap()
-            .attributes
-            .iter()
-            .find(|attr| attr.key == "lock_id")
-            .map(|attr| attr.value.parse::<u64>().unwrap())
-            .expect("lock_id not found in response");
-
-        lock_ids.push(lock_id);
-    }
-
-    // Advance time by one month + 1 nanosecond
-    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
-
-    // First attempt: unlock locks 1 and 4
-    let unlock_msg = ExecuteMsg::UnlockTokens {
-        lock_ids: Some(vec![lock_ids[0], lock_ids[3]]),
-    };
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), unlock_msg);
-    assert!(res.is_ok());
-
-    let res = res.unwrap();
-    // Should have 2 messages (one for each unlocked token)
-    assert_eq!(2, res.messages.len());
-
-    // Verify the first attempt's messages and unlocked IDs
-    let unlocked_ids: Vec<u64> = res
-        .attributes
-        .iter()
-        .find(|attr| attr.key == "unlocked_lock_ids")
-        .map(|attr| {
-            attr.value
-                .split(", ")
-                .map(|id| id.parse::<u64>().unwrap())
-                .collect()
-        })
-        .expect("unlocked_lock_ids not found in response");
-
-    assert_eq!(unlocked_ids.len(), 2);
-    assert!(unlocked_ids.contains(&lock_ids[0]));
-    assert!(unlocked_ids.contains(&lock_ids[3]));
-
-    // Verify first attempt's bank messages
-    for msg in res.messages.iter() {
-        match msg.msg.clone() {
-            CosmosMsg::Bank(bank_msg) => match bank_msg {
-                BankMsg::Send { to_address, amount } => {
-                    assert_eq!(info.sender.to_string(), to_address);
-                    assert_eq!(1, amount.len());
-                    assert_eq!(user_token.denom, amount[0].denom);
-                    assert_eq!(user_token.amount.u128(), amount[0].amount.u128());
-                }
-                _ => panic!("expected BankMsg::Send message"),
-            },
-            _ => panic!("expected CosmosMsg::Bank msg"),
-        }
-    }
-
-    // Second attempt: unlock locks 2 and 3
-    let unlock_msg = ExecuteMsg::UnlockTokens {
-        lock_ids: Some(vec![lock_ids[1], lock_ids[2]]),
-    };
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), unlock_msg);
-    assert!(res.is_ok());
-
-    let res = res.unwrap();
-    // Should have 1 message (only lock 3 should be unlockable)
-    assert_eq!(1, res.messages.len());
-
-    // Verify the second attempt's unlocked IDs
-    let unlocked_ids: Vec<u64> = res
-        .attributes
-        .iter()
-        .find(|attr| attr.key == "unlocked_lock_ids")
-        .map(|attr| {
-            attr.value
-                .split(", ")
-                .map(|id| id.parse::<u64>().unwrap())
-                .collect()
-        })
-        .expect("unlocked_lock_ids not found in response");
-
-    assert_eq!(unlocked_ids.len(), 1);
-    assert!(unlocked_ids.contains(&lock_ids[2]));
-    assert!(!unlocked_ids.contains(&lock_ids[1])); // Lock 2 shouldn't be unlocked yet
-
-    // Verify second attempt's bank message
-    for msg in res.messages.iter() {
-        match msg.msg.clone() {
-            CosmosMsg::Bank(bank_msg) => match bank_msg {
-                BankMsg::Send { to_address, amount } => {
-                    assert_eq!(info.sender.to_string(), to_address);
-                    assert_eq!(1, amount.len());
-                    assert_eq!(user_token.denom, amount[0].denom);
-                    assert_eq!(user_token.amount.u128(), amount[0].amount.u128());
-                }
-                _ => panic!("expected BankMsg::Send message"),
-            },
-            _ => panic!("expected CosmosMsg::Bank msg"),
-        }
-    }
-
-    // Third attempt: try to unlock lock 2 again (should succeed but unlock nothing)
-    let unlock_msg = ExecuteMsg::UnlockTokens {
-        lock_ids: Some(vec![lock_ids[1]]),
-    };
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), unlock_msg);
-    assert!(res.is_ok());
-
-    let res = res.unwrap();
-    // Should have 0 messages (lock 2 is still not expired)
-    assert_eq!(0, res.messages.len());
-
-    // Verify the third attempt's unlocked IDs (should be empty)
-    let unlocked_ids = res
-        .attributes
-        .iter()
-        .find(|attr| attr.key == "unlocked_lock_ids")
-        .map(|attr| attr.value.trim())
-        .expect("unlocked_lock_ids not found in response");
-
-    assert!(unlocked_ids.is_empty());
 }
 
 #[test]
@@ -1086,27 +818,38 @@ fn past_start_time_test() {
 // round id to query proposals and votes.
 fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token1 = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token2 = Coin::new(2000u64, ST_ATOM_ON_NEUTRON.to_string());
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
     let mut msg = get_default_instantiate_msg(&deps.api);
     msg.first_round_start = start_time;
 
-    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    let info1 = get_message_info(&deps.api, user_address, &[user_token1.clone()]);
+    let info2 = get_message_info(&deps.api, user_address, &[user_token2.clone()]);
+    let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
+
+    let res = instantiate(deps.as_mut(), env.clone(), info1.clone(), msg.clone());
     assert!(res.is_ok());
 
     set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
 
     // lock some tokens to get voting power
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
     };
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg);
+    assert!(res.is_ok());
+
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
     assert!(res.is_ok());
 
     let prop_infos = vec![
@@ -1132,7 +875,7 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
             minimum_atom_liquidity_request: Uint128::zero(),
         };
 
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg.clone());
         assert!(res.is_ok());
     }
 
@@ -1142,24 +885,29 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
         tranche_id: 1,
         proposals_votes: vec![ProposalToLockups {
             proposal_id: first_proposal_id,
-            lock_ids: vec![0],
+            lock_ids: vec![0, 1],
         }],
     };
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg.clone());
     assert!(res.is_ok());
 
     // verify users vote for the first proposal
     let round_id = current_round_id;
     let tranche_id = 1;
 
-    let res = query_user_votes(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
+    let res = query_user_votes(
+        deps.as_ref(),
+        round_id,
+        tranche_id,
+        info1.sender.to_string(),
+    );
     assert!(res.is_ok(), "error: {:?}", res);
     assert_eq!(first_proposal_id, res.unwrap().votes[0].prop_id);
 
     let res = query_proposal(deps.as_ref(), round_id, tranche_id, first_proposal_id);
     assert!(res.is_ok());
     assert_eq!(
-        info.funds[0].amount.u128(),
+        info1.funds[0].amount.u128() + info2.funds[0].amount.u128(),
         res.unwrap().proposal.power.u128()
     );
 
@@ -1169,21 +917,26 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
         tranche_id: 1,
         proposals_votes: vec![ProposalToLockups {
             proposal_id: second_proposal_id,
-            lock_ids: vec![0],
+            lock_ids: vec![0, 1],
         }],
     };
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg.clone());
     assert!(res.is_ok(), "error: {:?}", res);
 
     // verify users vote for the second proposal
-    let res = query_user_votes(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
+    let res = query_user_votes(
+        deps.as_ref(),
+        round_id,
+        tranche_id,
+        info1.sender.to_string(),
+    );
     assert!(res.is_ok());
     assert_eq!(second_proposal_id, res.unwrap().votes[0].prop_id);
 
     let res = query_proposal(deps.as_ref(), round_id, tranche_id, second_proposal_id);
     assert!(res.is_ok());
     assert_eq!(
-        info.funds[0].amount.u128(),
+        info1.funds[0].amount.u128() + info2.funds[0].amount.u128(),
         res.unwrap().proposal.power.u128()
     );
 
@@ -1198,7 +951,7 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
     let res = execute(
         deps.as_mut(),
         env.clone(),
-        info.clone(),
+        info1.clone(),
         ExecuteMsg::UnlockTokens { lock_ids: None },
     );
 
@@ -2756,249 +2509,6 @@ proptest! {
 }
 
 #[test]
-fn test_too_many_locks() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
-    );
-    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(
-        &deps.api,
-        "addr0000",
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
-    );
-    let msg = get_default_instantiate_msg(&deps.api);
-
-    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok());
-
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
-
-    // lock tokens many times
-    let lock_msg = ExecuteMsg::LockTokens {
-        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
-    };
-    for i in 0..MAX_LOCK_ENTRIES + 10 {
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
-        if i < MAX_LOCK_ENTRIES {
-            assert!(res.is_ok());
-        } else {
-            assert!(res.is_err());
-            assert!(res
-                .unwrap_err()
-                .to_string()
-                .contains("User has too many locks"));
-        }
-    }
-
-    // now test that another user can still lock tokens
-    let info2 = get_message_info(
-        &deps.api,
-        "addr0001",
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
-    );
-    for i in 0..MAX_LOCK_ENTRIES + 10 {
-        let res = execute(deps.as_mut(), env.clone(), info2.clone(), lock_msg.clone());
-        if i < MAX_LOCK_ENTRIES {
-            assert!(res.is_ok());
-        } else {
-            assert!(res.is_err());
-            assert!(res
-                .unwrap_err()
-                .to_string()
-                .contains("User has too many locks"));
-        }
-    }
-
-    // now test that the first user can unlock tokens after we have passed enough time so that they are unlocked
-    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
-    let unlock_msg = ExecuteMsg::UnlockTokens { lock_ids: None };
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), unlock_msg.clone());
-    assert!(res.is_ok());
-
-    // now the first user can lock tokens again
-    for i in 0..MAX_LOCK_ENTRIES + 10 {
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
-        if i < MAX_LOCK_ENTRIES {
-            assert!(res.is_ok());
-        } else {
-            assert!(res.is_err());
-            assert!(res
-                .unwrap_err()
-                .to_string()
-                .contains("User has too many locks"));
-        }
-    }
-}
-
-#[test]
-fn max_locked_tokens_test() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
-    );
-    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let mut info = get_message_info(&deps.api, "addr0000", &[]);
-
-    let mut msg = get_default_instantiate_msg(&deps.api);
-    msg.max_locked_tokens = Uint128::new(2000);
-    msg.whitelist_admins = vec![get_address_as_str(&deps.api, "addr0001")];
-
-    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok());
-
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
-
-    // total tokens locked after this action will be 1500
-    info = get_message_info(
-        &deps.api,
-        "addr0000",
-        &[Coin::new(1500u64, IBC_DENOM_1.to_string())],
-    );
-    let mut lock_msg = ExecuteMsg::LockTokens {
-        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
-    };
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
-    assert!(res.is_ok());
-
-    // total tokens locked after this action would be 3000, which is not allowed
-    info = get_message_info(
-        &deps.api,
-        "addr0000",
-        &[Coin::new(1500u64, IBC_DENOM_1.to_string())],
-    );
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
-    assert!(res.is_err());
-    assert!(res
-        .unwrap_err()
-        .to_string()
-        .contains("The limit for locking tokens has been reached. No more tokens can be locked."));
-
-    // total tokens locked after this action will be 2000, which is the cap
-    info = get_message_info(
-        &deps.api,
-        "addr0000",
-        &[Coin::new(500u64, IBC_DENOM_1.to_string())],
-    );
-    lock_msg = ExecuteMsg::LockTokens {
-        lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
-    };
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
-    assert!(res.is_ok());
-
-    // advance the chain by one month plus one nanosecond and unlock the first lockup
-    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
-    let res = execute(
-        deps.as_mut(),
-        env.clone(),
-        info.clone(),
-        ExecuteMsg::UnlockTokens { lock_ids: None },
-    );
-    assert!(res.is_ok());
-
-    // now a user can lock new 1500 tokens
-    info = get_message_info(
-        &deps.api,
-        "addr0000",
-        &[Coin::new(1500u64, IBC_DENOM_1.to_string())],
-    );
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
-    assert!(res.is_ok());
-
-    // a privileged user can update the maximum allowed locked tokens, but only for the future
-    info = get_message_info(&deps.api, "addr0001", &[]);
-    let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
-        activate_at: env.block.time.minus_hours(1),
-        max_locked_tokens: Some(3000),
-        known_users_cap: None,
-        max_deployment_duration: None,
-    };
-    let res = execute(
-        deps.as_mut(),
-        env.clone(),
-        info.clone(),
-        update_max_locked_tokens_msg.clone(),
-    );
-    assert!(res
-        .unwrap_err()
-        .to_string()
-        .contains("Can not update config in the past."));
-
-    // this time with a valid activation timestamp
-    let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
-        activate_at: env.block.time,
-        max_locked_tokens: Some(3000),
-        known_users_cap: None,
-        max_deployment_duration: None,
-    };
-    let res = execute(
-        deps.as_mut(),
-        env.clone(),
-        info.clone(),
-        update_max_locked_tokens_msg.clone(),
-    );
-    assert!(res.is_ok());
-
-    // now a user can lock up to additional 1000 tokens
-    info = get_message_info(
-        &deps.api,
-        "addr0002",
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
-    );
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
-    assert!(res.is_ok());
-
-    // but no more than the cap of 3000 tokens
-    info = get_message_info(
-        &deps.api,
-        "addr0002",
-        &[Coin::new(1u64, IBC_DENOM_1.to_string())],
-    );
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
-    assert!(res.is_err());
-    assert!(res
-        .unwrap_err()
-        .to_string()
-        .contains("The limit for locking tokens has been reached. No more tokens can be locked."));
-
-    // increase the maximum allowed locked tokens by 500, starting in 1 hour
-    info = get_message_info(&deps.api, "addr0001", &[]);
-    let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
-        activate_at: env.block.time.plus_hours(1),
-        max_locked_tokens: Some(3500),
-        known_users_cap: None,
-        max_deployment_duration: None,
-    };
-    let res = execute(
-        deps.as_mut(),
-        env.clone(),
-        info.clone(),
-        update_max_locked_tokens_msg,
-    );
-    assert!(res.is_ok());
-
-    // try to lock additional 500 tokens before the time is reached to increase the cap
-    info = get_message_info(
-        &deps.api,
-        "addr0002",
-        &[Coin::new(500u64, IBC_DENOM_1.to_string())],
-    );
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
-    assert!(res.is_err());
-    assert!(res
-        .unwrap_err()
-        .to_string()
-        .contains("The limit for locking tokens has been reached. No more tokens can be locked."));
-
-    // advance the chain by 1h 0m 1s and verify user can lock additional 500 tokens
-    env.block.time = env.block.time.plus_seconds(3601);
-
-    // now a user can lock up to additional 500 tokens
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
-    assert!(res.is_ok());
-}
-
-#[test]
 fn delete_configs_test() {
     let first_round_start_time = Timestamp::from_nanos(1737540000000000000);
     let initial_block_height = 19_185_000;
@@ -3148,6 +2658,22 @@ fn contract_pausing_test() {
             round_id: 0,
             tranche_id: 0,
             proposal_id: 0,
+        },
+        ExecuteMsg::AddTokenInfoProvider {
+            token_info_provider: TokenInfoProviderInstantiateMsg::LSM {
+                max_validator_shares_participating: 1,
+                hub_connection_id: "connection-0".to_string(),
+                hub_transfer_channel_id: "channel-1".to_string(),
+                icq_update_period: 100,
+            },
+        },
+        ExecuteMsg::RemoveTokenInfoProvider {
+            provider_id: LSM_TOKEN_INFO_PROVIDER_ID.to_string(),
+        },
+        ExecuteMsg::UpdateTokenGroupRatio {
+            token_group_id: "token_group_id".to_string(),
+            old_ratio: Decimal::one(),
+            new_ratio: Decimal::zero(),
         },
     ];
 
@@ -3355,14 +2881,8 @@ struct TestCase {
 // * that a user cannot include a lock id for a lock belonging to a different user
 #[test]
 fn test_refresh_multiple_locks() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
-    );
-    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let sender = "addr0000";
     let other_sender = "addr0001";
-    let info = get_message_info(&deps.api, sender, &[]);
 
     // Define test cases
     let test_cases = vec![
@@ -3421,6 +2941,14 @@ fn test_refresh_multiple_locks() {
     // Execute test cases
     for case in test_cases {
         println!("Running test case: {}", case.name);
+
+        let grpc_query = denom_trace_grpc_query_mock(
+            "transfer/channel-0".to_string(),
+            HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        );
+        let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+        let info = get_message_info(&deps.api, sender, &[]);
+
         let mut msg = get_default_instantiate_msg(&deps.api);
         msg.lock_epoch_length = ONE_MONTH_IN_NANO_SECONDS;
         msg.round_length = ONE_MONTH_IN_NANO_SECONDS;

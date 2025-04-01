@@ -1,11 +1,11 @@
 use crate::contract::{can_lock_vote_for_proposal, compute_round_end};
 use crate::error::ContractError;
-use crate::lsm_integration::validate_denom;
 use crate::msg::ProposalToLockups;
 use crate::score_keeper::ProposalPowerUpdate;
 use crate::state::{
     Constants, LockEntry, Vote, LOCKS_MAP, PROPOSAL_MAP, VOTE_MAP, VOTING_ALLOWED_ROUND,
 };
+use crate::token_manager::TokenManager;
 use crate::utils::{find_deployment_for_voted_lock, get_lock_time_weighted_shares};
 use cosmwasm_std::{Addr, Decimal, DepsMut, Env, SignedDecimal, StdError, Storage, Uint128};
 use neutron_sdk::bindings::query::NeutronQuery;
@@ -116,15 +116,15 @@ pub fn process_unvotes(
 
             let change = power_changes.entry(existing_vote.prop_id).or_default();
 
-            // Subtract validator shares
+            // Subtract token group shares
             let entry = change
-                .validator_shares
+                .token_group_shares
                 .entry(existing_vote.time_weighted_shares.0.clone())
                 .or_default();
             *entry -=
                 SignedDecimal::try_from(existing_vote.time_weighted_shares.1).map_err(|_| {
                     StdError::generic_err(
-                        "Failed to convert Decimal to SignedDecimal for validator shares",
+                        "Failed to convert Decimal to SignedDecimal for token group shares",
                     )
                 })?;
 
@@ -177,6 +177,7 @@ pub fn process_votes(
 ) -> Result<ProcessVotesResult, ContractError> {
     let round_end = compute_round_end(context.constants, context.round_id)?;
     let lock_epoch_length = context.constants.lock_epoch_length;
+    let mut token_manager = TokenManager::new(&deps.as_ref());
 
     let mut locks_voted = vec![];
     let mut locks_skipped = vec![];
@@ -223,21 +224,15 @@ pub fn process_votes(
                 }
             }
 
-            // Validate and get validator
-            let validator = match validate_denom(
+            // Validate and get token group
+            let token_group_id = match token_manager.validate_denom(
                 &deps.as_ref(),
                 context.round_id,
-                context.constants,
                 lock_entry.clone().funds.denom,
             ) {
-                Ok(validator) => validator,
+                Ok(token_group_id) => token_group_id,
                 Err(_) => {
-                    deps.api.debug(&format!(
-                        "Denom {} is not a valid validator denom; validator might not be in the current set of top validators by delegation",
-                        lock_entry.funds.denom
-                    ));
-
-                    // skip this lock entry, since the locked shares do not belong to a validator that we want to take into account
+                    // skip this lock entry, since the locked shares are of the token that can't currently be locked
                     locks_skipped.push(lock_id);
                     continue;
                 }
@@ -273,7 +268,7 @@ pub fn process_votes(
             // Create new vote
             let vote = Vote {
                 prop_id: proposal_id,
-                time_weighted_shares: (validator.clone(), scaled_shares),
+                time_weighted_shares: (token_group_id.clone(), scaled_shares),
             };
 
             // Store the vote in VOTE_MAP
@@ -297,10 +292,10 @@ pub fn process_votes(
 
             // Add to power changes
             let change = power_changes.entry(proposal_id).or_default();
-            let entry = change.validator_shares.entry(validator).or_default();
+            let entry = change.token_group_shares.entry(token_group_id).or_default();
             *entry += SignedDecimal::try_from(scaled_shares).map_err(|_| {
                 StdError::generic_err(
-                    "Failed to convert Decimal to SignedDecimal for validator shares",
+                    "Failed to convert Decimal to SignedDecimal for token group shares",
                 )
             })?;
 

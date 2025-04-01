@@ -1,8 +1,8 @@
 [package]
-name = "hydro"
+name = "st-token-info-provider"
 version = { workspace = true }
 edition = { workspace = true }
-authors = ["Jehan Tremback", "Philip Offtermatt", "Dusan Maksimovic"]
+authors = ["Philip Offtermatt", "Dusan Maksimovic"]
 
 exclude = [
   # Those files are rust-optimizer artifacts. You might want to commit them for convenience but they should not be part of the source code publication.
@@ -26,17 +26,7 @@ thiserror = { workspace = true }
 cw-storage-plus = { workspace = true }
 cw2 = { workspace = true }
 cosmwasm-schema = { workspace = true }
-cw-utils = { workspace = true }
-cosmos-sdk-proto = { workspace = true }
-prost = { workspace = true }
-prost-types = { workspace = true }
-cw-orch = { workspace = true }
-neutron-sdk = { workspace = true }
-neutron-std = { workspace = true }
-bech32 = { workspace = true }
-serde-json-wasm = { workspace = true }
-token-info-provider-interface = { path = "../../packages/token-info-provider-interface" }
+token-info-provider-interface = { path = "../../../packages/token-info-provider-interface" }
 
 [dev-dependencies]
 cosmwasm-schema = { workspace = true }
-proptest = { workspace = true }

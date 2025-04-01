@@ -6,13 +6,13 @@ use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 use hydro::msg::{ExecuteMsg, InstantiateMsg};
 use hydro::query::{
     AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse,
-    AllVotesRoundTrancheResponse, ConstantsResponse, CurrentRoundResponse,
+    AllVotesRoundTrancheResponse, CanLockDenomResponse, ConstantsResponse, CurrentRoundResponse,
     ExpiredUserLockupsResponse, ICQManagersResponse, LiquidityDeploymentResponse, ProposalResponse,
     QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
     RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse,
     SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse,
-    TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse,
-    UserVotesResponse, UserVotingPowerResponse, ValidatorPowerRatioResponse,
+    TokenInfoProvidersResponse, TopNProposalsResponse, TotalLockedTokensResponse,
+    TotalPowerAtHeightResponse, TranchesResponse, UserVotesResponse, UserVotingPowerResponse,
     VotingPowerAtHeightResponse, WhitelistAdminsResponse, WhitelistResponse,
 };
 
@@ -59,7 +59,8 @@ fn main() {
     );
     export_schema(&schema_for!(ICQManagersResponse), &out_dir);
     export_schema(&schema_for!(RegisteredValidatorQueriesResponse), &out_dir);
-    export_schema(&schema_for!(ValidatorPowerRatioResponse), &out_dir);
+    export_schema(&schema_for!(CanLockDenomResponse), &out_dir);
     export_schema(&schema_for!(TotalPowerAtHeightResponse), &out_dir);
     export_schema(&schema_for!(VotingPowerAtHeightResponse), &out_dir);
+    export_schema(&schema_for!(TokenInfoProvidersResponse), &out_dir);
 }

@@ -2,7 +2,7 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
 use cw_storage_plus::{Item, Map, SnapshotMap, Strategy};
 
-use crate::msg::LiquidityDeployment;
+use crate::{msg::LiquidityDeployment, token_manager::TokenInfoProvider};
 
 // The currently-active constants are always those with the largest activation_timestamp
 // such that activation_timestamp <= current_block.timestamp
@@ -70,14 +70,16 @@ pub struct Constants {
     // zero, which would allow any user to lock any amount that possibly wasn't filled, but was reserved
     // for this cap.
     pub known_users_cap: u128,
-    pub max_validator_shares_participating: u64,
-    pub hub_connection_id: String,
-    pub hub_transfer_channel_id: String,
-    pub icq_update_period: u64,
     pub paused: bool,
     pub max_deployment_duration: u64,
     pub round_lock_power_schedule: RoundLockPowerSchedule,
 }
+
+// Used to store a set of token info providers that are able to validate various denoms allowed to be locked
+// in the contract. The key in this map is the address of the token info provider smart contract, except
+// (temporarily) for the LSM one, which will have a hardcoded string key until we migrate LSM handling
+// into a separate smart contract.
+pub const TOKEN_INFO_PROVIDERS: Map<String, TokenInfoProvider> = Map::new("token_info_providers");
 
 // the total number of tokens locked in the contract
 pub const LOCKED_TOKENS: Item<u128> = Item::new("locked_tokens");
@@ -158,7 +160,7 @@ pub const VOTING_ALLOWED_ROUND: Map<(u64, u64), u64> = Map::new("voting_allowed_
 #[cw_serde]
 pub struct Vote {
     pub prop_id: u64,
-    // stores the amount of shares of that validator the user voted with
+    // stores the amount of shares of the token group ID the user voted with
     // (already scaled according to lockup scaling)
     pub time_weighted_shares: (String, Decimal),
 }
@@ -224,20 +226,20 @@ pub const VALIDATORS_INFO: Map<(u64, String), ValidatorInfo> = Map::new("validat
 // VALIDATORS_STORE_INITIALIZED: key(round_id) -> bool
 pub const VALIDATORS_STORE_INITIALIZED: Map<u64, bool> = Map::new("round_store_initialized");
 
-// For each round and validator, it stores the time-scaled number of shares of that validator
+// For each round and token group ID, it stores the time-scaled number of shares of that token group
 // that are locked in Hydro.
 // Concretely, the time weighted shares for each round are scaled by the lockup scaling factor,
 // see scale_lockup_power in contract.rs
-// SCALED_ROUND_POWER_SHARES_MAP: key(round_id, validator_address) -> number_of_shares
+// SCALED_ROUND_POWER_SHARES_MAP: key(round_id, token_group_ID) -> number_of_shares
 pub const SCALED_ROUND_POWER_SHARES_MAP: Map<(u64, String), Decimal> =
     Map::new("scaled_round_power_shares");
 
 // The following two store fields are supposed to be kept in sync,
-// i.e. whenever the shares of a proposal (or the power ratio of a validator)
+// i.e. whenever the shares of a proposal (or the power ratio of a token group)
 // get updated, the total power of the proposal should be updated as well.
-// For each proposal and validator, it stores the time-scaled number of shares of that validator
+// For each proposal and token group ID, it stores the time-scaled number of shares of that token group
 // that voted for the proposal.
-// SCALED_PROPOSAL_SHARES_MAP: key(proposal_id, validator_address) -> number_of_shares
+// SCALED_PROPOSAL_SHARES_MAP: key(proposal_id, token_group_ID) -> number_of_shares
 pub const SCALED_PROPOSAL_SHARES_MAP: Map<(u64, String), Decimal> =
     Map::new("scaled_proposal_power_shares");
 

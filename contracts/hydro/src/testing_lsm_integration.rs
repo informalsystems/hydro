@@ -13,23 +13,25 @@ use crate::{
         compute_current_round_id, execute, instantiate, query_round_tranche_proposals,
         query_top_n_proposals, sudo,
     },
-    lsm_integration::{
-        get_total_power_for_round, get_validator_power_ratio_for_round,
-        update_scores_due_to_power_ratio_change, validate_denom,
-    },
+    lsm_integration::get_validator_power_ratio_for_round,
     msg::{ExecuteMsg, ProposalToLockups},
+    score_keeper::{
+        get_total_power_for_round, update_scores_due_to_tokens_ratio_changes, TokenGroupRatioChange,
+    },
     state::{ValidatorInfo, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED},
     testing::{
-        get_default_instantiate_msg, get_default_power_schedule, get_message_info,
-        set_default_validator_for_rounds, IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3,
-        ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
-        VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3, VALIDATOR_3_LST_DENOM_1,
+        get_default_instantiate_msg, get_default_lsm_token_info_provider,
+        get_default_power_schedule, get_message_info, set_default_validator_for_rounds,
+        IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3, ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS,
+        VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3,
+        VALIDATOR_3_LST_DENOM_1,
     },
     testing_mocks::{
         custom_interchain_query_mock, denom_trace_grpc_query_mock, mock_dependencies,
         no_op_grpc_query_mock, system_result_ok_from, GrpcQueryFunc,
     },
     testing_validators_icqs::mock_get_icq_result_for_validator,
+    token_manager::{TokenManager, LSM_TOKEN_INFO_PROVIDER_ID},
 };
 
 fn get_default_constants() -> crate::state::Constants {
@@ -40,10 +42,6 @@ fn get_default_constants() -> crate::state::Constants {
         max_locked_tokens: 1,
         known_users_cap: 0,
         paused: false,
-        max_validator_shares_participating: 2,
-        hub_connection_id: "connection-0".to_string(),
-        hub_transfer_channel_id: "channel-0".to_string(),
-        icq_update_period: 100,
         max_deployment_duration: 12,
         round_lock_power_schedule: get_default_power_schedule(),
     }
@@ -82,15 +80,20 @@ pub fn set_validator_power_ratio(
     power_ratio: Decimal,
 ) {
     let old_power_ratio =
-        get_validator_power_ratio_for_round(storage, round_id, validator.to_string()).unwrap();
+        match get_validator_power_ratio_for_round(storage, round_id, validator.to_string()) {
+            Ok(power_ratio) => power_ratio,
+            Err(_) => Decimal::zero(),
+        };
+
     if old_power_ratio != power_ratio {
-        let res = update_scores_due_to_power_ratio_change(
-            storage,
-            validator,
-            round_id,
-            old_power_ratio,
-            power_ratio,
-        );
+        let tokens_ratio_changes = vec![TokenGroupRatioChange {
+            token_group_id: validator.to_string(),
+            old_ratio: old_power_ratio,
+            new_ratio: power_ratio,
+        }];
+
+        let res =
+            update_scores_due_to_tokens_ratio_changes(storage, round_id, &tokens_ratio_changes);
         assert!(res.is_ok());
     }
     let res = VALIDATORS_INFO.save(
@@ -253,7 +256,7 @@ fn test_validate_denom() {
         TestCase {
             description: "validator not in top validators set".to_string(),
             denom: IBC_DENOM_1.to_string(),
-            expected_result: Err(StdError::generic_err(format!("Validator {} is not present; possibly they are not part of the top 2 validators by delegated tokens", VALIDATOR_1))),
+            expected_result: Err(StdError::generic_err(format!("Validator {} is not present; possibly they are not part of the top 100 validators by delegated tokens", VALIDATOR_1))),
             setup: Box::new(|storage, _env| {
                 let validators = vec![VALIDATOR_2.to_string(), VALIDATOR_3.to_string()];
                 let res = set_validator_infos_for_round(storage, 0, validators);
@@ -269,7 +272,7 @@ fn test_validate_denom() {
         TestCase {
             description: "validator not in top validators set".to_string(),
             denom: IBC_DENOM_1.to_string(),
-            expected_result: Err(StdError::generic_err(format!("Validator {} is not present; possibly they are not part of the top 2 validators by delegated tokens", VALIDATOR_1))),
+            expected_result: Err(StdError::generic_err(format!("Validator {} is not present; possibly they are not part of the top 100 validators by delegated tokens", VALIDATOR_1))),
             setup: Box::new(|storage, env| {
                 let res = set_validator_infos_for_round(storage, 0, vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()]);
                 assert!(res.is_ok());
@@ -292,6 +295,7 @@ fn test_validate_denom() {
             setup: Box::new(|storage, env| {
                 let constants = get_default_constants();
                 crate::state::CONSTANTS.save(storage, env.block.time.nanos(), &constants).unwrap();
+                crate::state::TOKEN_INFO_PROVIDERS.save(storage, LSM_TOKEN_INFO_PROVIDER_ID.to_string(), &get_default_lsm_token_info_provider()).unwrap();
                 let round_id = 0;
                 let res = set_validator_infos_for_round(
                         storage,
@@ -320,15 +324,22 @@ fn test_validate_denom() {
         crate::state::CONSTANTS
             .save(&mut deps.storage, env.block.time.nanos(), &constants)
             .unwrap();
+        crate::state::TOKEN_INFO_PROVIDERS
+            .save(
+                &mut deps.storage,
+                LSM_TOKEN_INFO_PROVIDER_ID.to_string(),
+                &get_default_lsm_token_info_provider(),
+            )
+            .unwrap();
 
         env.block.time = Timestamp::from_seconds(0);
 
         (test_case.setup)(&mut deps.storage, &mut env);
 
-        let result = validate_denom(
+        let mut token_manager = TokenManager::new(&deps.as_ref());
+        let result = token_manager.validate_denom(
             &deps.as_ref(),
             compute_current_round_id(&env, &constants).unwrap(),
-            &constants,
             test_case.denom.clone(),
         );
 

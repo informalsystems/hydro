@@ -13,8 +13,8 @@ use neutron_sdk::{
 
 use crate::{
     contract::{execute, instantiate, sudo},
-    lsm_integration::get_total_power_for_round,
     msg::ExecuteMsg,
+    score_keeper::get_total_power_for_round,
     state::{EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, LOCKED_TOKENS},
     testing::{
         get_address_as_str, get_default_instantiate_msg, get_message_info, IBC_DENOM_1,

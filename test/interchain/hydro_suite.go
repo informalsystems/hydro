@@ -2,6 +2,7 @@ package interchain
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -22,10 +23,18 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	HydroWasm               = "hydro.wasm"
+	TributeWasm             = "tribute.wasm"
+	DAOVotingAdapterWasm    = "dao_voting_adapter.wasm"
+	STTokenInfoProviderWasm = "st_token_info_provider.wasm"
+)
+
 var (
-	hydroCodeId            string
-	tributeCodeId          string
-	daoVotingAdapterCodeId string
+	hydroCodeId               string
+	tributeCodeId             string
+	daoVotingAdapterCodeId    string
+	stTokenInfoProviderCodeId string
 )
 
 type HydroSuite struct {
@@ -57,25 +66,17 @@ func (s *HydroSuite) SetupSuite() {
 	s.Require().NoError(err)
 	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, relayer, 1_000_000, 0))
 
-	// copy hydro, tribute and dao_voting_adapter contracts to neutron validator
-	hydroContract, err := os.ReadFile("../../artifacts/hydro.wasm")
-	s.Require().NoError(err)
-	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), hydroContract, "hydro.wasm"))
-
-	tributeContract, err := os.ReadFile("../../artifacts/tribute.wasm")
-	s.Require().NoError(err)
-	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), tributeContract, "tribute.wasm"))
-
-	daoVotingAdapterContract, err := os.ReadFile("../../artifacts/dao_voting_adapter.wasm")
-	s.Require().NoError(err)
-	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), daoVotingAdapterContract, "dao_voting_adapter.wasm"))
+	// copy hydro, tribute, dao_voting_adapter and st_token_info_provider contracts to neutron validator
+	s.CopyWasmFiles(HydroWasm, TributeWasm, DAOVotingAdapterWasm, STTokenInfoProviderWasm)
 
 	// store hydro contract code
-	hydroCodeId = s.StoreCode(s.GetContractCodePath("hydro.wasm"))
+	hydroCodeId = s.StoreCode(s.GetContractCodePath(HydroWasm))
 	// store tribute contract code
-	tributeCodeId = s.StoreCode(s.GetContractCodePath("tribute.wasm"))
+	tributeCodeId = s.StoreCode(s.GetContractCodePath(TributeWasm))
 	// store dao_voting_adapter contract code
-	daoVotingAdapterCodeId = s.StoreCode(s.GetContractCodePath("dao_voting_adapter.wasm"))
+	daoVotingAdapterCodeId = s.StoreCode(s.GetContractCodePath(DAOVotingAdapterWasm))
+	// store st_token_info_provider contract code
+	stTokenInfoProviderCodeId = s.StoreCode(s.GetContractCodePath(STTokenInfoProviderWasm))
 
 	// start icq relayer
 	sidecarConfig := chainsuite.GetIcqSidecarConfig(s.HubChain, s.NeutronChain)
@@ -180,6 +181,14 @@ func (s *HydroSuite) HubToNeutronShareTokenTransfer(
 	return dstIbcDenom
 }
 
+func (s *HydroSuite) CopyWasmFiles(fileNames ...string) {
+	for _, fileName := range fileNames {
+		binary, err := os.ReadFile(fmt.Sprintf("../../artifacts/%s", fileName))
+		s.Require().NoError(err)
+		s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), binary, fileName))
+	}
+}
+
 func (s *HydroSuite) StoreCode(contractPath string) string {
 	node := s.NeutronChain.Validators[0]
 	keyMoniker := s.NeutronChain.ValidatorWallets[0].Moniker
@@ -195,18 +204,64 @@ func (s *HydroSuite) StoreCode(contractPath string) string {
 	return codeId
 }
 
+func (s *HydroSuite) GetLSMTokenInfoProviderInitMsg(maxValParticipating int) map[string]interface{} {
+	neutronTransferChannel, err := s.Relayer.GetTransferChannel(s.GetContext(), s.NeutronChain, s.HubChain)
+	s.Require().NoError(err)
+
+	return map[string]interface{}{
+		"max_validator_shares_participating": maxValParticipating,
+		"hub_connection_id":                  neutronTransferChannel.ConnectionHops[0],
+		"hub_transfer_channel_id":            neutronTransferChannel.ChannelID,
+		"icq_update_period":                  10,
+	}
+}
+
+func (s *HydroSuite) GetContractTokenInfoProviderInitMsg(codeId string, initMsg map[string]interface{}, label string, admin *string) map[string]interface{} {
+	codeIdInt, err := strconv.Atoi(codeId)
+	s.Require().NoError(err)
+
+	initMsgJson, err := json.Marshal(initMsg)
+	s.Require().NoError(err)
+
+	intMsgBase64 := base64.StdEncoding.EncodeToString(initMsgJson)
+
+	return map[string]interface{}{
+		"code_id": codeIdInt,
+		"msg":     intMsgBase64,
+		"label":   label,
+		"admin":   admin,
+	}
+}
+
 func (s *HydroSuite) InstantiateHydroContract(
 	keyMoniker string,
 	codeId string,
 	adminAddr string,
-	maxValParticipating int,
 	roundLength int,
+	tokenInfoProviderLSMInitMsg interface{},
+	tokenInfoProviderContractsInitMsgs []interface{},
 ) string {
 	s.Suite.T().Log("Instantiating Hydro contract")
 
 	firstRoundStartTime := time.Now().UnixNano()
-	neutronTransferChannel, err := s.Relayer.GetTransferChannel(s.GetContext(), s.NeutronChain, s.HubChain)
-	s.Require().NoError(err)
+
+	var tokenInfoProvidersInitMsgs []map[string]interface{}
+
+	if tokenInfoProviderLSMInitMsg != nil {
+		lsmTokenInfoProviderInitMsg := map[string]interface{}{
+			"lsm": tokenInfoProviderLSMInitMsg,
+		}
+
+		tokenInfoProvidersInitMsgs = append(tokenInfoProvidersInitMsgs, lsmTokenInfoProviderInitMsg)
+	}
+
+	for _, contractInitMsg := range tokenInfoProviderContractsInitMsgs {
+		tokenInfoProviderContractInitMsg := map[string]interface{}{
+			"token_info_provider_contract": contractInitMsg,
+		}
+
+		tokenInfoProvidersInitMsgs = append(tokenInfoProvidersInitMsgs, tokenInfoProviderContractInitMsg)
+	}
 
 	initHydro := map[string]interface{}{
 		"round_length":      roundLength,
@@ -221,17 +276,14 @@ func (s *HydroSuite) InstantiateHydroContract(
 				"metadata": "Consumer chains tranche metadata",
 			},
 		},
-		"first_round_start":                  strconv.FormatInt(firstRoundStartTime, 10),
-		"max_locked_tokens":                  "1000000000",
-		"whitelist_admins":                   []string{adminAddr},
-		"initial_whitelist":                  []string{adminAddr},
-		"max_validator_shares_participating": maxValParticipating,
-		"hub_connection_id":                  neutronTransferChannel.ConnectionHops[0],
-		"hub_transfer_channel_id":            neutronTransferChannel.ChannelID,
-		"icq_update_period":                  10,
-		"icq_managers":                       []string{adminAddr},
-		"max_deployment_duration":            12,
-		"round_lock_power_schedule":          [][]interface{}{{1, "1"}, {2, "1.25"}, {3, "1.5"}, {6, "2"}, {12, "4"}},
+		"first_round_start":         strconv.FormatInt(firstRoundStartTime, 10),
+		"max_locked_tokens":         "1000000000",
+		"whitelist_admins":          []string{adminAddr},
+		"initial_whitelist":         []string{adminAddr},
+		"icq_managers":              []string{adminAddr},
+		"max_deployment_duration":   12,
+		"round_lock_power_schedule": [][]interface{}{{1, "1"}, {2, "1.25"}, {3, "1.5"}, {6, "2"}, {12, "4"}},
+		"token_info_providers":      tokenInfoProvidersInitMsgs,
 	}
 
 	return s.InstantiateContract(codeId, initHydro, adminAddr, "Hydro Smart Contract")

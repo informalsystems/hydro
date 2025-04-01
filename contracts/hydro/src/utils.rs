@@ -7,18 +7,17 @@ use neutron_sdk::bindings::query::NeutronQuery;
 use crate::{
     contract::{compute_current_round_id, compute_round_end},
     error::{new_generic_error, ContractError},
-    lsm_integration::{
-        get_total_power_for_round, get_validator_power_ratio_for_round, initialize_validator_store,
-        validate_denom,
-    },
+    lsm_integration::initialize_validator_store,
     msg::LiquidityDeployment,
     query::LockEntryWithPower,
+    score_keeper::get_total_power_for_round,
     state::{
         Constants, HeightRange, LockEntry, Proposal, RoundLockPowerSchedule, CONSTANTS,
         EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND,
         LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP, PROPOSAL_MAP, ROUND_TO_HEIGHT_RANGE,
         SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, VOTE_MAP,
     },
+    token_manager::TokenManager,
 };
 
 /// Loads the constants that are active for the current block according to the block timestamp.
@@ -363,6 +362,7 @@ pub fn get_current_user_voting_power(
     let constants = load_current_constants(deps, env)?;
     let current_round_id = compute_current_round_id(env, &constants)?;
     let round_end = compute_round_end(&constants, current_round_id)?;
+    let mut token_manager = TokenManager::new(deps);
 
     Ok(LOCKS_MAP
         .prefix(address)
@@ -370,9 +370,16 @@ pub fn get_current_user_voting_power(
         .filter_map(|lockup| match lockup {
             Err(_) => None,
             Ok(lockup) => Some(
-                to_lockup_with_power(deps, &constants, current_round_id, round_end, lockup.1)
-                    .current_voting_power
-                    .u128(),
+                to_lockup_with_power(
+                    deps,
+                    &constants,
+                    &mut token_manager,
+                    current_round_id,
+                    round_end,
+                    lockup.1,
+                )
+                .current_voting_power
+                .u128(),
             ),
         })
         .sum())
@@ -389,6 +396,7 @@ fn get_past_user_voting_power(
     round_id: u64,
 ) -> StdResult<u128> {
     let round_end = compute_round_end(constants, round_id)?;
+    let mut token_manager = TokenManager::new(deps);
 
     let user_locks_ids = USER_LOCKS
         .may_load_at_height(deps.storage, address.clone(), height)?
@@ -402,9 +410,18 @@ fn get_past_user_voting_power(
                 .unwrap_or_default()
         })
         .map(|lockup| {
-            to_lockup_with_power(deps, constants, round_id, round_end, lockup)
-                .current_voting_power
-                .u128()
+            to_lockup_with_power(
+                deps,
+                constants,
+                &mut token_manager,
+                round_id,
+                round_end,
+                lockup,
+            )
+            // Current voting power in this context means the voting power that the lockup had in the
+            // given past round, with the applied token group ratios as they were in that round.
+            .current_voting_power
+            .u128()
         })
         .sum())
 }
@@ -433,21 +450,21 @@ pub fn get_user_voting_power_for_past_height(
 pub fn to_lockup_with_power(
     deps: &Deps<NeutronQuery>,
     constants: &Constants,
+    token_manager: &mut TokenManager,
     round_id: u64,
     round_end: Timestamp,
     lock_entry: LockEntry,
 ) -> LockEntryWithPower {
-    match validate_denom(deps, round_id, constants, lock_entry.funds.denom.clone()) {
+    match token_manager.validate_denom(deps, round_id, lock_entry.funds.denom.clone()) {
         Err(_) => {
-            // If we fail to resove the denom, or the validator has dropped
-            // from the top N, then this lockup has zero voting power.
+            // If we fail to resove the denom, then this lockup has zero voting power.
             LockEntryWithPower {
                 lock_entry,
                 current_voting_power: Uint128::zero(),
             }
         }
-        Ok(validator) => {
-            match get_validator_power_ratio_for_round(deps.storage, round_id, validator) {
+        Ok(token_group_id) => {
+            match token_manager.get_token_group_ratio(deps, round_id, token_group_id) {
                 Err(_) => {
                     deps.api.debug(&format!(
                         "An error occured while computing voting power for lock: {:?}",
@@ -459,7 +476,7 @@ pub fn to_lockup_with_power(
                         current_voting_power: Uint128::zero(),
                     }
                 }
-                Ok(validator_power_ratio) => {
+                Ok(token_ratio) => {
                     let time_weighted_shares = get_lock_time_weighted_shares(
                         &constants.round_lock_power_schedule,
                         round_end,
@@ -467,7 +484,7 @@ pub fn to_lockup_with_power(
                         constants.lock_epoch_length,
                     );
 
-                    let current_voting_power = validator_power_ratio
+                    let current_voting_power = token_ratio
                         .checked_mul(Decimal::from_ratio(time_weighted_shares, Uint128::one()));
 
                     match current_voting_power {
