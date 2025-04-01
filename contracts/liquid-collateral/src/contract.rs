@@ -1,18 +1,21 @@
 use cosmwasm_std::{
-    entry_point, to_json_binary, Binary, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Reply,
-    Response, StdResult, SubMsg, Uint128,
+    entry_point, to_binary, to_json_binary, Binary, CosmosMsg, Decimal, Deps, DepsMut, Env,
+    MessageInfo, QueryResponse, Reply, Response, StdResult, SubMsg, Uint128,
 };
+use osmosis_std::types::cosmos::bank::v1beta1::MsgSend;
 use osmosis_std::types::cosmos::base::v1beta1::Coin;
+use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::ConcentratedliquidityQuerier;
 use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::{
-    MsgCreatePosition, MsgCreatePositionResponse,
+    MsgCreatePosition, MsgCreatePositionResponse, MsgWithdrawPosition, MsgWithdrawPositionResponse,
 };
 use osmosis_std::types::osmosis::poolmanager::v1beta1::PoolmanagerQuerier;
 
 use crate::error::ContractError;
 use crate::msg::{
-    CreatePositionMsg, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse, WithdrawPositionMsg,
+    CreatePositionMsg, ExecuteMsg, InstantiateMsg, LiquidateMsg, QueryMsg, StateResponse,
 };
 use crate::state::{State, STATE};
+use std::str::FromStr;
 
 #[entry_point]
 pub fn instantiate(
@@ -25,11 +28,13 @@ pub fn instantiate(
         owner: info.sender.clone(),
         pool_id: msg.pool_id,
         position_id: None,
-        base_denom: msg.base_denom,
+        principal_denom: msg.principal_denom,
         counterparty_denom: msg.counterparty_denom,
-        initial_base_amount: Uint128::zero(),
+        initial_principal_amount: Uint128::zero(),
         initial_counterparty_amount: Uint128::zero(),
-        threshold: None,
+        position_created_price: None,
+        created_liquidity: None,
+        liquidator_address: None,
     };
     STATE.save(deps.storage, &state)?;
 
@@ -47,17 +52,31 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::CreatePosition(msg) => execute_create_position(deps, env, info, msg),
-        ExecuteMsg::WithdrawPosition(msg) => execute_withdraw_position(deps, env, info, msg),
+        ExecuteMsg::CreatePosition(msg) => create_position(deps, env, info, msg),
+        ExecuteMsg::Liquidate(msg) => liquidate(deps, env, info, msg),
     }
 }
 
-pub fn execute_create_position(
+#[entry_point]
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
+    match msg {
+        // Handle the GetState query
+        QueryMsg::GetState {} => to_binary(&query_get_state(deps)?),
+    }
+}
+
+pub fn calculate_position(deps: DepsMut, env: Env, info: MessageInfo, msg: CreatePositionMsg) {
+    // inputs: lower tick, base token amount, and liquidation bonus
+    // output:  upper tick and counterparty
+}
+
+pub fn create_position(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
     msg: CreatePositionMsg,
 ) -> Result<Response, ContractError> {
+    // straight pass - no validation from contract
     let state = STATE.load(deps.storage)?;
 
     // Only owner can create position
@@ -65,24 +84,22 @@ pub fn execute_create_position(
         return Err(ContractError::Unauthorized {});
     }
 
-    // Validate funds sent
+    // Fetch funds sent
     let counterparty = info
         .funds
         .iter()
         .find(|c| c.denom == state.counterparty_denom);
-    let base = info.funds.iter().find(|c| c.denom == state.base_denom);
-
-    if counterparty.is_none() || base.is_none() {
-        return Err(ContractError::InsufficientFunds {});
-    }
+    let principal = info.funds.iter().find(|c| c.denom == state.principal_denom);
 
     let counterparty_amount = counterparty.unwrap().amount;
-    let base_amount = base.unwrap().amount;
+    let principal_amount = principal.unwrap().amount;
 
-    if counterparty_amount != msg.counterparty_token_amount || base_amount != msg.base_token_amount
-    {
-        return Err(ContractError::InsufficientFunds {});
-    }
+    /*
+    The order of the tokens which will be put in tokens provided is very important
+    on osmosis they check lexicographical order: https://github.com/osmosis-labs/osmosis/blob/main/x/concentrated-liquidity/types/msgs.go#L42C2-L44C3
+    ibc/token should go before uosmo token for example
+    if order is not correct - tx will fail!
+     */
 
     // Create position message
     let create_position_msg = MsgCreatePosition {
@@ -96,12 +113,12 @@ pub fn execute_create_position(
                 amount: counterparty_amount.to_string(),
             },
             Coin {
-                denom: state.base_denom.clone(),
-                amount: base_amount.to_string(),
+                denom: state.principal_denom.clone(),
+                amount: principal_amount.to_string(),
             },
         ],
-        token_min_amount0: counterparty_amount.to_string(),
-        token_min_amount1: base_amount.to_string(),
+        token_min_amount0: msg.counterparty_token_min_amount.to_string(),
+        token_min_amount1: msg.principal_token_min_amount.to_string(),
     };
 
     // Wrap in SubMsg to handle response
@@ -115,45 +132,79 @@ pub fn execute_create_position(
         .add_attribute("upper_tick", msg.upper_tick.to_string()))
 }
 
-pub fn execute_withdraw_position(
+pub fn liquidate(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
-    msg: WithdrawPositionMsg,
+    msg: LiquidateMsg,
 ) -> Result<Response, ContractError> {
-    let state = STATE.load(deps.storage)?;
+    let mut state = STATE.load(deps.storage)?;
 
-    // Query the current spot price
-    let ratio = PoolmanagerQuerier::new(&deps.querier)
-        .spot_price(
-            state.pool_id,
-            state.counterparty_denom.clone(),
-            state.base_denom.clone(),
-        )
-        .map_err(|_| ContractError::PriceQueryFailed {})? // Handle query errors
-        .spot_price;
+    // Validate funds sent
+    let base = info.funds.iter().find(|c| c.denom == state.principal_denom);
 
-    // Check if the ratio is lower than the threshold
-    if let Some(threshold) = state.threshold {
-        let ratio: f64 = ratio
-            .parse::<f64>()
-            .map_err(|_| ContractError::InvalidRatioFormat {})?;
-
-        if ratio >= threshold {
-            return Err(ContractError::ThresholdNotMet {});
-        }
+    if base.is_none() {
+        return Err(ContractError::InsufficientFunds {});
     }
 
+    // Convert base_amount and initial_base_amount to Decimal for precise division
+    let base_amount = Decimal::from_atomics(base.unwrap().amount, 0)
+        .map_err(|_| ContractError::InvalidConversion {})?;
+    let initial_principal_amount = Decimal::from_atomics(state.initial_principal_amount, 0)
+        .map_err(|_| ContractError::InvalidConversion {})?;
+
+    // Ensure the supplied amount is not greater than the initial amount
+    if base_amount > initial_principal_amount {
+        return Err(ContractError::ExcessiveLiquidationAmount {});
+    }
+
+    // Calculate percentage to liquidate
+    let perc_to_liquidate = base_amount / initial_principal_amount;
+
+    let position = ConcentratedliquidityQuerier::new(&deps.querier)
+        .position_by_id(state.position_id.unwrap())
+        .map_err(|_| ContractError::PositionQueryFailed {})? // Handle query errors
+        .position
+        .ok_or(ContractError::PositionNotFound {})?; // Return error if position is None
+
+    // Extract asset1 amount safely
+    let asset1_amount = position
+        .asset1
+        .map(|coin| coin.amount)
+        .ok_or(ContractError::AssetNotFound {})?;
+
+    // Check if asset1_amount is non-zero
+    // if it's zero - price went below lower tick (since principal token amount is zero)
+    if asset1_amount != "0" {
+        return Err(ContractError::ThresholdNotMet {
+            amount: asset1_amount,
+        });
+    }
+
+    // Convert liquidity_amount (String) to Uint128
+    let liquidity_amount = Uint128::from_str(&msg.liquidity_amount).unwrap();
+
+    // Calculate the proportional liquidity amount to withdraw
+    let withdraw_liquidity_amount = liquidity_amount * perc_to_liquidate;
+    // substract liquidity and save again
+
     // Create withdraw message
-    let withdraw_msg =
-        osmosis_std::types::osmosis::concentratedliquidity::v1beta1::MsgWithdrawPosition {
-            position_id: state.position_id.unwrap(),
-            sender: _env.contract.address.to_string(),
-            liquidity_amount: msg.liquidity_amount,
-        };
+    let withdraw_position_msg = MsgWithdrawPosition {
+        position_id: state.position_id.unwrap(),
+        sender: _env.contract.address.to_string(),
+        liquidity_amount: withdraw_liquidity_amount.to_string(),
+    };
+
+    // Wrap in SubMsg to handle response
+    let submsg = SubMsg::reply_on_success(withdraw_position_msg, 2);
+
+    state.liquidator_address = Some(info.sender);
+
+    // Save the updated state back to storage
+    STATE.save(deps.storage, &state)?;
 
     Ok(Response::new()
-        .add_message(withdraw_msg)
+        .add_submessage(submsg)
         .add_attribute("action", "withdraw_position"))
 }
 
@@ -161,6 +212,7 @@ pub fn execute_withdraw_position(
 pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractError> {
     match msg.id {
         1 => handle_create_position_reply(deps, msg),
+        2 => handle_withdraw_position_reply(deps, _env, msg),
         _ => Err(ContractError::UnknownReplyId { id: msg.id }),
     }
 }
@@ -174,6 +226,22 @@ fn handle_create_position_reply(deps: DepsMut, msg: Reply) -> Result<Response, C
 
     // Update the state with the new position ID
     state.position_id = Some(response.position_id);
+    state.initial_principal_amount = Uint128::from_str(&response.amount1).unwrap();
+    state.initial_counterparty_amount = Uint128::from_str(&response.amount0).unwrap();
+    state.created_liquidity = Some(response.liquidity_created);
+
+    // Query the current spot price
+    //TODO make sure this is accurate - async
+    let ratio_str = PoolmanagerQuerier::new(&deps.querier)
+        .spot_price(
+            state.pool_id,
+            state.counterparty_denom.clone(),
+            state.principal_denom.clone(),
+        )
+        .map_err(|_| ContractError::PriceQueryFailed {})? // Handle query errors
+        .spot_price;
+
+    state.position_created_price = Some(ratio_str);
 
     // Save the updated state back to storage
     STATE.save(deps.storage, &state)?;
@@ -181,11 +249,67 @@ fn handle_create_position_reply(deps: DepsMut, msg: Reply) -> Result<Response, C
     Ok(Response::new().add_attribute("position_id", response.position_id.to_string()))
 }
 
+fn handle_withdraw_position_reply(
+    deps: DepsMut,
+    env: Env,
+    msg: Reply,
+) -> Result<Response, ContractError> {
+    // Parse the reply result into MsgCreatePositionResponse
+    let response: MsgWithdrawPositionResponse = msg.result.try_into()?;
+
+    // Load the current state
+    let mut state = STATE.load(deps.storage)?;
+    // Get liquidator address (this should be set somewhere in your state or logic)
+    if let Some(liquidator_address) = state.liquidator_address.clone() {
+        // Create a transfer message to send amount0 to the liquidator
+        let amount0 = response.amount0;
+        let transfer_msg = MsgSend {
+            from_address: env.contract.address.into_string(),
+            to_address: liquidator_address.into_string(),
+            amount: vec![Coin {
+                denom: state.counterparty_denom.to_string(),
+                amount: amount0,
+            }],
+        };
+
+        // Save the updated state (if necessary)
+        state.liquidator_address = None; // Reset liquidator address after the transfer
+        STATE.save(deps.storage, &state)?;
+
+        // Return the response with the transfer message
+        return Ok(Response::new()
+            .add_message(transfer_msg) // Add transfer message
+            .add_attribute("action", "withdraw_position"));
+    } else {
+        return Err(ContractError::NoLiquidatorAddress {});
+    }
+}
+
+pub fn query_get_state(deps: Deps) -> StdResult<Binary> {
+    // Load the current state from storage
+    let state = STATE.load(deps.storage)?;
+
+    // Build the StateResponse using the loaded state
+    let response = StateResponse {
+        owner: state.owner.to_string(),
+        pool_id: state.pool_id,
+        counterparty_denom: state.counterparty_denom.clone(),
+        principal_denom: state.principal_denom.clone(),
+        position_id: state.position_id,
+        initial_principal_amount: state.initial_principal_amount,
+        initial_counterparty_amount: state.initial_counterparty_amount,
+        position_created_price: state.position_created_price,
+        created_liquidity: state.created_liquidity,
+    };
+
+    to_json_binary(&response)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::mock::mock::{store_contracts_code, PoolMockup};
-    use cosmwasm_std::Coin;
+    use cosmwasm_std::{from_binary, from_json, from_slice, Coin};
     use osmosis_test_tube::{Module, Wasm};
 
     pub const USDC_DENOM: &str =
@@ -195,20 +319,35 @@ mod tests {
     #[test]
     fn test_create_and_withdraw_position_in_pool() {
         /*
-                type: osmosis/cl-create-position
+                        type: osmosis/cl-create-position
+                value:
+                  lower_tick: '-108000000'
+                  pool_id: '1464'
+                  sender: osmo1dlp3hevpc88upn06awnpu8zm37xn4etudrdx0s
+                  token_min_amount0: '85000'
+                  token_min_amount1: '24978'
+                  tokens_provided:
+                    - amount: '29387'
+                      denom: ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4
+                    - amount: '100000'
+                      denom: uosmo
+                  upper_tick: '342000000'
+
+        type: osmosis/cl-create-position
         value:
-          lower_tick: '-108000000'
+          lower_tick: '-7568000'
           pool_id: '1464'
           sender: osmo1dlp3hevpc88upn06awnpu8zm37xn4etudrdx0s
-          token_min_amount0: '85000'
-          token_min_amount1: '24978'
+          token_min_amount0: '170000'
+          token_min_amount1: '0'
           tokens_provided:
-            - amount: '29387'
+            - amount: '24782'
               denom: ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4
-            - amount: '100000'
+            - amount: '200000'
               denom: uosmo
-          upper_tick: '342000000'
-         */
+          upper_tick: '-6842600'
+
+                 */
         let pool_mockup = PoolMockup::new();
 
         let wasm = Wasm::new(&pool_mockup.app);
@@ -217,7 +356,7 @@ mod tests {
         let instantiate_msg = InstantiateMsg {
             pool_id: 1,
             counterparty_denom: USDC_DENOM.to_owned(),
-            base_denom: OSMO_DENOM.to_owned(),
+            principal_denom: OSMO_DENOM.to_owned(),
         };
 
         // liquid-collateral contract instantiation
@@ -239,8 +378,8 @@ mod tests {
         let msg = ExecuteMsg::CreatePosition(CreatePositionMsg {
             lower_tick: -108000000,
             upper_tick: 342000000,
-            counterparty_token_amount: 85000u128.into(),
-            base_token_amount: 100000u128.into(),
+            counterparty_token_min_amount: 85000u128.into(),
+            principal_token_min_amount: 100000u128.into(),
         });
 
         let coins = &[
@@ -249,33 +388,6 @@ mod tests {
         ];
 
         //deployer enters first position
-        let response = wasm
-            .execute(&contract_addr, &msg, coins, &pool_mockup.deployer)
-            .expect("Execution failed");
-        //println!("Execution successful: {:?}", response);
-        for event in response.events {
-            if event.ty == "create_position" {
-                for attr in event.attributes {
-                    if attr.key == "position_id" {
-                        println!("Position ID: {}", attr.value);
-                    }
-                }
-            }
-        }
-
-        let msg = ExecuteMsg::CreatePosition(CreatePositionMsg {
-            lower_tick: -108000000,
-            upper_tick: 342000000,
-            counterparty_token_amount: 85000u128.into(),
-            base_token_amount: 100000u128.into(),
-        });
-
-        let coins = &[
-            Coin::new(85000u128, USDC_DENOM),
-            Coin::new(100000u128, OSMO_DENOM),
-        ];
-
-        //deployer enters second position
         let response = wasm
             .execute(&contract_addr, &msg, coins, &pool_mockup.deployer)
             .expect("Execution failed");
@@ -304,12 +416,25 @@ mod tests {
             println!("Failed to get position response");
             String::from("0") // Default value
         };
+
+        let query_msg = QueryMsg::GetState {};
+
+        let query_result: Binary = wasm.query(&contract_addr, &query_msg).unwrap();
+        let state_response: StateResponse = from_json(&query_result).unwrap();
+        let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
+
+        // Print the state response
+        println!("{}", formatted_output);
+
         //92195444572928873195000
-        let withdraw_msg = ExecuteMsg::WithdrawPosition(WithdrawPositionMsg {
+        let liquidate_msg = ExecuteMsg::Liquidate(LiquidateMsg {
             liquidity_amount: "92195444572928873195000".to_string(),
         });
+
+        let coins = &[Coin::new(50000u128, OSMO_DENOM)];
+
         let response = wasm
-            .execute(&contract_addr, &withdraw_msg, &[], &pool_mockup.user1)
+            .execute(&contract_addr, &liquidate_msg, coins, &pool_mockup.user1)
             .expect("Execution failed");
         //println!("Execution successful: {:?}", response);
 
