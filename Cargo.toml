@@ -3,6 +3,7 @@ members = [
     "contracts/hydro",
     "contracts/tribute",
     "contracts/dao-voting-adapter",
+    "contracts/gatekeeper",
     "packages/interface",
     "test/e2e"
 ]

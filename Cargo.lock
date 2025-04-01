@@ -1669,6 +1669,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "gatekeeper"
+version = "3.1.0"
+dependencies = [
+ "cosmwasm-schema 1.5.10",
+ "cosmwasm-std 1.5.10",
+ "cw-storage-plus 1.2.0",
+ "cw-utils 1.0.3",
+ "cw2 1.1.2",
+ "dao-dao-macros",
+ "dao-interface",
+ "hex",
+ "schemars",
+ "serde",
+ "serde-json-wasm 1.0.1",
+ "thiserror",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
