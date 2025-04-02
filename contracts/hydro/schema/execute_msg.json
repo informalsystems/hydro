@@ -563,9 +563,84 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "update_token_group_ratio"
+      ],
+      "properties": {
+        "update_token_group_ratio": {
+          "type": "object",
+          "required": [
+            "new_ratio",
+            "old_ratio",
+            "token_group_id"
+          ],
+          "properties": {
+            "new_ratio": {
+              "$ref": "#/definitions/Decimal"
+            },
+            "old_ratio": {
+              "$ref": "#/definitions/Decimal"
+            },
+            "token_group_id": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "add_token_info_provider"
+      ],
+      "properties": {
+        "add_token_info_provider": {
+          "type": "object",
+          "required": [
+            "token_info_provider"
+          ],
+          "properties": {
+            "token_info_provider": {
+              "$ref": "#/definitions/TokenInfoProviderInstantiateMsg"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "remove_token_info_provider"
+      ],
+      "properties": {
+        "remove_token_info_provider": {
+          "type": "object",
+          "required": [
+            "provider_id"
+          ],
+          "properties": {
+            "provider_id": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {
+    "Binary": {
+      "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
+      "type": "string"
+    },
     "Coin": {
       "type": "object",
       "required": [
@@ -581,6 +656,10 @@
         }
       },
       "additionalProperties": false
+    },
+    "Decimal": {
+      "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
+      "type": "string"
     },
     "ProposalToLockups": {
       "type": "object",
@@ -610,6 +689,84 @@
       "allOf": [
         {
           "$ref": "#/definitions/Uint64"
+        }
+      ]
+    },
+    "TokenInfoProviderInstantiateMsg": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "lsm"
+          ],
+          "properties": {
+            "lsm": {
+              "type": "object",
+              "required": [
+                "hub_connection_id",
+                "hub_transfer_channel_id",
+                "icq_update_period",
+                "max_validator_shares_participating"
+              ],
+              "properties": {
+                "hub_connection_id": {
+                  "type": "string"
+                },
+                "hub_transfer_channel_id": {
+                  "type": "string"
+                },
+                "icq_update_period": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "max_validator_shares_participating": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "token_info_provider_contract"
+          ],
+          "properties": {
+            "token_info_provider_contract": {
+              "type": "object",
+              "required": [
+                "code_id",
+                "label",
+                "msg"
+              ],
+              "properties": {
+                "admin": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "code_id": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "label": {
+                  "type": "string"
+                },
+                "msg": {
+                  "$ref": "#/definitions/Binary"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
         }
       ]
     },

@@ -18,6 +18,19 @@
     {
       "type": "object",
       "required": [
+        "token_info_providers"
+      ],
+      "properties": {
+        "token_info_providers": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
         "tranches"
       ],
       "properties": {
@@ -549,22 +562,16 @@
     {
       "type": "object",
       "required": [
-        "validator_power_ratio"
+        "can_lock_denom"
       ],
       "properties": {
-        "validator_power_ratio": {
+        "can_lock_denom": {
           "type": "object",
           "required": [
-            "round_id",
-            "validator"
+            "token_denom"
           ],
           "properties": {
-            "round_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "validator": {
+            "token_denom": {
               "type": "string"
             }
           },

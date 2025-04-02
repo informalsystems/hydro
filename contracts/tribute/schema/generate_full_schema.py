@@ -41,7 +41,7 @@ for file in responses:
     with open(file, "r") as f:
         schema["responses"][file.split("_response.json")[0]] = json.load(f)
 
-with open("tribute_full_schema.json", "w") as f:
+with open("full_schema.json", "w") as f:
     json.dump(schema, f, indent=2)
 
 print("Tribute full schema generated.")

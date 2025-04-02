@@ -41,7 +41,7 @@ for file in responses:
     with open(file, "r") as f:
         schema["responses"][file.split("_response.json")[0]] = json.load(f)
 
-with open("dao_voting_adapter_full_schema.json", "w") as f:
+with open("full_schema.json", "w") as f:
     json.dump(schema, f, indent=2)
 
 print("DAO Voting Adapter full schema generated.")
