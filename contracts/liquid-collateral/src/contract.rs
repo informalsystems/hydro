@@ -1,7 +1,5 @@
 use crate::error::ContractError;
-use crate::msg::{
-    CreatePositionMsg, ExecuteMsg, InstantiateMsg, LiquidateMsg, QueryMsg, StateResponse,
-};
+use crate::msg::{CreatePositionMsg, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse};
 use crate::state::{State, STATE};
 use cosmwasm_std::{
     entry_point, to_binary, to_json_binary, Binary, CosmosMsg, Decimal, Deps, DepsMut, Env, Event,
@@ -31,8 +29,7 @@ pub fn instantiate(
         counterparty_denom: msg.counterparty_denom,
         initial_principal_amount: Uint128::zero(),
         initial_counterparty_amount: Uint128::zero(),
-        position_created_price: None,
-        created_liquidity: None,
+        liquidity_shares: None,
         liquidator_address: None,
     };
     STATE.save(deps.storage, &state)?;
@@ -52,7 +49,7 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::CreatePosition(msg) => create_position(deps, env, info, msg),
-        ExecuteMsg::Liquidate(msg) => liquidate(deps, env, info, msg),
+        ExecuteMsg::Liquidate => liquidate(deps, env, info),
     }
 }
 
@@ -77,6 +74,11 @@ pub fn create_position(
 ) -> Result<Response, ContractError> {
     // straight pass - no validation from contract
     let state = STATE.load(deps.storage)?;
+
+    // Check if the position_id already exists
+    if state.position_id.is_some() {
+        return Err(ContractError::PositionAlreadyExists {});
+    }
 
     // Only owner can create position
     if info.sender != state.owner {
@@ -131,12 +133,7 @@ pub fn create_position(
         .add_attribute("upper_tick", msg.upper_tick.to_string()))
 }
 
-pub fn liquidate(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    msg: LiquidateMsg,
-) -> Result<Response, ContractError> {
+pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response, ContractError> {
     let mut state = STATE.load(deps.storage)?;
 
     // Validate funds sent
@@ -180,11 +177,15 @@ pub fn liquidate(
         });
     }
 
-    // Convert liquidity_amount (String) to Uint128
-    let liquidity_amount = Uint128::from_str(&msg.liquidity_amount).unwrap();
+    let liquidity_shares = state
+        .liquidity_shares
+        .as_deref() // Converts Option<String> to Option<&str>
+        .unwrap_or("0"); // Default value if None
+
+    let liquidity_shares = Uint128::from_str(liquidity_shares).unwrap();
 
     // Calculate the proportional liquidity amount to withdraw
-    let withdraw_liquidity_amount = liquidity_amount * perc_to_liquidate;
+    let withdraw_liquidity_amount = liquidity_shares * perc_to_liquidate;
     // substract liquidity and save again
 
     // Create withdraw message
@@ -198,6 +199,14 @@ pub fn liquidate(
     let submsg = SubMsg::reply_on_success(withdraw_position_msg, 2);
 
     state.liquidator_address = Some(info.sender);
+
+    // Subtract liquidity shares (ensuring no underflow)
+    let updated_liquidity_shares = liquidity_shares
+        .checked_sub(withdraw_liquidity_amount)
+        .unwrap_or(Uint128::zero()); // Prevents underflow
+
+    // Update state with new liquidity shares value
+    state.liquidity_shares = Some(updated_liquidity_shares.to_string());
 
     // Save the updated state back to storage
     STATE.save(deps.storage, &state)?;
@@ -227,20 +236,7 @@ fn handle_create_position_reply(deps: DepsMut, msg: Reply) -> Result<Response, C
     state.position_id = Some(response.position_id);
     state.initial_principal_amount = Uint128::from_str(&response.amount1).unwrap();
     state.initial_counterparty_amount = Uint128::from_str(&response.amount0).unwrap();
-    state.created_liquidity = Some(response.liquidity_created);
-
-    // Query the current spot price
-    //TODO make sure this is accurate - async
-    let ratio_str = PoolmanagerQuerier::new(&deps.querier)
-        .spot_price(
-            state.pool_id,
-            state.counterparty_denom.clone(),
-            state.principal_denom.clone(),
-        )
-        .map_err(|_| ContractError::PriceQueryFailed {})? // Handle query errors
-        .spot_price;
-
-    state.position_created_price = Some(ratio_str);
+    state.liquidity_shares = Some(response.liquidity_created);
 
     // Save the updated state back to storage
     STATE.save(deps.storage, &state)?;
@@ -300,8 +296,7 @@ pub fn query_get_state(deps: Deps) -> StdResult<Binary> {
         position_id: state.position_id,
         initial_principal_amount: state.initial_principal_amount,
         initial_counterparty_amount: state.initial_counterparty_amount,
-        position_created_price: state.position_created_price,
-        created_liquidity: state.created_liquidity,
+        liquidity_shares: state.liquidity_shares,
     };
 
     to_json_binary(&response)
@@ -510,10 +505,9 @@ mod tests {
         };
 
         //92195444572928873195000
-        let liquidate_msg = ExecuteMsg::Liquidate(LiquidateMsg {
-            liquidity_amount: "92195444572928873195000".to_string(),
-        });
+        let liquidate_msg = ExecuteMsg::Liquidate;
 
+        //100000
         let coins = &[Coin::new(100000u128, OSMO_DENOM)];
 
         let response = wasm
@@ -575,5 +569,13 @@ mod tests {
 
         println!("Contract USDC after withdrawal: {}", amount_usdc); // Print the value
         println!("Contract OSMO after withdrawal: {}", amount_osmo);
+
+        let query_msg = QueryMsg::GetState {};
+
+        let query_result: Binary = wasm.query(&contract_addr, &query_msg).unwrap();
+        let state_response: StateResponse = from_json(&query_result).unwrap();
+        let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
+        // Print the state response
+        println!("{}", formatted_output);
     }
 }

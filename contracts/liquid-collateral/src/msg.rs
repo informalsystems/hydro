@@ -24,14 +24,9 @@ pub struct CalculatePositionMsg {
 }
 
 #[cw_serde]
-pub struct LiquidateMsg {
-    pub liquidity_amount: String,
-}
-
-#[cw_serde]
 pub enum ExecuteMsg {
     CreatePosition(CreatePositionMsg),
-    Liquidate(LiquidateMsg),
+    Liquidate,
 }
 
 #[cw_serde]
@@ -50,6 +45,5 @@ pub struct StateResponse {
     pub counterparty_denom: String,
     pub initial_principal_amount: Uint128,
     pub initial_counterparty_amount: Uint128,
-    pub position_created_price: Option<String>,
-    pub created_liquidity: Option<String>,
+    pub liquidity_shares: Option<String>,
 }

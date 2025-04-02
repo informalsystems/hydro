@@ -29,16 +29,25 @@ pub enum ContractError {
 
     #[error("Ratio is still in bounds. Principal token amount is: {amount}")]
     ThresholdNotMet { amount: String },
+
     #[error("Invalid ratio format")]
     InvalidRatioFormat {},
+
     #[error("Threshold not set")]
     ThresholdNotSet {},
+
     #[error("Invalid conversion")]
     InvalidConversion {},
+
     #[error("Excessive liquidation amount")]
     ExcessiveLiquidationAmount {},
+
     #[error("Asset not found")]
     AssetNotFound {},
+
     #[error("No liquidator address")]
     NoLiquidatorAddress {},
+
+    #[error("Position already exists")]
+    PositionAlreadyExists {},
 }

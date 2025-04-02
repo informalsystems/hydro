@@ -12,8 +12,7 @@ pub struct State {
     pub counterparty_denom: String,
     pub initial_principal_amount: Uint128,
     pub initial_counterparty_amount: Uint128,
-    pub position_created_price: Option<String>,
-    pub created_liquidity: Option<String>,
+    pub liquidity_shares: Option<String>,
     pub liquidator_address: Option<Addr>,
 }
 
