@@ -108,6 +108,72 @@ pub mod mock {
             Self::new_with_spread("0.01")
         }
 
+        pub fn swap_osmo_for_usdc(
+            &self,
+            from: &SigningAccount,
+            osmo_in: u128,
+            pool_id: u64,
+        ) -> Result<Uint128> {
+            let pm = PoolManager::new(&self.app);
+            let usdc_got = pm
+                .swap_exact_amount_in(
+                    MsgSwapExactAmountIn {
+                        sender: from.address(),
+                        routes: vec![SwapAmountInRoute {
+                            pool_id: pool_id,
+                            token_out_denom: USDC_DENOM.into(),
+                        }],
+                        token_in: Some(Coin::new(osmo_in, OSMO_DENOM).into()),
+                        token_out_min_amount: "1".into(),
+                    },
+                    from,
+                )
+                .map(|x| x.data.token_out_amount)
+                .map(|amount| Uint128::from_str(&amount).unwrap());
+
+            Ok(usdc_got?)
+        }
+
+        pub fn swap_usdc_for_osmo(
+            &self,
+            from: &SigningAccount,
+            usdc_in: u128,
+            pool_id: u64,
+        ) -> Result<Uint128> {
+            let pm = PoolManager::new(&self.app);
+            let usdc_got = pm
+                .swap_exact_amount_in(
+                    MsgSwapExactAmountIn {
+                        sender: from.address(),
+                        routes: vec![SwapAmountInRoute {
+                            pool_id: pool_id,
+                            token_out_denom: OSMO_DENOM.into(),
+                        }],
+                        token_in: Some(Coin::new(usdc_in, USDC_DENOM).into()),
+                        token_out_min_amount: "1".into(),
+                    },
+                    from,
+                )
+                .map(|x| x.data.token_out_amount)
+                .map(|amount| Uint128::from_str(&amount).unwrap());
+
+            Ok(usdc_got?)
+        }
+
+        pub fn osmo_balance_query<T: ToString>(&self, address: T) -> Uint128 {
+            let bank = Bank::new(&self.app);
+            let amount = bank
+                .query_balance(&QueryBalanceRequest {
+                    address: address.to_string(),
+                    denom: OSMO_DENOM.into(),
+                })
+                .unwrap()
+                .balance
+                .unwrap()
+                .amount;
+            Uint128::from_str(&amount).unwrap()
+        }
+
         pub fn position_query(&self, position_id: u64) -> Result<FullPositionBreakdown> {
             let cl = ConcentratedLiquidity::new(&self.app);
             let pos = cl.query_position_by_id(&PositionByIdRequest { position_id })?;

@@ -1,5 +1,10 @@
+use crate::error::ContractError;
+use crate::msg::{
+    CreatePositionMsg, ExecuteMsg, InstantiateMsg, LiquidateMsg, QueryMsg, StateResponse,
+};
+use crate::state::{State, STATE};
 use cosmwasm_std::{
-    entry_point, to_binary, to_json_binary, Binary, CosmosMsg, Decimal, Deps, DepsMut, Env,
+    entry_point, to_binary, to_json_binary, Binary, CosmosMsg, Decimal, Deps, DepsMut, Env, Event,
     MessageInfo, QueryResponse, Reply, Response, StdResult, SubMsg, Uint128,
 };
 use osmosis_std::types::cosmos::bank::v1beta1::MsgSend;
@@ -9,12 +14,6 @@ use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::{
     MsgCreatePosition, MsgCreatePositionResponse, MsgWithdrawPosition, MsgWithdrawPositionResponse,
 };
 use osmosis_std::types::osmosis::poolmanager::v1beta1::PoolmanagerQuerier;
-
-use crate::error::ContractError;
-use crate::msg::{
-    CreatePositionMsg, ExecuteMsg, InstantiateMsg, LiquidateMsg, QueryMsg, StateResponse,
-};
-use crate::state::{State, STATE};
 use std::str::FromStr;
 
 #[entry_point]
@@ -141,25 +140,25 @@ pub fn liquidate(
     let mut state = STATE.load(deps.storage)?;
 
     // Validate funds sent
-    let base = info.funds.iter().find(|c| c.denom == state.principal_denom);
+    let principal = info.funds.iter().find(|c| c.denom == state.principal_denom);
 
-    if base.is_none() {
+    if principal.is_none() {
         return Err(ContractError::InsufficientFunds {});
     }
 
     // Convert base_amount and initial_base_amount to Decimal for precise division
-    let base_amount = Decimal::from_atomics(base.unwrap().amount, 0)
+    let principal_amount = Decimal::from_atomics(principal.unwrap().amount, 0)
         .map_err(|_| ContractError::InvalidConversion {})?;
     let initial_principal_amount = Decimal::from_atomics(state.initial_principal_amount, 0)
         .map_err(|_| ContractError::InvalidConversion {})?;
 
     // Ensure the supplied amount is not greater than the initial amount
-    if base_amount > initial_principal_amount {
+    if principal_amount > initial_principal_amount {
         return Err(ContractError::ExcessiveLiquidationAmount {});
     }
 
     // Calculate percentage to liquidate
-    let perc_to_liquidate = base_amount / initial_principal_amount;
+    let perc_to_liquidate = principal_amount / initial_principal_amount;
 
     let position = ConcentratedliquidityQuerier::new(&deps.querier)
         .position_by_id(state.position_id.unwrap())
@@ -268,7 +267,7 @@ fn handle_withdraw_position_reply(
             to_address: liquidator_address.into_string(),
             amount: vec![Coin {
                 denom: state.counterparty_denom.to_string(),
-                amount: amount0,
+                amount: amount0.clone(),
             }],
         };
 
@@ -276,10 +275,13 @@ fn handle_withdraw_position_reply(
         state.liquidator_address = None; // Reset liquidator address after the transfer
         STATE.save(deps.storage, &state)?;
 
+        let event = Event::new("withdraw_from_position")
+            .add_attribute("counterparty_amount", amount0.to_string());
+
         // Return the response with the transfer message
         return Ok(Response::new()
             .add_message(transfer_msg) // Add transfer message
-            .add_attribute("action", "withdraw_position"));
+            .add_event(event));
     } else {
         return Err(ContractError::NoLiquidatorAddress {});
     }
@@ -310,7 +312,8 @@ mod tests {
     use super::*;
     use crate::mock::mock::{store_contracts_code, PoolMockup};
     use cosmwasm_std::{from_binary, from_json, from_slice, Coin};
-    use osmosis_test_tube::{Module, Wasm};
+    use osmosis_std::types::cosmos::bank::v1beta1::{BankQuerier, QueryBalanceRequest};
+    use osmosis_test_tube::{Bank, Module, Wasm};
 
     pub const USDC_DENOM: &str =
         "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4";
@@ -403,19 +406,6 @@ mod tests {
         }
 
         let position_response = pool_mockup.position_query(1);
-        //println!("{:#?}", position_response);
-        let liquidity = if let Ok(full_position) = position_response {
-            if let Some(position) = full_position.position {
-                println!("Liquidity: {}", position.liquidity); // Print the value
-                position.liquidity // Return liquidity
-            } else {
-                println!("Position not found");
-                String::from("0") // Default value
-            }
-        } else {
-            println!("Failed to get position response");
-            String::from("0") // Default value
-        };
 
         let query_msg = QueryMsg::GetState {};
 
@@ -426,23 +416,33 @@ mod tests {
         // Print the state response
         println!("{}", formatted_output);
 
-        //92195444572928873195000
-        let liquidate_msg = ExecuteMsg::Liquidate(LiquidateMsg {
-            liquidity_amount: "92195444572928873195000".to_string(),
-        });
-
-        let coins = &[Coin::new(50000u128, OSMO_DENOM)];
-
-        let response = wasm
-            .execute(&contract_addr, &liquidate_msg, coins, &pool_mockup.user1)
-            .expect("Execution failed");
-        //println!("Execution successful: {:?}", response);
-
-        let position_response = pool_mockup.position_query(1);
-        //println!("{:#?}", position_response);
         let liquidity = if let Ok(full_position) = position_response {
+            // Extract amounts safely
+            let asset0_amount = full_position
+                .asset0
+                .as_ref()
+                .map(|coin| coin.amount.clone())
+                .unwrap_or_else(|| String::from("0"));
+
+            let asset1_amount = full_position
+                .asset1
+                .as_ref()
+                .map(|coin| coin.amount.clone())
+                .unwrap_or_else(|| String::from("0"));
+
+            // Print extracted values
+            println!("USDC Amount pre withdrawal: {}", asset0_amount);
+            println!("OSMO Amount pre withdrawal: {}", asset1_amount);
+
+            // Print claimable spread rewards
+            println!("Claimable Spread Rewards:");
+            for reward in &full_position.claimable_spread_rewards {
+                let denom = &reward.denom;
+                let amount = &reward.amount;
+                println!("Denom: {}, Amount: {}", denom, amount);
+            }
             if let Some(position) = full_position.position {
-                println!("Liquidity: {}", position.liquidity); // Print the value
+                println!("Liquidity pre withdrawal: {}", position.liquidity); // Print the value
                 position.liquidity // Return liquidity
             } else {
                 println!("Position not found");
@@ -452,5 +452,128 @@ mod tests {
             println!("Failed to get position response");
             String::from("0") // Default value
         };
+
+        let bank = Bank::new(&pool_mockup.app);
+        let amount_usdc = bank
+            .query_balance(&QueryBalanceRequest {
+                address: contract_addr.to_string(),
+                denom: USDC_DENOM.into(),
+            })
+            .unwrap()
+            .balance
+            .unwrap()
+            .amount;
+        let amount_osmo = bank
+            .query_balance(&QueryBalanceRequest {
+                address: contract_addr.to_string(),
+                denom: OSMO_DENOM.into(),
+            })
+            .unwrap()
+            .balance
+            .unwrap()
+            .amount;
+
+        println!("Contract USDC pre withdrawal: {}", amount_usdc); // Print the value
+        println!("Contract OSMO pre withdrawal: {}", amount_osmo);
+
+        // this swap should make price goes below lower range - should make OSMO amount in pool be zero
+        let usdc_needed: u128 = 117_647_058_823;
+        let swap_response = pool_mockup.swap_usdc_for_osmo(&pool_mockup.user1, usdc_needed, 1);
+        let position_response = pool_mockup.position_query(1);
+        let liquidity = if let Ok(full_position) = position_response {
+            // Extract amounts safely
+            let asset0_amount = full_position
+                .asset0
+                .as_ref()
+                .map(|coin| coin.amount.clone())
+                .unwrap_or_else(|| String::from("0"));
+
+            let asset1_amount = full_position
+                .asset1
+                .as_ref()
+                .map(|coin| coin.amount.clone())
+                .unwrap_or_else(|| String::from("0"));
+
+            // Print extracted values
+            println!("USDC Amount after swap: {}", asset0_amount);
+            println!("OSMO Amount after swap: {}", asset1_amount);
+
+            // Print claimable spread rewards
+            println!("Claimable Spread Rewards:");
+            for reward in &full_position.claimable_spread_rewards {
+                let denom = &reward.denom;
+                let amount = &reward.amount;
+                println!("Denom: {}, Amount: {}", denom, amount);
+            }
+        } else {
+            println!("Failed to get position response");
+        };
+
+        //92195444572928873195000
+        let liquidate_msg = ExecuteMsg::Liquidate(LiquidateMsg {
+            liquidity_amount: "92195444572928873195000".to_string(),
+        });
+
+        let coins = &[Coin::new(100000u128, OSMO_DENOM)];
+
+        let response = wasm
+            .execute(&contract_addr, &liquidate_msg, coins, &pool_mockup.user1)
+            .expect("Execution failed");
+        //println!("Execution successful: {:?}", response);
+        //println!("{:?}", response.events);
+
+        let position_response = pool_mockup.position_query(1);
+        //println!("{:#?}", position_response);
+        let liquidity = if let Ok(full_position) = position_response {
+            // Extract amounts safely
+            let asset0_amount = full_position
+                .asset0
+                .as_ref()
+                .map(|coin| coin.amount.clone())
+                .unwrap_or_else(|| String::from("0"));
+
+            let asset1_amount = full_position
+                .asset1
+                .as_ref()
+                .map(|coin| coin.amount.clone())
+                .unwrap_or_else(|| String::from("0"));
+
+            // Print extracted values
+            println!("USDC Amount after withdrawal: {}", asset0_amount);
+            println!("OSMO Amount after withdrawal: {}", asset1_amount);
+            if let Some(position) = full_position.position {
+                println!("Liquidity after withdrawal: {}", position.liquidity); // Print the value
+                position.liquidity // Return liquidity
+            } else {
+                println!("Position not found");
+                String::from("0") // Default value
+            }
+        } else {
+            println!("Failed to get position response");
+            String::from("0") // Default value
+        };
+
+        let bank = Bank::new(&pool_mockup.app);
+        let amount_usdc = bank
+            .query_balance(&QueryBalanceRequest {
+                address: contract_addr.to_string(),
+                denom: USDC_DENOM.into(),
+            })
+            .unwrap()
+            .balance
+            .unwrap()
+            .amount;
+        let amount_osmo = bank
+            .query_balance(&QueryBalanceRequest {
+                address: contract_addr.to_string(),
+                denom: OSMO_DENOM.into(),
+            })
+            .unwrap()
+            .balance
+            .unwrap()
+            .amount;
+
+        println!("Contract USDC after withdrawal: {}", amount_usdc); // Print the value
+        println!("Contract OSMO after withdrawal: {}", amount_osmo);
     }
 }
