@@ -38,6 +38,7 @@ schema:
 	cd contracts/hydro && cargo run --bin hydro_schema
 	cd contracts/tribute && cargo run --bin tribute_schema
 	cd contracts/dao-voting-adapter && cargo run --bin dao_voting_adapter_schema
+	cd contracts/token-info-providers/st-token-info-provider && cargo run --bin st_token_info_provider_schema
 
 	cosmwasm-ts-codegen generate \
           --plugin client \
@@ -57,10 +58,17 @@ schema:
           --out ./ts_types \
           --name DAOVotingAdapterBase \
           --no-bundle
+	cosmwasm-ts-codegen generate \
+          --plugin client \
+          --schema ./contracts/token-info-providers/st-token-info-provider/schema \
+          --out ./ts_types \
+          --name STTokenInfoProviderBase \
+          --no-bundle
 
 	cd contracts/hydro/schema && python3 generate_full_schema.py
 	cd contracts/tribute/schema && python3 generate_full_schema.py
 	cd contracts/dao-voting-adapter/schema && python3 generate_full_schema.py
+	cd contracts/token-info-providers/st-token-info-provider/schema && python3 generate_full_schema.py
 
 build-docker-relayer:
 	docker build -t neutron-org/neutron-query-relayer https://github.com/neutron-org/neutron-query-relayer.git#main

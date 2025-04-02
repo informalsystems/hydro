@@ -41,7 +41,7 @@ for file in responses:
     with open(file, "r") as f:
         schema["responses"][file.split("_response.json")[0]] = json.load(f)
 
-with open("hydro_full_schema.json", "w") as f:
+with open("full_schema.json", "w") as f:
     json.dump(schema, f, indent=2)
 
 print("Hydro full schema generated.")

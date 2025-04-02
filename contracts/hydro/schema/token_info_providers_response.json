@@ -1,0 +1,116 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TokenInfoProvidersResponse",
+  "type": "object",
+  "required": [
+    "providers"
+  ],
+  "properties": {
+    "providers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/TokenInfoProvider"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "Decimal": {
+      "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
+      "type": "string"
+    },
+    "DenomInfoResponse": {
+      "type": "object",
+      "required": [
+        "denom",
+        "ratio",
+        "token_group_id"
+      ],
+      "properties": {
+        "denom": {
+          "type": "string"
+        },
+        "ratio": {
+          "$ref": "#/definitions/Decimal"
+        },
+        "token_group_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "TokenInfoProvider": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "lsm"
+          ],
+          "properties": {
+            "lsm": {
+              "$ref": "#/definitions/TokenInfoProviderLSM"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "derivative"
+          ],
+          "properties": {
+            "derivative": {
+              "$ref": "#/definitions/TokenInfoProviderDerivative"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "TokenInfoProviderDerivative": {
+      "type": "object",
+      "required": [
+        "cache",
+        "contract"
+      ],
+      "properties": {
+        "cache": {
+          "type": "object",
+          "additionalProperties": false
+        },
+        "contract": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "TokenInfoProviderLSM": {
+      "type": "object",
+      "required": [
+        "hub_connection_id",
+        "hub_transfer_channel_id",
+        "icq_update_period",
+        "max_validator_shares_participating"
+      ],
+      "properties": {
+        "hub_connection_id": {
+          "type": "string"
+        },
+        "hub_transfer_channel_id": {
+          "type": "string"
+        },
+        "icq_update_period": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "max_validator_shares_participating": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
