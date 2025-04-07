@@ -10,6 +10,7 @@ pub struct InstantiateMsg {
     pub first_round_start: Timestamp,
     pub round_length: u64,
     pub hydro: String,
+    pub auction_duration: u64,
 }
 
 #[cw_serde]
@@ -28,10 +29,18 @@ pub struct CalculatePositionMsg {
 }
 
 #[cw_serde]
+pub struct EndRoundBidMsg {
+    pub requested_amount: Uint128,
+}
+
+#[cw_serde]
 pub enum ExecuteMsg {
     CreatePosition(CreatePositionMsg),
     Liquidate,
     EndRound,
+    EndRoundBid(EndRoundBidMsg),
+    WidthdrawBid,
+    ResolveAuction,
 }
 
 #[cw_serde]
@@ -55,4 +64,7 @@ pub struct StateResponse {
     pub liquidity_shares: Option<String>,
     pub position_created_price: Option<String>,
     pub auction_period: bool,
+    pub auction_end_time: Option<Timestamp>,
+    pub principal_to_replenish: Option<Uint128>,
+    pub counterparty_to_give: Option<Uint128>,
 }

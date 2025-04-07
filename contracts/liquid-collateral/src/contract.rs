@@ -1,6 +1,8 @@
 use crate::error::ContractError;
-use crate::msg::{CreatePositionMsg, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse};
-use crate::state::{State, RESERVATIONS, STATE};
+use crate::msg::{
+    CreatePositionMsg, EndRoundBidMsg, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse,
+};
+use crate::state::{Bid, State, BIDS, RESERVATIONS, STATE};
 use cosmwasm_std::{
     entry_point, to_binary, to_json_binary, Binary, CosmosMsg, Decimal, Deps, DepsMut, Env, Event,
     MessageInfo, Order, QueryResponse, Reply, Response, StdError, StdResult, SubMsg, Timestamp,
@@ -39,8 +41,12 @@ pub fn instantiate(
         round_length: msg.round_length,
         position_created_price: None,
         round_id: round_id.unwrap(),
+        auction_duration: msg.auction_duration,
         auction_period: false,
+        auction_end_time: None,
         hydro: deps.api.addr_validate(&msg.hydro)?,
+        principal_to_replenish: None,
+        counterparty_to_give: None,
     };
     STATE.save(deps.storage, &state)?;
 
@@ -61,6 +67,9 @@ pub fn execute(
         ExecuteMsg::CreatePosition(msg) => create_position(deps, env, info, msg),
         ExecuteMsg::Liquidate => liquidate(deps, env, info),
         ExecuteMsg::EndRound => end_round(deps, env, info),
+        ExecuteMsg::EndRoundBid(msg) => end_round_bid(deps, info, msg),
+        ExecuteMsg::WidthdrawBid => withdraw_bid(deps, env, info),
+        ExecuteMsg::ResolveAuction => resolve_auction(deps, env, info),
     }
 }
 
@@ -322,10 +331,10 @@ fn handle_withdraw_position_end_round_reply(
     let amount_1 = Uint128::from_str(&response.amount1)
         .map_err(|_| StdError::generic_err("Invalid Uint128 value"))?;
 
-    if amount_1 >= state.initial_principal_amount {
-        let amount_0 = Uint128::from_str(&response.amount0)
-            .map_err(|_| StdError::generic_err("Invalid Uint128 value"))?;
+    let amount_0 = Uint128::from_str(&response.amount0)
+        .map_err(|_| StdError::generic_err("Invalid Uint128 value"))?;
 
+    if amount_1 >= state.initial_principal_amount {
         let mut owner_reservations = RESERVATIONS
             .may_load(deps.storage, &state.owner.to_string())?
             .unwrap_or_default();
@@ -356,6 +365,9 @@ fn handle_withdraw_position_end_round_reply(
         RESERVATIONS.save(deps.storage, &state.hydro.to_string(), &hydro_reservations)?;
     } else {
         state.auction_period = true;
+        state.auction_end_time = Some(env.block.time.plus_seconds(state.auction_duration));
+        state.principal_to_replenish = Some(state.initial_principal_amount - amount_1);
+        state.counterparty_to_give = Some(amount_0);
     }
 
     STATE.save(deps.storage, &state)?;
@@ -403,6 +415,205 @@ pub fn end_round(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
         .add_submessage(submsg)
         .add_attribute("action", "withdraw_position"))
 }
+pub fn end_round_bid(
+    deps: DepsMut,
+    info: MessageInfo,
+    msg: EndRoundBidMsg,
+) -> Result<Response, ContractError> {
+    let state = STATE.load(deps.storage)?;
+
+    // Check that auction is active and has not ended
+    if !state.auction_period {
+        return Err(ContractError::AuctionNotActive {});
+    }
+
+    let principal = info
+        .funds
+        .iter()
+        .find(|c| c.denom == state.principal_denom)
+        .filter(|c| !c.amount.is_zero())
+        .ok_or(ContractError::InsufficientFunds {})?;
+
+    // Calculate the percentage replenished
+    let percentage_replenished = if state.principal_to_replenish.unwrap().is_zero() {
+        Decimal::zero() // if no replenishment is needed, no percentage can be calculated
+    } else {
+        Decimal::from_ratio(principal.amount, state.principal_to_replenish.unwrap())
+    };
+
+    // Save bid
+    BIDS.save(
+        deps.storage,
+        info.sender.clone(),
+        &Bid {
+            bidder: info.sender.clone(),
+            principal_amount: principal.amount,
+            tokens_requested: msg.requested_amount,
+            percentage_replenished,
+        },
+    )?;
+
+    Ok(Response::new()
+        .add_attribute("action", "end_round_bid")
+        .add_attribute("bidder", info.sender)
+        .add_attribute("principal", principal.amount)
+        .add_attribute("tokens_requested", msg.requested_amount))
+}
+
+pub fn withdraw_bid(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+) -> Result<Response, ContractError> {
+    // Load the current state
+    let state = STATE.load(deps.storage)?;
+
+    let bid = BIDS
+        .may_load(deps.storage, info.sender.clone())?
+        .ok_or(ContractError::NoBidFound {})?;
+
+    BIDS.remove(deps.storage, info.sender.clone());
+
+    let bank_msg = MsgSend {
+        from_address: _env.contract.address.into_string(),
+        to_address: info.sender.clone().into_string(),
+        amount: vec![Coin {
+            denom: state.principal_denom.to_string(),
+            amount: bid.principal_amount.to_string(),
+        }],
+    };
+
+    Ok(Response::new()
+        .add_message(bank_msg)
+        .add_attribute("action", "withdraw_bid")
+        .add_attribute("bidder", info.sender))
+}
+pub fn resolve_auction(
+    deps: DepsMut,
+    _env: Env,
+    _info: MessageInfo,
+) -> Result<Response, ContractError> {
+    let mut state = STATE.load(deps.storage)?;
+
+    // Check if the auction is active and has ended
+    if !state.auction_period || state.auction_end_time.is_none() {
+        return Err(ContractError::AuctionNotActive {});
+    }
+
+    if _env.clone().block.time < state.auction_end_time.unwrap() {
+        return Err(ContractError::AuctionNotYetEnded {});
+    }
+
+    let mut all_bids: Vec<Bid> = BIDS
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|item| item.map(|(_, bid)| bid))
+        .collect::<StdResult<Vec<_>>>()?;
+
+    // Sort bids by price per COUNTERPARTY (tokens_requested / principal_amount)
+    all_bids.sort_by(|a, b| {
+        let price_a = Decimal::from_ratio(a.tokens_requested, a.principal_amount);
+        let price_b = Decimal::from_ratio(b.tokens_requested, b.principal_amount);
+        price_a
+            .partial_cmp(&price_b)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let mut principal_accumulated = Uint128::zero();
+    let mut counterparty_spent = Uint128::zero();
+    let mut messages: Vec<SubMsg> = vec![];
+
+    for bid in all_bids.iter() {
+        // If the full principal amount has been replenished, stop processing further bids
+        if principal_accumulated >= state.principal_to_replenish.unwrap() {
+            break;
+        }
+
+        //// Calculate how much principal is needed to reach the full amount
+        let principal_needed = state
+            .principal_to_replenish
+            .unwrap_or(Uint128::zero())
+            .checked_sub(principal_accumulated)
+            .unwrap_or(Uint128::zero());
+
+        // If no principal is left to be replenished, break the loop
+        if principal_needed.is_zero() {
+            break;
+        }
+
+        // If the bid's principal is greater than the remaining principal needed, skip it
+        if bid.principal_amount > principal_needed {
+            continue;
+        }
+
+        // Fully accept the bid
+        let replenishment_ratio = Decimal::from_ratio(
+            bid.principal_amount,
+            state.principal_to_replenish.unwrap_or(Uint128::zero()),
+        );
+        let counterparty_to_give = bid.tokens_requested * replenishment_ratio;
+
+        let counterparty_available = state
+            .counterparty_to_give
+            .unwrap_or(Uint128::zero())
+            .checked_sub(counterparty_spent)
+            .unwrap_or(Uint128::zero());
+
+        if counterparty_to_give > counterparty_available {
+            continue; // skip bid if not enough counterparty tokens left
+        }
+
+        // Create message to send counterparty tokens
+        let counterparty_msg = MsgSend {
+            from_address: _env.contract.address.clone().into_string(),
+            to_address: bid.bidder.clone().into_string(),
+            amount: vec![Coin {
+                denom: state.counterparty_denom.to_string(),
+                amount: counterparty_to_give.to_string(),
+            }],
+        };
+
+        messages.push(SubMsg::new(counterparty_msg));
+
+        // Update accumulated amounts
+        principal_accumulated += bid.principal_amount;
+        counterparty_spent += counterparty_to_give;
+
+        // Clean up: Remove the processed bid
+        BIDS.remove(deps.storage, bid.bidder.clone());
+    }
+
+    // Check if the auction was able to fully replenish the principal amount
+    if principal_accumulated < state.initial_principal_amount {
+        return Err(ContractError::PrincipalNotFullyReplenished {});
+    }
+
+    // Send remaining counterparty tokens back to the project
+    let counterparty_to_project = state
+        .counterparty_to_give
+        .unwrap()
+        .checked_sub(counterparty_spent)
+        .unwrap_or(Uint128::zero());
+    let send_back_msg = MsgSend {
+        from_address: _env.contract.address.into_string(),
+        to_address: state.owner.clone().into_string(),
+        amount: vec![Coin {
+            denom: state.counterparty_denom.to_string(),
+            amount: counterparty_to_project.to_string(),
+        }],
+    };
+    messages.push(SubMsg::new(send_back_msg));
+
+    // Reset auction state
+    state.auction_period = false;
+    state.auction_end_time = None;
+    STATE.save(deps.storage, &state)?;
+
+    Ok(Response::new()
+        .add_submessages(messages)
+        .add_attribute("action", "resolve_auction")
+        .add_attribute("counterparty_spent", counterparty_spent)
+        .add_attribute("principal_replenished", principal_accumulated))
+}
 
 pub fn query_get_state(deps: Deps) -> StdResult<Binary> {
     // Load the current state from storage
@@ -420,6 +631,9 @@ pub fn query_get_state(deps: Deps) -> StdResult<Binary> {
         liquidity_shares: state.liquidity_shares,
         position_created_price: state.position_created_price,
         auction_period: state.auction_period,
+        auction_end_time: state.auction_end_time,
+        principal_to_replenish: state.principal_to_replenish,
+        counterparty_to_give: state.counterparty_to_give,
     };
 
     to_json_binary(&response)
@@ -504,7 +718,8 @@ mod tests {
             principal_denom: OSMO_DENOM.to_owned(),
             first_round_start: Timestamp::from_seconds(0),
             round_length: ONE_SECOND,
-            hydro: pool_mockup.user2.address(), // Addr type
+            hydro: pool_mockup.user2.address(), // Addr
+            auction_duration: 1000,
         };
 
         let contract_addr = wasm
@@ -808,6 +1023,8 @@ mod tests {
             .execute(&contract_addr, &end_round_msg, &[], &pool_mockup.user1)
             .expect("Execution failed");
 
+        println!("End round msg events {:?}", response.events);
+
         let query_msg = QueryMsg::GetState {};
 
         let query_result: Binary = wasm.query(&contract_addr, &query_msg).unwrap();
@@ -838,5 +1055,146 @@ mod tests {
             }
             println!(); // Print an empty line between reservations
         }
+
+        println!("Query-ing contract bank balances after liquidation...\n");
+        let bank = Bank::new(&pool_mockup.app);
+        let amount_usdc = bank
+            .query_balance(&QueryBalanceRequest {
+                address: contract_addr.to_string(),
+                denom: USDC_DENOM.into(),
+            })
+            .unwrap()
+            .balance
+            .unwrap()
+            .amount;
+        let amount_osmo = bank
+            .query_balance(&QueryBalanceRequest {
+                address: contract_addr.to_string(),
+                denom: OSMO_DENOM.into(),
+            })
+            .unwrap()
+            .balance
+            .unwrap()
+            .amount;
+
+        println!("Contract USDC after withdrawal: {}", amount_usdc); // Print the value
+        println!("Contract OSMO after withdrawal: {}", amount_osmo);
+    }
+    #[test]
+    fn test_auction() {
+        let pool_mockup = PoolMockup::new();
+        let wasm = Wasm::new(&pool_mockup.app);
+        let code_id = store_contracts_code(&wasm, &pool_mockup.deployer);
+        let contract_addr = instantiate(&wasm, &pool_mockup, code_id);
+        println!("Creating position...\n");
+        let response = create_position(&wasm, &contract_addr, &pool_mockup.deployer);
+
+        // this swap should make principal amount being lower than on creating position but not zero
+        let usdc_needed: u128 = 100000;
+        println!("Doing a swap which will make principal amount being lower than on creating position but not zero...\n");
+        let swap_response = pool_mockup.swap_usdc_for_osmo(&pool_mockup.user1, usdc_needed, 1);
+
+        let position_response = pool_mockup.position_query(1);
+
+        println!("Printing position details after swap...\n");
+        let liquidity = if let Ok(full_position) = position_response {
+            // Print the full position details using the helper method
+            print_position_details(&full_position);
+
+            // Extract liquidity
+            if let Some(position) = full_position.position {
+                position.liquidity // Return liquidity
+            } else {
+                println!("Position not found");
+                String::from("0") // Default value
+            }
+        } else {
+            println!("Failed to get position response");
+            String::from("0") // Default value
+        };
+
+        let end_round_msg = ExecuteMsg::EndRound;
+
+        println!("Executing end round msg...\n");
+        let response = wasm
+            .execute(&contract_addr, &end_round_msg, &[], &pool_mockup.user1)
+            .expect("Execution failed");
+
+        println!("End round msg events {:?}", response.events);
+
+        let query_msg = QueryMsg::GetState {};
+
+        let query_result: Binary = wasm.query(&contract_addr, &query_msg).unwrap();
+        let state_response: StateResponse = from_json(&query_result).unwrap();
+        let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
+
+        println!("Printing contract state...\n");
+        // Print the state response
+        println!("{}", formatted_output);
+
+        let first_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
+            requested_amount: 10u128.into(),
+        });
+
+        let coins = &[Coin::new(1u128, OSMO_DENOM)];
+
+        println!("Executing end round bid msg...\n");
+        let response = wasm
+            .execute(&contract_addr, &first_bid, coins, &pool_mockup.user2)
+            .expect("Execution failed");
+
+        let withdraw_bid_msg = ExecuteMsg::WidthdrawBid;
+
+        println!("Executing withdraw bid msg...\n");
+        let response = wasm
+            .execute(&contract_addr, &withdraw_bid_msg, &[], &pool_mockup.user2)
+            .expect("Execution failed");
+
+        let user3_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
+            requested_amount: 10u128.into(),
+        });
+
+        let coins = &[Coin::new(10000u128, OSMO_DENOM)];
+
+        println!("Executing end round bid msg from user3...\n");
+        let response = wasm
+            .execute(&contract_addr, &user3_bid, coins, &pool_mockup.user3)
+            .expect("Execution failed");
+
+        let user4_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
+            requested_amount: 10000u128.into(),
+        });
+
+        let coins = &[Coin::new(10000u128, OSMO_DENOM)];
+
+        println!("Executing end round bid msg from user 4...\n");
+        let response = wasm
+            .execute(&contract_addr, &user4_bid, coins, &pool_mockup.user4)
+            .expect("Execution failed");
+
+        let user5_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
+            requested_amount: 10000u128.into(),
+        });
+
+        let coins = &[Coin::new(33805u128, OSMO_DENOM)];
+
+        println!("Executing end round bid msg from user 5...\n");
+        let response = wasm
+            .execute(&contract_addr, &user5_bid, coins, &pool_mockup.user5)
+            .expect("Execution failed");
+
+        println!("Increasing time for 1000 seconds...\n");
+        pool_mockup.app.increase_time(10000);
+        let resolve_auction_msg = ExecuteMsg::ResolveAuction;
+
+        println!("Executing resolve auction msg...\n");
+        let response = wasm
+            .execute(
+                &contract_addr,
+                &resolve_auction_msg,
+                &[],
+                &pool_mockup.deployer,
+            )
+            .expect("Execution failed");
     }
 }

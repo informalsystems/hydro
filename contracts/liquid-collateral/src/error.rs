@@ -50,4 +50,16 @@ pub enum ContractError {
 
     #[error("Position already exists")]
     PositionAlreadyExists {},
+
+    #[error("Auction not active")]
+    AuctionNotActive {},
+
+    #[error("NoBidFound")]
+    NoBidFound {},
+
+    #[error("AuctionNotYetEnded")]
+    AuctionNotYetEnded {},
+
+    #[error("PrincipalNotFullyReplenished")]
+    PrincipalNotFullyReplenished {},
 }
