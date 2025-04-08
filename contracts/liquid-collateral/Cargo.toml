@@ -28,7 +28,7 @@ cw20-base = "1.1.2"
 cw-orch = { workspace = true }
 hydro = { path = "../hydro", features = ["library"] }
 serde_json = "1.0.0"
-
+schemars = "0.8"
 [dev-dependencies]
 cosmwasm-schema = { workspace = true }
 proptest = { workspace = true }

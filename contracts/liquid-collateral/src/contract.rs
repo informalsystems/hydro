@@ -79,6 +79,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         // Handle the GetState query
         QueryMsg::GetState {} => to_binary(&query_get_state(deps)?),
         QueryMsg::GetReservations {} => to_binary(&query_get_reservations(deps)?),
+        QueryMsg::GetBids {} => to_binary(&query_get_bids(deps)?),
     }
 }
 
@@ -520,18 +521,22 @@ pub fn resolve_auction(
 
     let mut principal_accumulated = Uint128::zero();
     let mut counterparty_spent = Uint128::zero();
-    let mut messages: Vec<SubMsg> = vec![];
+    let principal_target = state
+        .principal_to_replenish
+        .ok_or(ContractError::PrincipalNotSet {})?;
+    let counterparty_total = state
+        .counterparty_to_give
+        .ok_or(ContractError::CounterpartyNotSet {})?;
+    let mut messages = vec![];
 
     for bid in all_bids.iter() {
         // If the full principal amount has been replenished, stop processing further bids
-        if principal_accumulated >= state.principal_to_replenish.unwrap() {
+        if principal_accumulated >= principal_target {
             break;
         }
 
         //// Calculate how much principal is needed to reach the full amount
-        let principal_needed = state
-            .principal_to_replenish
-            .unwrap_or(Uint128::zero())
+        let principal_needed = principal_target
             .checked_sub(principal_accumulated)
             .unwrap_or(Uint128::zero());
 
@@ -545,20 +550,11 @@ pub fn resolve_auction(
             continue;
         }
 
-        // Fully accept the bid
-        let replenishment_ratio = Decimal::from_ratio(
-            bid.principal_amount,
-            state.principal_to_replenish.unwrap_or(Uint128::zero()),
-        );
-        let counterparty_to_give = bid.tokens_requested * replenishment_ratio;
-
-        let counterparty_available = state
-            .counterparty_to_give
-            .unwrap_or(Uint128::zero())
+        let counterparty_available = counterparty_total
             .checked_sub(counterparty_spent)
             .unwrap_or(Uint128::zero());
 
-        if counterparty_to_give > counterparty_available {
+        if bid.tokens_requested > counterparty_available {
             continue; // skip bid if not enough counterparty tokens left
         }
 
@@ -568,40 +564,41 @@ pub fn resolve_auction(
             to_address: bid.bidder.clone().into_string(),
             amount: vec![Coin {
                 denom: state.counterparty_denom.to_string(),
-                amount: counterparty_to_give.to_string(),
+                amount: bid.tokens_requested.to_string(),
             }],
         };
 
-        messages.push(SubMsg::new(counterparty_msg));
+        messages.push(counterparty_msg);
 
         // Update accumulated amounts
         principal_accumulated += bid.principal_amount;
-        counterparty_spent += counterparty_to_give;
+        counterparty_spent += bid.tokens_requested;
 
         // Clean up: Remove the processed bid
         BIDS.remove(deps.storage, bid.bidder.clone());
     }
 
     // Check if the auction was able to fully replenish the principal amount
-    if principal_accumulated < state.initial_principal_amount {
+    if principal_accumulated < principal_target {
         return Err(ContractError::PrincipalNotFullyReplenished {});
     }
 
     // Send remaining counterparty tokens back to the project
-    let counterparty_to_project = state
-        .counterparty_to_give
-        .unwrap()
+    let counterparty_to_project = counterparty_total
         .checked_sub(counterparty_spent)
         .unwrap_or(Uint128::zero());
-    let send_back_msg = MsgSend {
-        from_address: _env.contract.address.into_string(),
-        to_address: state.owner.clone().into_string(),
-        amount: vec![Coin {
-            denom: state.counterparty_denom.to_string(),
-            amount: counterparty_to_project.to_string(),
-        }],
-    };
-    messages.push(SubMsg::new(send_back_msg));
+
+    if !counterparty_to_project.is_zero() {
+        let send_back_msg = MsgSend {
+            from_address: _env.contract.address.into_string(),
+            to_address: state.owner.clone().into_string(),
+            amount: vec![Coin {
+                denom: state.counterparty_denom.to_string(),
+                amount: counterparty_to_project.to_string(),
+            }],
+        };
+        messages.push(send_back_msg);
+    }
 
     // Reset auction state
     state.auction_period = false;
@@ -609,7 +606,7 @@ pub fn resolve_auction(
     STATE.save(deps.storage, &state)?;
 
     Ok(Response::new()
-        .add_submessages(messages)
+        .add_messages(messages)
         .add_attribute("action", "resolve_auction")
         .add_attribute("counterparty_spent", counterparty_spent)
         .add_attribute("principal_replenished", principal_accumulated))
@@ -656,6 +653,19 @@ pub fn query_get_reservations(deps: Deps) -> StdResult<Binary> {
         .collect::<Result<Vec<(String, Vec<Coin>)>, cosmwasm_std::StdError>>()?;
 
     Ok(to_binary(&reservations)?)
+}
+pub fn query_get_bids(deps: Deps) -> StdResult<Binary> {
+    // Collect all bids from the BIDS map, converting each entry to a tuple (String, Bid)
+    let all_bids: StdResult<Vec<(String, Bid)>> = BIDS
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|item| item.map(|(addr, bid)| (addr.to_string(), bid))) // Convert Addr to String
+        .collect();
+
+    // Prepare the response as a Vec<(String, Bid)>
+    let response = all_bids.unwrap_or_default();
+
+    // Convert the response into Binary (CosmWasm format)
+    Ok(to_binary(&response)?)
 }
 
 // Computes the current round_id by taking contract_start_time and dividing the time since
@@ -1185,6 +1195,21 @@ mod tests {
 
         println!("Increasing time for 1000 seconds...\n");
         pool_mockup.app.increase_time(10000);
+
+        let query_bids = QueryMsg::GetBids {};
+
+        let query_result: Binary = wasm.query(&contract_addr, &query_bids).unwrap();
+        let bids_response: Vec<(String, Bid)> = from_json(&query_result).unwrap();
+        // Deserialize the response to get the bids
+
+        // Print all bids in a structured format
+        for (bidder, bid) in bids_response {
+            println!(
+        "Bidder Address: {}\n  Principal Amount: {}\n  Tokens Requested: {}\n  Percentage Replenished: {}\n",
+        bidder, bid.principal_amount, bid.tokens_requested, bid.percentage_replenished
+    );
+        }
+
         let resolve_auction_msg = ExecuteMsg::ResolveAuction;
 
         println!("Executing resolve auction msg...\n");

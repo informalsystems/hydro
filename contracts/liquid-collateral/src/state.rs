@@ -2,6 +2,7 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
 use cw_storage_plus::{Item, Map};
 use osmosis_std::types::cosmos::base::v1beta1::Coin;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -33,7 +34,7 @@ pub const RESERVATIONS: Map<&str, Vec<Coin>> = Map::new("reservations");
 
 // Each bid
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
 pub struct Bid {
     pub bidder: Addr,
     pub principal_amount: Uint128,

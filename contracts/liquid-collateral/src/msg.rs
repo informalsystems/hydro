@@ -1,6 +1,9 @@
-use cosmwasm_schema::{cw_serde, QueryResponses};
+use cosmwasm_schema::{cw_serde, schemars::JsonSchema, QueryResponses};
 use cosmwasm_std::{Timestamp, Uint128};
 use osmosis_std::types::cosmos::base::v1beta1::Coin;
+use serde::{Deserialize, Serialize};
+
+use crate::state::Bid;
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -50,6 +53,8 @@ pub enum QueryMsg {
     GetState {},
     #[returns(Vec<(String, Vec<Coin>)>)]
     GetReservations {},
+    #[returns(Vec<(String, Bid)>)]
+    GetBids {},
 }
 
 #[cw_serde]

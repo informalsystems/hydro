@@ -62,4 +62,10 @@ pub enum ContractError {
 
     #[error("PrincipalNotFullyReplenished")]
     PrincipalNotFullyReplenished {},
+
+    #[error("PrincipalNotSet")]
+    PrincipalNotSet {},
+
+    #[error("CounterpartyNotSet")]
+    CounterpartyNotSet {},
 }

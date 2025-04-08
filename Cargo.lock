@@ -2472,6 +2472,7 @@ dependencies = [
  "osmosis-std 0.25.0",
  "osmosis-test-tube",
  "proptest",
+ "schemars",
  "serde",
  "serde_json",
  "thiserror",
