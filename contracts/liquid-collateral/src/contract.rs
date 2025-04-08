@@ -1,6 +1,7 @@
 use crate::error::ContractError;
 use crate::msg::{
-    CreatePositionMsg, EndRoundBidMsg, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse,
+    CalculatedDataResponse, CreatePositionMsg, EndRoundBidMsg, ExecuteMsg, InstantiateMsg,
+    ParametersMsg, QueryMsg, StateResponse,
 };
 use crate::state::{Bid, State, BIDS, RESERVATIONS, STATE};
 use cosmwasm_std::{
@@ -80,12 +81,77 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::GetState {} => to_binary(&query_get_state(deps)?),
         QueryMsg::GetReservations {} => to_binary(&query_get_reservations(deps)?),
         QueryMsg::GetBids {} => to_binary(&query_get_bids(deps)?),
+        QueryMsg::GetCalculatedPosition {
+            lower_tick,
+            principal_token_amount,
+            liquidation_bonus,
+            price_ratio,
+        } => {
+            // Call the query function with the fields directly
+            to_binary(&query_get_calculated_position(
+                deps,
+                lower_tick,
+                principal_token_amount,
+                liquidation_bonus,
+                price_ratio,
+            )?)
+        }
     }
 }
 
-pub fn calculate_position(deps: DepsMut, env: Env, info: MessageInfo, msg: CreatePositionMsg) {
+pub fn query_get_calculated_position(
+    deps: Deps,
+    lower_tick: String,
+    principal_token_amount: String,
+    liquidation_bonus: String,
+    price_ratio: String,
+) -> StdResult<Binary> {
     // inputs: lower tick, base token amount, and liquidation bonus
     // output:  upper tick and counterparty
+
+    let price_ratio: f64 = match price_ratio.parse() {
+        Ok(val) => val,
+        Err(_) => panic!("Failed to parse price_ratio to f64"), // Handle parsing error
+    };
+
+    // Calculate the square root of the ratio (current price)
+    let sqrt_current = price_ratio.sqrt();
+    let lower_tick: f64 = match lower_tick.parse() {
+        Ok(val) => val,
+        Err(_) => panic!("Failed to parse lower_tick to f64"), // Handle parsing error
+    };
+    let sqrt_lower = lower_tick.sqrt(); // Convert lower_tick to f64 and take the square root
+
+    let principal_token_amount: f64 = match principal_token_amount.parse() {
+        Ok(val) => val,
+        Err(_) => panic!("Failed to parse principal_token_amount to f64"), // Handle parsing error
+    };
+
+    let liquidation_bonus: f64 = match liquidation_bonus.parse() {
+        Ok(val) => val,
+        Err(_) => panic!("Failed to parse liquidation_bonus to f64"), // Handle parsing error
+    };
+
+    // Step 1: Calculate liquidity based on the principal token amount
+    let liquidity = principal_token_amount / (sqrt_current - sqrt_lower);
+
+    // Step 2: Adjust liquidity based on liquidation bonus
+    let adjusted_base_token_amount = principal_token_amount * (1.0 + liquidation_bonus);
+    let adjusted_liquidity = adjusted_base_token_amount / (sqrt_current - sqrt_lower);
+
+    // Step 3: Calculate the upper tick based on adjusted liquidity
+    let upper_tick = ((liquidity / adjusted_liquidity) + sqrt_current) * sqrt_current;
+
+    // Step 4: Calculate counterparty amount (WOBBLE) based on liquidity
+    let sqrt_upper = upper_tick.sqrt();
+    let counterparty_amount = adjusted_liquidity * (1.0 / sqrt_current - 1.0 / sqrt_upper);
+
+    // Create and return the response struct
+    let response = CalculatedDataResponse {
+        upper_tick: upper_tick.to_string(),
+        counterparty_amount: counterparty_amount.to_string(),
+    };
+    to_json_binary(&response)
 }
 
 pub fn create_position(
@@ -1221,5 +1287,30 @@ mod tests {
                 &pool_mockup.deployer,
             )
             .expect("Execution failed");
+    }
+
+    #[test]
+    fn test_calculate_position() {
+        let pool_mockup = PoolMockup::new();
+        let wasm = Wasm::new(&pool_mockup.app);
+        let code_id = store_contracts_code(&wasm, &pool_mockup.deployer);
+        let contract_addr = instantiate(&wasm, &pool_mockup, code_id);
+
+        let query_calculated_data = QueryMsg::GetCalculatedPosition {
+            lower_tick: "0.03".to_string(),              // Example lower tick
+            principal_token_amount: "100.0".to_string(), // Example principal token amount
+            liquidation_bonus: "0.0".to_string(),        // 10 %liquidation bonus
+            price_ratio: "0.0555555556".to_string(),     // Example price ratio
+        };
+
+        let query_result: Binary = wasm.query(&contract_addr, &query_calculated_data).unwrap();
+        let data_response: CalculatedDataResponse = from_json(&query_result).unwrap();
+
+        // Deserialize the binary response into the appropriate struct
+        //let data_response: CalculatedDataResponse = from_binary(&query_result).unwrap();
+
+        // Print the values from the deserialized response
+        println!("Upper Tick: {}", data_response.upper_tick);
+        println!("Counterparty Amount: {}", data_response.counterparty_amount);
     }
 }

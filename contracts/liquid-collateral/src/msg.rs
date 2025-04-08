@@ -25,12 +25,11 @@ pub struct CreatePositionMsg {
 }
 
 #[cw_serde]
-pub struct CalculatePositionMsg {
-    pub lower_tick: i64,
-    pub principal_token_amount: Uint128,
-    pub liquidation_bonus: f64,
+pub struct ParametersMsg {
+    pub lower_tick: String,
+    pub principal_token_amount: String,
+    pub liquidation_bonus: String,
 }
-
 #[cw_serde]
 pub struct EndRoundBidMsg {
     pub requested_amount: Uint128,
@@ -55,6 +54,13 @@ pub enum QueryMsg {
     GetReservations {},
     #[returns(Vec<(String, Bid)>)]
     GetBids {},
+    #[returns((CalculatedDataResponse))]
+    GetCalculatedPosition {
+        lower_tick: String,
+        principal_token_amount: String,
+        liquidation_bonus: String,
+        price_ratio: String,
+    },
 }
 
 #[cw_serde]
@@ -72,4 +78,10 @@ pub struct StateResponse {
     pub auction_end_time: Option<Timestamp>,
     pub principal_to_replenish: Option<Uint128>,
     pub counterparty_to_give: Option<Uint128>,
+}
+
+#[cw_serde]
+pub struct CalculatedDataResponse {
+    pub upper_tick: String,
+    pub counterparty_amount: String,
 }
