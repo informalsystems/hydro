@@ -1,4 +1,4 @@
-use cosmwasm_std::StdError;
+use cosmwasm_std::{Decimal, StdError};
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
@@ -68,4 +68,10 @@ pub enum ContractError {
 
     #[error("CounterpartyNotSet")]
     CounterpartyNotSet {},
+
+    #[error("Multiplication overflow. Liquidity: {liquidity}, Percentage: {perc}")]
+    DetailedOverflow { liquidity: Decimal, perc: Decimal },
+
+    #[error("NotEnoughCounterpartyAmount")]
+    NotEnoughCounterpartyAmount {},
 }

@@ -1,13 +1,12 @@
 use crate::error::ContractError;
 use crate::msg::{
     CalculatedDataResponse, CreatePositionMsg, EndRoundBidMsg, ExecuteMsg, InstantiateMsg,
-    ParametersMsg, QueryMsg, StateResponse,
+    QueryMsg, StateResponse,
 };
 use crate::state::{Bid, State, BIDS, RESERVATIONS, STATE};
 use cosmwasm_std::{
-    entry_point, to_binary, to_json_binary, Binary, CosmosMsg, Decimal, Deps, DepsMut, Env, Event,
-    MessageInfo, Order, QueryResponse, Reply, Response, StdError, StdResult, SubMsg, Timestamp,
-    Uint128,
+    entry_point, to_binary, to_json_binary, Binary, Decimal, Deps, DepsMut, Env, Event,
+    MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Timestamp, Uint128,
 };
 use osmosis_std::types::cosmos::bank::v1beta1::MsgSend;
 use osmosis_std::types::cosmos::base::v1beta1::Coin;
@@ -16,7 +15,6 @@ use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::{
     MsgCreatePosition, MsgCreatePositionResponse, MsgWithdrawPosition, MsgWithdrawPositionResponse,
 };
 use osmosis_std::types::osmosis::poolmanager::v1beta1::PoolmanagerQuerier;
-use std::error::Error;
 use std::str::FromStr;
 
 #[entry_point]
@@ -81,15 +79,14 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::GetState {} => to_binary(&query_get_state(deps)?),
         QueryMsg::GetReservations {} => to_binary(&query_get_reservations(deps)?),
         QueryMsg::GetBids {} => to_binary(&query_get_bids(deps)?),
-        QueryMsg::GetCalculatedPosition {
+        QueryMsg::GetCalculatedOptimalCounterpartyUpperTick {
             lower_tick,
             principal_token_amount,
             liquidation_bonus,
             price_ratio,
         } => {
             // Call the query function with the fields directly
-            to_binary(&query_get_calculated_position(
-                deps,
+            to_binary(&query_get_calculated_optimal_counterparty_upper_tick(
                 lower_tick,
                 principal_token_amount,
                 liquidation_bonus,
@@ -99,8 +96,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     }
 }
 
-pub fn query_get_calculated_position(
-    deps: Deps,
+pub fn query_get_calculated_optimal_counterparty_upper_tick(
     lower_tick: String,
     principal_token_amount: String,
     liquidation_bonus: String,
@@ -111,25 +107,33 @@ pub fn query_get_calculated_position(
 
     let price_ratio: f64 = match price_ratio.parse() {
         Ok(val) => val,
-        Err(_) => panic!("Failed to parse price_ratio to f64"), // Handle parsing error
+        Err(_) => return Err(StdError::generic_err("Failed to parse price_ratio to f64")),
     };
 
     // Calculate the square root of the ratio (current price)
     let sqrt_current = price_ratio.sqrt();
     let lower_tick: f64 = match lower_tick.parse() {
         Ok(val) => val,
-        Err(_) => panic!("Failed to parse lower_tick to f64"), // Handle parsing error
+        Err(_) => return Err(StdError::generic_err("Failed to parse lower_tick to f64")),
     };
     let sqrt_lower = lower_tick.sqrt(); // Convert lower_tick to f64 and take the square root
 
     let principal_token_amount: f64 = match principal_token_amount.parse() {
         Ok(val) => val,
-        Err(_) => panic!("Failed to parse principal_token_amount to f64"), // Handle parsing error
+        Err(_) => {
+            return Err(StdError::generic_err(
+                "Failed to parse principal_token_amount to f64",
+            ))
+        }
     };
 
     let liquidation_bonus: f64 = match liquidation_bonus.parse() {
         Ok(val) => val,
-        Err(_) => panic!("Failed to parse liquidation_bonus to f64"), // Handle parsing error
+        Err(_) => {
+            return Err(StdError::generic_err(
+                "Failed to parse liquidation_bonus to f64",
+            ))
+        }
     };
 
     // Step 1: Calculate liquidity based on the principal token amount
@@ -141,6 +145,7 @@ pub fn query_get_calculated_position(
 
     // Step 3: Calculate the upper tick based on adjusted liquidity
     let upper_tick = ((liquidity / adjusted_liquidity) + sqrt_current) * sqrt_current;
+    //let upper_tick = 0.1 as f64;
 
     // Step 4: Calculate counterparty amount (WOBBLE) based on liquidity
     let sqrt_upper = upper_tick.sqrt();
@@ -601,29 +606,6 @@ pub fn resolve_auction(
             break;
         }
 
-        //// Calculate how much principal is needed to reach the full amount
-        let principal_needed = principal_target
-            .checked_sub(principal_accumulated)
-            .unwrap_or(Uint128::zero());
-
-        // If no principal is left to be replenished, break the loop
-        if principal_needed.is_zero() {
-            break;
-        }
-
-        // If the bid's principal is greater than the remaining principal needed, skip it
-        if bid.principal_amount > principal_needed {
-            continue;
-        }
-
-        let counterparty_available = counterparty_total
-            .checked_sub(counterparty_spent)
-            .unwrap_or(Uint128::zero());
-
-        if bid.tokens_requested > counterparty_available {
-            continue; // skip bid if not enough counterparty tokens left
-        }
-
         // Create message to send counterparty tokens
         let counterparty_msg = MsgSend {
             from_address: _env.contract.address.clone().into_string(),
@@ -647,6 +629,11 @@ pub fn resolve_auction(
     // Check if the auction was able to fully replenish the principal amount
     if principal_accumulated < principal_target {
         return Err(ContractError::PrincipalNotFullyReplenished {});
+    }
+
+    // Check if contract is having enough counterparty amount
+    if counterparty_spent > counterparty_total {
+        return Err(ContractError::NotEnoughCounterpartyAmount {});
     }
 
     // Send remaining counterparty tokens back to the project
@@ -1296,7 +1283,7 @@ mod tests {
         let code_id = store_contracts_code(&wasm, &pool_mockup.deployer);
         let contract_addr = instantiate(&wasm, &pool_mockup, code_id);
 
-        let query_calculated_data = QueryMsg::GetCalculatedPosition {
+        let query_calculated_data = QueryMsg::GetCalculatedOptimalCounterpartyUpperTick {
             lower_tick: "0.03".to_string(),              // Example lower tick
             principal_token_amount: "100.0".to_string(), // Example principal token amount
             liquidation_bonus: "0.0".to_string(),        // 10 %liquidation bonus
