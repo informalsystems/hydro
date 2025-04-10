@@ -37,8 +37,8 @@ jobs:
           echo "TRIBUTE_ATOM_CONTRACT_ADDRESS=neutron1e90z4vpxufxvskz3fc80wrz0g57xg4u7zda7dsuwnwm5jp7635dsrt9r4t" >> $GITHUB_ENV
           echo "HYDRO_ATOM_TRANCHES_NUM=2" >> $GITHUB_ENV
 
-          echo "HYDRO_OSMO_CONTRACT_ADDRESS=neutron13fufhcn5pfz8zvmmfn53xruz76ac0kt4aed42d7nkw3a0789kxrqzrv90f" >> $GITHUB_ENV
-          echo "TRIBUTE_OSMO_CONTRACT_ADDRESS=neutron1826fj7njgh2xn56h7an9yakmuvsmpzujszew3c68gayhs439f3kq8mu9ud" >> $GITHUB_ENV
+          echo "HYDRO_OSMO_CONTRACT_ADDRESS=neutron1xkvzdzfzacuzlwlxf5hhlrqgv9sz4rgd2gkhvgm8lmudn8lmw0fq2296nu" >> $GITHUB_ENV
+          echo "TRIBUTE_OSMO_CONTRACT_ADDRESS=neutron1l6sq43kzhw77t7f5n9e6vxente0agcj3wyedkxtc08pm7c9uu2jsssq9wj" >> $GITHUB_ENV
           echo "HYDRO_OSMO_TRANCHES_NUM=1" >> $GITHUB_ENV
       
       # Enter liquidity deployments info for all proposals from the previous round.
