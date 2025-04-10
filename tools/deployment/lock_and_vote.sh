@@ -3,11 +3,12 @@ set -eux
 
 CONFIG_FILE="$1"
 HYDRO_CONTRACT_ADDRESS="$2"
+TRANCHES_NUM=$3
+TOKEN_TO_LOCK_1="$4"
 
 NEUTRON_CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
 NEUTRON_NODE=$(jq -r '.neutron_rpc_node' $CONFIG_FILE)
 TX_SENDER_WALLET=$(jq -r '.tx_sender_wallet' $CONFIG_FILE)
-TOKEN_TO_LOCK_1=$(jq -r '.token_to_lock_1' $CONFIG_FILE)
 TX_SENDER_ADDRESS=$(neutrond keys show $TX_SENDER_WALLET --keyring-backend test | grep "address:" | sed 's/.*address: //')
 
 NEUTRON_BINARY="neutrond"
@@ -107,8 +108,7 @@ vote() {
 
 prepare_lockup_for_voting
 
-TRANCHE_ID=1
-vote $ROUND_ID $TRANCHE_ID $LOCK_ID
-
-TRANCHE_ID=2
-vote $ROUND_ID $TRANCHE_ID $LOCK_ID
+for ((i=1; i<=TRANCHES_NUM; i++)); do
+    TRANCHE_ID=$i
+    vote $ROUND_ID $TRANCHE_ID $LOCK_ID
+done
