@@ -3,6 +3,7 @@ set -eux
 
 CONFIG_FILE="$1"
 HYDRO_CONTRACT_ADDRESS="$2"
+TRANCHES_NUM=$3
 
 NEUTRON_CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
 NEUTRON_NODE=$(jq -r '.neutron_rpc_node' $CONFIG_FILE)
@@ -78,8 +79,7 @@ if [ "$PREVIOUS_ROUND_ID" -eq -1 ]; then
     return 0
 fi
 
-TRANCHE_ID=1
-enter_liquidity_deployments $PREVIOUS_ROUND_ID $TRANCHE_ID
-
-TRANCHE_ID=2
-enter_liquidity_deployments $PREVIOUS_ROUND_ID $TRANCHE_ID
+for ((i=1; i<=TRANCHES_NUM; i++)); do
+    TRANCHE_ID=$i
+    enter_liquidity_deployments $PREVIOUS_ROUND_ID $TRANCHE_ID
+done

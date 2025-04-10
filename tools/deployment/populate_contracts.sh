@@ -4,6 +4,7 @@ set -eux
 CONFIG_FILE="$1"
 HYDRO_CONTRACT_ADDRESS="$2"
 TRIBUTE_CONTRACT_ADDRESS="$3"
+TRANCHES_NUM=$4
 
 NEUTRON_CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
 NEUTRON_NODE=$(jq -r '.neutron_rpc_node' $CONFIG_FILE)
@@ -99,12 +100,10 @@ extract_proposal_details() {
     echo "$PROPOSAL_ID $ROUND_ID"
 }
 
-TRANCHE_ID="1"
-submit_proposals $TRANCHE_ID
-add_tributes $TRANCHE_ID
-
-TRANCHE_ID="2"
-submit_proposals $TRANCHE_ID
-add_tributes $TRANCHE_ID
+for ((i=1; i<=TRANCHES_NUM; i++)); do
+    TRANCHE_ID=$i
+    submit_proposals $TRANCHE_ID
+    add_tributes $TRANCHE_ID
+done
 
 echo 'Successfully created proposals and tributes'
