@@ -6,9 +6,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct State {
-    pub owner: Addr,
-    pub hydro: Addr,
+    pub project_owner: Option<Addr>,
+    pub principal_funds_owner: Addr,
     pub pool_id: u64,
+    pub position_created_address: Option<Addr>,
     pub position_id: Option<u64>,
     pub principal_denom: String,
     pub counterparty_denom: String,
@@ -16,20 +17,15 @@ pub struct State {
     pub initial_counterparty_amount: Uint128,
     pub liquidity_shares: Option<String>,
     pub liquidator_address: Option<Addr>,
-    pub round_length: u64,
-    pub first_round_start: Timestamp,
-    pub round_id: u64,
+    pub round_end_time: Timestamp,
     pub position_created_price: Option<String>,
     pub auction_duration: u64,
-    pub auction_period: bool,
     pub auction_end_time: Option<Timestamp>,
-    pub principal_to_replenish: Option<Uint128>,
+    pub principal_to_replenish: Uint128,
     pub counterparty_to_give: Option<Uint128>,
 }
 
 pub const STATE: Item<State> = Item::new("state");
-
-pub const RESERVATIONS: Map<&str, Vec<Coin>> = Map::new("reservations");
 
 // Each bid
 

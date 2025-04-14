@@ -61,6 +61,9 @@ pub mod mock {
         pub user3: SigningAccount,
         pub user4: SigningAccount,
         pub user5: SigningAccount,
+        pub principal_funds_owner: SigningAccount,
+        pub project_owner: SigningAccount,
+        pub liquidator: SigningAccount,
     }
 
     impl PoolMockup {
@@ -79,6 +82,17 @@ pub mod mock {
             let user4 = accounts.next().unwrap();
             let user5 = accounts.next().unwrap();
             let deployer = accounts.next().unwrap();
+            let principal_funds_owner = app.init_account(&[]).unwrap();
+            let project_owner = app
+                .init_account(&[
+                    Coin::new(10_000_000_000u128, OSMO_DENOM),
+                    Coin::new(85000u128, USDC_DENOM),
+                ])
+                .unwrap();
+            //18375375000
+            let liquidator = app
+                .init_account(&[Coin::new(4157657500u128, OSMO_DENOM)])
+                .unwrap();
 
             let gov = GovWithAppAccess::new(&app);
 
@@ -110,6 +124,9 @@ pub mod mock {
                 user3,
                 user4,
                 user5,
+                principal_funds_owner,
+                project_owner,
+                liquidator,
             }
         }
 

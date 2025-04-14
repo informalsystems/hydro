@@ -57,6 +57,9 @@ pub enum ContractError {
     #[error("NoBidFound")]
     NoBidFound {},
 
+    #[error("AuctionEnded")]
+    AuctionEnded {},
+
     #[error("AuctionNotYetEnded")]
     AuctionNotYetEnded {},
 

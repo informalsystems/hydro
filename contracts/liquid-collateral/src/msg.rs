@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Timestamp, Uint128};
+use cosmwasm_std::{Addr, Timestamp, Uint128};
 use osmosis_std::types::cosmos::base::v1beta1::Coin;
 
 use crate::state::Bid;
@@ -9,9 +9,9 @@ pub struct InstantiateMsg {
     pub pool_id: u64,
     pub principal_denom: String,
     pub counterparty_denom: String,
-    pub first_round_start: Timestamp,
-    pub round_length: u64,
-    pub hydro: String,
+    pub round_duration: u64,
+    pub project_owner: Option<String>,
+    pub principal_funds_owner: String,
     pub auction_duration: u64,
 }
 
@@ -49,8 +49,6 @@ pub enum ExecuteMsg {
 pub enum QueryMsg {
     #[returns(StateResponse)]
     GetState {},
-    #[returns(Vec<(String, Vec<Coin>)>)]
-    GetReservations {},
     #[returns(Vec<(String, Bid)>)]
     GetBids {},
     #[returns(CalculatedDataResponse)]
@@ -64,18 +62,18 @@ pub enum QueryMsg {
 
 #[cw_serde]
 pub struct StateResponse {
-    pub owner: String,
+    pub project_owner: Option<Addr>,
+    pub principal_funds_owner: String,
     pub pool_id: u64,
     pub position_id: Option<u64>,
     pub principal_denom: String,
     pub counterparty_denom: String,
     pub initial_principal_amount: Uint128,
+    pub principal_to_replenish: Uint128,
     pub initial_counterparty_amount: Uint128,
     pub liquidity_shares: Option<String>,
     pub position_created_price: Option<String>,
-    pub auction_period: bool,
     pub auction_end_time: Option<Timestamp>,
-    pub principal_to_replenish: Option<Uint128>,
     pub counterparty_to_give: Option<Uint128>,
 }
 

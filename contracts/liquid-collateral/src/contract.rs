@@ -3,13 +3,13 @@ use crate::msg::{
     CalculatedDataResponse, CreatePositionMsg, EndRoundBidMsg, ExecuteMsg, InstantiateMsg,
     QueryMsg, StateResponse,
 };
-use crate::state::{Bid, State, BIDS, RESERVATIONS, STATE};
+use crate::state::{Bid, State, BIDS, STATE};
 use cosmwasm_std::{
-    entry_point, to_binary, to_json_binary, Binary, Decimal, Deps, DepsMut, Env, Event,
-    MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Timestamp, Uint128,
+    entry_point, to_binary, to_json_binary, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
+    Event, MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Timestamp, Uint128,
 };
 use osmosis_std::types::cosmos::bank::v1beta1::MsgSend;
-use osmosis_std::types::cosmos::base::v1beta1::Coin;
+use osmosis_std::types::cosmos::base::v1beta1::Coin as OsmosisCoin;
 use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::ConcentratedliquidityQuerier;
 use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::{
     MsgCreatePosition, MsgCreatePositionResponse, MsgWithdrawPosition, MsgWithdrawPositionResponse,
@@ -24,11 +24,13 @@ pub fn instantiate(
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
-    let round_id = compute_current_round_id(_env, msg.first_round_start, msg.round_length);
-
     let state = State {
-        owner: info.sender.clone(),
+        project_owner: match msg.project_owner {
+            Some(owner_str) => Some(deps.api.addr_validate(&owner_str)?),
+            None => None,
+        },
         pool_id: msg.pool_id,
+        position_created_address: None,
         position_id: None,
         principal_denom: msg.principal_denom,
         counterparty_denom: msg.counterparty_denom,
@@ -36,15 +38,12 @@ pub fn instantiate(
         initial_counterparty_amount: Uint128::zero(),
         liquidity_shares: None,
         liquidator_address: None,
-        first_round_start: msg.first_round_start,
-        round_length: msg.round_length,
+        round_end_time: _env.block.time.plus_seconds(msg.round_duration),
         position_created_price: None,
-        round_id: round_id.unwrap(),
         auction_duration: msg.auction_duration,
-        auction_period: false,
         auction_end_time: None,
-        hydro: deps.api.addr_validate(&msg.hydro)?,
-        principal_to_replenish: None,
+        principal_funds_owner: deps.api.addr_validate(&msg.principal_funds_owner)?,
+        principal_to_replenish: Uint128::zero(),
         counterparty_to_give: None,
     };
     STATE.save(deps.storage, &state)?;
@@ -66,7 +65,7 @@ pub fn execute(
         ExecuteMsg::CreatePosition(msg) => create_position(deps, env, info, msg),
         ExecuteMsg::Liquidate => liquidate(deps, env, info),
         ExecuteMsg::EndRound => end_round(deps, env, info),
-        ExecuteMsg::EndRoundBid(msg) => end_round_bid(deps, info, msg),
+        ExecuteMsg::EndRoundBid(msg) => end_round_bid(deps, env, info, msg),
         ExecuteMsg::WidthdrawBid => withdraw_bid(deps, env, info),
         ExecuteMsg::ResolveAuction => resolve_auction(deps, env, info),
     }
@@ -77,7 +76,6 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         // Handle the GetState query
         QueryMsg::GetState {} => to_binary(&query_get_state(deps)?),
-        QueryMsg::GetReservations {} => to_binary(&query_get_reservations(deps)?),
         QueryMsg::GetBids {} => to_binary(&query_get_bids(deps)?),
         QueryMsg::GetCalculatedOptimalCounterpartyUpperTick {
             lower_tick,
@@ -165,17 +163,19 @@ pub fn create_position(
     info: MessageInfo,
     msg: CreatePositionMsg,
 ) -> Result<Response, ContractError> {
-    // straight pass - no validation from contract
-    let state = STATE.load(deps.storage)?;
+    let mut state = STATE.load(deps.storage)?;
 
     // Check if the position_id already exists
     if state.position_id.is_some() {
         return Err(ContractError::PositionAlreadyExists {});
     }
 
-    // Only owner can create position
-    if info.sender != state.owner {
-        return Err(ContractError::Unauthorized {});
+    // Only owner can create position - if present
+    match &state.project_owner {
+        Some(owner) if info.sender != *owner => {
+            return Err(ContractError::Unauthorized {});
+        }
+        _ => {}
     }
 
     // Fetch funds sent
@@ -202,11 +202,11 @@ pub fn create_position(
         lower_tick: msg.lower_tick,
         upper_tick: msg.upper_tick,
         tokens_provided: vec![
-            Coin {
+            OsmosisCoin {
                 denom: state.counterparty_denom.clone(),
                 amount: counterparty_amount.to_string(),
             },
-            Coin {
+            OsmosisCoin {
                 denom: state.principal_denom.clone(),
                 amount: principal_amount.to_string(),
             },
@@ -214,6 +214,11 @@ pub fn create_position(
         token_min_amount0: msg.counterparty_token_min_amount.to_string(),
         token_min_amount1: msg.principal_token_min_amount.to_string(),
     };
+
+    // store the address which initiated position creation
+    state.position_created_address = Some(info.sender);
+    // Save the updated state back to storage
+    STATE.save(deps.storage, &state)?;
 
     // Wrap in SubMsg to handle response
     let submsg = SubMsg::reply_on_success(create_position_msg, 1);
@@ -228,28 +233,6 @@ pub fn create_position(
 
 pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response, ContractError> {
     let mut state = STATE.load(deps.storage)?;
-
-    // Validate funds sent
-    let principal = info.funds.iter().find(|c| c.denom == state.principal_denom);
-
-    if principal.is_none() {
-        return Err(ContractError::InsufficientFunds {});
-    }
-
-    // Convert base_amount and initial_base_amount to Decimal for precise division
-    let principal_amount = Decimal::from_atomics(principal.unwrap().amount, 0)
-        .map_err(|_| ContractError::InvalidConversion {})?;
-    let initial_principal_amount = Decimal::from_atomics(state.initial_principal_amount, 0)
-        .map_err(|_| ContractError::InvalidConversion {})?;
-
-    // Ensure the supplied amount is not greater than the initial amount
-    if principal_amount > initial_principal_amount {
-        return Err(ContractError::ExcessiveLiquidationAmount {});
-    }
-
-    // Calculate percentage to liquidate
-    let perc_to_liquidate = principal_amount / initial_principal_amount;
-
     let position = ConcentratedliquidityQuerier::new(&deps.querier)
         .position_by_id(state.position_id.unwrap())
         .map_err(|_| ContractError::PositionQueryFailed {})? // Handle query errors
@@ -270,15 +253,30 @@ pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response
         });
     }
 
+    // Validate funds sent
+    let principal = info.funds.iter().find(|c| c.denom == state.principal_denom);
+
+    if principal.is_none() {
+        return Err(ContractError::InsufficientFunds {});
+    }
+
+    // Convert base_amount and initial_base_amount to Decimal for precise division
+    let principal_amount = Decimal::from_atomics(principal.unwrap().amount, 0)
+        .map_err(|_| ContractError::InvalidConversion {})?;
+    let principal_amount_to_replenish = Decimal::from_atomics(state.principal_to_replenish, 0)
+        .map_err(|_| ContractError::InvalidConversion {})?;
+
     let liquidity_shares = state
         .liquidity_shares
         .as_deref() // Converts Option<String> to Option<&str>
         .unwrap_or("0"); // Default value if None
 
-    let liquidity_shares = Uint128::from_str(liquidity_shares).unwrap();
-
     // Calculate the proportional liquidity amount to withdraw
-    let withdraw_liquidity_amount = liquidity_shares * perc_to_liquidate;
+    let withdraw_liquidity_amount = calculate_withdraw_liquidity_amount(
+        principal_amount,
+        principal_amount_to_replenish,
+        liquidity_shares,
+    )?;
     // substract liquidity and save again
 
     // Create withdraw message
@@ -292,9 +290,15 @@ pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response
     let submsg = SubMsg::reply_on_success(withdraw_position_msg, 2);
 
     state.liquidator_address = Some(info.sender);
+    // update that liquidator replenished some principal amount
+    state.principal_to_replenish = state.principal_to_replenish - principal.unwrap().amount;
+
+    // Convert liquidity_shares from &str to Uint128
+    let liquidity_shares_uint =
+        Uint128::from_str(liquidity_shares).map_err(|_| ContractError::InvalidConversion {})?;
 
     // Subtract liquidity shares (ensuring no underflow)
-    let updated_liquidity_shares = liquidity_shares
+    let updated_liquidity_shares = liquidity_shares_uint
         .checked_sub(withdraw_liquidity_amount)
         .unwrap_or(Uint128::zero()); // Prevents underflow
 
@@ -304,9 +308,45 @@ pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response
     // Save the updated state back to storage
     STATE.save(deps.storage, &state)?;
 
+    // immediately forward principal funds to principal owner
+    let principal_msg = BankMsg::Send {
+        to_address: state.principal_funds_owner.clone().into_string(),
+        amount: vec![principal.unwrap().clone()],
+    };
+
     Ok(Response::new()
         .add_submessage(submsg)
+        .add_message(principal_msg)
         .add_attribute("action", "withdraw_position"))
+}
+
+pub fn calculate_withdraw_liquidity_amount(
+    principal_amount: Decimal,
+    principal_amount_to_replenish: Decimal,
+    liquidity_shares: &str,
+) -> Result<Uint128, ContractError> {
+    // Ensure the supplied amount is not greater than the initial amount
+    if principal_amount > principal_amount_to_replenish {
+        return Err(ContractError::ExcessiveLiquidationAmount {});
+    }
+
+    // Calculate percentage to liquidate
+    let perc_to_liquidate = principal_amount / principal_amount_to_replenish;
+
+    // Parse liquidity_shares as a Decimal with 18 decimal places
+    let liquidity_shares_decimal = Decimal::from_atomics(
+        Uint128::from_str(liquidity_shares).map_err(|_| ContractError::InvalidConversion {})?,
+        18, // Default precision for Decimal
+    )
+    .map_err(|_| ContractError::InvalidConversion {})?;
+
+    // Perform high-precision multiplication
+    let withdraw_liquidity_amount = liquidity_shares_decimal * perc_to_liquidate;
+
+    // Round to the nearest integer and convert back to Uint128
+    let liquidity_amount = withdraw_liquidity_amount.atomics().into();
+
+    Ok(liquidity_amount)
 }
 
 #[entry_point]
@@ -329,11 +369,11 @@ fn handle_create_position_reply(deps: DepsMut, msg: Reply) -> Result<Response, C
     // Update the state with the new position ID
     state.position_id = Some(response.position_id);
     state.initial_principal_amount = Uint128::from_str(&response.amount1).unwrap();
+    state.principal_to_replenish = Uint128::from_str(&response.amount1).unwrap();
     state.initial_counterparty_amount = Uint128::from_str(&response.amount0).unwrap();
     state.liquidity_shares = Some(response.liquidity_created);
 
     // Query the current spot price
-    //TODO make sure this is accurate - async
     let ratio_str = PoolmanagerQuerier::new(&deps.querier)
         .spot_price(
             state.pool_id,
@@ -359,35 +399,39 @@ fn handle_withdraw_position_reply(
     // Parse the reply result into MsgCreatePositionResponse
     let response: MsgWithdrawPositionResponse = msg.result.try_into()?;
 
+    let amount_0 = Uint128::from_str(&response.amount0)
+        .map_err(|_| StdError::generic_err("Invalid Uint128 value"))?;
+
     // Load the current state
     let mut state = STATE.load(deps.storage)?;
-    // Get liquidator address (this should be set somewhere in your state or logic)
-    if let Some(liquidator_address) = state.liquidator_address.clone() {
-        // Create a transfer message to send amount0 to the liquidator
-        let amount0 = response.amount0;
-        let transfer_msg = MsgSend {
-            from_address: env.contract.address.into_string(),
+
+    let liquidator_address = state
+        .liquidator_address
+        .clone()
+        .ok_or(ContractError::NoLiquidatorAddress {})?;
+
+    let mut messages = vec![];
+
+    let amount0 = response.amount0;
+    if amount_0 > Uint128::zero() {
+        let counterparty_msg = BankMsg::Send {
             to_address: liquidator_address.into_string(),
             amount: vec![Coin {
                 denom: state.counterparty_denom.to_string(),
-                amount: amount0.clone(),
+                amount: amount_0,
             }],
         };
-
-        // Save the updated state (if necessary)
-        state.liquidator_address = None; // Reset liquidator address after the transfer
-        STATE.save(deps.storage, &state)?;
-
-        let event = Event::new("withdraw_from_position")
-            .add_attribute("counterparty_amount", amount0.to_string());
-
-        // Return the response with the transfer message
-        return Ok(Response::new()
-            .add_message(transfer_msg) // Add transfer message
-            .add_event(event));
-    } else {
-        return Err(ContractError::NoLiquidatorAddress {});
+        messages.push(counterparty_msg);
     }
+
+    // Reset liquidator and save state
+    state.liquidator_address = None;
+    STATE.save(deps.storage, &state)?;
+
+    Ok(Response::new()
+        .add_messages(messages)
+        .add_attribute("principal_amount", &response.amount1.to_string())
+        .add_attribute("counterparty_amount", amount0.to_string()))
 }
 fn handle_withdraw_position_end_round_reply(
     deps: DepsMut,
@@ -406,39 +450,72 @@ fn handle_withdraw_position_end_round_reply(
     let amount_0 = Uint128::from_str(&response.amount0)
         .map_err(|_| StdError::generic_err("Invalid Uint128 value"))?;
 
-    if amount_1 >= state.initial_principal_amount {
-        let mut owner_reservations = RESERVATIONS
-            .may_load(deps.storage, &state.owner.to_string())?
-            .unwrap_or_default();
-        let mut hydro_reservations = RESERVATIONS
-            .may_load(deps.storage, &state.hydro.to_string())?
-            .unwrap_or_default();
+    let project_owner = state.position_created_address.clone();
+    let principal_owner = state.principal_funds_owner.clone();
 
-        // Reserve WOBBLE for the project
-        owner_reservations.push(Coin {
-            denom: state.counterparty_denom.clone(),
-            amount: amount_0.to_string(),
-        });
+    // we have fully withdrawn position
+    state.liquidity_shares = None;
 
-        // Reserve PRINCIPAL for hydro
-        hydro_reservations.push(Coin {
-            denom: state.principal_denom.clone(),
-            amount: state.initial_principal_amount.to_string(),
-        });
-        let remaining_amount = amount_1 - state.initial_principal_amount;
-        // If remaining amount is positive, reserve it for the project
-        if remaining_amount > Uint128::zero() {
-            owner_reservations.push(Coin {
-                denom: state.principal_denom.clone(),
-                amount: amount_1.to_string(),
-            });
+    let mut messages = vec![];
+
+    // Question: should we check here state.principal_to_replenish amount?
+    // since it's possible there were partial liquidations which didn't replenish all amount
+    if amount_1 >= state.principal_to_replenish {
+        // send COUNTERPARTY to the project
+        if amount_0 > Uint128::zero() {
+            let counterparty_msg = BankMsg::Send {
+                to_address: project_owner.clone().unwrap().into_string(),
+                amount: vec![Coin {
+                    denom: state.counterparty_denom.to_string(),
+                    amount: amount_0,
+                }],
+            };
+            messages.push(counterparty_msg);
         }
-        RESERVATIONS.save(deps.storage, &state.owner.to_string(), &owner_reservations)?;
-        RESERVATIONS.save(deps.storage, &state.hydro.to_string(), &hydro_reservations)?;
+
+        // send PRINCIPAL to principal owner
+        if state.principal_to_replenish > Uint128::zero() {
+            let principal_msg = BankMsg::Send {
+                to_address: principal_owner.into_string(),
+                amount: vec![Coin {
+                    denom: state.principal_denom.to_string(),
+                    amount: state.principal_to_replenish,
+                }],
+            };
+            messages.push(principal_msg);
+        }
+
+        let remaining_amount = amount_1 - state.principal_to_replenish;
+        // send remaining PRINCIPAL to the project
+        if remaining_amount > Uint128::zero() {
+            let remaining_principal_msg = BankMsg::Send {
+                to_address: project_owner.unwrap().into_string(),
+                amount: vec![Coin {
+                    denom: state.principal_denom.to_string(),
+                    amount: remaining_amount,
+                }],
+            };
+            messages.push(remaining_principal_msg);
+        }
+
+        // all amount is replenished
+        state.principal_to_replenish = Uint128::zero();
     } else {
-        state.auction_period = true;
+        // send PRINCIPAL to principal owner
+        if amount_1 > Uint128::zero() {
+            let principal_msg = BankMsg::Send {
+                to_address: principal_owner.into_string(),
+                amount: vec![Coin {
+                    denom: state.principal_denom.to_string(),
+                    amount: amount_1,
+                }],
+            };
+            messages.push(principal_msg);
+        }
+        // there is possibility principal amount is zero and this method is called
+        // Question: should we then prevent liqidation msg to be called if contract reaches auction state?
         state.auction_end_time = Some(env.block.time.plus_seconds(state.auction_duration));
-        state.principal_to_replenish = Some(state.initial_principal_amount - amount_1);
+        state.principal_to_replenish = state.principal_to_replenish - amount_1;
         state.counterparty_to_give = Some(amount_0);
     }
 
@@ -449,20 +526,17 @@ fn handle_withdraw_position_end_round_reply(
         .add_attribute("principal_amount", response.amount1.to_string());
 
     // Return the response with the transfer message
-    return Ok(Response::new().add_event(event));
+    Ok(Response::new().add_messages(messages).add_event(event))
 }
 
 pub fn end_round(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
     // Load the current state
-    let mut state = STATE.load(deps.storage)?;
-    let current_round_id = compute_current_round_id(
-        env.clone(),
-        state.first_round_start,
-        state.round_length.clone(),
-    )?;
+    let state = STATE.load(deps.storage)?;
+
+    let current_time = env.block.time;
 
     // Check that the round is ended by checking that the round_id is less than the current round
-    if state.round_id >= current_round_id {
+    if current_time < state.round_end_time {
         return Err(ContractError::Std(StdError::generic_err(
             "Round has not ended yet",
         )));
@@ -478,8 +552,6 @@ pub fn end_round(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
     // Wrap in SubMsg to handle response
     let submsg = SubMsg::reply_on_success(withdraw_position_msg, 3);
 
-    state.round_id = current_round_id;
-
     // Save the updated state back to storage
     STATE.save(deps.storage, &state)?;
 
@@ -489,14 +561,19 @@ pub fn end_round(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
 }
 pub fn end_round_bid(
     deps: DepsMut,
+    env: Env,
     info: MessageInfo,
     msg: EndRoundBidMsg,
 ) -> Result<Response, ContractError> {
     let state = STATE.load(deps.storage)?;
 
     // Check that auction is active and has not ended
-    if !state.auction_period {
+    if state.auction_end_time.is_none() {
         return Err(ContractError::AuctionNotActive {});
+    }
+
+    if env.block.time >= state.auction_end_time.unwrap() {
+        return Err(ContractError::AuctionEnded {});
     }
 
     let principal = info
@@ -507,10 +584,10 @@ pub fn end_round_bid(
         .ok_or(ContractError::InsufficientFunds {})?;
 
     // Calculate the percentage replenished
-    let percentage_replenished = if state.principal_to_replenish.unwrap().is_zero() {
+    let percentage_replenished = if state.principal_to_replenish.is_zero() {
         Decimal::zero() // if no replenishment is needed, no percentage can be calculated
     } else {
-        Decimal::from_ratio(principal.amount, state.principal_to_replenish.unwrap())
+        Decimal::from_ratio(principal.amount, state.principal_to_replenish)
     };
 
     // Save bid
@@ -546,12 +623,11 @@ pub fn withdraw_bid(
 
     BIDS.remove(deps.storage, info.sender.clone());
 
-    let bank_msg = MsgSend {
-        from_address: _env.contract.address.into_string(),
+    let bank_msg = BankMsg::Send {
         to_address: info.sender.clone().into_string(),
         amount: vec![Coin {
             denom: state.principal_denom.to_string(),
-            amount: bid.principal_amount.to_string(),
+            amount: bid.principal_amount,
         }],
     };
 
@@ -568,7 +644,7 @@ pub fn resolve_auction(
     let mut state = STATE.load(deps.storage)?;
 
     // Check if the auction is active and has ended
-    if !state.auction_period || state.auction_end_time.is_none() {
+    if state.auction_end_time.is_none() {
         return Err(ContractError::AuctionNotActive {});
     }
 
@@ -592,9 +668,7 @@ pub fn resolve_auction(
 
     let mut principal_accumulated = Uint128::zero();
     let mut counterparty_spent = Uint128::zero();
-    let principal_target = state
-        .principal_to_replenish
-        .ok_or(ContractError::PrincipalNotSet {})?;
+    let principal_target = state.principal_to_replenish;
     let counterparty_total = state
         .counterparty_to_give
         .ok_or(ContractError::CounterpartyNotSet {})?;
@@ -607,12 +681,11 @@ pub fn resolve_auction(
         }
 
         // Create message to send counterparty tokens
-        let counterparty_msg = MsgSend {
-            from_address: _env.contract.address.clone().into_string(),
+        let counterparty_msg = BankMsg::Send {
             to_address: bid.bidder.clone().into_string(),
             amount: vec![Coin {
                 denom: state.counterparty_denom.to_string(),
-                amount: bid.tokens_requested.to_string(),
+                amount: bid.tokens_requested,
             }],
         };
 
@@ -642,19 +715,21 @@ pub fn resolve_auction(
         .unwrap_or(Uint128::zero());
 
     if !counterparty_to_project.is_zero() {
-        let send_back_msg = MsgSend {
-            from_address: _env.contract.address.into_string(),
-            to_address: state.owner.clone().into_string(),
+        let send_back_msg = BankMsg::Send {
+            to_address: state
+                .position_created_address
+                .clone()
+                .unwrap()
+                .into_string(),
             amount: vec![Coin {
                 denom: state.counterparty_denom.to_string(),
-                amount: counterparty_to_project.to_string(),
+                amount: counterparty_to_project,
             }],
         };
         messages.push(send_back_msg);
     }
 
     // Reset auction state
-    state.auction_period = false;
     state.auction_end_time = None;
     STATE.save(deps.storage, &state)?;
 
@@ -671,7 +746,8 @@ pub fn query_get_state(deps: Deps) -> StdResult<Binary> {
 
     // Build the StateResponse using the loaded state
     let response = StateResponse {
-        owner: state.owner.to_string(),
+        project_owner: state.project_owner,
+        principal_funds_owner: state.principal_funds_owner.into_string(),
         pool_id: state.pool_id,
         counterparty_denom: state.counterparty_denom.clone(),
         principal_denom: state.principal_denom.clone(),
@@ -680,7 +756,6 @@ pub fn query_get_state(deps: Deps) -> StdResult<Binary> {
         initial_counterparty_amount: state.initial_counterparty_amount,
         liquidity_shares: state.liquidity_shares,
         position_created_price: state.position_created_price,
-        auction_period: state.auction_period,
         auction_end_time: state.auction_end_time,
         principal_to_replenish: state.principal_to_replenish,
         counterparty_to_give: state.counterparty_to_give,
@@ -689,24 +764,6 @@ pub fn query_get_state(deps: Deps) -> StdResult<Binary> {
     to_json_binary(&response)
 }
 
-pub fn query_get_reservations(deps: Deps) -> StdResult<Binary> {
-    let reservations = RESERVATIONS
-        .range(deps.storage, None, None, Order::Ascending)
-        .map(|result| {
-            match result {
-                Ok((key, coin_list)) => {
-                    // Convert the raw key bytes to a UTF-8 string
-                    let key_str =
-                        String::from_utf8(key.into()).unwrap_or_else(|_| "Invalid Key".to_string());
-                    Ok((key_str, coin_list)) // Now coin_list is Vec<Coin>
-                }
-                Err(e) => Err(e),
-            }
-        })
-        .collect::<Result<Vec<(String, Vec<Coin>)>, cosmwasm_std::StdError>>()?;
-
-    Ok(to_binary(&reservations)?)
-}
 pub fn query_get_bids(deps: Deps) -> StdResult<Binary> {
     // Collect all bids from the BIDS map, converting each entry to a tuple (String, Bid)
     let all_bids: StdResult<Vec<(String, Bid)>> = BIDS
@@ -766,7 +823,7 @@ mod tests {
         "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4";
     pub const OSMO_DENOM: &str = "uosmo";
 
-    pub const ONE_SECOND: u64 = 1;
+    pub const FIVE_SECONDS: u64 = 5;
 
     pub fn instantiate(
         wasm: &Wasm<OsmosisTestApp>, // Borrow wasm reference
@@ -779,10 +836,10 @@ mod tests {
             pool_id: 1,
             counterparty_denom: USDC_DENOM.to_owned(),
             principal_denom: OSMO_DENOM.to_owned(),
-            first_round_start: Timestamp::from_seconds(0),
-            round_length: ONE_SECOND,
-            hydro: pool_mockup.user2.address(), // Addr
-            auction_duration: 1000,
+            round_duration: FIVE_SECONDS,
+            principal_funds_owner: pool_mockup.principal_funds_owner.address(),
+            project_owner: None, // Addr
+            auction_duration: FIVE_SECONDS,
         };
 
         let contract_addr = wasm
@@ -798,7 +855,7 @@ mod tests {
             .data
             .address;
 
-        println!("Contract deployed at: {}", contract_addr);
+        println!("Contract deployed at: {}\n", contract_addr);
 
         contract_addr // Return the contract address
     }
@@ -843,7 +900,7 @@ mod tests {
         println!("OSMO Amount: {}", asset1_amount);
 
         // Print claimable spread rewards
-        println!("Claimable Spread Rewards:");
+        println!("Claimable Spread Rewards:\n");
         for reward in &full_position.claimable_spread_rewards {
             let denom = &reward.denom;
             let amount = &reward.amount;
@@ -851,10 +908,61 @@ mod tests {
         }
 
         if let Some(position) = &full_position.position {
-            println!("Liquidity: {}", position.liquidity); // Print the value
+            println!("Liquidity: {}\n", position.liquidity); // Print the value
         } else {
-            println!("Position not found");
+            println!("Position not found\n");
         }
+    }
+    fn query_and_print_balance(
+        bank: &Bank<'_, OsmosisTestApp>,
+        address: &str,
+        denom: &str,
+        user_name: &str,
+    ) -> String {
+        let amount = bank
+            .query_balance(&QueryBalanceRequest {
+                address: address.to_string(),
+                denom: denom.to_string(),
+            })
+            .unwrap()
+            .balance
+            .unwrap()
+            .amount;
+
+        println!("{}'s balance for {}: {}", user_name, denom, amount);
+        amount
+    }
+
+    #[test]
+    fn test_calculate_withdraw_liquidity_amount() {
+        // Create a mock principal Coin
+        let coin = Coin {
+            denom: "uosmo".to_string(),
+            amount: Uint128::new(3333), // Example principal amount
+        };
+        let principal = Some(&coin);
+
+        // Create a mock initial principal amount
+        let initial_principal_amount = Uint128::new(100000); // Example initial principal amount
+                                                             // Convert base_amount and initial_base_amount to Decimal for precise division
+        let principal_amount = Decimal::from_atomics(principal.unwrap().amount, 0)
+            .map_err(|_| ContractError::InvalidConversion {});
+        let initial_principal_amount = Decimal::from_atomics(initial_principal_amount, 0)
+            .map_err(|_| ContractError::InvalidConversion {});
+        let mock_liquidity_shares = Some("92195444572928873195000".to_string());
+
+        let liquidity_shares = &mock_liquidity_shares
+            .as_deref() // Converts Option<String> to Option<&str>
+            .unwrap_or("0"); // Default value if None
+
+        let result = calculate_withdraw_liquidity_amount(
+            principal_amount.unwrap(),
+            initial_principal_amount.unwrap(),
+            liquidity_shares,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Uint128::new(3072874167615719343589)); // 50% of 1000 = 500
     }
 
     #[test]
@@ -895,17 +1003,7 @@ mod tests {
         let code_id = store_contracts_code(&wasm, &pool_mockup.deployer);
         let contract_addr = instantiate(&wasm, &pool_mockup, code_id);
         println!("Creating position...\n");
-        let response = create_position(&wasm, &contract_addr, &pool_mockup.deployer);
-        //println!("Execution successful: {:?}", response);
-        for event in response.events {
-            if event.ty == "create_position" {
-                for attr in event.attributes {
-                    if attr.key == "position_id" {
-                        println!("Position ID: {}", attr.value);
-                    }
-                }
-            }
-        }
+        let response = create_position(&wasm, &contract_addr, &pool_mockup.project_owner);
 
         let position_response = pool_mockup.position_query(1);
 
@@ -927,37 +1025,18 @@ mod tests {
             if let Some(position) = full_position.position {
                 position.liquidity // Return liquidity
             } else {
-                println!("Position not found");
+                println!("Position not found\n");
                 String::from("0") // Default value
             }
         } else {
-            println!("Failed to get position response");
+            println!("Failed to get position response\n");
             String::from("0") // Default value
         };
 
-        println!("Query-ing bank balances for contract...\n");
         let bank = Bank::new(&pool_mockup.app);
-        let amount_usdc = bank
-            .query_balance(&QueryBalanceRequest {
-                address: contract_addr.to_string(),
-                denom: USDC_DENOM.into(),
-            })
-            .unwrap()
-            .balance
-            .unwrap()
-            .amount;
-        let amount_osmo = bank
-            .query_balance(&QueryBalanceRequest {
-                address: contract_addr.to_string(),
-                denom: OSMO_DENOM.into(),
-            })
-            .unwrap()
-            .balance
-            .unwrap()
-            .amount;
+        let usdc_balance = query_and_print_balance(&bank, &contract_addr, USDC_DENOM, "Contract");
 
-        println!("Contract USDC pre withdrawal: {}", amount_usdc); // Print the value
-        println!("Contract OSMO pre withdrawal: {}", amount_osmo);
+        let osmo_balance = query_and_print_balance(&bank, &contract_addr, OSMO_DENOM, "Contract");
 
         // this swap should make price goes below lower range - should make OSMO amount in pool be zero
         let usdc_needed: u128 = 117_647_058_823;
@@ -974,11 +1053,11 @@ mod tests {
             if let Some(position) = full_position.position {
                 position.liquidity // Return liquidity
             } else {
-                println!("Position not found");
+                println!("Position not found\n");
                 String::from("0") // Default value
             }
         } else {
-            println!("Failed to get position response");
+            println!("Failed to get position response\n");
             String::from("0") // Default value
         };
 
@@ -986,18 +1065,23 @@ mod tests {
         let liquidate_msg = ExecuteMsg::Liquidate;
 
         //100000
-        let coins = &[Coin::new(100000u128, OSMO_DENOM)];
+        let coins = &[Coin::new(99999u128, OSMO_DENOM)];
 
         println!("Executing liquidate msg...\n");
         let response = wasm
-            .execute(&contract_addr, &liquidate_msg, coins, &pool_mockup.user1)
+            .execute(
+                &contract_addr,
+                &liquidate_msg,
+                coins,
+                &pool_mockup.liquidator,
+            )
             .expect("Execution failed");
         //println!("Execution successful: {:?}", response);
         //println!("{:?}", response.events);
 
         let position_response = pool_mockup.position_query(1);
         //println!("{:#?}", position_response);
-        println!("Printing position details after liqudation...\n");
+        println!("Printing position details after liquidation...\n");
         let liquidity = if let Ok(full_position) = position_response {
             // Print the full position details using the helper method
             print_position_details(&full_position);
@@ -1014,29 +1098,57 @@ mod tests {
             String::from("0") // Default value
         };
 
-        println!("Query-ing contract bank balances after liquidation...\n");
+        println!("\nQuery-ing contract bank balances after liquidation...\n");
         let bank = Bank::new(&pool_mockup.app);
-        let amount_usdc = bank
-            .query_balance(&QueryBalanceRequest {
-                address: contract_addr.to_string(),
-                denom: USDC_DENOM.into(),
-            })
-            .unwrap()
-            .balance
-            .unwrap()
-            .amount;
-        let amount_osmo = bank
-            .query_balance(&QueryBalanceRequest {
-                address: contract_addr.to_string(),
-                denom: OSMO_DENOM.into(),
-            })
-            .unwrap()
-            .balance
-            .unwrap()
-            .amount;
+        let usdc_balance = query_and_print_balance(&bank, &contract_addr, USDC_DENOM, "Contract");
 
-        println!("Contract USDC after withdrawal: {}", amount_usdc); // Print the value
-        println!("Contract OSMO after withdrawal: {}", amount_osmo);
+        let osmo_balance = query_and_print_balance(&bank, &contract_addr, OSMO_DENOM, "Contract");
+
+        println!("\nQuery-ing principal owner bank balances after liquidation...\n");
+        let usdc_balance = query_and_print_balance(
+            &bank,
+            &pool_mockup.principal_funds_owner.address(),
+            USDC_DENOM,
+            "Principal funds owner",
+        );
+
+        let osmo_balance = query_and_print_balance(
+            &bank,
+            &pool_mockup.principal_funds_owner.address(),
+            OSMO_DENOM,
+            "Principal funds owner",
+        );
+        let bank = Bank::new(&pool_mockup.app);
+        println!("\nQuery-ing project owner bank balances after liquidation...\n");
+        let usdc_balance = query_and_print_balance(
+            &bank,
+            &pool_mockup.project_owner.address(),
+            USDC_DENOM,
+            "Project owner",
+        );
+
+        let osmo_balance = query_and_print_balance(
+            &bank,
+            &pool_mockup.project_owner.address(),
+            OSMO_DENOM,
+            "Project owner",
+        );
+
+        println!("\nQuery-ing liquidator bank balances after liquidation...\n");
+        let bank = Bank::new(&pool_mockup.app);
+        let usdc_balance = query_and_print_balance(
+            &bank,
+            &pool_mockup.liquidator.address(),
+            USDC_DENOM,
+            "Liquidator",
+        );
+
+        let osmo_balance = query_and_print_balance(
+            &bank,
+            &pool_mockup.liquidator.address(),
+            OSMO_DENOM,
+            "Liquidator",
+        );
 
         let query_msg = QueryMsg::GetState {};
 
@@ -1045,6 +1157,24 @@ mod tests {
         let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
         // Print the state response
         println!("{}", formatted_output);
+
+        println!("Printing position details...\n");
+        let position_response = pool_mockup.position_query(1);
+        let liquidity = if let Ok(full_position) = position_response {
+            // Print the full position details using the helper method
+            print_position_details(&full_position);
+
+            // Extract liquidity
+            if let Some(position) = full_position.position {
+                position.liquidity // Return liquidity
+            } else {
+                println!("Position not found\n");
+                String::from("0") // Default value
+            }
+        } else {
+            println!("Failed to get position response\n");
+            String::from("0") // Default value
+        };
     }
     #[test]
     fn test_end_of_round_principal_higher_or_equal() {
@@ -1097,27 +1227,6 @@ mod tests {
         println!("Printing contract state...\n");
         // Print the state response
         println!("{}", formatted_output);
-
-        let query_msg = QueryMsg::GetReservations {};
-
-        let query_result: Binary = wasm.query(&contract_addr, &query_msg).unwrap();
-        let reservation_response: Vec<(String, Vec<Coin>)> = from_binary(&query_result).unwrap();
-        println!(
-            "Reservations... ({} total keys)\n",
-            reservation_response.len()
-        );
-
-        for (key, coins) in reservation_response {
-            println!("Key: {}", key);
-            if coins.is_empty() {
-                println!("  No coins reserved.");
-            } else {
-                for coin in coins {
-                    println!("  - Amount: {} {}", coin.amount, coin.denom);
-                }
-            }
-            println!(); // Print an empty line between reservations
-        }
 
         println!("Query-ing contract bank balances after liquidation...\n");
         let bank = Bank::new(&pool_mockup.app);
