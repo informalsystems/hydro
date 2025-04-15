@@ -1,4 +1,4 @@
-use cosmwasm_std::{Decimal, StdError};
+use cosmwasm_std::{Decimal, StdError, Uint128};
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
@@ -77,4 +77,19 @@ pub enum ContractError {
 
     #[error("NotEnoughCounterpartyAmount")]
     NotEnoughCounterpartyAmount {},
+
+    #[error("BidTooSmall")]
+    BidTooSmall {
+        min_required: Uint128,
+        provided: Uint128,
+    },
+
+    #[error("RequestedAmountTooHigh")]
+    RequestedAmountTooHigh {
+        requested: Uint128,
+        available: Uint128,
+    },
+
+    #[error("BidNotBetterThanWorst")]
+    BidNotBetterThanWorst {},
 }

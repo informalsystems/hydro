@@ -3,10 +3,11 @@ use crate::msg::{
     CalculatedDataResponse, CreatePositionMsg, EndRoundBidMsg, ExecuteMsg, InstantiateMsg,
     QueryMsg, StateResponse,
 };
-use crate::state::{Bid, State, BIDS, STATE};
+use crate::state::{Bid, State, BIDS, SORTED_BIDS, STATE};
 use cosmwasm_std::{
-    entry_point, to_binary, to_json_binary, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
-    Event, MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Timestamp, Uint128,
+    entry_point, to_binary, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut,
+    Env, Event, MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Timestamp,
+    Uint128,
 };
 use osmosis_std::types::cosmos::bank::v1beta1::MsgSend;
 use osmosis_std::types::cosmos::base::v1beta1::Coin as OsmosisCoin;
@@ -42,6 +43,7 @@ pub fn instantiate(
         position_created_price: None,
         auction_duration: msg.auction_duration,
         auction_end_time: None,
+        auction_principal_deposited: Uint128::zero(),
         principal_funds_owner: deps.api.addr_validate(&msg.principal_funds_owner)?,
         principal_to_replenish: Uint128::zero(),
         counterparty_to_give: None,
@@ -91,6 +93,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
                 price_ratio,
             )?)
         }
+        QueryMsg::GetSortedBids {} => to_binary(&query_sorted_bids(deps)?),
     }
 }
 
@@ -138,11 +141,12 @@ pub fn query_get_calculated_optimal_counterparty_upper_tick(
     let liquidity = principal_token_amount / (sqrt_current - sqrt_lower);
 
     // Step 2: Adjust liquidity based on liquidation bonus
-    let adjusted_base_token_amount = principal_token_amount * (1.0 + liquidation_bonus);
+    let bonus_amount = principal_token_amount * liquidation_bonus;
+    let adjusted_base_token_amount = principal_token_amount + bonus_amount;
     let adjusted_liquidity = adjusted_base_token_amount / (sqrt_current - sqrt_lower);
 
     // Step 3: Calculate the upper tick based on adjusted liquidity
-    let upper_tick = ((liquidity / adjusted_liquidity) + sqrt_current) * sqrt_current;
+    let upper_tick = sqrt_current + (adjusted_liquidity / liquidity);
     //let upper_tick = 0.1 as f64;
 
     // Step 4: Calculate counterparty amount (WOBBLE) based on liquidity
@@ -565,7 +569,7 @@ pub fn end_round_bid(
     info: MessageInfo,
     msg: EndRoundBidMsg,
 ) -> Result<Response, ContractError> {
-    let state = STATE.load(deps.storage)?;
+    let mut state = STATE.load(deps.storage)?;
 
     // Check that auction is active and has not ended
     if state.auction_end_time.is_none() {
@@ -583,12 +587,103 @@ pub fn end_round_bid(
         .filter(|c| !c.amount.is_zero())
         .ok_or(ContractError::InsufficientFunds {})?;
 
-    // Calculate the percentage replenished
-    let percentage_replenished = if state.principal_to_replenish.is_zero() {
-        Decimal::zero() // if no replenishment is needed, no percentage can be calculated
-    } else {
-        Decimal::from_ratio(principal.amount, state.principal_to_replenish)
-    };
+    // Ensure the principal amount is at least 1% of principal_to_replenish
+    let min_required_amount = state.principal_to_replenish / Uint128::new(100); // 1% of principal_to_replenish
+    if principal.amount < min_required_amount {
+        return Err(ContractError::BidTooSmall {
+            min_required: min_required_amount,
+            provided: principal.amount,
+        });
+    }
+    // do not allow requested amounts that cannot be covered
+    let counterparty_to_give = state
+        .counterparty_to_give
+        .ok_or(ContractError::CounterpartyNotSet {})?;
+    if msg.requested_amount > counterparty_to_give {
+        return Err(ContractError::RequestedAmountTooHigh {
+            requested: msg.requested_amount,
+            available: counterparty_to_give,
+        });
+    }
+
+    // Calculate the price of the new bid
+    let new_bid_price = Decimal::from_ratio(msg.requested_amount, principal.amount);
+
+    // Load the sorted bids array
+    let mut sorted_bids = SORTED_BIDS.load(deps.storage).unwrap_or_default();
+
+    // Check if the total principal deposited is already sufficient
+    if state.auction_principal_deposited >= state.principal_to_replenish {
+        // If the total principal is sufficient, compare with the worst bid
+        if let Some((worst_bidder, worst_bid_price)) = sorted_bids.first() {
+            // Replace the worst bid if the new bid is better
+            if new_bid_price < *worst_bid_price
+                && principal.amount
+                    >= BIDS
+                        .load(deps.storage, worst_bidder.clone())?
+                        .principal_amount
+            {
+                // Remove the worst bid
+                let worst_bid = BIDS.load(deps.storage, worst_bidder.clone())?;
+                BIDS.remove(deps.storage, worst_bidder.clone());
+                sorted_bids.remove(0);
+
+                // Refund the worst bidder
+                // Question: Should we make bidders claim themselves?
+                let principal_msg = BankMsg::Send {
+                    to_address: worst_bid.bidder.clone().into_string(),
+                    amount: vec![Coin {
+                        denom: state.principal_denom.to_string(),
+                        amount: worst_bid.principal_amount,
+                    }],
+                };
+
+                // Save the new bid
+                BIDS.save(
+                    deps.storage,
+                    info.sender.clone(),
+                    &Bid {
+                        bidder: info.sender.clone(),
+                        principal_amount: principal.amount,
+                        tokens_requested: msg.requested_amount,
+                    },
+                )?;
+
+                // Insert the new bid into the sorted array
+                let position = sorted_bids
+                    .iter()
+                    .position(|(_, price)| new_bid_price > *price)
+                    .unwrap_or(sorted_bids.len());
+                sorted_bids.insert(position, (info.sender.clone(), new_bid_price));
+
+                // Update the total principal deposited
+                state.auction_principal_deposited += principal.amount - worst_bid.principal_amount;
+
+                // Save the updated state and sorted bids
+                STATE.save(deps.storage, &state)?;
+                SORTED_BIDS.save(deps.storage, &sorted_bids)?;
+
+                return Ok(Response::new()
+                    .add_message(principal_msg)
+                    .add_attribute("action", "replace_worst_bid")
+                    .add_attribute("bidder", info.sender)
+                    .add_attribute("principal", principal.amount)
+                    .add_attribute("tokens_requested", msg.requested_amount));
+            } else {
+                return Err(ContractError::BidNotBetterThanWorst {});
+            }
+        }
+    }
+
+    // Update the total principal deposited
+    state.auction_principal_deposited += principal.amount;
+
+    // Insert the new bid into the sorted array
+    let position = sorted_bids
+        .iter()
+        .position(|(_, price)| new_bid_price > *price)
+        .unwrap_or(sorted_bids.len());
+    sorted_bids.insert(position, (info.sender.clone(), new_bid_price));
 
     // Save bid
     BIDS.save(
@@ -598,9 +693,12 @@ pub fn end_round_bid(
             bidder: info.sender.clone(),
             principal_amount: principal.amount,
             tokens_requested: msg.requested_amount,
-            percentage_replenished,
         },
     )?;
+
+    // Save the updated state
+    STATE.save(deps.storage, &state)?;
+    SORTED_BIDS.save(deps.storage, &sorted_bids)?;
 
     Ok(Response::new()
         .add_attribute("action", "end_round_bid")
@@ -759,6 +857,7 @@ pub fn query_get_state(deps: Deps) -> StdResult<Binary> {
         auction_end_time: state.auction_end_time,
         principal_to_replenish: state.principal_to_replenish,
         counterparty_to_give: state.counterparty_to_give,
+        auction_principal_deposited: state.auction_principal_deposited,
     };
 
     to_json_binary(&response)
@@ -776,6 +875,12 @@ pub fn query_get_bids(deps: Deps) -> StdResult<Binary> {
 
     // Convert the response into Binary (CosmWasm format)
     Ok(to_binary(&response)?)
+}
+
+pub fn query_sorted_bids(deps: Deps) -> StdResult<Vec<(Addr, Decimal)>> {
+    // Load the sorted bids from storage
+    let sorted_bids = SORTED_BIDS.load(deps.storage).unwrap_or_default();
+    Ok(sorted_bids)
 }
 
 // Computes the current round_id by taking contract_start_time and dividing the time since
@@ -823,6 +928,7 @@ mod tests {
         "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4";
     pub const OSMO_DENOM: &str = "uosmo";
 
+    pub const HUNDRED_SECONDS: u64 = 100;
     pub const FIVE_SECONDS: u64 = 5;
 
     pub fn instantiate(
@@ -839,7 +945,7 @@ mod tests {
             round_duration: FIVE_SECONDS,
             principal_funds_owner: pool_mockup.principal_funds_owner.address(),
             project_owner: None, // Addr
-            auction_duration: FIVE_SECONDS,
+            auction_duration: HUNDRED_SECONDS,
         };
 
         let contract_addr = wasm
@@ -1304,57 +1410,93 @@ mod tests {
         // Print the state response
         println!("{}", formatted_output);
 
+        // Execute the first bid
         let first_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
             requested_amount: 10u128.into(),
         });
 
-        let coins = &[Coin::new(1u128, OSMO_DENOM)];
+        let coins = &[Coin::new(539u128, OSMO_DENOM)];
 
-        println!("Executing end round bid msg...\n");
+        println!("Executing bid msg from user1 ...\n");
         let response = wasm
-            .execute(&contract_addr, &first_bid, coins, &pool_mockup.user2)
+            .execute(&contract_addr, &first_bid, coins, &pool_mockup.user1)
             .expect("Execution failed");
 
-        let withdraw_bid_msg = ExecuteMsg::WidthdrawBid;
-
-        println!("Executing withdraw bid msg...\n");
-        let response = wasm
-            .execute(&contract_addr, &withdraw_bid_msg, &[], &pool_mockup.user2)
-            .expect("Execution failed");
-
-        let user3_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
+        // Execute the second bid
+        let second_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
             requested_amount: 10u128.into(),
         });
 
         let coins = &[Coin::new(10000u128, OSMO_DENOM)];
 
-        println!("Executing end round bid msg from user3...\n");
+        println!("Executing bid msg from user2...\n");
         let response = wasm
-            .execute(&contract_addr, &user3_bid, coins, &pool_mockup.user3)
+            .execute(&contract_addr, &second_bid, coins, &pool_mockup.user2)
             .expect("Execution failed");
 
-        let user4_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
+        // Execute the third bid
+        let third_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
             requested_amount: 10000u128.into(),
         });
 
         let coins = &[Coin::new(10000u128, OSMO_DENOM)];
 
-        println!("Executing end round bid msg from user 4...\n");
+        println!("Executing bid msg from user3...\n");
         let response = wasm
-            .execute(&contract_addr, &user4_bid, coins, &pool_mockup.user4)
+            .execute(&contract_addr, &third_bid, coins, &pool_mockup.user3)
             .expect("Execution failed");
 
-        let user5_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
+        let fourth_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
             requested_amount: 10000u128.into(),
         });
 
         let coins = &[Coin::new(33805u128, OSMO_DENOM)];
 
-        println!("Executing end round bid msg from user 5...\n");
+        println!("Executing bid msg from user4...\n");
         let response = wasm
-            .execute(&contract_addr, &user5_bid, coins, &pool_mockup.user5)
+            .execute(&contract_addr, &fourth_bid, coins, &pool_mockup.user4)
             .expect("Execution failed");
 
+        let query_msg = QueryMsg::GetState {};
+
+        let query_result: Binary = wasm.query(&contract_addr, &query_msg).unwrap();
+        let state_response: StateResponse = from_json(&query_result).unwrap();
+        let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
+
+        println!("Printing contract state...\n");
+        // Print the state response
+        println!("{}", formatted_output);
+
+        let fifth_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
+            requested_amount: 1u128.into(),
+        });
+
+        let coins = &[Coin::new(10001u128, OSMO_DENOM)];
+
+        println!("Executing bid msg from user5...\n");
+        let response = wasm
+            .execute(&contract_addr, &fifth_bid, coins, &pool_mockup.user5)
+            .expect("Execution failed");
+
+        let query_msg = QueryMsg::GetState {};
+
+        let query_result: Binary = wasm.query(&contract_addr, &query_msg).unwrap();
+        let state_response: StateResponse = from_json(&query_result).unwrap();
+        let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
+
+        println!("Printing contract state...\n");
+        // Print the state response
+        println!("{}", formatted_output);
+
+        // Query the sorted bids
+        let query_msg = QueryMsg::GetSortedBids {};
+        let response: Vec<(Addr, Decimal)> = wasm.query(&contract_addr, &query_msg).unwrap();
+
+        // Print the sorted bids
+        println!("Sorted Bids:");
+        for (bidder, price_ratio) in response {
+            println!("Bidder: {}, Price Ratio: {}", bidder, price_ratio);
+        }
         println!("Increasing time for 1000 seconds...\n");
         pool_mockup.app.increase_time(10000);
 
@@ -1367,9 +1509,9 @@ mod tests {
         // Print all bids in a structured format
         for (bidder, bid) in bids_response {
             println!(
-        "Bidder Address: {}\n  Principal Amount: {}\n  Tokens Requested: {}\n  Percentage Replenished: {}\n",
-        bidder, bid.principal_amount, bid.tokens_requested, bid.percentage_replenished
-    );
+                "Bidder Address: {}\n  Principal Amount: {}\n  Tokens Requested: {}\n",
+                bidder, bid.principal_amount, bid.tokens_requested,
+            );
         }
 
         let resolve_auction_msg = ExecuteMsg::ResolveAuction;
@@ -1395,7 +1537,7 @@ mod tests {
         let query_calculated_data = QueryMsg::GetCalculatedOptimalCounterpartyUpperTick {
             lower_tick: "0.03".to_string(),              // Example lower tick
             principal_token_amount: "100.0".to_string(), // Example principal token amount
-            liquidation_bonus: "0.0".to_string(),        // 10 %liquidation bonus
+            liquidation_bonus: "0.5".to_string(),        // 10 %liquidation bonus
             price_ratio: "0.0555555556".to_string(),     // Example price ratio
         };
 

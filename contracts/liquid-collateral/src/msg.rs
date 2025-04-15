@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Timestamp, Uint128};
+use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
 use osmosis_std::types::cosmos::base::v1beta1::Coin;
 
 use crate::state::Bid;
@@ -58,6 +58,8 @@ pub enum QueryMsg {
         liquidation_bonus: String,
         price_ratio: String,
     },
+    #[returns(Vec<(Addr, Decimal)>)]
+    GetSortedBids {},
 }
 
 #[cw_serde]
@@ -75,6 +77,7 @@ pub struct StateResponse {
     pub position_created_price: Option<String>,
     pub auction_end_time: Option<Timestamp>,
     pub counterparty_to_give: Option<Uint128>,
+    pub auction_principal_deposited: Uint128,
 }
 
 #[cw_serde]

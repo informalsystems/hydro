@@ -21,11 +21,14 @@ pub struct State {
     pub position_created_price: Option<String>,
     pub auction_duration: u64,
     pub auction_end_time: Option<Timestamp>,
+    pub auction_principal_deposited: Uint128,
     pub principal_to_replenish: Uint128,
     pub counterparty_to_give: Option<Uint128>,
 }
 
 pub const STATE: Item<State> = Item::new("state");
+
+pub const SORTED_BIDS: Item<Vec<(Addr, Decimal)>> = Item::new("sorted_bids");
 
 // Each bid
 
@@ -34,7 +37,6 @@ pub struct Bid {
     pub bidder: Addr,
     pub principal_amount: Uint128,
     pub tokens_requested: Uint128,
-    pub percentage_replenished: Decimal,
 }
 
 pub const BIDS: Map<Addr, Bid> = Map::new("bids");
