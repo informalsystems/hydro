@@ -18,7 +18,6 @@ pub struct State {
     pub liquidity_shares: Option<String>,
     pub liquidator_address: Option<Addr>,
     pub round_end_time: Timestamp,
-    pub position_created_price: Option<String>,
     pub auction_duration: u64,
     pub auction_end_time: Option<Timestamp>,
     pub auction_principal_deposited: Uint128,
@@ -28,15 +27,23 @@ pub struct State {
 
 pub const STATE: Item<State> = Item::new("state");
 
-pub const SORTED_BIDS: Item<Vec<(Addr, Decimal)>> = Item::new("sorted_bids");
+pub const SORTED_BIDS: Item<Vec<(Addr, Decimal, Uint128)>> = Item::new("sorted_bids");
 
-// Each bid
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub enum BidStatus {
+    Submitted,
+    Processed,
+    Refunded,
+}
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]
 pub struct Bid {
     pub bidder: Addr,
-    pub principal_amount: Uint128,
+    pub principal_deposited: Uint128,
     pub tokens_requested: Uint128,
+    pub tokens_fulfilled: Uint128,
+    pub tokens_refunded: Uint128,
+    pub status: BidStatus,
 }
 
 pub const BIDS: Map<Addr, Bid> = Map::new("bids");

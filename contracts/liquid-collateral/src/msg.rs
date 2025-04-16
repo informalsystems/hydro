@@ -74,7 +74,6 @@ pub struct StateResponse {
     pub principal_to_replenish: Uint128,
     pub initial_counterparty_amount: Uint128,
     pub liquidity_shares: Option<String>,
-    pub position_created_price: Option<String>,
     pub auction_end_time: Option<Timestamp>,
     pub counterparty_to_give: Option<Uint128>,
     pub auction_principal_deposited: Uint128,
