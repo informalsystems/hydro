@@ -11,6 +11,7 @@ pub struct State {
     pub position_created_address: Option<Addr>,
     pub position_id: Option<u64>,
     pub principal_denom: String,
+    pub principal_first: bool, // Flag to track in which position is the principal
     pub counterparty_denom: String,
     pub initial_principal_amount: Uint128,
     pub initial_counterparty_amount: Uint128,

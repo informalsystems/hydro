@@ -49,6 +49,7 @@ pub fn instantiate(
         principal_to_replenish: Uint128::zero(),
         counterparty_to_give: None,
         position_rewards: None,
+        principal_first: msg.principal_first,
     };
     STATE.save(deps.storage, &state)?;
 
@@ -245,17 +246,24 @@ pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response
         .position
         .ok_or(ContractError::PositionNotFound {})?; // Return error if position is None
 
-    // Extract asset1 amount safely
-    let asset1_amount = position
-        .asset1
-        .map(|coin| coin.amount)
-        .ok_or(ContractError::AssetNotFound {})?;
+    // Conditionally extract only the principal asset based on `state.principal_first`
+    let principal_asset = if state.principal_first {
+        position.asset0 // principal is asset0
+    } else {
+        position.asset1 // principal is asset1
+    };
+
+    // Ensure the principal asset is valid
+    let principal_asset = principal_asset.ok_or(ContractError::AssetNotFound {})?;
+
+    // Use the principal asset amount
+    let principal_amount = principal_asset.amount.clone();
 
     // Check if asset1_amount is non-zero
     // if it's zero - price went below lower tick (since principal token amount is zero)
-    if asset1_amount != "0" {
+    if principal_amount != "0" {
         return Err(ContractError::ThresholdNotMet {
-            amount: asset1_amount,
+            amount: principal_amount,
         });
     }
 
@@ -431,11 +439,25 @@ fn handle_create_position_reply(deps: DepsMut, msg: Reply) -> Result<Response, C
     // Load the current state
     let mut state = STATE.load(deps.storage)?;
 
+    // Parse both amounts
+    let amount0 =
+        Uint128::from_str(&response.amount0).map_err(|_| ContractError::AssetNotFound {})?;
+    let amount1 =
+        Uint128::from_str(&response.amount1).map_err(|_| ContractError::AssetNotFound {})?;
+
+    // Assign based on whether principal is first
+    if state.principal_first {
+        state.initial_principal_amount = amount0;
+        state.principal_to_replenish = amount0;
+        state.initial_counterparty_amount = amount1;
+    } else {
+        state.initial_principal_amount = amount1;
+        state.principal_to_replenish = amount1;
+        state.initial_counterparty_amount = amount0;
+    }
+
     // Update the state with the new position ID
     state.position_id = Some(response.position_id);
-    state.initial_principal_amount = Uint128::from_str(&response.amount1).unwrap();
-    state.principal_to_replenish = Uint128::from_str(&response.amount1).unwrap();
-    state.initial_counterparty_amount = Uint128::from_str(&response.amount0).unwrap();
     state.liquidity_shares = Some(response.liquidity_created);
 
     // Save the updated state back to storage
@@ -452,11 +474,17 @@ fn handle_withdraw_position_reply(
     // Parse the reply result into MsgCreatePositionResponse
     let response: MsgWithdrawPositionResponse = msg.result.try_into()?;
 
-    let amount_0 = Uint128::from_str(&response.amount0)
-        .map_err(|_| StdError::generic_err("Invalid Uint128 value"))?;
-
     // Load the current state
     let mut state = STATE.load(deps.storage)?;
+
+    let counterparty_amount = if state.principal_first {
+        // If principal is amount0, counterparty is amount1
+        Uint128::from_str(&response.amount1)
+    } else {
+        // If principal is amount1, counterparty is amount0
+        Uint128::from_str(&response.amount0)
+    }
+    .map_err(|_| StdError::generic_err("Invalid Uint128 value"))?;
 
     let liquidator_address = state
         .liquidator_address
@@ -465,13 +493,12 @@ fn handle_withdraw_position_reply(
 
     let mut messages = vec![];
 
-    let amount0 = response.amount0;
-    if amount_0 > Uint128::zero() {
+    if counterparty_amount > Uint128::zero() {
         let counterparty_msg = BankMsg::Send {
             to_address: liquidator_address.into_string(),
             amount: vec![Coin {
                 denom: state.counterparty_denom.to_string(),
-                amount: amount_0,
+                amount: counterparty_amount,
             }],
         };
         messages.push(counterparty_msg);
@@ -503,8 +530,7 @@ fn handle_withdraw_position_reply(
 
     Ok(Response::new()
         .add_messages(messages)
-        .add_attribute("principal_amount", &response.amount1.to_string())
-        .add_attribute("counterparty_amount", amount0.to_string()))
+        .add_attribute("counterparty_amount", counterparty_amount.to_string()))
 }
 fn handle_withdraw_position_end_round_reply(
     deps: DepsMut,
@@ -517,11 +543,18 @@ fn handle_withdraw_position_end_round_reply(
     // Load the current state
     let mut state = STATE.load(deps.storage)?;
 
+    // Parse both amounts
+    let amount_0 = Uint128::from_str(&response.amount0)
+        .map_err(|_| StdError::generic_err("Invalid Uint128 value"))?;
     let amount_1 = Uint128::from_str(&response.amount1)
         .map_err(|_| StdError::generic_err("Invalid Uint128 value"))?;
 
-    let amount_0 = Uint128::from_str(&response.amount0)
-        .map_err(|_| StdError::generic_err("Invalid Uint128 value"))?;
+    // Determine which amount is principal and which is counterparty
+    let (principal_amount, counterparty_amount) = if state.principal_first {
+        (amount_0, amount_1)
+    } else {
+        (amount_1, amount_0)
+    };
 
     let project_owner = state.position_created_address.clone();
     let principal_owner = state.principal_funds_owner.clone();
@@ -553,14 +586,14 @@ fn handle_withdraw_position_end_round_reply(
     state.position_rewards = None;
 
     // check pulled principal amount
-    if amount_1 >= state.principal_to_replenish {
+    if principal_amount >= state.principal_to_replenish {
         // send COUNTERPARTY to the project
-        if amount_0 > Uint128::zero() {
+        if counterparty_amount > Uint128::zero() {
             let counterparty_msg = BankMsg::Send {
                 to_address: project_owner.clone().unwrap().into_string(),
                 amount: vec![Coin {
                     denom: state.counterparty_denom.to_string(),
-                    amount: amount_0,
+                    amount: counterparty_amount,
                 }],
             };
             messages.push(counterparty_msg);
@@ -578,7 +611,7 @@ fn handle_withdraw_position_end_round_reply(
             messages.push(principal_msg);
         }
 
-        let remaining_amount = amount_1 - state.principal_to_replenish;
+        let remaining_amount = principal_amount - state.principal_to_replenish;
         // send remaining PRINCIPAL to the project
         if remaining_amount > Uint128::zero() {
             let remaining_principal_msg = BankMsg::Send {
@@ -595,12 +628,12 @@ fn handle_withdraw_position_end_round_reply(
         state.principal_to_replenish = Uint128::zero();
     } else {
         // send PRINCIPAL to principal owner
-        if amount_1 > Uint128::zero() {
+        if principal_amount > Uint128::zero() {
             let principal_msg = BankMsg::Send {
                 to_address: principal_owner.into_string(),
                 amount: vec![Coin {
                     denom: state.principal_denom.to_string(),
-                    amount: amount_1,
+                    amount: principal_amount,
                 }],
             };
             messages.push(principal_msg);
@@ -608,15 +641,15 @@ fn handle_withdraw_position_end_round_reply(
         // there is possibility principal amount is zero and this method is called
         // Question: should we then prevent liqidation msg to be called if contract reaches auction state?
         state.auction_end_time = Some(env.block.time.plus_seconds(state.auction_duration));
-        state.principal_to_replenish = state.principal_to_replenish - amount_1;
-        state.counterparty_to_give = Some(amount_0);
+        state.principal_to_replenish = state.principal_to_replenish - principal_amount;
+        state.counterparty_to_give = Some(counterparty_amount);
     }
 
     STATE.save(deps.storage, &state)?;
 
     let event = Event::new("withdraw_from_position")
-        .add_attribute("counterparty_amount", response.amount0.to_string())
-        .add_attribute("principal_amount", response.amount1.to_string());
+        .add_attribute("counterparty_amount", counterparty_amount.to_string())
+        .add_attribute("principal_amount", principal_amount.to_string());
 
     // Return the response with the transfer message
     Ok(Response::new().add_messages(messages).add_event(event))
@@ -1064,6 +1097,7 @@ pub fn query_get_state(deps: Deps) -> StdResult<Binary> {
     // Build the StateResponse using the loaded state
     let response = StateResponse {
         project_owner: state.project_owner,
+        position_created_address: state.position_created_address,
         principal_funds_owner: state.principal_funds_owner.into_string(),
         pool_id: state.pool_id,
         counterparty_denom: state.counterparty_denom.clone(),
@@ -1101,32 +1135,6 @@ pub fn query_sorted_bids(deps: Deps) -> StdResult<Vec<(Addr, Decimal, Uint128)>>
     let sorted_bids = SORTED_BIDS.load(deps.storage).unwrap_or_default();
     Ok(sorted_bids)
 }
-
-// Computes the current round_id by taking contract_start_time and dividing the time since
-// by the round_length.
-pub fn compute_current_round_id(
-    env: Env,
-    first_round_start: Timestamp,
-    round_length: u64,
-) -> StdResult<u64> {
-    compute_round_id_for_timestamp(first_round_start, round_length, env.block.time.nanos())
-}
-
-fn compute_round_id_for_timestamp(
-    first_round_start: Timestamp,
-    round_length: u64,
-    timestamp: u64,
-) -> StdResult<u64> {
-    // If the first round has not started yet, return an error
-    if timestamp < first_round_start.nanos() {
-        return Err(StdError::generic_err("The first round has not started yet"));
-    }
-    let time_since_start = timestamp - first_round_start.nanos();
-    let round_id = time_since_start / round_length;
-
-    Ok(round_id)
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -1169,6 +1177,7 @@ mod tests {
             principal_funds_owner: pool_mockup.principal_funds_owner.address(),
             project_owner: None, // Addr
             auction_duration: HUNDRED_SECONDS,
+            principal_first: false,
         };
 
         let contract_addr = wasm
@@ -1865,6 +1874,7 @@ mod tests {
             liquidator_address: None,
             round_end_time: env.block.time.plus_seconds(100),
             position_rewards: None,
+            principal_first: false,
         };
         STATE.save(deps.as_mut().storage, &state).unwrap();
 

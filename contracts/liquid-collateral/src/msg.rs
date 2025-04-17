@@ -12,6 +12,7 @@ pub struct InstantiateMsg {
     pub project_owner: Option<String>,
     pub principal_funds_owner: String,
     pub auction_duration: u64,
+    pub principal_first: bool,
 }
 
 #[cw_serde]
@@ -64,6 +65,7 @@ pub enum QueryMsg {
 #[cw_serde]
 pub struct StateResponse {
     pub project_owner: Option<Addr>,
+    pub position_created_address: Option<Addr>,
     pub principal_funds_owner: String,
     pub pool_id: u64,
     pub position_id: Option<u64>,
