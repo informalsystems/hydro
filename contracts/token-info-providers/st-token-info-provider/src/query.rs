@@ -3,7 +3,7 @@ use cosmwasm_schema::{cw_serde, QueryResponses};
 
 // When compiling for wasm32 platform, compiler doesn't recognize that this type is used in one of the queries.
 #[allow(unused_imports)]
-use token_info_provider_interface::DenomInfoResponse;
+use interface::token_info_provider::DenomInfoResponse;
 
 #[derive(QueryResponses)]
 #[cw_serde]

@@ -5,7 +5,7 @@
 */
 
 import { CosmWasmClient } from "@cosmjs/cosmwasm-stargate";
-import { Addr, ConfigResponse, Config, DaoResponse, ExecuteMsg, InfoResponse, ContractVersion, InstantiateMsg, QueryMsg, Uint128, TotalPowerAtHeightResponse, VotingPowerAtHeightResponse } from "./DAOVotingAdapterBase.types";
+import { InstantiateMsg, ExecuteMsg, QueryMsg, Addr, ConfigResponse, Config, InfoResponse, ContractVersion, Uint128, TotalPowerAtHeightResponse, VotingPowerAtHeightResponse } from "./DAOVotingAdapterBase.types";
 export interface DAOVotingAdapterBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
@@ -21,7 +21,7 @@ export interface DAOVotingAdapterBaseReadOnlyInterface {
   }: {
     height?: number;
   }) => Promise<TotalPowerAtHeightResponse>;
-  dao: () => Promise<DaoResponse>;
+  dao: () => Promise<Addr>;
   info: () => Promise<InfoResponse>;
 }
 export class DAOVotingAdapterBaseQueryClient implements DAOVotingAdapterBaseReadOnlyInterface {
@@ -66,7 +66,7 @@ export class DAOVotingAdapterBaseQueryClient implements DAOVotingAdapterBaseRead
       }
     });
   };
-  dao = async (): Promise<DaoResponse> => {
+  dao = async (): Promise<Addr> => {
     return this.client.queryContractSmart(this.contractAddress, {
       dao: {}
     });

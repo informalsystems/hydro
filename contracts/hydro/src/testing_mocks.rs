@@ -9,6 +9,7 @@ use cosmwasm_std::{
     to_json_binary, Binary, Coin, ContractResult, GrpcQuery, OwnedDeps, Querier, QuerierResult,
     QueryRequest, SystemError, SystemResult, WasmQuery,
 };
+use interface::token_info_provider::{DenomInfoResponse, TokenInfoProviderQueryMsg};
 use neutron_sdk::{
     bindings::{
         query::{NeutronQuery, QueryRegisteredQueryResponse, QueryRegisteredQueryResultResponse},
@@ -22,7 +23,6 @@ use neutron_std::types::ibc::applications::transfer::v1::{
 };
 use prost::Message;
 use serde_json_wasm::to_string;
-use token_info_provider_interface::{DenomInfoResponse, TokenInfoProviderQueryMsg};
 
 use crate::lsm_integration::{DENOM_TRACE_GRPC, INTERCHAINQUERIES_PARAMS_GRPC};
 

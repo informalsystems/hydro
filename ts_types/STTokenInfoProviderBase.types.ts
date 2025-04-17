@@ -4,6 +4,18 @@
 * and run the @cosmwasm/ts-codegen generate command to regenerate this file.
 */
 
+export interface InstantiateMsg {
+  st_token_denom: string;
+  token_group_id: string;
+}
+export type ExecuteMsg = string;
+export type QueryMsg = {
+  config: {};
+} | {
+  denom_info: {
+    round_id: number;
+  };
+};
 export type Addr = string;
 export interface ConfigResponse {
   config: Config;
@@ -19,15 +31,3 @@ export interface DenomInfoResponse {
   ratio: Decimal;
   token_group_id: string;
 }
-export type ExecuteMsg = string;
-export interface InstantiateMsg {
-  st_token_denom: string;
-  token_group_id: string;
-}
-export type QueryMsg = {
-  config: {};
-} | {
-  denom_info: {
-    round_id: number;
-  };
-};

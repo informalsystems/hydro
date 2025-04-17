@@ -12,4 +12,4 @@ cw-orch = { workspace = true, features = ["daemon"] }
 
 hydro = { path = "../../contracts/hydro" }
 tribute = { path = "../../contracts/tribute" }
-interface = { path = "../../packages/interface" }
+cw-orch-interface = { path = "../../packages/cw-orch-interface" }

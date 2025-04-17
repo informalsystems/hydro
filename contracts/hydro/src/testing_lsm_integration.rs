@@ -420,6 +420,7 @@ fn lock_tokens_with_multiple_denoms() {
             let info = get_message_info(&deps.api, "addr0001", &[fund.clone()]);
             let msg = ExecuteMsg::LockTokens {
                 lock_duration: case.lock_duration,
+                proof: None,
             };
             let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
 
@@ -479,6 +480,7 @@ fn unlock_tokens_multiple_denoms() {
     // lock tokens from validator1
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok(), "locking tokens: {:?}", res);
@@ -558,6 +560,7 @@ fn unlock_tokens_multiple_users() {
     // user1 locks tokens
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg.clone());
     assert!(res.is_ok(), "locking tokens: {:?}", res);
@@ -669,6 +672,7 @@ fn lock_tokens_multiple_validators_and_vote() {
     info.funds = vec![user_token1.clone()];
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok(), "locking tokens: {:?}", res);
@@ -797,6 +801,7 @@ fn validator_set_initialization_test() {
             description: "Lock tokens".to_string(),
             message: ExecuteMsg::LockTokens {
                 lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+                proof: None,
             },
         },
         ValidatorSetInitializationTestCase {
@@ -901,6 +906,7 @@ fn validator_set_initialization_test() {
         // lock tokens in round 1 so that we can refresh a lock with a message
         let msg = ExecuteMsg::LockTokens {
             lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+            proof: None,
         };
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
 

@@ -264,7 +264,10 @@ fn advance_chain_and_lock_tokens(
     env.block.height += days_num * BLOCKS_PER_DAY;
 
     let msg_info = get_message_info(&deps.api, user, &[to_lock]);
-    let msg = ExecuteMsg::LockTokens { lock_duration };
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration,
+        proof: None,
+    };
     let res = execute(deps.as_mut(), env.clone(), msg_info.clone(), msg);
     assert!(res.is_ok(), "error: {:?}", res);
 }

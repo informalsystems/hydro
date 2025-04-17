@@ -1,5 +1,6 @@
 pub mod contract;
 mod error;
+pub mod gatekeeper;
 pub mod governance;
 pub mod lsm_integration;
 pub mod migration;
