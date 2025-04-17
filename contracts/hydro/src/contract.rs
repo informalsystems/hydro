@@ -2760,19 +2760,16 @@ pub fn get_vote_for_update(
     token_group_id: &str,
 ) -> Result<Option<Vote>, ContractError> {
     Ok(match old_lock_entry {
-        Some(old_lock_entry) => {
-            match VOTE_MAP.load(
+        Some(old_lock_entry) => VOTE_MAP
+            .load(
                 deps.storage,
                 (
                     (current_round, tranche_id),
                     sender.clone(),
                     old_lock_entry.lock_id,
                 ),
-            ) {
-                Ok(vote) => Some(vote),
-                Err(_) => None,
-            }
-        }
+            )
+            .ok(),
         None => {
             let mut voted_proposals: HashSet<u64> = HashSet::new();
 

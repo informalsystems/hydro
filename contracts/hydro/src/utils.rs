@@ -39,10 +39,7 @@ pub fn load_constants_active_at_timestamp(
             Order::Descending,
         )
         .take(1)
-        .filter_map(|constants| match constants {
-            Ok(constants) => Some(constants),
-            Err(_) => None,
-        })
+        .filter_map(|constants| constants.ok())
         .collect();
 
     Ok(match current_constants.len() {

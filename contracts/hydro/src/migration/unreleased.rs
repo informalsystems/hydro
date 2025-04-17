@@ -14,10 +14,7 @@ pub fn migrate_v3_1_1_to_unreleased(deps: &mut DepsMut<NeutronQuery>) -> Result<
 
     let old_constants = OLD_CONSTANTS
         .range(deps.storage, None, None, Order::Ascending)
-        .filter_map(|result| match result {
-            Err(_) => None,
-            Ok(constants) => Some(constants),
-        })
+        .filter_map(|result| result.ok())
         .collect::<Vec<(u64, ConstantsV3_1_1)>>();
 
     let mut constants_to_add = vec![];
