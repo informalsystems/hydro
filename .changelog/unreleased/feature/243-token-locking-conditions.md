@@ -1,0 +1,2 @@
+- Introduced the Gatekeeper smart contract to validate if the given user should be allowed to lock the given number of tokens at the given point in time.
+  ([\#243](https://github.com/informalsystems/hydro/pull/243))

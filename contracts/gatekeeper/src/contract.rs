@@ -410,10 +410,7 @@ pub fn query_admins(deps: &Deps) -> StdResult<AdminsResponse> {
     Ok(AdminsResponse {
         admins: ADMINS
             .keys(deps.storage, None, None, Order::Ascending)
-            .filter_map(|admin| match admin {
-                Ok(admin) => Some(admin),
-                Err(_) => None,
-            })
+            .filter_map(|admin| admin.ok())
             .collect(),
     })
 }
