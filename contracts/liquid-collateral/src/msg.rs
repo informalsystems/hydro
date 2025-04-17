@@ -1,6 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
-use osmosis_std::types::cosmos::base::v1beta1::Coin;
+use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
 
 use crate::state::Bid;
 
@@ -77,6 +76,7 @@ pub struct StateResponse {
     pub auction_end_time: Option<Timestamp>,
     pub counterparty_to_give: Option<Uint128>,
     pub auction_principal_deposited: Uint128,
+    pub rewards: Option<Vec<Coin>>,
 }
 
 #[cw_serde]

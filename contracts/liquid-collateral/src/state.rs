@@ -1,6 +1,5 @@
-use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
+use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
 use cw_storage_plus::{Item, Map};
-use osmosis_std::types::cosmos::base::v1beta1::Coin;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +22,7 @@ pub struct State {
     pub auction_principal_deposited: Uint128,
     pub principal_to_replenish: Uint128,
     pub counterparty_to_give: Option<Uint128>,
+    pub position_rewards: Option<Vec<Coin>>,
 }
 
 pub const STATE: Item<State> = Item::new("state");

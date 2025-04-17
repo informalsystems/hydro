@@ -11,7 +11,9 @@ use cosmwasm_std::{
 };
 use osmosis_std::types::cosmos::bank::v1beta1::MsgSend;
 use osmosis_std::types::cosmos::base::v1beta1::Coin as OsmosisCoin;
-use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::ConcentratedliquidityQuerier;
+use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::{
+    ClaimableIncentivesResponse, ConcentratedliquidityQuerier,
+};
 use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::{
     MsgCreatePosition, MsgCreatePositionResponse, MsgWithdrawPosition, MsgWithdrawPositionResponse,
 };
@@ -46,6 +48,7 @@ pub fn instantiate(
         principal_funds_owner: deps.api.addr_validate(&msg.principal_funds_owner)?,
         principal_to_replenish: Uint128::zero(),
         counterparty_to_give: None,
+        position_rewards: None,
     };
     STATE.save(deps.storage, &state)?;
 
@@ -289,6 +292,33 @@ pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response
         liquidity_amount: withdraw_liquidity_amount.to_string(),
     };
 
+    let liquidity_shares_uint = Uint128::from_str(liquidity_shares)?;
+    // Check if we're withdrawing the full liquidity
+    let is_full_withdraw = withdraw_liquidity_amount == liquidity_shares_uint;
+    if is_full_withdraw {
+        // Query the claimable spread rewards
+        let spread_rewards = ConcentratedliquidityQuerier::new(&deps.querier)
+            .claimable_spread_rewards(state.pool_id)
+            .map_err(|_| ContractError::ClaimableSpreadRewardsQueryFailed {})? // Handle query errors
+            .claimable_spread_rewards;
+
+        // Query the claimable incentives
+        let incentives: ClaimableIncentivesResponse =
+            ConcentratedliquidityQuerier::new(&deps.querier)
+                .claimable_incentives(state.pool_id)
+                .map_err(|_| ContractError::ClaimableSpreadRewardsQueryFailed {})?;
+
+        // Save into state
+        state.position_rewards = Some(
+            fetch_all_rewards(
+                spread_rewards,
+                incentives.claimable_incentives,
+                incentives.forfeited_incentives,
+            )
+            .unwrap_or_default(),
+        );
+    }
+
     // Wrap in SubMsg to handle response
     let submsg = SubMsg::reply_on_success(withdraw_position_msg, 2);
 
@@ -321,6 +351,38 @@ pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response
         .add_submessage(submsg)
         .add_message(principal_msg)
         .add_attribute("action", "withdraw_position"))
+}
+
+pub fn fetch_all_rewards(
+    spread_rewards: Vec<OsmosisCoin>,
+    claimable_incentives: Vec<OsmosisCoin>,
+    forfeited_incentives: Vec<OsmosisCoin>,
+) -> Result<Vec<Coin>, ContractError> {
+    let convert_coin = |c: OsmosisCoin| -> Result<Coin, ContractError> {
+        Ok(Coin {
+            denom: c.denom,
+            amount: Uint128::from_str(&c.amount)
+                .map_err(|_| ContractError::InvalidConversion {})?,
+        })
+    };
+
+    let mut all_rewards: Vec<Coin> = Vec::with_capacity(
+        spread_rewards.len() + claimable_incentives.len() + forfeited_incentives.len(),
+    );
+
+    for c in spread_rewards {
+        all_rewards.push(convert_coin(c)?);
+    }
+
+    for c in claimable_incentives {
+        all_rewards.push(convert_coin(c)?);
+    }
+
+    for c in forfeited_incentives {
+        all_rewards.push(convert_coin(c)?);
+    }
+
+    Ok(all_rewards)
 }
 
 pub fn calculate_withdraw_liquidity_amount(
@@ -415,8 +477,28 @@ fn handle_withdraw_position_reply(
         messages.push(counterparty_msg);
     }
 
+    // Handle rewards if present
+    if let Some(rewards) = &state.position_rewards {
+        for reward in rewards {
+            // Query contract's balance for the denom
+            let contract_balance = deps
+                .querier
+                .query_balance(env.contract.address.clone(), &reward.denom)?;
+
+            // If contract has enough balance, create a send msg
+            if contract_balance.amount >= reward.amount {
+                let reward_msg = BankMsg::Send {
+                    to_address: state.principal_funds_owner.to_string(),
+                    amount: vec![reward.clone()],
+                };
+                messages.push(reward_msg.into());
+            }
+        }
+    }
+
     // Reset liquidator and save state
     state.liquidator_address = None;
+    state.position_rewards = None;
     STATE.save(deps.storage, &state)?;
 
     Ok(Response::new()
@@ -449,8 +531,28 @@ fn handle_withdraw_position_end_round_reply(
 
     let mut messages = vec![];
 
-    // Question: should we check here state.principal_to_replenish amount?
-    // since it's possible there were partial liquidations which didn't replenish all amount
+    // Handle rewards if present
+    if let Some(rewards) = &state.position_rewards {
+        for reward in rewards {
+            // Query contract's balance for the denom
+            let contract_balance = deps
+                .querier
+                .query_balance(env.contract.address.clone(), &reward.denom)?;
+
+            // If contract has enough balance, create a send msg
+            if contract_balance.amount >= reward.amount {
+                let reward_msg = BankMsg::Send {
+                    to_address: state.principal_funds_owner.to_string(),
+                    amount: vec![reward.clone()],
+                };
+                messages.push(reward_msg.into());
+            }
+        }
+    }
+
+    state.position_rewards = None;
+
+    // check pulled principal amount
     if amount_1 >= state.principal_to_replenish {
         // send COUNTERPARTY to the project
         if amount_0 > Uint128::zero() {
@@ -522,7 +624,7 @@ fn handle_withdraw_position_end_round_reply(
 
 pub fn end_round(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
     // Load the current state
-    let state = STATE.load(deps.storage)?;
+    let mut state = STATE.load(deps.storage)?;
 
     let current_time = env.block.time;
 
@@ -539,6 +641,27 @@ pub fn end_round(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
         sender: env.contract.address.to_string(),
         liquidity_amount: state.liquidity_shares.clone().unwrap(),
     };
+
+    // Query the claimable spread rewards
+    let spread_rewards = ConcentratedliquidityQuerier::new(&deps.querier)
+        .claimable_spread_rewards(state.pool_id)
+        .map_err(|_| ContractError::ClaimableSpreadRewardsQueryFailed {})? // Handle query errors
+        .claimable_spread_rewards;
+
+    // Query the claimable incentives
+    let incentives: ClaimableIncentivesResponse = ConcentratedliquidityQuerier::new(&deps.querier)
+        .claimable_incentives(state.pool_id)
+        .map_err(|_| ContractError::ClaimableSpreadRewardsQueryFailed {})?;
+
+    // Save into state
+    state.position_rewards = Some(
+        fetch_all_rewards(
+            spread_rewards,
+            incentives.claimable_incentives,
+            incentives.forfeited_incentives,
+        )
+        .unwrap_or_default(),
+    );
 
     // Wrap in SubMsg to handle response
     let submsg = SubMsg::reply_on_success(withdraw_position_msg, 3);
@@ -953,6 +1076,7 @@ pub fn query_get_state(deps: Deps) -> StdResult<Binary> {
         principal_to_replenish: state.principal_to_replenish,
         counterparty_to_give: state.counterparty_to_give,
         auction_principal_deposited: state.auction_principal_deposited,
+        rewards: state.position_rewards,
     };
 
     to_json_binary(&response)
@@ -1110,6 +1234,18 @@ mod tests {
             let denom = &reward.denom;
             let amount = &reward.amount;
             println!("Denom: {}, Amount: {}", denom, amount);
+        }
+
+        // Print claimable incentives
+        println!("\nClaimable Incentives:");
+        for incentive in &full_position.claimable_incentives {
+            println!("  Denom: {}, Amount: {}", incentive.denom, incentive.amount);
+        }
+
+        // Print forfeited incentives
+        println!("\nForfeited Incentives:");
+        for forfeited in &full_position.forfeited_incentives {
+            println!("  Denom: {}, Amount: {}", forfeited.denom, forfeited.amount);
         }
 
         if let Some(position) = &full_position.position {
@@ -1270,7 +1406,7 @@ mod tests {
         let liquidate_msg = ExecuteMsg::Liquidate;
 
         //100000
-        let coins = &[Coin::new(99999u128, OSMO_DENOM)];
+        let coins = &[Coin::new(100000u128, OSMO_DENOM)];
 
         println!("Executing liquidate msg...\n");
         let response = wasm
@@ -1302,6 +1438,15 @@ mod tests {
             println!("Failed to get position response");
             String::from("0") // Default value
         };
+
+        let query_msg = QueryMsg::GetState {};
+
+        let query_result: Binary = wasm.query(&contract_addr, &query_msg).unwrap();
+        let state_response: StateResponse = from_json(&query_result).unwrap();
+        let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
+
+        // Print the state response
+        println!("{}", formatted_output);
 
         println!("\nQuery-ing contract bank balances after liquidation...\n");
         let bank = Bank::new(&pool_mockup.app);
@@ -1679,9 +1824,9 @@ mod tests {
         println!("Counterparty Amount: {}", data_response.counterparty_amount);
 
         let query_calculated_data = QueryMsg::GetCalculatedOptimalCounterpartyUpperTick {
-            lower_tick: "0.04".to_string(),                // Example lower tick
+            lower_tick: "0.025".to_string(),               // Example lower tick
             principal_token_amount: "10000.0".to_string(), // Example principal token amount
-            liquidation_bonus: "0.3".to_string(),          // 30 %liquidation bonus
+            liquidation_bonus: "0.2".to_string(),          // 30 %liquidation bonus
             price_ratio: "0.0530292978".to_string(),       // Example price ratio
         };
 
@@ -1719,6 +1864,7 @@ mod tests {
             project_owner: None,
             liquidator_address: None,
             round_end_time: env.block.time.plus_seconds(100),
+            position_rewards: None,
         };
         STATE.save(deps.as_mut().storage, &state).unwrap();
 

@@ -92,4 +92,7 @@ pub enum ContractError {
 
     #[error("BidNotBetterThanWorst")]
     BidNotBetterThanWorst {},
+
+    #[error("ClaimableSpreadRewardsQueryFailed")]
+    ClaimableSpreadRewardsQueryFailed {},
 }
