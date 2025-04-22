@@ -1265,23 +1265,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cw20-base"
-version = "1.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17ad79e86ea3707229bf78df94e08732e8f713207b4a77b2699755596725e7d9"
-dependencies = [
- "cosmwasm-schema 1.5.10",
- "cosmwasm-std 1.5.10",
- "cw-storage-plus 1.2.0",
- "cw2 1.1.2",
- "cw20 1.1.2",
- "schemars",
- "semver",
- "serde",
- "thiserror",
-]
-
-[[package]]
 name = "cw20-ics20"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2464,11 +2447,7 @@ dependencies = [
  "anyhow",
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 1.5.10",
- "cw-orch",
  "cw-storage-plus 1.2.0",
- "cw20 1.1.2",
- "cw20-base",
- "hydro",
  "osmosis-std 0.25.0",
  "osmosis-test-tube",
  "proptest",

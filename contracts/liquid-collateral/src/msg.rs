@@ -40,7 +40,7 @@ pub enum ExecuteMsg {
     Liquidate,
     EndRound,
     EndRoundBid(EndRoundBidMsg),
-    WidthdrawBid,
+    WithdrawBid,
     ResolveAuction,
 }
 
@@ -48,18 +48,18 @@ pub enum ExecuteMsg {
 #[derive(QueryResponses)]
 pub enum QueryMsg {
     #[returns(StateResponse)]
-    GetState {},
+    State {},
     #[returns(Vec<(String, Bid)>)]
-    GetBids {},
+    Bids {},
     #[returns(CalculatedDataResponse)]
-    GetCalculatedOptimalCounterpartyUpperTick {
+    CounterpartyAndUpperTick {
         lower_tick: String,
         principal_token_amount: String,
         liquidation_bonus: String,
         price_ratio: String,
     },
     #[returns(Vec<(Addr, Decimal)>)]
-    GetSortedBids {},
+    SortedBids {},
 }
 
 #[cw_serde]

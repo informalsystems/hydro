@@ -1,25 +1,23 @@
-#[cfg(any(test, feature = "fuzzing"))]
+#[cfg(test)]
 
 pub mod mock {
     use anyhow::Result;
     use std::{env, str::FromStr};
 
-    use cosmwasm_std::{testing::mock_dependencies, Addr, Api, Coin, Decimal, Uint128};
-    use cw20_base::state::TokenInfo;
+    use cosmwasm_std::{Coin, Decimal, Uint128};
     use osmosis_std::types::{
         cosmos::bank::v1beta1::QueryBalanceRequest,
-        cosmwasm::wasm::v1::MsgExecuteContractResponse,
         osmosis::{
             concentratedliquidity::v1beta1::{
-                CreateConcentratedLiquidityPoolsProposal, FullPositionBreakdown, MsgCreatePosition,
-                PoolRecord, PositionByIdRequest,
+                CreateConcentratedLiquidityPoolsProposal, FullPositionBreakdown, PoolRecord,
+                PositionByIdRequest,
             },
             poolmanager::v1beta1::{MsgSwapExactAmountIn, SwapAmountInRoute},
         },
     };
     use osmosis_test_tube::{
-        Account, Bank, ConcentratedLiquidity, ExecuteResponse, GovWithAppAccess, Module,
-        OsmosisTestApp, PoolManager, SigningAccount, Wasm,
+        Account, Bank, ConcentratedLiquidity, GovWithAppAccess, Module, OsmosisTestApp,
+        PoolManager, SigningAccount, Wasm,
     };
 
     pub const MIN_TICK: i32 = -108_000_000;
