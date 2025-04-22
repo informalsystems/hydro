@@ -199,6 +199,17 @@ pub fn create_position(
     if order is not correct - tx will fail!
      */
 
+    let token_min_amount0;
+    let token_min_amount1;
+
+    if state.principal_first {
+        token_min_amount0 = msg.principal_token_min_amount.to_string();
+        token_min_amount1 = msg.counterparty_token_min_amount.to_string();
+    } else {
+        token_min_amount0 = msg.counterparty_token_min_amount.to_string();
+        token_min_amount1 = msg.principal_token_min_amount.to_string();
+    }
+
     // Create position message
     let create_position_msg = MsgCreatePosition {
         pool_id: state.pool_id,
@@ -215,8 +226,8 @@ pub fn create_position(
                 amount: principal_amount.to_string(),
             },
         ],
-        token_min_amount0: msg.counterparty_token_min_amount.to_string(),
-        token_min_amount1: msg.principal_token_min_amount.to_string(),
+        token_min_amount0: token_min_amount0,
+        token_min_amount1: token_min_amount1,
     };
 
     // store the address which initiated position creation
