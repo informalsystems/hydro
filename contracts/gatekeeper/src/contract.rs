@@ -151,7 +151,6 @@ fn execute_register_stage(
         .add_attribute("hrp", hrp.unwrap_or_default()))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn execute_lock_tokens(
     deps: DepsMut,
     env: Env,
