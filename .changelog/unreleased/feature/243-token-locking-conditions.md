@@ -1,2 +1,2 @@
-- Introduced the Gatekeeper smart contract to validate if the given user should be allowed to lock the given number of tokens at the given point in time.
+- Introduced the Gatekeeper smart contract, which checks user lockups into Hydro against a merkle-tree-encoded whitelist.
   ([\#243](https://github.com/informalsystems/hydro/pull/243))
