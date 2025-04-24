@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use super::*;
 use crate::mock::mock::{store_contracts_code, PoolMockup};
 use crate::msg::{
@@ -5,6 +7,7 @@ use crate::msg::{
     QueryMsg, StateResponse,
 };
 use crate::state::{Bid, BidStatus, State, BIDS, SORTED_BIDS, STATE};
+use bigdecimal::BigDecimal;
 use cosmwasm_std::{
     testing::{mock_dependencies, mock_env, mock_info},
     Addr, Coin, Decimal, Uint128,
@@ -17,7 +20,11 @@ use osmosis_test_tube::{
     Account, Bank, ExecuteResponse, Module, OsmosisTestApp, SigningAccount, Wasm,
 };
 
-use crate::contract::{calculate_withdraw_liquidity_amount, resolve_auction};
+use crate::calculations::tick_to_sqrt_price;
+use crate::contract::{
+    calculate_optimal_counterparty_and_upper_tick, calculate_withdraw_liquidity_amount,
+    parse_liquidity, resolve_auction,
+};
 
 pub const USDC_DENOM: &str = "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4";
 pub const OSMO_DENOM: &str = "uosmo";
@@ -168,14 +175,16 @@ fn test_calculate_withdraw_liquidity_amount() {
         .as_deref() // Converts Option<String> to Option<&str>
         .unwrap_or("0"); // Default value if None
 
+    let liquidity_shares_decimal = parse_liquidity(&liquidity_shares);
+
     let result = calculate_withdraw_liquidity_amount(
         principal_amount.unwrap(),
         initial_principal_amount.unwrap(),
-        liquidity_shares,
+        liquidity_shares_decimal.unwrap(),
     );
 
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), Uint128::new(3072874167615719343589)); // 50% of 1000 = 500
+    assert_eq!(result.unwrap(), Uint128::new(3072874167615719343589));
 }
 
 #[test]
@@ -673,29 +682,31 @@ fn test_calculate_position() {
     let wasm = Wasm::new(&pool_mockup.app);
     let code_id = store_contracts_code(&wasm, &pool_mockup.deployer);
     let contract_addr = instantiate(&wasm, &pool_mockup, code_id);
+    /*
+       let query_calculated_data = QueryMsg::CounterpartyAndUpperTick {
+           lower_tick: "0.03".to_string(),              // Example lower tick
+           principal_token_amount: "100.0".to_string(), // Example principal token amount
+           liquidation_bonus: "0.5".to_string(),        // 10 %liquidation bonus
+           price_ratio: "0.0555555556".to_string(),
+           tick_spacing: "100".to_string(),
+       };
 
+       let data_response: CalculatedDataResponse =
+           wasm.query(&contract_addr, &query_calculated_data).unwrap();
+
+       // Deserialize the binary response into the appropriate struct
+       //let data_response: CalculatedDataResponse = from_binary(&query_result).unwrap();
+
+       // Print the values from the deserialized response
+       println!("Upper Tick: {}", data_response.upper_tick);
+       println!("Counterparty Amount: {}", data_response.counterparty_amount);
+    */
     let query_calculated_data = QueryMsg::CounterpartyAndUpperTick {
-        lower_tick: "0.03".to_string(),              // Example lower tick
-        principal_token_amount: "100.0".to_string(), // Example principal token amount
-        liquidation_bonus: "0.5".to_string(),        // 10 %liquidation bonus
-        price_ratio: "0.0555555556".to_string(),     // Example price ratio
-    };
-
-    let data_response: CalculatedDataResponse =
-        wasm.query(&contract_addr, &query_calculated_data).unwrap();
-
-    // Deserialize the binary response into the appropriate struct
-    //let data_response: CalculatedDataResponse = from_binary(&query_result).unwrap();
-
-    // Print the values from the deserialized response
-    println!("Upper Tick: {}", data_response.upper_tick);
-    println!("Counterparty Amount: {}", data_response.counterparty_amount);
-
-    let query_calculated_data = QueryMsg::CounterpartyAndUpperTick {
-        lower_tick: "0.025".to_string(),               // Example lower tick
+        lower_tick: "-25100".to_string(), // Example lower tick (which represents 0.03 price)
         principal_token_amount: "10000.0".to_string(), // Example principal token amount
-        liquidation_bonus: "0.2".to_string(),          // 30 %liquidation bonus
-        price_ratio: "0.0530292978".to_string(),       // Example price ratio
+        liquidation_bonus: "0.0".to_string(), // 30 %liquidation bonus
+        price_ratio: "0.0530292978".to_string(),
+        tick_spacing: "100".to_string(), // Example tick spacing
     };
 
     let data_response: CalculatedDataResponse =
@@ -833,4 +844,44 @@ fn test_resolve_auction() {
 
     // Step 5: Assert the results
     assert!(result.is_ok());
+}
+#[test]
+fn test_tick_to_price() {
+    let tick = -700; // Example tick value
+    let price = tick_to_sqrt_price(tick).unwrap();
+
+    println!("Sqrt price: {}", price);
+
+    let sqrt_price_f64 = price.to_string().parse::<f64>().unwrap_or(f64::NAN);
+    println!("Sqrt price (f64): {}", sqrt_price_f64);
+}
+
+#[test]
+fn test_calculate_optimal() {
+    let lower_tick = "-7850200".to_string(); // -8150200 representing 0.1849800 price
+    let principal_token_amount = "100".to_string(); // Example principal token amount
+    let liquidation_bonus = "0.2".to_string(); // 0 %liquidation bonus
+    let price_ratio = "0.2296738".to_string();
+    let tick_spacing = "100".to_string(); // Example tick spacing
+
+    //Upper Tick: -700 0.99price
+    //Counterparty Amount: 2122.7133920172023
+
+    let response = calculate_optimal_counterparty_and_upper_tick(
+        lower_tick,
+        principal_token_amount,
+        liquidation_bonus,
+        price_ratio,
+        tick_spacing,
+    );
+
+    match response {
+        Ok(data) => {
+            println!("Upper Tick: {}", data.upper_tick);
+            println!("Counterparty Amount: {}", data.counterparty_amount);
+        }
+        Err(e) => {
+            println!("Error calculating optimal data: {}", e);
+        }
+    }
 }

@@ -95,4 +95,13 @@ pub enum ContractError {
 
     #[error("ClaimableSpreadRewardsQueryFailed")]
     ClaimableSpreadRewardsQueryFailed {},
+
+    #[error("Tick index too low")]
+    TickIndexTooLow,
+
+    #[error("Tick index too high")]
+    TickIndexTooHigh,
+
+    #[error("Price is out of bounds")]
+    PriceOutOfBounds,
 }

@@ -22,13 +22,6 @@ pub struct CreatePositionMsg {
     pub principal_token_min_amount: Uint128,
     pub counterparty_token_min_amount: Uint128,
 }
-
-#[cw_serde]
-pub struct ParametersMsg {
-    pub lower_tick: String,
-    pub principal_token_amount: String,
-    pub liquidation_bonus: String,
-}
 #[cw_serde]
 pub struct EndRoundBidMsg {
     pub requested_amount: Uint128,
@@ -57,6 +50,7 @@ pub enum QueryMsg {
         principal_token_amount: String,
         liquidation_bonus: String,
         price_ratio: String,
+        tick_spacing: String,
     },
     #[returns(Vec<(Addr, Decimal)>)]
     SortedBids {},

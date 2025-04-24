@@ -1,3 +1,4 @@
+use crate::calculations::tick_to_sqrt_price;
 use crate::error::ContractError;
 use crate::msg::{
     CalculatedDataResponse, CreatePositionMsg, EndRoundBidMsg, ExecuteMsg, InstantiateMsg,
@@ -84,6 +85,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             principal_token_amount,
             liquidation_bonus,
             price_ratio,
+            tick_spacing,
         } => {
             // Call the query function with the fields directly
             to_json_binary(&calculate_optimal_counterparty_and_upper_tick(
@@ -91,6 +93,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
                 principal_token_amount,
                 liquidation_bonus,
                 price_ratio,
+                tick_spacing,
             )?)
         }
         QueryMsg::SortedBids {} => to_json_binary(&query_sorted_bids(deps)?),
@@ -102,6 +105,7 @@ pub fn calculate_optimal_counterparty_and_upper_tick(
     principal_token_amount: String,
     liquidation_bonus: String,
     price_ratio: String,
+    tick_spacing: String,
 ) -> StdResult<CalculatedDataResponse> {
     // inputs: lower tick, base token amount, and liquidation bonus
     // output:  upper tick and counterparty
@@ -111,13 +115,30 @@ pub fn calculate_optimal_counterparty_and_upper_tick(
         Err(_) => return Err(StdError::generic_err("Failed to parse price_ratio to f64")),
     };
 
+    let tick_spacing: i64 = match tick_spacing.parse() {
+        Ok(val) => val,
+        Err(_) => return Err(StdError::generic_err("Failed to parse tick_spacing to i64")),
+    };
+
     // Calculate the square root of the ratio (current price)
     let sqrt_current = price_ratio.sqrt();
-    let lower_tick: f64 = match lower_tick.parse() {
+    let lower_tick: i64 = match lower_tick.parse() {
         Ok(val) => val,
-        Err(_) => return Err(StdError::generic_err("Failed to parse lower_tick to f64")),
+        Err(_) => return Err(StdError::generic_err("Failed to parse lower_tick to i64")),
     };
-    let sqrt_lower = lower_tick.sqrt(); // Convert lower_tick to f64 and take the square root
+    // Validate lower_tick alignment with tick spacing
+    if lower_tick.abs() % tick_spacing != 0 {
+        return Err(StdError::generic_err(format!(
+            "lower_tick must be aligned with tick spacing: {}",
+            tick_spacing
+        )));
+    }
+
+    let sqrt_lower = tick_to_sqrt_price(lower_tick);
+    let sqrt_lower = match sqrt_lower {
+        Ok(value) => value.to_string().parse::<f64>().unwrap_or(f64::NAN),
+        Err(_) => f64::NAN,
+    }; // Convert lower_tick to f64 and take the square root
 
     let principal_token_amount: f64 = match principal_token_amount.parse() {
         Ok(val) => val,
@@ -137,6 +158,14 @@ pub fn calculate_optimal_counterparty_and_upper_tick(
         }
     };
 
+    if sqrt_lower >= sqrt_current {
+        return Err(StdError::generic_err(format!(
+            "Invalid lower_tick: its corresponding price ({}) must be lower than the current price ({})",
+            sqrt_lower * sqrt_lower,
+            sqrt_current * sqrt_current
+        )));
+    }
+
     // Step 1: Calculate liquidity based on the principal token amount
     let liquidity = principal_token_amount / (sqrt_current - sqrt_lower);
 
@@ -146,12 +175,20 @@ pub fn calculate_optimal_counterparty_and_upper_tick(
     let adjusted_liquidity = adjusted_base_token_amount / (sqrt_current - sqrt_lower);
 
     // Step 3: Calculate the upper tick based on adjusted liquidity
-    let upper_tick = sqrt_current + (adjusted_liquidity / liquidity);
+    let scale_factor = adjusted_liquidity / liquidity;
+    let sqrt_upper = sqrt_current * (1.0 + scale_factor);
     //let upper_tick = 0.1 as f64;
 
     // Step 4: Calculate counterparty amount (WOBBLE) based on liquidity
-    let sqrt_upper = upper_tick.sqrt();
+
     let counterparty_amount = adjusted_liquidity * (1.0 / sqrt_current - 1.0 / sqrt_upper);
+
+    let upper_price = sqrt_upper * sqrt_upper;
+
+    let mut upper_tick = price_to_tick(upper_price);
+
+    // Align upper_tick to nearest valid tick
+    upper_tick = round_to_spacing(upper_tick, tick_spacing as i32);
 
     // Create and return the response struct
     let response = CalculatedDataResponse {
@@ -159,6 +196,19 @@ pub fn calculate_optimal_counterparty_and_upper_tick(
         counterparty_amount: counterparty_amount.to_string(),
     };
     Ok(response)
+}
+
+pub fn price_to_tick(price: f64) -> i32 {
+    (price.ln() / 1.0001_f64.ln()).floor() as i32
+}
+
+pub fn tick_to_price(tick: i32) -> f64 {
+    1.0001_f64.powi(tick)
+}
+
+// Helper: round tick to spacing
+pub fn round_to_spacing(tick: i32, spacing: i32) -> i32 {
+    ((tick + spacing / 2) / spacing) * spacing
 }
 
 pub fn create_position(
@@ -293,11 +343,13 @@ pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response
         .as_deref() // Converts Option<String> to Option<&str>
         .unwrap_or("0"); // Default value if None
 
+    let liquidity_shares_decimal = parse_liquidity(&liquidity_shares)?;
+
     // Calculate the proportional liquidity amount to withdraw
     let withdraw_liquidity_amount = calculate_withdraw_liquidity_amount(
         principal_amount,
         principal_amount_to_replenish,
-        liquidity_shares,
+        liquidity_shares_decimal,
     )?;
     // substract liquidity and save again
 
@@ -308,7 +360,7 @@ pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response
         liquidity_amount: withdraw_liquidity_amount.to_string(),
     };
 
-    let liquidity_shares_uint = Uint128::from_str(liquidity_shares)?;
+    let liquidity_shares_uint = liquidity_shares_decimal.atomics();
     // Check if we're withdrawing the full liquidity
     let is_full_withdraw = withdraw_liquidity_amount == liquidity_shares_uint;
     if is_full_withdraw {
@@ -404,7 +456,7 @@ pub fn fetch_all_rewards(
 pub fn calculate_withdraw_liquidity_amount(
     principal_amount: Decimal,
     principal_amount_to_replenish: Decimal,
-    liquidity_shares: &str,
+    liquidity_shares_decimal: Decimal,
 ) -> Result<Uint128, ContractError> {
     // Ensure the supplied amount is not greater than the initial amount
     if principal_amount > principal_amount_to_replenish {
@@ -414,13 +466,6 @@ pub fn calculate_withdraw_liquidity_amount(
     // Calculate percentage to liquidate
     let perc_to_liquidate = principal_amount / principal_amount_to_replenish;
 
-    // Parse liquidity_shares as a Decimal with 18 decimal places
-    let liquidity_shares_decimal = Decimal::from_atomics(
-        Uint128::from_str(liquidity_shares).map_err(|_| ContractError::InvalidConversion {})?,
-        18, // Default precision for Decimal
-    )
-    .map_err(|_| ContractError::InvalidConversion {})?;
-
     // Perform high-precision multiplication
     let withdraw_liquidity_amount = liquidity_shares_decimal * perc_to_liquidate;
 
@@ -428,6 +473,18 @@ pub fn calculate_withdraw_liquidity_amount(
     let liquidity_amount = withdraw_liquidity_amount.atomics();
 
     Ok(liquidity_amount)
+}
+
+pub fn parse_liquidity(liq: &str) -> Result<Decimal, ContractError> {
+    if liq.contains('.') {
+        Decimal::from_str(liq).map_err(|_| ContractError::InvalidConversion {})
+    } else {
+        Decimal::from_atomics(
+            Uint128::from_str(liq).map_err(|_| ContractError::InvalidConversion {})?,
+            18,
+        )
+        .map_err(|_| ContractError::InvalidConversion {})
+    }
 }
 
 #[entry_point]
