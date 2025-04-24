@@ -12,10 +12,10 @@ use crate::{
     query::LockEntryWithPower,
     score_keeper::get_total_power_for_round,
     state::{
-        Constants, HeightRange, LockEntry, Proposal, RoundLockPowerSchedule, CONSTANTS,
+        Constants, HeightRange, LockEntryV2, Proposal, RoundLockPowerSchedule, CONSTANTS,
         EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND,
-        LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP, PROPOSAL_MAP, ROUND_TO_HEIGHT_RANGE,
-        SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, VOTE_MAP,
+        LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V1, LOCKS_MAP_V2, PROPOSAL_MAP,
+        ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, VOTE_MAP_V2,
     },
     token_manager::TokenManager,
 };
@@ -335,7 +335,10 @@ pub fn get_round_id_for_height(storage: &dyn Storage, height: u64) -> StdResult<
     })
 }
 
-fn get_highest_known_height_for_round_id(storage: &dyn Storage, round_id: u64) -> StdResult<u64> {
+pub fn get_highest_known_height_for_round_id(
+    storage: &dyn Storage,
+    round_id: u64,
+) -> StdResult<u64> {
     Ok(ROUND_TO_HEIGHT_RANGE
         .may_load(storage, round_id)?
         .unwrap_or_default()
@@ -364,24 +367,31 @@ pub fn get_current_user_voting_power(
     let round_end = compute_round_end(&constants, current_round_id)?;
     let mut token_manager = TokenManager::new(deps);
 
-    Ok(LOCKS_MAP
-        .prefix(address)
-        .range(deps.storage, None, None, Order::Ascending)
-        .filter_map(|lockup| match lockup {
-            Err(_) => None,
-            Ok(lockup) => Some(
-                to_lockup_with_power(
-                    deps,
-                    &constants,
-                    &mut token_manager,
-                    current_round_id,
-                    round_end,
-                    lockup.1,
-                )
-                .current_voting_power
-                .u128(),
-            ),
-        })
+    // Get all lockups owned by the address from USER_LOCKS
+    let user_locks = USER_LOCKS
+        .may_load(deps.storage, address.clone())?
+        .unwrap_or_default();
+
+    // For each lock ID, load from LOCKS_MAP_V2, verify ownership, and compute voting power
+    Ok(user_locks
+        .iter()
+        .filter_map(
+            |&lock_id| match LOCKS_MAP_V2.may_load(deps.storage, lock_id) {
+                Ok(Some(lock_entry)) => Some(
+                    to_lockup_with_power(
+                        deps,
+                        &constants,
+                        &mut token_manager,
+                        current_round_id,
+                        round_end,
+                        lock_entry,
+                    )
+                    .current_voting_power
+                    .u128(),
+                ),
+                _ => None,
+            },
+        )
         .sum())
 }
 
@@ -405,9 +415,13 @@ fn get_past_user_voting_power(
     Ok(user_locks_ids
         .into_iter()
         .filter_map(|lock_id| {
-            LOCKS_MAP
-                .may_load_at_height(deps.storage, (address.clone(), lock_id), height)
+            LOCKS_MAP_V2
+                .may_load_at_height(deps.storage, lock_id, height)
                 .unwrap_or_default()
+                .or(LOCKS_MAP_V1
+                    .may_load_at_height(deps.storage, (address.clone(), lock_id), height)
+                    .unwrap_or_default()
+                    .map(|v1_lockup| v1_lockup.into_v2(address.clone())))
         })
         .map(|lockup| {
             to_lockup_with_power(
@@ -453,7 +467,7 @@ pub fn to_lockup_with_power(
     token_manager: &mut TokenManager,
     round_id: u64,
     round_end: Timestamp,
-    lock_entry: LockEntry,
+    lock_entry: LockEntryV2,
 ) -> LockEntryWithPower {
     match token_manager.validate_denom(deps, round_id, lock_entry.funds.denom.clone()) {
         Err(_) => {
@@ -516,7 +530,7 @@ pub fn to_lockup_with_power(
 pub fn get_lock_time_weighted_shares(
     round_lock_power_schedule: &RoundLockPowerSchedule,
     round_end: Timestamp,
-    lock_entry: &LockEntry,
+    lock_entry: &LockEntryV2,
     lock_epoch_length: u64,
 ) -> Uint128 {
     if round_end.nanos() > lock_entry.lock_end.nanos() {
@@ -563,13 +577,46 @@ pub struct LockingInfo {
     pub lock_in_known_users_cap: Option<u128>,
 }
 
+/// Loads a lock entry from LOCKS_MAP_V2 and verifies the sender is the owner
+/// Returns the lock entry if found and owned by sender, or an error otherwise
+pub fn load_lock_and_verify_ownership(
+    storage: &dyn Storage,
+    sender: &Addr,
+    lock_id: u64,
+) -> Result<LockEntryV2, ContractError> {
+    // Load the lock entry
+    let lock_entry = LOCKS_MAP_V2.load(storage, lock_id).map_err(|_| {
+        ContractError::Std(StdError::generic_err(format!(
+            "Lock with ID {} not found",
+            lock_id
+        )))
+    })?;
+
+    // Verify sender is the owner
+    if lock_entry.owner != *sender {
+        return Err(ContractError::Std(StdError::generic_err(format!(
+            "Lock with ID {} is not owned by {}",
+            lock_id, sender
+        ))));
+    }
+
+    Ok(lock_entry)
+}
+
+/// Check if sender owns the specified lock
+pub fn is_lock_owner(storage: &dyn Storage, sender: &Addr, lock_id: u64) -> bool {
+    match LOCKS_MAP_V2.may_load(storage, lock_id) {
+        Ok(Some(lock_entry)) => lock_entry.owner == *sender,
+        _ => false,
+    }
+}
+
 // Finds the last proposal the given lock has voted for.
 // It will return an error if the lock has not voted for any proposal.
 pub fn find_voted_proposal_for_lock(
     deps: &Deps<NeutronQuery>,
     current_round_id: u64,
     tranche_id: u64,
-    lock_voter: &Addr,
     lock_id: u64,
 ) -> Result<Proposal, ContractError> {
     if current_round_id == 0 {
@@ -580,10 +627,9 @@ pub fn find_voted_proposal_for_lock(
 
     let mut check_round = current_round_id - 1;
     loop {
-        if let Some(prev_vote) = VOTE_MAP.may_load(
-            deps.storage,
-            ((check_round, tranche_id), lock_voter.clone(), lock_id),
-        )? {
+        if let Some(prev_vote) =
+            VOTE_MAP_V2.may_load(deps.storage, ((check_round, tranche_id), lock_id))?
+        {
             // Found a vote, so get and return the proposal
             return PROPOSAL_MAP
                 .load(deps.storage, (check_round, tranche_id, prev_vote.prop_id))
@@ -624,11 +670,9 @@ pub fn find_deployment_for_voted_lock(
     deps: &Deps<NeutronQuery>,
     current_round_id: u64,
     tranche_id: u64,
-    lock_voter: &Addr,
     lock_id: u64,
 ) -> Result<Option<LiquidityDeployment>, ContractError> {
-    let proposal =
-        find_voted_proposal_for_lock(deps, current_round_id, tranche_id, lock_voter, lock_id)?;
+    let proposal = find_voted_proposal_for_lock(deps, current_round_id, tranche_id, lock_id)?;
     get_deployment_for_proposal(deps, &proposal)
 }
 
@@ -640,4 +684,28 @@ impl LiquidityDeployment {
                 .iter()
                 .any(|coin| coin.amount > Uint128::zero())
     }
+}
+
+/// Retrieves a lock entry by its ID and ensures the lock_owner is the actual owner.
+///
+/// # Arguments
+/// - `lock_owner` - The expected owner of the lock entry.
+/// - `lock_id` - The unique identifier of the lock entry.
+///
+/// # Returns
+/// - `Ok(LockEntryV2)` - If the lock entry exists and the caller is the owner.
+/// - `Err(ContractError::Unauthorized)` - If the caller is not the owner.
+/// - `Err(ContractError::Std(_))` - If the lock entry does not exist or another storage error occurs.
+pub fn get_owned_lock_entry(
+    storage: &dyn Storage,
+    lock_owner: &Addr,
+    lock_id: u64,
+) -> Result<LockEntryV2, ContractError> {
+    let lock_entry = LOCKS_MAP_V2.load(storage, lock_id)?;
+
+    if lock_entry.owner != lock_owner {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    Ok(lock_entry)
 }

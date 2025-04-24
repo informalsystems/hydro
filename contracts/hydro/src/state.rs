@@ -100,17 +100,48 @@ pub const LOCK_ID: Item<u64> = Item::new("lock_id");
 // this is incremented every time a new proposal is created
 pub const PROP_ID: Item<u64> = Item::new("prop_id");
 
-// LOCKS_MAP: key(sender_address, lock_id) -> LockEntry
-pub const LOCKS_MAP: SnapshotMap<(Addr, u64), LockEntry> = SnapshotMap::new(
+// LOCKS_MAP_V1: Previous structure, now preserved for migration, and for historical queries
+// LOCKS_MAP_V1: key(sender_address, lock_id) -> LockEntry
+pub const LOCKS_MAP_V1: SnapshotMap<(Addr, u64), LockEntryV1> = SnapshotMap::new(
     "locks_map",
     "locks_map__checkpoints",
     "locks_map__changelog",
     Strategy::EveryBlock,
 );
 
+// LOCKS_MAP_V2: New structure without address in key, to enable NFT features
+// LOCKS_MAP_V2: key(lock_id) -> LockEntry
+pub const LOCKS_MAP_V2: SnapshotMap<u64, LockEntryV2> = SnapshotMap::new(
+    "locks_map_v2",
+    "locks_map_v2__checkpoints",
+    "locks_map_v2__changelog",
+    Strategy::EveryBlock,
+);
+
 #[cw_serde]
-pub struct LockEntry {
+pub struct LockEntryV1 {
     pub lock_id: u64,
+    pub funds: Coin,
+    pub lock_start: Timestamp,
+    pub lock_end: Timestamp,
+}
+
+impl LockEntryV1 {
+    pub fn into_v2(self, owner: Addr) -> LockEntryV2 {
+        LockEntryV2 {
+            lock_id: self.lock_id,
+            owner,
+            funds: self.funds,
+            lock_start: self.lock_start,
+            lock_end: self.lock_end,
+        }
+    }
+}
+
+#[cw_serde]
+pub struct LockEntryV2 {
+    pub lock_id: u64,
+    pub owner: Addr,
     pub funds: Coin,
     pub lock_start: Timestamp,
     pub lock_end: Timestamp,
@@ -150,8 +181,13 @@ pub struct Proposal {
     pub minimum_atom_liquidity_request: Uint128,
 }
 
+// VOTE_MAP_V1: Previous structure, now preserved for migration
 // VOTE_MAP: key((round_id, tranche_id), sender_addr, lock_id) -> Vote
-pub const VOTE_MAP: Map<((u64, u64), Addr, u64), Vote> = Map::new("vote_map");
+pub const VOTE_MAP_V1: Map<((u64, u64), Addr, u64), Vote> = Map::new("vote_map");
+
+// VOTE_MAP_V2: New structure without address in key, to enable NFT features
+// VOTE_MAP: key((round_id, tranche_id), lock_id) -> Vote
+pub const VOTE_MAP_V2: Map<((u64, u64), u64), Vote> = Map::new("vote_map_v2");
 
 // Tracks the next round in which user is allowed to vote with the given lock_id.
 // VOTING_ALLOWED_ROUND: key(tranche_id, lock_id) -> round_id

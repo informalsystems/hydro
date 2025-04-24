@@ -7,18 +7,20 @@
 export type Uint128 = string;
 export type Timestamp = Uint64;
 export type Uint64 = string;
+export type Addr = string;
 export interface AllUserLockupsResponse {
   lockups: LockEntryWithPower[];
 }
 export interface LockEntryWithPower {
   current_voting_power: Uint128;
-  lock_entry: LockEntry;
+  lock_entry: LockEntryV2;
 }
-export interface LockEntry {
+export interface LockEntryV2 {
   funds: Coin;
   lock_end: Timestamp;
   lock_id: number;
   lock_start: Timestamp;
+  owner: Addr;
 }
 export interface Coin {
   amount: Uint128;
@@ -37,7 +39,6 @@ export interface PerTrancheLockupInfo {
   tied_to_proposal?: number | null;
   tranche_id: number;
 }
-export type Addr = string;
 export type Decimal = string;
 export interface AllVotesResponse {
   votes: VoteEntry[];
@@ -220,7 +221,7 @@ export interface TrancheInfo {
   name: string;
 }
 export interface ExpiredUserLockupsResponse {
-  lockups: LockEntry[];
+  lockups: LockEntryV2[];
 }
 export interface ICQManagersResponse {
   managers: Addr[];
@@ -305,6 +306,12 @@ export type QueryMsg = {
   };
 } | {
   user_votes: {
+    address: string;
+    round_id: number;
+    tranche_id: number;
+  };
+} | {
+  user_voted_locks: {
     address: string;
     round_id: number;
     tranche_id: number;
@@ -443,6 +450,13 @@ export interface Tranche {
   id: number;
   metadata: string;
   name: string;
+}
+export interface UserVotedLocksResponse {
+  voted_locks: [number, VotedLockInfo[]][];
+}
+export interface VotedLockInfo {
+  lock_id: number;
+  power: Decimal;
 }
 export interface UserVotesResponse {
   votes: VoteWithPower[];

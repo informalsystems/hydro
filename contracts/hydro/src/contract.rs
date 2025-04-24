@@ -29,8 +29,8 @@ use crate::query::{
     RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
     RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse,
     SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, TopNProposalsResponse,
-    TotalLockedTokensResponse, TranchesResponse, UserVotesResponse, UserVotingPowerResponse,
-    VoteEntry, WhitelistAdminsResponse, WhitelistResponse,
+    TotalLockedTokensResponse, TranchesResponse, UserVotedLocksResponse, UserVotesResponse,
+    UserVotingPowerResponse, VoteEntry, VotedLockInfo, WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_token_group_shares_to_proposal, add_token_group_shares_to_round_total,
@@ -39,11 +39,11 @@ use crate::score_keeper::{
     remove_token_group_shares_from_proposal, TokenGroupRatioChange,
 };
 use crate::state::{
-    Constants, LockEntry, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo, Vote,
-    VoteWithPower, CONSTANTS, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP,
+    Constants, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo, Vote,
+    VoteWithPower, CONSTANTS, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2,
     LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, SNAPSHOTS_ACTIVATION_HEIGHT,
     TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS, VALIDATORS_INFO,
-    VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP,
+    VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP_V2,
     VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::token_manager::{
@@ -52,8 +52,9 @@ use crate::token_manager::{
 };
 use crate::utils::{
     find_voted_proposal_for_lock, get_current_user_voting_power, get_deployment_for_proposal,
-    get_lock_time_weighted_shares, load_constants_active_at_timestamp, load_current_constants,
-    run_on_each_transaction, scale_lockup_power, to_lockup_with_power, update_locked_tokens_info,
+    get_highest_known_height_for_round_id, get_lock_time_weighted_shares, get_owned_lock_entry,
+    load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
+    scale_lockup_power, to_lockup_with_power, update_locked_tokens_info,
     validate_locked_tokens_caps,
 };
 use crate::validators_icqs::{
@@ -345,19 +346,15 @@ fn lock_tokens(
     let lock_id = LOCK_ID.load(deps.storage)?;
     LOCK_ID.save(deps.storage, &(lock_id + 1))?;
 
-    let lock_entry = LockEntry {
+    let lock_entry = LockEntryV2 {
         lock_id,
+        owner: info.sender.clone(),
         funds: info.funds[0].clone(),
         lock_start: env.block.time,
         lock_end: env.block.time.plus_nanos(lock_duration),
     };
     let lock_end = lock_entry.lock_end.nanos();
-    LOCKS_MAP.save(
-        deps.storage,
-        (info.sender.clone(), lock_id),
-        &lock_entry,
-        env.block.height,
-    )?;
+    LOCKS_MAP_V2.save(deps.storage, lock_id, &lock_entry, env.block.height)?;
 
     USER_LOCKS.update(
         deps.storage,
@@ -385,7 +382,6 @@ fn lock_tokens(
     // If user already voted for some proposals in the current round, update the voting power on those proposals.
     update_voting_power_on_proposals(
         &mut deps,
-        &info.sender,
         &constants,
         &mut token_manager,
         current_round,
@@ -496,9 +492,10 @@ fn refresh_single_lock(
     lock_id: u64,
     new_lock_duration: u64,
 ) -> Result<(u64, u64), ContractError> {
-    let mut lock_entry = LOCKS_MAP.load(deps.storage, (info.sender.clone(), lock_id))?;
+    let mut lock_entry = get_owned_lock_entry(deps.storage, &info.sender, lock_id)?;
+
     let old_lock_entry = lock_entry.clone();
-    deps.api.debug(&format!("lock_entry: {:?}", lock_entry));
+
     let new_lock_end = env.block.time.plus_nanos(new_lock_duration).nanos();
     let old_lock_end = lock_entry.lock_end.nanos();
     if new_lock_end <= old_lock_end {
@@ -507,12 +504,7 @@ fn refresh_single_lock(
         )));
     }
     lock_entry.lock_end = Timestamp::from_nanos(new_lock_end);
-    LOCKS_MAP.save(
-        deps.storage,
-        (info.sender.clone(), lock_id),
-        &lock_entry,
-        env.block.height,
-    )?;
+    LOCKS_MAP_V2.save(deps.storage, lock_id, &lock_entry, env.block.height)?;
     let validate_denom_result = token_manager.validate_denom(
         &deps.as_ref(),
         current_round_id,
@@ -526,7 +518,6 @@ fn refresh_single_lock(
 
     update_voting_power_on_proposals(
         deps,
-        &info.sender,
         constants,
         token_manager,
         current_round_id,
@@ -604,38 +595,33 @@ fn unlock_tokens(
     // TODO: reenable this when we implement slashing
     // validate_previous_round_vote(&deps, &env, info.sender.clone())?;
 
-    let locks_iter =
-        LOCKS_MAP
-            .prefix(info.sender.clone())
-            .range(deps.storage, None, None, Order::Ascending);
+    let locks: Vec<_> = USER_LOCKS
+        .may_load(deps.storage, info.sender.clone())?
+        .into_iter()
+        .flatten()
+        .filter_map(|id| {
+            if lock_ids.as_ref().is_some_and(|ids| !ids.contains(&id)) {
+                return None;
+            }
 
-    // If lock_ids is provided, filter locks to only those IDs
-    let locks: Vec<Result<(u64, LockEntry), StdError>> = if let Some(ids) = lock_ids {
-        locks_iter
-            .filter(|lock| {
-                if let Ok((id, _)) = lock {
-                    ids.contains(id)
-                } else {
-                    false
-                }
-            })
-            .collect()
-    } else {
-        locks_iter.collect()
-    };
+            LOCKS_MAP_V2
+                .load(deps.storage, id)
+                .map(|lock| Some((id, lock)))
+                .transpose()
+        })
+        .collect::<Result<_, _>>()?;
 
-    let mut to_delete = vec![];
     let mut total_unlocked_amount = Uint128::zero();
 
     let mut response = Response::new()
         .add_attribute("action", "unlock_tokens")
         .add_attribute("sender", info.sender.to_string());
 
+    let mut removed_lock_ids = HashSet::new();
     let mut unlocked_lock_ids = vec![];
     let mut unlocked_tokens = vec![];
 
-    for lock in locks {
-        let (lock_id, lock_entry) = lock?;
+    for (lock_id, lock_entry) in locks {
         if lock_entry.lock_end < env.block.time {
             // Send tokens back to caller
             let send = Coin {
@@ -650,23 +636,15 @@ fn unlock_tokens(
 
             total_unlocked_amount += send.amount;
 
-            to_delete.push(lock_id);
+            // Delete unlocked locks
+            LOCKS_MAP_V2.remove(deps.storage, lock_id, env.block.height)?;
+            removed_lock_ids.insert(lock_id);
 
             unlocked_lock_ids.push(lock_id.to_string());
             unlocked_tokens.push(send.to_string());
         }
     }
 
-    // Delete unlocked locks
-    for lock_id in to_delete.iter() {
-        LOCKS_MAP.remove(
-            deps.storage,
-            (info.sender.clone(), *lock_id),
-            env.block.height,
-        )?;
-    }
-
-    let to_delete: HashSet<u64> = to_delete.into_iter().collect();
     USER_LOCKS.update(
         deps.storage,
         info.sender.clone(),
@@ -675,7 +653,7 @@ fn unlock_tokens(
             match current_locks {
                 None => Ok(vec![]),
                 Some(mut current_locks) => {
-                    current_locks.retain(|lock_id| !to_delete.contains(lock_id));
+                    current_locks.retain(|lock_id| !removed_lock_ids.contains(lock_id));
                     Ok(current_locks)
                 }
             }
@@ -698,19 +676,24 @@ fn unlock_tokens(
 
 // prevent clippy from warning for unused function
 // TODO: reenable this when we enable slashing
+// Note: this function is outdated and would need to be fixed when reinstated
+// When we want to reinstate the function, the process should probably be:
+// 1. Receive list of lock_ids (already confirmed that they belong to the user) to unlock
+// 2. For each lock_id, check that the last vote's bid duration does not prevent the unlock to happen at this round
+// 3. Return the list of lock_ids that are allowed to be unlocked.
 #[allow(dead_code)]
 fn validate_previous_round_vote(
     deps: &DepsMut<NeutronQuery>,
     env: &Env,
-    sender: &Addr,
+    _sender: &Addr,
 ) -> Result<(), ContractError> {
     let constants = load_current_constants(&deps.as_ref(), env)?;
     let current_round_id = compute_current_round_id(env, &constants)?;
     if current_round_id > 0 {
         let previous_round_id = current_round_id - 1;
         for tranche_id in TRANCHE_MAP.keys(deps.storage, None, None, Order::Ascending) {
-            if VOTE_MAP
-                .prefix(((previous_round_id, tranche_id?), sender.clone()))
+            if VOTE_MAP_V2
+                .prefix((previous_round_id, tranche_id?))
                 .range(deps.storage, None, None, Order::Ascending)
                 .count()
                 > 0
@@ -845,19 +828,12 @@ fn vote(
         validate_proposals_and_locks_for_voting(deps.storage, &info.sender, &proposals_votes)?;
 
     // Process unvotes first
-    let unvotes_result = process_unvotes(
-        deps.storage,
-        &info.sender,
-        round_id,
-        tranche_id,
-        &target_votes,
-    )?;
+    let unvotes_result = process_unvotes(deps.storage, round_id, tranche_id, &target_votes)?;
 
     // Prepare context for voting
     let context = VoteProcessingContext {
         env: &env,
         constants: &constants,
-        sender: &info.sender,
         round_id,
         tranche_id,
     };
@@ -935,10 +911,16 @@ fn unvote(
     // Check that the tranche exists
     TRANCHE_MAP.load(deps.storage, tranche_id)?;
 
-    // If any of the lock_ids doesn't exist, or it belongs to a different user
-    // then error out.
+    let user_lock_ids = USER_LOCKS
+        .may_load(deps.storage, info.sender.clone())?
+        .ok_or_else(|| StdError::generic_err("User has no locks"))?;
+
     for &lock_id in &lock_ids {
-        LOCKS_MAP.load(deps.storage, (info.sender.clone(), lock_id))?;
+        if !user_lock_ids.contains(&lock_id) {
+            return Err(
+                StdError::generic_err("Lock ID not found or does not belong to user").into(),
+            );
+        }
     }
 
     // Create target votes map for unvoting - None means we're just unvoting
@@ -948,13 +930,7 @@ fn unvote(
         .collect();
 
     // Process unvotes
-    let unvotes_result = process_unvotes(
-        deps.storage,
-        &info.sender,
-        round_id,
-        tranche_id,
-        &target_votes,
-    )?;
+    let unvotes_result = process_unvotes(deps.storage, round_id, tranche_id, &target_votes)?;
 
     let unique_proposals_to_update: HashSet<u64> =
         unvotes_result.power_changes.keys().copied().collect();
@@ -1766,6 +1742,13 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
             tranche_id,
             address,
         } => to_json_binary(&query_user_votes(deps, round_id, tranche_id, address)?),
+        QueryMsg::UserVotedLocks {
+            round_id,
+            tranche_id,
+            address,
+        } => to_json_binary(&query_user_voted_locks(
+            deps, round_id, tranche_id, address,
+        )?),
         QueryMsg::AllVotes { start_from, limit } => {
             to_json_binary(&query_all_votes(deps, start_from, limit)?)
         }
@@ -1899,7 +1882,7 @@ fn get_user_lockups_with_predicate(
     deps: &Deps<NeutronQuery>,
     env: &Env,
     address: String,
-    predicate: impl FnMut(&LockEntry) -> bool,
+    predicate: impl FnMut(&LockEntryV2) -> bool,
     start_from: u32,
     limit: u32,
 ) -> StdResult<Vec<LockEntryWithPower>> {
@@ -1965,11 +1948,8 @@ pub fn query_specific_user_lockups(
 fn enrich_lockups_with_tranche_infos(
     deps: &Deps<NeutronQuery>,
     env: &Env,
-    address: String,
     lockups: Vec<LockEntryWithPower>,
 ) -> StdResult<Vec<LockupWithPerTrancheInfo>> {
-    let converted_addr = deps.api.addr_validate(&address)?;
-
     let tranche_ids = TRANCHE_MAP
         .range(deps.storage, None, None, Order::Ascending)
         .map(|tranche| tranche.unwrap().1.id)
@@ -1987,14 +1967,10 @@ fn enrich_lockups_with_tranche_infos(
                 .iter()
                 .filter_map(|tranche_id| {
                     // add which proposal the lock voted for
-                    let voted_for_proposal_res: StdResult<Option<u64>> = VOTE_MAP
+                    let voted_for_proposal_res: StdResult<Option<u64>> = VOTE_MAP_V2
                         .may_load(
                             deps.storage,
-                            (
-                                (current_round_id, *tranche_id),
-                                converted_addr.clone(),
-                                lock.lock_entry.lock_id,
-                            ),
+                            ((current_round_id, *tranche_id), lock.lock_entry.lock_id),
                         )
                         .map(|vote| vote.map(|v| v.prop_id));
 
@@ -2040,7 +2016,6 @@ fn enrich_lockups_with_tranche_infos(
                             deps,
                             current_round_id,
                             *tranche_id,
-                            &converted_addr,
                             lock.lock_entry.lock_id,
                         );
                         // if there was an error in the store while loading the proposal, filter out this tranche
@@ -2099,7 +2074,7 @@ pub fn query_all_user_lockups_with_tranche_infos(
     limit: u32,
 ) -> StdResult<AllUserLockupsWithTrancheInfosResponse> {
     let lockups = query_all_user_lockups(deps, env, address.clone(), start_from, limit)?;
-    let enriched_lockups = enrich_lockups_with_tranche_infos(deps, env, address, lockups.lockups)?;
+    let enriched_lockups = enrich_lockups_with_tranche_infos(deps, env, lockups.lockups)?;
     Ok(AllUserLockupsWithTrancheInfosResponse {
         lockups_with_per_tranche_infos: enriched_lockups,
     })
@@ -2112,7 +2087,7 @@ pub fn query_specific_user_lockups_with_tranche_infos(
     lock_ids: Vec<u64>,
 ) -> StdResult<SpecificUserLockupsWithTrancheInfosResponse> {
     let lockups = query_specific_user_lockups(deps, env, address.clone(), lock_ids)?;
-    let enriched_lockups = enrich_lockups_with_tranche_infos(deps, env, address, lockups.lockups)?;
+    let enriched_lockups = enrich_lockups_with_tranche_infos(deps, env, lockups.lockups)?;
 
     Ok(SpecificUserLockupsWithTrancheInfosResponse {
         lockups_with_per_tranche_infos: enriched_lockups,
@@ -2127,7 +2102,7 @@ pub fn query_expired_user_lockups(
     limit: u32,
 ) -> StdResult<ExpiredUserLockupsResponse> {
     let user_address = deps.api.addr_validate(&address)?;
-    let expired_lockup_predicate = |l: &LockEntry| l.lock_end < env.block.time;
+    let expired_lockup_predicate = |l: &LockEntryV2| l.lock_end < env.block.time;
 
     Ok(ExpiredUserLockupsResponse {
         lockups: query_user_lockups(
@@ -2181,14 +2156,19 @@ pub fn query_user_votes(
     let user_address = deps.api.addr_validate(&user_address)?;
     let mut voted_proposals_power_sum: HashMap<u64, Decimal> = HashMap::new();
 
-    let votes = VOTE_MAP
-        .prefix(((round_id, tranche_id), user_address.clone()))
-        .range(deps.storage, None, None, Order::Ascending)
-        .filter_map(|vote| match vote {
-            Err(_) => None,
-            Ok(vote) => Some(vote.1),
-        })
-        .collect::<Vec<Vote>>();
+    // Get the user's locks from USER_LOCKS
+    let user_locks = USER_LOCKS
+        .may_load(deps.storage, user_address.clone())?
+        .unwrap_or_default();
+
+    // Collect all votes for user's locks
+    let mut votes = Vec::new();
+    for lock_id in user_locks {
+        let vote = VOTE_MAP_V2.may_load(deps.storage, ((round_id, tranche_id), lock_id))?;
+        if let Some(vote) = vote {
+            votes.push(vote);
+        }
+    }
 
     let mut token_manager = TokenManager::new(&deps);
 
@@ -2228,28 +2208,92 @@ pub fn query_user_votes(
     Ok(UserVotesResponse { votes })
 }
 
+// This function queries user voted locks for the given round and tranche.
+// Unlike query_user_votes which aggregates voting power by proposal,
+// this function returns the individual locks that voted for each proposal
+// along with their voting power, to support transferable locks in the tribute contract.
+pub fn query_user_voted_locks(
+    deps: Deps<NeutronQuery>,
+    round_id: u64,
+    tranche_id: u64,
+    user_address: String,
+) -> StdResult<UserVotedLocksResponse> {
+    let user_address = deps.api.addr_validate(&user_address)?;
+    let mut voted_proposals_locks: HashMap<u64, Vec<VotedLockInfo>> = HashMap::new();
+    // Get the user's locks from USER_LOCKS for rhe given height
+    let round_highest_height = get_highest_known_height_for_round_id(deps.storage, round_id)?;
+    let user_locks = USER_LOCKS
+        .may_load_at_height(deps.storage, user_address.clone(), round_highest_height)?
+        .unwrap_or_default();
+
+    let mut token_manager = TokenManager::new(&deps);
+
+    // For each user lock, check if it voted in this round/tranche
+    for lock_id in user_locks {
+        if let Some(vote) = VOTE_MAP_V2.may_load(deps.storage, ((round_id, tranche_id), lock_id))? {
+            let vote_token_group_id = vote.time_weighted_shares.0.clone();
+            let token_ratio =
+                token_manager.get_token_group_ratio(&deps, round_id, vote_token_group_id)?;
+
+            // Calculate the vote power
+            let vote_power = vote.time_weighted_shares.1.checked_mul(token_ratio)?;
+
+            // Skip votes with zero power (happens if token ratio became zero)
+            if vote_power == Decimal::zero() {
+                continue;
+            }
+
+            // Add this lock to the map for its proposal
+            voted_proposals_locks
+                .entry(vote.prop_id)
+                .or_default()
+                .push(VotedLockInfo {
+                    lock_id,
+                    power: vote_power,
+                });
+        }
+    }
+
+    if voted_proposals_locks.is_empty() {
+        return Err(StdError::generic_err(
+            "User didn't vote in the given round and tranche",
+        ));
+    }
+
+    // Convert the HashMap to a Vec of tuples
+    let voted_locks: Vec<(u64, Vec<VotedLockInfo>)> = voted_proposals_locks.into_iter().collect();
+
+    Ok(UserVotedLocksResponse { voted_locks })
+}
+
 pub fn query_all_votes(
     deps: Deps<NeutronQuery>,
     start_from: u32,
     limit: u32,
 ) -> StdResult<AllVotesResponse> {
-    let votes = VOTE_MAP
+    let vote_entries = VOTE_MAP_V2
         .range(deps.storage, None, None, Order::Ascending)
         .skip(start_from as usize)
         .take(limit as usize)
-        .filter_map(|entry| match entry {
-            Err(_) => None,
-            Ok(((round_id_tranche, sender_addr, lock_id), vote)) => Some(VoteEntry {
-                round_id: round_id_tranche.0,
-                tranche_id: round_id_tranche.1,
-                sender_addr,
-                lock_id,
-                vote,
-            }),
+        .filter_map(|kv| {
+            let ((round_id_tranche, lock_id), vote) = kv.ok()?;
+            // For each vote, get the lock entry to determine the owner
+            LOCKS_MAP_V2
+                .load(deps.storage, lock_id)
+                .ok() // Skip votes where we can't find the lock entry
+                .map(|lock_entry| VoteEntry {
+                    round_id: round_id_tranche.0,
+                    tranche_id: round_id_tranche.1,
+                    sender_addr: lock_entry.owner,
+                    lock_id,
+                    vote,
+                })
         })
         .collect();
 
-    Ok(AllVotesResponse { votes })
+    Ok(AllVotesResponse {
+        votes: vote_entries,
+    })
 }
 
 pub fn query_all_votes_round_tranche(
@@ -2259,27 +2303,27 @@ pub fn query_all_votes_round_tranche(
     start_from: u32,
     limit: u32,
 ) -> StdResult<AllVotesResponse> {
-    let votes = VOTE_MAP
+    // Use prefix to filter by round_id and tranche_id directly
+    let prefix = (round_id, tranche_id);
+
+    let votes = VOTE_MAP_V2
+        .prefix(prefix)
         .range(deps.storage, None, None, Order::Ascending)
-        .filter_map(|entry| match entry {
-            Err(_) => None,
-            Ok(((stored_round_tranche, sender_addr, lock_id), vote)) => {
-                let (stored_round_id, stored_tranche_id) = stored_round_tranche;
-                if stored_round_id == round_id && stored_tranche_id == tranche_id {
-                    Some(VoteEntry {
-                        round_id: stored_round_id,
-                        tranche_id: stored_tranche_id,
-                        sender_addr,
-                        lock_id,
-                        vote,
-                    })
-                } else {
-                    None
-                }
-            }
-        })
         .skip(start_from as usize)
         .take(limit as usize)
+        .filter_map(|kv| {
+            let (lock_id, vote) = kv.ok()?;
+            LOCKS_MAP_V2
+                .load(deps.storage, lock_id)
+                .ok() // Skip votes where we can't find the lock entry
+                .map(|lock_entry| VoteEntry {
+                    round_id,
+                    tranche_id,
+                    sender_addr: lock_entry.owner,
+                    lock_id,
+                    vote,
+                })
+        })
         .collect();
 
     Ok(AllVotesResponse { votes })
@@ -2400,15 +2444,18 @@ pub fn query_tranches(deps: Deps<NeutronQuery>) -> StdResult<TranchesResponse> {
 fn query_user_lockups(
     deps: &Deps<NeutronQuery>,
     user_address: Addr,
-    predicate: impl FnMut(&LockEntry) -> bool,
+    mut predicate: impl FnMut(&LockEntryV2) -> bool,
     start_from: u32,
     limit: u32,
-) -> Vec<LockEntry> {
-    LOCKS_MAP
-        .prefix(user_address)
-        .range(deps.storage, None, None, Order::Ascending)
-        .map(|l| l.unwrap().1)
-        .filter(predicate)
+) -> Vec<LockEntryV2> {
+    let Ok(Some(lock_ids)) = USER_LOCKS.may_load(deps.storage, user_address.clone()) else {
+        return vec![];
+    };
+
+    lock_ids
+        .into_iter()
+        .filter_map(|lock_id| LOCKS_MAP_V2.may_load(deps.storage, lock_id).ok().flatten())
+        .filter(|lock| predicate(lock))
         .skip(start_from as usize)
         .take(limit as usize)
         .collect()
@@ -2565,12 +2612,11 @@ pub fn compute_round_end(constants: &Constants, round_id: u64) -> StdResult<Time
 #[allow(clippy::too_many_arguments)]
 fn update_voting_power_on_proposals(
     deps: &mut DepsMut<NeutronQuery>,
-    sender: &Addr,
     constants: &Constants,
     token_manager: &mut TokenManager,
     current_round: u64,
-    old_lock_entry: Option<LockEntry>,
-    new_lock_entry: LockEntry,
+    old_lock_entry: Option<LockEntryV2>,
+    new_lock_entry: LockEntryV2,
     token_group_id: String,
 ) -> Result<(), ContractError> {
     let round_end = compute_round_end(constants, current_round)?;
@@ -2613,7 +2659,7 @@ fn update_voting_power_on_proposals(
     for tranche_id in tranche_ids {
         let vote = get_vote_for_update(
             deps,
-            sender,
+            &new_lock_entry.owner,
             current_round,
             tranche_id,
             &old_lock_entry,
@@ -2650,13 +2696,9 @@ fn update_voting_power_on_proposals(
 
             vote.time_weighted_shares.1 = new_vote_shares;
 
-            VOTE_MAP.save(
+            VOTE_MAP_V2.save(
                 deps.storage,
-                (
-                    (current_round, tranche_id),
-                    sender.clone(),
-                    new_lock_entry.lock_id,
-                ),
+                ((current_round, tranche_id), new_lock_entry.lock_id),
                 &vote,
             )?;
 
@@ -2719,53 +2761,42 @@ pub fn get_vote_for_update(
     sender: &Addr,
     current_round: u64,
     tranche_id: u64,
-    old_lock_entry: &Option<LockEntry>,
+    old_lock_entry: &Option<LockEntryV2>,
     token_group_id: &str,
 ) -> Result<Option<Vote>, ContractError> {
-    Ok(match old_lock_entry {
-        Some(old_lock_entry) => {
-            match VOTE_MAP.load(
-                deps.storage,
-                (
-                    (current_round, tranche_id),
-                    sender.clone(),
-                    old_lock_entry.lock_id,
-                ),
-            ) {
-                Ok(vote) => Some(vote),
-                Err(_) => None,
-            }
-        }
-        None => {
-            let mut voted_proposals: HashSet<u64> = HashSet::new();
+    if let Some(old_lock_entry) = old_lock_entry {
+        let vote = VOTE_MAP_V2.may_load(
+            deps.storage,
+            ((current_round, tranche_id), old_lock_entry.lock_id),
+        )?;
+        return Ok(vote);
+    }
 
-            VOTE_MAP
-                .prefix(((current_round, tranche_id), sender.clone()))
-                .range(deps.storage, None, None, Order::Ascending)
-                .filter_map(|vote| match vote {
-                    Err(_) => None,
-                    Ok(vote) => Some(vote.1),
-                })
-                .for_each(|vote| {
-                    voted_proposals.insert(vote.prop_id);
-                });
+    let voted_proposals: HashSet<u64> = USER_LOCKS
+        .may_load(deps.storage, sender.clone())?
+        .into_iter()
+        .flatten()
+        .flat_map(|lock_id| {
+            VOTE_MAP_V2
+                .load(deps.storage, ((current_round, tranche_id), lock_id))
+                .map(|vote| vote.prop_id)
+                .ok()
+        })
+        .collect();
 
-            match voted_proposals.len() {
-                1 => {
-                    let prop_id = *voted_proposals.iter().next().ok_or(StdError::generic_err(
-                        "Failed to obtain proposal id that user voted on",
-                    ))?;
+    if voted_proposals.len() != 1 {
+        return Ok(None);
+    }
 
-                    // Create a vote with 0 power, which will be updated later
-                    Some(Vote {
-                        prop_id,
-                        time_weighted_shares: (token_group_id.to_string(), Decimal::zero()),
-                    })
-                }
-                _ => None,
-            }
-        }
-    })
+    let vote = voted_proposals
+        .into_iter()
+        .map(|prop_id| Vote {
+            prop_id,
+            time_weighted_shares: (token_group_id.to_string(), Decimal::zero()),
+        })
+        .next();
+
+    Ok(vote)
 }
 
 // Ensure that the lock will have a power greater than 0 at the end of
@@ -2773,7 +2804,7 @@ pub fn get_vote_for_update(
 pub fn can_lock_vote_for_proposal(
     current_round: u64,
     constants: &Constants,
-    lock_entry: &LockEntry,
+    lock_entry: &LockEntryV2,
     proposal: &Proposal,
 ) -> Result<bool, ContractError> {
     let power_required_round_id = current_round + proposal.deployment_duration - 1;
@@ -2878,10 +2909,10 @@ where
 
 // Returns the number of locks for a given user
 fn get_lock_count(deps: &Deps<NeutronQuery>, user_address: Addr) -> usize {
-    LOCKS_MAP
-        .prefix(user_address)
-        .range(deps.storage, None, None, Order::Ascending)
-        .count()
+    match USER_LOCKS.may_load(deps.storage, user_address) {
+        Ok(Some(lock_ids)) => lock_ids.len(),
+        _ => 0,
+    }
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
