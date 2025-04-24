@@ -282,6 +282,14 @@ fn execute_remove_admin(
         return Err(new_generic_error("Address is not an admin"));
     }
 
+    // if there is only one admin left, we cannot remove it
+    let admins_count = ADMINS
+        .keys(deps.storage, None, None, Order::Ascending)
+        .count();
+    if admins_count == 1 {
+        return Err(new_generic_error("Cannot remove the last admin"));
+    }
+
     ADMINS.remove(deps.storage, admin_address.clone());
 
     Ok(Response::new()

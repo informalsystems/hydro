@@ -860,6 +860,18 @@ fn add_remove_admin_test() {
     );
     assert!(res.is_ok());
 
+    // verify that removing the only admin is not allowed
+    let msg = ExecuteMsg::RemoveAdmin {
+        admin: admin_info.sender.to_string(),
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), admin_info.clone(), msg.clone());
+    assert!(res.is_err());
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .contains("Cannot remove the last admin"));
+
     // Verify that non-admin cannot add or remove other admins
     let add_admin1_msg = ExecuteMsg::AddAdmin {
         admin: new_admin_info1.sender.to_string(),
