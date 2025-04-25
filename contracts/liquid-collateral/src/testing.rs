@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use super::*;
 use crate::mock::mock::{store_contracts_code, PoolMockup};
 use crate::msg::{
@@ -7,7 +5,7 @@ use crate::msg::{
     QueryMsg, StateResponse,
 };
 use crate::state::{Bid, BidStatus, State, BIDS, SORTED_BIDS, STATE};
-use bigdecimal::BigDecimal;
+
 use cosmwasm_std::{
     testing::{mock_dependencies, mock_env, mock_info},
     Addr, Coin, Decimal, Uint128,

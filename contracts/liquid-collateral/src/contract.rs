@@ -996,9 +996,12 @@ pub fn resolve_auction(
 
         // Calculate how much principal we can take based on available counterparty
         let max_principal_based_on_counterparty =
-            (Decimal::from_ratio(counterparty_total - counterparty_spent, Uint128::one())
-                / bid_price)
-                .atomics();
+            Decimal::from_ratio(counterparty_total - counterparty_spent, Uint128::one())
+                / bid_price;
+
+        // Round the result to the nearest integer
+        let max_principal_based_on_counterparty =
+            round_decimal_to_uint128(max_principal_based_on_counterparty);
 
         // Determine the actual principal to take
         let principal_to_take = std::cmp::min(
@@ -1039,7 +1042,7 @@ pub fn resolve_auction(
 
         let remaining_principal_in_bid = bid.principal_deposited - principal_to_take;
 
-        // Refund the remaining principal (if any) and remove the bid
+        // Refund the remaining principal (if any) and update bid status
         if !remaining_principal_in_bid.is_zero() {
             let refund_msg = BankMsg::Send {
                 to_address: bid.bidder.clone().into_string(),
@@ -1091,7 +1094,7 @@ pub fn resolve_auction(
 
     // Reset auction state
     state.auction_end_time = None;
-    state.principal_to_replenish = Uint128::zero();
+    state.principal_to_replenish -= principal_accumulated;
     state.counterparty_to_give = None;
     STATE.save(deps.storage, &state)?;
 
