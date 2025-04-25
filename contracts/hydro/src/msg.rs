@@ -200,6 +200,9 @@ pub enum ExecuteMsg {
     RemoveTokenInfoProvider {
         provider_id: String,
     },
+    SetGatekeeper {
+        gatekeeper_addr: Option<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

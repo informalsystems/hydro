@@ -9,6 +9,7 @@ use cosmwasm_std::{
 };
 use cw2::set_contract_version;
 use cw_utils::must_pay;
+use interface::gatekeeper;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use neutron_sdk::bindings::query::NeutronQuery;
 use neutron_sdk::interchain_queries::v047::register_queries::new_register_staking_validators_query_msg;
@@ -299,7 +300,47 @@ pub fn execute(
         ExecuteMsg::RemoveTokenInfoProvider { provider_id } => {
             remove_token_info_provider(deps, env, info, provider_id)
         }
+        ExecuteMsg::SetGatekeeper { gatekeeper_addr } => {
+            set_gatekeeper(deps, env, info, gatekeeper_addr)
+        }
     }
+}
+
+// SetGatekeeper(gatekeeper_addr):
+// Validate that the sender is a whitelist admin
+// Changes the address of the Gatekeeper contract to the provided one
+// If the provided address is None, the reference to the Gatekeeper contract is removed from this contract
+fn set_gatekeeper(
+    deps: DepsMut<'_, NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    gatekeeper_addr: Option<String>,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
+    validate_contract_is_not_paused(&constants)?;
+
+    let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
+
+    if !whitelist_admins.contains(&info.sender) {
+        return Err(ContractError::Unauthorized);
+    }
+
+    match &gatekeeper_addr {
+        Some(addr) => {
+            GATEKEEPER.save(deps.storage, &addr)?;
+        }
+        None => {
+            GATEKEEPER.remove(deps.storage);
+        }
+    }
+
+    Ok(Response::new()
+        .add_attribute("action", "set_gatekeeper")
+        .add_attribute("sender", info.sender)
+        .add_attribute(
+            "gatekeeper_addr",
+            gatekeeper_addr.unwrap_or("None".to_string()),
+        ))
 }
 
 // LockTokens(lock_duration):
