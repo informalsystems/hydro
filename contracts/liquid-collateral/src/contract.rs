@@ -1,10 +1,11 @@
-use crate::calculations::tick_to_sqrt_price;
+use crate::calculations::{price_to_tick, tick_to_sqrt_price};
 use crate::error::ContractError;
 use crate::msg::{
     CalculatedDataResponse, CreatePositionMsg, EndRoundBidMsg, ExecuteMsg, InstantiateMsg,
     QueryMsg, StateResponse,
 };
 use crate::state::{Bid, BidStatus, State, BIDS, SORTED_BIDS, STATE};
+use bigdecimal::BigDecimal;
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, Event,
     MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Uint128,
@@ -107,7 +108,7 @@ pub fn calculate_optimal_counterparty_and_upper_tick(
     liquidation_bonus: String,
     price_ratio: String,
     tick_spacing: String,
-) -> StdResult<CalculatedDataResponse> {
+) -> StdResult<Vec<CalculatedDataResponse>> {
     // inputs: lower tick, base token amount, and liquidation bonus
     // output:  upper tick and counterparty
 
@@ -167,48 +168,45 @@ pub fn calculate_optimal_counterparty_and_upper_tick(
         )));
     }
 
-    // Step 1: Calculate liquidity based on the principal token amount
-    let liquidity = principal_token_amount / (sqrt_current - sqrt_lower);
-
-    // Step 2: Adjust liquidity based on liquidation bonus
+    // Step 1: Adjust liquidity based on liquidation bonus
     let bonus_amount = principal_token_amount * liquidation_bonus;
     let adjusted_base_token_amount = principal_token_amount + bonus_amount;
     let adjusted_liquidity = adjusted_base_token_amount / (sqrt_current - sqrt_lower);
 
-    // Step 3: Calculate the upper tick based on adjusted liquidity
-    let scale_factor = adjusted_liquidity / liquidity;
-    let sqrt_upper = sqrt_current * (1.0 + scale_factor);
-    //let upper_tick = 0.1 as f64;
+    // Step 2: Calculate the upper tick based on adjusted liquidity
 
-    // Step 4: Calculate counterparty amount (WOBBLE) based on liquidity
+    let strategies = vec![("tight", 0.05), ("passive", 0.15), ("conservative", 0.30)];
 
-    let counterparty_amount = adjusted_liquidity * (1.0 / sqrt_current - 1.0 / sqrt_upper);
+    let mut results = vec![];
 
-    let upper_price = sqrt_upper * sqrt_upper;
+    for (label, range_percent) in strategies {
+        let sqrt_upper = sqrt_current * (1.0 + range_percent);
+        let upper_price = sqrt_upper * sqrt_upper;
+        let upper_price_str = format!("{:.30}", upper_price); // preserve precision
+        let upper_price_bd = BigDecimal::from_str(&upper_price_str)
+            .expect("Failed to convert upper_price to BigDecimal");
+        let mut upper_tick = match price_to_tick(&upper_price_bd) {
+            Ok(tick) => tick,
+            Err(e) => return Err(StdError::generic_err("Failed to parse upper_tick to i64")),
+        };
+        upper_tick = round_to_spacing(upper_tick, tick_spacing);
 
-    let mut upper_tick = price_to_tick(upper_price);
+        // Step 3: Calculate counterparty amount (WOBBLE) based on liquidity
 
-    // Align upper_tick to nearest valid tick
-    upper_tick = round_to_spacing(upper_tick, tick_spacing as i32);
+        let counterparty_amount = adjusted_liquidity * (1.0 / sqrt_current - 1.0 / sqrt_upper);
 
-    // Create and return the response struct
-    let response = CalculatedDataResponse {
-        upper_tick: upper_tick.to_string(),
-        counterparty_amount: counterparty_amount.to_string(),
-    };
-    Ok(response)
-}
+        results.push(CalculatedDataResponse {
+            strategy: label.to_string(),
+            upper_tick: upper_tick.to_string(),
+            counterparty_amount: counterparty_amount.to_string(),
+        });
+    }
 
-pub fn price_to_tick(price: f64) -> i32 {
-    (price.ln() / 1.0001_f64.ln()).floor() as i32
-}
-
-pub fn tick_to_price(tick: i32) -> f64 {
-    1.0001_f64.powi(tick)
+    Ok(results)
 }
 
 // Helper: round tick to spacing
-pub fn round_to_spacing(tick: i32, spacing: i32) -> i32 {
+pub fn round_to_spacing(tick: i64, spacing: i64) -> i64 {
     ((tick + spacing / 2) / spacing) * spacing
 }
 

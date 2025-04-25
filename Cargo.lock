@@ -2462,6 +2462,7 @@ dependencies = [
  "cw-storage-plus 1.2.0",
  "num-bigint",
  "num-traits",
+ "once_cell",
  "osmosis-std 0.25.0",
  "osmosis-test-tube",
  "proptest",

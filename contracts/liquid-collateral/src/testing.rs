@@ -6,6 +6,7 @@ use crate::msg::{
 };
 use crate::state::{Bid, BidStatus, State, BIDS, SORTED_BIDS, STATE};
 
+use bigdecimal::BigDecimal;
 use cosmwasm_std::{
     testing::{mock_dependencies, mock_env, mock_info},
     Addr, Coin, Decimal, Uint128,
@@ -18,7 +19,7 @@ use osmosis_test_tube::{
     Account, Bank, ExecuteResponse, Module, OsmosisTestApp, SigningAccount, Wasm,
 };
 
-use crate::calculations::tick_to_sqrt_price;
+use crate::calculations::{price_to_tick, tick_to_price, tick_to_sqrt_price};
 use crate::contract::{
     calculate_optimal_counterparty_and_upper_tick, calculate_withdraw_liquidity_amount,
     parse_liquidity, resolve_auction,
@@ -897,12 +898,15 @@ fn test_calculate_position() {
         tick_spacing: "100".to_string(), // Example tick spacing
     };
 
-    let data_response: CalculatedDataResponse =
+    let data_response: Vec<CalculatedDataResponse> =
         wasm.query(&contract_addr, &query_calculated_data).unwrap();
 
-    // Print the values for the neptune calc
-    println!("Upper Tick: {}", data_response.upper_tick);
-    println!("Counterparty Amount: {}", data_response.counterparty_amount);
+    // Print the values
+    for (i, res) in data_response.iter().enumerate() {
+        println!("--- Response #{} ---", i + 1);
+        println!("Upper Tick: {}", res.upper_tick);
+        println!("Counterparty Amount: {}", res.counterparty_amount);
+    }
 }
 
 #[test]
@@ -1048,25 +1052,64 @@ fn test_tick_to_price() {
 fn test_calculate_optimal() {
     let lower_tick = "-7850200".to_string(); // -8150200 representing 0.1849800 price
     let principal_token_amount = "100".to_string(); // Example principal token amount
-    let liquidation_bonus = "0.2".to_string(); // 0 %liquidation bonus
+    let liquidation_bonus = "0.0".to_string(); // 0 %liquidation bonus
     let price_ratio = "0.2296738".to_string();
     let tick_spacing = "100".to_string(); // Example tick spacing
 
-    //Upper Tick: -700 0.99price
-    //Counterparty Amount: 2122.7133920172023
-
     let response = calculate_optimal_counterparty_and_upper_tick(
-        lower_tick,
+        lower_tick.clone(),
         principal_token_amount,
         liquidation_bonus,
-        price_ratio,
+        price_ratio.clone(),
         tick_spacing,
     );
 
     match response {
         Ok(data) => {
-            println!("Upper Tick: {}", data.upper_tick);
-            println!("Counterparty Amount: {}", data.counterparty_amount);
+            let lower_tick: i64 = lower_tick.parse().expect("Invalid lower_tick");
+            match tick_to_price(lower_tick) {
+                Ok(lower_price) => {
+                    println!("Lower Tick: {} → Price: {}", lower_tick, lower_price);
+                }
+                Err(e) => {
+                    println!("Error converting lower tick to price: {:?}", e);
+                    return;
+                }
+            }
+
+            // Parse current price
+            let price: BigDecimal = price_ratio
+                .parse::<BigDecimal>()
+                .expect("Invalid price_ratio");
+            let current_tick = price_to_tick(&price).unwrap();
+            match tick_to_price(current_tick.clone()) {
+                Ok(current_price) => {
+                    println!("Current Tick: {} → Price: {}", current_tick, current_price);
+                }
+                Err(e) => {
+                    println!("Error converting current tick to price: {:?}", e);
+                    return;
+                }
+            }
+            println!("=========================");
+
+            for strategy_data in data {
+                let upper_tick: i64 = strategy_data
+                    .upper_tick
+                    .parse()
+                    .expect("Invalid upper_tick");
+                match tick_to_price(upper_tick) {
+                    Ok(upper_price) => {
+                        println!("Strategy: {}", strategy_data.strategy);
+                        println!("Upper Tick: {} → Price: {}", upper_tick, upper_price);
+                        println!("Counterparty Amount: {}", strategy_data.counterparty_amount);
+                        println!("-------------------------");
+                    }
+                    Err(e) => {
+                        println!("Error converting upper tick to price: {:?}", e);
+                    }
+                }
+            }
         }
         Err(e) => {
             println!("Error calculating optimal data: {}", e);

@@ -78,6 +78,7 @@ pub struct StateResponse {
 
 #[cw_serde]
 pub struct CalculatedDataResponse {
-    pub upper_tick: String,
-    pub counterparty_amount: String,
+    pub strategy: String,   // Strategy name (tight, passive, conservative, etc.)
+    pub upper_tick: String, // Upper tick for the given strategy
+    pub counterparty_amount: String, // Amount of COUNTERPARTY token for the given strategy
 }
