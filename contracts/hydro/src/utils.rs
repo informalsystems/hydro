@@ -39,10 +39,7 @@ pub fn load_constants_active_at_timestamp(
             Order::Descending,
         )
         .take(1)
-        .filter_map(|constants| match constants {
-            Ok(constants) => Some(constants),
-            Err(_) => None,
-        })
+        .flatten()
         .collect();
 
     Ok(match current_constants.len() {
@@ -704,7 +701,7 @@ pub fn get_owned_lock_entry(
     let lock_entry = LOCKS_MAP_V2.load(storage, lock_id)?;
 
     if lock_entry.owner != lock_owner {
-        return Err(ContractError::Unauthorized {});
+        return Err(ContractError::Unauthorized);
     }
 
     Ok(lock_entry)

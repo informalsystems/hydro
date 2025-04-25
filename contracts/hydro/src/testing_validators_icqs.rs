@@ -567,7 +567,7 @@ fn test_icq_managers_feature() {
         withdraw_msg.clone(),
     );
     match res {
-        Err(ContractError::Unauthorized {}) => {}
+        Err(ContractError::Unauthorized) => {}
         _ => panic!("Expected Unauthorized error"),
     }
 
@@ -648,7 +648,7 @@ fn test_icq_managers_feature() {
         withdraw_msg,
     );
     match res {
-        Err(ContractError::Unauthorized {}) => {}
+        Err(ContractError::Unauthorized) => {}
         _ => panic!("Expected Unauthorized error"),
     }
 }
