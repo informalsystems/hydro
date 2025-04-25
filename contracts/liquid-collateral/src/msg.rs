@@ -42,6 +42,8 @@ pub enum ExecuteMsg {
 pub enum QueryMsg {
     #[returns(StateResponse)]
     State {},
+    #[returns(Bid)]
+    Bid { address: String },
     #[returns(Vec<(String, Bid)>)]
     Bids {},
     #[returns(CalculatedDataResponse)]
@@ -72,7 +74,6 @@ pub struct StateResponse {
     pub auction_end_time: Option<Timestamp>,
     pub counterparty_to_give: Option<Uint128>,
     pub auction_principal_deposited: Uint128,
-    pub rewards: Option<Vec<Coin>>,
 }
 
 #[cw_serde]

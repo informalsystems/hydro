@@ -407,6 +407,196 @@ fn test_create_and_withdraw_position_in_pool() {
     };
 }
 #[test]
+fn test_partial_liquidations() {
+    let pool_mockup = PoolMockup::new();
+
+    let wasm = Wasm::new(&pool_mockup.app);
+    let code_id = store_contracts_code(&wasm, &pool_mockup.deployer);
+    let contract_addr = instantiate(&wasm, &pool_mockup, code_id);
+    println!("Creating position...\n");
+    let _response = create_position(&wasm, &contract_addr, &pool_mockup.project_owner);
+
+    let position_response = pool_mockup.position_query(1);
+    println!("Printing position details after creating position...\n");
+    let _liquidity = if let Ok(full_position) = position_response {
+        // Print the full position details using the helper method
+        print_position_details(&full_position);
+
+        // Extract liquidity
+        if let Some(position) = full_position.position {
+            position.liquidity // Return liquidity
+        } else {
+            println!("Position not found");
+            String::from("0") // Default value
+        }
+    } else {
+        println!("Failed to get position response");
+        String::from("0") // Default value
+    };
+
+    let query_msg = QueryMsg::State {};
+
+    let state_response: StateResponse = wasm.query(&contract_addr, &query_msg).unwrap();
+    let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
+
+    // Print the state response
+    println!("{}", formatted_output);
+
+    // this swap should make price goes below lower range - should make OSMO amount in pool be zero
+    let usdc_needed: u128 = 117_647_058_823;
+    println!("Doing a swap which will make principal amount goes to zero in the pool...\n");
+    let _swap_response = pool_mockup.swap_usdc_for_osmo(&pool_mockup.user1, usdc_needed, 1);
+    let position_response = pool_mockup.position_query(1);
+    println!("Printing position details after swap...\n");
+    let _liquidity = if let Ok(full_position) = position_response {
+        // Print the full position details using the helper method
+        print_position_details(&full_position);
+
+        // Extract liquidity
+        if let Some(position) = full_position.position {
+            position.liquidity // Return liquidity
+        } else {
+            println!("Position not found");
+            String::from("0") // Default value
+        }
+    } else {
+        println!("Failed to get position response");
+        String::from("0") // Default value
+    };
+
+    let query_msg = QueryMsg::State {};
+
+    let state_response: StateResponse = wasm.query(&contract_addr, &query_msg).unwrap();
+    let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
+
+    // Print the state response
+    println!("{}", formatted_output);
+
+    let liquidate_msg = ExecuteMsg::Liquidate;
+
+    let coins = &[Coin::new(50000u128, OSMO_DENOM)];
+
+    println!("Executing first partial liquidate msg...\n");
+    let _response = wasm
+        .execute(
+            &contract_addr,
+            &liquidate_msg,
+            coins,
+            &pool_mockup.liquidator,
+        )
+        .expect("Execution failed");
+    //println!("Execution successful: {:?}", response);
+    //println!("{:?}", response.events);
+
+    let position_response = pool_mockup.position_query(1);
+    //println!("{:#?}", position_response);
+    println!("Printing position details after liquidation...\n");
+    let _liquidity = if let Ok(full_position) = position_response {
+        // Print the full position details using the helper method
+        print_position_details(&full_position);
+
+        // Extract liquidity
+        if let Some(position) = full_position.position {
+            position.liquidity // Return liquidity
+        } else {
+            println!("Position not found");
+            String::from("0") // Default value
+        }
+    } else {
+        println!("Failed to get position response");
+        String::from("0") // Default value
+    };
+
+    let query_msg = QueryMsg::State {};
+
+    let state_response: StateResponse = wasm.query(&contract_addr, &query_msg).unwrap();
+    let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
+
+    // Print the state response
+    println!("{}", formatted_output);
+
+    let coins = &[Coin::new(30001u128, OSMO_DENOM)];
+
+    println!("Executing second partial liquidate msg...\n");
+    let _response = wasm
+        .execute(
+            &contract_addr,
+            &liquidate_msg,
+            coins,
+            &pool_mockup.liquidator,
+        )
+        .expect("Execution failed");
+    //println!("Execution successful: {:?}", response);
+    //println!("{:?}", response.events);
+
+    let position_response = pool_mockup.position_query(1);
+    //println!("{:#?}", position_response);
+    println!("Printing position details after liquidation...\n");
+    let _liquidity = if let Ok(full_position) = position_response {
+        // Print the full position details using the helper method
+        print_position_details(&full_position);
+
+        // Extract liquidity
+        if let Some(position) = full_position.position {
+            position.liquidity // Return liquidity
+        } else {
+            println!("Position not found");
+            String::from("0") // Default value
+        }
+    } else {
+        println!("Failed to get position response");
+        String::from("0") // Default value
+    };
+
+    let query_msg = QueryMsg::State {};
+
+    let state_response: StateResponse = wasm.query(&contract_addr, &query_msg).unwrap();
+    let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
+
+    // Print the state response
+    println!("{}", formatted_output);
+    let coins = &[Coin::new(19999u128, OSMO_DENOM)];
+
+    println!("Executing third/final partial liquidate msg...\n");
+    let _response = wasm
+        .execute(
+            &contract_addr,
+            &liquidate_msg,
+            coins,
+            &pool_mockup.liquidator,
+        )
+        .expect("Execution failed");
+    //println!("Execution successful: {:?}", response);
+    //println!("{:?}", response.events);
+
+    let position_response = pool_mockup.position_query(1);
+    //println!("{:#?}", position_response);
+    println!("Printing position details after liquidation...\n");
+    let _liquidity = if let Ok(full_position) = position_response {
+        // Print the full position details using the helper method
+        print_position_details(&full_position);
+
+        // Extract liquidity
+        if let Some(position) = full_position.position {
+            position.liquidity // Return liquidity
+        } else {
+            println!("Position not found");
+            String::from("0") // Default value
+        }
+    } else {
+        println!("Failed to get position response");
+        String::from("0") // Default value
+    };
+
+    let query_msg = QueryMsg::State {};
+
+    let state_response: StateResponse = wasm.query(&contract_addr, &query_msg).unwrap();
+    let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
+
+    // Print the state response
+    println!("{}", formatted_output);
+}
+#[test]
 fn test_end_of_round_principal_higher_or_equal() {
     let pool_mockup = PoolMockup::new();
     let wasm = Wasm::new(&pool_mockup.app);
@@ -594,7 +784,7 @@ fn test_auction() {
         requested_amount: 1u128.into(),
     });
 
-    let coins = &[Coin::new(10001u128, OSMO_DENOM)];
+    let coins = &[Coin::new(53805u128, OSMO_DENOM)];
 
     println!("Executing bid msg from user5...\n");
     let _response = wasm
@@ -702,7 +892,7 @@ fn test_calculate_position() {
        println!("Counterparty Amount: {}", data_response.counterparty_amount);
     */
     let query_calculated_data = QueryMsg::CounterpartyAndUpperTick {
-        lower_tick: "-25100".to_string(), // Example lower tick (which represents 0.03 price)
+        lower_tick: "-16000000".to_string(), // Example lower tick (which represents 0.03 price)
         principal_token_amount: "10000.0".to_string(), // Example principal token amount
         liquidation_bonus: "0.0".to_string(), // 30 %liquidation bonus
         price_ratio: "0.0530292978".to_string(),

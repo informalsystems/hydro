@@ -104,4 +104,10 @@ pub enum ContractError {
 
     #[error("Price is out of bounds")]
     PriceOutOfBounds,
+
+    #[error("Bid not withdrawable")]
+    BidNotWithdrawable,
+
+    #[error("Bid already exists")]
+    BidAlreadyExists,
 }

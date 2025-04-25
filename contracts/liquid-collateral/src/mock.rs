@@ -89,7 +89,7 @@ pub mod mock {
                 .unwrap();
             //18375375000
             let liquidator = app
-                .init_account(&[Coin::new(4157657500u128, OSMO_DENOM)])
+                .init_account(&[Coin::new(10_000_000_00000u128, OSMO_DENOM)])
                 .unwrap();
 
             let gov = GovWithAppAccess::new(&app);

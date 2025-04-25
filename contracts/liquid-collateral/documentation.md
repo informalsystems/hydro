@@ -69,7 +69,7 @@
  - bidder must replenish at least 1% of principal
  - bidder cannot request more counterparty than contract has available
  - bid is being saved in bids and in sorted bids 
- - in case there are already bids that replenishes the whole principal amount - the new bid will need to be better than at least one bid
+ - in case the new bid makes principal amount be potentially replenished, unneeded (worst) bid/s will be kicked out 
  - if one or more bids are kicked out from sorted bids - bidders will be refunded and correct status of the bid will be saved
 
 ## Resolve auction
