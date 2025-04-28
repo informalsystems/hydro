@@ -57,10 +57,7 @@ fn migrate_test() {
 
     let new_constants = CONSTANTS
         .range(&deps.storage, None, None, Order::Ascending)
-        .filter_map(|c| match c {
-            Err(_) => None,
-            Ok(c) => Some(c),
-        })
+        .filter_map(|c| c.ok())
         .collect::<Vec<(u64, Constants)>>();
     assert_eq!(old_constants_vec.len(), new_constants.len());
 

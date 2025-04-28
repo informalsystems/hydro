@@ -5,8 +5,8 @@ use cosmwasm_std::{
     to_json_vec, Decimal, Deps, DepsMut, Env, Order, Reply, Response, StdError, StdResult, SubMsg,
     WasmMsg,
 };
+use interface::token_info_provider::{DenomInfoResponse, TokenInfoProviderQueryMsg};
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
-use token_info_provider_interface::{DenomInfoResponse, TokenInfoProviderQueryMsg};
 
 use crate::{
     contract::compute_current_round_id,

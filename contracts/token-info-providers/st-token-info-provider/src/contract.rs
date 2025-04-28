@@ -3,7 +3,7 @@ use cosmwasm_std::{
     StdResult,
 };
 use cw2::set_contract_version;
-use token_info_provider_interface::DenomInfoResponse;
+use interface::token_info_provider::DenomInfoResponse;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};

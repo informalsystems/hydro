@@ -67,6 +67,7 @@ impl FractionalVotingTestCase {
             let info = get_message_info(&deps.api, self.voter_address, &[lockup.token.clone()]);
             let msg = ExecuteMsg::LockTokens {
                 lock_duration: lock_epoch_length,
+                proof: None,
             };
 
             let res = execute(deps.as_mut(), env.clone(), info, msg);
@@ -480,6 +481,7 @@ fn fractional_voting_test() {
         );
         let msg = ExecuteMsg::LockTokens {
             lock_duration: lock_epoch_length,
+            proof: None,
         };
         let res = execute(deps.as_mut(), env.clone(), other_user_info, msg);
         assert!(res.is_ok());

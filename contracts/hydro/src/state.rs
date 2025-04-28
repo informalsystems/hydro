@@ -81,6 +81,10 @@ pub struct Constants {
 // into a separate smart contract.
 pub const TOKEN_INFO_PROVIDERS: Map<String, TokenInfoProvider> = Map::new("token_info_providers");
 
+// Keeps the address of the associated Gatekeeper contract, if Hydro uses one. The Gatekeeper contract
+// determines if a user should be allowed to lock the given amount of tokens at a given time.
+pub const GATEKEEPER: Item<String> = Item::new("gatekeeper");
+
 // the total number of tokens locked in the contract
 pub const LOCKED_TOKENS: Item<u128> = Item::new("locked_tokens");
 

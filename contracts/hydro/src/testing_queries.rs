@@ -64,6 +64,7 @@ fn query_user_lockups_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -83,6 +84,7 @@ fn query_user_lockups_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -481,6 +483,7 @@ fn query_user_voting_power_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
 
     let res = execute(deps.as_mut(), env_new.clone(), info.clone(), msg);
@@ -500,6 +503,7 @@ fn query_user_voting_power_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
 
     let res = execute(deps.as_mut(), env_new.clone(), info.clone(), msg);

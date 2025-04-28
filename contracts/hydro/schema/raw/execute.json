@@ -18,6 +18,16 @@
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
+            },
+            "proof": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/LockTokensProof"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "additionalProperties": false
@@ -661,6 +671,36 @@
       "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
       "type": "string"
     },
+    "LockTokensProof": {
+      "description": "For detailed explanation of the fields take a look at ExecuteLockTokensMsg located in the interface package",
+      "type": "object",
+      "required": [
+        "maximum_amount",
+        "proof"
+      ],
+      "properties": {
+        "maximum_amount": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "proof": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sig_info": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SignatureInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "ProposalToLockups": {
       "type": "object",
       "required": [
@@ -680,6 +720,22 @@
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "SignatureInfo": {
+      "type": "object",
+      "required": [
+        "claim_msg",
+        "signature"
+      ],
+      "properties": {
+        "claim_msg": {
+          "$ref": "#/definitions/Binary"
+        },
+        "signature": {
+          "$ref": "#/definitions/Binary"
         }
       },
       "additionalProperties": false

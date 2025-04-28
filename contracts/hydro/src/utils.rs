@@ -39,10 +39,7 @@ pub fn load_constants_active_at_timestamp(
             Order::Descending,
         )
         .take(1)
-        .filter_map(|constants| match constants {
-            Ok(constants) => Some(constants),
-            Err(_) => None,
-        })
+        .filter_map(|constants| constants.ok())
         .collect();
 
     Ok(match current_constants.len() {
@@ -229,7 +226,7 @@ pub fn update_locked_tokens_info(
     current_round: u64,
     sender: &Addr,
     mut total_locked_tokens: u128,
-    locking_info: LockingInfo,
+    locking_info: &LockingInfo,
 ) -> Result<(), ContractError> {
     if let Some(lock_in_public_cap) = locking_info.lock_in_public_cap {
         total_locked_tokens += lock_in_public_cap;

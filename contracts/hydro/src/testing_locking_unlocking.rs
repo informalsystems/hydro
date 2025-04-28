@@ -40,6 +40,7 @@ fn lock_tokens_basic_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg);
     assert!(res.is_ok(), "error: {:?}", res);
@@ -51,6 +52,7 @@ fn lock_tokens_basic_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
     assert!(res.is_ok());
@@ -133,6 +135,7 @@ fn lock_tokens_various_denoms_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg);
     assert!(res.is_err());
@@ -149,6 +152,7 @@ fn lock_tokens_various_denoms_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
     assert!(res.is_ok(), "error: {:?}", res);
@@ -160,6 +164,7 @@ fn lock_tokens_various_denoms_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info3.clone(), msg);
     assert!(res.is_ok());
@@ -202,6 +207,7 @@ fn unlock_tokens_basic_test() {
     // lock 1000 tokens for one month
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
@@ -284,6 +290,7 @@ fn unlock_specific_tokens_test() {
     for duration in durations.iter() {
         let msg = ExecuteMsg::LockTokens {
             lock_duration: *duration,
+            proof: None,
         };
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
         assert!(res.is_ok());
@@ -434,6 +441,7 @@ fn test_too_many_locks() {
     // lock tokens many times
     let lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     for i in 0..MAX_LOCK_ENTRIES + 10 {
         let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
@@ -514,6 +522,7 @@ fn max_locked_tokens_test() {
     );
     let mut lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_ok());
@@ -539,6 +548,7 @@ fn max_locked_tokens_test() {
     );
     lock_msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_ok());

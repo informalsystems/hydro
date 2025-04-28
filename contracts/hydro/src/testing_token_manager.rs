@@ -533,6 +533,7 @@ fn token_info_provider_lifecycle_test() {
         let locking_info = get_message_info(&deps.api, user_address, &[token_to_lock]);
         let msg = ExecuteMsg::LockTokens {
             lock_duration: init_msg.lock_epoch_length * 2,
+            proof: None,
         };
 
         let res = execute(deps.as_mut(), env.clone(), locking_info.clone(), msg);

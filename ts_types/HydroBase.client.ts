@@ -6,11 +6,12 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Uint128, Timestamp, Uint64, AllUserLockupsResponse, LockEntryWithPower, LockEntry, Coin, AllUserLockupsWithTrancheInfosResponse, LockupWithPerTrancheInfo, PerTrancheLockupInfo, Addr, Decimal, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExecuteMsg, TokenInfoProviderInstantiateMsg, Binary, ProposalToLockups, TrancheInfo, ExpiredUserLockupsResponse, ICQManagersResponse, InstantiateMsg, LiquidityDeploymentResponse, LiquidityDeployment, ProposalResponse, Proposal, QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSM, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistAdminsResponse, WhitelistResponse } from "./HydroBase.types";
+import { Timestamp, Uint64, Binary, Uint128, Decimal, TokenInfoProviderInstantiateMsg, InstantiateMsg, InstantiateContractMsg, TrancheInfo, ExecuteMsg, LockTokensProof, SignatureInfo, ProposalToLockups, Coin, QueryMsg, AllUserLockupsResponse, LockEntryWithPower, LockEntry, AllUserLockupsWithTrancheInfosResponse, LockupWithPerTrancheInfo, PerTrancheLockupInfo, Addr, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExpiredUserLockupsResponse, GatekeeperResponse, ICQManagersResponse, LiquidityDeploymentResponse, LiquidityDeployment, ProposalResponse, Proposal, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSM, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistResponse, WhitelistAdminsResponse } from "./HydroBase.types";
 export interface HydroBaseReadOnlyInterface {
   contractAddress: string;
   constants: () => Promise<ConstantsResponse>;
   tokenInfoProviders: () => Promise<TokenInfoProvidersResponse>;
+  gatekeeper: () => Promise<GatekeeperResponse>;
   tranches: () => Promise<TranchesResponse>;
   allUserLockups: ({
     address,
@@ -176,6 +177,7 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     this.contractAddress = contractAddress;
     this.constants = this.constants.bind(this);
     this.tokenInfoProviders = this.tokenInfoProviders.bind(this);
+    this.gatekeeper = this.gatekeeper.bind(this);
     this.tranches = this.tranches.bind(this);
     this.allUserLockups = this.allUserLockups.bind(this);
     this.specificUserLockups = this.specificUserLockups.bind(this);
@@ -211,6 +213,11 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
   tokenInfoProviders = async (): Promise<TokenInfoProvidersResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       token_info_providers: {}
+    });
+  };
+  gatekeeper = async (): Promise<GatekeeperResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      gatekeeper: {}
     });
   };
   tranches = async (): Promise<TranchesResponse> => {
@@ -543,9 +550,11 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   contractAddress: string;
   sender: string;
   lockTokens: ({
-    lockDuration
+    lockDuration,
+    proof
   }: {
     lockDuration: number;
+    proof?: LockTokensProof;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
   refreshLockDuration: ({
     lockDuration,
@@ -730,13 +739,16 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.removeTokenInfoProvider = this.removeTokenInfoProvider.bind(this);
   }
   lockTokens = async ({
-    lockDuration
+    lockDuration,
+    proof
   }: {
     lockDuration: number;
+    proof?: LockTokensProof;
   }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       lock_tokens: {
-        lock_duration: lockDuration
+        lock_duration: lockDuration,
+        proof
       }
     }, fee_, memo_, funds_);
   };

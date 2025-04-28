@@ -5,7 +5,7 @@
 */
 
 import { CosmWasmClient } from "@cosmjs/cosmwasm-stargate";
-import { Addr, ConfigResponse, Config, Decimal, DenomInfoResponse, ExecuteMsg, InstantiateMsg, QueryMsg } from "./STTokenInfoProviderBase.types";
+import { InstantiateMsg, ExecuteMsg, QueryMsg, Addr, ConfigResponse, Config, Decimal, DenomInfoResponse } from "./STTokenInfoProviderBase.types";
 export interface STTokenInfoProviderBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
