@@ -9,7 +9,6 @@ use cosmwasm_std::{
 };
 use cw2::set_contract_version;
 use cw_utils::must_pay;
-use interface::gatekeeper;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use neutron_sdk::bindings::query::NeutronQuery;
 use neutron_sdk::interchain_queries::v047::register_queries::new_register_staking_validators_query_msg;
@@ -327,7 +326,7 @@ fn set_gatekeeper(
 
     match &gatekeeper_addr {
         Some(addr) => {
-            GATEKEEPER.save(deps.storage, &addr)?;
+            GATEKEEPER.save(deps.storage, addr)?;
         }
         None => {
             GATEKEEPER.remove(deps.storage);

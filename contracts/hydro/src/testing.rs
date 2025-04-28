@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use crate::contract::{
     get_vote_for_update, query_all_user_lockups_with_tranche_infos, query_current_round_id,
-    query_tranches, query_user_votes, query_whitelist, query_whitelist_admins,
+    query_gatekeeper, query_tranches, query_user_votes, query_whitelist, query_whitelist_admins,
 };
 use crate::msg::{ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo};
 use crate::state::{
@@ -3319,4 +3319,57 @@ fn test_cannot_vote_while_long_deployment_ongoing() {
     // now, voting should be possible
     let res = execute(deps.as_mut(), env.clone(), info.clone(), vote_msg);
     assert!(res.is_ok());
+}
+
+#[test]
+/// This test checks the functionality of setting and removing the gatekeeper address.
+fn test_set_gatekeeper() {
+    let user_address = "addr0000";
+
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[]);
+
+    // Initialize with 1 month round length
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.whitelist_admins = vec![get_address_as_str(&deps.api, "admin")];
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // try to set gatekeeper as user
+    let info = get_message_info(&deps.api, user_address, &[]);
+    let msg = ExecuteMsg::SetGatekeeper {
+        gatekeeper_addr: Some("gatekeeper".to_string()),
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("Unauthorized"));
+
+    // try to set gatekeeper as admin
+    let info = get_message_info(&deps.api, "admin", &[]);
+    let msg = ExecuteMsg::SetGatekeeper {
+        gatekeeper_addr: Some("gatekeeper".to_string()),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+    let gatekeeper = query_gatekeeper(deps.as_ref());
+    assert!(gatekeeper.is_ok());
+    assert_eq!(gatekeeper.unwrap().gatekeeper, "gatekeeper".to_string());
+
+    // try to set gatekeeper to None
+    let info = get_message_info(&deps.api, "admin", &[]);
+    let msg = ExecuteMsg::SetGatekeeper {
+        gatekeeper_addr: None,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+    let gatekeeper = query_gatekeeper(deps.as_ref());
+    assert!(gatekeeper.is_ok());
+    assert_eq!(gatekeeper.unwrap().gatekeeper, "".to_string());
 }
