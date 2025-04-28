@@ -326,6 +326,11 @@ fn set_gatekeeper(
 
     match &gatekeeper_addr {
         Some(addr) => {
+            if addr == "" {
+                return Err(ContractError::Std(StdError::generic_err(
+                    "Gatekeeper address cannot be empty",
+                )));
+            }
             GATEKEEPER.save(deps.storage, addr)?;
         }
         None => {
