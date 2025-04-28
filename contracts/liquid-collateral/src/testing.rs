@@ -1052,14 +1052,14 @@ fn test_tick_to_price() {
 fn test_calculate_optimal() {
     let lower_tick = "-7850200".to_string(); // -8150200 representing 0.1849800 price
     let principal_token_amount = "100".to_string(); // Example principal token amount
-    let liquidation_bonus = "0.0".to_string(); // 0 %liquidation bonus
+    let liquidation_bonus = "0.05".to_string(); // 0 %liquidation bonus
     let price_ratio = "0.2296738".to_string();
     let tick_spacing = "100".to_string(); // Example tick spacing
 
     let response = calculate_optimal_counterparty_and_upper_tick(
         lower_tick.clone(),
-        principal_token_amount,
-        liquidation_bonus,
+        principal_token_amount.clone(),
+        liquidation_bonus.clone(),
         price_ratio.clone(),
         tick_spacing,
     );
@@ -1091,6 +1091,9 @@ fn test_calculate_optimal() {
                     return;
                 }
             }
+            // Print the principal amount and liquidation bonus
+            println!("Principal Token Amount: {}", principal_token_amount);
+            println!("Liquidation Bonus: {}", liquidation_bonus);
             println!("=========================");
 
             for strategy_data in data {
