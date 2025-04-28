@@ -37,7 +37,7 @@ pub fn get_message_info(api: &MockApi, sender: &str, funds: &[Coin]) -> MessageI
 //  2) Stages are registered successfully and taken into account correctly as the block time progresses
 //  3) Stages cannot be registered for the past timestamps
 //  4) A new stage can be registered only at timestamps that are later than all of the already existing stages,
-//     except for the latest existing stage where
+//     except for the latest existing stage
 //  5) A new stage can be registered at identical timestamp as the latest registered stage
 #[test]
 fn register_stage_test() {
