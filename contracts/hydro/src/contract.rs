@@ -326,7 +326,7 @@ fn set_gatekeeper(
 
     match &gatekeeper_addr {
         Some(addr) => {
-            if addr == "" {
+            if addr.is_empty() {
                 return Err(ContractError::Std(StdError::generic_err(
                     "Gatekeeper address cannot be empty",
                 )));
