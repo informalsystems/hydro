@@ -579,6 +579,7 @@ func (s *HydroSuite) GetUserVotingPower(contractAddr string, address string) int
 	}
 
 	response, err := s.QueryContractState(queryData, contractAddr)
+	s.Require().NoError(err)
 
 	var userData chainsuite.UserVotingPower
 	err = json.Unmarshal([]byte(response), &userData)
