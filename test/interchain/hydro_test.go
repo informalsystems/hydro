@@ -22,12 +22,6 @@ const (
 	DefaultMinLiquidityRequest = 100000000
 )
 
-func (s *HydroSuite) BeforeTest(suiteName, testName string) {
-	if testName != "TestGatekeeperLockConditions" {
-		s.T().Skip("Skipping test: " + testName)
-	}
-}
-
 func TestHydroSuite(t *testing.T) {
 	s := &HydroSuite{}
 	suite.Run(t, s)
