@@ -523,10 +523,11 @@ func (s *HydroSuite) GetProposalByTitle(contractAddr string, proposalTitle strin
 		},
 	}
 
-	response := s.QueryContractState(queryData, contractAddr)
+	response, err := s.QueryContractState(queryData, contractAddr)
+	s.Require().NoError(err)
 
 	var proposals chainsuite.ProposalData
-	err := json.Unmarshal([]byte(response), &proposals)
+	err = json.Unmarshal([]byte(response), &proposals)
 	s.Require().NoError(err)
 
 	for _, proposal := range proposals.Data.Proposals {
@@ -543,10 +544,11 @@ func (s *HydroSuite) GetCurrentRound(contractAddr string) int {
 		"current_round": map[string]interface{}{},
 	}
 
-	response := s.QueryContractState(queryData, contractAddr)
+	response, err := s.QueryContractState(queryData, contractAddr)
+	s.Require().NoError(err)
 
 	var roundData chainsuite.RoundData
-	err := json.Unmarshal([]byte(response), &roundData)
+	err = json.Unmarshal([]byte(response), &roundData)
 	s.Require().NoError(err)
 
 	return roundData.Data.RoundID
@@ -576,10 +578,10 @@ func (s *HydroSuite) GetUserVotingPower(contractAddr string, address string) int
 		},
 	}
 
-	response := s.QueryContractState(queryData, contractAddr)
+	response, err := s.QueryContractState(queryData, contractAddr)
 
 	var userData chainsuite.UserVotingPower
-	err := json.Unmarshal([]byte(response), &userData)
+	err = json.Unmarshal([]byte(response), &userData)
 	s.Require().NoError(err)
 
 	return userData.Data.VotingPower
@@ -592,9 +594,10 @@ func (s *HydroSuite) GetRoundVotingPower(contractAddr string, roundId int64) int
 		},
 	}
 
-	response := s.QueryContractState(queryData, contractAddr)
+	response, err := s.QueryContractState(queryData, contractAddr)
+	s.Require().NoError(err)
 	var roundData chainsuite.RoundVotingPower
-	err := json.Unmarshal([]byte(response), &roundData)
+	err = json.Unmarshal([]byte(response), &roundData)
 	s.Require().NoError(err)
 
 	roundPower, err := strconv.ParseInt(roundData.Data.VotingPower, 10, 64)
@@ -608,10 +611,11 @@ func (s *HydroSuite) GetGatekeeper(hydroContractAddr string) string {
 		"gatekeeper": map[string]any{},
 	}
 
-	response := s.QueryContractState(queryData, hydroContractAddr)
+	response, err := s.QueryContractState(queryData, hydroContractAddr)
+	s.Require().NoError(err)
 
 	var gatekeeperResponse chainsuite.Gatekeeper
-	err := json.Unmarshal([]byte(response), &gatekeeperResponse)
+	err = json.Unmarshal([]byte(response), &gatekeeperResponse)
 	s.Require().NoError(err)
 
 	return gatekeeperResponse.Data.Gatekeeper
@@ -888,7 +892,8 @@ func (s *HydroSuite) RefundTribute(validatorIndex int, contractAddr string, roun
 
 func (s *HydroSuite) RegisterGatekeeperStage(
 	validatorIndex int, contractAddr string, activateAt int64,
-	merkleRoot string, startNewEpoch bool, hrp *string) {
+	merkleRoot string, startNewEpoch bool, hrp *string,
+) {
 	txData := map[string]any{
 		"register_stage": map[string]any{
 			"activate_at":     strconv.Itoa(int(activateAt)),
@@ -915,13 +920,17 @@ func (s *HydroSuite) WaitForGatekeeperStage(contractAddress string, stageId int,
 	for tCtx.Err() == nil {
 		time.Sleep(chainsuite.CommitTimeout)
 
-		response := s.QueryContractState(queryData, contractAddress)
-		if strings.Contains(string(response), "Failed to get current stage.") {
-			continue
+		response, err := s.QueryContractState(queryData, contractAddress)
+		if err != nil {
+			if strings.Contains(err.Error(), "Failed to get current stage.") {
+				continue
+			} else {
+				s.Require().NoError(err)
+			}
 		}
 
 		var stageData chainsuite.StageData
-		err := json.Unmarshal(response, &stageData)
+		err = json.Unmarshal(response, &stageData)
 		s.Require().NoError(err)
 
 		if stageData.Data.Stage.StageID == stageId {
@@ -933,7 +942,7 @@ func (s *HydroSuite) WaitForGatekeeperStage(contractAddress string, stageId int,
 	s.Require().True(stageReached)
 }
 
-func (s *HydroSuite) QueryContractState(queryData map[string]any, contractAddr string) []byte {
+func (s *HydroSuite) QueryContractState(queryData map[string]any, contractAddr string) ([]byte, error) {
 	queryJson, err := json.Marshal(queryData)
 	s.Require().NoError(err)
 
@@ -941,9 +950,12 @@ func (s *HydroSuite) QueryContractState(queryData map[string]any, contractAddr s
 		s.GetContext(),
 		"wasm", "contract-state", "smart", contractAddr, string(queryJson),
 	)
-	s.Require().NoError(err)
 
-	return response
+	// log
+	s.Suite.T().Logf("Querying contract state: %s", string(queryJson))
+	s.Suite.T().Logf("Response: %s", response)
+
+	return response, err
 }
 
 func (s *HydroSuite) WasmExecuteTx(validatorIndex int, keyMoniker string, txData map[string]interface{}, contractAddr string, flags []string) (*types.TxResponse, error) {
@@ -1048,9 +1060,10 @@ func (s *HydroSuite) VerifyHistoricalVotingPowers(
 		},
 	}
 
-	response := s.QueryContractState(queryInput, daoVotingAdapterContractAddr)
+	response, err := s.QueryContractState(queryInput, daoVotingAdapterContractAddr)
+	s.Require().NoError(err)
 	var totalPowerAtHeight chainsuite.TotalPowerAtHeight
-	err := json.Unmarshal([]byte(response), &totalPowerAtHeight)
+	err = json.Unmarshal([]byte(response), &totalPowerAtHeight)
 	s.Require().NoError(err)
 
 	totalPower, err := strconv.ParseInt(totalPowerAtHeight.Data.Power, 10, 64)
@@ -1066,7 +1079,8 @@ func (s *HydroSuite) VerifyHistoricalVotingPowers(
 			},
 		}
 
-		response := s.QueryContractState(queryInput, daoVotingAdapterContractAddr)
+		response, err := s.QueryContractState(queryInput, daoVotingAdapterContractAddr)
+		s.Require().NoError(err)
 		var votingPowerAtHeight chainsuite.VotingPowerAtHeight
 		err = json.Unmarshal([]byte(response), &votingPowerAtHeight)
 		s.Require().NoError(err)

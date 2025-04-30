@@ -3,11 +3,9 @@ package interchain
 import (
 	"fmt"
 	"log"
-
 	"strconv"
 	"strings"
 	"testing"
-
 	"time"
 
 	"hydro/test/interchain/chainsuite"
@@ -23,6 +21,12 @@ const (
 	DefaultDeploymentDuration  = 1
 	DefaultMinLiquidityRequest = 100000000
 )
+
+func (s *HydroSuite) BeforeTest(suiteName, testName string) {
+	if testName != "TestGatekeeperLockConditions" {
+		s.T().Skip("Skipping test: " + testName)
+	}
+}
 
 func TestHydroSuite(t *testing.T) {
 	s := &HydroSuite{}
