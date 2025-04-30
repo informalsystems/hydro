@@ -24,7 +24,7 @@ use osmosis_test_tube::{
 };
 
 use crate::calculations::{
-    calc_amount0, calc_amount1, calc_final_amount_at_lower_tick, price_to_tick, tick_to_price,
+    calc_amount0, calc_amount1, calc_required_token1_with_bonus, price_to_tick, tick_to_price,
     tick_to_sqrt_price,
 };
 use crate::contract::{
@@ -1093,7 +1093,7 @@ fn test_tick_to_price() {
 fn test_calculate_optimal() {
     let lower_tick = "-8850200".to_string(); // -8150200 representing 0.1849800 price
     let principal_token_amount = "100".to_string(); // Example principal token amount
-    let liquidation_bonus = "0.05".to_string(); // 0 %liquidation bonus
+    let liquidation_bonus = "0.2".to_string(); // 0 %liquidation bonus
     let price_ratio = "0.210040000000000001".to_string();
     let tick_spacing = "100".to_string(); // Example tick spacing
 
@@ -1169,7 +1169,7 @@ fn test_calculate_amount_0() {
     let current_sqrt_price = current_price.sqrt().expect("Failed to take sqrt");
     let lower_tick = -108000000;
     let upper_tick = 342000000;
-    let response = calc_amount1(
+    let amount1 = calc_amount1(
         amount0.clone(),
         lower_tick,
         upper_tick,
@@ -1179,15 +1179,9 @@ fn test_calculate_amount_0() {
     let liquidation_bonus = "0.0";
     let liquidation_bonus = BigDecimal::from_str(&liquidation_bonus).unwrap();
 
-    println!("Token1 amount on entering position: {}", response);
+    println!("Token1 amount on entering position: {}", amount1);
 
-    let response = calc_final_amount_at_lower_tick(
-        amount0,
-        lower_tick,
-        upper_tick,
-        current_sqrt_price,
-        liquidation_bonus,
-    );
+    let response = calc_required_token1_with_bonus(amount0, amount1, lower_tick, liquidation_bonus);
     //921954445729288730000575
     //92195444572928873195000
     println!("Token1 amount on liquidation: {}", response);

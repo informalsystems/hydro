@@ -1,4 +1,6 @@
-use crate::calculations::{calc_final_amount_at_lower_tick, price_to_tick, tick_to_sqrt_price};
+use crate::calculations::{
+    calc_amount1, calc_required_token1_with_bonus, price_to_tick, tick_to_sqrt_price,
+};
 use crate::error::ContractError;
 use crate::msg::{
     CalculatedDataResponse, CreatePositionMsg, EndRoundBidMsg, ExecuteMsg, InstantiateMsg,
@@ -198,11 +200,17 @@ pub fn calculate_optimal_counterparty_and_upper_tick(
         };
         upper_tick = round_to_spacing(upper_tick, tick_spacing);
 
-        let counterparty_amount = calc_final_amount_at_lower_tick(
+        let counterparty_amount = calc_amount1(
             principal_token_amount_decimal.clone(),
             lower_tick,
             upper_tick,
             sqrt_current_bigdecimal.clone(),
+        );
+
+        let counterparty_amount = calc_required_token1_with_bonus(
+            principal_token_amount_decimal.clone(),
+            counterparty_amount,
+            lower_tick,
             liquidation_bonus_bigdec.clone(),
         );
 

@@ -313,7 +313,7 @@ pub fn calc_amount1(
     lower_tick: i64,
     upper_tick: i64,
     current_sqrt_price: BigDecimal,
-) -> BigInt {
+) -> BigDecimal {
     // Calculate liquidity0
     let liquidity0 =
         calc_liquidity_amount0(upper_tick, current_sqrt_price.clone(), amount0.clone());
@@ -331,7 +331,8 @@ pub fn calc_amount1(
     let diff = &sqrt_price_b - &sqrt_price_a;
     let result = &liquidity0 * diff;
 
-    result.round(0).to_bigint().unwrap()
+    //result.round(0).to_bigint().unwrap()
+    result
 }
 
 pub fn round_up_bigdec(value: &BigDecimal) -> BigInt {
@@ -391,32 +392,25 @@ pub fn calc_liquidity_amount0(
     numerator / denominator
 }
 
-/// Calculates the final amount of token1 when price reaches the lower tick,
-/// assuming an initial token0 deposit and all of it is converted.
-pub fn calc_final_amount_at_lower_tick(
-    amount0: BigDecimal,
-    lower_tick: i64,
-    upper_tick: i64,
-    current_sqrt_price: BigDecimal,
-    liquidation_bonus: BigDecimal,
+/// Calculates the total required amount of token1 (counterparty) to be provided,
+/// including a liquidation bonus equal to `liquidation_bonus` percent of `amount0`
+/// valued at the lower tick price.
+pub fn calc_required_token1_with_bonus(
+    amount0: BigDecimal,           // Principal token amount (e.g., OSMO)
+    amount1: BigDecimal,           // Counterparty token amount (e.g., USDC), already computed
+    lower_tick: i64,               // Lower tick of the LP range
+    liquidation_bonus: BigDecimal, // e.g., 0.20 for 20% bonus
 ) -> BigInt {
-    // Step 1: Calculate sqrt prices
+    // Step 1: Compute price at lower tick
     let sqrt_price_lower = tick_to_sqrt_price(lower_tick).expect("invalid lower tick");
-    let sqrt_price_upper = tick_to_sqrt_price(upper_tick).expect("invalid upper tick");
-
-    // Step 2: Calculate liquidity based on amount0 and current price
-    let liquidity = calc_liquidity_amount0(upper_tick, current_sqrt_price, amount0.clone());
-
-    // Step 3: Compute amount1 = liquidity × (sqrtPriceUpper - sqrtPriceLower)
-    let diff = &sqrt_price_upper - &sqrt_price_lower;
-    let base_amount1 = &liquidity * diff;
-
-    // Step 4: Compute bonus = amount0 × price_at_lower_tick × liquidation_bonus
     let price_at_lower_tick = &sqrt_price_lower * &sqrt_price_lower;
+
+    // Step 2: Calculate bonus value in token1 denom
     let bonus_value = amount0 * price_at_lower_tick * liquidation_bonus;
-    let total_amount1 = base_amount1 + bonus_value;
 
-    let total_amount1 = round_up_bigdec(&total_amount1);
+    // Step 3: Total required token1 = amount1 + bonus
+    let total = amount1 + bonus_value;
 
-    total_amount1
+    // Step 4: Round up
+    round_up_bigdec(&total)
 }
