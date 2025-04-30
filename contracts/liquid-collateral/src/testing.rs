@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use super::*;
 use crate::mock::mock::{store_contracts_code, PoolMockup};
 use crate::msg::{
@@ -11,15 +13,20 @@ use cosmwasm_std::{
     testing::{mock_dependencies, mock_env, mock_info},
     Addr, Coin, Decimal, Uint128,
 };
+use osmosis_std::types::osmosis::poolmanager::v1beta1::SpotPriceRequest;
 use osmosis_std::types::{
     cosmos::bank::v1beta1::QueryBalanceRequest, cosmwasm::wasm::v1::MsgExecuteContractResponse,
     osmosis::concentratedliquidity::v1beta1::FullPositionBreakdown,
 };
 use osmosis_test_tube::{
-    Account, Bank, ExecuteResponse, Module, OsmosisTestApp, SigningAccount, Wasm,
+    Account, Bank, ConcentratedLiquidity, ExecuteResponse, Module, OsmosisTestApp, PoolManager,
+    SigningAccount, Wasm,
 };
 
-use crate::calculations::{price_to_tick, tick_to_price, tick_to_sqrt_price};
+use crate::calculations::{
+    calc_amount0, calc_amount1, calc_final_amount_at_lower_tick, price_to_tick, tick_to_price,
+    tick_to_sqrt_price,
+};
 use crate::contract::{
     calculate_optimal_counterparty_and_upper_tick, calculate_withdraw_liquidity_amount,
     parse_liquidity, resolve_auction,
@@ -223,6 +230,18 @@ fn test_create_and_withdraw_position_in_pool() {
     let wasm = Wasm::new(&pool_mockup.app);
     let code_id = store_contracts_code(&wasm, &pool_mockup.deployer);
     let contract_addr = instantiate(&wasm, &pool_mockup, code_id);
+    /*
+    let pm = PoolManager::new(&pool_mockup.app);
+    let request = SpotPriceRequest {
+        pool_id: 1,
+        base_asset_denom: USDC_DENOM.to_string(),
+        quote_asset_denom: OSMO_DENOM.to_string(),
+    };
+    let response = pm.query_spot_price(&request).unwrap();
+    let price: Decimal = response.spot_price.parse().unwrap();
+
+    println!("Spot price before entering position: {}", price);
+    */
     println!("Creating position...\n");
     let _response = create_position(&wasm, &contract_addr, &pool_mockup.project_owner);
 
@@ -259,6 +278,17 @@ fn test_create_and_withdraw_position_in_pool() {
 
     let _osmo_balance = query_and_print_balance(&bank, &contract_addr, OSMO_DENOM, "Contract");
 
+    let pm = PoolManager::new(&pool_mockup.app);
+    let request = SpotPriceRequest {
+        pool_id: 1,
+        base_asset_denom: OSMO_DENOM.to_string(),
+        quote_asset_denom: USDC_DENOM.to_string(),
+    };
+    let response = pm.query_spot_price(&request).unwrap();
+    let price: Decimal = response.spot_price.parse().unwrap();
+
+    println!("Spot price before swap: {}", price);
+
     // this swap should make price goes below lower range - should make OSMO amount in pool be zero
     let usdc_needed: u128 = 117_647_058_823;
     println!("Doing a swap which will make principal amount goes to zero in the pool...\n");
@@ -281,6 +311,17 @@ fn test_create_and_withdraw_position_in_pool() {
         println!("Failed to get position response\n");
         String::from("0") // Default value
     };
+
+    let pm = PoolManager::new(&pool_mockup.app);
+    let request = SpotPriceRequest {
+        pool_id: 1,
+        base_asset_denom: OSMO_DENOM.to_string(),
+        quote_asset_denom: USDC_DENOM.to_string(),
+    };
+    let response = pm.query_spot_price(&request).unwrap();
+    let price: Decimal = response.spot_price.parse().unwrap();
+
+    println!("Spot price after swap: {}", price);
 
     //92195444572928873195000
     let liquidate_msg = ExecuteMsg::Liquidate;
@@ -1050,10 +1091,10 @@ fn test_tick_to_price() {
 
 #[test]
 fn test_calculate_optimal() {
-    let lower_tick = "-7850200".to_string(); // -8150200 representing 0.1849800 price
+    let lower_tick = "-8850200".to_string(); // -8150200 representing 0.1849800 price
     let principal_token_amount = "100".to_string(); // Example principal token amount
     let liquidation_bonus = "0.05".to_string(); // 0 %liquidation bonus
-    let price_ratio = "0.2296738".to_string();
+    let price_ratio = "0.210040000000000001".to_string();
     let tick_spacing = "100".to_string(); // Example tick spacing
 
     let response = calculate_optimal_counterparty_and_upper_tick(
@@ -1118,4 +1159,57 @@ fn test_calculate_optimal() {
             println!("Error calculating optimal data: {}", e);
         }
     }
+}
+#[test]
+fn test_calculate_amount_0() {
+    let amount0_str = "100000";
+    let amount0 = BigDecimal::from_str(&amount0_str).unwrap();
+    let current_price_str = "0.85";
+    let current_price = BigDecimal::from_str(&current_price_str).unwrap();
+    let current_sqrt_price = current_price.sqrt().expect("Failed to take sqrt");
+    let lower_tick = -108000000;
+    let upper_tick = 342000000;
+    let response = calc_amount1(
+        amount0.clone(),
+        lower_tick,
+        upper_tick,
+        current_sqrt_price.clone(),
+    );
+
+    let liquidation_bonus = "0.0";
+    let liquidation_bonus = BigDecimal::from_str(&liquidation_bonus).unwrap();
+
+    println!("Token1 amount on entering position: {}", response);
+
+    let response = calc_final_amount_at_lower_tick(
+        amount0,
+        lower_tick,
+        upper_tick,
+        current_sqrt_price,
+        liquidation_bonus,
+    );
+    //921954445729288730000575
+    //92195444572928873195000
+    println!("Token1 amount on liquidation: {}", response);
+}
+
+#[test]
+fn test_calculate_amount_1() {
+    let amount1_str = "85000";
+    let amount1 = BigDecimal::from_str(&amount1_str).unwrap();
+    // ratio calculated as: osmo/usdc (spot price: base - osmo, quote-usdc)
+    // token0 is always quote in osmosis pool
+    let current_price_str = "0.85";
+    let current_price = BigDecimal::from_str(&current_price_str).unwrap();
+    let current_sqrt_price = current_price.sqrt().expect("Failed to take sqrt");
+    let lower_tick = -108000000;
+    let upper_tick = 342000000;
+    let response = calc_amount0(
+        amount1.clone(),
+        lower_tick,
+        upper_tick,
+        current_sqrt_price.clone(),
+    );
+
+    println!("Token0 amount on entering position: {}", response); // <-- BigInt supports {}
 }

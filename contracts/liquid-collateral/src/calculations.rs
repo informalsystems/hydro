@@ -8,7 +8,8 @@ use num_bigint::BigInt;
 use num_bigint::BigUint;
 use num_bigint::ToBigInt;
 use num_traits::{FromPrimitive, One, Zero}; // We need this for easier BigDecimal manipulations
-use once_cell::sync::Lazy; // Import Lazy for static initialization
+use once_cell::sync::Lazy;
+use osmosis_std::types::cosmos::base; // Import Lazy for static initialization
 
 // Constants
 const MIN_INITIALIZED_TICK_V2: i64 = -270_000_000;
@@ -192,7 +193,7 @@ pub fn tick_to_price(tick_index: i64) -> Result<BigDecimal, ContractError> {
     //println!("Price: {}", price);
 
     if price > max_spot_price() || price < min_spot_price_v2() {
-        return Err(ContractError::PriceOutOfBounds);
+        //return Err(ContractError::PriceOutOfBounds);
     }
 
     Ok(price)
@@ -267,4 +268,155 @@ pub fn price_to_tick(price: &BigDecimal) -> Result<i64, String> {
     let tick_index = data.initial_tick + ticks_filled.to_bigint().unwrap().to_i64().unwrap();
 
     Ok(tick_index)
+}
+pub fn calc_amount0(
+    amount1: BigDecimal,
+    lower_tick: i64,
+    upper_tick: i64,
+    current_sqrt_price: BigDecimal,
+) -> BigInt {
+    // Calculate liquidity1
+    let liquidity1 =
+        calc_liquidity_amount1(lower_tick, current_sqrt_price.clone(), amount1.clone());
+
+    // Convert upper tick to sqrt price
+    let upper_tick_sqrt = tick_to_sqrt_price(upper_tick).unwrap();
+
+    // Set sqrtPriceA and sqrtPriceB based on the current price and upper tick
+    let (sqrt_price_a, sqrt_price_b) = if current_sqrt_price > upper_tick_sqrt {
+        (upper_tick_sqrt.clone(), current_sqrt_price)
+    } else {
+        (current_sqrt_price, upper_tick_sqrt.clone())
+    };
+
+    // Calculate the numerator and denominator for the final result
+    let numerator = liquidity1 * (sqrt_price_b.clone() - sqrt_price_a.clone());
+    let denominator = sqrt_price_b * sqrt_price_a;
+
+    // Calculate the result (liquidity0) and round it up
+    let result = numerator / denominator;
+
+    round_up(&result)
+}
+
+pub fn round_up(value: &BigDecimal) -> BigInt {
+    let int_part = value.to_bigint().unwrap();
+    if value > &BigDecimal::from(int_part.clone()) {
+        int_part + 1
+    } else {
+        int_part
+    }
+}
+
+pub fn calc_amount1(
+    amount0: BigDecimal,
+    lower_tick: i64,
+    upper_tick: i64,
+    current_sqrt_price: BigDecimal,
+) -> BigInt {
+    // Calculate liquidity0
+    let liquidity0 =
+        calc_liquidity_amount0(upper_tick, current_sqrt_price.clone(), amount0.clone());
+    //let liquidity0 = liquidity0.with_scale(0); // round up
+    let liquidity0 = round_up_bigdec(&liquidity0); // round up
+
+    // Sqrt prices
+    let lower_tick_sqrt = tick_to_sqrt_price(lower_tick).unwrap();
+    let (mut sqrt_price_a, mut sqrt_price_b) = (current_sqrt_price.clone(), lower_tick_sqrt);
+
+    if sqrt_price_a > sqrt_price_b {
+        std::mem::swap(&mut sqrt_price_a, &mut sqrt_price_b);
+    }
+
+    let diff = &sqrt_price_b - &sqrt_price_a;
+    let result = &liquidity0 * diff;
+
+    result.round(0).to_bigint().unwrap()
+}
+
+pub fn round_up_bigdec(value: &BigDecimal) -> BigInt {
+    let integer_part = value.with_scale(0);
+    let fractional_part = value - &integer_part;
+
+    if fractional_part.is_zero() || value < &BigDecimal::zero() {
+        integer_part.to_bigint().unwrap()
+    } else {
+        integer_part.to_bigint().unwrap() + BigInt::from(1)
+    }
+}
+
+pub fn calc_liquidity_amount1(
+    lower_tick: i64,
+    current_sqrt_price: BigDecimal,
+    amount1: BigDecimal,
+) -> BigDecimal {
+    // Convert the lower tick to its corresponding sqrt price
+    let lower_tick_sqrt = tick_to_sqrt_price(lower_tick).unwrap();
+
+    // Set sqrtPriceA and sqrtPriceB based on the current price and lower tick
+    let (sqrt_price_a, sqrt_price_b) = if current_sqrt_price == lower_tick_sqrt {
+        // If sqrtPriceA equals sqrtPriceB, return zero liquidity
+        return BigDecimal::zero();
+    } else if current_sqrt_price > lower_tick_sqrt {
+        (lower_tick_sqrt.clone(), current_sqrt_price)
+    } else {
+        (current_sqrt_price, lower_tick_sqrt.clone())
+    };
+
+    // Perform the division and return the result
+    amount1 / (sqrt_price_b - sqrt_price_a)
+}
+
+pub fn calc_liquidity_amount0(
+    upper_tick: i64,
+    current_sqrt_price: BigDecimal,
+    amount0: BigDecimal,
+) -> BigDecimal {
+    let upper_tick_sqrt = tick_to_sqrt_price(upper_tick).unwrap();
+
+    let mut sqrt_price_a = current_sqrt_price.clone();
+    let mut sqrt_price_b = upper_tick_sqrt;
+
+    if sqrt_price_a == sqrt_price_b {
+        return BigDecimal::zero();
+    }
+
+    if sqrt_price_a > sqrt_price_b {
+        std::mem::swap(&mut sqrt_price_a, &mut sqrt_price_b);
+    }
+
+    let numerator = BigDecimal::from(amount0) * &sqrt_price_a * &sqrt_price_b;
+    let denominator = &sqrt_price_b - &sqrt_price_a;
+
+    numerator / denominator
+}
+
+/// Calculates the final amount of token1 when price reaches the lower tick,
+/// assuming an initial token0 deposit and all of it is converted.
+pub fn calc_final_amount_at_lower_tick(
+    amount0: BigDecimal,
+    lower_tick: i64,
+    upper_tick: i64,
+    current_sqrt_price: BigDecimal,
+    liquidation_bonus: BigDecimal,
+) -> BigInt {
+    // Step 1: Calculate sqrt prices
+    let sqrt_price_lower = tick_to_sqrt_price(lower_tick).expect("invalid lower tick");
+    let sqrt_price_upper = tick_to_sqrt_price(upper_tick).expect("invalid upper tick");
+
+    // Step 2: Calculate liquidity based on amount0 and current price
+    let liquidity = calc_liquidity_amount0(upper_tick, current_sqrt_price, amount0.clone());
+
+    // Step 3: Compute amount1 = liquidity × (sqrtPriceUpper - sqrtPriceLower)
+    let diff = &sqrt_price_upper - &sqrt_price_lower;
+    let base_amount1 = &liquidity * diff;
+
+    // Step 4: Compute bonus = amount0 × price_at_lower_tick × liquidation_bonus
+    let price_at_lower_tick = &sqrt_price_lower * &sqrt_price_lower;
+    let bonus_value = amount0 * price_at_lower_tick * liquidation_bonus;
+    let total_amount1 = base_amount1 + bonus_value;
+
+    let total_amount1 = round_up_bigdec(&total_amount1);
+
+    total_amount1
 }

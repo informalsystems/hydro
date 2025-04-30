@@ -1,4 +1,4 @@
-use crate::calculations::{price_to_tick, tick_to_sqrt_price};
+use crate::calculations::{calc_final_amount_at_lower_tick, price_to_tick, tick_to_sqrt_price};
 use crate::error::ContractError;
 use crate::msg::{
     CalculatedDataResponse, CreatePositionMsg, EndRoundBidMsg, ExecuteMsg, InstantiateMsg,
@@ -10,6 +10,7 @@ use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, Event,
     MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Uint128,
 };
+use num_traits::FromPrimitive;
 use osmosis_std::types::cosmos::base::v1beta1::Coin as OsmosisCoin;
 use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::{
     ClaimableIncentivesResponse, ConcentratedliquidityQuerier,
@@ -124,6 +125,8 @@ pub fn calculate_optimal_counterparty_and_upper_tick(
 
     // Calculate the square root of the ratio (current price)
     let sqrt_current = price_ratio.sqrt();
+    // Convert sqrt_current (Decimal) to BigDecimal
+    let sqrt_current_bigdecimal = BigDecimal::from_f64(sqrt_current).unwrap();
     let lower_tick: i64 = match lower_tick.parse() {
         Ok(val) => val,
         Err(_) => return Err(StdError::generic_err("Failed to parse lower_tick to i64")),
@@ -151,6 +154,12 @@ pub fn calculate_optimal_counterparty_and_upper_tick(
         }
     };
 
+    // Convert f64 to BigDecimal
+    let principal_token_amount_decimal = match BigDecimal::from_f64(principal_token_amount) {
+        Some(val) => val,
+        None => return Err(StdError::generic_err("Failed to convert f64 to BigDecimal")),
+    };
+
     let liquidation_bonus: f64 = match liquidation_bonus.parse() {
         Ok(val) => val,
         Err(_) => {
@@ -160,6 +169,11 @@ pub fn calculate_optimal_counterparty_and_upper_tick(
         }
     };
 
+    let liquidation_bonus_bigdec = match BigDecimal::from_f64(liquidation_bonus) {
+        Some(val) => val,
+        None => return Err(StdError::generic_err("Failed to convert f64 to BigDecimal")),
+    };
+
     if sqrt_lower >= sqrt_current {
         return Err(StdError::generic_err(format!(
             "Invalid lower_tick: its corresponding price ({}) must be lower than the current price ({})",
@@ -167,13 +181,6 @@ pub fn calculate_optimal_counterparty_and_upper_tick(
             sqrt_current * sqrt_current
         )));
     }
-
-    // Step 1: Adjust liquidity based on liquidation bonus
-    let bonus_amount = principal_token_amount * liquidation_bonus;
-    let adjusted_base_token_amount = principal_token_amount + bonus_amount;
-    let adjusted_liquidity = adjusted_base_token_amount / (sqrt_current - sqrt_lower);
-
-    // Step 2: Calculate the upper tick based on adjusted liquidity
 
     let strategies = vec![("tight", 0.05), ("passive", 0.15), ("conservative", 0.30)];
 
@@ -191,9 +198,13 @@ pub fn calculate_optimal_counterparty_and_upper_tick(
         };
         upper_tick = round_to_spacing(upper_tick, tick_spacing);
 
-        // Step 3: Calculate counterparty amount (WOBBLE) based on liquidity
-
-        let counterparty_amount = adjusted_liquidity * (1.0 / sqrt_current - 1.0 / sqrt_upper);
+        let counterparty_amount = calc_final_amount_at_lower_tick(
+            principal_token_amount_decimal.clone(),
+            lower_tick,
+            upper_tick,
+            sqrt_current_bigdecimal.clone(),
+            liquidation_bonus_bigdec.clone(),
+        );
 
         results.push(CalculatedDataResponse {
             strategy: label.to_string(),
