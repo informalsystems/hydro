@@ -1,0 +1,10 @@
+[package]
+name = "cw-orch-interface"
+version = { workspace = true }
+edition = { workspace = true }
+
+[dependencies]
+cw-orch = { workspace = true }
+neutron-sdk = { workspace = true }
+hydro = { path = "../../contracts/hydro" }
+tribute = { path = "../../contracts/tribute" }

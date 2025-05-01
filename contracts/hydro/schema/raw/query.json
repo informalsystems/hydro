@@ -31,6 +31,19 @@
     {
       "type": "object",
       "required": [
+        "gatekeeper"
+      ],
+      "properties": {
+        "gatekeeper": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
         "tranches"
       ],
       "properties": {

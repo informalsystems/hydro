@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use crate::contract::{
     get_vote_for_update, query_all_user_lockups_with_tranche_infos, query_current_round_id,
-    query_tranches, query_user_votes, query_whitelist, query_whitelist_admins,
+    query_gatekeeper, query_tranches, query_user_votes, query_whitelist, query_whitelist_admins,
 };
 use crate::msg::{ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo};
 use crate::state::{
@@ -31,9 +31,9 @@ use crate::{
 use cosmwasm_std::testing::{mock_env, MockApi, MockStorage};
 use cosmwasm_std::{Addr, Coin, StdError, StdResult};
 use cosmwasm_std::{Decimal, Deps, DepsMut, MessageInfo, OwnedDeps, Timestamp, Uint128};
+use interface::token_info_provider::DenomInfoResponse;
 use neutron_sdk::bindings::query::NeutronQuery;
 use proptest::prelude::*;
-use token_info_provider_interface::DenomInfoResponse;
 
 pub const VALIDATOR_1: &str = "cosmosvaloper157v7tczs40axfgejp2m43kwuzqe0wsy0rv8puv";
 pub const VALIDATOR_2: &str = "cosmosvaloper140l6y2gp3gxvay6qtn70re7z2s0gn57zfd832j";
@@ -129,6 +129,7 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         max_deployment_duration: 12,
         round_lock_power_schedule: get_default_power_schedule_vec(),
         token_info_providers: vec![get_default_lsm_token_info_provider_init_msg()],
+        gatekeeper: None,
     }
 }
 
@@ -376,6 +377,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
 
     let msg = ExecuteMsg::LockTokens {
         lock_duration: TWO_WEEKS_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
@@ -432,6 +434,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
     // lock additional 1000 tokens before voting and verify this has no effect on proposals power
     let msg = ExecuteMsg::LockTokens {
         lock_duration: TWO_WEEKS_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
@@ -533,6 +536,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
     // lock additional 1000 tokens and verify that the voting power gets updated on both proposals
     let msg = ExecuteMsg::LockTokens {
         lock_duration: TWO_WEEKS_IN_NANO_SECONDS,
+        proof: None,
     };
     // lock LSM token that user already locked before
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -571,6 +575,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
     let info = get_message_info(&deps.api, user_address, &[user_token2.clone()]);
     let msg = ExecuteMsg::LockTokens {
         lock_duration: TWO_WEEKS_IN_NANO_SECONDS,
+        proof: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -768,6 +773,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
     let info = get_message_info(&deps.api, user_address, &[user_token1.clone()]);
     let msg = ExecuteMsg::LockTokens {
         lock_duration: TWO_WEEKS_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
@@ -843,12 +849,14 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
     // lock some tokens to get voting power
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg);
     assert!(res.is_ok());
 
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
     assert!(res.is_ok());
@@ -1010,6 +1018,7 @@ fn vote_extended_proposals_test() {
     // create a lock that will have power long enough to vote for the 'long lasting' proposal
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 6 * ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -1020,6 +1029,7 @@ fn vote_extended_proposals_test() {
     // the liquidity should be returned
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 2 * ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -1278,6 +1288,7 @@ fn switch_vote_between_short_and_long_props_test() {
     // lock some tokens for one round to get voting power
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
@@ -1436,6 +1447,7 @@ fn unvote_and_revote_test() {
     // Lock tokens for one round to get voting power
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
@@ -1619,6 +1631,7 @@ fn unvote_forbidden_locks() {
     // Lock tokens for one round to get voting power
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
@@ -1667,6 +1680,7 @@ fn unvote_forbidden_locks() {
         get_message_info(&deps.api, other_user_address, &[other_user_token.clone()]);
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), other_user_info.clone(), msg);
     assert!(res.is_ok());
@@ -1746,6 +1760,7 @@ fn disable_voting_in_next_round_with_auto_voted_lock_test() {
     // lock some tokens to get voting power
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 12 * ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
@@ -1797,6 +1812,7 @@ fn disable_voting_in_next_round_with_auto_voted_lock_test() {
     // lock 1000 more tokens and verify that voting power on first proposal increases
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 12 * ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
@@ -1929,6 +1945,7 @@ fn multi_tranches_test() {
     // lock some tokens to get voting power
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
@@ -1967,6 +1984,7 @@ fn multi_tranches_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
     assert!(res.is_ok());
@@ -1989,6 +2007,7 @@ fn multi_tranches_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info3.clone(), msg);
     assert!(res.is_ok());
@@ -2339,6 +2358,7 @@ fn total_voting_power_tracking_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg);
     assert!(res.is_ok());
@@ -2357,6 +2377,7 @@ fn total_voting_power_tracking_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
     assert!(res.is_ok());
@@ -2403,6 +2424,7 @@ fn total_voting_power_tracking_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
     assert!(res.is_ok());
@@ -2465,6 +2487,7 @@ proptest! {
         // lock the tokens for 12 months
         let msg = ExecuteMsg::LockTokens {
             lock_duration: ONE_MONTH_IN_NANO_SECONDS * 12,
+            proof: None,
         };
 
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -2589,7 +2612,10 @@ fn contract_pausing_test() {
 
     // verify that no action can be executed while the contract is paused
     let msgs = vec![
-        ExecuteMsg::LockTokens { lock_duration: 0 },
+        ExecuteMsg::LockTokens {
+            lock_duration: 0,
+            proof: None,
+        },
         ExecuteMsg::RefreshLockDuration {
             lock_ids: vec![0],
             lock_duration: 0,
@@ -2838,6 +2864,7 @@ pub fn pilot_round_lock_duration_test() {
 
         let lock_msg = ExecuteMsg::LockTokens {
             lock_duration: case.lock_duration,
+            proof: None,
         };
 
         let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
@@ -2975,6 +3002,7 @@ fn test_refresh_multiple_locks() {
             );
             let lock_msg = ExecuteMsg::LockTokens {
                 lock_duration: duration,
+                proof: None,
             };
             let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg);
             assert!(
@@ -3226,6 +3254,7 @@ fn test_cannot_vote_while_long_deployment_ongoing() {
     // Lock tokens for 3 months to be able to vote on long proposals
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
@@ -3308,4 +3337,86 @@ fn test_cannot_vote_while_long_deployment_ongoing() {
     // now, voting should be possible
     let res = execute(deps.as_mut(), env.clone(), info.clone(), vote_msg);
     assert!(res.is_ok());
+}
+
+#[test]
+/// This test checks the functionality of setting and removing the gatekeeper address.
+fn test_set_gatekeeper() {
+    struct TestCase {
+        sender: &'static str,
+        gatekeeper_addr: Option<String>,
+        expected_error: Option<&'static str>,
+        expected_gatekeeper: Option<String>,
+    }
+
+    let test_cases = vec![
+        TestCase {
+            sender: "addr0000",
+            gatekeeper_addr: Some("gatekeeper".to_string()),
+            expected_error: Some("Unauthorized"),
+            expected_gatekeeper: None,
+        },
+        TestCase {
+            sender: "admin",
+            gatekeeper_addr: Some("gatekeeper".to_string()),
+            expected_error: None,
+            expected_gatekeeper: Some("gatekeeper".to_string()),
+        },
+        TestCase {
+            sender: "admin",
+            gatekeeper_addr: None,
+            expected_error: None,
+            expected_gatekeeper: Some("".to_string()),
+        },
+        TestCase {
+            sender: "admin",
+            gatekeeper_addr: Some("".to_string()),
+            expected_error: Some("Gatekeeper address cannot be empty"),
+            expected_gatekeeper: None,
+        },
+    ];
+
+    // Setup initial contract state
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, "addr0000", &[]);
+
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.whitelist_admins = vec![get_address_as_str(&deps.api, "admin")];
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // Run test cases
+    for test in test_cases {
+        // Execute message
+        let info = get_message_info(&deps.api, test.sender, &[]);
+        let msg = ExecuteMsg::SetGatekeeper {
+            gatekeeper_addr: test.gatekeeper_addr,
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+
+        // Verify results
+        match test.expected_error {
+            Some(expected_error) => {
+                assert!(res.is_err());
+                assert!(res.unwrap_err().to_string().contains(expected_error));
+            }
+            None => {
+                assert!(res.is_ok());
+                // Check gatekeeper was set correctly
+                let gatekeeper = query_gatekeeper(deps.as_ref());
+                assert!(gatekeeper.is_ok());
+                assert_eq!(
+                    gatekeeper.unwrap().gatekeeper,
+                    test.expected_gatekeeper.unwrap()
+                );
+            }
+        }
+    }
 }

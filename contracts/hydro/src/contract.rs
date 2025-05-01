@@ -15,22 +15,26 @@ use neutron_sdk::interchain_queries::v047::register_queries::new_register_stakin
 use neutron_sdk::sudo::msg::SudoMsg;
 
 use crate::error::{new_generic_error, ContractError};
+use crate::gatekeeper::{
+    build_gatekeeper_lock_tokens_msg, build_init_gatekeeper_msg, gatekeeper_handle_submsg_reply,
+};
 use crate::governance::{query_total_power_at_height, query_voting_power_at_height};
 use crate::lsm_integration::COSMOS_VALIDATOR_PREFIX;
 use crate::msg::{
-    ExecuteMsg, InstantiateMsg, LiquidityDeployment, ProposalToLockups, ReplyPayload,
-    TokenInfoProviderInstantiateMsg, TrancheInfo,
+    ExecuteMsg, InstantiateMsg, LiquidityDeployment, LockTokensProof, ProposalToLockups,
+    ReplyPayload, TokenInfoProviderInstantiateMsg, TrancheInfo,
 };
 use crate::query::{
     AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse,
     CanLockDenomResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    ICQManagersResponse, LiquidityDeploymentResponse, LockEntryWithPower, LockupWithPerTrancheInfo,
-    PerTrancheLockupInfo, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
-    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
-    RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse,
-    SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, TopNProposalsResponse,
-    TotalLockedTokensResponse, TranchesResponse, UserVotedLocksResponse, UserVotesResponse,
-    UserVotingPowerResponse, VoteEntry, VotedLockInfo, WhitelistAdminsResponse, WhitelistResponse,
+    GatekeeperResponse, ICQManagersResponse, LiquidityDeploymentResponse, LockEntryWithPower,
+    LockupWithPerTrancheInfo, PerTrancheLockupInfo, ProposalResponse, QueryMsg,
+    RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
+    RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse,
+    SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse,
+    TokenInfoProvidersResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse,
+    UserVotedLocksResponse, UserVotesResponse, UserVotingPowerResponse, VoteEntry, VotedLockInfo,
+    WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_token_group_shares_to_proposal, add_token_group_shares_to_round_total,
@@ -40,8 +44,8 @@ use crate::score_keeper::{
 };
 use crate::state::{
     Constants, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo, Vote,
-    VoteWithPower, CONSTANTS, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2,
-    LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, SNAPSHOTS_ACTIVATION_HEIGHT,
+    VoteWithPower, CONSTANTS, GATEKEEPER, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS,
+    LOCKS_MAP_V2, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, SNAPSHOTS_ACTIVATION_HEIGHT,
     TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS, VALIDATORS_INFO,
     VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP_V2,
     VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
@@ -156,9 +160,17 @@ pub fn instantiate(
     // Store ID to be used for the next tranche
     TRANCHE_ID.save(deps.storage, &tranche_id)?;
 
+    let mut submsgs = vec![];
+
     // Save token info providers into the store and build SubMsgs to instantiate contracts, if there are any needed
     let (token_info_provider_init_msgs, _) =
         add_token_info_providers(&mut deps, msg.token_info_providers)?;
+    submsgs.extend(token_info_provider_init_msgs);
+
+    // Prepare Gatekeeper instantiation SubMsg
+    if let Some(init_gatekeeper_msg) = build_init_gatekeeper_msg(&msg.gatekeeper)? {
+        submsgs.push(init_gatekeeper_msg);
+    }
 
     // the store for the first round is already initialized, since there is no previous round to copy information over from.
     VALIDATORS_STORE_INITIALIZED.save(deps.storage, 0, &true)?;
@@ -168,7 +180,7 @@ pub fn instantiate(
     Ok(Response::new()
         .add_attribute("action", "initialisation")
         .add_attribute("sender", info.sender.clone())
-        .add_submessages(token_info_provider_init_msgs))
+        .add_submessages(submsgs))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -183,7 +195,10 @@ pub fn execute(
     run_on_each_transaction(deps.storage, &env, current_round)?;
 
     match msg {
-        ExecuteMsg::LockTokens { lock_duration } => lock_tokens(deps, env, info, lock_duration),
+        ExecuteMsg::LockTokens {
+            lock_duration,
+            proof,
+        } => lock_tokens(deps, env, info, lock_duration, proof),
         ExecuteMsg::RefreshLockDuration {
             lock_ids,
             lock_duration,
@@ -285,7 +300,52 @@ pub fn execute(
         ExecuteMsg::RemoveTokenInfoProvider { provider_id } => {
             remove_token_info_provider(deps, env, info, provider_id)
         }
+        ExecuteMsg::SetGatekeeper { gatekeeper_addr } => {
+            set_gatekeeper(deps, env, info, gatekeeper_addr)
+        }
     }
+}
+
+// SetGatekeeper(gatekeeper_addr):
+// Validate that the sender is a whitelist admin
+// Changes the address of the Gatekeeper contract to the provided one
+// If the provided address is None, the reference to the Gatekeeper contract is removed from this contract
+fn set_gatekeeper(
+    deps: DepsMut<'_, NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    gatekeeper_addr: Option<String>,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
+    validate_contract_is_not_paused(&constants)?;
+
+    let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
+
+    if !whitelist_admins.contains(&info.sender) {
+        return Err(ContractError::Unauthorized);
+    }
+
+    match &gatekeeper_addr {
+        Some(addr) => {
+            if addr.is_empty() {
+                return Err(ContractError::Std(StdError::generic_err(
+                    "Gatekeeper address cannot be empty",
+                )));
+            }
+            GATEKEEPER.save(deps.storage, addr)?;
+        }
+        None => {
+            GATEKEEPER.remove(deps.storage);
+        }
+    }
+
+    Ok(Response::new()
+        .add_attribute("action", "set_gatekeeper")
+        .add_attribute("sender", info.sender)
+        .add_attribute(
+            "gatekeeper_addr",
+            gatekeeper_addr.unwrap_or("None".to_string()),
+        ))
 }
 
 // LockTokens(lock_duration):
@@ -299,6 +359,7 @@ fn lock_tokens(
     env: Env,
     info: MessageInfo,
     lock_duration: u64,
+    proof: Option<LockTokensProof>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let constants = load_current_constants(&deps.as_ref(), &env)?;
 
@@ -376,8 +437,21 @@ fn lock_tokens(
         current_round,
         &info.sender,
         total_locked_tokens,
-        locking_info,
+        &locking_info,
     )?;
+
+    // Prepare a message that will be sent to the Gatekeeper to validate if the user has
+    // the right to lock the specifed number of tokens, per currently active criteria.
+    // The ReplyOn is set to Never, so if this message fails then the changes we made
+    // during this lock_tokens processing will be reverted as well. We also don't need to
+    // wait for the result of execution, since the Gatekeeper will accept this SubMsg only
+    // if user is eligible to lock the entire amount provided, and provides valid proofs.
+    let mut submsgs = vec![];
+    if let Some(gatekeeper_msg) =
+        build_gatekeeper_lock_tokens_msg(&deps, &info.sender, &locking_info, &proof)?
+    {
+        submsgs.push(gatekeeper_msg);
+    }
 
     // If user already voted for some proposals in the current round, update the voting power on those proposals.
     update_voting_power_on_proposals(
@@ -409,6 +483,7 @@ fn lock_tokens(
     )?;
 
     Ok(Response::new()
+        .add_submessages(submsgs)
         .add_attribute("action", "lock_tokens")
         .add_attribute("sender", info.sender)
         .add_attribute("lock_id", lock_entry.lock_id.to_string())
@@ -1823,6 +1898,7 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
             to_json_binary(&query_voting_power_at_height(&deps, &env, address, height)?)
         }
         QueryMsg::TokenInfoProviders {} => to_json_binary(&query_token_info_providers(deps)?),
+        QueryMsg::Gatekeeper {} => to_json_binary(&query_gatekeeper(deps)?),
     }
 }
 
@@ -2579,6 +2655,12 @@ pub fn query_token_info_providers(
     })
 }
 
+pub fn query_gatekeeper(deps: Deps<NeutronQuery>) -> StdResult<GatekeeperResponse> {
+    Ok(GatekeeperResponse {
+        gatekeeper: GATEKEEPER.may_load(deps.storage)?.unwrap_or_default(),
+    })
+}
+
 // Computes the current round_id by taking contract_start_time and dividing the time since
 // by the round_length.
 pub fn compute_current_round_id(env: &Env, constants: &Constants) -> StdResult<u64> {
@@ -2927,6 +3009,7 @@ pub fn reply(
             ReplyPayload::InstantiateTokenInfoProvider(token_info_provider) => {
                 token_manager_handle_submsg_reply(deps, &env, token_info_provider, msg)
             }
+            ReplyPayload::InstantiateGatekeeper => gatekeeper_handle_submsg_reply(deps, msg),
         },
         Err(_) => handle_submsg_reply(deps, msg),
     }

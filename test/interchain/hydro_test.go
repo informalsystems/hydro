@@ -14,6 +14,7 @@ import (
 
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/strangelove-ventures/interchaintest/v8/ibc"
 	"github.com/strangelove-ventures/interchaintest/v8/testutil"
 	"github.com/stretchr/testify/suite"
 )
@@ -60,7 +61,7 @@ func (s *HydroSuite) TestHappyPath() {
 	// Transfer ATOMs to Neutron chain. For the purpose of this test, we will use ATOMs as a substitute for stATOMs and allow them to be locked in Hydro.
 	dstIbcDenom3 := s.HubToNeutronShareTokenTransfer(0, math.NewInt(400), chainsuite.GetHubSpec().Denom, s.NeutronChain.ValidatorWallets[0].Address)
 
-	stTokenInfoProviderInitMsg := s.GetContractTokenInfoProviderInitMsg(
+	stTokenInfoProviderInitMsg := s.GetInstantiateContractMsg(
 		stTokenInfoProviderCodeId,
 		map[string]any{
 			"st_token_denom": dstIbcDenom3,
@@ -70,7 +71,7 @@ func (s *HydroSuite) TestHappyPath() {
 		nil)
 
 	// deploy hydro contract - instantiate code
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(3), []any{stTokenInfoProviderInitMsg})
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(3), []any{stTokenInfoProviderInitMsg}, nil)
 
 	// register interchain query
 	log.Println("==== Registering interchain queries")
@@ -79,15 +80,15 @@ func (s *HydroSuite) TestHappyPath() {
 
 	// lock tokens
 	log.Println("==== Locking tokens in Hydro")
-	err := s.LockTokens(0, 86400000000000, "10", dstIbcDenom1, contractAddr)
+	err := s.LockTokens(0, 86400000000000, "10", dstIbcDenom1, nil, contractAddr)
 	s.Require().NoError(err)
-	err = s.LockTokens(0, 3*86400000000000, "10", dstIbcDenom2, contractAddr)
+	err = s.LockTokens(0, 3*86400000000000, "10", dstIbcDenom2, nil, contractAddr)
 	s.Require().NoError(err)
-	err = s.LockTokens(0, 6*86400000000000, "10", dstIbcDenom1, contractAddr)
+	err = s.LockTokens(0, 6*86400000000000, "10", dstIbcDenom1, nil, contractAddr)
 	s.Require().NoError(err)
-	err = s.LockTokens(0, 12*86400000000000, "10", dstIbcDenom2, contractAddr)
+	err = s.LockTokens(0, 12*86400000000000, "10", dstIbcDenom2, nil, contractAddr)
 	s.Require().NoError(err)
-	err = s.LockTokens(0, 86400000000000, "10", dstIbcDenom3, contractAddr)
+	err = s.LockTokens(0, 86400000000000, "10", dstIbcDenom3, nil, contractAddr)
 	s.Require().NoError(err)
 
 	// Scale lockup power
@@ -178,7 +179,7 @@ func (s *HydroSuite) TestPauseContract() {
 	dstIbcDenom := s.HubToNeutronShareTokenTransfer(0, math.NewInt(400), sourceIbcDenom, s.NeutronChain.ValidatorWallets[0].Address)
 
 	// instantiate hydro contract
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(2), nil)
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(2), nil, nil)
 
 	// pause the contract
 	log.Println("==== Pausing contract")
@@ -186,7 +187,7 @@ func (s *HydroSuite) TestPauseContract() {
 	// confirm that calling contract returns an error
 	log.Println("==== Confirming contract is paused")
 
-	err := s.LockTokens(0, 100000000000, "10", dstIbcDenom, contractAddr)
+	err := s.LockTokens(0, 100000000000, "10", dstIbcDenom, nil, contractAddr)
 	RequirePaused(s, err)
 	err = s.UnlockTokens(contractAddr)
 	RequirePaused(s, err)
@@ -253,7 +254,7 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 
 	// deploy hydro contract - instantiate code
 	// active valset consists of 2 validators, currently val1 and val2
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(2), nil)
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(2), nil, nil)
 
 	// register interchain query for val1 and val2
 	log.Println("==== Registering interchain queries for val1 and val2")
@@ -262,9 +263,9 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 
 	// lock tokens
 	log.Println("==== Locking tokens in Hydro")
-	err := s.LockTokens(0, 86400000000000, "10", dstIbcDenom1, contractAddr)
+	err := s.LockTokens(0, 86400000000000, "10", dstIbcDenom1, nil, contractAddr)
 	s.Require().NoError(err)
-	err = s.LockTokens(0, 3*86400000000000, "10", dstIbcDenom2, contractAddr)
+	err = s.LockTokens(0, 3*86400000000000, "10", dstIbcDenom2, nil, contractAddr)
 	s.Require().NoError(err)
 
 	votingPowerVal1Denom := "10"
@@ -309,7 +310,7 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 
 	// lock token for val3
 	log.Println("==== Locking tokens for val3")
-	err = s.LockTokens(0, 6*86400000000000, "10", dstIbcDenom3, contractAddr)
+	err = s.LockTokens(0, 6*86400000000000, "10", dstIbcDenom3, nil, contractAddr)
 	s.Require().NoError(err)
 
 	// proposal power is increased with val3 shares right after the locking
@@ -339,7 +340,7 @@ func (s *HydroSuite) TestValidatorSlashing() {
 	dstIbcDenom1 := s.HubToNeutronShareTokenTransfer(0, math.NewInt(400), sourceIbcDenom1, s.NeutronChain.ValidatorWallets[0].Address)
 
 	// deploy hydro contract - instantiate code
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(4), nil)
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(4), nil, nil)
 
 	// register interchain query
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[3].ValoperAddress},
@@ -348,7 +349,7 @@ func (s *HydroSuite) TestValidatorSlashing() {
 	// lock tokens
 	lockAmount := "300"
 	powerAfterSlashing := 271 // ceil rounding is used, which is why the power after slashing 10% of the tokens is 271 instead of 270
-	s.Require().NoError(s.LockTokens(0, 86400000000000, lockAmount, dstIbcDenom1, contractAddr))
+	s.Require().NoError(s.LockTokens(0, 86400000000000, lockAmount, dstIbcDenom1, nil, contractAddr))
 
 	// create hydro proposals
 	s.Require().NoError(s.SubmitHydroProposal(0, contractAddr, "tranche 1 prop 1", 1, DefaultDeploymentDuration, DefaultMinLiquidityRequest))
@@ -396,6 +397,141 @@ func (s *HydroSuite) TestValidatorSlashing() {
 	s.Require().Equal(int64(powerAfterSlashing), roundPower)
 }
 
+func (s *HydroSuite) TestGatekeeperLockConditions() {
+	log.Println("==== Running gatekeeper lock conditions test")
+
+	// Transfer ATOMs to Neutron chain. For the purpose of this test, we will use ATOMs as a substitute for stATOMs and allow them to be locked in Hydro.
+	stAtomDenom := s.HubToNeutronShareTokenTransfer(0, math.NewInt(1000), chainsuite.GetHubSpec().Denom, s.NeutronChain.ValidatorWallets[0].Address)
+
+	// Send "stATOMs" to addresses that will be eligible to lock them
+	s.NeutronChain.Validators[0].BankSend(s.ctx, s.NeutronChain.ValidatorWallets[0].Moniker,
+		ibc.WalletAmount{Address: chainsuite.NeutronWalletAddress1, Amount: math.NewInt(450), Denom: stAtomDenom})
+	s.NeutronChain.Validators[0].BankSend(s.ctx, s.NeutronChain.ValidatorWallets[0].Moniker,
+		ibc.WalletAmount{Address: chainsuite.NeutronWalletAddress2, Amount: math.NewInt(450), Denom: stAtomDenom})
+
+	// Also send some NTRN to those addresses to be able to pay for gas
+	s.NeutronChain.Validators[0].BankSend(s.ctx, s.NeutronChain.ValidatorWallets[0].Moniker,
+		ibc.WalletAmount{Address: chainsuite.NeutronWalletAddress1, Amount: math.NewInt(1000000), Denom: chainsuite.Untrn})
+	s.NeutronChain.Validators[0].BankSend(s.ctx, s.NeutronChain.ValidatorWallets[0].Moniker,
+		ibc.WalletAmount{Address: chainsuite.NeutronWalletAddress2, Amount: math.NewInt(1000000), Denom: chainsuite.Untrn})
+
+	stTokenInfoProviderInitMsg := s.GetInstantiateContractMsg(
+		stTokenInfoProviderCodeId,
+		map[string]any{
+			"st_token_denom": stAtomDenom,
+			"token_group_id": "statom",
+		},
+		"stATOM token info provider",
+		nil)
+
+	// Set the first validator as a user allowed to create new stages on the Gatekeeper contract
+	gatekeeperInitMsg := s.GetInstantiateContractMsg(
+		gatekeeperCodeId,
+		map[string]any{
+			"admins": []string{s.NeutronChain.ValidatorWallets[0].Address},
+		},
+		"hydro gatekeeper",
+		nil)
+
+	// Instantiate Hydro contract
+	lockEpochLength := 86400000000000
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker,
+		hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, lockEpochLength,
+		nil, []any{stTokenInfoProviderInitMsg}, gatekeeperInitMsg)
+	gatekeeperAddr := s.GetGatekeeper(contractAddr)
+
+	// Regiser first stage on the Gatekeeper. User 1 can lock up to 80 tokens, user 2 up to 70.
+	stage1Start := time.Now().UTC().Add(time.Second * 10).UnixNano()
+	s.RegisterGatekeeperStage(0, gatekeeperAddr, stage1Start, chainsuite.Stage1MerkleRoot, true, nil)
+	s.WaitForGatekeeperStage(gatekeeperAddr, 0, time.Second*20)
+
+	user1Stage1Proof := map[string]any{
+		"maximum_amount": "80",
+		"proof":          []string{chainsuite.Stage1Wallet1Proof},
+		"sig_info":       nil,
+	}
+
+	// Try to lock some tokens with user that isn't eligible to lock any number of tokens
+	// by providing valid maximum amount and proofs of another user.
+	err := s.LockTokens(0, lockEpochLength, "100", stAtomDenom, user1Stage1Proof, contractAddr)
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "Failed to verify provided proofs against the current stage root.")
+
+	// User 1 locks 80 tokens in two different transactions
+	err = s.LockTokensWithWallet(0, chainsuite.HydroWalletMoniker1, lockEpochLength, "50", stAtomDenom, user1Stage1Proof, contractAddr)
+	s.Require().NoError(err)
+	err = s.LockTokensWithWallet(0, chainsuite.HydroWalletMoniker1, lockEpochLength, "30", stAtomDenom, user1Stage1Proof, contractAddr)
+	s.Require().NoError(err)
+
+	// Try to lock more tokens than the user should be allowed to
+	err = s.LockTokensWithWallet(0, chainsuite.HydroWalletMoniker1, lockEpochLength, "20", stAtomDenom, user1Stage1Proof, contractAddr)
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "User cannot lock 20 tokens. Currently locked: 80. Maximum allowed to lock: 80.")
+
+	// Lock the maximum allowed for user 2
+	user2Stage1Proof := map[string]any{
+		"maximum_amount": "70",
+		"proof":          []string{chainsuite.Stage1Wallet2Proof},
+		"sig_info":       nil,
+	}
+
+	err = s.LockTokensWithWallet(0, chainsuite.HydroWalletMoniker2, lockEpochLength, "70", stAtomDenom, user2Stage1Proof, contractAddr)
+	s.Require().NoError(err)
+
+	// Regiser second stage on the Gatekeeper. This stage root was built from JSON file containing Cosmos Hub addresses.
+	// User 1 can lock up to 160 tokens and user 2 up to 140 tokens.
+	stage2Hrp := "cosmos"
+	stage2Start := time.Now().UTC().Add(time.Second * 10).UnixNano()
+	s.RegisterGatekeeperStage(0, gatekeeperAddr, stage2Start, chainsuite.Stage2MerkleRoot, false, &stage2Hrp)
+	s.WaitForGatekeeperStage(gatekeeperAddr, 1, time.Second*20)
+
+	hubValidatorNode := s.HubChain.Validators[0]
+	user1TxToSignOutput := "user1_tx_to_sign.json"
+	user1SignedTxOutput := "user1_signed_tx.json"
+
+	// Generate a dummy transaction that will be signed in the next step. The most important thing is
+	// to set the memo field to user's Neutron address, since it is used during the proof verification
+	// when trying to lock the tokens. Example transaction:
+	//
+	// gaiad tx bank send cosmos12kentvdxyxff9d8q5llksekm5cxvhucy745jhw neutron1rfv5q5z8am9qh9ayfhfyz70fhcpeqvgr9euw0q 10uatom
+	// --from HydroEligibleUser1 --note "neutron12kentvdxyxff9d8q5llksekm5cxvhucy62asdf" --generate-only
+	// --offline --account-number 0 --sequence 0 > user1_tx_to_sign.json
+	err = s.TxGenerateOnly(hubValidatorNode, chainsuite.HydroWalletMoniker1, user1TxToSignOutput,
+		"tx", "bank", "send",
+		chainsuite.CosmosWalletAddress1, chainsuite.CosmosWalletAddress2, fmt.Sprintf("10%s", chainsuite.Uatom),
+		"--note", chainsuite.NeutronWalletAddress1)
+	s.Require().NoError(err)
+
+	// Sign the previously generated transaction. Example transaction:
+	// gaiad tx sign user1_tx_to_sign.json --from HydroEligibleUser1 --generate-only --offline --account-number 0 --sequence 0 > user1_signed_tx.json
+	err = s.TxGenerateOnly(hubValidatorNode, chainsuite.HydroWalletMoniker1, user1SignedTxOutput,
+		"tx", "sign", fmt.Sprintf("%s/%s", hubValidatorNode.HomeDir(), user1TxToSignOutput))
+	s.Require().NoError(err)
+
+	// Read the file from the Hub validator container in order to extract the data needed to build the lock tokens msg
+	signedTxJson, err := hubValidatorNode.ReadFile(s.GetContext(), user1SignedTxOutput)
+	s.Require().NoError(err)
+
+	signatureInfo, err := s.PrepareSignatureInfo(signedTxJson)
+	s.Require().NoError(err)
+
+	user1Stage2Proof := map[string]any{
+		"maximum_amount": "160",
+		"proof":          []string{chainsuite.Stage2Wallet1Proof},
+		"sig_info":       signatureInfo,
+	}
+
+	// Stages 1 and 2 are part of the same Epoch. Stage 2 allows maximum of 160 tokens to be locked by the first user.
+	// This user already locked 80 tokens during Stage 1, so only 80 are left for locking. Try to lock the maximum allowed.
+	err = s.LockTokensWithWallet(0, chainsuite.HydroWalletMoniker1, lockEpochLength, "80", stAtomDenom, user1Stage2Proof, contractAddr)
+	s.Require().NoError(err)
+
+	// Try to lock some more and verify it is not possible
+	err = s.LockTokensWithWallet(0, chainsuite.HydroWalletMoniker1, lockEpochLength, "1", stAtomDenom, user1Stage2Proof, contractAddr)
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "User cannot lock 1 tokens. Currently locked: 160. Maximum allowed to lock: 160.")
+}
+
 // TestTributeContract tests tribute creation and distribution
 func (s *HydroSuite) TestTributeContract() {
 	log.Println("==== Running tribute test")
@@ -415,7 +551,7 @@ func (s *HydroSuite) TestTributeContract() {
 
 	// deploy hydro contract - instantiate code
 	roundLength := 300000000000
-	hydroContractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, roundLength, s.GetLSMTokenInfoProviderInitMsg(4), nil)
+	hydroContractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, roundLength, s.GetLSMTokenInfoProviderInitMsg(4), nil, nil)
 
 	// deploy tribute contract - instantiate code
 	tributeContractAddr := s.InstantiateTributeContract(tributeCodeId, hydroContractAddr, s.NeutronChain.ValidatorWallets[0].Address)
@@ -428,9 +564,9 @@ func (s *HydroSuite) TestTributeContract() {
 	lockAmountVal2 := "800"
 	lockAmountVal3 := "400"
 	lockAmountVal4 := "200"
-	s.Require().NoError(s.LockTokens(1, roundLength, lockAmountVal2, dstIbcDenom, hydroContractAddr))
-	s.Require().NoError(s.LockTokens(2, roundLength, lockAmountVal3, dstIbcDenom, hydroContractAddr))
-	s.Require().NoError(s.LockTokens(3, roundLength, lockAmountVal4, dstIbcDenom, hydroContractAddr))
+	s.Require().NoError(s.LockTokens(1, roundLength, lockAmountVal2, dstIbcDenom, nil, hydroContractAddr))
+	s.Require().NoError(s.LockTokens(2, roundLength, lockAmountVal3, dstIbcDenom, nil, hydroContractAddr))
+	s.Require().NoError(s.LockTokens(3, roundLength, lockAmountVal4, dstIbcDenom, nil, hydroContractAddr))
 
 	// validator 1 creates hydro proposals
 	s.Require().NoError(s.SubmitHydroProposal(0, hydroContractAddr, "tranche 1 prop 1", 1, DefaultDeploymentDuration, DefaultMinLiquidityRequest))
@@ -691,7 +827,7 @@ func (s *HydroSuite) TestDaoVotingAdapter() {
 
 	// instantiate hydro contract
 	log.Println("==== Instantiating Hydro contract")
-	hydroContractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(3), nil)
+	hydroContractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(3), nil, nil)
 
 	// instantiate DAO voting power adapter contract
 	log.Println("==== Instantiating DAO Voting Power Adapter contract")
@@ -704,9 +840,9 @@ func (s *HydroSuite) TestDaoVotingAdapter() {
 
 	// first user locks tokens
 	log.Println("==== Locking tokens in Hydro")
-	err := s.LockTokens(0, 86400000000000, "10", dstIbcDenom1, hydroContractAddr)
+	err := s.LockTokens(0, 86400000000000, "10", dstIbcDenom1, nil, hydroContractAddr)
 	s.Require().NoError(err)
-	err = s.LockTokens(0, 3*86400000000000, "10", dstIbcDenom1, hydroContractAddr)
+	err = s.LockTokens(0, 3*86400000000000, "10", dstIbcDenom1, nil, hydroContractAddr)
 	s.Require().NoError(err)
 
 	historicalHeight, err := s.NeutronChain.Height(s.ctx)
@@ -722,9 +858,9 @@ func (s *HydroSuite) TestDaoVotingAdapter() {
 
 	// second user locks tokens
 	log.Println("==== Locking tokens in Hydro")
-	err = s.LockTokens(1, 86400000000000, "20", dstIbcDenom2, hydroContractAddr)
+	err = s.LockTokens(1, 86400000000000, "20", dstIbcDenom2, nil, hydroContractAddr)
 	s.Require().NoError(err)
-	err = s.LockTokens(1, 3*86400000000000, "20", dstIbcDenom2, hydroContractAddr)
+	err = s.LockTokens(1, 3*86400000000000, "20", dstIbcDenom2, nil, hydroContractAddr)
 	s.Require().NoError(err)
 
 	historicalHeight, err = s.NeutronChain.Height(s.ctx)

@@ -2,6 +2,7 @@ use std::fmt::{Display, Formatter};
 
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Binary, Coin, Decimal, Timestamp, Uint128};
+use interface::gatekeeper::SignatureInfo;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +28,9 @@ pub struct InstantiateMsg {
     // See the RoundLockPowerSchedule struct for more information.
     pub round_lock_power_schedule: Vec<(u64, Decimal)>,
     pub token_info_providers: Vec<TokenInfoProviderInstantiateMsg>,
+    // Provides inputs for instantiation of the Gatekeeper contract that
+    // controls how many tokens each user can lock at a given point in time.
+    pub gatekeeper: Option<InstantiateContractMsg>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -52,6 +56,14 @@ pub enum TokenInfoProviderInstantiateMsg {
         label: String,
         admin: Option<String>,
     },
+}
+
+#[cw_serde]
+pub struct InstantiateContractMsg {
+    pub code_id: u64,
+    pub msg: Binary,
+    pub label: String,
+    pub admin: Option<String>,
 }
 
 impl Display for TokenInfoProviderInstantiateMsg {
@@ -93,6 +105,7 @@ pub enum ExecuteMsg {
     #[cw_orch(payable)]
     LockTokens {
         lock_duration: u64,
+        proof: Option<LockTokensProof>,
     },
     RefreshLockDuration {
         lock_ids: Vec<u64>,
@@ -187,6 +200,9 @@ pub enum ExecuteMsg {
     RemoveTokenInfoProvider {
         provider_id: String,
     },
+    SetGatekeeper {
+        gatekeeper_addr: Option<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -215,7 +231,16 @@ pub struct LiquidityDeployment {
     pub remaining_rounds: u64,
 }
 
+/// For detailed explanation of the fields take a look at ExecuteLockTokensMsg located in the interface package
+#[cw_serde]
+pub struct LockTokensProof {
+    pub maximum_amount: Uint128,
+    pub proof: Vec<String>,
+    pub sig_info: Option<SignatureInfo>,
+}
+
 #[derive(Serialize, Deserialize)]
 pub enum ReplyPayload {
     InstantiateTokenInfoProvider(TokenInfoProvider),
+    InstantiateGatekeeper,
 }

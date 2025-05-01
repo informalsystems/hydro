@@ -1050,6 +1050,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cw-orch-interface"
+version = "3.2.0"
+dependencies = [
+ "cw-orch",
+ "hydro",
+ "neutron-sdk",
+ "tribute",
+]
+
+[[package]]
 name = "cw-orch-mock"
 version = "0.24.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1669,6 +1679,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "gatekeeper"
+version = "3.2.0"
+dependencies = [
+ "bech32 0.11.0",
+ "cosmwasm-schema 2.2.1",
+ "cosmwasm-std 2.2.1",
+ "cw-storage-plus 2.0.0",
+ "cw2 2.0.0",
+ "hex",
+ "interface",
+ "k256",
+ "ripemd",
+ "schemars",
+ "serde",
+ "sha2 0.10.8",
+ "thiserror",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1922,7 +1951,7 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 name = "hydro"
 version = "3.2.0"
 dependencies = [
- "bech32 0.9.1",
+ "bech32 0.11.0",
  "cosmos-sdk-proto 0.20.0",
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",
@@ -1930,6 +1959,7 @@ dependencies = [
  "cw-storage-plus 2.0.0",
  "cw-utils 2.0.0",
  "cw2 2.0.0",
+ "interface",
  "neutron-sdk",
  "neutron-std",
  "proptest",
@@ -1939,7 +1969,6 @@ dependencies = [
  "serde",
  "serde-json-wasm 1.0.1",
  "thiserror",
- "token-info-provider-interface",
 ]
 
 [[package]]
@@ -2258,10 +2287,8 @@ dependencies = [
 name = "interface"
 version = "3.2.0"
 dependencies = [
- "cw-orch",
- "hydro",
- "neutron-sdk",
- "tribute",
+ "cosmwasm-schema 2.2.1",
+ "cosmwasm-std 2.2.1",
 ]
 
 [[package]]
@@ -2306,9 +2333,9 @@ dependencies = [
 
 [[package]]
 name = "k256"
-version = "0.13.3"
+version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "956ff9b67e26e1a6a866cb758f12c6f8746208489e3e4a4b5580802f2f0a587b"
+checksum = "f6e3919bbaa2945715f0bb6d3934a173d1e9a59ac23767fbaaef277265a7411b"
 dependencies = [
  "cfg-if",
  "ecdsa",
@@ -2876,7 +2903,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "157c5a9d7ea5c2ed2d9fb8f495b64759f7816c7eaea54ba3978f0d63000162e3"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.87",
@@ -2962,7 +2989,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3779b94aeb87e8bd4e834cee3650289ee9e0d5677f976ecdb6d219e5f4f6cd94"
 dependencies = [
  "rand_chacha 0.9.0",
- "rand_core 0.9.0",
+ "rand_core 0.9.3",
  "zerocopy 0.8.17",
 ]
 
@@ -2983,7 +3010,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3022b5f1df60f26e1ffddd6c66e8aa15de382ae63b3a0c1bfc0e4d3e3f325cb"
 dependencies = [
  "ppv-lite86",
- "rand_core 0.9.0",
+ "rand_core 0.9.3",
 ]
 
 [[package]]
@@ -3003,12 +3030,11 @@ dependencies = [
 
 [[package]]
 name = "rand_core"
-version = "0.9.0"
+version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b08f3c9802962f7e1b25113931d94f43ed9725bebc59db9d0c3e9a23b67e15ff"
+checksum = "99d9a13982dcf210057a8a78572b2217b667c3beacbf3a0d8b454f6f82837d38"
 dependencies = [
  "getrandom 0.3.1",
- "zerocopy 0.8.17",
 ]
 
 [[package]]
@@ -3700,10 +3726,10 @@ dependencies = [
  "cosmwasm-std 2.2.1",
  "cw-storage-plus 2.0.0",
  "cw2 2.0.0",
+ "interface",
  "schemars",
  "serde",
  "thiserror",
- "token-info-provider-interface",
 ]
 
 [[package]]
@@ -3980,8 +4006,8 @@ version = "3.2.0"
 dependencies = [
  "cosmwasm-std 2.2.1",
  "cw-orch",
+ "cw-orch-interface",
  "hydro",
- "interface",
  "tribute",
 ]
 
@@ -4043,14 +4069,6 @@ checksum = "9117f5d4db391c1cf6927e7bea3db74b9a1c1add8f7eda9ffd5364f40f57b82f"
 dependencies = [
  "displaydoc",
  "zerovec",
-]
-
-[[package]]
-name = "token-info-provider-interface"
-version = "3.2.0"
-dependencies = [
- "cosmwasm-schema 2.2.1",
- "cosmwasm-std 2.2.1",
 ]
 
 [[package]]
@@ -4513,7 +4531,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

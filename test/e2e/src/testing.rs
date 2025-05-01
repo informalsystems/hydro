@@ -8,11 +8,11 @@ use cosmwasm_std::{Decimal, Timestamp, Uint128};
 
 use cw_orch::{anyhow, prelude::*};
 
+use cw_orch_interface::{hydro::*, tribute::*};
 use hydro::{
     msg::{TokenInfoProviderInstantiateMsg, TrancheInfo},
     query::QueryMsgFns as HydroQueryMsgFn,
 };
-use interface::{hydro::*, tribute::*};
 use tribute::query::QueryMsgFns as TributeQueryMsgFns;
 
 pub fn get_default_power_schedule_vec() -> Vec<(u64, Decimal)> {
@@ -100,6 +100,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
                 hub_transfer_channel_id,
                 10000,
             )],
+            gatekeeper: None,
         },
         Some(&Addr::unchecked(whitelist_admin_address.clone())),
         &[],

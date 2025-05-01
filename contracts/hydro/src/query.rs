@@ -15,6 +15,9 @@ pub enum QueryMsg {
     #[returns(TokenInfoProvidersResponse)]
     TokenInfoProviders {},
 
+    #[returns(GatekeeperResponse)]
+    Gatekeeper {},
+
     #[returns(TranchesResponse)]
     Tranches {},
 
@@ -155,6 +158,11 @@ pub struct ConstantsResponse {
 #[cw_serde]
 pub struct TokenInfoProvidersResponse {
     pub providers: Vec<TokenInfoProvider>,
+}
+
+#[cw_serde]
+pub struct GatekeeperResponse {
+    pub gatekeeper: String,
 }
 
 #[cw_serde]

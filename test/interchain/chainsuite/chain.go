@@ -81,6 +81,24 @@ func CreateChain(ctx context.Context, testName interchaintest.TestName, spec *in
 		return nil, err
 	}
 
+	predefinedWallets := []struct {
+		Moniker  string
+		Mnemonic string
+	}{
+		{Moniker: HydroWalletMoniker1, Mnemonic: HydroWalletMnemonic1},
+		{Moniker: HydroWalletMoniker2, Mnemonic: HydroWalletMnemonic2},
+	}
+
+	for _, val := range cosmosChain.Validators {
+		// On each validator node, recover the keys of those addresses that will be eligible to lock tokens in Hydro.
+		// Merkle roots to verify against, as well as the proofs, will be generated in advance and used as such.
+		for _, wallet := range predefinedWallets {
+			if err := val.RecoverKey(ctx, wallet.Moniker, wallet.Mnemonic); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	chain, err := chainFromCosmosChain(cosmosChain, relayerWallet)
 	if err != nil {
 		return nil, err
@@ -159,9 +177,25 @@ func (p *Chain) AddConsumerChain(ctx context.Context, relayer *Relayer, chainId 
 		return nil, err
 	}
 
+	predefinedWallets := []struct {
+		Moniker  string
+		Mnemonic string
+	}{
+		{Moniker: HydroWalletMoniker1, Mnemonic: HydroWalletMnemonic1},
+		{Moniker: HydroWalletMoniker2, Mnemonic: HydroWalletMnemonic2},
+	}
+
 	for i, val := range cosmosConsumer.Validators {
 		if err := val.RecoverKey(ctx, validatorMoniker, wallets[i+1].Mnemonic()); err != nil {
 			return nil, err
+		}
+
+		// On each validator node, recover the keys of those addresses that will be eligible to lock tokens in Hydro.
+		// Merkle roots to verify against, as well as the proofs, will be generated in advance and used as such.
+		for _, wallet := range predefinedWallets {
+			if err := val.RecoverKey(ctx, wallet.Moniker, wallet.Mnemonic); err != nil {
+				return nil, err
+			}
 		}
 	}
 	consumer, err := chainFromCosmosChain(cosmosConsumer, relayerWallet)

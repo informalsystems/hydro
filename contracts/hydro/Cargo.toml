@@ -35,7 +35,7 @@ neutron-sdk = { workspace = true }
 neutron-std = { workspace = true }
 bech32 = { workspace = true }
 serde-json-wasm = { workspace = true }
-token-info-provider-interface = { path = "../../packages/token-info-provider-interface" }
+interface = { path = "../../packages/interface" }
 
 [dev-dependencies]
 cosmwasm-schema = { workspace = true }
