@@ -3,11 +3,9 @@ package interchain
 import (
 	"fmt"
 	"log"
-
 	"strconv"
 	"strings"
 	"testing"
-
 	"time"
 
 	"hydro/test/interchain/chainsuite"
