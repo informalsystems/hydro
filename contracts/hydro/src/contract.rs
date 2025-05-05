@@ -2296,7 +2296,7 @@ pub fn query_user_voted_locks(
 ) -> StdResult<UserVotedLocksResponse> {
     let user_address = deps.api.addr_validate(&user_address)?;
     let mut voted_proposals_locks: HashMap<u64, Vec<VotedLockInfo>> = HashMap::new();
-    // Get the user's locks from USER_LOCKS for rhe given height
+    // Get the users locks from USER_LOCKS for the given height
     let round_highest_height = get_highest_known_height_for_round_id(deps.storage, round_id)?;
     let user_locks = USER_LOCKS
         .may_load_at_height(deps.storage, user_address.clone(), round_highest_height)?
