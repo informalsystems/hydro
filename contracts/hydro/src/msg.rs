@@ -1,6 +1,12 @@
-use cosmwasm_std::{Coin, Decimal, Timestamp, Uint128};
+use std::fmt::{Display, Formatter};
+
+use cosmwasm_schema::cw_serde;
+use cosmwasm_std::{Binary, Coin, Decimal, Timestamp, Uint128};
+use interface::gatekeeper::SignatureInfo;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+use crate::token_manager::TokenInfoProvider;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -11,10 +17,6 @@ pub struct InstantiateMsg {
     pub max_locked_tokens: Uint128,
     pub whitelist_admins: Vec<String>,
     pub initial_whitelist: Vec<String>,
-    pub max_validator_shares_participating: u64,
-    pub hub_connection_id: String,
-    pub hub_transfer_channel_id: String,
-    pub icq_update_period: u64,
     // Anyone can permissionlessly create ICQs, but addresses in this list can attempt
     // to create ICQs without paying, which will then implicitly be paid for by the contract;
     // and they can also withdraw funds in the *native token denom* from the contract;
@@ -25,6 +27,10 @@ pub struct InstantiateMsg {
     // The first element is the round number, the second element is the lock power.
     // See the RoundLockPowerSchedule struct for more information.
     pub round_lock_power_schedule: Vec<(u64, Decimal)>,
+    pub token_info_providers: Vec<TokenInfoProviderInstantiateMsg>,
+    // Provides inputs for instantiation of the Gatekeeper contract that
+    // controls how many tokens each user can lock at a given point in time.
+    pub gatekeeper: Option<InstantiateContractMsg>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -34,12 +40,72 @@ pub struct TrancheInfo {
     pub metadata: String,
 }
 
+#[cw_serde]
+pub enum TokenInfoProviderInstantiateMsg {
+    // After we extract LSM token info provider into separate contract, all token info providers will be instantiated as SCs.
+    #[serde(rename = "lsm")]
+    LSM {
+        max_validator_shares_participating: u64,
+        hub_connection_id: String,
+        hub_transfer_channel_id: String,
+        icq_update_period: u64,
+    },
+    TokenInfoProviderContract {
+        code_id: u64,
+        msg: Binary,
+        label: String,
+        admin: Option<String>,
+    },
+}
+
+#[cw_serde]
+pub struct InstantiateContractMsg {
+    pub code_id: u64,
+    pub msg: Binary,
+    pub label: String,
+    pub admin: Option<String>,
+}
+
+impl Display for TokenInfoProviderInstantiateMsg {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        match self {
+            TokenInfoProviderInstantiateMsg::LSM {
+                max_validator_shares_participating,
+                hub_connection_id,
+                hub_transfer_channel_id,
+                icq_update_period,
+            } => write!(
+                f,
+                "LSM(max_validator_shares_participating: {}, hub_connection_id: {}, hub_transfer_channel_id: {}, icq_update_period: {})",
+                max_validator_shares_participating,
+                hub_connection_id,
+                hub_transfer_channel_id,
+                icq_update_period
+            ),
+            TokenInfoProviderInstantiateMsg::TokenInfoProviderContract {
+                code_id,
+                msg,
+                label,
+                admin,
+            } => write!(
+                f,
+                "TokenInfoProviderContract(code_id: {}, msg: {}, label: {}, admin: {:?})",
+                code_id,
+                msg,
+                label,
+                admin
+            ),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, cw_orch::ExecuteFns)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
     #[cw_orch(payable)]
     LockTokens {
         lock_duration: u64,
+        proof: Option<LockTokensProof>,
     },
     RefreshLockDuration {
         lock_ids: Vec<u64>,
@@ -122,6 +188,21 @@ pub enum ExecuteMsg {
         tranche_id: u64,
         proposal_id: u64,
     },
+
+    UpdateTokenGroupRatio {
+        token_group_id: String,
+        old_ratio: Decimal,
+        new_ratio: Decimal,
+    },
+    AddTokenInfoProvider {
+        token_info_provider: TokenInfoProviderInstantiateMsg,
+    },
+    RemoveTokenInfoProvider {
+        provider_id: String,
+    },
+    SetGatekeeper {
+        gatekeeper_addr: Option<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -148,4 +229,18 @@ pub struct LiquidityDeployment {
     // how many rounds are left for this proposal to be in effect
     // if this is a "repeating" proposal
     pub remaining_rounds: u64,
+}
+
+/// For detailed explanation of the fields take a look at ExecuteLockTokensMsg located in the interface package
+#[cw_serde]
+pub struct LockTokensProof {
+    pub maximum_amount: Uint128,
+    pub proof: Vec<String>,
+    pub sig_info: Option<SignatureInfo>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum ReplyPayload {
+    InstantiateTokenInfoProvider(TokenInfoProvider),
+    InstantiateGatekeeper,
 }

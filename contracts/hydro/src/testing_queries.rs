@@ -3,29 +3,36 @@ use std::str::FromStr;
 
 use crate::contract::{
     compute_current_round_id, query_all_user_lockups, query_all_user_lockups_with_tranche_infos,
-    query_specific_user_lockups, query_specific_user_lockups_with_tranche_infos, query_user_votes,
+    query_all_votes, query_all_votes_round_tranche, query_specific_user_lockups,
+    query_specific_user_lockups_with_tranche_infos, query_user_votes,
 };
 use crate::msg::ProposalToLockups;
-use crate::state::{RoundLockPowerSchedule, ValidatorInfo, Vote, VALIDATORS_INFO, VOTE_MAP};
+use crate::query::VoteEntry;
+use crate::state::{
+    RoundLockPowerSchedule, ValidatorInfo, Vote, LOCKS_MAP_V2, TOKEN_INFO_PROVIDERS, USER_LOCKS,
+    VALIDATORS_INFO, VOTE_MAP_V2,
+};
 use crate::testing::{
-    get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds, IBC_DENOM_1,
-    ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_3,
+    get_default_instantiate_msg, get_default_lsm_token_info_provider, get_message_info,
+    set_default_validator_for_rounds, IBC_DENOM_1, ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1,
+    VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_3,
 };
 use crate::testing_lsm_integration::set_validator_power_ratio;
 use crate::testing_mocks::{
     denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
 };
+use crate::token_manager::LSM_TOKEN_INFO_PROVIDER_ID;
 use crate::utils::{load_current_constants, scale_lockup_power};
 use crate::{
     contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
     msg::ExecuteMsg,
-    state::LockEntry,
+    state::LockEntryV2,
 };
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
     Coin, Env, OwnedDeps,
 };
-use cosmwasm_std::{Addr, Decimal, StdError, StdResult, Uint128};
+use cosmwasm_std::{Addr, Decimal, StdError, StdResult, Timestamp, Uint128};
 use neutron_sdk::bindings::query::NeutronQuery;
 
 #[test]
@@ -58,6 +65,7 @@ fn query_user_lockups_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -77,6 +85,7 @@ fn query_user_lockups_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -353,6 +362,19 @@ fn query_user_lockups_test() {
             .next_round_lockup_can_vote
     );
 
+    // check that the lockups are tied to the right proposals
+    assert_eq!(
+        None,
+        all_lockups.lockups_with_per_tranche_infos[0].per_tranche_info[0].tied_to_proposal
+    );
+
+    assert_eq!(
+        1,
+        all_lockups.lockups_with_per_tranche_infos[1].per_tranche_info[0]
+            .tied_to_proposal
+            .unwrap()
+    );
+
     // advance the chain for 3 more months and verify that the second lockup has expired as well
     env.block.time = env.block.time.plus_nanos(3 * ONE_MONTH_IN_NANO_SECONDS);
     let expired_lockups = get_expired_user_lockups(&deps, env.clone(), info.sender.to_string());
@@ -407,6 +429,17 @@ fn query_user_lockups_test() {
             .u128()
     );
 
+    // check that neither lockup is tied to a proposal
+    assert_eq!(
+        None,
+        all_lockups.lockups_with_per_tranche_infos[0].per_tranche_info[0].tied_to_proposal
+    );
+
+    assert_eq!(
+        None,
+        all_lockups.lockups_with_per_tranche_infos[1].per_tranche_info[0].tied_to_proposal
+    );
+
     // unlock the tokens and verify that the user doesn't have any expired lockups after that
     let msg = ExecuteMsg::UnlockTokens { lock_ids: None };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -451,6 +484,7 @@ fn query_user_voting_power_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
 
     let res = execute(deps.as_mut(), env_new.clone(), info.clone(), msg);
@@ -470,6 +504,7 @@ fn query_user_voting_power_test() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
     };
 
     let res = execute(deps.as_mut(), env_new.clone(), info.clone(), msg);
@@ -499,6 +534,7 @@ fn query_user_voting_power_test() {
 
 #[test]
 fn query_user_votes_test() {
+    let env = mock_env();
     struct VoteToCreate {
         round_id: u64,
         tranche_id: u64,
@@ -786,11 +822,24 @@ fn query_user_votes_test() {
         let (mut deps, _env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
 
         for vote_to_create in &test_case.votes_to_create {
-            let res = VOTE_MAP.save(
+            let mut lock_ids = USER_LOCKS
+                .load(&deps.storage, test_case.voter.clone())
+                .unwrap_or_default();
+            if !lock_ids.contains(&vote_to_create.lock_id) {
+                lock_ids.push(vote_to_create.lock_id);
+                USER_LOCKS
+                    .save(
+                        &mut deps.storage,
+                        test_case.voter.clone(),
+                        &lock_ids,
+                        env.block.height,
+                    )
+                    .unwrap();
+            }
+            let res = VOTE_MAP_V2.save(
                 &mut deps.storage,
                 (
                     (vote_to_create.round_id, vote_to_create.tranche_id),
-                    test_case.voter.clone(),
                     vote_to_create.lock_id,
                 ),
                 &vote_to_create.vote,
@@ -809,6 +858,13 @@ fn query_user_votes_test() {
             );
             assert!(res.is_ok(), "failed to save validator info");
         }
+
+        let res = TOKEN_INFO_PROVIDERS.save(
+            &mut deps.storage,
+            LSM_TOKEN_INFO_PROVIDER_ID.to_string(),
+            &get_default_lsm_token_info_provider(),
+        );
+        assert!(res.is_ok(), "failed to save token info provider");
 
         let res = query_user_votes(
             deps.as_ref(),
@@ -846,11 +902,237 @@ fn query_user_votes_test() {
     }
 }
 
+// Tests the `query_all_votes` function to ensure it correctly retrieves all stored votes,
+// along with voter information, round ID, tranche ID, and lock ID.
+#[test]
+fn query_all_votes_test() {
+    struct VoteToCreate {
+        round_id: u64,
+        tranche_id: u64,
+        lock_id: u64,
+        vote: Vote,
+    }
+
+    let round_id = 0;
+    let tranche_id = 1;
+
+    let mut deps = mock_dependencies(no_op_grpc_query_mock());
+    let voter = deps.api.addr_make("addr0000");
+
+    let first_proposal_id = 3;
+    let second_proposal_id = 5;
+
+    let start_from = 0;
+    let limit = 10;
+
+    let votes_to_create = vec![
+        VoteToCreate {
+            round_id,
+            tranche_id,
+            lock_id: 0,
+            vote: Vote {
+                prop_id: first_proposal_id,
+                time_weighted_shares: (
+                    VALIDATOR_1.to_string(),
+                    Decimal::from_ratio(500u128, 1000u128),
+                ),
+            },
+        },
+        VoteToCreate {
+            round_id,
+            tranche_id,
+            lock_id: 1,
+            vote: Vote {
+                prop_id: first_proposal_id,
+                time_weighted_shares: (
+                    VALIDATOR_2.to_string(),
+                    Decimal::from_ratio(300u128, 1000u128),
+                ),
+            },
+        },
+        VoteToCreate {
+            round_id,
+            tranche_id,
+            lock_id: 2,
+            vote: Vote {
+                prop_id: second_proposal_id,
+                time_weighted_shares: (
+                    VALIDATOR_2.to_string(),
+                    Decimal::from_ratio(700u128, 1000u128),
+                ),
+            },
+        },
+    ];
+    let env = mock_env();
+
+    for vote_to_create in &votes_to_create {
+        let res_lock = LOCKS_MAP_V2.save(
+            &mut deps.storage,
+            vote_to_create.lock_id,
+            &LockEntryV2 {
+                lock_id: vote_to_create.lock_id,
+                funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
+                owner: voter.clone(),
+                lock_start: Timestamp::from_seconds(10),
+                lock_end: Timestamp::from_seconds(100),
+            },
+            env.block.height,
+        );
+        assert!(res_lock.is_ok(), "failed to save lock");
+        let res = VOTE_MAP_V2.save(
+            &mut deps.storage,
+            (
+                (vote_to_create.round_id, vote_to_create.tranche_id),
+                vote_to_create.lock_id,
+            ),
+            &vote_to_create.vote,
+        );
+        assert!(res.is_ok(), "failed to save vote");
+    }
+
+    let res = query_all_votes(deps.as_ref(), start_from, limit);
+    assert!(res.is_ok());
+    let response = res.unwrap();
+    assert_eq!(response.votes.len(), votes_to_create.len());
+
+    for (i, vote_to_create) in votes_to_create.iter().enumerate() {
+        let expected_vote = VoteEntry {
+            round_id: vote_to_create.round_id,
+            tranche_id: vote_to_create.tranche_id,
+            sender_addr: voter.clone(),
+            lock_id: vote_to_create.lock_id,
+            vote: vote_to_create.vote.clone(),
+        };
+        assert_eq!(response.votes[i], expected_vote, "Mismatch at index {}", i);
+    }
+}
+
+// Tests the `query_all_votes_round_tranche` function to ensure it correctly retrieves votes alongside metadata
+// for a specific round ID and tranche ID.
+#[test]
+fn query_all_votes_round_tranche_test() {
+    struct VoteToCreate {
+        round_id: u64,
+        tranche_id: u64,
+        lock_id: u64,
+        vote: Vote,
+    }
+
+    let round_id = 1;
+    let tranche_id = 1;
+
+    let target_round_id = 2;
+    let target_tranche_id = 2;
+
+    let mut deps = mock_dependencies(no_op_grpc_query_mock());
+    let voter = deps.api.addr_make("addr0000");
+
+    let first_proposal_id = 3;
+    let second_proposal_id = 5;
+
+    let start_from = 0;
+    let limit = 10;
+
+    let votes_to_create = vec![
+        VoteToCreate {
+            round_id,
+            tranche_id,
+            lock_id: 0,
+            vote: Vote {
+                prop_id: first_proposal_id,
+                time_weighted_shares: (
+                    VALIDATOR_1.to_string(),
+                    Decimal::from_ratio(500u128, 1000u128),
+                ),
+            },
+        },
+        VoteToCreate {
+            round_id: target_round_id,
+            tranche_id: target_tranche_id,
+            lock_id: 1,
+            vote: Vote {
+                prop_id: first_proposal_id,
+                time_weighted_shares: (
+                    VALIDATOR_2.to_string(),
+                    Decimal::from_ratio(300u128, 1000u128),
+                ),
+            },
+        },
+        VoteToCreate {
+            round_id,
+            tranche_id,
+            lock_id: 2,
+            vote: Vote {
+                prop_id: second_proposal_id,
+                time_weighted_shares: (
+                    VALIDATOR_2.to_string(),
+                    Decimal::from_ratio(700u128, 1000u128),
+                ),
+            },
+        },
+    ];
+    let env = mock_env();
+
+    for vote_to_create in &votes_to_create {
+        let res_lock = LOCKS_MAP_V2.save(
+            &mut deps.storage,
+            vote_to_create.lock_id,
+            &LockEntryV2 {
+                lock_id: vote_to_create.lock_id,
+                funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
+                owner: voter.clone(),
+                lock_start: Timestamp::from_seconds(10),
+                lock_end: Timestamp::from_seconds(100),
+            },
+            env.block.height,
+        );
+        assert!(res_lock.is_ok(), "failed to save lock");
+        let res = VOTE_MAP_V2.save(
+            &mut deps.storage,
+            (
+                (vote_to_create.round_id, vote_to_create.tranche_id),
+                vote_to_create.lock_id,
+            ),
+            &vote_to_create.vote,
+        );
+        assert!(res.is_ok(), "failed to save vote");
+    }
+
+    let res = query_all_votes_round_tranche(
+        deps.as_ref(),
+        target_round_id,
+        target_tranche_id,
+        start_from,
+        limit,
+    );
+    assert!(res.is_ok());
+    let response = res.unwrap();
+    assert_eq!(response.votes.len(), 1);
+
+    // Expected vote
+    let expected_vote = VoteEntry {
+        round_id: target_round_id,
+        tranche_id: target_tranche_id,
+        sender_addr: voter.clone(), // Replace if sender is stored elsewhere
+        lock_id: 1,
+        vote: Vote {
+            prop_id: first_proposal_id,
+            time_weighted_shares: (
+                VALIDATOR_2.to_string(),
+                Decimal::from_ratio(300u128, 1000u128),
+            ),
+        },
+    };
+
+    // Assert that the response contains the expected vote
+    assert_eq!(response.votes[0], expected_vote);
+}
+
 fn get_expired_user_lockups(
     deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
     env: Env,
     user_address: String,
-) -> Vec<LockEntry> {
+) -> Vec<LockEntryV2> {
     let res = query_expired_user_lockups(&deps.as_ref(), &env, user_address.to_string(), 0, 2000);
     assert!(res.is_ok());
     let res = res.unwrap();

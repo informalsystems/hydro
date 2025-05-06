@@ -14,13 +14,14 @@ use crate::query::{
     ProposalTributesResponse, QueryMsg, RoundTributesResponse, TributeClaim,
 };
 use crate::state::{
-    Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_ID, TRIBUTE_MAP,
+    Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMED_LOCKS, TRIBUTE_CLAIMS, TRIBUTE_ID,
+    TRIBUTE_MAP,
 };
 use hydro::query::{
     CurrentRoundResponse, LiquidityDeploymentResponse, ProposalResponse, QueryMsg as HydroQueryMsg,
-    UserVotesResponse,
+    UserVotedLocksResponse,
 };
-use hydro::state::{Proposal, VoteWithPower};
+use hydro::state::Proposal;
 
 /// Contract name that is used for migration.
 pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -154,14 +155,6 @@ fn claim_tribute(
 ) -> Result<Response, ContractError> {
     let voter = deps.api.addr_validate(&voter_address)?;
 
-    // Check that the voter has not already claimed the tribute using the TRIBUTE_CLAIMS map
-    let claim = TRIBUTE_CLAIMS.may_load(deps.storage, (voter.clone(), tribute_id))?;
-    if claim.is_some() {
-        return Err(ContractError::Std(StdError::generic_err(
-            "User has already claimed the tribute",
-        )));
-    }
-
     // Check that the round is ended
     let config = CONFIG.load(deps.storage)?;
     let current_round_id = query_current_round_id(&deps, &config.hydro_contract)?;
@@ -174,40 +167,92 @@ fn claim_tribute(
 
     let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
 
-    // Look up voter's votes for the round, error if no votes can be found
-    let vote = match query_user_votes(
+    // Get all user's locks that voted for this proposal
+    let voted_locks_resp = query_user_voted_locks(
         &deps.as_ref(),
         &config.hydro_contract,
         round_id,
         tranche_id,
         voter.clone().to_string(),
-    )?
-    .into_iter()
-    .find(|vote| vote.prop_id == tribute.proposal_id)
-    {
-        None => {
-            // Error out if user didn't vote for the proposal that the given tribute belongs to.
-            return Err(ContractError::Std(StdError::generic_err(
-                "User didn't vote for the proposal this tribute belongs to",
-            )));
+    )?;
+
+    // Find locks that voted for the proposal associated with this tribute
+    let (_, prop_locks) = voted_locks_resp
+        .voted_locks
+        .into_iter()
+        .find(|(prop_id, _)| *prop_id == tribute.proposal_id)
+        .ok_or_else(|| {
+            StdError::generic_err("User didn't vote for the proposal this tribute belongs to")
+        })?;
+
+    // Filter out locks that have already claimed this tribute
+    let mut unclaimed_locks = Vec::new();
+    let mut unclaimed_voting_power = Decimal::zero();
+
+    for lock_info in prop_locks {
+        if !TRIBUTE_CLAIMED_LOCKS.has(deps.storage, (tribute_id, lock_info.lock_id)) {
+            unclaimed_voting_power += lock_info.power;
+            unclaimed_locks.push(lock_info.lock_id);
         }
-        Some(vote) => vote,
-    };
+    }
+
+    // If there are no unclaimed locks, return an error
+    if unclaimed_locks.is_empty() {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Nothing to claim - all locks have already claimed this tribute",
+        )));
+    }
 
     // make sure that tributes for this proposal are claimable
-    get_proposal_tributes_info(&deps.as_ref(), &config, round_id, tranche_id, vote.prop_id)?
-        .are_tributes_claimable()?;
+    get_proposal_tributes_info(
+        &deps.as_ref(),
+        &config,
+        round_id,
+        tranche_id,
+        tribute.proposal_id,
+    )?
+    .are_tributes_claimable()?;
 
-    let proposal = get_proposal(&deps.as_ref(), &config, round_id, tranche_id, vote.prop_id)?;
-
-    let sent_coin = calculate_voter_claim_amount(tribute.funds, vote.power, proposal.power)?;
-
-    // Mark in the TRIBUTE_CLAIMS that the voter has claimed this tribute
-    TRIBUTE_CLAIMS.save(
-        deps.storage,
-        (voter.clone(), tribute_id),
-        &sent_coin.clone(),
+    let proposal = get_proposal(
+        &deps.as_ref(),
+        &config,
+        round_id,
+        tranche_id,
+        tribute.proposal_id,
     )?;
+
+    // Calculate claim amount based on unclaimed voting power
+    let sent_coin =
+        calculate_voter_claim_amount(tribute.funds, unclaimed_voting_power, proposal.power)?;
+
+    // Update TRIBUTE_CLAIMS for this tribute - add to existing amount if present
+    let previous_claim = TRIBUTE_CLAIMS.may_load(deps.storage, (voter.clone(), tribute_id))?;
+    let updated_claim = match previous_claim {
+        Some(previous_coin) => {
+            // Make sure the denom matches
+            if previous_coin.denom != sent_coin.denom {
+                return Err(ContractError::Std(StdError::generic_err(format!(
+                    "Mismatched denominations: previous claim was {}, new claim is {}",
+                    previous_coin.denom, sent_coin.denom
+                ))));
+            }
+
+            // Add the new amount to the previous amount
+            Coin {
+                denom: previous_coin.denom.clone(),
+                amount: previous_coin.amount + sent_coin.amount,
+            }
+        }
+        None => sent_coin.clone(),
+    };
+
+    // Save the updated claim
+    TRIBUTE_CLAIMS.save(deps.storage, (voter.clone(), tribute_id), &updated_claim)?;
+
+    // Mark each unclaimed lock as having claimed this tribute
+    for lock_id in unclaimed_locks {
+        TRIBUTE_CLAIMED_LOCKS.save(deps.storage, (tribute_id, lock_id), &true)?;
+    }
 
     // Send the tribute to the voter
     Ok(Response::new()
@@ -427,15 +472,11 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             user_address,
             round_id,
             tranche_id,
-            start_from,
-            limit,
         } => to_json_binary(&query_outstanding_tribute_claims(
             &deps,
             user_address,
             round_id,
             tranche_id,
-            start_from,
-            limit,
         )?),
     }
 }
@@ -492,25 +533,23 @@ fn query_proposal(
     Ok(proposal_resp.proposal)
 }
 
-fn query_user_votes(
+pub fn query_user_voted_locks(
     deps: &Deps,
     hydro_contract: &Addr,
     round_id: u64,
     tranche_id: u64,
     address: String,
-) -> Result<Vec<VoteWithPower>, ContractError> {
-    let user_vote_resp: UserVotesResponse = deps.querier.query_wasm_smart(
+) -> Result<UserVotedLocksResponse, ContractError> {
+    let user_voted_locks: UserVotedLocksResponse = deps.querier.query_wasm_smart(
         hydro_contract,
-        &HydroQueryMsg::UserVotes {
+        &HydroQueryMsg::UserVotedLocks {
             round_id,
             tranche_id,
             address,
         },
     )?;
 
-    let vote = user_vote_resp.votes;
-
-    Ok(vote)
+    Ok(user_voted_locks)
 }
 
 pub fn query_historical_tribute_claims(
@@ -583,26 +622,26 @@ pub fn query_outstanding_tribute_claims(
     address: String,
     round_id: u64,
     tranche_id: u64,
-    start_from: u32,
-    limit: u32,
 ) -> StdResult<OutstandingTributeClaimsResponse> {
     let address = deps.api.addr_validate(&address)?;
+    let config = CONFIG.load(deps.storage)?;
 
-    // get user votes for this round and tranche
-    let user_votes = query_user_votes(
+    // get user voted locks for this round and tranche
+    let user_voted_locks = query_user_voted_locks(
         deps,
-        &CONFIG.load(deps.storage)?.hydro_contract,
+        &config.hydro_contract,
         round_id,
         tranche_id,
         address.to_string(),
     )
-    .map_err(|err| StdError::generic_err(format!("Failed to get user votes: {}", err)))?;
+    .map_err(|err| StdError::generic_err(format!("Failed to get user voted locks: {}", err)))?;
 
-    let config = CONFIG.load(deps.storage)?;
     let mut claims = vec![];
 
-    for user_vote in user_votes {
-        if get_proposal_tributes_info(deps, &config, round_id, tranche_id, user_vote.prop_id)
+    // Process each proposal the user voted for
+    for (proposal_id, lock_infos) in user_voted_locks.voted_locks {
+        // Check if tributes for this proposal are claimable
+        if get_proposal_tributes_info(deps, &config, round_id, tranche_id, proposal_id)
             .map_err(|err| StdError::generic_err(format!("Failed to get proposal info: {}", err)))?
             .are_tributes_claimable()
             .is_err()
@@ -610,67 +649,69 @@ pub fn query_outstanding_tribute_claims(
             continue;
         }
 
-        let proposal = get_proposal(deps, &config, round_id, tranche_id, user_vote.prop_id)
+        let proposal = get_proposal(deps, &config, round_id, tranche_id, proposal_id)
             .map_err(|err| StdError::generic_err(format!("Failed to get proposal: {}", err)))?;
+
+        // Find which locks haven't claimed yet and sum their power
+        let mut lock_ids_set = std::collections::HashSet::new();
+
+        for lock_info in &lock_infos {
+            lock_ids_set.insert(lock_info.lock_id);
+        }
 
         // get all tributes for this proposal
         let tributes = TRIBUTE_MAP
-            .prefix((round_id, proposal.proposal_id))
+            .prefix((round_id, proposal_id))
             .range(deps.storage, None, None, Order::Ascending)
-            .filter(|l| {
-                if l.is_err() {
-                    // log an error and filter out this entry
-                    deps.api.debug("Error reading tribute");
-                }
-                l.is_ok()
-            })
+            .filter(|l| l.is_ok())
             .filter_map(|l| {
-                if l.is_ok() {
-                    let (_, tribute_id) = l.unwrap();
-                    Some(tribute_id)
-                } else {
-                    None
-                }
-            })
-            .filter(
-                // make sure that the user has not claimed the tribute already
-                |tribute_id| !TRIBUTE_CLAIMS.has(deps.storage, (address.clone(), *tribute_id)),
-            )
-            .skip(start_from as usize)
-            .take(limit as usize)
-            .filter_map(|tribute_id| {
+                let (_, tribute_id) = l.unwrap();
                 ID_TO_TRIBUTE_MAP
                     .may_load(deps.storage, tribute_id)
                     .unwrap_or(None)
             })
             .collect::<Vec<Tribute>>();
 
-        // for each tribute, compute the amount that the user would receive when claiming
-        tributes
-            .iter()
-            .filter_map(|tribute| {
-                match calculate_voter_claim_amount(
-                    tribute.funds.clone(),
-                    user_vote.power,
-                    proposal.power,
-                ) {
-                    Ok(sent_coin) => Some(TributeClaim {
+        // For each tribute, compute the claimable amount based on unclaimed locks
+        for tribute in tributes {
+            // For this tribute, check which locks haven't claimed yet
+            let mut tribute_unclaimed_power = Decimal::zero();
+
+            for lock_info in &lock_infos {
+                // Check if this lock has already claimed this tribute
+                if !TRIBUTE_CLAIMED_LOCKS.has(deps.storage, (tribute.tribute_id, lock_info.lock_id))
+                {
+                    tribute_unclaimed_power += lock_info.power;
+                }
+            }
+
+            // Skip if no unclaimed power for this tribute
+            if tribute_unclaimed_power == Decimal::zero() {
+                continue;
+            }
+
+            // Calculate the claim amount
+            match calculate_voter_claim_amount(
+                tribute.funds.clone(),
+                tribute_unclaimed_power,
+                proposal.power,
+            ) {
+                Ok(sent_coin) => {
+                    claims.push(TributeClaim {
                         round_id: tribute.round_id,
                         tranche_id: tribute.tranche_id,
                         proposal_id: tribute.proposal_id,
                         tribute_id: tribute.tribute_id,
                         amount: sent_coin,
-                    }),
-                    Err(err) => {
-                        // log an error and skip this entry
-                        deps.api.debug(
-                            format!("Error calculating voter claim amount: {:?}", err).as_str(),
-                        );
-                        None
-                    }
+                    });
                 }
-            })
-            .for_each(|claim| claims.push(claim));
+                Err(err) => {
+                    // log an error and skip this entry
+                    deps.api
+                        .debug(format!("Error calculating voter claim amount: {:?}", err).as_str());
+                }
+            }
+        }
     }
 
     Ok(OutstandingTributeClaimsResponse { claims })

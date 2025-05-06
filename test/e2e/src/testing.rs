@@ -8,8 +8,11 @@ use cosmwasm_std::{Decimal, Timestamp, Uint128};
 
 use cw_orch::{anyhow, prelude::*};
 
-use hydro::{msg::TrancheInfo, query::QueryMsgFns as HydroQueryMsgFn};
-use interface::{hydro::*, tribute::*};
+use cw_orch_interface::{hydro::*, tribute::*};
+use hydro::{
+    msg::{TokenInfoProviderInstantiateMsg, TrancheInfo},
+    query::QueryMsgFns as HydroQueryMsgFn,
+};
 use tribute::query::QueryMsgFns as TributeQueryMsgFns;
 
 pub fn get_default_power_schedule_vec() -> Vec<(u64, Decimal)> {
@@ -20,6 +23,20 @@ pub fn get_default_power_schedule_vec() -> Vec<(u64, Decimal)> {
         (6, Decimal::from_str("2").unwrap()),
         (12, Decimal::from_str("4").unwrap()),
     ]
+}
+
+pub fn get_lsm_token_info_provider_init_info(
+    max_validator_shares_participating: u64,
+    hub_connection_id: String,
+    hub_transfer_channel_id: String,
+    icq_update_period: u64,
+) -> TokenInfoProviderInstantiateMsg {
+    TokenInfoProviderInstantiateMsg::LSM {
+        max_validator_shares_participating,
+        hub_connection_id,
+        hub_transfer_channel_id,
+        icq_update_period,
+    }
 }
 
 #[test]
@@ -74,13 +91,16 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             ],
             whitelist_admins: vec![whitelist_admin_address.clone()],
             initial_whitelist: vec![whitelist_admin_address.clone()],
-            max_validator_shares_participating: 500,
-            hub_connection_id,
-            hub_transfer_channel_id,
-            icq_update_period: 10000,
             icq_managers: vec![],
             max_deployment_duration: 12,
             round_lock_power_schedule: get_default_power_schedule_vec(),
+            token_info_providers: vec![get_lsm_token_info_provider_init_info(
+                500,
+                hub_connection_id,
+                hub_transfer_channel_id,
+                10000,
+            )],
+            gatekeeper: None,
         },
         Some(&Addr::unchecked(whitelist_admin_address.clone())),
         &[],

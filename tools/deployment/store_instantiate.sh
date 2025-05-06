@@ -8,6 +8,7 @@ NEUTRON_CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
 NEUTRON_NODE=$(jq -r '.neutron_rpc_node' $CONFIG_FILE)
 TX_SENDER_WALLET=$(jq -r '.tx_sender_wallet' $CONFIG_FILE)
 TX_SENDER_ADDRESS=$(neutrond keys show $TX_SENDER_WALLET --keyring-backend test | grep "address:" | sed 's/.*address: //')
+HYDRO_TEST_ADDRESS="neutron1r6rv879netg009eh6ty23v57qrq29afecuehlm"
 HUB_CONNECTION_ID=$(jq -r '.hub_connection_id' $CONFIG_FILE)
 HUB_CHANNEL_ID=$(jq -r '.hub_channel_id' $CONFIG_FILE)
 
@@ -35,7 +36,6 @@ ROUND_LENGTH=$ROUND_END_TEST_ROUND_LENGTH
 FIRST_ROUND_START_TIME=$CURRENT_TIME_NO_MINS_AND_SECS
 HYDRO_COMMITTEE_DAODAO="neutron1xd6z4nwmfeamv089fr9s4hlp3vq00l0tn9j9ysauc2j5pcmlm6vsk7nf7q"
 
-IS_IN_PILOT_MODE=true
 MAX_DEPLOYMENT_DURATION=3
 HYDRO_WASM_PATH="./artifacts/hydro.wasm"
 TRIBUTE_WASM_PATH="./artifacts/tribute.wasm"
@@ -108,7 +108,7 @@ instantiate_hydro() {
 
     echo 'Instantiating Hydro contract...'
 
-    INIT_HYDRO='{"round_length":'$ROUND_LENGTH',"lock_epoch_length":'$ROUND_LENGTH', "tranches":[{"name": "ATOM Bucket", "metadata": "A bucket of ATOM to deploy as PoL"}],"first_round_start":"'$FIRST_ROUND_START_TIME'","max_locked_tokens":"20000000000","whitelist_admins":["'$HYDRO_COMMITTEE_DAODAO'","'$TX_SENDER_ADDRESS'"],"initial_whitelist":["'$TX_SENDER_ADDRESS'"],"max_validator_shares_participating":500,"hub_connection_id":"'$HUB_CONNECTION_ID'","hub_transfer_channel_id":"'$HUB_CHANNEL_ID'","icq_update_period":109000,"icq_managers":["'$TX_SENDER_ADDRESS'"],"round_lock_power_schedule": [[1, "1"], [2, "1.25"], [3, "1.5"], [6, "2"], [12, "4"]],"max_deployment_duration":'$MAX_DEPLOYMENT_DURATION'}'
+    INIT_HYDRO='{"round_length":'$ROUND_LENGTH',"lock_epoch_length":'$ROUND_LENGTH', "tranches":[{"name": "ATOM Bucket", "metadata": "A bucket of ATOM to deploy as PoL"}, {"name": "USDC Bucket", "metadata": "This is a bucket for USDC from the Cosmos Hub community pool."}],"first_round_start":"'$FIRST_ROUND_START_TIME'","max_locked_tokens":"20000000000","whitelist_admins":["'$HYDRO_COMMITTEE_DAODAO'","'$TX_SENDER_ADDRESS'","'$HYDRO_TEST_ADDRESS'"],"initial_whitelist":["'$TX_SENDER_ADDRESS'","'$HYDRO_TEST_ADDRESS'"],"icq_managers":["'$TX_SENDER_ADDRESS'"],"round_lock_power_schedule": [[1, "1"], [2, "1.25"], [3, "1.5"], [6, "2"], [12, "4"]],"max_deployment_duration":'$MAX_DEPLOYMENT_DURATION',"token_info_providers":[{"lsm":{"max_validator_shares_participating":500,"hub_connection_id":"'$HUB_CONNECTION_ID'","hub_transfer_channel_id":"'$HUB_CHANNEL_ID'","icq_update_period":109000}}]}'
 
     $NEUTRON_BINARY tx wasm instantiate $HYDRO_CODE_ID "$INIT_HYDRO" --admin $TX_SENDER_ADDRESS --label "'$HYDRO_SC_LABEL'" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS --output json &> ./instantiate_hydro_res.json
     sleep 10

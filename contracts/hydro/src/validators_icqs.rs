@@ -19,12 +19,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     contract::{compute_current_round_id, NATIVE_TOKEN_DENOM},
-    error::ContractError,
-    lsm_integration::update_stores_due_to_power_ratio_change,
+    error::{new_generic_error, ContractError},
+    score_keeper::{apply_token_groups_ratio_changes, TokenGroupRatioChange},
     state::{
-        Constants, ValidatorInfo, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
+        ValidatorInfo, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
         VALIDATOR_TO_QUERY_ID,
     },
+    token_manager::TokenManager,
     utils::{load_current_constants, run_on_each_transaction},
 };
 
@@ -124,6 +125,16 @@ pub fn handle_delivered_interchain_query_result(
     };
     let constants = load_current_constants(&deps.as_ref(), &env)?;
     let current_round = compute_current_round_id(&env, &constants)?;
+
+    let lsm_token_info_provider = match TokenManager::new(&deps.as_ref())
+        .get_lsm_token_info_provider()
+    {
+        None => return Err(new_generic_error(
+            "Cannot handle validator ICQ results: contract doesn't support locking of LSM tokens.",
+        )),
+        Some(provider) => provider,
+    };
+
     run_on_each_transaction(deps.storage, &env, current_round)?;
 
     let validator_address = validator.operator_address.clone();
@@ -153,7 +164,11 @@ pub fn handle_delivered_interchain_query_result(
         // 2) At the begining of a new round, we start receiving ICQ results for validators from previous round
         None => {
             let validator_info = ValidatorInfo::new(validator_address, new_tokens, new_power_ratio);
-            match get_last_validator(&mut deps, current_round, &constants) {
+            match get_last_validator(
+                &mut deps,
+                current_round,
+                lsm_token_info_provider.max_validator_shares_participating,
+            ) {
                 None => {
                     // if there are currently less than top N validators, add this one to the top N
                     top_n_validator_add(&mut deps, &env, current_round, validator_info)?;
@@ -198,15 +213,18 @@ fn top_n_validator_add(
     current_round: u64,
     validator_info: ValidatorInfo,
 ) -> Result<(), NeutronError> {
+    let tokens_ratio_changes = vec![TokenGroupRatioChange {
+        token_group_id: validator_info.address.clone(),
+        old_ratio: Decimal::zero(),
+        new_ratio: validator_info.power_ratio,
+    }];
     // this call only makes difference if some validator was in the top N,
     // then was droped out, and then got back in the top N again
-    update_stores_due_to_power_ratio_change(
+    apply_token_groups_ratio_changes(
         deps.storage,
         env.block.height,
-        &validator_info.address.clone(),
         current_round,
-        Decimal::zero(),
-        validator_info.power_ratio,
+        &tokens_ratio_changes,
     )?;
     VALIDATORS_INFO.save(
         deps.storage,
@@ -258,13 +276,17 @@ fn top_n_validator_update(
     }
 
     if validator_info.power_ratio != new_power_ratio {
-        update_stores_due_to_power_ratio_change(
+        let tokens_ratio_changes = vec![TokenGroupRatioChange {
+            token_group_id: validator_info.address.clone(),
+            old_ratio: validator_info.power_ratio,
+            new_ratio: new_power_ratio,
+        }];
+
+        apply_token_groups_ratio_changes(
             deps.storage,
             env.block.height,
-            &validator_info.address.clone(),
             current_round,
-            validator_info.power_ratio,
-            new_power_ratio,
+            &tokens_ratio_changes,
         )?;
 
         validator_info.power_ratio = new_power_ratio;
@@ -288,13 +310,17 @@ fn top_n_validator_remove(
     current_round: u64,
     validator_info: ValidatorInfo,
 ) -> Result<(), NeutronError> {
-    update_stores_due_to_power_ratio_change(
+    let tokens_ratio_changes = vec![TokenGroupRatioChange {
+        token_group_id: validator_info.address.clone(),
+        old_ratio: validator_info.power_ratio,
+        new_ratio: Decimal::zero(),
+    }];
+
+    apply_token_groups_ratio_changes(
         deps.storage,
         env.block.height,
-        &validator_info.address.clone(),
         current_round,
-        validator_info.power_ratio,
-        Decimal::zero(),
+        &tokens_ratio_changes,
     )?;
 
     VALIDATORS_INFO.remove(
@@ -316,12 +342,12 @@ fn top_n_validator_remove(
 fn get_last_validator(
     deps: &mut DepsMut<NeutronQuery>,
     current_round: u64,
-    constants: &Constants,
+    max_validator_shares_participating: u64,
 ) -> Option<(u128, String)> {
     let last_validator: Vec<(u128, String)> = VALIDATORS_PER_ROUND
         .sub_prefix(current_round)
         .range(deps.storage, None, None, Order::Descending)
-        .skip((constants.max_validator_shares_participating - 1) as usize)
+        .skip((max_validator_shares_participating - 1) as usize)
         .filter(|f| {
             let ok = f.is_ok();
             if !ok {

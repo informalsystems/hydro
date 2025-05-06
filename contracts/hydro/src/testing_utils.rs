@@ -23,10 +23,6 @@ fn load_current_constants_test() {
         max_locked_tokens: 0,
         known_users_cap: 0,
         paused: false,
-        max_validator_shares_participating: 500,
-        hub_connection_id: "connection-0".to_string(),
-        hub_transfer_channel_id: "channel-1".to_string(),
-        icq_update_period: 100000,
         max_deployment_duration: 12,
         round_lock_power_schedule: get_default_power_schedule(),
     };

@@ -1,6 +1,7 @@
 use crate::{
     msg::LiquidityDeployment,
-    state::{Constants, LockEntry, Proposal, Tranche, VoteWithPower},
+    state::{Constants, LockEntryV2, Proposal, Tranche, Vote, VoteWithPower},
+    token_manager::TokenInfoProvider,
 };
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
@@ -10,6 +11,12 @@ use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
 pub enum QueryMsg {
     #[returns(ConstantsResponse)]
     Constants {},
+
+    #[returns(TokenInfoProvidersResponse)]
+    TokenInfoProviders {},
+
+    #[returns(GatekeeperResponse)]
+    Gatekeeper {},
 
     #[returns(TranchesResponse)]
     Tranches {},
@@ -51,6 +58,24 @@ pub enum QueryMsg {
         round_id: u64,
         tranche_id: u64,
         address: String,
+    },
+
+    #[returns(UserVotedLocksResponse)]
+    UserVotedLocks {
+        round_id: u64,
+        tranche_id: u64,
+        address: String,
+    },
+
+    #[returns(AllVotesResponse)]
+    AllVotes { start_from: u32, limit: u32 },
+
+    #[returns(AllVotesRoundTrancheResponse)]
+    AllVotesRoundTranche {
+        round_id: u64,
+        tranche_id: u64,
+        start_from: u32,
+        limit: u32,
     },
 
     #[returns(CurrentRoundResponse)]
@@ -99,8 +124,8 @@ pub enum QueryMsg {
     #[returns(RegisteredValidatorQueriesResponse)]
     RegisteredValidatorQueries {},
 
-    #[returns(ValidatorPowerRatioResponse)]
-    ValidatorPowerRatio { validator: String, round_id: u64 },
+    #[returns(CanLockDenomResponse)]
+    CanLockDenom { token_denom: String },
 
     #[returns(LiquidityDeploymentResponse)]
     LiquidityDeployment {
@@ -131,6 +156,16 @@ pub struct ConstantsResponse {
 }
 
 #[cw_serde]
+pub struct TokenInfoProvidersResponse {
+    pub providers: Vec<TokenInfoProvider>,
+}
+
+#[cw_serde]
+pub struct GatekeeperResponse {
+    pub gatekeeper: String,
+}
+
+#[cw_serde]
 pub struct TranchesResponse {
     pub tranches: Vec<Tranche>,
 }
@@ -140,7 +175,7 @@ pub struct TranchesResponse {
 // lockups are returned with the current voting power of the lockup.
 #[cw_serde]
 pub struct LockEntryWithPower {
-    pub lock_entry: LockEntry,
+    pub lock_entry: LockEntryV2,
     pub current_voting_power: Uint128,
 }
 
@@ -154,6 +189,11 @@ pub struct PerTrancheLockupInfo {
     // In particular, if the lockup is blocked from voting in the current round (because it voted for a
     // proposal with a long deployment duration in a previous round), this will be None.
     pub current_voted_on_proposal: Option<u64>,
+
+    // This is the id of the proposal that the lockup is tied to because it has voted for a proposal with a long deployment duration.
+    // In case the lockup can currently vote (and is not tied to a proposal), this will be None.
+    // Note that None will also be returned if the lockup voted for a proposal that received a deployment with zero funds.
+    pub tied_to_proposal: Option<u64>,
 }
 
 // LockupWithPerTrancheInfo is used to store the lockup information for a specific lockup,
@@ -191,7 +231,7 @@ pub struct SpecificUserLockupsWithTrancheInfosResponse {
 
 #[cw_serde]
 pub struct ExpiredUserLockupsResponse {
-    pub lockups: Vec<LockEntry>,
+    pub lockups: Vec<LockEntryV2>,
 }
 
 #[cw_serde]
@@ -202,6 +242,38 @@ pub struct UserVotingPowerResponse {
 #[cw_serde]
 pub struct UserVotesResponse {
     pub votes: Vec<VoteWithPower>,
+}
+
+#[cw_serde]
+pub struct VotedLockInfo {
+    pub lock_id: u64,
+    pub power: Decimal,
+}
+
+#[cw_serde]
+pub struct UserVotedLocksResponse {
+    // Maps proposal_id to a list of locks that voted for it with their voting power
+    // The first item in each tuple is the proposal_id
+    pub voted_locks: Vec<(u64, Vec<VotedLockInfo>)>,
+}
+
+#[cw_serde]
+pub struct VoteEntry {
+    pub round_id: u64,
+    pub tranche_id: u64,
+    pub sender_addr: Addr,
+    pub lock_id: u64,
+    pub vote: Vote,
+}
+
+#[cw_serde]
+pub struct AllVotesResponse {
+    pub votes: Vec<VoteEntry>,
+}
+
+#[cw_serde]
+pub struct AllVotesRoundTrancheResponse {
+    pub votes: Vec<VoteEntry>,
 }
 
 #[cw_serde]
@@ -257,8 +329,9 @@ pub struct RegisteredValidatorQueriesResponse {
 }
 
 #[cw_serde]
-pub struct ValidatorPowerRatioResponse {
-    pub ratio: Decimal,
+pub struct CanLockDenomResponse {
+    pub denom: String,
+    pub can_be_locked: bool,
 }
 
 #[cw_serde]

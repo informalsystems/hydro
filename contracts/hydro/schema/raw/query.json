@@ -1,0 +1,758 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "QueryMsg",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "constants"
+      ],
+      "properties": {
+        "constants": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "token_info_providers"
+      ],
+      "properties": {
+        "token_info_providers": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "gatekeeper"
+      ],
+      "properties": {
+        "gatekeeper": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "tranches"
+      ],
+      "properties": {
+        "tranches": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "all_user_lockups"
+      ],
+      "properties": {
+        "all_user_lockups": {
+          "type": "object",
+          "required": [
+            "address",
+            "limit",
+            "start_from"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "start_from": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "specific_user_lockups"
+      ],
+      "properties": {
+        "specific_user_lockups": {
+          "type": "object",
+          "required": [
+            "address",
+            "lock_ids"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "lock_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "all_user_lockups_with_tranche_infos"
+      ],
+      "properties": {
+        "all_user_lockups_with_tranche_infos": {
+          "type": "object",
+          "required": [
+            "address",
+            "limit",
+            "start_from"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "start_from": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "specific_user_lockups_with_tranche_infos"
+      ],
+      "properties": {
+        "specific_user_lockups_with_tranche_infos": {
+          "type": "object",
+          "required": [
+            "address",
+            "lock_ids"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "lock_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "expired_user_lockups"
+      ],
+      "properties": {
+        "expired_user_lockups": {
+          "type": "object",
+          "required": [
+            "address",
+            "limit",
+            "start_from"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "start_from": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "user_voting_power"
+      ],
+      "properties": {
+        "user_voting_power": {
+          "type": "object",
+          "required": [
+            "address"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "user_votes"
+      ],
+      "properties": {
+        "user_votes": {
+          "type": "object",
+          "required": [
+            "address",
+            "round_id",
+            "tranche_id"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "user_voted_locks"
+      ],
+      "properties": {
+        "user_voted_locks": {
+          "type": "object",
+          "required": [
+            "address",
+            "round_id",
+            "tranche_id"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "all_votes"
+      ],
+      "properties": {
+        "all_votes": {
+          "type": "object",
+          "required": [
+            "limit",
+            "start_from"
+          ],
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "start_from": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "all_votes_round_tranche"
+      ],
+      "properties": {
+        "all_votes_round_tranche": {
+          "type": "object",
+          "required": [
+            "limit",
+            "round_id",
+            "start_from",
+            "tranche_id"
+          ],
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "start_from": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "current_round"
+      ],
+      "properties": {
+        "current_round": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "round_end"
+      ],
+      "properties": {
+        "round_end": {
+          "type": "object",
+          "required": [
+            "round_id"
+          ],
+          "properties": {
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "round_total_voting_power"
+      ],
+      "properties": {
+        "round_total_voting_power": {
+          "type": "object",
+          "required": [
+            "round_id"
+          ],
+          "properties": {
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "round_proposals"
+      ],
+      "properties": {
+        "round_proposals": {
+          "type": "object",
+          "required": [
+            "limit",
+            "round_id",
+            "start_from",
+            "tranche_id"
+          ],
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "start_from": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "proposal"
+      ],
+      "properties": {
+        "proposal": {
+          "type": "object",
+          "required": [
+            "proposal_id",
+            "round_id",
+            "tranche_id"
+          ],
+          "properties": {
+            "proposal_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "top_n_proposals"
+      ],
+      "properties": {
+        "top_n_proposals": {
+          "type": "object",
+          "required": [
+            "number_of_proposals",
+            "round_id",
+            "tranche_id"
+          ],
+          "properties": {
+            "number_of_proposals": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "whitelist"
+      ],
+      "properties": {
+        "whitelist": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "whitelist_admins"
+      ],
+      "properties": {
+        "whitelist_admins": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "i_c_q_managers"
+      ],
+      "properties": {
+        "i_c_q_managers": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "total_locked_tokens"
+      ],
+      "properties": {
+        "total_locked_tokens": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "registered_validator_queries"
+      ],
+      "properties": {
+        "registered_validator_queries": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "can_lock_denom"
+      ],
+      "properties": {
+        "can_lock_denom": {
+          "type": "object",
+          "required": [
+            "token_denom"
+          ],
+          "properties": {
+            "token_denom": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "liquidity_deployment"
+      ],
+      "properties": {
+        "liquidity_deployment": {
+          "type": "object",
+          "required": [
+            "proposal_id",
+            "round_id",
+            "tranche_id"
+          ],
+          "properties": {
+            "proposal_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "round_tranche_liquidity_deployments"
+      ],
+      "properties": {
+        "round_tranche_liquidity_deployments": {
+          "type": "object",
+          "required": [
+            "limit",
+            "round_id",
+            "start_from",
+            "tranche_id"
+          ],
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "start_from": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "total_power_at_height"
+      ],
+      "properties": {
+        "total_power_at_height": {
+          "type": "object",
+          "properties": {
+            "height": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "voting_power_at_height"
+      ],
+      "properties": {
+        "voting_power_at_height": {
+          "type": "object",
+          "required": [
+            "address"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "height": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

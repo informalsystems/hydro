@@ -2,27 +2,21 @@
 set -eux
 
 # Check for required arguments
-if [ $# -lt 7 ]; then
-  echo "Usage: $0 <config_file> <hydro_contract_address> <tribute_contract_address> <round_id> <tranche_id> <proposal_id> <deployed_fund_amount>"
+if [ $# -lt 6 ]; then
+  echo "Usage: $0 <config_file> <hydro_contract_address> <round_id> <tranche_id> <proposal_id> <deployed_fund_amount>"
   exit 1
 fi
 
 CONFIG_FILE="$1"
 HYDRO_CONTRACT_ADDRESS="$2"
-TRIBUTE_CONTRACT_ADDRESS="$3"
-ROUND_ID="$4"
-TRANCHE_ID="$5"
-PROPOSAL_ID="$6"
-DEPLOYED_FUND_AMOUNT="$7"
-
+ROUND_ID="$3"
+TRANCHE_ID="$4"
+PROPOSAL_ID="$5"
+DEPLOYED_FUND_AMOUNT="$6"
 
 NEUTRON_CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
 NEUTRON_NODE=$(jq -r '.neutron_rpc_node' $CONFIG_FILE)
 TX_SENDER_WALLET=$(jq -r '.tx_sender_wallet' $CONFIG_FILE)
-
-TRIBUTE_TOKEN_1=$(jq -r '.tribute_token_1' $CONFIG_FILE)
-TRIBUTE_TOKEN_2=$(jq -r '.tribute_token_2' $CONFIG_FILE)
-TRIBUTE_TOKEN_3=$(jq -r '.tribute_token_3' $CONFIG_FILE)
 
 NEUTRON_BINARY="neutrond"
 NEUTRON_CHAIN_ID_FLAG="--chain-id $NEUTRON_CHAIN_ID"

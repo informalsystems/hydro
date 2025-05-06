@@ -100,3 +100,55 @@ type VotingPowerAtHeight struct {
 		Height int64  `json:"height"`
 	} `json:"data"`
 }
+
+type Gatekeeper struct {
+	Data struct {
+		Gatekeeper string `json:"gatekeeper"`
+	} `json:"data"`
+}
+
+type StageData struct {
+	Data struct {
+		Stage Stage `json:"stage"`
+	} `json:"data"`
+}
+
+type Stage struct {
+	StageID    int     `json:"stage_id"`
+	ActivateAt string  `json:"activate_at"`
+	MerkleRoot string  `json:"merkle_root"`
+	Hrp        *string `json:"hrp"`
+}
+
+type SignatureInfo struct {
+	ClaimMsg  string `json:"claim_msg"`
+	Signature string `json:"signature"`
+}
+
+type CosmosSignature struct {
+	PubKey    string `json:"pub_key"`
+	Signature string `json:"signature"`
+}
+
+type CosmosTx struct {
+	Body       map[string]any `json:"body"`
+	AuthInfo   AuthInfo       `json:"auth_info"`
+	Signatures []string       `json:"signatures"`
+}
+
+type AuthInfo struct {
+	SignerInfos []SignerInfo `json:"signer_infos"`
+	Fee         any          `json:"fee"`
+	Tip         *any         `json:"tip"`
+}
+
+type SignerInfo struct {
+	PublicKey PublicKey `json:"public_key,omitempty"`
+	ModeInfo  any       `json:"mode_info,omitempty"`
+	Sequence  any       `json:"sequence,omitempty"`
+}
+
+type PublicKey struct {
+	Type string `json:"@type"`
+	Key  string `json:"key"`
+}

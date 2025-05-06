@@ -1,0 +1,78 @@
+name: Populate Staging Contracts
+
+on:
+  schedule:
+    # run every day at 10:05 AM UTC (new round in both Atom and Osmo Staging contracts starts at 10 AM UTC time)
+    - cron: '5 10 * * *'
+
+jobs:
+  populate-new-round:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout Hydro repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # Download specific neutrond binary and add it to the PATH so it can be used by other scripts
+      - name: Download Neutron chain binary
+        run: |
+          curl -L -o neutrond https://github.com/neutron-org/neutron/releases/download/v5.0.2/neutrond-linux-amd64
+          chmod +x neutrond
+          echo "$(pwd)" >> $GITHUB_PATH
+      
+      # Use mnemonic to restore the wallet that will be used in next steps.
+      # Set Hydro and Tribute Staging contracts addresses as env variables so they can be used by other scripts.
+      - name: Setup
+        env:
+          # The address derived from this mnemonic (neutron1r6rv879netg009eh6ty23v57qrq29afecuehlm)
+          # is in the whitelist of the Staging Hydro contract, which means it can submit proposals.
+          WALLET_MNEMONIC: ${{ secrets.HYDRO_TEST_MNEMONIC }}
+        run: |
+          CONFIG_FILE="./tools/deployment/config_mainnet.json"
+          TX_SENDER_WALLET=$(jq -r '.tx_sender_wallet' $CONFIG_FILE)
+
+          echo $WALLET_MNEMONIC | neutrond keys add $TX_SENDER_WALLET --keyring-backend test --recover
+
+          echo "HYDRO_ATOM_CONTRACT_ADDRESS=neutron1la84jn93j6qv3lmayrc7mvr3zp0vsmxhy9uhqzmnnevhxuev72uspf7da4" >> $GITHUB_ENV
+          echo "TRIBUTE_ATOM_CONTRACT_ADDRESS=neutron1e90z4vpxufxvskz3fc80wrz0g57xg4u7zda7dsuwnwm5jp7635dsrt9r4t" >> $GITHUB_ENV
+          echo "HYDRO_ATOM_TRANCHES_NUM=2" >> $GITHUB_ENV
+
+          echo "HYDRO_OSMO_CONTRACT_ADDRESS=neutron1xkvzdzfzacuzlwlxf5hhlrqgv9sz4rgd2gkhvgm8lmudn8lmw0fq2296nu" >> $GITHUB_ENV
+          echo "TRIBUTE_OSMO_CONTRACT_ADDRESS=neutron1l6sq43kzhw77t7f5n9e6vxente0agcj3wyedkxtc08pm7c9uu2jsssq9wj" >> $GITHUB_ENV
+          echo "HYDRO_OSMO_TRANCHES_NUM=1" >> $GITHUB_ENV
+      
+      # Enter liquidity deployments info for all proposals from the previous round.
+      # If the proposal power was > 0, liquidity deployment info will be entered with deployed_funds > 0.
+      - name: Enter liquidity deployments for previous round
+        run: |
+          CONFIG_FILE="./tools/deployment/config_mainnet.json"
+
+          chmod +x ./tools/deployment/enter_staging_liquidity_deployments.sh
+          chmod +x ./tools/deployment/add_liquidity_deployments.sh
+
+          source ./tools/deployment/enter_staging_liquidity_deployments.sh $CONFIG_FILE $HYDRO_ATOM_CONTRACT_ADDRESS $HYDRO_ATOM_TRANCHES_NUM
+
+          source ./tools/deployment/enter_staging_liquidity_deployments.sh $CONFIG_FILE $HYDRO_OSMO_CONTRACT_ADDRESS $HYDRO_OSMO_TRANCHES_NUM
+      
+      # Run the script to create proposals with tributes in current round
+      - name: Populate round with proposals and tributes
+        run: |
+          CONFIG_FILE="./tools/deployment/config_mainnet.json"
+
+          chmod +x ./tools/deployment/populate_contracts.sh
+          source ./tools/deployment/populate_contracts.sh $CONFIG_FILE $HYDRO_ATOM_CONTRACT_ADDRESS $TRIBUTE_ATOM_CONTRACT_ADDRESS $HYDRO_ATOM_TRANCHES_NUM
+
+          source ./tools/deployment/populate_contracts.sh $CONFIG_FILE $HYDRO_OSMO_CONTRACT_ADDRESS $TRIBUTE_OSMO_CONTRACT_ADDRESS $HYDRO_OSMO_TRANCHES_NUM
+      
+      # Refresh some expired lockup or create a new one, and then vote with it in all tranches of the current round
+      - name: Lock tokens and vote
+        run: |
+          CONFIG_FILE="./tools/deployment/config_mainnet.json"
+
+          chmod +x ./tools/deployment/lock_and_vote.sh
+
+          TOKEN_TO_LOCK="ibc/83311BD1F53AEBA1D1D4AE3F505606985E5F2A98C974FE064DC694A569B63F06"
+          source ./tools/deployment/lock_and_vote.sh $CONFIG_FILE $HYDRO_ATOM_CONTRACT_ADDRESS $HYDRO_ATOM_TRANCHES_NUM $TOKEN_TO_LOCK
+
+          TOKEN_TO_LOCK="ibc/75249A18DEFBEFE55F83B1C70CAD234DF164F174C6BC51682EE92C2C81C18C93"
+          source ./tools/deployment/lock_and_vote.sh $CONFIG_FILE $HYDRO_OSMO_CONTRACT_ADDRESS $HYDRO_OSMO_TRANCHES_NUM $TOKEN_TO_LOCK

@@ -1,0 +1,161 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "QueryMsg",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "config"
+      ],
+      "properties": {
+        "config": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "proposal_tributes"
+      ],
+      "properties": {
+        "proposal_tributes": {
+          "type": "object",
+          "required": [
+            "limit",
+            "proposal_id",
+            "round_id",
+            "start_from"
+          ],
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "proposal_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "start_from": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "historical_tribute_claims"
+      ],
+      "properties": {
+        "historical_tribute_claims": {
+          "type": "object",
+          "required": [
+            "limit",
+            "start_from",
+            "user_address"
+          ],
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "start_from": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "user_address": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "round_tributes"
+      ],
+      "properties": {
+        "round_tributes": {
+          "type": "object",
+          "required": [
+            "limit",
+            "round_id",
+            "start_from"
+          ],
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "start_from": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "outstanding_tribute_claims"
+      ],
+      "properties": {
+        "outstanding_tribute_claims": {
+          "type": "object",
+          "required": [
+            "round_id",
+            "tranche_id",
+            "user_address"
+          ],
+          "properties": {
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "user_address": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

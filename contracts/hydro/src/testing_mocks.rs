@@ -6,9 +6,10 @@ use cosmwasm_std::{
     testing::{
         MockApi, MockQuerier as BaseMockQuerier, MockQuerierCustomHandlerResult, MockStorage,
     },
-    Binary, Coin, ContractResult, GrpcQuery, OwnedDeps, Querier, QuerierResult, QueryRequest,
-    SystemError, SystemResult,
+    to_json_binary, Binary, Coin, ContractResult, GrpcQuery, OwnedDeps, Querier, QuerierResult,
+    QueryRequest, SystemError, SystemResult, WasmQuery,
 };
+use interface::token_info_provider::{DenomInfoResponse, TokenInfoProviderQueryMsg};
 use neutron_sdk::{
     bindings::{
         query::{NeutronQuery, QueryRegisteredQueryResponse, QueryRegisteredQueryResultResponse},
@@ -27,6 +28,7 @@ use crate::lsm_integration::{DENOM_TRACE_GRPC, INTERCHAINQUERIES_PARAMS_GRPC};
 
 pub type GrpcQueryFunc = dyn Fn(GrpcQuery) -> QuerierResult;
 pub type CustomQueryFunc = dyn Fn(&NeutronQuery) -> QuerierResult;
+pub type WasmQueryFunc = Box<dyn Fn(&WasmQuery) -> QuerierResult>;
 
 pub fn mock_dependencies(
     grpc_query_mock: Box<GrpcQueryFunc>,
@@ -63,6 +65,13 @@ impl MockQuerier {
 
         self
     }
+
+    pub fn update_wasm<WH>(&mut self, handler: WH)
+    where
+        WH: Fn(&WasmQuery) -> QuerierResult + 'static,
+    {
+        self.base_querier.update_wasm(handler);
+    }
 }
 
 // Overrides raw_query() to support gRPC queries. If the QueryRequest is
@@ -83,6 +92,20 @@ impl Querier for MockQuerier {
             QueryRequest::Grpc(grpc_query) => (self.grpc_query_mock)(grpc_query),
             _ => self.base_querier.raw_query(bin_request),
         }
+    }
+}
+
+pub struct MockWasmQuerier {
+    inner_handler: WasmQueryFunc,
+}
+
+impl MockWasmQuerier {
+    pub fn new(inner_handler: WasmQueryFunc) -> Self {
+        Self { inner_handler }
+    }
+
+    pub fn handler(&self, query: &WasmQuery) -> QuerierResult {
+        (self.inner_handler)(query)
     }
 }
 
@@ -136,6 +159,30 @@ pub fn min_query_deposit_grpc_query_mock(mock_min_deposit: Coin) -> Box<GrpcQuer
             }
             .encode_to_vec(),
         )
+    })
+}
+
+pub fn token_info_provider_derivative_mock(
+    token_provider_addr: String,
+    response: DenomInfoResponse,
+) -> WasmQueryFunc {
+    Box::new(move |query| match query {
+        WasmQuery::Smart { contract_addr, msg } => {
+            if *contract_addr != token_provider_addr.clone() {
+                return SystemResult::Err(SystemError::NoSuchContract {
+                    addr: contract_addr.to_string(),
+                });
+            }
+
+            let response = match from_json(msg).unwrap() {
+                TokenInfoProviderQueryMsg::DenomInfo { round_id: _ } => to_json_binary(&response),
+            };
+
+            SystemResult::Ok(ContractResult::Ok(response.unwrap()))
+        }
+        _ => SystemResult::Err(SystemError::UnsupportedRequest {
+            kind: "unsupported query type".to_string(),
+        }),
     })
 }
 
