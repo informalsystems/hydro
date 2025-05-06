@@ -9,7 +9,8 @@ use crate::contract::{
 use crate::msg::ProposalToLockups;
 use crate::query::VoteEntry;
 use crate::state::{
-    RoundLockPowerSchedule, ValidatorInfo, Vote, TOKEN_INFO_PROVIDERS, VALIDATORS_INFO, VOTE_MAP,
+    RoundLockPowerSchedule, ValidatorInfo, Vote, LOCKS_MAP_V2, TOKEN_INFO_PROVIDERS, USER_LOCKS,
+    VALIDATORS_INFO, VOTE_MAP_V2,
 };
 use crate::testing::{
     get_default_instantiate_msg, get_default_lsm_token_info_provider, get_message_info,
@@ -25,13 +26,13 @@ use crate::utils::{load_current_constants, scale_lockup_power};
 use crate::{
     contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
     msg::ExecuteMsg,
-    state::LockEntry,
+    state::LockEntryV2,
 };
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
     Coin, Env, OwnedDeps,
 };
-use cosmwasm_std::{Addr, Decimal, StdError, StdResult, Uint128};
+use cosmwasm_std::{Addr, Decimal, StdError, StdResult, Timestamp, Uint128};
 use neutron_sdk::bindings::query::NeutronQuery;
 
 #[test]
@@ -533,6 +534,7 @@ fn query_user_voting_power_test() {
 
 #[test]
 fn query_user_votes_test() {
+    let env = mock_env();
     struct VoteToCreate {
         round_id: u64,
         tranche_id: u64,
@@ -820,11 +822,24 @@ fn query_user_votes_test() {
         let (mut deps, _env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
 
         for vote_to_create in &test_case.votes_to_create {
-            let res = VOTE_MAP.save(
+            let mut lock_ids = USER_LOCKS
+                .load(&deps.storage, test_case.voter.clone())
+                .unwrap_or_default();
+            if !lock_ids.contains(&vote_to_create.lock_id) {
+                lock_ids.push(vote_to_create.lock_id);
+                USER_LOCKS
+                    .save(
+                        &mut deps.storage,
+                        test_case.voter.clone(),
+                        &lock_ids,
+                        env.block.height,
+                    )
+                    .unwrap();
+            }
+            let res = VOTE_MAP_V2.save(
                 &mut deps.storage,
                 (
                     (vote_to_create.round_id, vote_to_create.tranche_id),
-                    test_case.voter.clone(),
                     vote_to_create.lock_id,
                 ),
                 &vote_to_create.vote,
@@ -948,13 +963,26 @@ fn query_all_votes_test() {
             },
         },
     ];
+    let env = mock_env();
 
     for vote_to_create in &votes_to_create {
-        let res = VOTE_MAP.save(
+        let res_lock = LOCKS_MAP_V2.save(
+            &mut deps.storage,
+            vote_to_create.lock_id,
+            &LockEntryV2 {
+                lock_id: vote_to_create.lock_id,
+                funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
+                owner: voter.clone(),
+                lock_start: Timestamp::from_seconds(10),
+                lock_end: Timestamp::from_seconds(100),
+            },
+            env.block.height,
+        );
+        assert!(res_lock.is_ok(), "failed to save lock");
+        let res = VOTE_MAP_V2.save(
             &mut deps.storage,
             (
                 (vote_to_create.round_id, vote_to_create.tranche_id),
-                voter.clone(),
                 vote_to_create.lock_id,
             ),
             &vote_to_create.vote,
@@ -1043,13 +1071,26 @@ fn query_all_votes_round_tranche_test() {
             },
         },
     ];
+    let env = mock_env();
 
     for vote_to_create in &votes_to_create {
-        let res = VOTE_MAP.save(
+        let res_lock = LOCKS_MAP_V2.save(
+            &mut deps.storage,
+            vote_to_create.lock_id,
+            &LockEntryV2 {
+                lock_id: vote_to_create.lock_id,
+                funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
+                owner: voter.clone(),
+                lock_start: Timestamp::from_seconds(10),
+                lock_end: Timestamp::from_seconds(100),
+            },
+            env.block.height,
+        );
+        assert!(res_lock.is_ok(), "failed to save lock");
+        let res = VOTE_MAP_V2.save(
             &mut deps.storage,
             (
                 (vote_to_create.round_id, vote_to_create.tranche_id),
-                voter.clone(),
                 vote_to_create.lock_id,
             ),
             &vote_to_create.vote,
@@ -1091,7 +1132,7 @@ fn get_expired_user_lockups(
     deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
     env: Env,
     user_address: String,
-) -> Vec<LockEntry> {
+) -> Vec<LockEntryV2> {
     let res = query_expired_user_lockups(&deps.as_ref(), &env, user_address.to_string(), 0, 2000);
     assert!(res.is_ok());
     let res = res.unwrap();

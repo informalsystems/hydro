@@ -644,6 +644,27 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "set_gatekeeper"
+      ],
+      "properties": {
+        "set_gatekeeper": {
+          "type": "object",
+          "properties": {
+            "gatekeeper_addr": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {

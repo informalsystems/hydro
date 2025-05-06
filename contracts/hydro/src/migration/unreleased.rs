@@ -1,15 +1,20 @@
-use cosmwasm_std::{DepsMut, Order};
+use cosmwasm_std::{Deps, DepsMut, Order, Response, StdResult};
 use cw_storage_plus::Map;
-use neutron_sdk::bindings::query::NeutronQuery;
+use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 use crate::{
     error::{new_generic_error, ContractError},
     migration::v3_1_1::ConstantsV3_1_1,
-    state::{Constants, CONSTANTS, TOKEN_INFO_PROVIDERS},
+    state::{
+        Constants, LockEntryV2, CONSTANTS, LOCKS_MAP_V1, LOCKS_MAP_V2, TOKEN_INFO_PROVIDERS,
+        VOTE_MAP_V1, VOTE_MAP_V2,
+    },
     token_manager::{TokenInfoProvider, TokenInfoProviderLSM, LSM_TOKEN_INFO_PROVIDER_ID},
 };
 
-pub fn migrate_v3_1_1_to_unreleased(deps: &mut DepsMut<NeutronQuery>) -> Result<(), ContractError> {
+pub fn migrate_v3_1_1_to_unreleased(
+    deps: &mut DepsMut<NeutronQuery>,
+) -> Result<Response<NeutronMsg>, ContractError> {
     const OLD_CONSTANTS: Map<u64, ConstantsV3_1_1> = Map::new("constants");
 
     let old_constants = OLD_CONSTANTS
@@ -62,5 +67,108 @@ pub fn migrate_v3_1_1_to_unreleased(deps: &mut DepsMut<NeutronQuery>) -> Result<
         &TokenInfoProvider::LSM(lsm_token_info_provider),
     )?;
 
-    Ok(())
+    Ok(Response::new().add_attribute("action", "migrate_v3_1_1_to_unreleased"))
+}
+
+// Migrate locks from V1 to V2 storage structures
+// This function prepares our locks storage for NFT features by removing the address from the storage keys
+pub fn migrate_locks_batch(
+    deps: &mut DepsMut<NeutronQuery>,
+    current_height: u64,
+    start: usize,
+    limit: usize,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Get locks from LOCKS_MAP_V1
+    // We use the range method to get a slice of the locks
+    let locks = LOCKS_MAP_V1
+        .range(deps.storage, None, None, Order::Ascending)
+        .skip(start)
+        .take(limit)
+        .collect::<StdResult<Vec<_>>>()?;
+
+    let mut total_locks_migrated = 0;
+
+    // For each lock entry, create an entry in LOCKS_MAP_V2
+    for ((addr, lock_id), entry) in locks {
+        let lock_entry_v2 = LockEntryV2 {
+            lock_id: entry.lock_id,
+            owner: addr.clone(),
+            funds: entry.funds.clone(),
+            lock_start: entry.lock_start,
+            lock_end: entry.lock_end,
+        };
+
+        // Save to LOCKS_MAP_V2 with just lock_id as key
+        LOCKS_MAP_V2.save(deps.storage, lock_id, &lock_entry_v2, current_height)?;
+        total_locks_migrated += 1;
+    }
+
+    Ok(Response::new()
+        .add_attribute("action", "migrate_locks_batch")
+        .add_attribute("start", start.to_string())
+        .add_attribute("limit", limit.to_string())
+        .add_attribute("locks_migrated", total_locks_migrated.to_string()))
+}
+
+// Migrate votes from V1 to V2 storage structures
+// This function prepares our votes storage for NFT features by removing the address from the storage keys
+pub fn migrate_votes_batch(
+    deps: &mut DepsMut<NeutronQuery>,
+    start: usize,
+    limit: usize,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Get votes from VOTE_MAP_V1
+    let votes = VOTE_MAP_V1
+        .range(deps.storage, None, None, Order::Ascending)
+        .skip(start)
+        .take(limit)
+        .collect::<StdResult<Vec<_>>>()?;
+
+    let mut total_votes_migrated = 0;
+
+    for (((round_id, tranche_id), _addr, lock_id), vote) in votes {
+        // Save to new VOTE_MAP_V2 with lock_id as key instead of (addr, lock_id)
+        VOTE_MAP_V2.save(deps.storage, ((round_id, tranche_id), lock_id), &vote)?;
+        total_votes_migrated += 1;
+    }
+
+    Ok(Response::new()
+        .add_attribute("action", "migrate_votes_batch")
+        .add_attribute("start", start.to_string())
+        .add_attribute("limit", limit.to_string())
+        .add_attribute("votes_migrated", total_votes_migrated.to_string()))
+}
+
+// Check if the migration is done
+// This function checks if all locks and votes from V1 have been migrated to V2
+// by checking if each lock and vote key exists in the new map.
+// It returns true if the migration is done, false otherwise
+pub fn is_full_migration_done(deps: Deps<NeutronQuery>) -> Result<bool, ContractError> {
+    // Verify that each lock (by lock_id) exists in the new map
+    let old_locks = LOCKS_MAP_V1.keys(deps.storage, None, None, Order::Ascending);
+
+    for item in old_locks {
+        let (_addr, lock_id) = item?;
+        let exists = LOCKS_MAP_V2.key(lock_id).has(deps.storage);
+
+        if !exists {
+            return Ok(false);
+        }
+    }
+
+    // Verify that each vote (by lock_id) exists in the new map
+    let old_votes = VOTE_MAP_V1.keys(deps.storage, None, None, Order::Ascending);
+
+    for item in old_votes {
+        let ((round_id, tranche_id), _addr, lock_id) = item?;
+        let exists = VOTE_MAP_V2
+            .key(((round_id, tranche_id), lock_id))
+            .has(deps.storage);
+
+        if !exists {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
 }

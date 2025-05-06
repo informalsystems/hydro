@@ -7,7 +7,8 @@ use crate::contract::{
 };
 use crate::msg::{ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo};
 use crate::state::{
-    LockEntry, RoundLockPowerSchedule, Vote, CONSTANTS, TOKEN_INFO_PROVIDERS, VOTE_MAP,
+    LockEntryV2, RoundLockPowerSchedule, Vote, CONSTANTS, TOKEN_INFO_PROVIDERS, USER_LOCKS,
+    VOTE_MAP_V2,
 };
 use crate::testing_lsm_integration::set_validator_infos_for_round;
 
@@ -2957,7 +2958,7 @@ fn test_refresh_multiple_locks() {
             name: "Refresh other users lock",
             lock_ids: vec![0, 1, 2, 3],
             new_lock_duration: ONE_MONTH_IN_NANO_SECONDS * 12,
-            expected_error: Some("not found".to_string()),
+            expected_error: Some("Unauthorized".to_string()),
             expected_new_lock_durations: vec![
                 (other_sender.to_string(), vec![8]),
                 (sender.to_string(), vec![9, 4, 2]),
@@ -3082,6 +3083,7 @@ fn test_refresh_multiple_locks() {
 
 #[test]
 fn test_get_vote_for_update() {
+    let sender = MockApi::default().addr_make("addr0000");
     let round_id = 0;
     let tranche_id = 0;
 
@@ -3103,14 +3105,16 @@ fn test_get_vote_for_update() {
         time_weighted_shares: (validator_2.clone(), Decimal::one()),
     };
 
-    let lock_entry_1 = LockEntry {
+    let lock_entry_1 = LockEntryV2 {
         lock_id: lockup_id_1,
+        owner: sender.clone(),
         funds: Coin::default(),
         lock_start: Timestamp::from_seconds(10),
         lock_end: Timestamp::from_seconds(100),
     };
-    let lock_entry_2 = LockEntry {
+    let lock_entry_2 = LockEntryV2 {
         lock_id: lockup_id_2,
+        owner: sender.clone(),
         funds: Coin::default(),
         lock_start: Timestamp::from_seconds(10),
         lock_end: Timestamp::from_seconds(100),
@@ -3119,7 +3123,7 @@ fn test_get_vote_for_update() {
     struct TestCase {
         description: &'static str,
         votes_to_add: Vec<(u64, Vote)>,
-        old_lock_entry: Option<LockEntry>,
+        old_lock_entry: Option<LockEntryV2>,
         validator: String,
         expected_vote_to_update: Option<Vote>,
     }
@@ -3170,15 +3174,29 @@ fn test_get_vote_for_update() {
     ];
 
     for test in test_cases {
+        println!();
         println!("running test case: {}", test.description);
-
         let mut deps = mock_dependencies(no_op_grpc_query_mock());
-        let sender = get_message_info(&deps.api, "addr0000", &[]).sender;
+        let env = mock_env();
 
         for vote_to_add in test.votes_to_add {
-            let res = VOTE_MAP.save(
+            let mut lock_ids = USER_LOCKS
+                .load(&deps.storage, sender.clone())
+                .unwrap_or_default();
+            if !lock_ids.contains(&vote_to_add.0) {
+                lock_ids.push(vote_to_add.0);
+                USER_LOCKS
+                    .save(
+                        &mut deps.storage,
+                        sender.clone(),
+                        &lock_ids,
+                        env.block.height,
+                    )
+                    .unwrap();
+            }
+            let res = VOTE_MAP_V2.save(
                 &mut deps.storage,
-                ((round_id, tranche_id), sender.clone(), vote_to_add.0),
+                ((round_id, tranche_id), vote_to_add.0),
                 &vote_to_add.1,
             );
             assert!(res.is_ok());
@@ -3186,7 +3204,7 @@ fn test_get_vote_for_update() {
 
         let vote_for_update = get_vote_for_update(
             &mut deps.as_mut(),
-            &sender,
+            &sender.clone(),
             round_id,
             tranche_id,
             &test.old_lock_entry,
