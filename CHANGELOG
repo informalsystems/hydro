@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## v3.2.0
+
+Date: May 6th, 2025
+
+### FEATURE
+
+- Allow voting with locks that voted for a proposal which did not receive any funds in its deployment
+  ([\#231](https://github.com/informalsystems/hydro/pull/231))
+- Add information about which proposal lockups are tied to in `per_tranche_info`
+  ([\#235](https://github.com/informalsystems/hydro/pull/235))
+- Add AllVotes and AllVotesRoundTranche queries
+  ([\#236](https://github.com/informalsystems/hydro/pull/236))
+- Allow additional derivative tokens (e.g. stATOM) to be locked in Hydro together with LSM tokens.
+  ([\#238](https://github.com/informalsystems/hydro/pull/238))
+- Introduced the Gatekeeper smart contract, which checks user lockups into Hydro against a merkle-tree-encoded whitelist.
+  ([\#243](https://github.com/informalsystems/hydro/pull/243))
+- Prepare Hydro contract for the upcoming NFT features.
+  ([\#244](https://github.com/informalsystems/hydro/pull/244))
+
 ## v3.1.1
 
 <!--
@@ -130,11 +149,11 @@ Date: November 18th, 2024
 
 ### FEATURES
 
+- Add a minimum liquidity request value to proposals.
+  ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Adjusts tributes to only be claimable if their proposal received a non-zero fund deployment.
   ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Allow whitelist admins to register performed liquidity deployments in the Hydro contract.
-  ([\#164](https://github.com/informalsystems/hydro/pull/164))
-- Add a minimum liquidity request value to proposals.
   ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Allow bids to set a custom duration they would like to receive liquidity for.
   ([\#165](https://github.com/informalsystems/hydro/pull/165))

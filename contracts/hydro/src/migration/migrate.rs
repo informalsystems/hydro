@@ -25,7 +25,7 @@ pub const CONTRACT_VERSION_V3_1_1: &str = "3.1.1";
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub enum MigrateMsgV3_2_0 {
-    MigrateToUnreleased {},
+    MigrateToV3_2_0 {},
     MigrateLocksV1ToV2 {
         start: Option<usize>,
         limit: Option<usize>,
@@ -46,7 +46,7 @@ pub fn migrate(
     pause_contract_before_migration(&mut deps, &env)?;
 
     let response = match msg {
-        MigrateMsgV3_2_0::MigrateToUnreleased {} => migrate_v3_1_1_to_unreleased(&mut deps),
+        MigrateMsgV3_2_0::MigrateToV3_2_0 {} => migrate_v3_1_1_to_unreleased(&mut deps),
         MigrateMsgV3_2_0::MigrateLocksV1ToV2 { start, limit } => migrate_locks_batch(
             &mut deps,
             env.block.height,
