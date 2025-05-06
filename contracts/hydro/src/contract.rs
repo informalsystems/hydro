@@ -693,7 +693,6 @@ fn unlock_tokens(
         .add_attribute("sender", info.sender.to_string());
 
     let mut removed_lock_ids = HashSet::new();
-    let mut unlocked_lock_ids = vec![];
     let mut unlocked_tokens = vec![];
 
     for (lock_id, lock_entry) in locks {
@@ -714,8 +713,6 @@ fn unlock_tokens(
             // Delete unlocked locks
             LOCKS_MAP_V2.remove(deps.storage, lock_id, env.block.height)?;
             removed_lock_ids.insert(lock_id);
-
-            unlocked_lock_ids.push(lock_id.to_string());
             unlocked_tokens.push(send.to_string());
         }
     }
@@ -743,6 +740,12 @@ fn unlock_tokens(
             },
         )?;
     }
+
+    // Convert removed_lock_ids to strings for the response attributes
+    let unlocked_lock_ids = removed_lock_ids
+        .iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<String>>();
 
     Ok(response
         .add_attribute("unlocked_lock_ids", unlocked_lock_ids.join(", "))

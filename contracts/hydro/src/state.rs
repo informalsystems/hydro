@@ -106,6 +106,8 @@ pub const PROP_ID: Item<u64> = Item::new("prop_id");
 
 // LOCKS_MAP_V1: Previous structure, now preserved for migration, and for historical queries
 // LOCKS_MAP_V1: key(sender_address, lock_id) -> LockEntry
+// Note: as discussed in https://github.com/informalsystems/hydro/pull/244#discussion_r2065764776,
+//  if the upgrade goes live during round 7, it could be safely removed in round 12
 pub const LOCKS_MAP_V1: SnapshotMap<(Addr, u64), LockEntryV1> = SnapshotMap::new(
     "locks_map",
     "locks_map__checkpoints",

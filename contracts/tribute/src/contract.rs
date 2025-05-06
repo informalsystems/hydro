@@ -472,15 +472,11 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             user_address,
             round_id,
             tranche_id,
-            start_from,
-            limit,
         } => to_json_binary(&query_outstanding_tribute_claims(
             &deps,
             user_address,
             round_id,
             tranche_id,
-            start_from,
-            limit,
         )?),
     }
 }
@@ -621,14 +617,11 @@ pub fn query_round_tributes(
 // then checks whether the given user address can claim them.
 // If the user has not claimed the tribute yet, the amount that the user would receive when claiming is
 // computed, and the tribute is added to the list of tributes that the user can claim.
-// TODO: Do we still want start_from and limit? Seems not convenient in the new situation?
 pub fn query_outstanding_tribute_claims(
     deps: &Deps,
     address: String,
     round_id: u64,
     tranche_id: u64,
-    start_from: u32,
-    limit: u32,
 ) -> StdResult<OutstandingTributeClaimsResponse> {
     let address = deps.api.addr_validate(&address)?;
     let config = CONFIG.load(deps.storage)?;
@@ -677,9 +670,8 @@ pub fn query_outstanding_tribute_claims(
                     .may_load(deps.storage, tribute_id)
                     .unwrap_or(None)
             })
-            .skip(start_from as usize)
-            .take(limit as usize)
             .collect::<Vec<Tribute>>();
+
         // For each tribute, compute the claimable amount based on unclaimed locks
         for tribute in tributes {
             // For this tribute, check which locks haven't claimed yet

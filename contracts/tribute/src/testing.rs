@@ -1358,8 +1358,6 @@ struct OutstandingTributeClaimsTestCase {
     user_address: Addr,
     round_id: u64,
     tranche_id: u64,
-    start_from: u32,
-    limit: u32,
     expected_claims: Vec<TributeClaim>,
     expected_error: Option<StdError>,
 }
@@ -1374,8 +1372,6 @@ fn test_query_outstanding_tribute_claims() {
             user_address: deps.api.addr_make("user1"),
             round_id: 1,
             tranche_id: 1,
-            start_from: 0,
-            limit: 10,
             expected_claims: vec![TributeClaim {
                 round_id: 1,
                 tranche_id: 1,
@@ -1391,18 +1387,6 @@ fn test_query_outstanding_tribute_claims() {
             user_address: deps.api.addr_make("user2"),
             round_id: 1,
             tranche_id: 1,
-            start_from: 0,
-            limit: 10,
-            expected_claims: vec![],
-            expected_error: None,
-        },
-        OutstandingTributeClaimsTestCase {
-            description: "Query with start_from beyond range".to_string(),
-            user_address: deps.api.addr_make("user1"),
-            round_id: 1,
-            tranche_id: 1,
-            start_from: 10,
-            limit: 10,
             expected_claims: vec![],
             expected_error: None,
         },
@@ -1607,8 +1591,6 @@ fn test_query_outstanding_tribute_claims() {
             test_case.user_address.clone().to_string(),
             test_case.round_id,
             test_case.tranche_id,
-            test_case.start_from,
-            test_case.limit,
         );
 
         match result {

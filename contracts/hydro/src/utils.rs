@@ -574,32 +574,6 @@ pub struct LockingInfo {
     pub lock_in_known_users_cap: Option<u128>,
 }
 
-/// Loads a lock entry from LOCKS_MAP_V2 and verifies the sender is the owner
-/// Returns the lock entry if found and owned by sender, or an error otherwise
-pub fn load_lock_and_verify_ownership(
-    storage: &dyn Storage,
-    sender: &Addr,
-    lock_id: u64,
-) -> Result<LockEntryV2, ContractError> {
-    // Load the lock entry
-    let lock_entry = LOCKS_MAP_V2.load(storage, lock_id).map_err(|_| {
-        ContractError::Std(StdError::generic_err(format!(
-            "Lock with ID {} not found",
-            lock_id
-        )))
-    })?;
-
-    // Verify sender is the owner
-    if lock_entry.owner != *sender {
-        return Err(ContractError::Std(StdError::generic_err(format!(
-            "Lock with ID {} is not owned by {}",
-            lock_id, sender
-        ))));
-    }
-
-    Ok(lock_entry)
-}
-
 /// Check if sender owns the specified lock
 pub fn is_lock_owner(storage: &dyn Storage, sender: &Addr, lock_id: u64) -> bool {
     match LOCKS_MAP_V2.may_load(storage, lock_id) {
