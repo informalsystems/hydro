@@ -1113,14 +1113,14 @@ pub mod testing {
     }
 
     #[test]
-    fn test_calculate_amount_0() {
-        let amount0_str = "100000";
+    fn test_calculate_amount_1() {
+        let amount0_str = "345";
         let amount0 = BigDecimal::from_str(&amount0_str).unwrap();
-        let current_price_str = "0.85";
+        let current_price_str = "0.05208";
         let current_price = BigDecimal::from_str(&current_price_str).unwrap();
         let current_sqrt_price = current_price.sqrt().expect("Failed to take sqrt");
-        let lower_tick = -108000000;
-        let upper_tick = 342000000;
+        let lower_tick = -13995400;
+        let upper_tick = -13420200;
         let amount1 = calc_amount1(
             amount0.clone(),
             lower_tick,
@@ -1141,16 +1141,16 @@ pub mod testing {
     }
 
     #[test]
-    fn test_calculate_amount_1() {
-        let amount1_str = "85000";
+    fn test_calculate_amount_0() {
+        let amount1_str = "345";
         let amount1 = BigDecimal::from_str(&amount1_str).unwrap();
         // ratio calculated as: osmo/usdc (spot price: base - osmo, quote-usdc)
         // token0 is always quote in osmosis pool
-        let current_price_str = "0.85";
+        let current_price_str = "0.05208";
         let current_price = BigDecimal::from_str(&current_price_str).unwrap();
         let current_sqrt_price = current_price.sqrt().expect("Failed to take sqrt");
-        let lower_tick = -108000000;
-        let upper_tick = 342000000;
+        let lower_tick = -13995400;
+        let upper_tick = -13420200;
         let response = calc_amount0(
             amount1.clone(),
             lower_tick,

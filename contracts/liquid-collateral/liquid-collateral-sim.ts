@@ -8,17 +8,19 @@ import {
 } from "npm:defi-sim@1.0.3";
 
 // Inputs
-const starting_ATOM_USD_price: number = 4.5;
-const starting_WOBBLE_USD_price: number = 0.25;
+const starting_ATOM_USD_price: number = 4.143;
+const starting_WOBBLE_USD_price: number = 0.216149;
 
-const currentPrice: number =
-  starting_WOBBLE_USD_price / starting_ATOM_USD_price;
+//const currentPrice: number =
+// starting_WOBBLE_USD_price / starting_ATOM_USD_price;
+
+const currentPrice: number = 0.05208
 
 // Input the amount of ATOM you want to provide
-const ATOMSupplied: number = 100;
+const ATOMSupplied: number = 345.0;
 
-const lowerBoundPrice: number = 0.03;
-const upperBoundPrice: number = 0.1;
+const lowerBoundPrice: number = 0.050046;
+const upperBoundPrice: number = 0.055798;
 
 // Calculate optimal amounts
 const sqrtPrice: number = Math.sqrt(currentPrice);
@@ -83,7 +85,7 @@ console.log(
 // Initialize pool
 const liquidityPool = new ConcentratedLiquidityPool({
   initialPrice: currentPrice,
-  feeRate: 0.003,
+  feeRate: 0.000,
 });
 
 // Add liquidity
@@ -100,7 +102,8 @@ liquidityPool.movePrice(lowerBoundPrice);
 console.log("\nBalance at lower bound:", position.balance);
 console.log("Rewards accumulated:", position.rewards);
 
-const totalWOBBLEAtLowerBound: number = position.balance.x + position.rewards.x;
+//const totalWOBBLEAtLowerBound: number = position.balance.x + position.rewards.x;
+const totalWOBBLEAtLowerBound: number = position.balance.x;
 const ATOMforWOBBLE: number = totalWOBBLEAtLowerBound * lowerBoundPrice;
 
 console.log("WOBBLE in the position at lower bound:", totalWOBBLEAtLowerBound);
