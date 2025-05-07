@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
+use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
 
 use crate::state::Bid;
 
@@ -46,14 +46,6 @@ pub enum QueryMsg {
     Bid { address: String },
     #[returns(Vec<(String, Bid)>)]
     Bids {},
-    #[returns(CalculatedDataResponse)]
-    CounterpartyAndUpperTick {
-        lower_tick: String,
-        principal_token_amount: String,
-        liquidation_bonus: String,
-        price_ratio: String,
-        tick_spacing: String,
-    },
     #[returns(Vec<(Addr, Decimal)>)]
     SortedBids {},
 }

@@ -9,8 +9,8 @@ pub mod mock {
         cosmos::bank::v1beta1::QueryBalanceRequest,
         osmosis::{
             concentratedliquidity::v1beta1::{
-                CreateConcentratedLiquidityPoolsProposal, FullPositionBreakdown, PoolRecord,
-                PositionByIdRequest,
+                CreateConcentratedLiquidityPoolsProposal, FullPositionBreakdown, MsgCreatePosition,
+                PoolRecord, PositionByIdRequest,
             },
             poolmanager::v1beta1::{MsgSwapExactAmountIn, SwapAmountInRoute},
         },
@@ -35,18 +35,6 @@ pub mod mock {
     /// As USDC has 6 decimals, 5_000_000 USDC atoms is 5 USDC.
     pub const VAULT_CREATION_COST: Uint128 = Uint128::new(5_000_000);
 
-    // use crate::{
-    //     constants::{MAX_TICK, MIN_TICK, TWAP_SECONDS, VAULT_CREATION_COST, VAULT_CREATION_COST_DENOM},
-    //     msg::{
-    //         CalcSharesAndUsableAmountsResponse, DepositMsg, ExecuteMsg, InstantiateMsg, PositionBalancesWithFeesResponse, QueryMsg, VaultBalancesResponse, VaultInfoInstantiateMsg, VaultParametersInstantiateMsg, VaultRebalancerInstantiateMsg, WithdrawMsg
-    //     },
-    //     state::{
-    //         FeesInfo, PositionType, ProtocolFee, VaultParameters, VaultState,
-    //     },
-    // };
-
-    // TODO: Ideally abstract those 2, so the tests dev doesnt has to keep
-    // track of whats in the pool.
     pub const USDC_DENOM: &str =
         "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4";
     pub const OSMO_DENOM: &str = "uosmo";
@@ -65,7 +53,7 @@ pub mod mock {
     }
 
     impl PoolMockup {
-        pub fn new_with_spread(spread_factor: &str) -> Self {
+        pub fn new(denom0: String, denom1: String) -> Self {
             let app = OsmosisTestApp::new();
 
             let init_coins = &[
@@ -73,7 +61,7 @@ pub mod mock {
                 Coin::new(1_000_000_000_000_000u128, OSMO_DENOM),
             ];
 
-            let mut accounts = app.init_accounts(init_coins, 6).unwrap().into_iter();
+            let mut accounts = app.init_accounts(init_coins, 7).unwrap().into_iter();
             let user1 = accounts.next().unwrap();
             let user2 = accounts.next().unwrap();
             let user3 = accounts.next().unwrap();
@@ -101,18 +89,16 @@ pub mod mock {
                     title: "Create cl uosmo:usdc pool".into(),
                     description: "blabla".into(),
                     pool_records: vec![PoolRecord {
-                        denom0: USDC_DENOM.into(),
-                        denom1: OSMO_DENOM.into(),
-                        tick_spacing: 30,
-                        spread_factor: Decimal::from_str(spread_factor).unwrap().atomics().into(),
+                        denom0: denom0.into(),
+                        denom1: denom1.into(),
+                        tick_spacing: 100,
+                        spread_factor: Decimal::from_str("0.01").unwrap().atomics().into(),
                     }],
                 },
                 deployer.address(),
                 &deployer,
             )
             .unwrap();
-
-            app.increase_time(TWAP_SECONDS);
 
             Self {
                 app,
@@ -126,10 +112,6 @@ pub mod mock {
                 project_owner,
                 liquidator,
             }
-        }
-
-        pub fn new() -> Self {
-            Self::new_with_spread("0.01")
         }
 
         pub fn swap_osmo_for_usdc(

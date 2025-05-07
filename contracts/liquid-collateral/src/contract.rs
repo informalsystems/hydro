@@ -1,18 +1,12 @@
-use crate::calculations::{
-    calc_amount1, calc_required_token1_with_bonus, price_to_tick, tick_to_sqrt_price,
-};
 use crate::error::ContractError;
 use crate::msg::{
-    CalculatedDataResponse, CreatePositionMsg, EndRoundBidMsg, ExecuteMsg, InstantiateMsg,
-    QueryMsg, StateResponse,
+    CreatePositionMsg, EndRoundBidMsg, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse,
 };
 use crate::state::{Bid, BidStatus, State, BIDS, SORTED_BIDS, STATE};
-use bigdecimal::BigDecimal;
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, Event,
     MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Uint128,
 };
-use num_traits::FromPrimitive;
 use osmosis_std::types::cosmos::base::v1beta1::Coin as OsmosisCoin;
 use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::{
     ClaimableIncentivesResponse, ConcentratedliquidityQuerier,
@@ -85,150 +79,15 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::State {} => to_json_binary(&query_get_state(deps)?),
         QueryMsg::Bid { address } => to_json_binary(&query_bid(deps, address)?),
         QueryMsg::Bids {} => to_json_binary(&query_get_bids(deps)?),
-        QueryMsg::CounterpartyAndUpperTick {
-            lower_tick,
-            principal_token_amount,
-            liquidation_bonus,
-            price_ratio,
-            tick_spacing,
-        } => {
-            // Call the query function with the fields directly
-            to_json_binary(&calculate_optimal_counterparty_and_upper_tick(
-                lower_tick,
-                principal_token_amount,
-                liquidation_bonus,
-                price_ratio,
-                tick_spacing,
-            )?)
-        }
         QueryMsg::SortedBids {} => to_json_binary(&query_sorted_bids(deps)?),
     }
 }
+/*
 
-pub fn calculate_optimal_counterparty_and_upper_tick(
-    lower_tick: String,
-    principal_token_amount: String,
-    liquidation_bonus: String,
-    price_ratio: String,
-    tick_spacing: String,
-) -> StdResult<Vec<CalculatedDataResponse>> {
-    // inputs: lower tick, base token amount, and liquidation bonus
-    // output:  upper tick and counterparty
-
-    let price_ratio: f64 = match price_ratio.parse() {
-        Ok(val) => val,
-        Err(_) => return Err(StdError::generic_err("Failed to parse price_ratio to f64")),
-    };
-
-    let tick_spacing: i64 = match tick_spacing.parse() {
-        Ok(val) => val,
-        Err(_) => return Err(StdError::generic_err("Failed to parse tick_spacing to i64")),
-    };
-
-    // Calculate the square root of the ratio (current price)
-    let sqrt_current = price_ratio.sqrt();
-    // Convert sqrt_current (Decimal) to BigDecimal
-    let sqrt_current_bigdecimal = BigDecimal::from_f64(sqrt_current).unwrap();
-    let lower_tick: i64 = match lower_tick.parse() {
-        Ok(val) => val,
-        Err(_) => return Err(StdError::generic_err("Failed to parse lower_tick to i64")),
-    };
-    // Validate lower_tick alignment with tick spacing
-    if lower_tick.abs() % tick_spacing != 0 {
-        return Err(StdError::generic_err(format!(
-            "lower_tick must be aligned with tick spacing: {}",
-            tick_spacing
-        )));
-    }
-
-    let sqrt_lower = tick_to_sqrt_price(lower_tick);
-    let sqrt_lower = match sqrt_lower {
-        Ok(value) => value.to_string().parse::<f64>().unwrap_or(f64::NAN),
-        Err(_) => f64::NAN,
-    }; // Convert lower_tick to f64 and take the square root
-
-    let principal_token_amount: f64 = match principal_token_amount.parse() {
-        Ok(val) => val,
-        Err(_) => {
-            return Err(StdError::generic_err(
-                "Failed to parse principal_token_amount to f64",
-            ))
-        }
-    };
-
-    // Convert f64 to BigDecimal
-    let principal_token_amount_decimal = match BigDecimal::from_f64(principal_token_amount) {
-        Some(val) => val,
-        None => return Err(StdError::generic_err("Failed to convert f64 to BigDecimal")),
-    };
-
-    let liquidation_bonus: f64 = match liquidation_bonus.parse() {
-        Ok(val) => val,
-        Err(_) => {
-            return Err(StdError::generic_err(
-                "Failed to parse liquidation_bonus to f64",
-            ))
-        }
-    };
-
-    let liquidation_bonus_bigdec = match BigDecimal::from_f64(liquidation_bonus) {
-        Some(val) => val,
-        None => return Err(StdError::generic_err("Failed to convert f64 to BigDecimal")),
-    };
-
-    if sqrt_lower >= sqrt_current {
-        return Err(StdError::generic_err(format!(
-            "Invalid lower_tick: its corresponding price ({}) must be lower than the current price ({})",
-            sqrt_lower * sqrt_lower,
-            sqrt_current * sqrt_current
-        )));
-    }
-
-    let strategies = vec![("tight", 0.05), ("passive", 0.15), ("conservative", 0.30)];
-
-    let mut results = vec![];
-
-    for (label, range_percent) in strategies {
-        let sqrt_upper = sqrt_current * (1.0 + range_percent);
-        let upper_price = sqrt_upper * sqrt_upper;
-        let upper_price_str = format!("{:.30}", upper_price); // preserve precision
-        let upper_price_bd = BigDecimal::from_str(&upper_price_str)
-            .expect("Failed to convert upper_price to BigDecimal");
-        let mut upper_tick = match price_to_tick(&upper_price_bd) {
-            Ok(tick) => tick,
-            Err(e) => return Err(StdError::generic_err("Failed to parse upper_tick to i64")),
-        };
-        upper_tick = round_to_spacing(upper_tick, tick_spacing);
-
-        let counterparty_amount = calc_amount1(
-            principal_token_amount_decimal.clone(),
-            lower_tick,
-            upper_tick,
-            sqrt_current_bigdecimal.clone(),
-        );
-
-        let counterparty_amount = calc_required_token1_with_bonus(
-            principal_token_amount_decimal.clone(),
-            counterparty_amount,
-            lower_tick,
-            liquidation_bonus_bigdec.clone(),
-        );
-
-        results.push(CalculatedDataResponse {
-            strategy: label.to_string(),
-            upper_tick: upper_tick.to_string(),
-            counterparty_amount: counterparty_amount.to_string(),
-        });
-    }
-
-    Ok(results)
-}
-
-// Helper: round tick to spacing
-pub fn round_to_spacing(tick: i64, spacing: i64) -> i64 {
-    ((tick + spacing / 2) / spacing) * spacing
-}
-
+## Create position with reply
+ - based on the passed position arguments, method is sending MsgCreatePosition to the cl module on Osmosis
+ - in the reply contract is updating the state with the position information.
+*/
 pub fn create_position(
     deps: DepsMut,
     env: Env,
@@ -250,16 +109,6 @@ pub fn create_position(
         _ => {}
     }
 
-    // Fetch funds sent
-    let counterparty = info
-        .funds
-        .iter()
-        .find(|c| c.denom == state.counterparty_denom);
-    let principal = info.funds.iter().find(|c| c.denom == state.principal_denom);
-
-    let counterparty_amount = counterparty.unwrap().amount;
-    let principal_amount = principal.unwrap().amount;
-
     /*
     The order of the tokens which will be put in tokens provided is very important
     on osmosis they check lexicographical order: https://github.com/osmosis-labs/osmosis/blob/main/x/concentrated-liquidity/types/msgs.go#L42C2-L44C3
@@ -267,15 +116,33 @@ pub fn create_position(
     if order is not correct - tx will fail!
      */
 
-    let token_min_amount0;
-    let token_min_amount1;
+    let mut tokens_provided: Vec<OsmosisCoin> = Vec::new();
+    let mut token_min_amount0 = "0".to_string();
+    let mut token_min_amount1 = "0".to_string();
 
-    if state.principal_first {
-        token_min_amount0 = msg.principal_token_min_amount.to_string();
-        token_min_amount1 = msg.counterparty_token_min_amount.to_string();
-    } else {
-        token_min_amount0 = msg.counterparty_token_min_amount.to_string();
-        token_min_amount1 = msg.principal_token_min_amount.to_string();
+    for coin in &info.funds {
+        let osmo_coin = OsmosisCoin {
+            denom: coin.denom.clone(),
+            amount: coin.amount.to_string(),
+        };
+
+        if coin.denom == state.principal_denom {
+            if state.principal_first {
+                token_min_amount0 = msg.principal_token_min_amount.to_string();
+            } else {
+                token_min_amount1 = msg.principal_token_min_amount.to_string();
+            }
+        } else if coin.denom == state.counterparty_denom {
+            if state.principal_first {
+                token_min_amount1 = msg.counterparty_token_min_amount.to_string();
+            } else {
+                token_min_amount0 = msg.counterparty_token_min_amount.to_string();
+            }
+        } else {
+            return Err(ContractError::AssetNotFound {});
+        }
+
+        tokens_provided.push(osmo_coin);
     }
 
     // Create position message
@@ -284,16 +151,7 @@ pub fn create_position(
         sender: env.contract.address.to_string(),
         lower_tick: msg.lower_tick,
         upper_tick: msg.upper_tick,
-        tokens_provided: vec![
-            OsmosisCoin {
-                denom: state.counterparty_denom.clone(),
-                amount: counterparty_amount.to_string(),
-            },
-            OsmosisCoin {
-                denom: state.principal_denom.clone(),
-                amount: principal_amount.to_string(),
-            },
-        ],
+        tokens_provided: tokens_provided,
         token_min_amount0: token_min_amount0,
         token_min_amount1: token_min_amount1,
     };
@@ -314,6 +172,15 @@ pub fn create_position(
         .add_attribute("upper_tick", msg.upper_tick.to_string()))
 }
 
+/*
+## Liquidate position with reply
+ - method checks whether principal amount in the position is zero - which needs to be the case in order to allow liquidation
+ - the percentage of liquidation amount is calculated based on the principal funds liquidator sent to the contract (can be full or partial)
+ - amount is immediatelly transferred to the principal_funds owner (so contract doesn't need to hold anything)
+ - MsgWithdrawPosition on Osmosis module is called
+ - in the reply the counterparty amount which was pulled from the pool is sent to the liquidator address
+ - in case of full liquidation - all rewards are being sent to principal_funds_owner
+*/
 pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response, ContractError> {
     let mut state = STATE.load(deps.storage)?;
     let position = ConcentratedliquidityQuerier::new(&deps.querier)
@@ -740,6 +607,22 @@ fn handle_withdraw_position_end_round_reply(
     Ok(Response::new().add_messages(messages).add_event(event))
 }
 
+/*
+## End round with reply
+ - is only executed if round has ended
+ - full position withdraw is executed (MsgWithdrawPosition with all liquidity amount)
+ - in the reply:
+   - all rewards are sent to principal_funds_owner
+   - if there are enough (equal or more) principal amount than needed for replenish:
+     - all fetched counterparty amount is sent to position_created_address (or project owner)
+     - potential excessive principal amount is sent to position_created_address
+     - exact amount needed to be replenished is sent to principal_funds_owner
+   - in case there were not enough principal amount for replenish:
+     - send whatever principal amount is fetched to principal_funds_owner
+     - decrement principal amount needed
+     - update counteparty amount available in the auction
+     - start the auction
+*/
 pub fn end_round(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response, ContractError> {
     // Load the current state
     let mut state = STATE.load(deps.storage)?;
@@ -791,6 +674,17 @@ pub fn end_round(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response
         .add_submessage(submsg)
         .add_attribute("action", "withdraw_position"))
 }
+
+/*
+## End round bid
+ - can only be executed if auction is in progress
+ - bidder sends desired principal amount to the contract and request some amount of counterparty token
+ - bidder must replenish at least 1% of principal
+ - bidder cannot request more counterparty than contract has available
+ - bid is being saved in bids and in sorted bids
+ - in case the new bid makes principal amount be potentially replenished, unneeded (worst) bid/s will be kicked out
+ - if one or more bids are kicked out from sorted bids - bidders will be refunded and correct status of the bid will be saved
+*/
 pub fn end_round_bid(
     deps: DepsMut,
     env: Env,
@@ -968,6 +862,15 @@ pub fn withdraw_bid(
         .add_attribute("action", "withdraw_bid")
         .add_attribute("bidder", info.sender))
 }
+/*
+## Resolve auction
+ - after auction time elapses this method can be executed by anyone
+ - sorted bids are taken and the iteration goes backwards
+ - contract is taking as much as principal amount possible and is giving the bidder the counterparty tokens
+ - in case some bid is partially fulfilled - the contract is refunding the bidder unused principal amount
+ - all replenished principal amount contract is sending to the principal_funds_owner
+ - in case all needed principals are replenished - the iteration stops and all unspent counterparty are sent to position_created_address
+*/
 pub fn resolve_auction(
     deps: DepsMut,
     _env: Env,
