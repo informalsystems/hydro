@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 
 use cosmwasm_std::from_json;
@@ -48,8 +47,8 @@ use crate::state::{
     VoteWithPower, CONSTANTS, GATEKEEPER, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS,
     LOCKS_MAP_V2, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, SNAPSHOTS_ACTIVATION_HEIGHT,
     TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS, VALIDATORS_INFO,
-    VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP_V2,
-    VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
+    VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1,
+    VOTE_MAP_V2, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::token_manager::{
     add_token_info_providers, handle_token_info_provider_add_remove,
@@ -60,7 +59,7 @@ use crate::utils::{
     get_highest_known_height_for_round_id, get_lock_time_weighted_shares, get_owned_lock_entry,
     load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
     scale_lockup_power, to_lockup_with_power, update_locked_tokens_info,
-    validate_locked_tokens_caps,
+    validate_locked_tokens_caps, verify_historical_data_availability,
 };
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
@@ -2222,7 +2221,7 @@ pub fn query_user_voting_power(
 // to zero will be filtered out.
 pub fn query_user_votes(
     deps: Deps<NeutronQuery>,
-    mut round_id: u64,
+    round_id: u64,
     tranche_id: u64,
     user_address: String,
 ) -> StdResult<UserVotesResponse> {
@@ -2230,22 +2229,37 @@ pub fn query_user_votes(
     let mut voted_proposals_power_sum: HashMap<u64, Decimal> = HashMap::new();
 
     // The USER_LOCKS only has history starting from round_id: 3
-    // Note: users who voted in rounds ID 1 and 2 had to lock for 3 rounds, so their lock_ids would still show in round ID 3
-    // This means that only votes of users who voted in round ID 0, and unlocked before round ID 3, will not be returned by this function
-    round_id = max(round_id, 3);
+    // Before that round, we cannot query USER_LOCKS, which is necessary to check votes from VOTE_MAP_V2
+    // So, we need to query VOTE_MAP_V1 for those rounds
     let round_highest_height = get_highest_known_height_for_round_id(deps.storage, round_id)?;
+    let is_historical_data_available =
+        verify_historical_data_availability(deps.storage, round_highest_height);
 
-    // Get the user's locks from USER_LOCKS
-    let user_locks = USER_LOCKS
-        .may_load_at_height(deps.storage, user_address.clone(), round_highest_height)?
-        .unwrap_or_default();
-
-    // Collect all votes for user's locks
     let mut votes = Vec::new();
-    for lock_id in user_locks {
-        let vote = VOTE_MAP_V2.may_load(deps.storage, ((round_id, tranche_id), lock_id))?;
-        if let Some(vote) = vote {
-            votes.push(vote);
+
+    if is_historical_data_available.is_err() {
+        // We still use the old VOTE_MAP_V1 store for where there's no historical data available
+        votes = VOTE_MAP_V1
+            .prefix(((round_id, tranche_id), user_address.clone()))
+            .range(deps.storage, None, None, Order::Ascending)
+            .filter_map(|vote| match vote {
+                Err(_) => None,
+                Ok(vote) => Some(vote.1),
+            })
+            .collect::<Vec<Vote>>();
+    } else {
+        // Get the user's locks from USER_LOCKS.
+        // If the lock was created at round_highest_height, it should still be counted (hence the load_at_height + 1)
+        let user_locks = USER_LOCKS
+            .may_load_at_height(deps.storage, user_address.clone(), round_highest_height + 1)?
+            .unwrap_or_default();
+
+        // Collect all votes for user's locks
+        for lock_id in user_locks {
+            let vote = VOTE_MAP_V2.may_load(deps.storage, ((round_id, tranche_id), lock_id))?;
+            if let Some(vote) = vote {
+                votes.push(vote);
+            }
         }
     }
 

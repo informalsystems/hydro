@@ -9,8 +9,8 @@ use crate::contract::{
 use crate::msg::ProposalToLockups;
 use crate::query::VoteEntry;
 use crate::state::{
-    RoundLockPowerSchedule, ValidatorInfo, Vote, LOCKS_MAP_V2, TOKEN_INFO_PROVIDERS, USER_LOCKS,
-    VALIDATORS_INFO, VOTE_MAP_V2,
+    HeightRange, RoundLockPowerSchedule, ValidatorInfo, Vote, LOCKS_MAP_V2, ROUND_TO_HEIGHT_RANGE,
+    SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, USER_LOCKS, VALIDATORS_INFO, VOTE_MAP_V2,
 };
 use crate::testing::{
     get_default_instantiate_msg, get_default_lsm_token_info_provider, get_message_info,
@@ -820,6 +820,20 @@ fn query_user_votes_test() {
     for test_case in test_cases {
         println!("running test case: {}", test_case.description);
         let (mut deps, _env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+
+        let height_range = HeightRange {
+            lowest_known_height: 0,
+            highest_known_height: env.block.height,
+        };
+
+        // We need to fill these stores or query_user_votes won't work
+        ROUND_TO_HEIGHT_RANGE
+            .save(&mut deps.storage, round_id, &height_range)
+            .unwrap();
+
+        SNAPSHOTS_ACTIVATION_HEIGHT
+            .save(&mut deps.storage, &0)
+            .unwrap();
 
         for vote_to_create in &test_case.votes_to_create {
             let mut lock_ids = USER_LOCKS
