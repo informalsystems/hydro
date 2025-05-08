@@ -1397,39 +1397,6 @@
       {
         "type": "object",
         "required": [
-          "user_voted_locks"
-        ],
-        "properties": {
-          "user_voted_locks": {
-            "type": "object",
-            "required": [
-              "address",
-              "round_id",
-              "tranche_id"
-            ],
-            "properties": {
-              "address": {
-                "type": "string"
-              },
-              "round_id": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
-              },
-              "tranche_id": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
-      },
-      {
-        "type": "object",
-        "required": [
           "all_votes"
         ],
         "properties": {
@@ -3552,62 +3519,6 @@
             },
             "name": {
               "type": "string"
-            }
-          },
-          "additionalProperties": false
-        }
-      }
-    },
-    "user_voted_locks": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "UserVotedLocksResponse",
-      "type": "object",
-      "required": [
-        "voted_locks"
-      ],
-      "properties": {
-        "voted_locks": {
-          "type": "array",
-          "items": {
-            "type": "array",
-            "items": [
-              {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
-              },
-              {
-                "type": "array",
-                "items": {
-                  "$ref": "#/definitions/VotedLockInfo"
-                }
-              }
-            ],
-            "maxItems": 2,
-            "minItems": 2
-          }
-        }
-      },
-      "additionalProperties": false,
-      "definitions": {
-        "Decimal": {
-          "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
-          "type": "string"
-        },
-        "VotedLockInfo": {
-          "type": "object",
-          "required": [
-            "lock_id",
-            "power"
-          ],
-          "properties": {
-            "lock_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "power": {
-              "$ref": "#/definitions/Decimal"
             }
           },
           "additionalProperties": false

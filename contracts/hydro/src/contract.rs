@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 
 use cosmwasm_std::from_json;
@@ -33,8 +34,8 @@ use crate::query::{
     RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse,
     SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse,
     TokenInfoProvidersResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse,
-    UserVotedLocksResponse, UserVotesResponse, UserVotingPowerResponse, VoteEntry, VotedLockInfo,
-    WhitelistAdminsResponse, WhitelistResponse,
+    UserVotesResponse, UserVotingPowerResponse, VoteEntry, WhitelistAdminsResponse,
+    WhitelistResponse,
 };
 use crate::score_keeper::{
     add_token_group_shares_to_proposal, add_token_group_shares_to_round_total,
@@ -1820,13 +1821,6 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
             tranche_id,
             address,
         } => to_json_binary(&query_user_votes(deps, round_id, tranche_id, address)?),
-        QueryMsg::UserVotedLocks {
-            round_id,
-            tranche_id,
-            address,
-        } => to_json_binary(&query_user_voted_locks(
-            deps, round_id, tranche_id, address,
-        )?),
         QueryMsg::AllVotes { start_from, limit } => {
             to_json_binary(&query_all_votes(deps, start_from, limit)?)
         }
@@ -2228,16 +2222,22 @@ pub fn query_user_voting_power(
 // to zero will be filtered out.
 pub fn query_user_votes(
     deps: Deps<NeutronQuery>,
-    round_id: u64,
+    mut round_id: u64,
     tranche_id: u64,
     user_address: String,
 ) -> StdResult<UserVotesResponse> {
     let user_address = deps.api.addr_validate(&user_address)?;
     let mut voted_proposals_power_sum: HashMap<u64, Decimal> = HashMap::new();
 
+    // The USER_LOCKS only has history starting from round_id: 3
+    // Note: users who voted in rounds ID 1 and 2 had to lock for 3 rounds, so their lock_ids would still show in round ID 3
+    // This means that only votes of users who voted in round ID 0, and unlocked before round ID 3, will not be returned by this function
+    round_id = max(round_id, 3);
+    let round_highest_height = get_highest_known_height_for_round_id(deps.storage, round_id)?;
+
     // Get the user's locks from USER_LOCKS
     let user_locks = USER_LOCKS
-        .may_load(deps.storage, user_address.clone())?
+        .may_load_at_height(deps.storage, user_address.clone(), round_highest_height)?
         .unwrap_or_default();
 
     // Collect all votes for user's locks
@@ -2285,64 +2285,6 @@ pub fn query_user_votes(
         .collect();
 
     Ok(UserVotesResponse { votes })
-}
-
-// This function queries user voted locks for the given round and tranche.
-// Unlike query_user_votes which aggregates voting power by proposal,
-// this function returns the individual locks that voted for each proposal
-// along with their voting power, to support transferable locks in the tribute contract.
-pub fn query_user_voted_locks(
-    deps: Deps<NeutronQuery>,
-    round_id: u64,
-    tranche_id: u64,
-    user_address: String,
-) -> StdResult<UserVotedLocksResponse> {
-    let user_address = deps.api.addr_validate(&user_address)?;
-    let mut voted_proposals_locks: HashMap<u64, Vec<VotedLockInfo>> = HashMap::new();
-    // Get the users locks from USER_LOCKS for the given height
-    let round_highest_height = get_highest_known_height_for_round_id(deps.storage, round_id)?;
-    let user_locks = USER_LOCKS
-        .may_load_at_height(deps.storage, user_address.clone(), round_highest_height)?
-        .unwrap_or_default();
-
-    let mut token_manager = TokenManager::new(&deps);
-
-    // For each user lock, check if it voted in this round/tranche
-    for lock_id in user_locks {
-        if let Some(vote) = VOTE_MAP_V2.may_load(deps.storage, ((round_id, tranche_id), lock_id))? {
-            let vote_token_group_id = vote.time_weighted_shares.0.clone();
-            let token_ratio =
-                token_manager.get_token_group_ratio(&deps, round_id, vote_token_group_id)?;
-
-            // Calculate the vote power
-            let vote_power = vote.time_weighted_shares.1.checked_mul(token_ratio)?;
-
-            // Skip votes with zero power (happens if token ratio became zero)
-            if vote_power == Decimal::zero() {
-                continue;
-            }
-
-            // Add this lock to the map for its proposal
-            voted_proposals_locks
-                .entry(vote.prop_id)
-                .or_default()
-                .push(VotedLockInfo {
-                    lock_id,
-                    power: vote_power,
-                });
-        }
-    }
-
-    if voted_proposals_locks.is_empty() {
-        return Err(StdError::generic_err(
-            "User didn't vote in the given round and tranche",
-        ));
-    }
-
-    // Convert the HashMap to a Vec of tuples
-    let voted_locks: Vec<(u64, Vec<VotedLockInfo>)> = voted_proposals_locks.into_iter().collect();
-
-    Ok(UserVotedLocksResponse { voted_locks })
 }
 
 pub fn query_all_votes(

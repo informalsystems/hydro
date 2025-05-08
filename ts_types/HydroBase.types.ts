@@ -228,12 +228,6 @@ export type QueryMsg = {
     tranche_id: number;
   };
 } | {
-  user_voted_locks: {
-    address: string;
-    round_id: number;
-    tranche_id: number;
-  };
-} | {
   all_votes: {
     limit: number;
     start_from: number;
@@ -476,13 +470,6 @@ export interface Tranche {
   id: number;
   metadata: string;
   name: string;
-}
-export interface UserVotedLocksResponse {
-  voted_locks: [number, VotedLockInfo[]][];
-}
-export interface VotedLockInfo {
-  lock_id: number;
-  power: Decimal;
 }
 export interface UserVotesResponse {
   votes: VoteWithPower[];

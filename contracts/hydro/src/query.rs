@@ -4,7 +4,7 @@ use crate::{
     token_manager::TokenInfoProvider,
 };
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
+use cosmwasm_std::{Addr, Timestamp, Uint128};
 
 #[cw_serde]
 #[derive(QueryResponses, cw_orch::QueryFns)]
@@ -55,13 +55,6 @@ pub enum QueryMsg {
 
     #[returns(UserVotesResponse)]
     UserVotes {
-        round_id: u64,
-        tranche_id: u64,
-        address: String,
-    },
-
-    #[returns(UserVotedLocksResponse)]
-    UserVotedLocks {
         round_id: u64,
         tranche_id: u64,
         address: String,
@@ -242,19 +235,6 @@ pub struct UserVotingPowerResponse {
 #[cw_serde]
 pub struct UserVotesResponse {
     pub votes: Vec<VoteWithPower>,
-}
-
-#[cw_serde]
-pub struct VotedLockInfo {
-    pub lock_id: u64,
-    pub power: Decimal,
-}
-
-#[cw_serde]
-pub struct UserVotedLocksResponse {
-    // Maps proposal_id to a list of locks that voted for it with their voting power
-    // The first item in each tuple is the proposal_id
-    pub voted_locks: Vec<(u64, Vec<VotedLockInfo>)>,
 }
 
 #[cw_serde]

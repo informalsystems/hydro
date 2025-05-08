@@ -41,11 +41,4 @@ pub const ID_TO_TRIBUTE_MAP: Map<u64, Tribute> = Map::new("id_to_tribute_map");
 
 // Importantly, the TRIBUTE_CLAIMS for a voter_addr and tribute_id being present at all means the user has claimed that tribute.
 // TRIBUTE_CLAIMS: key(voter_addr, tribute_id) -> amount_claimed
-// Kept for historical information
 pub const TRIBUTE_CLAIMS: Map<(Addr, u64), Coin> = Map::new("tribute_claims");
-
-// New storage map to track which lockups have claimed which tributes
-// This enables transferable locks while preventing double claims
-// Using tribute_id as the first key allows us to easily query all locks that claimed a specific tribute
-// TRIBUTE_CLAIMED_LOCKS: key(tribute_id, lock_id) -> bool
-pub const TRIBUTE_CLAIMED_LOCKS: Map<(u64, u64), bool> = Map::new("tribute_claimed_locks");
