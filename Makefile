@@ -34,7 +34,7 @@ compile-inner:
 		cosmwasm/optimizer:0.16.0
 
 schema:
-	# to install ts tooling see here: https://docs.cosmology.zone/ts-codegen
+	# to install TS tooling see here: https://docs.hyperweb.io/ts-codegen
 	
 	cd contracts/hydro && cargo run --bin hydro_schema
 	cd contracts/tribute && cargo run --bin tribute_schema

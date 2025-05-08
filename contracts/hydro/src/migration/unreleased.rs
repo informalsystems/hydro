@@ -67,7 +67,7 @@ pub fn migrate_v3_1_1_to_unreleased(
         &TokenInfoProvider::LSM(lsm_token_info_provider),
     )?;
 
-    Ok(Response::new().add_attribute("action", "migrate_v3_1_1_to_unreleased"))
+    Ok(Response::new().add_attribute("action", "migrate_v3_1_1_to_v3_2_0"))
 }
 
 // Migrate locks from V1 to V2 storage structures
