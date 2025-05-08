@@ -43,17 +43,23 @@ pub fn migrate(
     msg: MigrateMsgV3_2_0,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     check_contract_version(deps.storage, CONTRACT_VERSION_V3_1_1)?;
-    pause_contract_before_migration(&mut deps, &env)?;
 
     let response = match msg {
+        // Constants must be migrated first in order for contract pausing not to break the state!
         MigrateMsgV3_2_0::MigrateToV3_2_0 {} => migrate_v3_1_1_to_unreleased(&mut deps),
-        MigrateMsgV3_2_0::MigrateLocksV1ToV2 { start, limit } => migrate_locks_batch(
-            &mut deps,
-            env.block.height,
-            start.unwrap_or(0),
-            limit.unwrap_or(50),
-        ),
+        MigrateMsgV3_2_0::MigrateLocksV1ToV2 { start, limit } => {
+            pause_contract_before_migration(&mut deps, &env)?;
+
+            migrate_locks_batch(
+                &mut deps,
+                env.block.height,
+                start.unwrap_or(0),
+                limit.unwrap_or(50),
+            )
+        }
         MigrateMsgV3_2_0::MigrateVotesV1ToV2 { start, limit } => {
+            pause_contract_before_migration(&mut deps, &env)?;
+
             migrate_votes_batch(&mut deps, start.unwrap_or(0), limit.unwrap_or(50))
         }
     }?;
