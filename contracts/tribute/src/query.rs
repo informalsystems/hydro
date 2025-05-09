@@ -42,6 +42,8 @@ pub enum QueryMsg {
         user_address: String,
         round_id: u64,
         tranche_id: u64,
+        start_from: u32,
+        limit: u32,
     },
 }
 

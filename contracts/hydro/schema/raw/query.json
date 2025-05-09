@@ -270,39 +270,6 @@
     {
       "type": "object",
       "required": [
-        "user_voted_locks"
-      ],
-      "properties": {
-        "user_voted_locks": {
-          "type": "object",
-          "required": [
-            "address",
-            "round_id",
-            "tranche_id"
-          ],
-          "properties": {
-            "address": {
-              "type": "string"
-            },
-            "round_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "tranche_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
         "all_votes"
       ],
       "properties": {

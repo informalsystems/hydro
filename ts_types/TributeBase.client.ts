@@ -40,11 +40,15 @@ export interface TributeBaseReadOnlyInterface {
     startFrom: number;
   }) => Promise<RoundTributesResponse>;
   outstandingTributeClaims: ({
+    limit,
     roundId,
+    startFrom,
     trancheId,
     userAddress
   }: {
+    limit: number;
     roundId: number;
+    startFrom: number;
     trancheId: number;
     userAddress: string;
   }) => Promise<OutstandingTributeClaimsResponse>;
@@ -121,17 +125,23 @@ export class TributeBaseQueryClient implements TributeBaseReadOnlyInterface {
     });
   };
   outstandingTributeClaims = async ({
+    limit,
     roundId,
+    startFrom,
     trancheId,
     userAddress
   }: {
+    limit: number;
     roundId: number;
+    startFrom: number;
     trancheId: number;
     userAddress: string;
   }): Promise<OutstandingTributeClaimsResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       outstanding_tribute_claims: {
+        limit,
         round_id: roundId,
+        start_from: startFrom,
         tranche_id: trancheId,
         user_address: userAddress
       }

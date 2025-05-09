@@ -51,7 +51,9 @@ export type QueryMsg = {
   };
 } | {
   outstanding_tribute_claims: {
+    limit: number;
     round_id: number;
+    start_from: number;
     tranche_id: number;
     user_address: string;
   };

@@ -187,7 +187,7 @@ pub struct Proposal {
     pub minimum_atom_liquidity_request: Uint128,
 }
 
-// VOTE_MAP_V1: Previous structure, now preserved for migration
+// VOTE_MAP_V1: Previous structure, we need to keep it until all the tributes are claimed for round 0
 // VOTE_MAP: key((round_id, tranche_id), sender_addr, lock_id) -> Vote
 pub const VOTE_MAP_V1: Map<((u64, u64), Addr, u64), Vote> = Map::new("vote_map");
 

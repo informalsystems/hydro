@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::{
     contract::{
         execute, instantiate, query_historical_tribute_claims, query_outstanding_tribute_claims,
@@ -7,10 +5,7 @@ use crate::{
     },
     msg::{ExecuteMsg, InstantiateMsg},
     query::TributeClaim,
-    state::{
-        Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMED_LOCKS, TRIBUTE_CLAIMS,
-        TRIBUTE_MAP,
-    },
+    state::{Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMS, TRIBUTE_MAP},
 };
 use cosmwasm_std::{
     coins, from_json,
@@ -23,7 +18,7 @@ use hydro::{
     msg::LiquidityDeployment,
     query::{
         ConstantsResponse, CurrentRoundResponse, LiquidityDeploymentResponse, ProposalResponse,
-        QueryMsg as HydroQueryMsg, UserVotedLocksResponse, UserVotesResponse, VotedLockInfo,
+        QueryMsg as HydroQueryMsg, UserVotesResponse,
     },
     state::{Constants, Proposal, VoteWithPower},
 };
@@ -177,27 +172,6 @@ impl MockWasmQuerier {
                     HydroQueryMsg::Constants {} => to_json_binary(&ConstantsResponse {
                         constants: self.hydro_constants.clone().unwrap(),
                     }),
-                    HydroQueryMsg::UserVotedLocks {
-                        round_id,
-                        tranche_id,
-                        address,
-                    } => Ok({
-                        let res = self.find_matching_user_voted_locks(
-                            round_id,
-                            tranche_id,
-                            address.as_str(),
-                        );
-
-                        match res {
-                            Ok(res) => res,
-                            Err(_) => {
-                                return SystemResult::Err(SystemError::InvalidRequest {
-                                    error: "vote couldn't be found".to_string(),
-                                    request: Binary::new(vec![]),
-                                })
-                            }
-                        }
-                    }),
 
                     _ => panic!("unsupported query"),
                 };
@@ -217,7 +191,7 @@ impl MockWasmQuerier {
         address: &str,
     ) -> StdResult<Binary> {
         let mut votes = vec![];
-        for (vote_round_id, vote_tranche_id, vote_address, vote, _) in &self.user_votes {
+        for (vote_round_id, vote_tranche_id, vote_address, vote) in &self.user_votes {
             if *vote_round_id == round_id
                 && *vote_tranche_id == tranche_id
                 && vote_address == address
@@ -231,30 +205,6 @@ impl MockWasmQuerier {
         }
 
         to_json_binary(&UserVotesResponse { votes })
-    }
-
-    fn find_matching_user_voted_locks(
-        &self,
-        round_id: u64,
-        tranche_id: u64,
-        address: &str,
-    ) -> StdResult<Binary> {
-        let mut locks_by_prop_id: HashMap<u64, Vec<VotedLockInfo>> = HashMap::new();
-        for (vote_round_id, vote_tranche_id, vote_address, vote, lock_id) in &self.user_votes {
-            let votes = locks_by_prop_id.entry(vote.prop_id).or_default();
-            if *vote_round_id == round_id
-                && *vote_tranche_id == tranche_id
-                && vote_address == address
-            {
-                votes.push(VotedLockInfo {
-                    lock_id: *lock_id,
-                    power: vote.power,
-                });
-            }
-        }
-        to_json_binary(&UserVotedLocksResponse {
-            voted_locks: locks_by_prop_id.into_iter().collect(),
-        })
     }
 
     fn find_matching_proposal(
@@ -342,7 +292,7 @@ struct ClaimTributeInfo {
     expected_tribute_claim: u128,
 }
 
-type UserVote = (u64, u64, String, VoteWithPower, u64); // (round_id, tranche_id, address, VoteWithPower, lock_id)
+type UserVote = (u64, u64, String, VoteWithPower); // (round_id, tranche_id, address, VoteWithPower)
 
 struct RefundTributeTestCase {
     description: String,
@@ -588,7 +538,6 @@ fn claim_tribute_test() {
                             prop_id: 5,
                             power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
                         },
-                        0,
                     ),
                     (
                         10,
@@ -598,7 +547,6 @@ fn claim_tribute_test() {
                             prop_id: 6,
                             power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
                         },
-                        1,
                     ),
                 ],
                 deployments_for_all_proposals.clone(),
@@ -642,8 +590,7 @@ fn claim_tribute_test() {
                 tribute_id: 0,
                 expected_success: false,
                 expected_tribute_claim: 0,
-                expected_error_msg: "User didn't vote for the proposal this tribute belongs to"
-                    .to_string(),
+                expected_error_msg: "vote couldn't be found".to_string(),
             }],
             mock_data: (
                 10,
@@ -681,7 +628,6 @@ fn claim_tribute_test() {
                         prop_id: 5,
                         power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
                     },
-                    0,
                 )],
                 deployments_for_all_proposals.clone(),
             ),
@@ -717,7 +663,6 @@ fn claim_tribute_test() {
                         prop_id: 6,
                         power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
                     },
-                    0,
                 )],
                 deployments_for_all_proposals.clone(),
             ),
@@ -751,7 +696,6 @@ fn claim_tribute_test() {
                         prop_id: 5,
                         power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
                     },
-                    0,
                 )],
                 vec![],
             ),
@@ -785,7 +729,6 @@ fn claim_tribute_test() {
                         prop_id: 5,
                         power: Decimal::from_ratio(Uint128::new(70), Uint128::one()),
                     },
-                    0,
                 )],
                 zero_deployments_for_all_proposals,
             ),
@@ -872,7 +815,10 @@ fn claim_tribute_test() {
 
             // Verify that the same tribute can't be claimed twice for the same user
             let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-            assert!(res.unwrap_err().to_string().contains("Nothing to claim"));
+            assert!(res
+                .unwrap_err()
+                .to_string()
+                .contains("User has already claimed the tribute"));
         }
     }
 }
@@ -1358,6 +1304,8 @@ struct OutstandingTributeClaimsTestCase {
     user_address: Addr,
     round_id: u64,
     tranche_id: u64,
+    start_from: u32,
+    limit: u32,
     expected_claims: Vec<TributeClaim>,
     expected_error: Option<StdError>,
 }
@@ -1372,6 +1320,8 @@ fn test_query_outstanding_tribute_claims() {
             user_address: deps.api.addr_make("user1"),
             round_id: 1,
             tranche_id: 1,
+            start_from: 0,
+            limit: 10,
             expected_claims: vec![TributeClaim {
                 round_id: 1,
                 tranche_id: 1,
@@ -1387,6 +1337,18 @@ fn test_query_outstanding_tribute_claims() {
             user_address: deps.api.addr_make("user2"),
             round_id: 1,
             tranche_id: 1,
+            start_from: 0,
+            limit: 10,
+            expected_claims: vec![],
+            expected_error: None,
+        },
+        OutstandingTributeClaimsTestCase {
+            description: "Query with start_from beyond range".to_string(),
+            user_address: deps.api.addr_make("user1"),
+            round_id: 1,
+            tranche_id: 1,
+            start_from: 10,
+            limit: 10,
             expected_claims: vec![],
             expected_error: None,
         },
@@ -1470,17 +1432,6 @@ fn test_query_outstanding_tribute_claims() {
             )
             .unwrap();
 
-        TRIBUTE_CLAIMED_LOCKS
-            .save(&mut deps.storage, (1, 0), &true)
-            .unwrap();
-
-        TRIBUTE_CLAIMED_LOCKS
-            .save(&mut deps.storage, (1, 2), &true)
-            .unwrap();
-        TRIBUTE_CLAIMED_LOCKS
-            .save(&mut deps.storage, (2, 2), &true)
-            .unwrap();
-
         // user 2 claimed both tributes
         TRIBUTE_CLAIMS
             .save(
@@ -1489,18 +1440,12 @@ fn test_query_outstanding_tribute_claims() {
                 &Coin::new(Uint128::new(100), "token"),
             )
             .unwrap();
-        TRIBUTE_CLAIMED_LOCKS
-            .save(&mut deps.storage, (1, 1), &true)
-            .unwrap();
         TRIBUTE_CLAIMS
             .save(
                 &mut deps.storage,
                 (deps.api.addr_make("user2"), 2),
                 &Coin::new(Uint128::new(200), "token"),
             )
-            .unwrap();
-        TRIBUTE_CLAIMED_LOCKS
-            .save(&mut deps.storage, (2, 1), &true)
             .unwrap();
 
         // Mock proposals and user votes
@@ -1549,20 +1494,11 @@ fn test_query_outstanding_tribute_claims() {
             mock_proposals.clone(),
             vec![
                 (
-                    // user 1 voted on prop 1 with lock_id 0
+                    // user 1 voted on prop 1
                     1,
                     1,
                     get_address_as_str(&deps.api, "user1"),
                     user_vote.clone(),
-                    0,
-                ),
-                (
-                    // user 1 voted on prop 1 with lock_id 2
-                    1,
-                    1,
-                    get_address_as_str(&deps.api, "user1"),
-                    user_vote.clone(),
-                    2,
                 ),
                 (
                     // user 2 voted on prop 1, too
@@ -1570,7 +1506,6 @@ fn test_query_outstanding_tribute_claims() {
                     1,
                     get_address_as_str(&deps.api, "user2"),
                     user_vote.clone(),
-                    1,
                 ),
             ],
             liquidity_deployments,
@@ -1591,6 +1526,8 @@ fn test_query_outstanding_tribute_claims() {
             test_case.user_address.clone().to_string(),
             test_case.round_id,
             test_case.tranche_id,
+            test_case.start_from,
+            test_case.limit,
         );
 
         match result {

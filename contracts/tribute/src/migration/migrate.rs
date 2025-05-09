@@ -7,8 +7,6 @@ use crate::{
     error::ContractError,
 };
 
-use super::unreleased::migrate_v3_1_1_to_unreleased;
-
 #[cw_serde]
 pub struct MigrateMsgV3_2_0 {}
 
@@ -20,24 +18,18 @@ pub const CONTRACT_VERSION_V3_1_1: &str = "3.1.1";
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(
-    mut deps: DepsMut,
+    deps: DepsMut,
     _env: Env,
     _msg: MigrateMsgV3_2_0,
 ) -> Result<Response, ContractError> {
     check_contract_version(deps.storage, CONTRACT_VERSION_V3_1_1)?;
 
-    // Run migrations based on current version
-    let response = migrate_v3_1_1_to_unreleased(&mut deps).map_err(|e| {
-        ContractError::Std(StdError::generic_err(format!(
-            "Migration to unreleased failed: {}",
-            e
-        )))
-    })?;
+    // no migration necessary
 
     // Update contract version
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    Ok(response)
+    Ok(Response::default())
 }
 
 fn check_contract_version(
