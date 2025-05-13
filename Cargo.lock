@@ -2466,6 +2466,8 @@ dependencies = [
  "osmosis-std 0.25.0",
  "osmosis-test-tube",
  "proptest",
+ "prost 0.12.6",
+ "prost-derive 0.9.0",
  "schemars",
  "serde",
  "serde_json",
@@ -3024,6 +3026,19 @@ checksum = "2c0fef6c4230e4ccf618a35c59d7ede15dea37de8427500f50aff708806e42ec"
 dependencies = [
  "bytes",
  "prost-derive 0.13.4",
+]
+
+[[package]]
+name = "prost-derive"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9cc1a3263e07e0bf68e96268f37665207b49560d98739662cdfaae215c720fe"
+dependencies = [
+ "anyhow",
+ "itertools 0.10.5",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]

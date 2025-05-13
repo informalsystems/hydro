@@ -96,6 +96,9 @@ pub enum ContractError {
     #[error("ClaimableSpreadRewardsQueryFailed")]
     ClaimableSpreadRewardsQueryFailed {},
 
+    #[error("ClaimableIncentivesQueryFailed")]
+    ClaimableIncentivesQueryFailed {},
+
     #[error("Tick index too low")]
     TickIndexTooLow,
 

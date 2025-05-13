@@ -37,3 +37,4 @@ node_modules/
 
 contracts/liquid-collateral/package.json
 contracts/liquid-collateral/package-lock.json
+artifacts/liquid_collateral.wasm

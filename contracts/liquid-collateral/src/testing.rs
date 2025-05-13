@@ -9,13 +9,14 @@ pub mod testing {
     };
     use crate::state::{Bid, BidStatus, State, BIDS, SORTED_BIDS, STATE};
     use crate::ContractError;
-    use std::str::FromStr;
-
     use bigdecimal::BigDecimal;
     use cosmwasm_std::{
         testing::{mock_dependencies, mock_env, mock_info},
         Addr, Coin, Decimal, Uint128,
     };
+    use cosmwasm_std::{Binary, Reply, SubMsgResponse, SubMsgResult};
+    use osmosis_std::types::cosmos::base::v1beta1::Coin as OsmosisCoin;
+    use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::MsgWithdrawPositionResponse;
     use osmosis_std::types::osmosis::poolmanager::v1beta1::SpotPriceRequest;
     use osmosis_std::types::{
         cosmos::bank::v1beta1::QueryBalanceRequest, cosmwasm::wasm::v1::MsgExecuteContractResponse,
@@ -24,8 +25,13 @@ pub mod testing {
     use osmosis_test_tube::{
         Account, Bank, ExecuteResponse, Module, OsmosisTestApp, PoolManager, SigningAccount, Wasm,
     };
+    use prost::Message;
+    use std::str::FromStr;
 
-    use crate::contract::{calculate_withdraw_liquidity_amount, parse_liquidity, resolve_auction};
+    use crate::contract::{
+        calculate_withdraw_liquidity_amount, fetch_all_rewards,
+        handle_withdraw_position_end_round_reply, parse_liquidity, resolve_auction,
+    };
 
     pub const USDC_DENOM: &str =
         "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4";
@@ -1114,13 +1120,13 @@ pub mod testing {
 
     #[test]
     fn test_calculate_amount_1() {
-        let amount0_str = "345";
+        let amount0_str = "0.009578";
         let amount0 = BigDecimal::from_str(&amount0_str).unwrap();
-        let current_price_str = "0.05208";
+        let current_price_str = "1.461";
         let current_price = BigDecimal::from_str(&current_price_str).unwrap();
         let current_sqrt_price = current_price.sqrt().expect("Failed to take sqrt");
-        let lower_tick = -13995400;
-        let upper_tick = -13420200;
+        let lower_tick = 433500;
+        let upper_tick = 500600;
         let amount1 = calc_amount1(
             amount0.clone(),
             lower_tick,
@@ -1159,5 +1165,126 @@ pub mod testing {
         );
 
         println!("Token0 amount on entering position: {}", response); // <-- BigInt supports {}
+    }
+
+    #[test]
+    fn test_fetch_all_rewards() {
+        // Simulate your input:
+        let spread_rewards = vec![
+            OsmosisCoin {
+                denom: "ibc/9FF2B7A5F55038A7EE61F4FD6749D9A648B48E89830F2682B67B5DC158E2753C"
+                    .to_string(),
+                amount: "23".to_string(),
+            },
+            OsmosisCoin {
+                denom: "uosmo".to_string(),
+                amount: "34".to_string(),
+            },
+        ];
+
+        let claimable_incentives = vec![];
+        let forfeited_incentives = vec![];
+
+        let result =
+            fetch_all_rewards(spread_rewards, claimable_incentives, forfeited_incentives).unwrap();
+
+        let expected = vec![
+            Coin {
+                denom: "ibc/9FF2B7A5F55038A7EE61F4FD6749D9A648B48E89830F2682B67B5DC158E2753C"
+                    .to_string(),
+                amount: Uint128::new(23),
+            },
+            Coin {
+                denom: "uosmo".to_string(),
+                amount: Uint128::new(34),
+            },
+        ];
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_withdraw_end_round_reply() {
+        // Step 1: Set up the mock environment and dependencies
+        let mut deps = mock_dependencies();
+        let mut env = mock_env();
+        let info = mock_info("deployer", &[]);
+
+        // Step 2: Initialize the state
+        let state = State {
+            auction_end_time: Some(env.block.time.plus_seconds(0)), // Set the auction end time
+            principal_to_replenish: Uint128::new(103333),           // Target principal to replenish
+            counterparty_to_give: None,                             // Total counterparty available
+            position_created_address: Some(Addr::unchecked("deployer")),
+            principal_funds_owner: Addr::unchecked("principal_funds_owner"),
+            pool_id: 1,
+            counterparty_denom:
+                "ibc/9FF2B7A5F55038A7EE61F4FD6749D9A648B48E89830F2682B67B5DC158E2753C".to_string(),
+            principal_denom: "uosmo".to_string(),
+            position_id: Some(1),
+            initial_principal_amount: Uint128::new(1000),
+            initial_counterparty_amount: Uint128::new(500),
+            liquidity_shares: Some("92195444572928873195000".to_string()),
+            auction_principal_deposited: Uint128::new(0),
+            auction_duration: 100,
+            project_owner: None,
+            liquidator_address: None,
+            round_end_time: env.block.time.plus_seconds(100),
+            position_rewards: Some(vec![
+                Coin {
+                    denom: "ibc/9FF2B7A5F55038A7EE61F4FD6749D9A648B48E89830F2682B67B5DC158E2753C"
+                        .to_string(),
+                    amount: Uint128::new(23),
+                },
+                Coin {
+                    denom: "uosmo".to_string(),
+                    amount: Uint128::new(34),
+                },
+            ]),
+            principal_first: false,
+        };
+        STATE.save(deps.as_mut().storage, &state).unwrap();
+
+        // Mock balances: contract holds enough
+        deps.querier.update_balance(
+            env.contract.address.clone(),
+            vec![
+                Coin {
+                    denom: "uosmo".to_string(),
+                    amount: Uint128::new(100),
+                },
+                Coin {
+                    denom: "ibc/9FF2B7A5F55038A7EE61F4FD6749D9A648B48E89830F2682B67B5DC158E2753C"
+                        .to_string(),
+                    amount: Uint128::new(103371),
+                },
+            ],
+        );
+
+        env.block.time = env.block.time.plus_seconds(1);
+        let proto = MsgWithdrawPositionResponse {
+            amount0: "59998".to_string(),
+            amount1: "103337".to_string(),
+        };
+
+        let mut buf = Vec::new();
+        proto.encode(&mut buf).unwrap();
+
+        let binary_data = Binary::from(buf);
+
+        // Step 3: Build the Reply inline
+        let reply = Reply {
+            id: 3, // use the ID your contract expects
+            result: SubMsgResult::Ok(SubMsgResponse {
+                events: vec![],
+                data: Some(binary_data),
+            }),
+        };
+
+        // Step 4: Call the resolve_auction method
+        let result = handle_withdraw_position_end_round_reply(deps.as_mut(), env.clone(), reply);
+
+        // Step 5: Assert the results
+        assert!(result.is_ok());
     }
 }

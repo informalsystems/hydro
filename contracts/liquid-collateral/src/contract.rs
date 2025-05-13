@@ -251,14 +251,14 @@ pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response
     if is_full_withdraw {
         // Query the claimable spread rewards
         let spread_rewards = ConcentratedliquidityQuerier::new(&deps.querier)
-            .claimable_spread_rewards(state.pool_id)
+            .claimable_spread_rewards(state.position_id.unwrap())
             .map_err(|_| ContractError::ClaimableSpreadRewardsQueryFailed {})? // Handle query errors
             .claimable_spread_rewards;
 
         // Query the claimable incentives
         let incentives: ClaimableIncentivesResponse =
             ConcentratedliquidityQuerier::new(&deps.querier)
-                .claimable_incentives(state.pool_id)
+                .claimable_incentives(state.position_id.unwrap())
                 .map_err(|_| ContractError::ClaimableSpreadRewardsQueryFailed {})?;
 
         // Save into state
@@ -477,14 +477,13 @@ fn handle_withdraw_position_reply(
 
     // Reset liquidator and save state
     state.liquidator_address = None;
-    state.position_rewards = None;
     STATE.save(deps.storage, &state)?;
 
     Ok(Response::new()
         .add_messages(messages)
         .add_attribute("counterparty_amount", counterparty_amount.to_string()))
 }
-fn handle_withdraw_position_end_round_reply(
+pub fn handle_withdraw_position_end_round_reply(
     deps: DepsMut,
     env: Env,
     msg: Reply,
@@ -534,8 +533,6 @@ fn handle_withdraw_position_end_round_reply(
             }
         }
     }
-
-    state.position_rewards = None;
 
     // check pulled principal amount
     if principal_amount >= state.principal_to_replenish {
@@ -645,14 +642,14 @@ pub fn end_round(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response
 
     // Query the claimable spread rewards
     let spread_rewards = ConcentratedliquidityQuerier::new(&deps.querier)
-        .claimable_spread_rewards(state.pool_id)
+        .claimable_spread_rewards(state.position_id.unwrap())
         .map_err(|_| ContractError::ClaimableSpreadRewardsQueryFailed {})? // Handle query errors
         .claimable_spread_rewards;
 
     // Query the claimable incentives
     let incentives: ClaimableIncentivesResponse = ConcentratedliquidityQuerier::new(&deps.querier)
-        .claimable_incentives(state.pool_id)
-        .map_err(|_| ContractError::ClaimableSpreadRewardsQueryFailed {})?;
+        .claimable_incentives(state.position_id.unwrap())
+        .map_err(|_| ContractError::ClaimableIncentivesQueryFailed {})?;
 
     // Save into state
     state.position_rewards = Some(
@@ -1043,6 +1040,7 @@ pub fn query_get_state(deps: Deps) -> StdResult<StateResponse> {
         pool_id: state.pool_id,
         counterparty_denom: state.counterparty_denom.clone(),
         principal_denom: state.principal_denom.clone(),
+        principal_first: state.principal_first,
         position_id: state.position_id,
         initial_principal_amount: state.initial_principal_amount,
         initial_counterparty_amount: state.initial_counterparty_amount,
@@ -1051,6 +1049,8 @@ pub fn query_get_state(deps: Deps) -> StdResult<StateResponse> {
         principal_to_replenish: state.principal_to_replenish,
         counterparty_to_give: state.counterparty_to_give,
         auction_principal_deposited: state.auction_principal_deposited,
+        position_rewards: state.position_rewards,
+        round_end_time: state.round_end_time,
     };
 
     Ok(response)

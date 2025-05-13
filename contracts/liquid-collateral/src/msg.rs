@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
+use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
 
 use crate::state::Bid;
 
@@ -59,6 +59,7 @@ pub struct StateResponse {
     pub position_id: Option<u64>,
     pub principal_denom: String,
     pub counterparty_denom: String,
+    pub principal_first: bool,
     pub initial_principal_amount: Uint128,
     pub principal_to_replenish: Uint128,
     pub initial_counterparty_amount: Uint128,
@@ -66,11 +67,6 @@ pub struct StateResponse {
     pub auction_end_time: Option<Timestamp>,
     pub counterparty_to_give: Option<Uint128>,
     pub auction_principal_deposited: Uint128,
-}
-
-#[cw_serde]
-pub struct CalculatedDataResponse {
-    pub strategy: String,   // Strategy name (tight, passive, conservative, etc.)
-    pub upper_tick: String, // Upper tick for the given strategy
-    pub counterparty_amount: String, // Amount of COUNTERPARTY token for the given strategy
+    pub position_rewards: Option<Vec<Coin>>,
+    pub round_end_time: Timestamp,
 }
