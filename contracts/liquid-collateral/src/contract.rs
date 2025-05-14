@@ -746,9 +746,6 @@ pub fn end_round_bid(
         (info.sender.clone(), new_bid_price, principal.amount),
     );
 
-    // Update the total principal deposited
-    state.auction_principal_deposited += principal.amount;
-
     // Save bid
     BIDS.save(
         deps.storage,
@@ -783,6 +780,9 @@ pub fn end_round_bid(
                     collecting_bids = false; // Stop collecting
                 }
             } else {
+                if bidder == info.sender {
+                    return Err(ContractError::BidNotBetterThanWorst {});
+                }
                 // This bid goes beyond what we need — refund it
                 let refund_msg = BankMsg::Send {
                     to_address: bidder.clone().into_string(),
@@ -805,6 +805,8 @@ pub fn end_round_bid(
         selected_bids.reverse();
         sorted_bids = selected_bids;
     }
+    // Update the total principal deposited
+    state.auction_principal_deposited += principal.amount;
     // Save the updated state
     STATE.save(deps.storage, &state)?;
     SORTED_BIDS.save(deps.storage, &sorted_bids)?;
@@ -926,12 +928,22 @@ pub fn resolve_auction(
             std::cmp::min(max_principal_from_bid, max_principal_based_on_counterparty),
         );
 
+        if principal_to_take.is_zero() {
+            continue;
+        }
+
         // Calculate the corresponding counterparty tokens
         let counterparty_to_give =
             bid_price * Decimal::from_ratio(principal_to_take, Uint128::one());
 
         // Round the result to the nearest integer
         let rounded_counterparty_to_give = round_decimal_to_uint128(counterparty_to_give);
+
+        if rounded_counterparty_to_give.is_zero()
+            || rounded_counterparty_to_give > (counterparty_total - counterparty_spent)
+        {
+            continue;
+        }
 
         // Create message to send counterparty tokens
         let counterparty_msg = BankMsg::Send {
@@ -982,11 +994,6 @@ pub fn resolve_auction(
                 ..bid
             },
         )?;
-    }
-
-    // Check if contract is having enough counterparty amount
-    if counterparty_spent > counterparty_total {
-        return Err(ContractError::NotEnoughCounterpartyAmount {});
     }
 
     // Send remaining counterparty tokens back to the project
