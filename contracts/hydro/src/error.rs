@@ -3,25 +3,30 @@ use cw_utils::PaymentError;
 use neutron_sdk::NeutronError;
 use thiserror::Error;
 
+use crate::cw721::Error as Cw721Error;
+
 #[derive(Error, Debug)]
 pub enum ContractError {
-    #[error("{0}")]
+    #[error(transparent)]
     Std(#[from] StdError),
 
-    #[error("{0}")]
+    #[error(transparent)]
     OverflowError(#[from] OverflowError),
 
-    #[error("{0}")]
+    #[error(transparent)]
     CheckedFromRatioError(#[from] CheckedFromRatioError),
 
     #[error("Unauthorized")]
     Unauthorized,
 
-    #[error("{0}")]
+    #[error(transparent)]
     PaymentError(#[from] PaymentError),
 
-    #[error("{0}")]
+    #[error(transparent)]
     NeutronError(#[from] NeutronError),
+
+    #[error(transparent)]
+    Cw721Error(#[from] Cw721Error),
 
     #[error("Paused")]
     Paused,

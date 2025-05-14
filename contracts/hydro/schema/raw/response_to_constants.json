@@ -12,9 +12,26 @@
   },
   "additionalProperties": false,
   "definitions": {
+    "CollectionInfo": {
+      "type": "object",
+      "required": [
+        "name",
+        "symbol"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "Constants": {
       "type": "object",
       "required": [
+        "cw721_collection_info",
         "first_round_start",
         "known_users_cap",
         "lock_epoch_length",
@@ -25,6 +42,9 @@
         "round_lock_power_schedule"
       ],
       "properties": {
+        "cw721_collection_info": {
+          "$ref": "#/definitions/CollectionInfo"
+        },
         "first_round_start": {
           "$ref": "#/definitions/Timestamp"
         },
