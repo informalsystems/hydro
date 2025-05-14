@@ -186,6 +186,32 @@ pub fn token_info_provider_derivative_mock(
     })
 }
 
+pub fn contract_info_mock(existing_contract_addr: String) -> WasmQueryFunc {
+    Box::new(move |query| match query {
+        WasmQuery::ContractInfo { contract_addr } => {
+            if *contract_addr != existing_contract_addr.clone() {
+                return SystemResult::Err(SystemError::NoSuchContract {
+                    addr: contract_addr.to_string(),
+                });
+            }
+
+            let binary = Binary::from(
+                br#"{
+                    "code_id": 1,
+                    "creator": "creator",
+                    "admin": null,
+                    "pinned": false,
+                    "ibc_port": null
+                }"#,
+            );
+            SystemResult::Ok(ContractResult::Ok(binary))
+        }
+        _ => SystemResult::Err(SystemError::UnsupportedRequest {
+            kind: "unsupported query type".to_string(),
+        }),
+    })
+}
+
 pub struct ICQMockData {
     pub query_type: QueryType,
     pub should_query_return_error: bool,

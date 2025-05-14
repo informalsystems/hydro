@@ -1,4 +1,5 @@
 pub mod contract;
+pub mod cw721;
 mod error;
 pub mod gatekeeper;
 pub mod governance;
@@ -51,3 +52,6 @@ mod testing_token_manager;
 
 #[cfg(test)]
 mod testing_locking_unlocking;
+
+#[cfg(test)]
+mod testing_cw721;

@@ -1,16 +1,27 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "AllUserLockupsWithTrancheInfosResponse",
+  "title": "AllNftInfoResponse",
   "type": "object",
   "required": [
-    "lockups_with_per_tranche_infos"
+    "access",
+    "info"
   ],
   "properties": {
-    "lockups_with_per_tranche_infos": {
-      "type": "array",
-      "items": {
-        "$ref": "#/definitions/LockupWithPerTrancheInfo"
-      }
+    "access": {
+      "description": "Who can transfer the token",
+      "allOf": [
+        {
+          "$ref": "#/definitions/OwnerOfResponse"
+        }
+      ]
+    },
+    "info": {
+      "description": "Data on the token itself,",
+      "allOf": [
+        {
+          "$ref": "#/definitions/NftInfoResponse"
+        }
+      ]
     }
   },
   "additionalProperties": false,
@@ -18,6 +29,22 @@
     "Addr": {
       "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
       "type": "string"
+    },
+    "Approval": {
+      "type": "object",
+      "required": [
+        "expires",
+        "spender"
+      ],
+      "properties": {
+        "expires": {
+          "$ref": "#/definitions/Expiration"
+        },
+        "spender": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     },
     "Coin": {
       "type": "object",
@@ -34,6 +61,53 @@
         }
       },
       "additionalProperties": false
+    },
+    "Expiration": {
+      "description": "Expiration represents a point in time when some event happens. It can compare with a BlockInfo and will return is_expired() == true once the condition is hit (and for every block in the future)",
+      "oneOf": [
+        {
+          "description": "AtHeight will expire when `env.block.height` >= height",
+          "type": "object",
+          "required": [
+            "at_height"
+          ],
+          "properties": {
+            "at_height": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "AtTime will expire when `env.block.time` >= time",
+          "type": "object",
+          "required": [
+            "at_time"
+          ],
+          "properties": {
+            "at_time": {
+              "$ref": "#/definitions/Timestamp"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Never will never expire. Used to express the empty variant",
+          "type": "object",
+          "required": [
+            "never"
+          ],
+          "properties": {
+            "never": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "LockEntryV2": {
       "type": "object",
@@ -96,6 +170,51 @@
           "items": {
             "$ref": "#/definitions/PerTrancheLockupInfo"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "NftInfoResponse": {
+      "type": "object",
+      "required": [
+        "extension"
+      ],
+      "properties": {
+        "extension": {
+          "description": "You can add any custom metadata here when you extend cw721-base",
+          "allOf": [
+            {
+              "$ref": "#/definitions/LockupWithPerTrancheInfo"
+            }
+          ]
+        },
+        "token_uri": {
+          "description": "Universal resource identifier for this NFT Should point to a JSON file that conforms to the ERC721 Metadata JSON Schema",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "OwnerOfResponse": {
+      "type": "object",
+      "required": [
+        "approvals",
+        "owner"
+      ],
+      "properties": {
+        "approvals": {
+          "description": "If set this address is approved to transfer/send the token as well",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Approval"
+          }
+        },
+        "owner": {
+          "description": "Owner of the token",
+          "type": "string"
         }
       },
       "additionalProperties": false
