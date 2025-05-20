@@ -23,7 +23,7 @@ pub struct CreatePositionMsg {
     pub counterparty_token_min_amount: Uint128,
 }
 #[cw_serde]
-pub struct EndRoundBidMsg {
+pub struct PlaceBidMsg {
     pub requested_amount: Uint128,
 }
 
@@ -32,7 +32,7 @@ pub enum ExecuteMsg {
     CreatePosition(CreatePositionMsg),
     Liquidate,
     EndRound,
-    EndRoundBid(EndRoundBidMsg),
+    PlaceBid(PlaceBidMsg),
     WithdrawBid,
     ResolveAuction,
 }
@@ -48,6 +48,10 @@ pub enum QueryMsg {
     Bids {},
     #[returns(Vec<(Addr, Decimal)>)]
     SortedBids {},
+    #[returns(bool)]
+    IsLiquidatable,
+    #[returns(String)]
+    SimulateLiquidation { principal_amount: Uint128 },
 }
 
 #[cw_serde]

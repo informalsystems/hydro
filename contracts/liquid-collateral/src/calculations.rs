@@ -415,4 +415,59 @@ pub mod calculations {
         // Step 4: Round up
         round_up_bigdec(&total)
     }
+
+    /// Calculates the final amount of token0 when price reaches the lower tick,
+    /// assuming an initial token0 deposit and all of it is converted.
+    pub fn calc_final_amount_at_lower_tick_with_bonus(
+        amount1: BigDecimal,
+        lower_tick: i64,
+        upper_tick: i64,
+        current_sqrt_price: BigDecimal,
+        liquidation_bonus: f64,
+    ) -> (BigInt, BigInt, BigInt, BigInt) {
+        // Step 1: Calculate sqrt prices
+        let sqrt_price_lower = tick_to_sqrt_price(lower_tick).expect("invalid lower tick");
+        let sqrt_price_upper = tick_to_sqrt_price(upper_tick).expect("invalid upper tick");
+
+        // Step 2: Calculate liquidity based on amount1 and current price
+        let liquidity = calc_liquidity_amount1(lower_tick, current_sqrt_price, amount1.clone());
+
+        // Step 3: Calculate amount0 to be received when price hits lower tick:
+        // amount0 = liquidity × (1 / sqrt(lower) - 1 / sqrt(upper))
+        let one = BigDecimal::from(1u64);
+        let inv_lower = one.clone() / sqrt_price_lower;
+        let inv_upper = one / sqrt_price_upper;
+        let diff = inv_lower - inv_upper;
+
+        let amount0 = liquidity * diff;
+
+        // Round amount0 up
+        let amount0_rounded = round_up_bigdec(&amount0);
+
+        // Step 4: Calculate price at lower tick: token1/token0 (how much token1 = 1 token0)
+        let price_at_lower_tick = tick_to_price(lower_tick).expect("invalid price");
+
+        // Step 5: Convert liquidation bonus portion of token1 into token0 using price
+        let bonus_token1 = &amount1 * BigDecimal::from_f64(liquidation_bonus).unwrap(); // 20% of token1
+        let bonus_token0 = &bonus_token1 / &price_at_lower_tick;
+        let bonus_token0_rounded = round_up_bigdec(&bonus_token0);
+
+        // Step 6: Total token0 = base + bonus
+        let total_token0 = &amount0_rounded + &bonus_token0_rounded;
+
+        // Step 7: Calculate total value of token0 in token1 (without bonus)
+        let amount0_dec = BigDecimal::from_str(&amount0_rounded.to_string()).unwrap();
+        let value_without_bonus = round_up_bigdec(&(amount0_dec * &price_at_lower_tick));
+
+        // Step 8: Calculate total value of token0 in token1 (with bonus)
+        let total_token0_dec = BigDecimal::from_str(&total_token0.to_string()).unwrap();
+        let value_with_bonus = round_up_bigdec(&(total_token0_dec * &price_at_lower_tick));
+
+        (
+            amount0_rounded,
+            total_token0,
+            value_without_bonus,
+            value_with_bonus,
+        )
+    }
 }

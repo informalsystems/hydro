@@ -1,11 +1,12 @@
 #[cfg(test)]
 pub mod testing {
     use crate::calculations::calculations::{
-        calc_amount0, calc_amount1, calc_required_token1_with_bonus, tick_to_sqrt_price,
+        calc_amount0, calc_amount1, calc_final_amount_at_lower_tick_with_bonus,
+        calc_required_token1_with_bonus, tick_to_sqrt_price,
     };
     use crate::mock::mock::{store_contracts_code, PoolMockup};
     use crate::msg::{
-        CreatePositionMsg, EndRoundBidMsg, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse,
+        CreatePositionMsg, ExecuteMsg, InstantiateMsg, PlaceBidMsg, QueryMsg, StateResponse,
     };
     use crate::state::{Bid, BidStatus, State, BIDS, SORTED_BIDS, STATE};
     use crate::ContractError;
@@ -837,7 +838,7 @@ pub mod testing {
         println!("{}", formatted_output);
 
         // Execute the first bid
-        let first_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
+        let first_bid = ExecuteMsg::PlaceBid(PlaceBidMsg {
             requested_amount: 10u128.into(),
         });
 
@@ -849,7 +850,7 @@ pub mod testing {
             .expect("Execution failed");
 
         // Execute the second bid
-        let second_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
+        let second_bid = ExecuteMsg::PlaceBid(PlaceBidMsg {
             requested_amount: 10u128.into(),
         });
 
@@ -861,7 +862,7 @@ pub mod testing {
             .expect("Execution failed");
 
         // Execute the third bid
-        let third_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
+        let third_bid = ExecuteMsg::PlaceBid(PlaceBidMsg {
             requested_amount: 10000u128.into(),
         });
 
@@ -872,7 +873,7 @@ pub mod testing {
             .execute(&contract_addr, &third_bid, coins, &pool_mockup.user3)
             .expect("Execution failed");
 
-        let fourth_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
+        let fourth_bid = ExecuteMsg::PlaceBid(PlaceBidMsg {
             requested_amount: 10000u128.into(),
         });
 
@@ -892,7 +893,7 @@ pub mod testing {
         // Print the state response
         println!("{}", formatted_output);
 
-        let fifth_bid = ExecuteMsg::EndRoundBid(EndRoundBidMsg {
+        let fifth_bid = ExecuteMsg::PlaceBid(PlaceBidMsg {
             requested_amount: 1u128.into(),
         });
 
@@ -1109,7 +1110,7 @@ pub mod testing {
     }
     #[test]
     fn test_tick_to_price() {
-        let tick = -700; // Example tick value
+        let tick = 11046100; // Example tick value
         let price = tick_to_sqrt_price(tick).unwrap();
 
         println!("Sqrt price: {}", price);
@@ -1148,15 +1149,15 @@ pub mod testing {
 
     #[test]
     fn test_calculate_amount_0() {
-        let amount1_str = "345";
+        let amount1_str = "1000";
         let amount1 = BigDecimal::from_str(&amount1_str).unwrap();
         // ratio calculated as: osmo/usdc (spot price: base - osmo, quote-usdc)
         // token0 is always quote in osmosis pool
-        let current_price_str = "0.05208";
+        let current_price_str = "29.4696172";
         let current_price = BigDecimal::from_str(&current_price_str).unwrap();
         let current_sqrt_price = current_price.sqrt().expect("Failed to take sqrt");
-        let lower_tick = -13995400;
-        let upper_tick = -13420200;
+        let lower_tick = 10746100;
+        let upper_tick = 11046100;
         let response = calc_amount0(
             amount1.clone(),
             lower_tick,
@@ -1286,5 +1287,41 @@ pub mod testing {
 
         // Step 5: Assert the results
         assert!(result.is_ok());
+    }
+    #[test]
+    fn test_calculate_final_amount_at_lower_tick_with_bonus() {
+        let amount1_str = "1000";
+        let amount1 = BigDecimal::from_str(&amount1_str).unwrap();
+        // ratio calculated as: osmo/usdc (spot price: base - osmo, quote-usdc)
+        // token0 is always quote in osmosis pool
+        let current_price_str = "29.46961726";
+        let current_price = BigDecimal::from_str(&current_price_str).unwrap();
+        let current_sqrt_price = current_price.sqrt().expect("Failed to take sqrt");
+        let lower_tick = 10746100;
+        let upper_tick = 11046100;
+        let bonus = 0.2;
+
+        let (amount0, amount0_with_bonus, value_without_bonus, value_with_bonus) =
+            calc_final_amount_at_lower_tick_with_bonus(
+                amount1,
+                lower_tick,
+                upper_tick,
+                current_sqrt_price,
+                bonus,
+            );
+
+        println!("Token0 amount at lower tick (no bonus): {}", amount0);
+        println!(
+            "Token0 amount at lower tick (with bonus): {}",
+            amount0_with_bonus
+        );
+        println!(
+            "Value of token0 at lower tick (no bonus) in token1: {}",
+            value_without_bonus
+        );
+        println!(
+            "Value of token0 at lower tick (with bonus) in token1: {}",
+            value_with_bonus
+        );
     }
 }

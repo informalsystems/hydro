@@ -1,6 +1,6 @@
 use crate::error::ContractError;
 use crate::msg::{
-    CreatePositionMsg, EndRoundBidMsg, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse,
+    CreatePositionMsg, ExecuteMsg, InstantiateMsg, PlaceBidMsg, QueryMsg, StateResponse,
 };
 use crate::state::{Bid, BidStatus, State, BIDS, SORTED_BIDS, STATE};
 use cosmwasm_std::{
@@ -66,7 +66,7 @@ pub fn execute(
         ExecuteMsg::CreatePosition(msg) => create_position(deps, env, info, msg),
         ExecuteMsg::Liquidate => liquidate(deps, env, info),
         ExecuteMsg::EndRound => end_round(deps, env, info),
-        ExecuteMsg::EndRoundBid(msg) => end_round_bid(deps, env, info, msg),
+        ExecuteMsg::PlaceBid(msg) => place_bid(deps, env, info, msg),
         ExecuteMsg::WithdrawBid => withdraw_bid(deps, env, info),
         ExecuteMsg::ResolveAuction => resolve_auction(deps, env, info),
     }
@@ -80,14 +80,17 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::Bid { address } => to_json_binary(&query_bid(deps, address)?),
         QueryMsg::Bids {} => to_json_binary(&query_get_bids(deps)?),
         QueryMsg::SortedBids {} => to_json_binary(&query_sorted_bids(deps)?),
+        QueryMsg::IsLiquidatable {} => to_json_binary(&query_is_liquidatable(deps)?),
+        QueryMsg::SimulateLiquidation { principal_amount } => {
+            to_json_binary(&query_simulate_liquidation(deps, principal_amount)?)
+        }
     }
 }
-/*
 
-## Create position with reply
- - based on the passed position arguments, method is sending MsgCreatePosition to the cl module on Osmosis
- - in the reply contract is updating the state with the position information.
-*/
+/// Create position with reply
+/// - based on the passed position arguments, method is sending MsgCreatePosition to the cl module on Osmosis
+/// - in the reply contract is updating the state with the position information.
+
 pub fn create_position(
     deps: DepsMut,
     env: Env,
@@ -145,7 +148,6 @@ pub fn create_position(
         tokens_provided.push(osmo_coin);
     }
 
-    // Create position message
     let create_position_msg = MsgCreatePosition {
         pool_id: state.pool_id,
         sender: env.contract.address.to_string(),
@@ -158,10 +160,8 @@ pub fn create_position(
 
     // store the address which initiated position creation
     state.position_created_address = Some(info.sender);
-    // Save the updated state back to storage
     STATE.save(deps.storage, &state)?;
 
-    // Wrap in SubMsg to handle response
     let submsg = SubMsg::reply_on_success(create_position_msg, 1);
 
     Ok(Response::new()
@@ -176,7 +176,7 @@ pub fn create_position(
 ## Liquidate position with reply
  - method checks whether principal amount in the position is zero - which needs to be the case in order to allow liquidation
  - the percentage of liquidation amount is calculated based on the principal funds liquidator sent to the contract (can be full or partial)
- - amount is immediatelly transferred to the principal_funds owner (so contract doesn't need to hold anything)
+ - amount is immediately transferred to the principal_funds owner (so contract doesn't need to hold anything)
  - MsgWithdrawPosition on Osmosis module is called
  - in the reply the counterparty amount which was pulled from the pool is sent to the liquidator address
  - in case of full liquidation - all rewards are being sent to principal_funds_owner
@@ -202,8 +202,8 @@ pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response
     // Use the principal asset amount
     let principal_amount = principal_asset.amount.clone();
 
-    // Check if asset1_amount is non-zero
-    // if it's zero - price went below lower tick (since principal token amount is zero)
+    // Check if current principal amount inside position is non-zero
+    // if it's zero - price hit the lower/upper tick (since principal token amount is zero)
     if principal_amount != "0" {
         return Err(ContractError::ThresholdNotMet {
             amount: principal_amount,
@@ -236,9 +236,7 @@ pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response
         principal_amount_to_replenish,
         liquidity_shares_decimal,
     )?;
-    // substract liquidity and save again
 
-    // Create withdraw message
     let withdraw_position_msg = MsgWithdrawPosition {
         position_id: state.position_id.unwrap(),
         sender: _env.contract.address.to_string(),
@@ -261,7 +259,6 @@ pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response
                 .claimable_incentives(state.position_id.unwrap())
                 .map_err(|_| ContractError::ClaimableSpreadRewardsQueryFailed {})?;
 
-        // Save into state
         state.position_rewards = Some(
             fetch_all_rewards(
                 spread_rewards,
@@ -272,14 +269,12 @@ pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response
         );
     }
 
-    // Wrap in SubMsg to handle response
     let submsg = SubMsg::reply_on_success(withdraw_position_msg, 2);
 
     state.liquidator_address = Some(info.sender);
     // update that liquidator replenished some principal amount
     state.principal_to_replenish -= principal.unwrap().amount;
 
-    // Save the updated state back to storage
     STATE.save(deps.storage, &state)?;
 
     // immediately forward principal funds to principal owner
@@ -374,7 +369,6 @@ fn handle_create_position_reply(deps: DepsMut, msg: Reply) -> Result<Response, C
     // Parse the reply result into MsgCreatePositionResponse
     let response: MsgCreatePositionResponse = msg.result.try_into()?;
 
-    // Load the current state
     let mut state = STATE.load(deps.storage)?;
 
     // Parse both amounts
@@ -409,21 +403,20 @@ fn handle_withdraw_position_reply(
     env: Env,
     msg: Reply,
 ) -> Result<Response, ContractError> {
-    // Parse the reply result into MsgCreatePositionResponse
     let response: MsgWithdrawPositionResponse = msg.result.try_into()?;
 
-    // Load the current state
     let mut state = STATE.load(deps.storage)?;
 
+    // Fetch the current liquidity of the position after withdrawal
     let liquidity = state
         .position_id
         .map(|id| {
             ConcentratedliquidityQuerier::new(&deps.querier)
                 .position_by_id(id)
                 .ok()
-                .and_then(|resp| resp.position) // FullPositionBreakdown
-                .and_then(|breakdown| breakdown.position) // Option<Position>
-                .map(|pos| pos.liquidity) // Get liquidity as String
+                .and_then(|resp| resp.position)
+                .and_then(|breakdown| breakdown.position)
+                .map(|pos| pos.liquidity)
         })
         .flatten(); // Will be None if any of the steps fail
 
@@ -488,10 +481,8 @@ pub fn handle_withdraw_position_end_round_reply(
     env: Env,
     msg: Reply,
 ) -> Result<Response, ContractError> {
-    // Parse the reply result into MsgCreatePositionResponse
     let response: MsgWithdrawPositionResponse = msg.result.try_into()?;
 
-    // Load the current state
     let mut state = STATE.load(deps.storage)?;
 
     // Parse both amounts
@@ -626,14 +617,13 @@ pub fn end_round(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response
 
     let current_time = env.block.time;
 
-    // Check that the round is ended by checking that the round_id is less than the current round
+    // Check if the round ended by checking if current block time is less than the round_end_time
     if current_time < state.round_end_time {
         return Err(ContractError::Std(StdError::generic_err(
             "Round has not ended yet",
         )));
     }
 
-    // Create withdraw message
     let withdraw_position_msg = MsgWithdrawPosition {
         position_id: state.position_id.unwrap(),
         sender: env.contract.address.to_string(),
@@ -651,7 +641,6 @@ pub fn end_round(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response
         .claimable_incentives(state.position_id.unwrap())
         .map_err(|_| ContractError::ClaimableIncentivesQueryFailed {})?;
 
-    // Save into state
     state.position_rewards = Some(
         fetch_all_rewards(
             spread_rewards,
@@ -664,7 +653,6 @@ pub fn end_round(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response
     // Wrap in SubMsg to handle response
     let submsg = SubMsg::reply_on_success(withdraw_position_msg, 3);
 
-    // Save the updated state back to storage
     STATE.save(deps.storage, &state)?;
 
     Ok(Response::new()
@@ -673,7 +661,7 @@ pub fn end_round(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response
 }
 
 /*
-## End round bid
+## Place bid
  - can only be executed if auction is in progress
  - bidder sends desired principal amount to the contract and request some amount of counterparty token
  - bidder must replenish at least 1% of principal
@@ -682,11 +670,11 @@ pub fn end_round(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response
  - in case the new bid makes principal amount be potentially replenished, unneeded (worst) bid/s will be kicked out
  - if one or more bids are kicked out from sorted bids - bidders will be refunded and correct status of the bid will be saved
 */
-pub fn end_round_bid(
+pub fn place_bid(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    msg: EndRoundBidMsg,
+    msg: PlaceBidMsg,
 ) -> Result<Response, ContractError> {
     // Reject if user already has an existing bid
     if BIDS.may_load(deps.storage, info.sender.clone())?.is_some() {
@@ -733,7 +721,6 @@ pub fn end_round_bid(
     // Calculate the price of the new bid
     let new_bid_price = Decimal::from_ratio(msg.requested_amount, principal.amount);
 
-    // Load the sorted bids array
     let mut sorted_bids = SORTED_BIDS.load(deps.storage).unwrap_or_default();
 
     // Insert the new bid into the sorted array
@@ -746,7 +733,6 @@ pub fn end_round_bid(
         (info.sender.clone(), new_bid_price, principal.amount),
     );
 
-    // Save bid
     BIDS.save(
         deps.storage,
         info.sender.clone(),
@@ -823,7 +809,6 @@ pub fn withdraw_bid(
     _env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
-    // Load the current state
     let state = STATE.load(deps.storage)?;
 
     // Make sure auction is resolved
@@ -853,7 +838,6 @@ pub fn withdraw_bid(
         }],
     };
 
-    // Save updated bid back to storage
     BIDS.save(deps.storage, info.sender.clone(), &bid)?;
 
     Ok(Response::new()
@@ -1086,4 +1070,93 @@ pub fn query_sorted_bids(deps: Deps) -> StdResult<Vec<(Addr, Decimal, Uint128)>>
     // Load the sorted bids from storage
     let sorted_bids = SORTED_BIDS.load(deps.storage).unwrap_or_default();
     Ok(sorted_bids)
+}
+
+pub fn query_is_liquidatable(deps: Deps) -> StdResult<bool> {
+    let state = STATE
+        .load(deps.storage)
+        .map_err(|e| StdError::generic_err(format!("State load failed: {}", e)))?;
+
+    let position = ConcentratedliquidityQuerier::new(&deps.querier)
+        .position_by_id(
+            state
+                .position_id
+                .ok_or_else(|| StdError::generic_err("Missing position_id in state"))?,
+        )
+        .map_err(|_| StdError::generic_err("Position query failed"))?
+        .position
+        .ok_or_else(|| StdError::not_found("Position"))?;
+
+    let principal_asset = if state.principal_first {
+        position.asset0
+    } else {
+        position.asset1
+    };
+
+    let principal_asset = principal_asset.ok_or_else(|| StdError::not_found("Principal Asset"))?;
+    let principal_amount = principal_asset.amount.clone();
+
+    Ok(principal_amount == "0")
+}
+pub fn query_simulate_liquidation(deps: Deps, principal_input: Uint128) -> StdResult<String> {
+    let state = STATE
+        .load(deps.storage)
+        .map_err(|e| StdError::generic_err(format!("State load failed: {}", e)))?;
+
+    let position = ConcentratedliquidityQuerier::new(&deps.querier)
+        .position_by_id(
+            state
+                .position_id
+                .ok_or_else(|| StdError::generic_err("Missing position_id in state"))?,
+        )
+        .map_err(|_| StdError::generic_err("Position query failed"))?
+        .position
+        .ok_or_else(|| StdError::not_found("Position"))?;
+
+    let (principal_asset, counterparty_asset) = if state.principal_first {
+        (position.asset0, position.asset1)
+    } else {
+        (position.asset1, position.asset0)
+    };
+
+    let principal_asset = principal_asset.ok_or_else(|| StdError::not_found("Principal Asset"))?;
+    let counterparty_asset =
+        counterparty_asset.ok_or_else(|| StdError::not_found("Counterparty Asset"))?;
+    let principal_amount = principal_asset.amount.clone();
+
+    let counterparty_amount = Uint128::from_str(&counterparty_asset.amount)
+        .map_err(|_| StdError::generic_err("Invalid counterparty asset amount"))?;
+
+    // Check if asset1_amount is non-zero
+    // if it's zero - price went below lower tick (since principal token amount is zero)
+    if principal_amount != "0" {
+        return Ok("Position is not liquidatable".to_string());
+    }
+    // Convert base_amount and initial_base_amount to Decimal for precise division
+    let principal_input = Decimal::from_atomics(principal_input, 0)
+        .map_err(|_| ContractError::InvalidConversion {})
+        .unwrap();
+    let principal_amount_to_replenish = Decimal::from_atomics(state.principal_to_replenish, 0)
+        .map_err(|_| ContractError::InvalidConversion {})
+        .unwrap();
+    let counterparty_available = Decimal::from_atomics(counterparty_amount, 0)
+        .map_err(|_| ContractError::InvalidConversion {})
+        .unwrap();
+
+    // Ensure the supplied amount is not greater than the initial amount
+    if principal_input > principal_amount_to_replenish {
+        return Ok("Excessive liquidation amount".to_string());
+    }
+
+    // Calculate percentage to liquidate
+    let perc_to_liquidate = principal_input / principal_amount_to_replenish;
+
+    let counterparty_to_liquidate = counterparty_available * perc_to_liquidate;
+
+    let counterparty_to_liquidate = round_decimal_to_uint128(counterparty_to_liquidate);
+
+    // Return as string
+    let counterparty_str = counterparty_to_liquidate.to_string();
+
+    Ok(counterparty_str)
 }
