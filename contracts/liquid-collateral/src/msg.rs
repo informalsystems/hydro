@@ -28,12 +28,17 @@ pub struct PlaceBidMsg {
 }
 
 #[cw_serde]
+pub struct WithdrawBidMsg {
+    pub bid_id: u64,
+}
+
+#[cw_serde]
 pub enum ExecuteMsg {
     CreatePosition(CreatePositionMsg),
     Liquidate,
     EndRound,
     PlaceBid(PlaceBidMsg),
-    WithdrawBid,
+    WithdrawBid(WithdrawBidMsg),
     ResolveAuction,
 }
 
@@ -43,9 +48,9 @@ pub enum QueryMsg {
     #[returns(StateResponse)]
     State {},
     #[returns(Bid)]
-    Bid { address: String },
+    Bid { bid_id: u64 },
     #[returns(Vec<(String, Bid)>)]
-    Bids {},
+    Bids { start_from: u32, limit: u32 },
     #[returns(Vec<(Addr, Decimal)>)]
     SortedBids {},
     #[returns(bool)]

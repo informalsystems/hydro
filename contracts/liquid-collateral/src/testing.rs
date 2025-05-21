@@ -915,31 +915,35 @@ pub mod testing {
 
         // Query the sorted bids
         let query_msg = QueryMsg::SortedBids {};
-        let response: Vec<(Addr, Decimal, Uint128)> =
+        let response: Vec<(u64, Decimal, Uint128)> =
             wasm.query(&contract_addr, &query_msg).unwrap();
 
         // Print the sorted bids
         println!("Sorted Bids:");
-        for (bidder, price_ratio, principal_deposited) in response {
+        for (bid_id, price_ratio, principal_deposited) in response {
             println!(
-                "Bidder: {}, Price Ratio: {}, Principal deposited: {}",
-                bidder, price_ratio, principal_deposited
+                "Bid Id: {}, Price Ratio: {}, Principal deposited: {}",
+                bid_id, price_ratio, principal_deposited
             );
         }
         println!("Increasing time for 1000 seconds...\n");
         pool_mockup.app.increase_time(10000);
 
-        let query_bids = QueryMsg::Bids {};
+        let query_bids = QueryMsg::Bids {
+            start_from: 1,
+            limit: 10,
+        };
 
-        let bids_response: Vec<(String, Bid)> = wasm.query(&contract_addr, &query_bids).unwrap();
+        let bids_response: Vec<(u64, Bid)> = wasm.query(&contract_addr, &query_bids).unwrap();
 
         // Deserialize the response to get the bids
 
         // Print all bids in a structured format
-        for (bidder, bid) in bids_response {
+        for (bid_id, bid) in bids_response {
             println!(
-    "Bidder Address: {}\n  Principal Deposited: {}\n  Tokens Requested: {}\n  Tokens Fulfilled: {}\n  Tokens Refunded: {}\n  Status: {:?}\n",
-    bidder,
+    "Bid Id: {}\n Bidder Address: {}\n  Principal Deposited: {}\n  Tokens Requested: {}\n  Tokens Fulfilled: {}\n  Tokens Refunded: {}\n  Status: {:?}\n",
+    bid_id,
+    bid.bidder,
     bid.principal_deposited,
     bid.tokens_requested,
     bid.tokens_fulfilled,
@@ -960,17 +964,21 @@ pub mod testing {
             )
             .expect("Execution failed");
 
-        let query_bids = QueryMsg::Bids {};
+        let query_bids = QueryMsg::Bids {
+            start_from: 1,
+            limit: 10,
+        };
 
-        let bids_response: Vec<(String, Bid)> = wasm.query(&contract_addr, &query_bids).unwrap();
+        let bids_response: Vec<(u64, Bid)> = wasm.query(&contract_addr, &query_bids).unwrap();
 
         // Deserialize the response to get the bids
 
         // Print all bids in a structured format
-        for (bidder, bid) in bids_response {
+        for (bid_id, bid) in bids_response {
             println!(
-    "Bidder Address: {}\n  Principal Deposited: {}\n  Tokens Requested: {}\n  Tokens Fulfilled: {}\n  Tokens Refunded: {}\n  Status: {:?}\n",
-    bidder,
+    "Bid Id: {}\n Bidder Address: {}\n  Principal Deposited: {}\n  Tokens Requested: {}\n  Tokens Fulfilled: {}\n  Tokens Refunded: {}\n  Status: {:?}\n",
+    bid_id,
+    bid.bidder,
     bid.principal_deposited,
     bid.tokens_requested,
     bid.tokens_fulfilled,
@@ -1056,41 +1064,36 @@ pub mod testing {
             status: BidStatus::Submitted,
         };
 
-        BIDS.save(deps.as_mut().storage, Addr::unchecked("bidder1"), &bid1)
-            .unwrap();
-        BIDS.save(deps.as_mut().storage, Addr::unchecked("bidder2"), &bid2)
-            .unwrap();
-        BIDS.save(deps.as_mut().storage, Addr::unchecked("bidder3"), &bid3)
-            .unwrap();
-        BIDS.save(deps.as_mut().storage, Addr::unchecked("bidder4"), &bid4)
-            .unwrap();
-        BIDS.save(deps.as_mut().storage, Addr::unchecked("bidder5"), &bid5)
-            .unwrap();
+        BIDS.save(deps.as_mut().storage, 1, &bid1).unwrap();
+        BIDS.save(deps.as_mut().storage, 2, &bid2).unwrap();
+        BIDS.save(deps.as_mut().storage, 3, &bid3).unwrap();
+        BIDS.save(deps.as_mut().storage, 4, &bid4).unwrap();
+        BIDS.save(deps.as_mut().storage, 5, &bid5).unwrap();
 
         // Step 4: Sort the bids by price ratio (tokens_requested / principal_amount)
-        let mut all_bids: Vec<(Addr, Decimal, Uint128)> = vec![
+        let mut all_bids: Vec<(u64, Decimal, Uint128)> = vec![
             (
-                Addr::unchecked("bidder1"),
+                1,
                 Decimal::from_ratio(bid1.tokens_requested, bid1.principal_deposited),
                 bid1.principal_deposited,
             ),
             (
-                Addr::unchecked("bidder2"),
+                2,
                 Decimal::from_ratio(bid2.tokens_requested, bid2.principal_deposited),
                 bid2.principal_deposited,
             ),
             (
-                Addr::unchecked("bidder3"),
+                3,
                 Decimal::from_ratio(bid3.tokens_requested, bid3.principal_deposited),
                 bid3.principal_deposited,
             ),
             (
-                Addr::unchecked("bidder4"),
+                4,
                 Decimal::from_ratio(bid4.tokens_requested, bid4.principal_deposited),
                 bid4.principal_deposited,
             ),
             (
-                Addr::unchecked("bidder5"),
+                5,
                 Decimal::from_ratio(bid5.tokens_requested, bid5.principal_deposited),
                 bid5.principal_deposited,
             ),

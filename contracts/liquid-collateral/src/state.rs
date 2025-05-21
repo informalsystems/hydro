@@ -54,7 +54,7 @@ pub const STATE: Item<State> = Item::new("state");
 // The idea is that only good enough bids are stored in the sorted bids.
 // Example: If there are several bids, and a new bid comes in which is the best and will replenish the needed amount, all other bids are kicked out.
 // The sorted bids are designed to contain only those bids which will be processed on 'resolve auction' action. (may not necessarily be the case).
-pub const SORTED_BIDS: Item<Vec<(Addr, Decimal, Uint128)>> = Item::new("sorted_bids");
+pub const SORTED_BIDS: Item<Vec<(u64, Decimal, Uint128)>> = Item::new("sorted_bids");
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub enum BidStatus {
@@ -75,5 +75,6 @@ pub struct Bid {
     // In case bid is considered as one of the 'winners' bid , it will be processed and the status will be Processed - but note that contract may not need the whole bid.
     pub status: BidStatus,
 }
+pub const BID_COUNTER: Item<u64> = Item::new("bid_counter");
 // The bids stored when bidders manage to create a bid in the auction period
-pub const BIDS: Map<Addr, Bid> = Map::new("bids");
+pub const BIDS: Map<u64, Bid> = Map::new("bids");

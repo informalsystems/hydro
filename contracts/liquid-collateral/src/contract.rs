@@ -1,8 +1,9 @@
 use crate::error::ContractError;
 use crate::msg::{
     CreatePositionMsg, ExecuteMsg, InstantiateMsg, PlaceBidMsg, QueryMsg, StateResponse,
+    WithdrawBidMsg,
 };
-use crate::state::{Bid, BidStatus, State, BIDS, SORTED_BIDS, STATE};
+use crate::state::{Bid, BidStatus, State, BIDS, BID_COUNTER, SORTED_BIDS, STATE};
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, Event,
     MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Uint128,
@@ -67,7 +68,7 @@ pub fn execute(
         ExecuteMsg::Liquidate => liquidate(deps, env, info),
         ExecuteMsg::EndRound => end_round(deps, env, info),
         ExecuteMsg::PlaceBid(msg) => place_bid(deps, env, info, msg),
-        ExecuteMsg::WithdrawBid => withdraw_bid(deps, env, info),
+        ExecuteMsg::WithdrawBid(msg) => withdraw_bid(deps, env, info, msg),
         ExecuteMsg::ResolveAuction => resolve_auction(deps, env, info),
     }
 }
@@ -77,8 +78,10 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         // Handle the GetState query
         QueryMsg::State {} => to_json_binary(&query_get_state(deps)?),
-        QueryMsg::Bid { address } => to_json_binary(&query_bid(deps, address)?),
-        QueryMsg::Bids {} => to_json_binary(&query_get_bids(deps)?),
+        QueryMsg::Bid { bid_id } => to_json_binary(&query_bid(deps, bid_id)?),
+        QueryMsg::Bids { start_from, limit } => {
+            to_json_binary(&query_get_bids(deps, start_from, limit)?)
+        }
         QueryMsg::SortedBids {} => to_json_binary(&query_sorted_bids(deps)?),
         QueryMsg::IsLiquidatable {} => to_json_binary(&query_is_liquidatable(deps)?),
         QueryMsg::SimulateLiquidation { principal_amount } => {
@@ -452,19 +455,11 @@ fn handle_withdraw_position_reply(
     // Handle rewards if present
     if let Some(rewards) = &state.position_rewards {
         for reward in rewards {
-            // Query contract's balance for the denom
-            let contract_balance = deps
-                .querier
-                .query_balance(env.contract.address.clone(), &reward.denom)?;
-
-            // If contract has enough balance, create a send msg
-            if contract_balance.amount >= reward.amount {
-                let reward_msg = BankMsg::Send {
-                    to_address: state.principal_funds_owner.to_string(),
-                    amount: vec![reward.clone()],
-                };
-                messages.push(reward_msg);
-            }
+            let reward_msg = BankMsg::Send {
+                to_address: state.principal_funds_owner.to_string(),
+                amount: vec![reward.clone()],
+            };
+            messages.push(reward_msg);
         }
     }
 
@@ -676,11 +671,6 @@ pub fn place_bid(
     info: MessageInfo,
     msg: PlaceBidMsg,
 ) -> Result<Response, ContractError> {
-    // Reject if user already has an existing bid
-    if BIDS.may_load(deps.storage, info.sender.clone())?.is_some() {
-        return Err(ContractError::BidAlreadyExists {});
-    }
-
     let mut state = STATE.load(deps.storage)?;
 
     // Check that auction is active and has not ended
@@ -723,19 +713,18 @@ pub fn place_bid(
 
     let mut sorted_bids = SORTED_BIDS.load(deps.storage).unwrap_or_default();
 
+    let counter = BID_COUNTER.may_load(deps.storage)?.unwrap_or(1);
+
     // Insert the new bid into the sorted array
     let position = sorted_bids
         .iter()
         .position(|(_, price, _)| new_bid_price > *price)
         .unwrap_or(sorted_bids.len());
-    sorted_bids.insert(
-        position,
-        (info.sender.clone(), new_bid_price, principal.amount),
-    );
+    sorted_bids.insert(position, (counter, new_bid_price, principal.amount));
 
     BIDS.save(
         deps.storage,
-        info.sender.clone(),
+        counter,
         &Bid {
             bidder: info.sender.clone(),
             principal_deposited: principal.amount,
@@ -745,6 +734,7 @@ pub fn place_bid(
             status: BidStatus::Submitted,
         },
     )?;
+    BID_COUNTER.save(deps.storage, &(counter + 1))?;
 
     let mut messages = vec![];
 
@@ -756,7 +746,7 @@ pub fn place_bid(
         let mut collecting_bids = true;
 
         for bid in sorted_bids.iter().rev() {
-            let (bidder, _, principal_deposited) = bid;
+            let (bid_id, _, principal_deposited) = bid;
 
             if collecting_bids {
                 accumulated_principal += *principal_deposited;
@@ -766,12 +756,10 @@ pub fn place_bid(
                     collecting_bids = false; // Stop collecting
                 }
             } else {
-                if bidder == info.sender {
-                    return Err(ContractError::BidNotBetterThanWorst {});
-                }
+                let mut refund_bid = BIDS.load(deps.storage, *bid_id)?;
                 // This bid goes beyond what we need — refund it
                 let refund_msg = BankMsg::Send {
-                    to_address: bidder.clone().into_string(),
+                    to_address: refund_bid.bidder.clone().into_string(),
                     amount: vec![Coin {
                         denom: state.principal_denom.to_string(),
                         amount: *principal_deposited,
@@ -781,10 +769,9 @@ pub fn place_bid(
                 state.auction_principal_deposited -= *principal_deposited;
 
                 // Update bid status
-                let mut refund_bid = BIDS.load(deps.storage, bidder.clone())?;
                 refund_bid.tokens_refunded = *principal_deposited;
                 refund_bid.status = BidStatus::Refunded;
-                BIDS.save(deps.storage, bidder.clone(), &refund_bid)?;
+                BIDS.save(deps.storage, *bid_id, &refund_bid)?;
             }
         }
 
@@ -808,6 +795,7 @@ pub fn withdraw_bid(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
+    msg: WithdrawBidMsg,
 ) -> Result<Response, ContractError> {
     let state = STATE.load(deps.storage)?;
 
@@ -818,8 +806,12 @@ pub fn withdraw_bid(
     }
 
     let mut bid = BIDS
-        .may_load(deps.storage, info.sender.clone())?
+        .may_load(deps.storage, msg.bid_id)?
         .ok_or(ContractError::NoBidFound {})?;
+
+    if info.sender != bid.bidder {
+        return Err(ContractError::Unauthorized {});
+    }
 
     // Allow withdrawal only if bid is still in Submitted state
     if bid.status != BidStatus::Submitted {
@@ -838,7 +830,7 @@ pub fn withdraw_bid(
         }],
     };
 
-    BIDS.save(deps.storage, info.sender.clone(), &bid)?;
+    BIDS.save(deps.storage, msg.bid_id, &bid)?;
 
     Ok(Response::new()
         .add_message(bank_msg)
@@ -882,14 +874,14 @@ pub fn resolve_auction(
     let mut messages = vec![];
 
     // Iterate backwards through the sorted bids
-    while let Some((bidder, bid_price, principal_deposited)) = sorted_bids.pop() {
+    while let Some((bid_id, bid_price, principal_deposited)) = sorted_bids.pop() {
         // If the full principal amount has been replenished, stop processing further bids
         if principal_accumulated >= principal_target {
             break;
         }
 
         // Load the bid details
-        let bid = BIDS.load(deps.storage, bidder.clone())?;
+        let bid = BIDS.load(deps.storage, bid_id)?;
 
         // Calculate the remaining principal needed
         let remaining_principal = principal_target - principal_accumulated;
@@ -970,7 +962,7 @@ pub fn resolve_auction(
         // Update the bid status to refunded
         BIDS.save(
             deps.storage,
-            bid.bidder.clone(),
+            bid_id,
             &Bid {
                 status: BidStatus::Processed,
                 tokens_refunded: remaining_principal_in_bid,
@@ -1047,26 +1039,27 @@ pub fn query_get_state(deps: Deps) -> StdResult<StateResponse> {
     Ok(response)
 }
 
-pub fn query_get_bids(deps: Deps) -> StdResult<Vec<(String, Bid)>> {
-    // Collect all bids from the BIDS map, converting each entry to a tuple (String, Bid)
-    let all_bids: StdResult<Vec<(String, Bid)>> = BIDS
+pub fn query_get_bids(deps: Deps, start_from: u32, limit: u32) -> StdResult<Vec<(u64, Bid)>> {
+    let bids: Vec<(u64, Bid)> = BIDS
         .range(deps.storage, None, None, Order::Ascending)
-        .map(|item| item.map(|(addr, bid)| (addr.to_string(), bid))) // Convert Addr to String
+        .skip(start_from as usize)
+        .take(limit as usize)
+        .filter_map(|item| {
+            match item {
+                Ok((bid_id, bid)) => Some((bid_id, bid)),
+                Err(_) => None, // Skip errored entries
+            }
+        })
         .collect();
 
-    // Prepare the response as a Vec<(String, Bid)>
-    let response = all_bids.unwrap_or_default();
-
-    // Convert the response into Binary (CosmWasm format)
-    Ok(response)
+    Ok(bids)
 }
 
-pub fn query_bid(deps: Deps, address: String) -> StdResult<Bid> {
-    let addr = deps.api.addr_validate(&address)?;
-    BIDS.load(deps.storage, addr)
+pub fn query_bid(deps: Deps, bid_id: u64) -> StdResult<Bid> {
+    BIDS.load(deps.storage, bid_id)
 }
 
-pub fn query_sorted_bids(deps: Deps) -> StdResult<Vec<(Addr, Decimal, Uint128)>> {
+pub fn query_sorted_bids(deps: Deps) -> StdResult<Vec<(u64, Decimal, Uint128)>> {
     // Load the sorted bids from storage
     let sorted_bids = SORTED_BIDS.load(deps.storage).unwrap_or_default();
     Ok(sorted_bids)
