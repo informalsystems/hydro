@@ -93,6 +93,10 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
 /// Create position with reply
 /// - based on the passed position arguments, method is sending MsgCreatePosition to the cl module on Osmosis
 /// - in the reply contract is updating the state with the position information.
+/// - The order of the tokens which will be put in tokens provided is very important
+/// - on osmosis they check lexicographical order: https://github.com/osmosis-labs/osmosis/blob/main/x/concentrated-liquidity/types/msgs.go#L42C2-L44C3
+/// - ibc/token should go before uosmo token for example
+/// - if order is not correct - tx will fail!
 
 pub fn create_position(
     deps: DepsMut,
@@ -115,41 +119,31 @@ pub fn create_position(
         _ => {}
     }
 
-    /*
-    The order of the tokens which will be put in tokens provided is very important
-    on osmosis they check lexicographical order: https://github.com/osmosis-labs/osmosis/blob/main/x/concentrated-liquidity/types/msgs.go#L42C2-L44C3
-    ibc/token should go before uosmo token for example
-    if order is not correct - tx will fail!
-     */
-
     let mut tokens_provided: Vec<OsmosisCoin> = Vec::new();
-    let mut token_min_amount0 = "0".to_string();
-    let mut token_min_amount1 = "0".to_string();
 
     for coin in &info.funds {
-        let osmo_coin = OsmosisCoin {
-            denom: coin.denom.clone(),
-            amount: coin.amount.to_string(),
-        };
-
-        if coin.denom == state.principal_denom {
-            if state.principal_first {
-                token_min_amount0 = msg.principal_token_min_amount.to_string();
-            } else {
-                token_min_amount1 = msg.principal_token_min_amount.to_string();
-            }
-        } else if coin.denom == state.counterparty_denom {
-            if state.principal_first {
-                token_min_amount1 = msg.counterparty_token_min_amount.to_string();
-            } else {
-                token_min_amount0 = msg.counterparty_token_min_amount.to_string();
-            }
-        } else {
+        if coin.denom != state.principal_denom && coin.denom != state.counterparty_denom {
             return Err(ContractError::AssetNotFound {});
         }
 
-        tokens_provided.push(osmo_coin);
+        tokens_provided.push(OsmosisCoin {
+            denom: coin.denom.clone(),
+            amount: coin.amount.to_string(),
+        });
     }
+
+    // Assign min amounts based on principal_first
+    let (token_min_amount0, token_min_amount1) = if state.principal_first {
+        (
+            msg.principal_token_min_amount.to_string(),
+            msg.counterparty_token_min_amount.to_string(),
+        )
+    } else {
+        (
+            msg.counterparty_token_min_amount.to_string(),
+            msg.principal_token_min_amount.to_string(),
+        )
+    };
 
     let create_position_msg = MsgCreatePosition {
         pool_id: state.pool_id,
