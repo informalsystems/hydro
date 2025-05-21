@@ -80,9 +80,6 @@ pub const NATIVE_TOKEN_DENOM: &str = "untrn";
 
 pub const MIN_DEPLOYMENT_DURATION: u64 = 1;
 
-pub const DEFAULT_LIMIT: u32 = 100;
-pub const MAX_LIMIT: u32 = 1000;
-
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     mut deps: DepsMut<NeutronQuery>,
