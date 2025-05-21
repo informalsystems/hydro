@@ -122,7 +122,13 @@ pub fn create_position(
     let mut tokens_provided: Vec<OsmosisCoin> = Vec::new();
 
     for coin in &info.funds {
-        if coin.denom != state.principal_denom && coin.denom != state.counterparty_denom {
+        let denom = coin.denom.as_str();
+
+        if denom == state.principal_denom {
+            state.initial_principal_amount = coin.amount;
+        } else if denom == state.counterparty_denom {
+            state.initial_counterparty_amount = coin.amount;
+        } else {
             return Err(ContractError::AssetNotFound {});
         }
 
@@ -131,7 +137,6 @@ pub fn create_position(
             amount: coin.amount.to_string(),
         });
     }
-
     // Assign min amounts based on principal_first
     let (token_min_amount0, token_min_amount1) = if state.principal_first {
         (
@@ -374,16 +379,47 @@ fn handle_create_position_reply(deps: DepsMut, msg: Reply) -> Result<Response, C
     let amount1 =
         Uint128::from_str(&response.amount1).map_err(|_| ContractError::AssetNotFound {})?;
 
-    // Assign based on whether principal is first
-    if state.principal_first {
-        state.initial_principal_amount = amount0;
-        state.principal_to_replenish = amount0;
-        state.initial_counterparty_amount = amount1;
+    let (principal_used, counterparty_used) = if state.principal_first {
+        (amount0, amount1)
     } else {
-        state.initial_principal_amount = amount1;
-        state.principal_to_replenish = amount1;
-        state.initial_counterparty_amount = amount0;
+        (amount1, amount0)
+    };
+
+    let mut messages = vec![];
+
+    if state.initial_principal_amount > principal_used {
+        let principal_diff = BankMsg::Send {
+            to_address: state
+                .position_created_address
+                .clone()
+                .unwrap()
+                .into_string(),
+            amount: vec![Coin {
+                denom: state.principal_denom.to_string(),
+                amount: state.initial_principal_amount - principal_used,
+            }],
+        };
+        messages.push(principal_diff);
     }
+
+    if state.initial_counterparty_amount > counterparty_used {
+        let counterparty_diff = BankMsg::Send {
+            to_address: state
+                .position_created_address
+                .clone()
+                .unwrap()
+                .into_string(),
+            amount: vec![Coin {
+                denom: state.counterparty_denom.to_string(),
+                amount: state.initial_counterparty_amount - counterparty_used,
+            }],
+        };
+        messages.push(counterparty_diff);
+    }
+
+    state.initial_principal_amount = principal_used;
+    state.principal_to_replenish = principal_used;
+    state.initial_counterparty_amount = counterparty_used;
 
     // Update the state with the new position ID
     state.position_id = Some(response.position_id);
