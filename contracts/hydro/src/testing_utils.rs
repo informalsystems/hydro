@@ -2,7 +2,9 @@ use cosmwasm_std::{testing::mock_env, Timestamp};
 
 use crate::{
     state::{Constants, CONSTANTS},
-    testing::{get_default_power_schedule, ONE_DAY_IN_NANO_SECONDS},
+    testing::{
+        get_default_cw721_collection_info, get_default_power_schedule, ONE_DAY_IN_NANO_SECONDS,
+    },
     testing_mocks::{mock_dependencies, no_op_grpc_query_mock},
     utils::load_current_constants,
 };
@@ -25,6 +27,7 @@ fn load_current_constants_test() {
         paused: false,
         max_deployment_duration: 12,
         round_lock_power_schedule: get_default_power_schedule(),
+        cw721_collection_info: get_default_cw721_collection_info(),
     };
 
     // Change max_locked_tokens each time we insert new Constants so that we can differentiate them

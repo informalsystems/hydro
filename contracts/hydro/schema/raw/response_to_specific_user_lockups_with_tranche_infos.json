@@ -103,6 +103,7 @@
     "PerTrancheLockupInfo": {
       "type": "object",
       "required": [
+        "historic_voted_on_proposals",
         "next_round_lockup_can_vote",
         "tranche_id"
       ],
@@ -114,6 +115,13 @@
           ],
           "format": "uint64",
           "minimum": 0.0
+        },
+        "historic_voted_on_proposals": {
+          "description": "This is the list of proposals that the lockup has been used to vote for in the past. It is used to show the history of the lockup upon transfer / selling on Marketplace. Note that this does not include the current voted on proposal, which is found in the current_voted_on_proposal field.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RoundWithBid"
+          }
         },
         "next_round_lockup_can_vote": {
           "type": "integer",
@@ -129,6 +137,30 @@
           "minimum": 0.0
         },
         "tranche_id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "RoundWithBid": {
+      "type": "object",
+      "required": [
+        "proposal_id",
+        "round_end",
+        "round_id"
+      ],
+      "properties": {
+        "proposal_id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "round_end": {
+          "$ref": "#/definitions/Timestamp"
+        },
+        "round_id": {
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0

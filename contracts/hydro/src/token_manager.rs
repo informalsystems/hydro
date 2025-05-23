@@ -282,6 +282,13 @@ impl TokenInfoProviderLSM {
         }
     }
 
+    // Returns true if denom is a valid LSM IBC denom.
+    // Note: it is purely checking the denom, and does not check whether the validator exists/is active
+    pub fn is_lsm_denom(&self, deps: &Deps<NeutronQuery>, denom: String) -> bool {
+        let result = resolve_validator_from_denom(deps, &self.hub_transfer_channel_id, denom);
+        result.is_ok()
+    }
+
     pub fn get_token_group_ratio(
         &mut self,
         deps: &Deps<NeutronQuery>,

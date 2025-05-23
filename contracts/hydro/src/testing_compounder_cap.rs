@@ -173,6 +173,7 @@ fn test_compounder_cap() {
         max_locked_tokens: Some(40000),
         known_users_cap: Some(2000),
         max_deployment_duration: None,
+        cw721_collection_info: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
@@ -189,6 +190,7 @@ fn test_compounder_cap() {
         max_locked_tokens: None,
         known_users_cap: Some(0),
         max_deployment_duration: None,
+        cw721_collection_info: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
@@ -419,6 +421,7 @@ fn test_compounder_cap() {
         max_locked_tokens: Some(50000),
         known_users_cap: Some(5000),
         max_deployment_duration: None,
+        cw721_collection_info: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
@@ -430,6 +433,7 @@ fn test_compounder_cap() {
         max_locked_tokens: None,
         known_users_cap: Some(0),
         max_deployment_duration: None,
+        cw721_collection_info: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
