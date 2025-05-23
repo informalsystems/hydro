@@ -11,6 +11,7 @@ use crate::{
     cw721::{query_approval, query_collection_info, query_nft_info, query_owner_of},
     msg::{CollectionInfo, ExecuteMsg, ProposalToLockups, ReceiverExecuteMsg},
     query::{NumTokensResponse, OperatorsResponse, QueryMsg, TokensResponse},
+    state::NFT_APPROVALS,
     testing::{
         get_address_as_str, get_default_instantiate_msg, get_message_info,
         set_default_validator_for_rounds, setup_contract_info_mock,
@@ -2087,4 +2088,78 @@ fn test_operator_revoke_for_token() {
         .attributes
         .iter()
         .any(|attr| attr.key == "token_id" && attr.value == token_id));
+}
+
+// Unlocking a token should remove any Approval on that token
+#[test]
+fn test_handle_execute_approve_then_unlock() {
+    // Setup mock for grpc queries
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(
+            ST_ATOM_ON_NEUTRON.to_string(),
+            ST_ATOM_ON_STRIDE.to_string(),
+        )]),
+    );
+
+    // Setup initial state
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+
+    let owner = "owner";
+    let info = get_message_info(&deps.api, owner, &[]);
+
+    // Proper contract initialization
+    let msg = get_default_instantiate_msg(&deps.api);
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+
+    // Setup ST_ATOM token info provider
+    let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
+    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+
+    // Lock tokens first to create a lock entry
+    let lock_info = get_message_info(
+        &deps.api,
+        owner,
+        &[Coin::new(1000u64, ST_ATOM_ON_NEUTRON.to_string())],
+    );
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+
+    // Try to create an approval for spender
+    let spender_addr = deps.api.addr_make("spender");
+    let spender = spender_addr.to_string();
+    let token_id = "0".to_string(); // First lock ID is 0
+    let execute_msg = ExecuteMsg::Approve {
+        spender: spender.clone(),
+        token_id: token_id.clone(),
+        expires: None,
+    };
+
+    // Execute the message using the contract's execute function
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), execute_msg);
+
+    // Verify the response
+    assert!(res.is_ok());
+
+    // Advance the chain by one month + 1 nano second and check that user can unlock tokens
+    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
+
+    // Unlock the token
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::UnlockTokens { lock_ids: None },
+    );
+    assert!(res.is_ok());
+
+    // We need to directly retrieve from the store, as both query_owner_of and query_approval queries
+    // first check that the lockup exists, and error out if not
+    let approval = NFT_APPROVALS.may_load(&deps.storage, (0, spender_addr.clone()));
+    assert_eq!(approval.unwrap(), None);
 }

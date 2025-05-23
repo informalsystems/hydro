@@ -137,15 +137,7 @@ fn transfer(
     }
 
     // Clear approvals for the lock ID
-    let keys_to_remove = NFT_APPROVALS
-        .prefix(lock_entry.lock_id)
-        .keys(deps.storage, None, None, Order::Ascending)
-        .collect::<Result<Vec<_>, _>>()?;
-
-    // Remove each approval in store
-    for spender_addr in keys_to_remove {
-        NFT_APPROVALS.remove(deps.storage, (lock_entry.lock_id, spender_addr));
-    }
+    clear_nft_approvals(deps.storage, lock_entry.lock_id)?;
 
     let old_owner_addr = lock_entry.owner;
     let new_owner_addr = recipient;
@@ -185,6 +177,19 @@ fn transfer(
             StdResult::Ok(locks)
         },
     )?;
+
+    Ok(())
+}
+
+pub fn clear_nft_approvals(storage: &mut dyn Storage, lock_id: u64) -> Result<(), ContractError> {
+    let keys_to_remove = NFT_APPROVALS
+        .prefix(lock_id)
+        .keys(storage, None, None, Order::Ascending)
+        .collect::<StdResult<Vec<_>>>()?;
+
+    for spender_addr in keys_to_remove {
+        NFT_APPROVALS.remove(storage, (lock_id, spender_addr));
+    }
 
     Ok(())
 }

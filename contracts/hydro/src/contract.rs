@@ -746,8 +746,12 @@ fn unlock_tokens(
 
             total_unlocked_amount += send.amount;
 
-            // Delete unlocked locks
+            // Delete unlocked lock
             LOCKS_MAP_V2.remove(deps.storage, lock_id, env.block.height)?;
+
+            // Clear any CW721 Approval on the lock
+            cw721::clear_nft_approvals(deps.storage, lock_id)?;
+
             removed_lock_ids.insert(lock_id);
             unlocked_tokens.push(send.to_string());
         }
