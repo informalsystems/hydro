@@ -320,6 +320,20 @@ fn test_handle_execute_transfer_st_atom_with_vote_success() {
 
     let res = res.unwrap();
     assert_eq!(res.owner, recipient.to_string());
+
+    // verify the transferred lockup has still voted
+    let vote_query_res = query_all_votes(deps.as_ref(), 0, 100);
+    assert!(
+        vote_query_res.is_ok(),
+        "Vote query should not fail: {:?}",
+        vote_query_res
+    );
+    let votes = vote_query_res.unwrap().votes;
+    assert_eq!(1, votes.len());
+    let vote = votes.first().unwrap();
+    assert_eq!(vote.sender_addr.to_string(), recipient);
+    assert_eq!(0, vote.lock_id);
+    assert_eq!(0, vote.vote.prop_id);
 }
 
 #[test]
