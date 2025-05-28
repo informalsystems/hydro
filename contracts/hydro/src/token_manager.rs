@@ -181,7 +181,16 @@ impl TokenInfoProviderDerivative {
         };
 
         match denom_info.denom == denom {
-            true => Ok(denom_info.token_group_id.clone()),
+            true => {
+                if denom_info.ratio.is_zero() {
+                    Err(StdError::generic_err(format!(
+                        "Token ratio not available for round: {}",
+                        round_id
+                    )))
+                } else {
+                    Ok(denom_info.token_group_id.clone())
+                }
+            }
             false => Err(StdError::generic_err(
                 "Input denom doesn't match the expected derivative token denom",
             )),

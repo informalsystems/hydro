@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "type": "object",
+  "required": [
+    "d_token_denom",
+    "drop_staking_core_contract",
+    "token_group_id"
+  ],
+  "properties": {
+    "d_token_denom": {
+      "type": "string"
+    },
+    "drop_staking_core_contract": {
+      "type": "string"
+    },
+    "token_group_id": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}
