@@ -1,9 +1,10 @@
 use crate::error::ContractError;
 use crate::msg::{
-    CreatePositionMsg, ExecuteMsg, InstantiateMsg, PlaceBidMsg, QueryMsg, StateResponse,
-    WithdrawBidMsg,
+    BidResponse, BidsResponse, CreatePositionMsg, ExecuteMsg, InstantiateMsg,
+    IsLiquidatableResponse, PlaceBidMsg, QueryMsg, SimulateLiquidationResponse, SortedBidsResponse,
+    StateResponse, WithdrawBidMsg,
 };
-use crate::state::{Bid, BidStatus, State, BIDS, BID_COUNTER, SORTED_BIDS, STATE};
+use crate::state::{Bid, BidStatus, SortedBid, State, BIDS, BID_COUNTER, SORTED_BIDS, STATE};
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, Event,
     MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Uint128,
@@ -428,7 +429,9 @@ fn handle_create_position_reply(deps: DepsMut, msg: Reply) -> Result<Response, C
     // Save the updated state back to storage
     STATE.save(deps.storage, &state)?;
 
-    Ok(Response::new().add_attribute("position_id", response.position_id.to_string()))
+    Ok(Response::new()
+        .add_messages(messages)
+        .add_attribute("position_id", response.position_id.to_string()))
 }
 
 fn handle_withdraw_position_reply(
@@ -603,8 +606,6 @@ pub fn handle_withdraw_position_end_round_reply(
             };
             messages.push(principal_msg);
         }
-        // there is possibility principal amount is zero and this method is called
-        // Question: should we then prevent liqidation msg to be called if contract reaches auction state?
         state.auction_end_time = Some(env.block.time.plus_seconds(state.auction_duration));
         state.principal_to_replenish -= principal_amount;
         state.counterparty_to_give = Some(counterparty_amount);
@@ -748,9 +749,18 @@ pub fn place_bid(
     // Insert the new bid into the sorted array
     let position = sorted_bids
         .iter()
-        .position(|(_, price, _)| new_bid_price > *price)
+        .position(|bid| new_bid_price > bid.price)
         .unwrap_or(sorted_bids.len());
-    sorted_bids.insert(position, (counter, new_bid_price, principal.amount));
+
+    sorted_bids.insert(
+        position,
+        SortedBid {
+            bid_id: counter,
+            price: new_bid_price,
+            principal_deposited: principal.amount,
+            requested_counterparty: msg.requested_amount,
+        },
+    );
 
     BIDS.save(
         deps.storage,
@@ -776,32 +786,33 @@ pub fn place_bid(
         let mut collecting_bids = true;
 
         for bid in sorted_bids.iter().rev() {
-            let (bid_id, _, principal_deposited) = bid;
+            let bid_id = bid.bid_id;
+            let principal_deposited = bid.principal_deposited;
 
             if collecting_bids {
-                accumulated_principal += *principal_deposited;
+                accumulated_principal += principal_deposited;
                 selected_bids.push(bid.clone());
 
                 if accumulated_principal >= state.principal_to_replenish {
-                    collecting_bids = false; // Stop collecting
+                    collecting_bids = false;
                 }
             } else {
-                let mut refund_bid = BIDS.load(deps.storage, *bid_id)?;
+                let mut refund_bid = BIDS.load(deps.storage, bid_id)?;
                 // This bid goes beyond what we need — refund it
                 let refund_msg = BankMsg::Send {
                     to_address: refund_bid.bidder.clone().into_string(),
                     amount: vec![Coin {
                         denom: state.principal_denom.to_string(),
-                        amount: *principal_deposited,
+                        amount: principal_deposited,
                     }],
                 };
                 messages.push(refund_msg);
-                state.auction_principal_deposited -= *principal_deposited;
+                state.auction_principal_deposited -= principal_deposited;
 
                 // Update bid status
-                refund_bid.tokens_refunded = *principal_deposited;
+                refund_bid.tokens_refunded = principal_deposited;
                 refund_bid.status = BidStatus::Refunded;
-                BIDS.save(deps.storage, *bid_id, &refund_bid)?;
+                BIDS.save(deps.storage, bid_id, &refund_bid)?;
             }
         }
 
@@ -904,11 +915,15 @@ pub fn resolve_auction(
     let mut messages = vec![];
 
     // Iterate backwards through the sorted bids
-    while let Some((bid_id, bid_price, principal_deposited)) = sorted_bids.pop() {
+    while let Some(bid) = sorted_bids.pop() {
         // If the full principal amount has been replenished, stop processing further bids
         if principal_accumulated >= principal_target {
             break;
         }
+
+        let bid_id = bid.bid_id;
+        let bid_price = bid.price;
+        let principal_deposited = bid.principal_deposited;
 
         // Load the bid details
         let bid = BIDS.load(deps.storage, bid_id)?;
@@ -920,9 +935,11 @@ pub fn resolve_auction(
         let max_principal_from_bid = principal_deposited;
 
         // Calculate how much principal we can take based on available counterparty
-        let max_principal_based_on_counterparty =
-            Decimal::from_ratio(counterparty_total - counterparty_spent, Uint128::one())
-                / bid_price;
+        let max_principal_based_on_counterparty = if bid_price.is_zero() {
+            Decimal::from_ratio(max_principal_from_bid, Uint128::one())
+        } else {
+            Decimal::from_ratio(counterparty_total - counterparty_spent, Uint128::one()) / bid_price
+        };
 
         // Round the result to the nearest integer
         let max_principal_based_on_counterparty =
@@ -943,23 +960,26 @@ pub fn resolve_auction(
             bid_price * Decimal::from_ratio(principal_to_take, Uint128::one());
 
         // Round the result to the nearest integer
-        let rounded_counterparty_to_give = round_decimal_to_uint128(counterparty_to_give);
+        let truncated_counterparty_to_give = truncate_decimal_to_uint128(counterparty_to_give);
 
-        if rounded_counterparty_to_give.is_zero()
-            || rounded_counterparty_to_give > (counterparty_total - counterparty_spent)
+        // we only allow check to pass if bid price is zero (meaning no counterparty requested)
+        if (truncated_counterparty_to_give.is_zero() && !bid_price.is_zero())
+            || truncated_counterparty_to_give > (counterparty_total - counterparty_spent)
         {
             continue;
         }
 
-        // Create message to send counterparty tokens
-        let counterparty_msg = BankMsg::Send {
-            to_address: bid.bidder.clone().into_string(),
-            amount: vec![Coin {
-                denom: state.counterparty_denom.to_string(),
-                amount: rounded_counterparty_to_give,
-            }],
-        };
-        messages.push(counterparty_msg);
+        if !truncated_counterparty_to_give.is_zero() {
+            // Create message to send counterparty tokens
+            let counterparty_msg = BankMsg::Send {
+                to_address: bid.bidder.clone().into_string(),
+                amount: vec![Coin {
+                    denom: state.counterparty_denom.to_string(),
+                    amount: truncated_counterparty_to_give,
+                }],
+            };
+            messages.push(counterparty_msg);
+        }
 
         // Create message to send principal tokens
         let principal_msg = BankMsg::Send {
@@ -973,7 +993,7 @@ pub fn resolve_auction(
 
         // Update accumulated amounts
         principal_accumulated += principal_to_take;
-        counterparty_spent += rounded_counterparty_to_give;
+        counterparty_spent += truncated_counterparty_to_give;
 
         let remaining_principal_in_bid = bid.principal_deposited - principal_to_take;
 
@@ -989,14 +1009,13 @@ pub fn resolve_auction(
             messages.push(refund_msg);
         }
 
-        // Update the bid status to refunded
         BIDS.save(
             deps.storage,
             bid_id,
             &Bid {
                 status: BidStatus::Processed,
                 tokens_refunded: remaining_principal_in_bid,
-                tokens_fulfilled: rounded_counterparty_to_give,
+                tokens_fulfilled: truncated_counterparty_to_give,
                 ..bid
             },
         )?;
@@ -1035,10 +1054,22 @@ pub fn resolve_auction(
         .add_attribute("principal_replenished", principal_accumulated))
 }
 
-fn round_decimal_to_uint128(decimal: Decimal) -> Uint128 {
-    // Add (10^18 - 1) to ensure the value is rounded up
-    let ceil = (decimal.atomics().u128() + 10u128.pow(18) - 1) / 10u128.pow(18);
-    Uint128::new(ceil)
+/// Rounds a Decimal to the nearest Uint128 (half up)
+pub fn round_decimal_to_uint128(decimal: Decimal) -> Uint128 {
+    let atomics = decimal.atomics().u128();
+    let base = 10u128.pow(18);
+
+    let rounded = (atomics + base / 2) / base;
+    Uint128::new(rounded)
+}
+
+/// Truncates a Decimal to the nearest lower Uint128
+pub fn truncate_decimal_to_uint128(decimal: Decimal) -> Uint128 {
+    let atomics = decimal.atomics().u128();
+    let base = 10u128.pow(18);
+
+    let truncated = atomics / base;
+    Uint128::new(truncated)
 }
 
 pub fn query_get_state(deps: Deps) -> StdResult<StateResponse> {
@@ -1069,33 +1100,31 @@ pub fn query_get_state(deps: Deps) -> StdResult<StateResponse> {
     Ok(response)
 }
 
-pub fn query_get_bids(deps: Deps, start_from: u32, limit: u32) -> StdResult<Vec<(u64, Bid)>> {
-    let bids: Vec<(u64, Bid)> = BIDS
+pub fn query_get_bids(deps: Deps, start_from: u32, limit: u32) -> StdResult<BidsResponse> {
+    let bids: Vec<BidResponse> = BIDS
         .range(deps.storage, None, None, Order::Ascending)
         .skip(start_from as usize)
         .take(limit as usize)
-        .filter_map(|item| {
-            match item {
-                Ok((bid_id, bid)) => Some((bid_id, bid)),
-                Err(_) => None, // Skip errored entries
-            }
-        })
+        .filter_map(|item| item.ok())
+        .map(|(bid_id, bid)| BidResponse { bid_id, bid }) // <- convert tuple to struct
         .collect();
 
-    Ok(bids)
+    Ok(BidsResponse { bids })
 }
 
-pub fn query_bid(deps: Deps, bid_id: u64) -> StdResult<Bid> {
-    BIDS.load(deps.storage, bid_id)
+pub fn query_bid(deps: Deps, bid_id: u64) -> StdResult<BidResponse> {
+    Ok(BidResponse {
+        bid_id: bid_id,
+        bid: BIDS.load(deps.storage, bid_id)?,
+    })
 }
 
-pub fn query_sorted_bids(deps: Deps) -> StdResult<Vec<(u64, Decimal, Uint128)>> {
-    // Load the sorted bids from storage
+pub fn query_sorted_bids(deps: Deps) -> StdResult<SortedBidsResponse> {
     let sorted_bids = SORTED_BIDS.load(deps.storage).unwrap_or_default();
-    Ok(sorted_bids)
+    Ok(SortedBidsResponse { sorted_bids })
 }
 
-pub fn query_is_liquidatable(deps: Deps) -> StdResult<bool> {
+pub fn query_is_liquidatable(deps: Deps) -> StdResult<IsLiquidatableResponse> {
     let state = STATE
         .load(deps.storage)
         .map_err(|e| StdError::generic_err(format!("State load failed: {}", e)))?;
@@ -1119,9 +1148,14 @@ pub fn query_is_liquidatable(deps: Deps) -> StdResult<bool> {
     let principal_asset = principal_asset.ok_or_else(|| StdError::not_found("Principal Asset"))?;
     let principal_amount = principal_asset.amount.clone();
 
-    Ok(principal_amount == "0")
+    Ok(IsLiquidatableResponse {
+        liquidatable: principal_amount == "0",
+    })
 }
-pub fn query_simulate_liquidation(deps: Deps, principal_input: Uint128) -> StdResult<String> {
+pub fn query_simulate_liquidation(
+    deps: Deps,
+    principal_input: Uint128,
+) -> StdResult<SimulateLiquidationResponse> {
     let state = STATE
         .load(deps.storage)
         .map_err(|e| StdError::generic_err(format!("State load failed: {}", e)))?;
@@ -1153,7 +1187,9 @@ pub fn query_simulate_liquidation(deps: Deps, principal_input: Uint128) -> StdRe
     // Check if asset1_amount is non-zero
     // if it's zero - price went below lower tick (since principal token amount is zero)
     if principal_amount != "0" {
-        return Ok("Position is not liquidatable".to_string());
+        return Ok(SimulateLiquidationResponse {
+            counterparty_to_receive: "Position is not liquidatable".to_string(),
+        });
     }
     // Convert base_amount and initial_base_amount to Decimal for precise division
     let principal_input = Decimal::from_atomics(principal_input, 0)
@@ -1168,7 +1204,9 @@ pub fn query_simulate_liquidation(deps: Deps, principal_input: Uint128) -> StdRe
 
     // Ensure the supplied amount is not greater than the initial amount
     if principal_input > principal_amount_to_replenish {
-        return Ok("Excessive liquidation amount".to_string());
+        return Ok(SimulateLiquidationResponse {
+            counterparty_to_receive: "Excessive liquidation amount".to_string(),
+        });
     }
 
     // Calculate percentage to liquidate
@@ -1181,5 +1219,7 @@ pub fn query_simulate_liquidation(deps: Deps, principal_input: Uint128) -> StdRe
     // Return as string
     let counterparty_str = counterparty_to_liquidate.to_string();
 
-    Ok(counterparty_str)
+    Ok(SimulateLiquidationResponse {
+        counterparty_to_receive: counterparty_str,
+    })
 }

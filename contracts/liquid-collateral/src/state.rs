@@ -49,12 +49,20 @@ pub struct State {
 
 pub const STATE: Item<State> = Item::new("state");
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct SortedBid {
+    pub bid_id: u64,
+    pub price: Decimal,
+    pub principal_deposited: Uint128,
+    pub requested_counterparty: Uint128,
+}
+
 // Helper part of the state used for sorting the bids by tokens_requested (counterparty)/ principal_deposited ratio as they come in.
 // The bids are sorted in descending order, so that the best bid is always on the top.
 // The idea is that only good enough bids are stored in the sorted bids.
 // Example: If there are several bids, and a new bid comes in which is the best and will replenish the needed amount, all other bids are kicked out.
 // The sorted bids are designed to contain only those bids which will be processed on 'resolve auction' action. (may not necessarily be the case).
-pub const SORTED_BIDS: Item<Vec<(u64, Decimal, Uint128)>> = Item::new("sorted_bids");
+pub const SORTED_BIDS: Item<Vec<SortedBid>> = Item::new("sorted_bids");
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub enum BidStatus {
@@ -63,7 +71,7 @@ pub enum BidStatus {
     Refunded,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Bid {
     pub bidder: Addr,
     pub principal_deposited: Uint128,

@@ -1,7 +1,7 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
 
-use crate::state::Bid;
+use crate::state::{Bid, SortedBid};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -47,15 +47,15 @@ pub enum ExecuteMsg {
 pub enum QueryMsg {
     #[returns(StateResponse)]
     State {},
-    #[returns(Bid)]
+    #[returns(BidResponse)]
     Bid { bid_id: u64 },
-    #[returns(Vec<(String, Bid)>)]
+    #[returns(BidsResponse)]
     Bids { start_from: u32, limit: u32 },
-    #[returns(Vec<(Addr, Decimal)>)]
+    #[returns(SortedBidsResponse)]
     SortedBids {},
-    #[returns(bool)]
+    #[returns(IsLiquidatableResponse)]
     IsLiquidatable,
-    #[returns(String)]
+    #[returns(SimulateLiquidationResponse)]
     SimulateLiquidation { principal_amount: Uint128 },
 }
 
@@ -78,4 +78,28 @@ pub struct StateResponse {
     pub auction_principal_deposited: Uint128,
     pub position_rewards: Option<Vec<Coin>>,
     pub round_end_time: Timestamp,
+}
+#[cw_serde]
+pub struct BidResponse {
+    pub bid_id: u64,
+    pub bid: Bid,
+}
+
+#[cw_serde]
+pub struct BidsResponse {
+    pub bids: Vec<BidResponse>,
+}
+#[cw_serde]
+pub struct SortedBidsResponse {
+    pub sorted_bids: Vec<SortedBid>,
+}
+
+#[cw_serde]
+pub struct IsLiquidatableResponse {
+    pub liquidatable: bool,
+}
+
+#[cw_serde]
+pub struct SimulateLiquidationResponse {
+    pub counterparty_to_receive: String,
 }

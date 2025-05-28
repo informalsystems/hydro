@@ -6,9 +6,10 @@ pub mod testing {
     };
     use crate::mock::mock::{store_contracts_code, PoolMockup};
     use crate::msg::{
-        CreatePositionMsg, ExecuteMsg, InstantiateMsg, PlaceBidMsg, QueryMsg, StateResponse,
+        BidsResponse, CreatePositionMsg, ExecuteMsg, InstantiateMsg, PlaceBidMsg, QueryMsg,
+        SortedBidsResponse, StateResponse,
     };
-    use crate::state::{Bid, BidStatus, State, BIDS, SORTED_BIDS, STATE};
+    use crate::state::{Bid, BidStatus, SortedBid, State, BIDS, SORTED_BIDS, STATE};
     use crate::ContractError;
     use bigdecimal::BigDecimal;
     use cosmwasm_std::{
@@ -915,40 +916,39 @@ pub mod testing {
 
         // Query the sorted bids
         let query_msg = QueryMsg::SortedBids {};
-        let response: Vec<(u64, Decimal, Uint128)> =
-            wasm.query(&contract_addr, &query_msg).unwrap();
+        let response: SortedBidsResponse = wasm.query(&contract_addr, &query_msg).unwrap();
 
         // Print the sorted bids
         println!("Sorted Bids:");
-        for (bid_id, price_ratio, principal_deposited) in response {
+        for bid in response.sorted_bids {
             println!(
-                "Bid Id: {}, Price Ratio: {}, Principal deposited: {}",
-                bid_id, price_ratio, principal_deposited
+                "Bid Id: {}, Price Ratio: {}, Principal deposited: {}, Counterparty requested: {}",
+                bid.bid_id, bid.price, bid.principal_deposited, bid.requested_counterparty
             );
         }
         println!("Increasing time for 1000 seconds...\n");
         pool_mockup.app.increase_time(10000);
 
         let query_bids = QueryMsg::Bids {
-            start_from: 1,
+            start_from: 0,
             limit: 10,
         };
 
-        let bids_response: Vec<(u64, Bid)> = wasm.query(&contract_addr, &query_bids).unwrap();
+        let bids_response: BidsResponse = wasm.query(&contract_addr, &query_bids).unwrap();
 
         // Deserialize the response to get the bids
 
         // Print all bids in a structured format
-        for (bid_id, bid) in bids_response {
+        for bid_response in bids_response.bids {
             println!(
     "Bid Id: {}\n Bidder Address: {}\n  Principal Deposited: {}\n  Tokens Requested: {}\n  Tokens Fulfilled: {}\n  Tokens Refunded: {}\n  Status: {:?}\n",
-    bid_id,
-    bid.bidder,
-    bid.principal_deposited,
-    bid.tokens_requested,
-    bid.tokens_fulfilled,
-    bid.tokens_refunded,
-    bid.status,
+    bid_response.bid_id,
+    bid_response.bid.bidder,
+    bid_response.bid.principal_deposited,
+    bid_response.bid.tokens_requested,
+    bid_response.bid.tokens_fulfilled,
+    bid_response.bid.tokens_refunded,
+    bid_response.bid.status,
 );
         }
 
@@ -965,25 +965,25 @@ pub mod testing {
             .expect("Execution failed");
 
         let query_bids = QueryMsg::Bids {
-            start_from: 1,
+            start_from: 0,
             limit: 10,
         };
 
-        let bids_response: Vec<(u64, Bid)> = wasm.query(&contract_addr, &query_bids).unwrap();
+        let bids_response: BidsResponse = wasm.query(&contract_addr, &query_bids).unwrap();
 
         // Deserialize the response to get the bids
 
         // Print all bids in a structured format
-        for (bid_id, bid) in bids_response {
+        for bid_response in bids_response.bids {
             println!(
     "Bid Id: {}\n Bidder Address: {}\n  Principal Deposited: {}\n  Tokens Requested: {}\n  Tokens Fulfilled: {}\n  Tokens Refunded: {}\n  Status: {:?}\n",
-    bid_id,
-    bid.bidder,
-    bid.principal_deposited,
-    bid.tokens_requested,
-    bid.tokens_fulfilled,
-    bid.tokens_refunded,
-    bid.status,
+    bid_response.bid_id,
+    bid_response.bid.bidder,
+    bid_response.bid.principal_deposited,
+    bid_response.bid.tokens_requested,
+    bid_response.bid.tokens_fulfilled,
+    bid_response.bid.tokens_refunded,
+    bid_response.bid.status,
 );
         }
     }
@@ -1071,36 +1071,42 @@ pub mod testing {
         BIDS.save(deps.as_mut().storage, 5, &bid5).unwrap();
 
         // Step 4: Sort the bids by price ratio (tokens_requested / principal_amount)
-        let mut all_bids: Vec<(u64, Decimal, Uint128)> = vec![
-            (
-                1,
-                Decimal::from_ratio(bid1.tokens_requested, bid1.principal_deposited),
-                bid1.principal_deposited,
-            ),
-            (
-                2,
-                Decimal::from_ratio(bid2.tokens_requested, bid2.principal_deposited),
-                bid2.principal_deposited,
-            ),
-            (
-                3,
-                Decimal::from_ratio(bid3.tokens_requested, bid3.principal_deposited),
-                bid3.principal_deposited,
-            ),
-            (
-                4,
-                Decimal::from_ratio(bid4.tokens_requested, bid4.principal_deposited),
-                bid4.principal_deposited,
-            ),
-            (
-                5,
-                Decimal::from_ratio(bid5.tokens_requested, bid5.principal_deposited),
-                bid5.principal_deposited,
-            ),
+
+        let mut all_bids: Vec<SortedBid> = vec![
+            SortedBid {
+                bid_id: 1,
+                price: Decimal::from_ratio(bid1.tokens_requested, bid1.principal_deposited),
+                principal_deposited: bid1.principal_deposited,
+                requested_counterparty: bid1.tokens_requested,
+            },
+            SortedBid {
+                bid_id: 2,
+                price: Decimal::from_ratio(bid2.tokens_requested, bid2.principal_deposited),
+                principal_deposited: bid2.principal_deposited,
+                requested_counterparty: bid2.tokens_requested,
+            },
+            SortedBid {
+                bid_id: 3,
+                price: Decimal::from_ratio(bid3.tokens_requested, bid3.principal_deposited),
+                principal_deposited: bid3.principal_deposited,
+                requested_counterparty: bid3.tokens_requested,
+            },
+            SortedBid {
+                bid_id: 4,
+                price: Decimal::from_ratio(bid4.tokens_requested, bid4.principal_deposited),
+                principal_deposited: bid4.principal_deposited,
+                requested_counterparty: bid4.tokens_requested,
+            },
+            SortedBid {
+                bid_id: 5,
+                price: Decimal::from_ratio(bid5.tokens_requested, bid5.principal_deposited),
+                principal_deposited: bid5.principal_deposited,
+                requested_counterparty: bid5.tokens_requested,
+            },
         ];
 
         // Sort the bids in descending order of price ratio (highest price first)
-        all_bids.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        all_bids.sort_by(|a, b| b.price.partial_cmp(&a.price).unwrap());
 
         // Save the sorted bids to SORTED_BIDS storage
         SORTED_BIDS.save(deps.as_mut().storage, &all_bids).unwrap();
