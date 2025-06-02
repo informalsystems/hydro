@@ -1,7 +1,10 @@
 use std::fmt::{Display, Formatter};
 
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Binary, Coin, Decimal, Timestamp, Uint128};
+use cosmwasm_std::{
+    to_json_binary, Binary, Coin, CosmosMsg, Decimal, StdResult, Timestamp, Uint128, WasmMsg,
+};
+use cw_utils::Expiration;
 use interface::gatekeeper::SignatureInfo;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -31,6 +34,8 @@ pub struct InstantiateMsg {
     // Provides inputs for instantiation of the Gatekeeper contract that
     // controls how many tokens each user can lock at a given point in time.
     pub gatekeeper: Option<InstantiateContractMsg>,
+    // The CW721 Collection Info (default: name: "Hydro Lockups", symbol: "hydro-lockups")
+    pub cw721_collection_info: Option<CollectionInfo>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -38,6 +43,13 @@ pub struct InstantiateMsg {
 pub struct TrancheInfo {
     pub name: String,
     pub metadata: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct CollectionInfo {
+    pub name: String,
+    pub symbol: String,
 }
 
 #[cw_serde]
@@ -141,6 +153,7 @@ pub enum ExecuteMsg {
         max_locked_tokens: Option<u128>,
         known_users_cap: Option<u128>,
         max_deployment_duration: Option<u64>,
+        cw721_collection_info: Option<CollectionInfo>,
     },
     DeleteConfigs {
         timestamps: Vec<Timestamp>,
@@ -159,19 +172,15 @@ pub enum ExecuteMsg {
     CreateICQsForValidators {
         validators: Vec<String>,
     },
-
     AddICQManager {
         address: String,
     },
-
     RemoveICQManager {
         address: String,
     },
-
     WithdrawICQFunds {
         amount: Uint128,
     },
-
     AddLiquidityDeployment {
         round_id: u64,
         tranche_id: u64,
@@ -182,13 +191,11 @@ pub enum ExecuteMsg {
         total_rounds: u64,
         remaining_rounds: u64,
     },
-
     RemoveLiquidityDeployment {
         round_id: u64,
         tranche_id: u64,
         proposal_id: u64,
     },
-
     UpdateTokenGroupRatio {
         token_group_id: String,
         old_ratio: Decimal,
@@ -202,6 +209,41 @@ pub enum ExecuteMsg {
     },
     SetGatekeeper {
         gatekeeper_addr: Option<String>,
+    },
+    /// Transfer is a base message to move a lockup to another account without triggering actions
+    TransferNft {
+        recipient: String,
+        token_id: String,
+    },
+    /// This transfers ownership of the token to contract account.
+    /// contract must be an address controlled by a smart contract, which implements the CW721Receiver interface.
+    /// The msg will be passed to the recipient contract, along with the token_id.
+    SendNft {
+        contract: String,
+        token_id: String,
+        msg: Binary,
+    },
+    /// Allows spender to transfer / send the lockup from the owner's account.
+    /// If expiration is set, then this allowance has a time/height limit
+    Approve {
+        spender: String,
+        token_id: String,
+        expires: Option<Expiration>,
+    },
+    /// Remove previously granted Approval
+    Revoke {
+        spender: String,
+        token_id: String,
+    },
+    /// Allows operator to transfer / send any token from the owner's account.
+    /// If expiration is set, then this allowance has a time/height limit
+    ApproveAll {
+        operator: String,
+        expires: Option<Expiration>,
+    },
+    /// Remove previously granted ApproveAll permission
+    RevokeAll {
+        operator: String,
     },
 }
 
@@ -243,4 +285,43 @@ pub struct LockTokensProof {
 pub enum ReplyPayload {
     InstantiateTokenInfoProvider(TokenInfoProvider),
     InstantiateGatekeeper,
+}
+
+#[cw_serde]
+pub struct Cw721ReceiveMsg {
+    pub sender: String,
+    pub token_id: String,
+    pub msg: Binary,
+}
+
+impl Cw721ReceiveMsg {
+    /// serializes the message
+    pub fn into_json_binary(self) -> StdResult<Binary> {
+        let msg = ReceiverExecuteMsg::ReceiveNft(self);
+        to_json_binary(&msg)
+    }
+
+    /// creates a cosmos_msg sending this struct to the named contract
+    pub fn into_cosmos_msg<TAddress: Into<String>, TCustomResponseMsg>(
+        self,
+        contract_addr: TAddress,
+    ) -> StdResult<CosmosMsg<TCustomResponseMsg>>
+    where
+        TCustomResponseMsg: Clone + std::fmt::Debug + PartialEq + JsonSchema,
+    {
+        let msg = self.into_json_binary()?;
+        let execute = WasmMsg::Execute {
+            contract_addr: contract_addr.into(),
+            msg,
+            funds: vec![],
+        };
+        Ok(execute.into())
+    }
+}
+
+/// This is just a helper to properly serialize the above message.
+/// The actual receiver should include this variant in the larger ExecuteMsg enum
+#[cw_serde]
+pub enum ReceiverExecuteMsg {
+    ReceiveNft(Cw721ReceiveMsg),
 }

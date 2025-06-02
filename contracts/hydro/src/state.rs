@@ -1,8 +1,9 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
 use cw_storage_plus::{Item, Map, SnapshotMap, Strategy};
+use cw_utils::Expiration;
 
-use crate::{msg::LiquidityDeployment, token_manager::TokenInfoProvider};
+use crate::{msg::CollectionInfo, msg::LiquidityDeployment, token_manager::TokenInfoProvider};
 
 // The currently-active constants are always those with the largest activation_timestamp
 // such that activation_timestamp <= current_block.timestamp
@@ -73,6 +74,7 @@ pub struct Constants {
     pub paused: bool,
     pub max_deployment_duration: u64,
     pub round_lock_power_schedule: RoundLockPowerSchedule,
+    pub cw721_collection_info: CollectionInfo,
 }
 
 // Used to store a set of token info providers that are able to validate various denoms allowed to be locked
@@ -345,3 +347,17 @@ pub struct HeightRange {
     pub lowest_known_height: u64,
     pub highest_known_height: u64,
 }
+
+// NFT_APPROVALS: key(lock_id, spender) -> Approval
+pub const NFT_APPROVALS: Map<(u64, Addr), Approval> = Map::new("nft_approvals");
+
+#[cw_serde]
+#[derive(Default)]
+pub struct Approval {
+    pub spender: String,
+    pub expires: Expiration,
+}
+
+/// Stored as (granter, operator), giving operator full control over granter's NFTs.
+/// NOTE: granter is the owner, so operator has control only for NFTs owned by granter
+pub const NFT_OPERATORS: Map<(Addr, Addr), Expiration> = Map::new("nft_operators");

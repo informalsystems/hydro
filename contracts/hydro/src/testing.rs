@@ -5,7 +5,7 @@ use crate::contract::{
     get_vote_for_update, query_all_user_lockups_with_tranche_infos, query_current_round_id,
     query_gatekeeper, query_tranches, query_user_votes, query_whitelist, query_whitelist_admins,
 };
-use crate::msg::{ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo};
+use crate::msg::{CollectionInfo, ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo};
 use crate::state::{
     LockEntryV2, RoundLockPowerSchedule, Vote, CONSTANTS, TOKEN_INFO_PROVIDERS, USER_LOCKS,
     VOTE_MAP_V2,
@@ -13,7 +13,7 @@ use crate::state::{
 use crate::testing_lsm_integration::set_validator_infos_for_round;
 
 use crate::testing_mocks::{
-    denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock,
+    contract_info_mock, denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock,
     token_info_provider_derivative_mock, MockQuerier, MockWasmQuerier,
 };
 use crate::token_manager::{
@@ -60,6 +60,7 @@ pub const IBC_DENOM_3: &str =
 
 pub const ST_ATOM_ON_NEUTRON: &str =
     "ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA5222815620B3C";
+pub const ST_ATOM_ON_STRIDE: &str = "stATOM";
 pub const ST_ATOM_TOKEN_GROUP: &str = "stATOM";
 
 pub const ONE_DAY_IN_NANO_SECONDS: u64 = 24 * 60 * 60 * 1000000000;
@@ -91,6 +92,13 @@ pub fn get_default_power_schedule_vec() -> Vec<(u64, Decimal)> {
 
 pub fn get_default_power_schedule() -> RoundLockPowerSchedule {
     RoundLockPowerSchedule::new(get_default_power_schedule_vec())
+}
+
+pub fn get_default_cw721_collection_info() -> CollectionInfo {
+    CollectionInfo {
+        name: "collection name".to_string(),
+        symbol: "collection symbol".to_string(),
+    }
 }
 
 pub fn get_default_lsm_token_info_provider_init_msg() -> TokenInfoProviderInstantiateMsg {
@@ -130,6 +138,7 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         round_lock_power_schedule: get_default_power_schedule_vec(),
         token_info_providers: vec![get_default_lsm_token_info_provider_init_msg()],
         gatekeeper: None,
+        cw721_collection_info: None,
     }
 }
 
@@ -168,6 +177,15 @@ pub fn setup_st_atom_token_info_provider_mock(
             ratio: token_group_ratio,
         },
     ));
+
+    deps.querier.update_wasm(move |q| wasm_querier.handler(q));
+}
+
+pub fn setup_contract_info_mock(
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    existing_contract_addr: Addr,
+) {
+    let wasm_querier = MockWasmQuerier::new(contract_info_mock(existing_contract_addr.to_string()));
 
     deps.querier.update_wasm(move |q| wasm_querier.handler(q));
 }
@@ -2560,6 +2578,7 @@ fn delete_configs_test() {
             max_locked_tokens: Some((i * 1000) as u128),
             known_users_cap: None,
             max_deployment_duration: None,
+            cw721_collection_info: None,
         };
         let res = execute(
             deps.as_mut(),
@@ -2647,6 +2666,7 @@ fn contract_pausing_test() {
             max_locked_tokens: None,
             known_users_cap: None,
             max_deployment_duration: None,
+            cw721_collection_info: None,
         },
         ExecuteMsg::DeleteConfigs { timestamps: vec![] },
         ExecuteMsg::Pause {},

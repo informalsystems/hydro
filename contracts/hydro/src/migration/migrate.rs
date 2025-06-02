@@ -11,9 +11,7 @@ use neutron_sdk::bindings::query::NeutronQuery;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::unreleased::{
-    is_full_migration_done, migrate_locks_batch, migrate_v3_1_1_to_unreleased, migrate_votes_batch,
-};
+use super::v3_2_0::migrate_v3_2_0_to_v3_3_0;
 
 pub const CONTRACT_VERSION_V1_1_0: &str = "1.1.0";
 pub const CONTRACT_VERSION_V2_0_1: &str = "2.0.1";
@@ -22,59 +20,29 @@ pub const CONTRACT_VERSION_V2_1_0: &str = "2.1.0";
 pub const CONTRACT_VERSION_V3_0_0: &str = "3.0.0";
 pub const CONTRACT_VERSION_V3_1_0: &str = "3.1.0";
 pub const CONTRACT_VERSION_V3_1_1: &str = "3.1.1";
+pub const CONTRACT_VERSION_V3_2_1: &str = "3.2.1";
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub enum MigrateMsgV3_2_0 {
-    MigrateToV3_2_0 {},
-    MigrateLocksV1ToV2 {
-        start: Option<usize>,
-        limit: Option<usize>,
-    },
-    MigrateVotesV1ToV2 {
-        start: Option<usize>,
-        limit: Option<usize>,
-    },
+pub enum MigrateMsgV3_3_0 {
+    MigrateToV3_3_0 {},
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(
     mut deps: DepsMut<NeutronQuery>,
-    env: Env,
-    msg: MigrateMsgV3_2_0,
+    _env: Env,
+    msg: MigrateMsgV3_3_0,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    check_contract_version(deps.storage, CONTRACT_VERSION_V3_1_1)?;
+    check_contract_version(deps.storage, CONTRACT_VERSION_V3_2_1)?;
 
     let response = match msg {
         // Constants must be migrated first in order for contract pausing not to break the state!
-        MigrateMsgV3_2_0::MigrateToV3_2_0 {} => migrate_v3_1_1_to_unreleased(&mut deps),
-        MigrateMsgV3_2_0::MigrateLocksV1ToV2 { start, limit } => {
-            pause_contract_before_migration(&mut deps, &env)?;
-
-            migrate_locks_batch(
-                &mut deps,
-                env.block.height,
-                start.unwrap_or(0),
-                limit.unwrap_or(50),
-            )
-        }
-        MigrateMsgV3_2_0::MigrateVotesV1ToV2 { start, limit } => {
-            pause_contract_before_migration(&mut deps, &env)?;
-
-            migrate_votes_batch(&mut deps, start.unwrap_or(0), limit.unwrap_or(50))
-        }
+        MigrateMsgV3_3_0::MigrateToV3_3_0 {} => migrate_v3_2_0_to_v3_3_0(&mut deps),
     }?;
 
-    let migration_done = is_full_migration_done(deps.as_ref())?;
-    if migration_done {
-        // If the migration is done, we can set the contract version to the new one
-        // and set the paused flag to false
-        // This is the final migration step
-        set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-        unpause_contract_after_migration(&mut deps, env)?;
-        return Ok(response.add_attribute("migration_status", "complete"));
-    }
+    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    Ok(response.add_attribute("migration_status", "incomplete"))
+    Ok(response)
 }
 
 fn check_contract_version(
@@ -99,6 +67,8 @@ fn check_contract_version(
     Ok(())
 }
 
+// prevent clippy from warning for unused function
+#[allow(dead_code)]
 fn pause_contract_before_migration(
     deps: &mut DepsMut<NeutronQuery>,
     env: &Env,
@@ -114,6 +84,8 @@ fn pause_contract_before_migration(
     Ok(())
 }
 
+// prevent clippy from warning for unused function
+#[allow(dead_code)]
 fn unpause_contract_after_migration(
     deps: &mut DepsMut<NeutronQuery>,
     env: Env,
