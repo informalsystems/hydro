@@ -1,5 +1,7 @@
 pub mod contract;
+pub mod cw721;
 mod error;
+pub mod gatekeeper;
 pub mod governance;
 pub mod lsm_integration;
 pub mod migration;
@@ -7,6 +9,7 @@ pub mod msg;
 pub mod query;
 pub mod score_keeper;
 pub mod state;
+pub mod token_manager;
 pub mod utils;
 pub mod validators_icqs;
 pub mod vote;
@@ -43,3 +46,12 @@ mod testing_snapshoting;
 
 #[cfg(test)]
 mod testing_governance;
+
+#[cfg(test)]
+mod testing_token_manager;
+
+#[cfg(test)]
+mod testing_locking_unlocking;
+
+#[cfg(test)]
+mod testing_cw721;

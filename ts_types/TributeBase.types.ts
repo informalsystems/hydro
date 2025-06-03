@@ -4,12 +4,8 @@
 * and run the @cosmwasm/ts-codegen generate command to regenerate this file.
 */
 
-export type Addr = string;
-export interface ConfigResponse {
-  config: Config;
-}
-export interface Config {
-  hydro_contract: Addr;
+export interface InstantiateMsg {
+  hydro_contract: string;
 }
 export type ExecuteMsg = {
   add_tribute: {
@@ -32,43 +28,6 @@ export type ExecuteMsg = {
     tribute_id: number;
   };
 };
-export type Uint128 = string;
-export interface HistoricalTributeClaimsResponse {
-  claims: TributeClaim[];
-}
-export interface TributeClaim {
-  amount: Coin;
-  proposal_id: number;
-  round_id: number;
-  tranche_id: number;
-  tribute_id: number;
-}
-export interface Coin {
-  amount: Uint128;
-  denom: string;
-}
-export interface InstantiateMsg {
-  hydro_contract: string;
-}
-export interface OutstandingTributeClaimsResponse {
-  claims: TributeClaim[];
-}
-export type Timestamp = Uint64;
-export type Uint64 = string;
-export interface ProposalTributesResponse {
-  tributes: Tribute[];
-}
-export interface Tribute {
-  creation_round: number;
-  creation_time: Timestamp;
-  depositor: Addr;
-  funds: Coin;
-  proposal_id: number;
-  refunded: boolean;
-  round_id: number;
-  tranche_id: number;
-  tribute_id: number;
-}
 export type QueryMsg = {
   config: {};
 } | {
@@ -99,6 +58,47 @@ export type QueryMsg = {
     user_address: string;
   };
 };
+export type Addr = string;
+export interface ConfigResponse {
+  config: Config;
+}
+export interface Config {
+  hydro_contract: Addr;
+}
+export type Uint128 = string;
+export interface HistoricalTributeClaimsResponse {
+  claims: TributeClaim[];
+}
+export interface TributeClaim {
+  amount: Coin;
+  proposal_id: number;
+  round_id: number;
+  tranche_id: number;
+  tribute_id: number;
+}
+export interface Coin {
+  amount: Uint128;
+  denom: string;
+}
+export interface OutstandingTributeClaimsResponse {
+  claims: TributeClaim[];
+}
+export type Timestamp = Uint64;
+export type Uint64 = string;
+export interface ProposalTributesResponse {
+  tributes: Tribute[];
+}
+export interface Tribute {
+  creation_round: number;
+  creation_time: Timestamp;
+  depositor: Addr;
+  funds: Coin;
+  proposal_id: number;
+  refunded: boolean;
+  round_id: number;
+  tranche_id: number;
+  tribute_id: number;
+}
 export interface RoundTributesResponse {
   tributes: Tribute[];
 }

@@ -1,19 +1,19 @@
 use crate::contract::{can_lock_vote_for_proposal, compute_round_end};
 use crate::error::ContractError;
-use crate::lsm_integration::validate_denom;
 use crate::msg::ProposalToLockups;
 use crate::score_keeper::ProposalPowerUpdate;
-use crate::state::{
-    Constants, LockEntry, Vote, LOCKS_MAP, PROPOSAL_MAP, VOTE_MAP, VOTING_ALLOWED_ROUND,
+use crate::state::{Constants, LockEntryV2, Vote, PROPOSAL_MAP, VOTE_MAP_V2, VOTING_ALLOWED_ROUND};
+use crate::token_manager::TokenManager;
+use crate::utils::{
+    find_deployment_for_voted_lock, get_lock_time_weighted_shares, get_owned_lock_entry,
 };
-use crate::utils::{find_deployment_for_voted_lock, get_lock_time_weighted_shares};
 use cosmwasm_std::{Addr, Decimal, DepsMut, Env, SignedDecimal, StdError, Storage, Uint128};
 use neutron_sdk::bindings::query::NeutronQuery;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 
 type TargetVotes = HashMap<u64, Option<u64>>; // Maps lock IDs to their associated proposal IDs (or None)
-type LockEntries = HashMap<u64, LockEntry>; // Maps lock IDs to their corresponding lock entries
+type LockEntries = HashMap<u64, LockEntryV2>; // Maps lock IDs to their corresponding lock entries
 
 // Validate input proposals and locks
 // Returns target votes: lock_id -> proposal_id
@@ -61,7 +61,7 @@ pub fn validate_proposals_and_locks_for_voting(
 
             // If any of the lock_ids doesn't exist, or it belongs to a different user
             // then error out.
-            let lock_entry = LOCKS_MAP.load(storage, (sender.clone(), lock_id))?;
+            let lock_entry = get_owned_lock_entry(storage, sender, lock_id)?; // LOCKS_MAP.load(storage, (sender.clone(), lock_id))?;
             lock_entries.insert(lock_id, lock_entry);
 
             // Map lock ID to the proposal ID it votes for
@@ -92,7 +92,6 @@ pub struct ProcessUnvotesResult {
 // If proposal_id is None, it means that the user only intends to unvote.
 pub fn process_unvotes(
     storage: &mut dyn Storage,
-    sender: &Addr,
     round_id: u64,
     tranche_id: u64,
     target_votes: &HashMap<u64, Option<u64>>,
@@ -103,7 +102,7 @@ pub fn process_unvotes(
 
     for (&lock_id, &target_proposal_id) in target_votes {
         if let Some(existing_vote) =
-            VOTE_MAP.may_load(storage, ((round_id, tranche_id), sender.clone(), lock_id))?
+            VOTE_MAP_V2.may_load(storage, ((round_id, tranche_id), lock_id))?
         {
             // Skip if we have a target proposal and it matches the current vote
             // We also add to locks_to_skip, to inform process_votes to skip this lock when voting
@@ -116,15 +115,15 @@ pub fn process_unvotes(
 
             let change = power_changes.entry(existing_vote.prop_id).or_default();
 
-            // Subtract validator shares
+            // Subtract token group shares
             let entry = change
-                .validator_shares
+                .token_group_shares
                 .entry(existing_vote.time_weighted_shares.0.clone())
                 .or_default();
             *entry -=
                 SignedDecimal::try_from(existing_vote.time_weighted_shares.1).map_err(|_| {
                     StdError::generic_err(
-                        "Failed to convert Decimal to SignedDecimal for validator shares",
+                        "Failed to convert Decimal to SignedDecimal for token group shares",
                     )
                 })?;
 
@@ -132,7 +131,7 @@ pub fn process_unvotes(
 
             // Always remove vote from Vote Map.
             // We cannot rely on it being overriden by the new vote (if any), as we don't know if it won't be skipped
-            VOTE_MAP.remove(storage, ((round_id, tranche_id), sender.clone(), lock_id));
+            VOTE_MAP_V2.remove(storage, ((round_id, tranche_id), lock_id));
 
             // Remove voting round allowed info
             VOTING_ALLOWED_ROUND.remove(storage, (tranche_id, lock_id));
@@ -158,7 +157,6 @@ pub struct ProcessVotesResult {
 pub struct VoteProcessingContext<'a> {
     pub env: &'a Env,
     pub constants: &'a Constants,
-    pub sender: &'a Addr,
     pub round_id: u64,
     pub tranche_id: u64,
 }
@@ -177,6 +175,7 @@ pub fn process_votes(
 ) -> Result<ProcessVotesResult, ContractError> {
     let round_end = compute_round_end(context.constants, context.round_id)?;
     let lock_epoch_length = context.constants.lock_epoch_length;
+    let mut token_manager = TokenManager::new(&deps.as_ref());
 
     let mut locks_voted = vec![];
     let mut locks_skipped = vec![];
@@ -209,7 +208,6 @@ pub fn process_votes(
                         &deps.as_ref(),
                         context.round_id,
                         context.tranche_id,
-                        context.sender,
                         lock_id,
                     )?;
 
@@ -223,21 +221,15 @@ pub fn process_votes(
                 }
             }
 
-            // Validate and get validator
-            let validator = match validate_denom(
+            // Validate and get token group
+            let token_group_id = match token_manager.validate_denom(
                 &deps.as_ref(),
                 context.round_id,
-                context.constants,
                 lock_entry.clone().funds.denom,
             ) {
-                Ok(validator) => validator,
+                Ok(token_group_id) => token_group_id,
                 Err(_) => {
-                    deps.api.debug(&format!(
-                        "Denom {} is not a valid validator denom; validator might not be in the current set of top validators by delegation",
-                        lock_entry.funds.denom
-                    ));
-
-                    // skip this lock entry, since the locked shares do not belong to a validator that we want to take into account
+                    // skip this lock entry, since the locked shares are of the token that can't currently be locked
                     locks_skipped.push(lock_id);
                     continue;
                 }
@@ -273,17 +265,13 @@ pub fn process_votes(
             // Create new vote
             let vote = Vote {
                 prop_id: proposal_id,
-                time_weighted_shares: (validator.clone(), scaled_shares),
+                time_weighted_shares: (token_group_id.clone(), scaled_shares),
             };
 
             // Store the vote in VOTE_MAP
-            VOTE_MAP.save(
+            VOTE_MAP_V2.save(
                 deps.storage,
-                (
-                    (context.round_id, context.tranche_id),
-                    context.sender.clone(),
-                    lock_id,
-                ),
+                ((context.round_id, context.tranche_id), lock_id),
                 &vote,
             )?;
 
@@ -297,10 +285,10 @@ pub fn process_votes(
 
             // Add to power changes
             let change = power_changes.entry(proposal_id).or_default();
-            let entry = change.validator_shares.entry(validator).or_default();
+            let entry = change.token_group_shares.entry(token_group_id).or_default();
             *entry += SignedDecimal::try_from(scaled_shares).map_err(|_| {
                 StdError::generic_err(
-                    "Failed to convert Decimal to SignedDecimal for validator shares",
+                    "Failed to convert Decimal to SignedDecimal for token group shares",
                 )
             })?;
 

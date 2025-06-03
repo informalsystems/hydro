@@ -3,8 +3,8 @@ use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
     contract::compute_current_round_id,
-    lsm_integration::get_total_power_for_round,
     query::{TotalPowerAtHeightResponse, VotingPowerAtHeightResponse},
+    score_keeper::get_total_power_for_round,
     state::TOTAL_VOTING_POWER_PER_ROUND,
     utils::{
         get_current_user_voting_power, get_round_id_for_height,

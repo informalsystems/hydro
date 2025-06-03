@@ -1,6 +1,15 @@
-use cosmwasm_std::{Coin, Decimal, Timestamp, Uint128};
+use std::fmt::{Display, Formatter};
+
+use cosmwasm_schema::cw_serde;
+use cosmwasm_std::{
+    to_json_binary, Binary, Coin, CosmosMsg, Decimal, StdResult, Timestamp, Uint128, WasmMsg,
+};
+use cw_utils::Expiration;
+use interface::gatekeeper::SignatureInfo;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+use crate::token_manager::TokenInfoProvider;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -11,10 +20,6 @@ pub struct InstantiateMsg {
     pub max_locked_tokens: Uint128,
     pub whitelist_admins: Vec<String>,
     pub initial_whitelist: Vec<String>,
-    pub max_validator_shares_participating: u64,
-    pub hub_connection_id: String,
-    pub hub_transfer_channel_id: String,
-    pub icq_update_period: u64,
     // Anyone can permissionlessly create ICQs, but addresses in this list can attempt
     // to create ICQs without paying, which will then implicitly be paid for by the contract;
     // and they can also withdraw funds in the *native token denom* from the contract;
@@ -25,6 +30,12 @@ pub struct InstantiateMsg {
     // The first element is the round number, the second element is the lock power.
     // See the RoundLockPowerSchedule struct for more information.
     pub round_lock_power_schedule: Vec<(u64, Decimal)>,
+    pub token_info_providers: Vec<TokenInfoProviderInstantiateMsg>,
+    // Provides inputs for instantiation of the Gatekeeper contract that
+    // controls how many tokens each user can lock at a given point in time.
+    pub gatekeeper: Option<InstantiateContractMsg>,
+    // The CW721 Collection Info (default: name: "Hydro Lockups", symbol: "hydro-lockups")
+    pub cw721_collection_info: Option<CollectionInfo>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -34,12 +45,79 @@ pub struct TrancheInfo {
     pub metadata: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct CollectionInfo {
+    pub name: String,
+    pub symbol: String,
+}
+
+#[cw_serde]
+pub enum TokenInfoProviderInstantiateMsg {
+    // After we extract LSM token info provider into separate contract, all token info providers will be instantiated as SCs.
+    #[serde(rename = "lsm")]
+    LSM {
+        max_validator_shares_participating: u64,
+        hub_connection_id: String,
+        hub_transfer_channel_id: String,
+        icq_update_period: u64,
+    },
+    TokenInfoProviderContract {
+        code_id: u64,
+        msg: Binary,
+        label: String,
+        admin: Option<String>,
+    },
+}
+
+#[cw_serde]
+pub struct InstantiateContractMsg {
+    pub code_id: u64,
+    pub msg: Binary,
+    pub label: String,
+    pub admin: Option<String>,
+}
+
+impl Display for TokenInfoProviderInstantiateMsg {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        match self {
+            TokenInfoProviderInstantiateMsg::LSM {
+                max_validator_shares_participating,
+                hub_connection_id,
+                hub_transfer_channel_id,
+                icq_update_period,
+            } => write!(
+                f,
+                "LSM(max_validator_shares_participating: {}, hub_connection_id: {}, hub_transfer_channel_id: {}, icq_update_period: {})",
+                max_validator_shares_participating,
+                hub_connection_id,
+                hub_transfer_channel_id,
+                icq_update_period
+            ),
+            TokenInfoProviderInstantiateMsg::TokenInfoProviderContract {
+                code_id,
+                msg,
+                label,
+                admin,
+            } => write!(
+                f,
+                "TokenInfoProviderContract(code_id: {}, msg: {}, label: {}, admin: {:?})",
+                code_id,
+                msg,
+                label,
+                admin
+            ),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, cw_orch::ExecuteFns)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
     #[cw_orch(payable)]
     LockTokens {
         lock_duration: u64,
+        proof: Option<LockTokensProof>,
     },
     RefreshLockDuration {
         lock_ids: Vec<u64>,
@@ -75,6 +153,7 @@ pub enum ExecuteMsg {
         max_locked_tokens: Option<u128>,
         known_users_cap: Option<u128>,
         max_deployment_duration: Option<u64>,
+        cw721_collection_info: Option<CollectionInfo>,
     },
     DeleteConfigs {
         timestamps: Vec<Timestamp>,
@@ -93,19 +172,15 @@ pub enum ExecuteMsg {
     CreateICQsForValidators {
         validators: Vec<String>,
     },
-
     AddICQManager {
         address: String,
     },
-
     RemoveICQManager {
         address: String,
     },
-
     WithdrawICQFunds {
         amount: Uint128,
     },
-
     AddLiquidityDeployment {
         round_id: u64,
         tranche_id: u64,
@@ -116,11 +191,59 @@ pub enum ExecuteMsg {
         total_rounds: u64,
         remaining_rounds: u64,
     },
-
     RemoveLiquidityDeployment {
         round_id: u64,
         tranche_id: u64,
         proposal_id: u64,
+    },
+    UpdateTokenGroupRatio {
+        token_group_id: String,
+        old_ratio: Decimal,
+        new_ratio: Decimal,
+    },
+    AddTokenInfoProvider {
+        token_info_provider: TokenInfoProviderInstantiateMsg,
+    },
+    RemoveTokenInfoProvider {
+        provider_id: String,
+    },
+    SetGatekeeper {
+        gatekeeper_addr: Option<String>,
+    },
+    /// Transfer is a base message to move a lockup to another account without triggering actions
+    TransferNft {
+        recipient: String,
+        token_id: String,
+    },
+    /// This transfers ownership of the token to contract account.
+    /// contract must be an address controlled by a smart contract, which implements the CW721Receiver interface.
+    /// The msg will be passed to the recipient contract, along with the token_id.
+    SendNft {
+        contract: String,
+        token_id: String,
+        msg: Binary,
+    },
+    /// Allows spender to transfer / send the lockup from the owner's account.
+    /// If expiration is set, then this allowance has a time/height limit
+    Approve {
+        spender: String,
+        token_id: String,
+        expires: Option<Expiration>,
+    },
+    /// Remove previously granted Approval
+    Revoke {
+        spender: String,
+        token_id: String,
+    },
+    /// Allows operator to transfer / send any token from the owner's account.
+    /// If expiration is set, then this allowance has a time/height limit
+    ApproveAll {
+        operator: String,
+        expires: Option<Expiration>,
+    },
+    /// Remove previously granted ApproveAll permission
+    RevokeAll {
+        operator: String,
     },
 }
 
@@ -148,4 +271,57 @@ pub struct LiquidityDeployment {
     // how many rounds are left for this proposal to be in effect
     // if this is a "repeating" proposal
     pub remaining_rounds: u64,
+}
+
+/// For detailed explanation of the fields take a look at ExecuteLockTokensMsg located in the interface package
+#[cw_serde]
+pub struct LockTokensProof {
+    pub maximum_amount: Uint128,
+    pub proof: Vec<String>,
+    pub sig_info: Option<SignatureInfo>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum ReplyPayload {
+    InstantiateTokenInfoProvider(TokenInfoProvider),
+    InstantiateGatekeeper,
+}
+
+#[cw_serde]
+pub struct Cw721ReceiveMsg {
+    pub sender: String,
+    pub token_id: String,
+    pub msg: Binary,
+}
+
+impl Cw721ReceiveMsg {
+    /// serializes the message
+    pub fn into_json_binary(self) -> StdResult<Binary> {
+        let msg = ReceiverExecuteMsg::ReceiveNft(self);
+        to_json_binary(&msg)
+    }
+
+    /// creates a cosmos_msg sending this struct to the named contract
+    pub fn into_cosmos_msg<TAddress: Into<String>, TCustomResponseMsg>(
+        self,
+        contract_addr: TAddress,
+    ) -> StdResult<CosmosMsg<TCustomResponseMsg>>
+    where
+        TCustomResponseMsg: Clone + std::fmt::Debug + PartialEq + JsonSchema,
+    {
+        let msg = self.into_json_binary()?;
+        let execute = WasmMsg::Execute {
+            contract_addr: contract_addr.into(),
+            msg,
+            funds: vec![],
+        };
+        Ok(execute.into())
+    }
+}
+
+/// This is just a helper to properly serialize the above message.
+/// The actual receiver should include this variant in the larger ExecuteMsg enum
+#[cw_serde]
+pub enum ReceiverExecuteMsg {
+    ReceiveNft(Cw721ReceiveMsg),
 }

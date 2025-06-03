@@ -59,6 +59,7 @@ fn test_user_locks_snapshoting() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: instantiate_msg.lock_epoch_length,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok(), "error: {:?}", res);
@@ -77,6 +78,7 @@ fn test_user_locks_snapshoting() {
 
     let msg = ExecuteMsg::LockTokens {
         lock_duration: instantiate_msg.lock_epoch_length,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok(), "error: {:?}", res);
@@ -112,6 +114,7 @@ fn test_user_locks_snapshoting() {
 
     let msg = ExecuteMsg::LockTokens {
         lock_duration: instantiate_msg.lock_epoch_length,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok(), "error: {:?}", res);

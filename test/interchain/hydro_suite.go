@@ -2,11 +2,14 @@ package interchain
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
 	"strconv"
+	"strings"
 	"time"
 
 	"hydro/test/interchain/chainsuite"
@@ -14,6 +17,7 @@ import (
 	"cosmossdk.io/math"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	abci "github.com/cometbft/cometbft/abci/types"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	transfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
@@ -22,10 +26,20 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	HydroWasm               = "hydro.wasm"
+	TributeWasm             = "tribute.wasm"
+	DAOVotingAdapterWasm    = "dao_voting_adapter.wasm"
+	STTokenInfoProviderWasm = "st_token_info_provider.wasm"
+	GatekeeperWasm          = "gatekeeper.wasm"
+)
+
 var (
-	hydroCodeId            string
-	tributeCodeId          string
-	daoVotingAdapterCodeId string
+	hydroCodeId               string
+	tributeCodeId             string
+	daoVotingAdapterCodeId    string
+	stTokenInfoProviderCodeId string
+	gatekeeperCodeId          string
 )
 
 type HydroSuite struct {
@@ -57,25 +71,19 @@ func (s *HydroSuite) SetupSuite() {
 	s.Require().NoError(err)
 	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, relayer, 1_000_000, 0))
 
-	// copy hydro, tribute and dao_voting_adapter contracts to neutron validator
-	hydroContract, err := os.ReadFile("../../artifacts/hydro.wasm")
-	s.Require().NoError(err)
-	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), hydroContract, "hydro.wasm"))
-
-	tributeContract, err := os.ReadFile("../../artifacts/tribute.wasm")
-	s.Require().NoError(err)
-	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), tributeContract, "tribute.wasm"))
-
-	daoVotingAdapterContract, err := os.ReadFile("../../artifacts/dao_voting_adapter.wasm")
-	s.Require().NoError(err)
-	s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), daoVotingAdapterContract, "dao_voting_adapter.wasm"))
+	// copy contract codes to neutron validator
+	s.CopyWasmFiles(HydroWasm, TributeWasm, DAOVotingAdapterWasm, STTokenInfoProviderWasm, GatekeeperWasm)
 
 	// store hydro contract code
-	hydroCodeId = s.StoreCode(s.GetContractCodePath("hydro.wasm"))
+	hydroCodeId = s.StoreCode(s.GetContractCodePath(HydroWasm))
 	// store tribute contract code
-	tributeCodeId = s.StoreCode(s.GetContractCodePath("tribute.wasm"))
+	tributeCodeId = s.StoreCode(s.GetContractCodePath(TributeWasm))
 	// store dao_voting_adapter contract code
-	daoVotingAdapterCodeId = s.StoreCode(s.GetContractCodePath("dao_voting_adapter.wasm"))
+	daoVotingAdapterCodeId = s.StoreCode(s.GetContractCodePath(DAOVotingAdapterWasm))
+	// store st_token_info_provider contract code
+	stTokenInfoProviderCodeId = s.StoreCode(s.GetContractCodePath(STTokenInfoProviderWasm))
+	// store gatekeeper contract code
+	gatekeeperCodeId = s.StoreCode(s.GetContractCodePath(GatekeeperWasm))
 
 	// start icq relayer
 	sidecarConfig := chainsuite.GetIcqSidecarConfig(s.HubChain, s.NeutronChain)
@@ -151,6 +159,13 @@ func (s *HydroSuite) HubToNeutronShareTokenTransfer(
 	s.Require().NoError(err)
 
 	dstIbcDenom := transfertypes.ParseDenomTrace(transfertypes.GetPrefixedDenom("transfer", hubTransferChannel.Counterparty.ChannelID, sourceIbcDenom)).IBCDenom()
+
+	// check balance before sending the tokens
+	balanceBefore, err := s.NeutronChain.GetBalance(s.GetContext(), dstAddress, dstIbcDenom)
+	if err != nil {
+		balanceBefore = math.ZeroInt()
+	}
+
 	_, err = s.HubChain.Validators[validatorIndex].SendIBCTransfer(s.GetContext(), hubTransferChannel.ChannelID, keyMoniker, ibc.WalletAmount{
 		Denom:   sourceIbcDenom,
 		Amount:  amount,
@@ -165,12 +180,12 @@ func (s *HydroSuite) HubToNeutronShareTokenTransfer(
 	ibcTokensReceived := false
 	for tCtx.Err() == nil {
 		time.Sleep(chainsuite.CommitTimeout)
-		receivedAmt, err := s.NeutronChain.GetBalance(s.GetContext(), dstAddress, dstIbcDenom)
+		balanceAfter, err := s.NeutronChain.GetBalance(s.GetContext(), dstAddress, dstIbcDenom)
 		if err != nil {
 			continue
 		}
 
-		if receivedAmt.Equal(amount) {
+		if balanceAfter.Sub(balanceBefore).Equal(amount) {
 			ibcTokensReceived = true
 			break
 		}
@@ -178,6 +193,14 @@ func (s *HydroSuite) HubToNeutronShareTokenTransfer(
 	s.Require().True(ibcTokensReceived)
 
 	return dstIbcDenom
+}
+
+func (s *HydroSuite) CopyWasmFiles(fileNames ...string) {
+	for _, fileName := range fileNames {
+		binary, err := os.ReadFile(fmt.Sprintf("../../artifacts/%s", fileName))
+		s.Require().NoError(err)
+		s.Require().NoError(s.NeutronChain.GetNode().WriteFile(s.GetContext(), binary, fileName))
+	}
 }
 
 func (s *HydroSuite) StoreCode(contractPath string) string {
@@ -195,20 +218,67 @@ func (s *HydroSuite) StoreCode(contractPath string) string {
 	return codeId
 }
 
+func (s *HydroSuite) GetLSMTokenInfoProviderInitMsg(maxValParticipating int) map[string]interface{} {
+	neutronTransferChannel, err := s.Relayer.GetTransferChannel(s.GetContext(), s.NeutronChain, s.HubChain)
+	s.Require().NoError(err)
+
+	return map[string]interface{}{
+		"max_validator_shares_participating": maxValParticipating,
+		"hub_connection_id":                  neutronTransferChannel.ConnectionHops[0],
+		"hub_transfer_channel_id":            neutronTransferChannel.ChannelID,
+		"icq_update_period":                  10,
+	}
+}
+
+func (s *HydroSuite) GetInstantiateContractMsg(codeId string, initMsg map[string]any, label string, admin *string) map[string]any {
+	codeIdInt, err := strconv.Atoi(codeId)
+	s.Require().NoError(err)
+
+	initMsgJson, err := json.Marshal(initMsg)
+	s.Require().NoError(err)
+
+	intMsgBase64 := base64.StdEncoding.EncodeToString(initMsgJson)
+
+	return map[string]any{
+		"code_id": codeIdInt,
+		"msg":     intMsgBase64,
+		"label":   label,
+		"admin":   admin,
+	}
+}
+
 func (s *HydroSuite) InstantiateHydroContract(
 	keyMoniker string,
 	codeId string,
 	adminAddr string,
-	maxValParticipating int,
 	roundLength int,
+	tokenInfoProviderLSMInitMsg any,
+	tokenInfoProviderContractsInitMsgs []any,
+	gatekeeperInitMsg map[string]any,
 ) string {
 	s.Suite.T().Log("Instantiating Hydro contract")
 
 	firstRoundStartTime := time.Now().UnixNano()
-	neutronTransferChannel, err := s.Relayer.GetTransferChannel(s.GetContext(), s.NeutronChain, s.HubChain)
-	s.Require().NoError(err)
 
-	initHydro := map[string]interface{}{
+	var tokenInfoProvidersInitMsgs []map[string]any
+
+	if tokenInfoProviderLSMInitMsg != nil {
+		lsmTokenInfoProviderInitMsg := map[string]any{
+			"lsm": tokenInfoProviderLSMInitMsg,
+		}
+
+		tokenInfoProvidersInitMsgs = append(tokenInfoProvidersInitMsgs, lsmTokenInfoProviderInitMsg)
+	}
+
+	for _, contractInitMsg := range tokenInfoProviderContractsInitMsgs {
+		tokenInfoProviderContractInitMsg := map[string]any{
+			"token_info_provider_contract": contractInitMsg,
+		}
+
+		tokenInfoProvidersInitMsgs = append(tokenInfoProvidersInitMsgs, tokenInfoProviderContractInitMsg)
+	}
+
+	initHydro := map[string]any{
 		"round_length":      roundLength,
 		"lock_epoch_length": roundLength,
 		"tranches": []map[string]string{
@@ -221,17 +291,15 @@ func (s *HydroSuite) InstantiateHydroContract(
 				"metadata": "Consumer chains tranche metadata",
 			},
 		},
-		"first_round_start":                  strconv.FormatInt(firstRoundStartTime, 10),
-		"max_locked_tokens":                  "1000000000",
-		"whitelist_admins":                   []string{adminAddr},
-		"initial_whitelist":                  []string{adminAddr},
-		"max_validator_shares_participating": maxValParticipating,
-		"hub_connection_id":                  neutronTransferChannel.ConnectionHops[0],
-		"hub_transfer_channel_id":            neutronTransferChannel.ChannelID,
-		"icq_update_period":                  10,
-		"icq_managers":                       []string{adminAddr},
-		"max_deployment_duration":            12,
-		"round_lock_power_schedule":          [][]interface{}{{1, "1"}, {2, "1.25"}, {3, "1.5"}, {6, "2"}, {12, "4"}},
+		"first_round_start":         strconv.FormatInt(firstRoundStartTime, 10),
+		"max_locked_tokens":         "1000000000",
+		"whitelist_admins":          []string{adminAddr},
+		"initial_whitelist":         []string{adminAddr},
+		"icq_managers":              []string{adminAddr},
+		"max_deployment_duration":   12,
+		"round_lock_power_schedule": [][]any{{1, "1"}, {2, "1.25"}, {3, "1.5"}, {6, "2"}, {12, "4"}},
+		"token_info_providers":      tokenInfoProvidersInitMsgs,
+		"gatekeeper":                gatekeeperInitMsg,
 	}
 
 	return s.InstantiateContract(codeId, initHydro, adminAddr, "Hydro Smart Contract")
@@ -288,7 +356,7 @@ func (s *HydroSuite) RegisterInterchainQueries(
 	}
 
 	queryDeposit := len(validators) * chainsuite.NeutronMinQueryDeposit
-	_, err := s.WasmExecuteTx(0, icqs, contractAddr, []string{"--amount", strconv.Itoa(queryDeposit) + "untrn"})
+	_, err := s.WasmExecuteTx(0, keyMoniker, icqs, contractAddr, []string{"--amount", strconv.Itoa(queryDeposit) + "untrn"})
 	s.Require().NoError(err)
 	// Wait for the relayer to retrieve the initial query data before proceeding with locking
 	tCtx, cancelFn := context.WithTimeout(s.GetContext(), 30*chainsuite.CommitTimeout)
@@ -365,45 +433,30 @@ func (s *HydroSuite) WaitForQueryUpdate(contractAddr string, remoteHeight int64)
 	s.Require().True(dataSubmitted)
 }
 
-func (s *HydroSuite) LockTokens(validatorIndex int, lockDuration int, lockAmount string, lockDenom string, contractAddr string) error {
-	address := s.NeutronChain.ValidatorWallets[validatorIndex].Address
+func (s *HydroSuite) LockTokens(validatorIndex int, lockDuration int, lockAmount string, lockDenom string, proof map[string]interface{}, contractAddr string) error {
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
 
-	lockTxData := map[string]interface{}{
-		"lock_tokens": map[string]interface{}{
+	return s.LockTokensWithWallet(validatorIndex, keyMoniker, lockDuration, lockAmount, lockDenom, proof, contractAddr)
+}
+
+// Locks tokens with the given keyMoniker that exists on the validator node with the given index.
+// Differs from LockTokens() in previous one always using the validator key on the given node.
+func (s *HydroSuite) LockTokensWithWallet(validatorIndex int, keyMoniker string, lockDuration int, lockAmount string, lockDenom string, proof map[string]any, contractAddr string) error {
+	lockTxData := map[string]any{
+		"lock_tokens": map[string]any{
 			"lock_duration": lockDuration,
+			"proof":         proof,
 		},
 	}
 
-	_, err := s.WasmExecuteTx(validatorIndex, lockTxData, contractAddr, []string{"--amount", lockAmount + lockDenom})
+	response, err := s.WasmExecuteTx(validatorIndex, keyMoniker, lockTxData, contractAddr, []string{"--amount", lockAmount + lockDenom})
 	if err != nil {
 		return err
 	}
 
-	lockQueryData := map[string]interface{}{
-		"all_user_lockups": map[string]interface{}{
-			"address":    address,
-			"start_from": 0,
-			"limit":      100,
-		},
-	}
-
-	lockQueryResp := s.QueryContractState(lockQueryData, contractAddr)
-
-	var lockResponse chainsuite.LockResponse
-	err = json.Unmarshal([]byte(lockQueryResp), &lockResponse)
-	if err != nil {
-		return err
-	}
-
-	lockFound := false
-	for _, lock := range lockResponse.Data.Lockups {
-		if lock.LockEntry.Funds.Denom == lockDenom {
-			s.Require().Equal(lockAmount, lock.LockEntry.Funds.Amount)
-			lockFound = true
-		}
-	}
-	if !lockFound {
-		return fmt.Errorf("error locking tokens")
+	_, found := getEvtAttribute(response.Events, "wasm", "lock_id")
+	if !found {
+		return errors.New("error locking tokens")
 	}
 
 	return nil
@@ -427,7 +480,8 @@ func (s *HydroSuite) SubmitHydroProposal(
 		},
 	}
 
-	_, err := s.WasmExecuteTx(validatorIndex, proposalTxData, contractAddr, []string{})
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, proposalTxData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -448,7 +502,8 @@ func (s *HydroSuite) VoteForHydroProposal(validatorIndex int, contractAddr strin
 		},
 	}
 
-	_, err := s.WasmExecuteTx(validatorIndex, voteTxData, contractAddr, []string{})
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, voteTxData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -468,10 +523,11 @@ func (s *HydroSuite) GetProposalByTitle(contractAddr string, proposalTitle strin
 		},
 	}
 
-	response := s.QueryContractState(queryData, contractAddr)
+	response, err := s.QueryContractState(queryData, contractAddr)
+	s.Require().NoError(err)
 
 	var proposals chainsuite.ProposalData
-	err := json.Unmarshal([]byte(response), &proposals)
+	err = json.Unmarshal([]byte(response), &proposals)
 	s.Require().NoError(err)
 
 	for _, proposal := range proposals.Data.Proposals {
@@ -488,10 +544,11 @@ func (s *HydroSuite) GetCurrentRound(contractAddr string) int {
 		"current_round": map[string]interface{}{},
 	}
 
-	response := s.QueryContractState(queryData, contractAddr)
+	response, err := s.QueryContractState(queryData, contractAddr)
+	s.Require().NoError(err)
 
 	var roundData chainsuite.RoundData
-	err := json.Unmarshal([]byte(response), &roundData)
+	err = json.Unmarshal([]byte(response), &roundData)
 	s.Require().NoError(err)
 
 	return roundData.Data.RoundID
@@ -521,10 +578,11 @@ func (s *HydroSuite) GetUserVotingPower(contractAddr string, address string) int
 		},
 	}
 
-	response := s.QueryContractState(queryData, contractAddr)
+	response, err := s.QueryContractState(queryData, contractAddr)
+	s.Require().NoError(err)
 
 	var userData chainsuite.UserVotingPower
-	err := json.Unmarshal([]byte(response), &userData)
+	err = json.Unmarshal([]byte(response), &userData)
 	s.Require().NoError(err)
 
 	return userData.Data.VotingPower
@@ -537,9 +595,10 @@ func (s *HydroSuite) GetRoundVotingPower(contractAddr string, roundId int64) int
 		},
 	}
 
-	response := s.QueryContractState(queryData, contractAddr)
+	response, err := s.QueryContractState(queryData, contractAddr)
+	s.Require().NoError(err)
 	var roundData chainsuite.RoundVotingPower
-	err := json.Unmarshal([]byte(response), &roundData)
+	err = json.Unmarshal([]byte(response), &roundData)
 	s.Require().NoError(err)
 
 	roundPower, err := strconv.ParseInt(roundData.Data.VotingPower, 10, 64)
@@ -548,12 +607,27 @@ func (s *HydroSuite) GetRoundVotingPower(contractAddr string, roundId int64) int
 	return roundPower
 }
 
+func (s *HydroSuite) GetGatekeeper(hydroContractAddr string) string {
+	queryData := map[string]any{
+		"gatekeeper": map[string]any{},
+	}
+
+	response, err := s.QueryContractState(queryData, hydroContractAddr)
+	s.Require().NoError(err)
+
+	var gatekeeperResponse chainsuite.Gatekeeper
+	err = json.Unmarshal([]byte(response), &gatekeeperResponse)
+	s.Require().NoError(err)
+
+	return gatekeeperResponse.Data.Gatekeeper
+}
+
 func (s *HydroSuite) PauseTheHydroContract(keyMoniker string, contractAddr string) {
 	pauseTxData := map[string]interface{}{
 		"pause": map[string]interface{}{},
 	}
 
-	_, err := s.WasmExecuteTx(0, pauseTxData, contractAddr, []string{})
+	_, err := s.WasmExecuteTx(0, keyMoniker, pauseTxData, contractAddr, []string{})
 	s.Require().NoError(err)
 }
 
@@ -562,7 +636,9 @@ func (s *HydroSuite) UnlockTokens(contractAddr string) error {
 		"unlock_tokens": map[string]interface{}{},
 	}
 
-	_, err := s.WasmExecuteTx(0, unlockTxData, contractAddr, []string{})
+	validatorIndex := 0
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, unlockTxData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -578,7 +654,9 @@ func (s *HydroSuite) RefreshLock(contractAddr string, new_lock_duration, lock_id
 		},
 	}
 
-	_, err := s.WasmExecuteTx(0, refreshTxData, contractAddr, []string{})
+	validatorIndex := 0
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, refreshTxData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -594,7 +672,9 @@ func (s *HydroSuite) UpdateMaxLockedTokens(contractAddr string, newMaxLockedToke
 		},
 	}
 
-	_, err := s.WasmExecuteTx(0, updateMaxLockedTokensTxData, contractAddr, []string{})
+	validatorIndex := 0
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, updateMaxLockedTokensTxData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -609,7 +689,9 @@ func (s *HydroSuite) WhitelistAccount(contractAddr string, address string) error
 		},
 	}
 
-	_, err := s.WasmExecuteTx(0, whiteListTxData, contractAddr, []string{})
+	validatorIndex := 0
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, whiteListTxData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -624,7 +706,9 @@ func (s *HydroSuite) RemoveFromWhitelist(contractAddr string, address string) er
 		},
 	}
 
-	_, err := s.WasmExecuteTx(0, whiteListTxData, contractAddr, []string{})
+	validatorIndex := 0
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, whiteListTxData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -642,7 +726,9 @@ func (s *HydroSuite) AddTranche(contractAddr, name, metadata string) error {
 		},
 	}
 
-	_, err := s.WasmExecuteTx(0, trancheTxData, contractAddr, []string{})
+	validatorIndex := 0
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, trancheTxData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -659,7 +745,9 @@ func (s *HydroSuite) EditTranche(contractAddr, name, metadata string, trancheId 
 		},
 	}
 
-	_, err := s.WasmExecuteTx(0, trancheTxData, contractAddr, []string{})
+	validatorIndex := 0
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, trancheTxData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -674,7 +762,9 @@ func (s *HydroSuite) AddICQManager(contractAddr, address string) error {
 		},
 	}
 
-	_, err := s.WasmExecuteTx(0, icqTxData, contractAddr, []string{})
+	validatorIndex := 0
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, icqTxData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -689,7 +779,9 @@ func (s *HydroSuite) RemoveICQManager(contractAddr, address string) error {
 		},
 	}
 
-	_, err := s.WasmExecuteTx(0, icqTxData, contractAddr, []string{})
+	validatorIndex := 0
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, icqTxData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -704,7 +796,9 @@ func (s *HydroSuite) WithdrawICQFunds(contractAddr string, amount int64) error {
 		},
 	}
 
-	_, err := s.WasmExecuteTx(0, icqTxData, contractAddr, []string{})
+	validatorIndex := 0
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, icqTxData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -726,7 +820,8 @@ func (s *HydroSuite) AddLiquidityDeployment(validatorIndex int, contractAddr str
 		},
 	}
 
-	_, err := s.WasmExecuteTx(0, addLiquidityData, contractAddr, []string{})
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, addLiquidityData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -743,7 +838,8 @@ func (s *HydroSuite) SubmitTribute(validatorIndex, amount, round_id, trancheId, 
 		},
 	}
 
-	response, err := s.WasmExecuteTx(validatorIndex, txData, contractAddr, []string{"--amount", strconv.Itoa(amount) + "untrn"})
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	response, err := s.WasmExecuteTx(validatorIndex, keyMoniker, txData, contractAddr, []string{"--amount", strconv.Itoa(amount) + "untrn"})
 	if err != nil {
 		return 0, err
 	}
@@ -767,7 +863,8 @@ func (s *HydroSuite) ClaimTribute(validatorIndex int, contractAddr, voterAddress
 		},
 	}
 
-	_, err := s.WasmExecuteTx(validatorIndex, txData, contractAddr, []string{})
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, txData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -785,7 +882,8 @@ func (s *HydroSuite) RefundTribute(validatorIndex int, contractAddr string, roun
 		},
 	}
 
-	_, err := s.WasmExecuteTx(validatorIndex, txData, contractAddr, []string{})
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, txData, contractAddr, []string{})
 	if err != nil {
 		return err
 	}
@@ -793,7 +891,59 @@ func (s *HydroSuite) RefundTribute(validatorIndex int, contractAddr string, roun
 	return nil
 }
 
-func (s *HydroSuite) QueryContractState(queryData map[string]interface{}, contractAddr string) []byte {
+func (s *HydroSuite) RegisterGatekeeperStage(
+	validatorIndex int, contractAddr string, activateAt int64,
+	merkleRoot string, startNewEpoch bool, hrp *string,
+) {
+	txData := map[string]any{
+		"register_stage": map[string]any{
+			"activate_at":     strconv.Itoa(int(activateAt)),
+			"merkle_root":     merkleRoot,
+			"start_new_epoch": startNewEpoch,
+			"hrp":             hrp,
+		},
+	}
+
+	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+	_, err := s.WasmExecuteTx(validatorIndex, keyMoniker, txData, contractAddr, []string{})
+	s.Require().NoError(err)
+}
+
+func (s *HydroSuite) WaitForGatekeeperStage(contractAddress string, stageId int, timeout time.Duration) {
+	tCtx, cancelFn := context.WithTimeout(s.GetContext(), timeout)
+	defer cancelFn()
+
+	queryData := map[string]any{
+		"current_stage": map[string]any{},
+	}
+
+	stageReached := false
+	for tCtx.Err() == nil {
+		time.Sleep(chainsuite.CommitTimeout)
+
+		response, err := s.QueryContractState(queryData, contractAddress)
+		if err != nil {
+			if strings.Contains(err.Error(), "Failed to get current stage.") {
+				continue
+			} else {
+				s.Require().NoError(err)
+			}
+		}
+
+		var stageData chainsuite.StageData
+		err = json.Unmarshal(response, &stageData)
+		s.Require().NoError(err)
+
+		if stageData.Data.Stage.StageID == stageId {
+			stageReached = true
+			break
+		}
+	}
+
+	s.Require().True(stageReached)
+}
+
+func (s *HydroSuite) QueryContractState(queryData map[string]any, contractAddr string) ([]byte, error) {
 	queryJson, err := json.Marshal(queryData)
 	s.Require().NoError(err)
 
@@ -801,13 +951,15 @@ func (s *HydroSuite) QueryContractState(queryData map[string]interface{}, contra
 		s.GetContext(),
 		"wasm", "contract-state", "smart", contractAddr, string(queryJson),
 	)
-	s.Require().NoError(err)
 
-	return response
+	// log
+	s.Suite.T().Logf("Querying contract state: %s", string(queryJson))
+	s.Suite.T().Logf("Response: %s", response)
+
+	return response, err
 }
 
-func (s *HydroSuite) WasmExecuteTx(validatorIndex int, txData map[string]interface{}, contractAddr string, flags []string) (*types.TxResponse, error) {
-	keyMoniker := s.NeutronChain.ValidatorWallets[validatorIndex].Moniker
+func (s *HydroSuite) WasmExecuteTx(validatorIndex int, keyMoniker string, txData map[string]interface{}, contractAddr string, flags []string) (*types.TxResponse, error) {
 	txJson, err := json.Marshal(txData)
 	if err != nil {
 		return nil, err
@@ -836,6 +988,63 @@ func (s *HydroSuite) WasmExecuteTx(validatorIndex int, txData map[string]interfa
 	return response, nil
 }
 
+// Runs the transaction in generate-only mode to build the resulting TX JSON file, which is then written to the
+// container at the specified location. File is written bacause the initial use case is to generate a TX and then
+// sign it in second step, for which the TX JSON file must be present in the filesystem.
+func (s *HydroSuite) TxGenerateOnly(node *cosmos.ChainNode, keyName string, outputFile string, command ...string) error {
+	command = node.BinCommand(append(command,
+		"--generate-only",
+		"--offline",
+		"--account-number", "0",
+		"--sequence", "0",
+		"--from", keyName,
+		"--keyring-backend", keyring.BackendTest,
+	)...)
+
+	stdout, _, err := node.Exec(s.GetContext(), command, node.Chain.Config().Env)
+	if err != nil {
+		return err
+	}
+
+	// Redirecting the output with "> out_file.json" doesn't work with the framework, so we need to write it like this
+	err = node.WriteFile(s.GetContext(), stdout, outputFile)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Given the signed TX JSON file prepares SignatureInfo to be attached to LockTokens transaction.
+// Only used when the Gatekeeper current stage refers to external chain addresses.
+func (s *HydroSuite) PrepareSignatureInfo(signedTxJson []byte) (*chainsuite.SignatureInfo, error) {
+	var tx chainsuite.CosmosTx
+	if err := json.Unmarshal(signedTxJson, &tx); err != nil {
+		return nil, err
+	}
+
+	claimMsg, err := json.Marshal(tx.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	signatureInput := chainsuite.CosmosSignature{
+		PubKey:    tx.AuthInfo.SignerInfos[0].PublicKey.Key,
+		Signature: tx.Signatures[0],
+	}
+	signature, err := json.Marshal(signatureInput)
+	if err != nil {
+		return nil, err
+	}
+
+	signatureInfo := chainsuite.SignatureInfo{
+		ClaimMsg:  base64.StdEncoding.EncodeToString(claimMsg),
+		Signature: base64.StdEncoding.EncodeToString(signature),
+	}
+
+	return &signatureInfo, nil
+}
+
 func (s *HydroSuite) GetContractCodePath(wasmCodeName string) string {
 	return path.Join(s.NeutronChain.GetNode().HomeDir(), wasmCodeName)
 }
@@ -852,9 +1061,10 @@ func (s *HydroSuite) VerifyHistoricalVotingPowers(
 		},
 	}
 
-	response := s.QueryContractState(queryInput, daoVotingAdapterContractAddr)
+	response, err := s.QueryContractState(queryInput, daoVotingAdapterContractAddr)
+	s.Require().NoError(err)
 	var totalPowerAtHeight chainsuite.TotalPowerAtHeight
-	err := json.Unmarshal([]byte(response), &totalPowerAtHeight)
+	err = json.Unmarshal([]byte(response), &totalPowerAtHeight)
 	s.Require().NoError(err)
 
 	totalPower, err := strconv.ParseInt(totalPowerAtHeight.Data.Power, 10, 64)
@@ -870,7 +1080,8 @@ func (s *HydroSuite) VerifyHistoricalVotingPowers(
 			},
 		}
 
-		response := s.QueryContractState(queryInput, daoVotingAdapterContractAddr)
+		response, err := s.QueryContractState(queryInput, daoVotingAdapterContractAddr)
+		s.Require().NoError(err)
 		var votingPowerAtHeight chainsuite.VotingPowerAtHeight
 		err = json.Unmarshal([]byte(response), &votingPowerAtHeight)
 		s.Require().NoError(err)

@@ -4,89 +4,59 @@
 * and run the @cosmwasm/ts-codegen generate command to regenerate this file.
 */
 
-export type Uint128 = string;
 export type Timestamp = Uint64;
 export type Uint64 = string;
-export interface AllUserLockupsResponse {
-  lockups: LockEntryWithPower[];
-}
-export interface LockEntryWithPower {
-  current_voting_power: Uint128;
-  lock_entry: LockEntry;
-}
-export interface LockEntry {
-  funds: Coin;
-  lock_end: Timestamp;
-  lock_id: number;
-  lock_start: Timestamp;
-}
-export interface Coin {
-  amount: Uint128;
-  denom: string;
-}
-export interface AllUserLockupsWithTrancheInfosResponse {
-  lockups_with_per_tranche_infos: LockupWithPerTrancheInfo[];
-}
-export interface LockupWithPerTrancheInfo {
-  lock_with_power: LockEntryWithPower;
-  per_tranche_info: PerTrancheLockupInfo[];
-}
-export interface PerTrancheLockupInfo {
-  current_voted_on_proposal?: number | null;
-  next_round_lockup_can_vote: number;
-  tied_to_proposal?: number | null;
-  tranche_id: number;
-}
-export type Addr = string;
+export type Binary = string;
+export type Uint128 = string;
 export type Decimal = string;
-export interface AllVotesResponse {
-  votes: VoteEntry[];
-}
-export interface VoteEntry {
-  lock_id: number;
-  round_id: number;
-  sender_addr: Addr;
-  tranche_id: number;
-  vote: Vote;
-}
-export interface Vote {
-  prop_id: number;
-  time_weighted_shares: [string, Decimal];
-}
-export interface AllVotesRoundTrancheResponse {
-  votes: VoteEntry[];
-}
-export interface ConstantsResponse {
-  constants: Constants;
-}
-export interface Constants {
+export type TokenInfoProviderInstantiateMsg = {
+  lsm: {
+    hub_connection_id: string;
+    hub_transfer_channel_id: string;
+    icq_update_period: number;
+    max_validator_shares_participating: number;
+  };
+} | {
+  token_info_provider_contract: {
+    admin?: string | null;
+    code_id: number;
+    label: string;
+    msg: Binary;
+  };
+};
+export interface InstantiateMsg {
+  cw721_collection_info?: CollectionInfo | null;
   first_round_start: Timestamp;
-  hub_connection_id: string;
-  hub_transfer_channel_id: string;
-  icq_update_period: number;
-  known_users_cap: number;
+  gatekeeper?: InstantiateContractMsg | null;
+  icq_managers: string[];
+  initial_whitelist: string[];
   lock_epoch_length: number;
   max_deployment_duration: number;
-  max_locked_tokens: number;
-  max_validator_shares_participating: number;
-  paused: boolean;
+  max_locked_tokens: Uint128;
   round_length: number;
-  round_lock_power_schedule: RoundLockPowerSchedule;
+  round_lock_power_schedule: [number, Decimal][];
+  token_info_providers: TokenInfoProviderInstantiateMsg[];
+  tranches: TrancheInfo[];
+  whitelist_admins: string[];
 }
-export interface RoundLockPowerSchedule {
-  round_lock_power_schedule: LockPowerEntry[];
+export interface CollectionInfo {
+  name: string;
+  symbol: string;
 }
-export interface LockPowerEntry {
-  locked_rounds: number;
-  power_scaling_factor: Decimal;
+export interface InstantiateContractMsg {
+  admin?: string | null;
+  code_id: number;
+  label: string;
+  msg: Binary;
 }
-export interface CurrentRoundResponse {
-  round_end: Timestamp;
-  round_id: number;
+export interface TrancheInfo {
+  metadata: string;
+  name: string;
 }
 export type ExecuteMsg = {
   lock_tokens: {
     lock_duration: number;
+    proof?: LockTokensProof | null;
   };
 } | {
   refresh_lock_duration: {
@@ -127,6 +97,7 @@ export type ExecuteMsg = {
 } | {
   update_config: {
     activate_at: Timestamp;
+    cw721_collection_info?: CollectionInfo | null;
     known_users_cap?: number | null;
     max_deployment_duration?: number | null;
     max_locked_tokens?: number | null;
@@ -180,66 +151,86 @@ export type ExecuteMsg = {
     round_id: number;
     tranche_id: number;
   };
+} | {
+  update_token_group_ratio: {
+    new_ratio: Decimal;
+    old_ratio: Decimal;
+    token_group_id: string;
+  };
+} | {
+  add_token_info_provider: {
+    token_info_provider: TokenInfoProviderInstantiateMsg;
+  };
+} | {
+  remove_token_info_provider: {
+    provider_id: string;
+  };
+} | {
+  set_gatekeeper: {
+    gatekeeper_addr?: string | null;
+  };
+} | {
+  transfer_nft: {
+    recipient: string;
+    token_id: string;
+  };
+} | {
+  send_nft: {
+    contract: string;
+    msg: Binary;
+    token_id: string;
+  };
+} | {
+  approve: {
+    expires?: Expiration | null;
+    spender: string;
+    token_id: string;
+  };
+} | {
+  revoke: {
+    spender: string;
+    token_id: string;
+  };
+} | {
+  approve_all: {
+    expires?: Expiration | null;
+    operator: string;
+  };
+} | {
+  revoke_all: {
+    operator: string;
+  };
 };
+export type Expiration = {
+  at_height: number;
+} | {
+  at_time: Timestamp;
+} | {
+  never: {};
+};
+export interface LockTokensProof {
+  maximum_amount: Uint128;
+  proof: string[];
+  sig_info?: SignatureInfo | null;
+}
+export interface SignatureInfo {
+  claim_msg: Binary;
+  signature: Binary;
+}
 export interface ProposalToLockups {
   lock_ids: number[];
   proposal_id: number;
 }
-export interface TrancheInfo {
-  metadata: string;
-  name: string;
-}
-export interface ExpiredUserLockupsResponse {
-  lockups: LockEntry[];
-}
-export interface ICQManagersResponse {
-  managers: Addr[];
-}
-export interface InstantiateMsg {
-  first_round_start: Timestamp;
-  hub_connection_id: string;
-  hub_transfer_channel_id: string;
-  icq_managers: string[];
-  icq_update_period: number;
-  initial_whitelist: string[];
-  lock_epoch_length: number;
-  max_deployment_duration: number;
-  max_locked_tokens: Uint128;
-  max_validator_shares_participating: number;
-  round_length: number;
-  round_lock_power_schedule: [number, Decimal][];
-  tranches: TrancheInfo[];
-  whitelist_admins: string[];
-}
-export interface LiquidityDeploymentResponse {
-  liquidity_deployment: LiquidityDeployment;
-}
-export interface LiquidityDeployment {
-  deployed_funds: Coin[];
-  destinations: string[];
-  funds_before_deployment: Coin[];
-  proposal_id: number;
-  remaining_rounds: number;
-  round_id: number;
-  total_rounds: number;
-  tranche_id: number;
-}
-export interface ProposalResponse {
-  proposal: Proposal;
-}
-export interface Proposal {
-  deployment_duration: number;
-  description: string;
-  minimum_atom_liquidity_request: Uint128;
-  percentage: Uint128;
-  power: Uint128;
-  proposal_id: number;
-  round_id: number;
-  title: string;
-  tranche_id: number;
+export interface Coin {
+  amount: Uint128;
+  denom: string;
 }
 export type QueryMsg = {
   constants: {};
+} | {
+  token_info_providers: {};
+} | {
+  gatekeeper: {};
 } | {
   tranches: {};
 } | {
@@ -332,9 +323,8 @@ export type QueryMsg = {
 } | {
   registered_validator_queries: {};
 } | {
-  validator_power_ratio: {
-    round_id: number;
-    validator: string;
+  can_lock_denom: {
+    token_denom: string;
   };
 } | {
   liquidity_deployment: {
@@ -358,7 +348,201 @@ export type QueryMsg = {
     address: string;
     height?: number | null;
   };
+} | {
+  owner_of: {
+    include_expired?: boolean | null;
+    token_id: string;
+  };
+} | {
+  approval: {
+    include_expired?: boolean | null;
+    spender: string;
+    token_id: string;
+  };
+} | {
+  approvals: {
+    include_expired?: boolean | null;
+    token_id: string;
+  };
+} | {
+  all_operators: {
+    include_expired?: boolean | null;
+    limit?: number | null;
+    owner: string;
+    start_after?: string | null;
+  };
+} | {
+  num_tokens: {};
+} | {
+  collection_info: {};
+} | {
+  nft_info: {
+    token_id: string;
+  };
+} | {
+  all_nft_info: {
+    include_expired?: boolean | null;
+    token_id: string;
+  };
+} | {
+  tokens: {
+    limit?: number | null;
+    owner: string;
+    start_after?: string | null;
+  };
+} | {
+  all_tokens: {
+    limit?: number | null;
+    start_after?: string | null;
+  };
 };
+export type Addr = string;
+export interface AllNftInfoResponse {
+  access: OwnerOfResponse;
+  info: NftInfoResponse;
+}
+export interface OwnerOfResponse {
+  approvals: Approval[];
+  owner: string;
+}
+export interface Approval {
+  expires: Expiration;
+  spender: string;
+}
+export interface NftInfoResponse {
+  extension: LockupWithPerTrancheInfo;
+  token_uri?: string | null;
+}
+export interface LockupWithPerTrancheInfo {
+  lock_with_power: LockEntryWithPower;
+  per_tranche_info: PerTrancheLockupInfo[];
+}
+export interface LockEntryWithPower {
+  current_voting_power: Uint128;
+  lock_entry: LockEntryV2;
+}
+export interface LockEntryV2 {
+  funds: Coin;
+  lock_end: Timestamp;
+  lock_id: number;
+  lock_start: Timestamp;
+  owner: Addr;
+}
+export interface PerTrancheLockupInfo {
+  current_voted_on_proposal?: number | null;
+  historic_voted_on_proposals: RoundWithBid[];
+  next_round_lockup_can_vote: number;
+  tied_to_proposal?: number | null;
+  tranche_id: number;
+}
+export interface RoundWithBid {
+  proposal_id: number;
+  round_end: Timestamp;
+  round_id: number;
+}
+export interface OperatorsResponse {
+  operators: Approval[];
+}
+export interface TokensResponse {
+  tokens: string[];
+}
+export interface AllUserLockupsResponse {
+  lockups: LockEntryWithPower[];
+}
+export interface AllUserLockupsWithTrancheInfosResponse {
+  lockups_with_per_tranche_infos: LockupWithPerTrancheInfo[];
+}
+export interface AllVotesResponse {
+  votes: VoteEntry[];
+}
+export interface VoteEntry {
+  lock_id: number;
+  round_id: number;
+  sender_addr: Addr;
+  tranche_id: number;
+  vote: Vote;
+}
+export interface Vote {
+  prop_id: number;
+  time_weighted_shares: [string, Decimal];
+}
+export interface AllVotesRoundTrancheResponse {
+  votes: VoteEntry[];
+}
+export interface ApprovalResponse {
+  approval: Approval;
+}
+export interface ApprovalsResponse {
+  approvals: Approval[];
+}
+export interface CanLockDenomResponse {
+  can_be_locked: boolean;
+  denom: string;
+}
+export interface ConstantsResponse {
+  constants: Constants;
+}
+export interface Constants {
+  cw721_collection_info: CollectionInfo;
+  first_round_start: Timestamp;
+  known_users_cap: number;
+  lock_epoch_length: number;
+  max_deployment_duration: number;
+  max_locked_tokens: number;
+  paused: boolean;
+  round_length: number;
+  round_lock_power_schedule: RoundLockPowerSchedule;
+}
+export interface RoundLockPowerSchedule {
+  round_lock_power_schedule: LockPowerEntry[];
+}
+export interface LockPowerEntry {
+  locked_rounds: number;
+  power_scaling_factor: Decimal;
+}
+export interface CurrentRoundResponse {
+  round_end: Timestamp;
+  round_id: number;
+}
+export interface ExpiredUserLockupsResponse {
+  lockups: LockEntryV2[];
+}
+export interface GatekeeperResponse {
+  gatekeeper: string;
+}
+export interface ICQManagersResponse {
+  managers: Addr[];
+}
+export interface LiquidityDeploymentResponse {
+  liquidity_deployment: LiquidityDeployment;
+}
+export interface LiquidityDeployment {
+  deployed_funds: Coin[];
+  destinations: string[];
+  funds_before_deployment: Coin[];
+  proposal_id: number;
+  remaining_rounds: number;
+  round_id: number;
+  total_rounds: number;
+  tranche_id: number;
+}
+export interface NumTokensResponse {
+  count: number;
+}
+export interface ProposalResponse {
+  proposal: Proposal;
+}
+export interface Proposal {
+  deployment_duration: number;
+  description: string;
+  minimum_atom_liquidity_request: Uint128;
+  percentage: Uint128;
+  power: Uint128;
+  proposal_id: number;
+  round_id: number;
+  title: string;
+  tranche_id: number;
+}
 export interface RegisteredValidatorQueriesResponse {
   query_ids: [string, number][];
 }
@@ -379,6 +563,24 @@ export interface SpecificUserLockupsResponse {
 }
 export interface SpecificUserLockupsWithTrancheInfosResponse {
   lockups_with_per_tranche_infos: LockupWithPerTrancheInfo[];
+}
+export type TokenInfoProvider = {
+  lsm: TokenInfoProviderLSM;
+} | {
+  derivative: TokenInfoProviderDerivative;
+};
+export interface TokenInfoProvidersResponse {
+  providers: TokenInfoProvider[];
+}
+export interface TokenInfoProviderLSM {
+  hub_connection_id: string;
+  hub_transfer_channel_id: string;
+  icq_update_period: number;
+  max_validator_shares_participating: number;
+}
+export interface TokenInfoProviderDerivative {
+  cache: {};
+  contract: string;
 }
 export interface TopNProposalsResponse {
   proposals: Proposal[];
@@ -408,16 +610,13 @@ export interface VoteWithPower {
 export interface UserVotingPowerResponse {
   voting_power: number;
 }
-export interface ValidatorPowerRatioResponse {
-  ratio: Decimal;
-}
 export interface VotingPowerAtHeightResponse {
   height: number;
   power: Uint128;
 }
-export interface WhitelistAdminsResponse {
-  admins: Addr[];
-}
 export interface WhitelistResponse {
   whitelist: Addr[];
+}
+export interface WhitelistAdminsResponse {
+  admins: Addr[];
 }

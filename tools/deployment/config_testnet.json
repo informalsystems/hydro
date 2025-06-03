@@ -5,7 +5,6 @@
     "hub_rpc_node": "https://rpc-rs.cosmos.nodestake.top:443",
     "hub_api_node": "https://api-rs.cosmos.nodestake.top:443",
     "tx_sender_wallet": "submitter",
-    "tx_sender_address": "neutron1r6rv879netg009eh6ty23v57qrq29afecuehlm",
     "hub_connection_id": "connection-42",
     "hub_channel_id": "channel-96",
     "tribute_token_1": "untrn",

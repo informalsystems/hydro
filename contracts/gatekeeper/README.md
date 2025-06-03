@@ -1,0 +1,1 @@
+The design of this contract draws inspiration from [cw20-merkle-airdrop](https://github.com/CosmWasm/cw-tokens/tree/main/contracts/cw20-merkle-airdrop).

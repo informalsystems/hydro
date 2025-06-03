@@ -7,18 +7,18 @@ use neutron_sdk::bindings::query::NeutronQuery;
 use crate::{
     contract::{compute_current_round_id, compute_round_end},
     error::{new_generic_error, ContractError},
-    lsm_integration::{
-        get_total_power_for_round, get_validator_power_ratio_for_round, initialize_validator_store,
-        validate_denom,
-    },
+    lsm_integration::initialize_validator_store,
     msg::LiquidityDeployment,
-    query::LockEntryWithPower,
+    query::{LockEntryWithPower, LockupWithPerTrancheInfo, PerTrancheLockupInfo, RoundWithBid},
+    score_keeper::get_total_power_for_round,
     state::{
-        Constants, HeightRange, LockEntry, Proposal, RoundLockPowerSchedule, CONSTANTS,
+        Constants, HeightRange, LockEntryV2, Proposal, RoundLockPowerSchedule, Vote, CONSTANTS,
         EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND,
-        LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP, PROPOSAL_MAP, ROUND_TO_HEIGHT_RANGE,
-        SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, VOTE_MAP,
+        LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V1, LOCKS_MAP_V2, PROPOSAL_MAP,
+        ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, VOTE_MAP_V2,
+        VOTING_ALLOWED_ROUND,
     },
+    token_manager::TokenManager,
 };
 
 /// Loads the constants that are active for the current block according to the block timestamp.
@@ -40,10 +40,7 @@ pub fn load_constants_active_at_timestamp(
             Order::Descending,
         )
         .take(1)
-        .filter_map(|constants| match constants {
-            Ok(constants) => Some(constants),
-            Err(_) => None,
-        })
+        .filter_map(|constants| constants.ok())
         .collect();
 
     Ok(match current_constants.len() {
@@ -230,7 +227,7 @@ pub fn update_locked_tokens_info(
     current_round: u64,
     sender: &Addr,
     mut total_locked_tokens: u128,
-    locking_info: LockingInfo,
+    locking_info: &LockingInfo,
 ) -> Result<(), ContractError> {
     if let Some(lock_in_public_cap) = locking_info.lock_in_public_cap {
         total_locked_tokens += lock_in_public_cap;
@@ -336,7 +333,10 @@ pub fn get_round_id_for_height(storage: &dyn Storage, height: u64) -> StdResult<
     })
 }
 
-fn get_highest_known_height_for_round_id(storage: &dyn Storage, round_id: u64) -> StdResult<u64> {
+pub fn get_highest_known_height_for_round_id(
+    storage: &dyn Storage,
+    round_id: u64,
+) -> StdResult<u64> {
     Ok(ROUND_TO_HEIGHT_RANGE
         .may_load(storage, round_id)?
         .unwrap_or_default()
@@ -363,18 +363,33 @@ pub fn get_current_user_voting_power(
     let constants = load_current_constants(deps, env)?;
     let current_round_id = compute_current_round_id(env, &constants)?;
     let round_end = compute_round_end(&constants, current_round_id)?;
+    let mut token_manager = TokenManager::new(deps);
 
-    Ok(LOCKS_MAP
-        .prefix(address)
-        .range(deps.storage, None, None, Order::Ascending)
-        .filter_map(|lockup| match lockup {
-            Err(_) => None,
-            Ok(lockup) => Some(
-                to_lockup_with_power(deps, &constants, current_round_id, round_end, lockup.1)
+    // Get all lockups owned by the address from USER_LOCKS
+    let user_locks = USER_LOCKS
+        .may_load(deps.storage, address.clone())?
+        .unwrap_or_default();
+
+    // For each lock ID, load from LOCKS_MAP_V2, verify ownership, and compute voting power
+    Ok(user_locks
+        .iter()
+        .filter_map(
+            |&lock_id| match LOCKS_MAP_V2.may_load(deps.storage, lock_id) {
+                Ok(Some(lock_entry)) => Some(
+                    to_lockup_with_power(
+                        deps,
+                        &constants,
+                        &mut token_manager,
+                        current_round_id,
+                        round_end,
+                        lock_entry,
+                    )
                     .current_voting_power
                     .u128(),
-            ),
-        })
+                ),
+                _ => None,
+            },
+        )
         .sum())
 }
 
@@ -389,6 +404,7 @@ fn get_past_user_voting_power(
     round_id: u64,
 ) -> StdResult<u128> {
     let round_end = compute_round_end(constants, round_id)?;
+    let mut token_manager = TokenManager::new(deps);
 
     let user_locks_ids = USER_LOCKS
         .may_load_at_height(deps.storage, address.clone(), height)?
@@ -397,14 +413,27 @@ fn get_past_user_voting_power(
     Ok(user_locks_ids
         .into_iter()
         .filter_map(|lock_id| {
-            LOCKS_MAP
-                .may_load_at_height(deps.storage, (address.clone(), lock_id), height)
+            LOCKS_MAP_V2
+                .may_load_at_height(deps.storage, lock_id, height)
                 .unwrap_or_default()
+                .or(LOCKS_MAP_V1
+                    .may_load_at_height(deps.storage, (address.clone(), lock_id), height)
+                    .unwrap_or_default()
+                    .map(|v1_lockup| v1_lockup.into_v2(address.clone())))
         })
         .map(|lockup| {
-            to_lockup_with_power(deps, constants, round_id, round_end, lockup)
-                .current_voting_power
-                .u128()
+            to_lockup_with_power(
+                deps,
+                constants,
+                &mut token_manager,
+                round_id,
+                round_end,
+                lockup,
+            )
+            // Current voting power in this context means the voting power that the lockup had in the
+            // given past round, with the applied token group ratios as they were in that round.
+            .current_voting_power
+            .u128()
         })
         .sum())
 }
@@ -433,65 +462,148 @@ pub fn get_user_voting_power_for_past_height(
 pub fn to_lockup_with_power(
     deps: &Deps<NeutronQuery>,
     constants: &Constants,
+    token_manager: &mut TokenManager,
     round_id: u64,
     round_end: Timestamp,
-    lock_entry: LockEntry,
+    lock_entry: LockEntryV2,
 ) -> LockEntryWithPower {
-    match validate_denom(deps, round_id, constants, lock_entry.funds.denom.clone()) {
-        Err(_) => {
-            // If we fail to resove the denom, or the validator has dropped
-            // from the top N, then this lockup has zero voting power.
-            LockEntryWithPower {
-                lock_entry,
-                current_voting_power: Uint128::zero(),
-            }
-        }
-        Ok(validator) => {
-            match get_validator_power_ratio_for_round(deps.storage, round_id, validator) {
-                Err(_) => {
-                    deps.api.debug(&format!(
-                        "An error occured while computing voting power for lock: {:?}",
-                        lock_entry,
-                    ));
+    let Ok(token_ratio) = token_manager
+        .validate_denom(deps, round_id, lock_entry.funds.denom.clone())
+        .and_then(|token_group_id| {
+            token_manager.get_token_group_ratio(deps, round_id, token_group_id)
+        })
+    else {
+        return LockEntryWithPower {
+            lock_entry,
+            current_voting_power: Uint128::zero(),
+        };
+    };
 
-                    LockEntryWithPower {
-                        lock_entry,
-                        current_voting_power: Uint128::zero(),
-                    }
-                }
-                Ok(validator_power_ratio) => {
-                    let time_weighted_shares = get_lock_time_weighted_shares(
-                        &constants.round_lock_power_schedule,
-                        round_end,
-                        &lock_entry,
-                        constants.lock_epoch_length,
-                    );
+    let time_weighted_shares = get_lock_time_weighted_shares(
+        &constants.round_lock_power_schedule,
+        round_end,
+        &lock_entry,
+        constants.lock_epoch_length,
+    );
 
-                    let current_voting_power = validator_power_ratio
-                        .checked_mul(Decimal::from_ratio(time_weighted_shares, Uint128::one()));
+    let current_voting_power = token_ratio
+        .checked_mul(Decimal::from_ratio(time_weighted_shares, Uint128::one()))
+        .ok()
+        .map_or_else(Uint128::zero, Decimal::to_uint_ceil);
 
-                    match current_voting_power {
-                        Err(_) => {
-                            // if there was an overflow error, log this but return 0
-                            deps.api.debug(&format!(
-                                "Overflow error when computing voting power for lock: {:?}",
-                                lock_entry
-                            ));
+    LockEntryWithPower {
+        lock_entry,
+        current_voting_power,
+    }
+}
 
-                            LockEntryWithPower {
-                                lock_entry: lock_entry.clone(),
-                                current_voting_power: Uint128::zero(),
-                            }
-                        }
-                        Ok(current_voting_power) => LockEntryWithPower {
-                            lock_entry,
-                            current_voting_power: current_voting_power.to_uint_ceil(),
-                        },
-                    }
-                }
-            }
+fn historic_voted_on_proposals(
+    storage: &dyn Storage,
+    constants: &Constants,
+    tranche_id: u64,
+    lock_id: u64,
+    current_round_id: u64,
+) -> Result<Vec<RoundWithBid>, ContractError> {
+    let mut historic_voted_on_proposals: Vec<RoundWithBid> = vec![];
+
+    // Get all votes from VOTE_MAP_V2 for this lock_id and tranche_id
+    // In future, we might want to add fields like history_start_from and history_limit when querying lockups.
+    for round_id in 0..current_round_id {
+        if let Some(vote) = VOTE_MAP_V2.may_load(storage, ((round_id, tranche_id), lock_id))? {
+            let round_end = compute_round_end(constants, round_id).unwrap();
+
+            historic_voted_on_proposals.push(RoundWithBid {
+                round_id,
+                proposal_id: vote.prop_id,
+                round_end,
+            });
         }
     }
+
+    Ok(historic_voted_on_proposals)
+}
+
+fn per_round_tranche_info(
+    deps: &Deps<NeutronQuery>,
+    constants: &Constants,
+    tranche_id: u64,
+    lock_id: u64,
+    current_round_id: u64,
+) -> Result<PerTrancheLockupInfo, ContractError> {
+    let historic_voted_on_proposals = historic_voted_on_proposals(
+        deps.storage,
+        constants,
+        tranche_id,
+        lock_id,
+        current_round_id,
+    )?;
+
+    if let Some(Vote { prop_id, .. }) =
+        VOTE_MAP_V2.may_load(deps.storage, ((current_round_id, tranche_id), lock_id))?
+    {
+        return Ok(PerTrancheLockupInfo {
+            tranche_id,
+            next_round_lockup_can_vote: current_round_id,
+            current_voted_on_proposal: Some(prop_id),
+            tied_to_proposal: None,
+            historic_voted_on_proposals,
+        });
+    }
+
+    let mut next_round_lockup_can_vote = VOTING_ALLOWED_ROUND
+        .may_load(deps.storage, (tranche_id, lock_id))?
+        .unwrap_or(current_round_id);
+
+    let mut tied_to_proposal = None;
+
+    if next_round_lockup_can_vote > current_round_id {
+        let proposal = find_voted_proposal_for_lock(deps, current_round_id, tranche_id, lock_id)?;
+
+        let deployment = get_deployment_for_proposal(deps, &proposal)?;
+
+        // If the deployment for the proposals exists, and has zero funds,
+        // then the lock can vote in the current round
+        if deployment.is_some_and(|d| !d.has_nonzero_funds()) {
+            next_round_lockup_can_vote = current_round_id;
+        } else {
+            tied_to_proposal = Some(proposal.proposal_id);
+        }
+    }
+
+    Ok(PerTrancheLockupInfo {
+        tranche_id,
+        next_round_lockup_can_vote,
+        current_voted_on_proposal: None,
+        tied_to_proposal,
+        historic_voted_on_proposals,
+    })
+}
+
+pub fn to_lockup_with_tranche_infos(
+    deps: &Deps<NeutronQuery>,
+    constants: &Constants,
+    tranche_ids: &[u64],
+    lock_with_power: LockEntryWithPower,
+    current_round_id: u64,
+) -> Result<LockupWithPerTrancheInfo, ContractError> {
+    let mut per_tranche_info = Vec::with_capacity(tranche_ids.len());
+
+    for tranche_id in tranche_ids {
+        let tranche_info = per_round_tranche_info(
+            deps,
+            constants,
+            *tranche_id,
+            lock_with_power.lock_entry.lock_id,
+            current_round_id,
+        )?;
+
+        per_tranche_info.push(tranche_info)
+    }
+
+    Ok(LockupWithPerTrancheInfo {
+        lock_with_power,
+        per_tranche_info,
+    })
 }
 
 // Returns the time-weighted amount of shares locked in the given lock entry in a round with the given end time,
@@ -499,7 +611,7 @@ pub fn to_lockup_with_power(
 pub fn get_lock_time_weighted_shares(
     round_lock_power_schedule: &RoundLockPowerSchedule,
     round_end: Timestamp,
-    lock_entry: &LockEntry,
+    lock_entry: &LockEntryV2,
     lock_epoch_length: u64,
 ) -> Uint128 {
     if round_end.nanos() > lock_entry.lock_end.nanos() {
@@ -546,13 +658,20 @@ pub struct LockingInfo {
     pub lock_in_known_users_cap: Option<u128>,
 }
 
+/// Check if sender owns the specified lock
+pub fn is_lock_owner(storage: &dyn Storage, sender: &Addr, lock_id: u64) -> bool {
+    match LOCKS_MAP_V2.may_load(storage, lock_id) {
+        Ok(Some(lock_entry)) => lock_entry.owner == *sender,
+        _ => false,
+    }
+}
+
 // Finds the last proposal the given lock has voted for.
 // It will return an error if the lock has not voted for any proposal.
 pub fn find_voted_proposal_for_lock(
     deps: &Deps<NeutronQuery>,
     current_round_id: u64,
     tranche_id: u64,
-    lock_voter: &Addr,
     lock_id: u64,
 ) -> Result<Proposal, ContractError> {
     if current_round_id == 0 {
@@ -563,10 +682,9 @@ pub fn find_voted_proposal_for_lock(
 
     let mut check_round = current_round_id - 1;
     loop {
-        if let Some(prev_vote) = VOTE_MAP.may_load(
-            deps.storage,
-            ((check_round, tranche_id), lock_voter.clone(), lock_id),
-        )? {
+        if let Some(prev_vote) =
+            VOTE_MAP_V2.may_load(deps.storage, ((check_round, tranche_id), lock_id))?
+        {
             // Found a vote, so get and return the proposal
             return PROPOSAL_MAP
                 .load(deps.storage, (check_round, tranche_id, prev_vote.prop_id))
@@ -607,11 +725,9 @@ pub fn find_deployment_for_voted_lock(
     deps: &Deps<NeutronQuery>,
     current_round_id: u64,
     tranche_id: u64,
-    lock_voter: &Addr,
     lock_id: u64,
 ) -> Result<Option<LiquidityDeployment>, ContractError> {
-    let proposal =
-        find_voted_proposal_for_lock(deps, current_round_id, tranche_id, lock_voter, lock_id)?;
+    let proposal = find_voted_proposal_for_lock(deps, current_round_id, tranche_id, lock_id)?;
     get_deployment_for_proposal(deps, &proposal)
 }
 
@@ -623,4 +739,28 @@ impl LiquidityDeployment {
                 .iter()
                 .any(|coin| coin.amount > Uint128::zero())
     }
+}
+
+/// Retrieves a lock entry by its ID and ensures the lock_owner is the actual owner.
+///
+/// # Arguments
+/// - `lock_owner` - The expected owner of the lock entry.
+/// - `lock_id` - The unique identifier of the lock entry.
+///
+/// # Returns
+/// - `Ok(LockEntryV2)` - If the lock entry exists and the caller is the owner.
+/// - `Err(ContractError::Unauthorized)` - If the caller is not the owner.
+/// - `Err(ContractError::Std(_))` - If the lock entry does not exist or another storage error occurs.
+pub fn get_owned_lock_entry(
+    storage: &dyn Storage,
+    lock_owner: &Addr,
+    lock_id: u64,
+) -> Result<LockEntryV2, ContractError> {
+    let lock_entry = LOCKS_MAP_V2.load(storage, lock_id)?;
+
+    if lock_entry.owner != lock_owner {
+        return Err(ContractError::Unauthorized);
+    }
+
+    Ok(lock_entry)
 }
