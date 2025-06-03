@@ -18,11 +18,11 @@ use crate::{
         TOKEN_INFO_PROVIDERS, TOTAL_VOTING_POWER_PER_ROUND, WHITELIST_ADMINS,
     },
     testing::{
-        get_default_instantiate_msg, get_default_lsm_token_info_provider_init_msg,
-        get_default_power_schedule, get_message_info, setup_st_atom_token_info_provider_mock,
-        IBC_DENOM_1, IBC_DENOM_2, ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON,
-        ST_ATOM_TOKEN_GROUP, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
-        VALIDATOR_2_LST_DENOM_1,
+        get_default_cw721_collection_info, get_default_instantiate_msg,
+        get_default_lsm_token_info_provider_init_msg, get_default_power_schedule, get_message_info,
+        setup_st_atom_token_info_provider_mock, IBC_DENOM_1, IBC_DENOM_2,
+        ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, ST_ATOM_TOKEN_GROUP, VALIDATOR_1,
+        VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
     },
     testing_lsm_integration::set_validator_infos_for_round,
     testing_mocks::{
@@ -32,6 +32,7 @@ use crate::{
         TokenInfoProvider, TokenInfoProviderDerivative, TokenInfoProviderLSM,
         LSM_TOKEN_INFO_PROVIDER_ID,
     },
+    utils::load_current_constants,
 };
 
 // This test verifies that Hydro contract can be instantiated with only LSM token info provider.
@@ -221,6 +222,7 @@ fn handle_token_info_provider_instantiate_reply_test() {
         paused: false,
         max_deployment_duration: 3,
         round_lock_power_schedule: get_default_power_schedule(),
+        cw721_collection_info: get_default_cw721_collection_info(),
     };
     CONSTANTS
         .save(&mut deps.storage, env.block.time.nanos(), &constants)
@@ -303,6 +305,7 @@ fn add_remove_token_info_provider_test() {
                 paused: false,
                 max_deployment_duration: 3,
                 round_lock_power_schedule: RoundLockPowerSchedule::new(vec![]),
+                cw721_collection_info: get_default_cw721_collection_info(),
             },
         )
         .unwrap();
@@ -328,7 +331,14 @@ fn add_remove_token_info_provider_test() {
         icq_update_period: 100,
     };
 
-    let res = add_token_info_provider(deps.as_mut(), env.clone(), info.clone(), new_provider_info);
+    let constants = load_current_constants(&deps.as_ref(), &env).unwrap();
+    let res = add_token_info_provider(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        &constants,
+        new_provider_info,
+    );
     assert!(
         res.is_err(),
         "having multiple LSM token info providers shouldn't be allowed"
@@ -352,7 +362,14 @@ fn add_remove_token_info_provider_test() {
         admin: init_admin.clone(),
     };
 
-    let res = add_token_info_provider(deps.as_mut(), env.clone(), info.clone(), new_provider_info);
+    let constants = load_current_constants(&deps.as_ref(), &env).unwrap();
+    let res = add_token_info_provider(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        &constants,
+        new_provider_info,
+    );
     assert!(
         res.is_ok(),
         "failed to add new Derivative token info provider"
@@ -409,10 +426,12 @@ fn add_remove_token_info_provider_test() {
     );
 
     // Remove the newly added smart contract token info provider
+    let constants = load_current_constants(&deps.as_ref(), &env).unwrap();
     let res = remove_token_info_provider(
         deps.as_mut(),
         env.clone(),
         info.clone(),
+        &constants,
         contract_address.to_string(),
     );
     assert!(res.is_ok(), "failed to remove token info provider");
@@ -424,6 +443,7 @@ fn add_remove_token_info_provider_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
+        &constants,
         LSM_TOKEN_INFO_PROVIDER_ID.to_string(),
     );
     assert!(res.is_ok(), "failed to remove LSM token info provider.");
@@ -621,10 +641,12 @@ fn token_info_provider_lifecycle_test() {
     verify_current_user_voting_power(&deps, env.clone(), user_address, 0);
 
     // Re-add both token info providers and verify the voting powers again.
+    let constants = load_current_constants(&deps.as_ref(), &env).unwrap();
     add_token_info_provider(
         deps.as_mut(),
         env.clone(),
         admin_info.clone(),
+        &constants,
         get_default_lsm_token_info_provider_init_msg(),
     )
     .unwrap();
@@ -633,6 +655,7 @@ fn token_info_provider_lifecycle_test() {
         deps.as_mut(),
         env.clone(),
         admin_info.clone(),
+        &constants,
         TokenInfoProviderInstantiateMsg::TokenInfoProviderContract {
             code_id: 1000,
             msg: Binary::new(vec![]),

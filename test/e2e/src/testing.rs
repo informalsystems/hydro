@@ -101,6 +101,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
                 10000,
             )],
             gatekeeper: None,
+            cw721_collection_info: None,
         },
         Some(&Addr::unchecked(whitelist_admin_address.clone())),
         &[],
