@@ -71,9 +71,20 @@ go build -o build/icq-tool ./*.go
 
 You can adjust parameters like the RPC nodes to connect to for relaying by modifying the exports in `./tools/relaying.sh`.
 
-## Run the script
+### Run the script
 
 Simply run the script by running `docker run hydro-docker ./tools/relaying.sh HYDRO_CONTRACT_ADDRESS NUM_OF_VALIDATORS_TO_ADD`.
 
 It will not stop on its own, but the script will eventually print out the relayer logs, and once there are no more regular changes in those, you can stop the container.
 
+## Updating dTOKEN ratio
+
+If the Hydro contract supports locking of dTOKENs, we should periodically update the ratio of the given dTOKEN towards the base token, in order to properly reflect the total voting power of the Hydro contract, as well as users voting powers. The address of the dTOKEN smart contract can be obtained from the Hydro contract by using the following query:
+
+`{"token_info_providers": {}}`
+
+Run the following command to update the dTOKEN<->TOKEN ratio:
+
+```bash
+docker run hydro-docker ./tools/deployment/update_dtoken_ratio.sh "tools/deployment/config_mainnet.json" $DTOKEN_INFO_PROVIDER_CONTRACT_ADDRESS
+```
