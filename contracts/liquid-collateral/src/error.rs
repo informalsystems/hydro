@@ -102,9 +102,6 @@ pub enum ContractError {
     #[error("Tick index too low")]
     TickIndexTooLow,
 
-    #[error("Tick index too high")]
-    TickIndexTooHigh,
-
     #[error("Price is out of bounds")]
     PriceOutOfBounds,
 

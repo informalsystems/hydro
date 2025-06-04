@@ -6,7 +6,7 @@ use crate::msg::{
 };
 use crate::state::{Bid, BidStatus, SortedBid, State, BIDS, BID_COUNTER, SORTED_BIDS, STATE};
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, Event,
+    entry_point, to_json_binary, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, Event,
     MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Uint128,
 };
 use osmosis_std::types::cosmos::base::v1beta1::Coin as OsmosisCoin;
@@ -98,7 +98,6 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
 /// - on osmosis they check lexicographical order: https://github.com/osmosis-labs/osmosis/blob/main/x/concentrated-liquidity/types/msgs.go#L42C2-L44C3
 /// - ibc/token should go before uosmo token for example
 /// - if order is not correct - tx will fail!
-
 pub fn create_position(
     deps: DepsMut,
     env: Env,
@@ -156,9 +155,9 @@ pub fn create_position(
         sender: env.contract.address.to_string(),
         lower_tick: msg.lower_tick,
         upper_tick: msg.upper_tick,
-        tokens_provided: tokens_provided,
-        token_min_amount0: token_min_amount0,
-        token_min_amount1: token_min_amount1,
+        tokens_provided,
+        token_min_amount0,
+        token_min_amount1,
     };
 
     // store the address which initiated position creation
@@ -231,7 +230,7 @@ pub fn liquidate(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response
         .as_deref() // Converts Option<String> to Option<&str>
         .unwrap_or("0"); // Default value if None
 
-    let liquidity_shares_decimal = parse_liquidity(&liquidity_shares)?;
+    let liquidity_shares_decimal = parse_liquidity(liquidity_shares)?;
 
     // Calculate the proportional liquidity amount to withdraw
     let withdraw_liquidity_amount = calculate_withdraw_liquidity_amount(
@@ -436,7 +435,7 @@ fn handle_create_position_reply(deps: DepsMut, msg: Reply) -> Result<Response, C
 
 fn handle_withdraw_position_reply(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     msg: Reply,
 ) -> Result<Response, ContractError> {
     let response: MsgWithdrawPositionResponse = msg.result.try_into()?;
@@ -444,17 +443,14 @@ fn handle_withdraw_position_reply(
     let mut state = STATE.load(deps.storage)?;
 
     // Fetch the current liquidity of the position after withdrawal
-    let liquidity = state
-        .position_id
-        .map(|id| {
-            ConcentratedliquidityQuerier::new(&deps.querier)
-                .position_by_id(id)
-                .ok()
-                .and_then(|resp| resp.position)
-                .and_then(|breakdown| breakdown.position)
-                .map(|pos| pos.liquidity)
-        })
-        .flatten(); // Will be None if any of the steps fail
+    let liquidity = state.position_id.and_then(|id| {
+        ConcentratedliquidityQuerier::new(&deps.querier)
+            .position_by_id(id)
+            .ok()
+            .and_then(|resp| resp.position)
+            .and_then(|breakdown| breakdown.position)
+            .map(|pos| pos.liquidity)
+    });
 
     state.liquidity_shares = liquidity; // Set to Some(liquidity) or None
 
@@ -1114,7 +1110,7 @@ pub fn query_get_bids(deps: Deps, start_from: u32, limit: u32) -> StdResult<Bids
 
 pub fn query_bid(deps: Deps, bid_id: u64) -> StdResult<BidResponse> {
     Ok(BidResponse {
-        bid_id: bid_id,
+        bid_id,
         bid: BIDS.load(deps.storage, bid_id)?,
     })
 }
