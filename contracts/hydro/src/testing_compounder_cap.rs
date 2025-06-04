@@ -13,8 +13,8 @@ use neutron_sdk::{
 
 use crate::{
     contract::{execute, instantiate, sudo},
-    lsm_integration::get_total_power_for_round,
     msg::ExecuteMsg,
+    score_keeper::get_total_power_for_round,
     state::{EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, LOCKED_TOKENS},
     testing::{
         get_address_as_str, get_default_instantiate_msg, get_message_info, IBC_DENOM_1,
@@ -173,6 +173,7 @@ fn test_compounder_cap() {
         max_locked_tokens: Some(40000),
         known_users_cap: Some(2000),
         max_deployment_duration: None,
+        cw721_collection_info: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
@@ -189,6 +190,7 @@ fn test_compounder_cap() {
         max_locked_tokens: None,
         known_users_cap: Some(0),
         max_deployment_duration: None,
+        cw721_collection_info: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
@@ -419,6 +421,7 @@ fn test_compounder_cap() {
         max_locked_tokens: Some(50000),
         known_users_cap: Some(5000),
         max_deployment_duration: None,
+        cw721_collection_info: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
@@ -430,6 +433,7 @@ fn test_compounder_cap() {
         max_locked_tokens: None,
         known_users_cap: Some(0),
         max_deployment_duration: None,
+        cw721_collection_info: None,
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
@@ -485,6 +489,7 @@ fn test_compounder_cap() {
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: LOCK_EPOCH_LENGTH,
+        proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
@@ -513,6 +518,7 @@ fn execute_locking_and_verify(
         let info = get_message_info(&deps.api, locking_info.0, &[locking_info.2]);
         let msg = ExecuteMsg::LockTokens {
             lock_duration: locking_info.1,
+            proof: None,
         };
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
         match locking_info.3 {

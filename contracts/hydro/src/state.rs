@@ -1,8 +1,9 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
 use cw_storage_plus::{Item, Map, SnapshotMap, Strategy};
+use cw_utils::Expiration;
 
-use crate::msg::LiquidityDeployment;
+use crate::{msg::CollectionInfo, msg::LiquidityDeployment, token_manager::TokenInfoProvider};
 
 // The currently-active constants are always those with the largest activation_timestamp
 // such that activation_timestamp <= current_block.timestamp
@@ -70,14 +71,21 @@ pub struct Constants {
     // zero, which would allow any user to lock any amount that possibly wasn't filled, but was reserved
     // for this cap.
     pub known_users_cap: u128,
-    pub max_validator_shares_participating: u64,
-    pub hub_connection_id: String,
-    pub hub_transfer_channel_id: String,
-    pub icq_update_period: u64,
     pub paused: bool,
     pub max_deployment_duration: u64,
     pub round_lock_power_schedule: RoundLockPowerSchedule,
+    pub cw721_collection_info: CollectionInfo,
 }
+
+// Used to store a set of token info providers that are able to validate various denoms allowed to be locked
+// in the contract. The key in this map is the address of the token info provider smart contract, except
+// (temporarily) for the LSM one, which will have a hardcoded string key until we migrate LSM handling
+// into a separate smart contract.
+pub const TOKEN_INFO_PROVIDERS: Map<String, TokenInfoProvider> = Map::new("token_info_providers");
+
+// Keeps the address of the associated Gatekeeper contract, if Hydro uses one. The Gatekeeper contract
+// determines if a user should be allowed to lock the given amount of tokens at a given time.
+pub const GATEKEEPER: Item<String> = Item::new("gatekeeper");
 
 // the total number of tokens locked in the contract
 pub const LOCKED_TOKENS: Item<u128> = Item::new("locked_tokens");
@@ -98,17 +106,50 @@ pub const LOCK_ID: Item<u64> = Item::new("lock_id");
 // this is incremented every time a new proposal is created
 pub const PROP_ID: Item<u64> = Item::new("prop_id");
 
-// LOCKS_MAP: key(sender_address, lock_id) -> LockEntry
-pub const LOCKS_MAP: SnapshotMap<(Addr, u64), LockEntry> = SnapshotMap::new(
+// LOCKS_MAP_V1: Previous structure, now preserved for migration, and for historical queries
+// LOCKS_MAP_V1: key(sender_address, lock_id) -> LockEntry
+// Note: as discussed in https://github.com/informalsystems/hydro/pull/244#discussion_r2065764776,
+//  if the upgrade goes live during round 7, it could be safely removed in round 12
+pub const LOCKS_MAP_V1: SnapshotMap<(Addr, u64), LockEntryV1> = SnapshotMap::new(
     "locks_map",
     "locks_map__checkpoints",
     "locks_map__changelog",
     Strategy::EveryBlock,
 );
 
+// LOCKS_MAP_V2: New structure without address in key, to enable NFT features
+// LOCKS_MAP_V2: key(lock_id) -> LockEntry
+pub const LOCKS_MAP_V2: SnapshotMap<u64, LockEntryV2> = SnapshotMap::new(
+    "locks_map_v2",
+    "locks_map_v2__checkpoints",
+    "locks_map_v2__changelog",
+    Strategy::EveryBlock,
+);
+
 #[cw_serde]
-pub struct LockEntry {
+pub struct LockEntryV1 {
     pub lock_id: u64,
+    pub funds: Coin,
+    pub lock_start: Timestamp,
+    pub lock_end: Timestamp,
+}
+
+impl LockEntryV1 {
+    pub fn into_v2(self, owner: Addr) -> LockEntryV2 {
+        LockEntryV2 {
+            lock_id: self.lock_id,
+            owner,
+            funds: self.funds,
+            lock_start: self.lock_start,
+            lock_end: self.lock_end,
+        }
+    }
+}
+
+#[cw_serde]
+pub struct LockEntryV2 {
+    pub lock_id: u64,
+    pub owner: Addr,
     pub funds: Coin,
     pub lock_start: Timestamp,
     pub lock_end: Timestamp,
@@ -148,8 +189,13 @@ pub struct Proposal {
     pub minimum_atom_liquidity_request: Uint128,
 }
 
+// VOTE_MAP_V1: Previous structure, we need to keep it until all the tributes are claimed for round 0
 // VOTE_MAP: key((round_id, tranche_id), sender_addr, lock_id) -> Vote
-pub const VOTE_MAP: Map<((u64, u64), Addr, u64), Vote> = Map::new("vote_map");
+pub const VOTE_MAP_V1: Map<((u64, u64), Addr, u64), Vote> = Map::new("vote_map");
+
+// VOTE_MAP_V2: New structure without address in key, to enable NFT features
+// VOTE_MAP: key((round_id, tranche_id), lock_id) -> Vote
+pub const VOTE_MAP_V2: Map<((u64, u64), u64), Vote> = Map::new("vote_map_v2");
 
 // Tracks the next round in which user is allowed to vote with the given lock_id.
 // VOTING_ALLOWED_ROUND: key(tranche_id, lock_id) -> round_id
@@ -158,7 +204,7 @@ pub const VOTING_ALLOWED_ROUND: Map<(u64, u64), u64> = Map::new("voting_allowed_
 #[cw_serde]
 pub struct Vote {
     pub prop_id: u64,
-    // stores the amount of shares of that validator the user voted with
+    // stores the amount of shares of the token group ID the user voted with
     // (already scaled according to lockup scaling)
     pub time_weighted_shares: (String, Decimal),
 }
@@ -224,20 +270,20 @@ pub const VALIDATORS_INFO: Map<(u64, String), ValidatorInfo> = Map::new("validat
 // VALIDATORS_STORE_INITIALIZED: key(round_id) -> bool
 pub const VALIDATORS_STORE_INITIALIZED: Map<u64, bool> = Map::new("round_store_initialized");
 
-// For each round and validator, it stores the time-scaled number of shares of that validator
+// For each round and token group ID, it stores the time-scaled number of shares of that token group
 // that are locked in Hydro.
 // Concretely, the time weighted shares for each round are scaled by the lockup scaling factor,
 // see scale_lockup_power in contract.rs
-// SCALED_ROUND_POWER_SHARES_MAP: key(round_id, validator_address) -> number_of_shares
+// SCALED_ROUND_POWER_SHARES_MAP: key(round_id, token_group_ID) -> number_of_shares
 pub const SCALED_ROUND_POWER_SHARES_MAP: Map<(u64, String), Decimal> =
     Map::new("scaled_round_power_shares");
 
 // The following two store fields are supposed to be kept in sync,
-// i.e. whenever the shares of a proposal (or the power ratio of a validator)
+// i.e. whenever the shares of a proposal (or the power ratio of a token group)
 // get updated, the total power of the proposal should be updated as well.
-// For each proposal and validator, it stores the time-scaled number of shares of that validator
+// For each proposal and token group ID, it stores the time-scaled number of shares of that token group
 // that voted for the proposal.
-// SCALED_PROPOSAL_SHARES_MAP: key(proposal_id, validator_address) -> number_of_shares
+// SCALED_PROPOSAL_SHARES_MAP: key(proposal_id, token_group_ID) -> number_of_shares
 pub const SCALED_PROPOSAL_SHARES_MAP: Map<(u64, String), Decimal> =
     Map::new("scaled_proposal_power_shares");
 
@@ -301,3 +347,17 @@ pub struct HeightRange {
     pub lowest_known_height: u64,
     pub highest_known_height: u64,
 }
+
+// NFT_APPROVALS: key(lock_id, spender) -> Approval
+pub const NFT_APPROVALS: Map<(u64, Addr), Approval> = Map::new("nft_approvals");
+
+#[cw_serde]
+#[derive(Default)]
+pub struct Approval {
+    pub spender: String,
+    pub expires: Expiration,
+}
+
+/// Stored as (granter, operator), giving operator full control over granter's NFTs.
+/// NOTE: granter is the owner, so operator has control only for NFTs owned by granter
+pub const NFT_OPERATORS: Map<(Addr, Addr), Expiration> = Map::new("nft_operators");

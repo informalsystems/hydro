@@ -1,15 +1,22 @@
 use crate::{
-    msg::LiquidityDeployment,
-    state::{Constants, LockEntry, Proposal, Tranche, Vote, VoteWithPower},
+    msg::{CollectionInfo, LiquidityDeployment},
+    state::{Approval, Constants, LockEntryV2, Proposal, Tranche, Vote, VoteWithPower},
+    token_manager::TokenInfoProvider,
 };
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
+use cosmwasm_std::{Addr, Timestamp, Uint128};
 
 #[cw_serde]
 #[derive(QueryResponses, cw_orch::QueryFns)]
 pub enum QueryMsg {
     #[returns(ConstantsResponse)]
     Constants {},
+
+    #[returns(TokenInfoProvidersResponse)]
+    TokenInfoProviders {},
+
+    #[returns(GatekeeperResponse)]
+    Gatekeeper {},
 
     #[returns(TranchesResponse)]
     Tranches {},
@@ -110,8 +117,8 @@ pub enum QueryMsg {
     #[returns(RegisteredValidatorQueriesResponse)]
     RegisteredValidatorQueries {},
 
-    #[returns(ValidatorPowerRatioResponse)]
-    ValidatorPowerRatio { validator: String, round_id: u64 },
+    #[returns(CanLockDenomResponse)]
+    CanLockDenom { token_denom: String },
 
     #[returns(LiquidityDeploymentResponse)]
     LiquidityDeployment {
@@ -134,11 +141,139 @@ pub enum QueryMsg {
         address: String,
         height: Option<u64>,
     },
+
+    /// Returns the owner of the given token, as well as anyone with approval on this particular token.
+    /// If the token is unknown, returns an error.
+    /// If include_expired is set (to true), shows expired approvals in the results, otherwise, ignore them.
+    #[returns(OwnerOfResponse)]
+    OwnerOf {
+        token_id: String,
+        include_expired: Option<bool>,
+    },
+    /// Returns an approval of spender about the given token_id.
+    /// If include_expired is set (to true), shows expired approvals in the results, otherwise, ignore them.
+    #[returns(ApprovalResponse)]
+    Approval {
+        token_id: String,
+        spender: String,
+        include_expired: Option<bool>,
+    },
+    /// Return all approvals that apply on the given token_id.
+    /// If include_expired is set (to true), show expired approvals in the results, otherwise, ignore them.
+    #[returns(ApprovalsResponse)]
+    Approvals {
+        token_id: String,
+        include_expired: Option<bool>,
+    },
+    /// List operators that can access all of the owner's tokens.
+    #[returns(OperatorsResponse)]
+    AllOperators {
+        owner: String,
+        include_expired: Option<bool>,
+        start_after: Option<String>,
+        limit: Option<u32>,
+    },
+    /// Total number of tokens (lockups) issued so far
+    #[returns(NumTokensResponse)]
+    NumTokens {},
+
+    #[returns(CollectionInfoResponse)]
+    CollectionInfo {},
+    /// Returns metadata about one particular token (as LockupWithPerTrancheInfo).
+    #[returns(NftInfoResponse)]
+    NftInfo { token_id: String },
+    /// Returns the result of both `NftInfo` and `OwnerOf` as one query as an optimization for clients
+    /// If include_expired is set (to true), shows expired approvals in the results, otherwise, ignore them.
+    #[returns(AllNftInfoResponse)]
+    AllNftInfo {
+        token_id: String,
+        /// unset or false will filter out expired approvals, you must set to true to see them
+        include_expired: Option<bool>,
+    },
+
+    /// Lists token_ids owned by a given owner, [] if no tokens.
+    #[returns(TokensResponse)]
+    Tokens {
+        owner: String,
+        start_after: Option<String>,
+        limit: Option<u32>,
+    },
+    /// Lists token_ids controlled by the contract.
+    #[returns(TokensResponse)]
+    AllTokens {
+        start_after: Option<String>,
+        limit: Option<u32>,
+    },
 }
+
+#[cw_serde]
+pub struct TokensResponse {
+    /// Contains all token_ids in lexicographical ordering
+    /// If there are more than `limit`, use `start_after` in future queries
+    /// to achieve pagination.
+    pub tokens: Vec<String>,
+}
+
+#[cw_serde]
+pub struct NumTokensResponse {
+    pub count: u64,
+}
+
+#[cw_serde]
+pub struct ApprovalResponse {
+    pub approval: Approval,
+}
+
+#[cw_serde]
+pub struct ApprovalsResponse {
+    pub approvals: Vec<Approval>,
+}
+
+#[cw_serde]
+pub struct OperatorsResponse {
+    pub operators: Vec<Approval>,
+}
+
+#[cw_serde]
+pub struct NftInfoResponse {
+    /// Universal resource identifier for this NFT
+    /// Should point to a JSON file that conforms to the ERC721
+    /// Metadata JSON Schema
+    pub token_uri: Option<String>,
+    /// You can add any custom metadata here when you extend cw721-base
+    pub extension: LockupWithPerTrancheInfo,
+}
+
+#[cw_serde]
+pub struct AllNftInfoResponse {
+    /// Who can transfer the token
+    pub access: OwnerOfResponse,
+    /// Data on the token itself,
+    pub info: NftInfoResponse,
+}
+#[cw_serde]
+pub struct OwnerOfResponse {
+    /// Owner of the token
+    pub owner: String,
+    /// If set this address is approved to transfer/send the token as well
+    pub approvals: Vec<Approval>,
+}
+
+pub type CollectionInfoResponse = CollectionInfo;
 
 #[cw_serde]
 pub struct ConstantsResponse {
     pub constants: Constants,
+}
+
+#[cw_serde]
+pub struct TokenInfoProvidersResponse {
+    pub providers: Vec<TokenInfoProvider>,
+}
+
+#[cw_serde]
+pub struct GatekeeperResponse {
+    pub gatekeeper: String,
 }
 
 #[cw_serde]
@@ -151,8 +286,15 @@ pub struct TranchesResponse {
 // lockups are returned with the current voting power of the lockup.
 #[cw_serde]
 pub struct LockEntryWithPower {
-    pub lock_entry: LockEntry,
+    pub lock_entry: LockEntryV2,
     pub current_voting_power: Uint128,
+}
+
+#[cw_serde]
+pub struct RoundWithBid {
+    pub round_id: u64,
+    pub proposal_id: u64,
+    pub round_end: Timestamp,
 }
 
 // PerTrancheLockupInfo is used to store the lockup information for a specific tranche.
@@ -170,6 +312,11 @@ pub struct PerTrancheLockupInfo {
     // In case the lockup can currently vote (and is not tied to a proposal), this will be None.
     // Note that None will also be returned if the lockup voted for a proposal that received a deployment with zero funds.
     pub tied_to_proposal: Option<u64>,
+
+    /// This is the list of proposals that the lockup has been used to vote for in the past.
+    /// It is used to show the history of the lockup upon transfer / selling on Marketplace.
+    /// Note that this does not include the current voted on proposal, which is found in the current_voted_on_proposal field.
+    pub historic_voted_on_proposals: Vec<RoundWithBid>,
 }
 
 // LockupWithPerTrancheInfo is used to store the lockup information for a specific lockup,
@@ -207,7 +354,7 @@ pub struct SpecificUserLockupsWithTrancheInfosResponse {
 
 #[cw_serde]
 pub struct ExpiredUserLockupsResponse {
-    pub lockups: Vec<LockEntry>,
+    pub lockups: Vec<LockEntryV2>,
 }
 
 #[cw_serde]
@@ -292,8 +439,9 @@ pub struct RegisteredValidatorQueriesResponse {
 }
 
 #[cw_serde]
-pub struct ValidatorPowerRatioResponse {
-    pub ratio: Decimal,
+pub struct CanLockDenomResponse {
+    pub denom: String,
+    pub can_be_locked: bool,
 }
 
 #[cw_serde]

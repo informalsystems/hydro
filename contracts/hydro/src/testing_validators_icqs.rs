@@ -17,7 +17,7 @@ use crate::{
         query_validators_per_round, sudo, NATIVE_TOKEN_DENOM,
     },
     error::ContractError,
-    msg::ExecuteMsg,
+    msg::{ExecuteMsg, TokenInfoProviderInstantiateMsg},
     state::{
         ValidatorInfo, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
         VALIDATOR_TO_QUERY_ID,
@@ -400,7 +400,13 @@ fn icq_results_state_update_test() {
         let info = get_message_info(&deps.api, "addr0000", &[]);
 
         let mut msg = get_default_instantiate_msg(&deps.api);
-        msg.max_validator_shares_participating = test_case.top_n_validators;
+        msg.token_info_providers[0] = TokenInfoProviderInstantiateMsg::LSM {
+            max_validator_shares_participating: test_case.top_n_validators,
+            hub_connection_id: "connection-0".to_string(),
+            hub_transfer_channel_id: "channel-0".to_string(),
+            icq_update_period: 100,
+        };
+
         let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
         assert!(res.is_ok());
 
@@ -561,7 +567,7 @@ fn test_icq_managers_feature() {
         withdraw_msg.clone(),
     );
     match res {
-        Err(ContractError::Unauthorized {}) => {}
+        Err(ContractError::Unauthorized) => {}
         _ => panic!("Expected Unauthorized error"),
     }
 
@@ -642,7 +648,7 @@ fn test_icq_managers_feature() {
         withdraw_msg,
     );
     match res {
-        Err(ContractError::Unauthorized {}) => {}
+        Err(ContractError::Unauthorized) => {}
         _ => panic!("Expected Unauthorized error"),
     }
 }

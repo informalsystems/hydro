@@ -1,8 +1,8 @@
 [package]
 name = "hydro"
-version = "3.1.1"
+version = { workspace = true }
+edition = { workspace = true }
 authors = ["Jehan Tremback", "Philip Offtermatt", "Dusan Maksimovic"]
-edition = "2021"
 
 exclude = [
   # Those files are rust-optimizer artifacts. You might want to commit them for convenience but they should not be part of the source code publication.
@@ -35,6 +35,7 @@ neutron-sdk = { workspace = true }
 neutron-std = { workspace = true }
 bech32 = { workspace = true }
 serde-json-wasm = { workspace = true }
+interface = { path = "../../packages/interface" }
 
 [dev-dependencies]
 cosmwasm-schema = { workspace = true }

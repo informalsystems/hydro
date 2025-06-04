@@ -195,10 +195,22 @@ fn claim_tribute(
     };
 
     // make sure that tributes for this proposal are claimable
-    get_proposal_tributes_info(&deps.as_ref(), &config, round_id, tranche_id, vote.prop_id)?
-        .are_tributes_claimable()?;
+    get_proposal_tributes_info(
+        &deps.as_ref(),
+        &config,
+        round_id,
+        tranche_id,
+        tribute.proposal_id,
+    )?
+    .are_tributes_claimable()?;
 
-    let proposal = get_proposal(&deps.as_ref(), &config, round_id, tranche_id, vote.prop_id)?;
+    let proposal = get_proposal(
+        &deps.as_ref(),
+        &config,
+        round_id,
+        tranche_id,
+        tribute.proposal_id,
+    )?;
 
     let sent_coin = calculate_voter_claim_amount(tribute.funds, vote.power, proposal.power)?;
 
@@ -508,9 +520,7 @@ fn query_user_votes(
         },
     )?;
 
-    let vote = user_vote_resp.votes;
-
-    Ok(vote)
+    Ok(user_vote_resp.votes)
 }
 
 pub fn query_historical_tribute_claims(

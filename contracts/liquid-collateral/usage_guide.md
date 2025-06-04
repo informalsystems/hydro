@@ -136,7 +136,7 @@ osmosisd tx wasm execute osmo1dwdneu... '"resolve_auction"' \
   --gas auto --gas-adjustment 1.17 --gas-prices 0.0025uosmo
 ```
 ### Query if liquidatable
-Queries if the position is out of range. This will mainly be used by liquidation bot. 
+Queries if the position is out of range.
 ```bash
 osmosisd query wasm contract-state smart osmo1dwdneu... '"is_liquidatable"' \
   --chain-id osmo-test-5 \
@@ -150,3 +150,78 @@ osmosisd query wasm contract-state smart osmo1dwdneu... \
   --chain-id osmo-test-5 \
   --node https://rpc.testnet.osmosis.zone/
   ```
+
+
+# Liquidation Guide for Users
+This section explains how to check if a position is eligible for liquidation and how to execute the liquidation. This is useful for users operating a liquidation bot or manually managing positions.
+
+## 1. Check if a Position is Liquidatable
+```bash
+osmosisd query wasm contract-state smart <contract_address> \
+  '"is_liquidatable"' \
+  --chain-id osmo-test-5 \
+  --node https://rpc.testnet.osmosis.zone/
+ ```
+
+Output:
+
+```json
+{
+  "data": {
+    "liquidatable": true
+  }
+}
+```
+If the result is true, the position holds zero principal tokens, indicating that the price has fallen below the lower tick and the position is out of range.
+
+## 2.Simulate Liquidation 
+Users can estimate how much of the counterparty asset would be returned if a position is fully or partially liquidated. This operation is tied to the principal_to_replenish state variable.
+
+For example, if principal_to_replenish is 100000, then:
+
+Providing 100000 of principal tokens will simulate a 100% liquidation of the position.
+
+Providing 50000 will simulate a 50% liquidation, and so on.
+
+```bash
+osmosisd query wasm contract-state smart <contract_address> \
+  '{"simulate_liquidation": {"principal_amount": "100000"}}' \
+  --chain-id osmo-test-5 \
+  --node https://rpc.testnet.osmosis.zone/
+```
+Output:
+
+```json
+{
+  "data": {
+    "counterparty_to_receive": "8581"
+  }
+}
+```
+This allows users to preview how much counterparty liquidity would be received without committing to a transaction.
+
+Note: This query will only return a value if the position is currently liquidatable. If it is not, the contract will return a message indicating that the position is not liquidatable at the moment.
+## 3.Execute Liquidation 
+This step performs the actual liquidation, causing the contract to partially or fully withdraw from a position if it has gone out of range (i.e., the position holds zero principal tokens).
+
+To execute the liquidation:
+
+```bash
+osmosisd tx wasm execute <contract_address> '"liquidate"' \
+  --amount 100000uosmo \
+  --chain-id osmo-test-5 \
+  --node https://rpc.testnet.osmosis.zone/ \
+  --from vortex1 \
+  --gas auto --gas-adjustment 1.17 --gas-prices 0.0025uosmo
+```
+In this example, 100000uosmo of the principal asset is sent to the contract to perform the liquidation. The amount determines the portion of the position that will be liquidated.
+
+Note:
+Steps 1. Check if a Position is Liquidatable and 2. Simulate Liquidation are optional helpers.
+Users may skip them and go directly to execution if they:
+
+Already know the position is liquidatable (e.g., querying osmosis chain without contract).
+
+Can calculate expected returns independently (e.g., based on the principal_to_replenish value).
+
+If the action is successfully executed, the contract's position will either be fully withdrawn - leaving no position in the pool — or partially reduced, depending on the amount of principal provided.

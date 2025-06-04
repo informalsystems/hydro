@@ -1,0 +1,36 @@
+[package]
+name = "gatekeeper"
+version = { workspace = true }
+edition = { workspace = true }
+authors = ["Philip Offtermatt", "Dusan Maksimovic"]
+
+exclude = [
+  # Those files are rust-optimizer artifacts. You might want to commit them for convenience but they should not be part of the source code publication.
+  "contract.wasm",
+  "hash.txt",
+]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+library = []
+
+[dependencies]
+cosmwasm-std = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+cw-storage-plus = { workspace = true }
+cw2 = { workspace = true }
+cosmwasm-schema = { workspace = true }
+bech32 = { workspace = true }
+sha2 = { workspace = true }
+ripemd = { workspace = true }
+hex = { workspace = true }
+interface = { path = "../../packages/interface" }
+
+[dev-dependencies]
+k256 = { version = "0.13.4", features = ["ecdsa", "sha256"] }

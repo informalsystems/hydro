@@ -18,7 +18,7 @@ test-e2e:
 
 # Note: If the neutron-org/neutron-query-relayer docker image does not exist locally, run `make build-docker-relayer` before running the interchain tests.
 test-interchain:
-	cd test/interchain && go test ./... -timeout 40m
+	cd test/interchain && go test ./... -timeout 50m
 
 coverage:
 	# to install see here: https://crates.io/crates/cargo-tarpaulin
@@ -34,33 +34,27 @@ compile-inner:
 		cosmwasm/optimizer:0.16.0
 
 schema:
-	# to install ts tooling see here: https://docs.cosmology.zone/ts-codegen
+	# to install TS tooling see here: https://docs.hyperweb.io/ts-codegen
+	
 	cd contracts/hydro && cargo run --bin hydro_schema
 	cd contracts/tribute && cargo run --bin tribute_schema
 	cd contracts/dao-voting-adapter && cargo run --bin dao_voting_adapter_schema
+	cd contracts/token-info-providers/st-token-info-provider && cargo run --bin st_token_info_provider_schema
+	cd contracts/gatekeeper && cargo run --bin gatekeeper_schema
 
-	cosmwasm-ts-codegen generate \
-          --plugin client \
-          --schema ./contracts/hydro/schema \
-          --out ./ts_types \
-          --name HydroBase \
-          --no-bundle
-	cosmwasm-ts-codegen generate \
-          --plugin client \
-          --schema ./contracts/tribute/schema \
-          --out ./ts_types \
-          --name TributeBase \
-          --no-bundle
-	cosmwasm-ts-codegen generate \
-          --plugin client \
-          --schema ./contracts/dao-voting-adapter/schema \
-          --out ./ts_types \
-          --name DAOVotingAdapterBase \
-          --no-bundle
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/hydro/schema NAME=HydroBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/tribute/schema NAME=TributeBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/dao-voting-adapter/schema NAME=DAOVotingAdapterBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/st-token-info-provider/schema NAME=STTokenInfoProviderBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/gatekeeper/schema NAME=GatekeeperBase
 
-	cd contracts/hydro/schema && python3 generate_full_schema.py
-	cd contracts/tribute/schema && python3 generate_full_schema.py
-	cd contracts/dao-voting-adapter/schema && python3 generate_full_schema.py
+ts-codegen-inner:
+	cosmwasm-ts-codegen generate \
+          --plugin client \
+          --schema $(SCHEMA_LOCATION) \
+          --out ./ts_types \
+          --name $(NAME) \
+          --no-bundle
 
 build-docker-relayer:
 	docker build -t neutron-org/neutron-query-relayer https://github.com/neutron-org/neutron-query-relayer.git#main
