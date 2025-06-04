@@ -88,3 +88,13 @@ Run the following command to update the dTOKEN<->TOKEN ratio:
 ```bash
 docker run hydro-docker ./tools/deployment/update_dtoken_ratio.sh "tools/deployment/config_mainnet.json" $DTOKEN_INFO_PROVIDER_CONTRACT_ADDRESS
 ```
+
+## Updating stTOKEN ratio
+
+If the Hydro contract supports locking of stTOKENs, we should periodically perform the same token ratio updates as it is the case with dTOKENs.
+
+Run the following command to update the stTOKEN<->TOKEN ratio:
+
+```bash
+docker run hydro-docker ./tools/deployment/update_sttoken_ratio.sh "tools/deployment/config_mainnet.json" $ST_TOKEN_INFO_PROVIDER_CONTRACT_ADDRESS
+```

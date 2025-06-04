@@ -1,12 +1,39 @@
+use cosmwasm_std::Decimal;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
+    // IBC token denom of the given stTOKEN on Neutron chain
     pub st_token_denom: String,
+    // stTOKEN group identifier used in Hydro
     pub token_group_id: String,
+    // Connection ID (Neutron side) to the Stride chain. Used when creating interchain query.
+    pub stride_connection_id: String,
+    // Number of blocks after which the ICQ result is updated
+    pub icq_update_period: u64,
+    // Identifier of the Stride host zone. This matches the chain ID of the blockchain for whose native token
+    // the stTOKEN is issued (e.g. for stATOM, this is "cosmoshub-4", for stTIA it is "celestia", etc.)
+    pub stride_host_zone_id: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum ExecuteMsg {}
+pub enum ExecuteMsg {
+    #[serde(rename = "register_host_zone_icq")]
+    RegisterHostZoneICQ {},
+    #[serde(rename = "remove_host_zone_icq")]
+    RemoveHostZoneICQ {},
+}
+
+// TODO: The following data structure should be replaced with the modified one from the interface package once the
+// LSM integration PR that introduces it gets merged.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HydroExecuteMsg {
+    UpdateTokenGroupRatio {
+        token_group_id: String,
+        old_ratio: Decimal,
+        new_ratio: Decimal,
+    },
+}
