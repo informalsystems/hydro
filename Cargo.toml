@@ -5,6 +5,7 @@ members = [
     "contracts/dao-voting-adapter",
     "contracts/liquid-collateral",
     "contracts/token-info-providers/st-token-info-provider",
+    "contracts/token-info-providers/d-token-info-provider",
     "contracts/gatekeeper",
     "packages/cw-orch-interface",
     "packages/interface",

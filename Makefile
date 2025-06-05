@@ -40,12 +40,14 @@ schema:
 	cd contracts/tribute && cargo run --bin tribute_schema
 	cd contracts/dao-voting-adapter && cargo run --bin dao_voting_adapter_schema
 	cd contracts/token-info-providers/st-token-info-provider && cargo run --bin st_token_info_provider_schema
+	cd contracts/token-info-providers/d-token-info-provider && cargo run --bin d_token_info_provider_schema
 	cd contracts/gatekeeper && cargo run --bin gatekeeper_schema
 
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/hydro/schema NAME=HydroBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/tribute/schema NAME=TributeBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/dao-voting-adapter/schema NAME=DAOVotingAdapterBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/st-token-info-provider/schema NAME=STTokenInfoProviderBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/d-token-info-provider/schema NAME=DTokenInfoProviderBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/gatekeeper/schema NAME=GatekeeperBase
 
 ts-codegen-inner:
