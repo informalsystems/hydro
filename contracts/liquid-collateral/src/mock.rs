@@ -198,10 +198,13 @@ pub fn store_contracts_code(wasm: &Wasm<OsmosisTestApp>, deployer: &SigningAccou
     let root_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let wasm_path = PathBuf::from(root_dir).join("../../artifacts/liquid_collateral.wasm");
 
-    println!("Looking for wasm at: {:?}", wasm_path);
+    let resolved_path = wasm_path
+        .canonicalize()
+        .expect("Failed to resolve absolute path of wasm");
+    println!("Resolved wasm path: {:?}", resolved_path);
 
     // Read the contract bytecode
-    let contract_bytecode = std::fs::read(wasm_path)
+    let contract_bytecode = std::fs::read(resolved_path)
         .expect("Failed to read contract file. Ensure it exists and the path is correct.");
 
     wasm.store_code(&contract_bytecode, None, deployer)
