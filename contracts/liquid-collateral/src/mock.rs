@@ -1,6 +1,6 @@
 #![cfg(test)]
 use anyhow::Result;
-use std::{env, path::PathBuf, str::FromStr};
+use std::{path::PathBuf, str::FromStr};
 
 use cosmwasm_std::{Coin, Decimal, Uint128};
 use osmosis_std::types::{
