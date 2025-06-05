@@ -1,6 +1,6 @@
 #![cfg(test)]
 use anyhow::Result;
-use std::{env, str::FromStr};
+use std::{env, path::PathBuf, str::FromStr};
 
 use cosmwasm_std::{Coin, Decimal, Uint128};
 use osmosis_std::types::{
@@ -195,22 +195,13 @@ impl PoolMockup {
 }
 
 pub fn store_contracts_code(wasm: &Wasm<OsmosisTestApp>, deployer: &SigningAccount) -> u64 {
-    // Get current working directory
-    let cwd = env::current_dir().unwrap();
-    println!("Current working directory: {:?}", cwd);
+    let root_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let wasm_path = PathBuf::from(root_dir).join("../../artifacts/liquid_collateral.wasm");
 
-    // Define the relative wasm path
-    let wasm_path = "../../target/wasm32-unknown-unknown/release/liquid_collateral.wasm";
-
-    // Canonicalize the relative path to an absolute path
-    let absolute_wasm_path = cwd.join(wasm_path);
-    let full_path = absolute_wasm_path.canonicalize().unwrap();
-
-    // Print the resolved absolute path
-    println!("Attempting to read file at: {:?}", full_path);
+    println!("Looking for wasm at: {:?}", wasm_path);
 
     // Read the contract bytecode
-    let contract_bytecode = std::fs::read(full_path)
+    let contract_bytecode = std::fs::read(wasm_path)
         .expect("Failed to read contract file. Ensure it exists and the path is correct.");
 
     wasm.store_code(&contract_bytecode, None, deployer)
