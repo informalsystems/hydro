@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{entry_point, DepsMut, Env, Response, StdError};
 use cw2::{get_contract_version, set_contract_version};
