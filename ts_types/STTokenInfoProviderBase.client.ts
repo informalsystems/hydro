@@ -4,11 +4,13 @@
 * and run the @cosmwasm/ts-codegen generate command to regenerate this file.
 */
 
-import { CosmWasmClient } from "@cosmjs/cosmwasm-stargate";
-import { InstantiateMsg, ExecuteMsg, QueryMsg, Addr, ConfigResponse, Config, Decimal, DenomInfoResponse } from "./STTokenInfoProviderBase.types";
+import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
+import { StdFee } from "@cosmjs/amino";
+import { InstantiateMsg, ExecuteMsg, QueryMsg, Addr, ConfigResponse, Config, Decimal, DenomInfoResponse, Uint128, InterchainQueryInfoResponse, InterchainQueryInfo, Coin } from "./STTokenInfoProviderBase.types";
 export interface STTokenInfoProviderBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
+  interchainQueryInfo: () => Promise<InterchainQueryInfoResponse>;
   denomInfo: ({
     roundId
   }: {
@@ -22,11 +24,17 @@ export class STTokenInfoProviderBaseQueryClient implements STTokenInfoProviderBa
     this.client = client;
     this.contractAddress = contractAddress;
     this.config = this.config.bind(this);
+    this.interchainQueryInfo = this.interchainQueryInfo.bind(this);
     this.denomInfo = this.denomInfo.bind(this);
   }
   config = async (): Promise<ConfigResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       config: {}
+    });
+  };
+  interchainQueryInfo = async (): Promise<InterchainQueryInfoResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      interchain_query_info: {}
     });
   };
   denomInfo = async ({
@@ -39,5 +47,34 @@ export class STTokenInfoProviderBaseQueryClient implements STTokenInfoProviderBa
         round_id: roundId
       }
     });
+  };
+}
+export interface STTokenInfoProviderBaseInterface extends STTokenInfoProviderBaseReadOnlyInterface {
+  contractAddress: string;
+  sender: string;
+  registerHostZoneIcq: (fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  removeHostZoneIcq: (fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+}
+export class STTokenInfoProviderBaseClient extends STTokenInfoProviderBaseQueryClient implements STTokenInfoProviderBaseInterface {
+  client: SigningCosmWasmClient;
+  sender: string;
+  contractAddress: string;
+  constructor(client: SigningCosmWasmClient, sender: string, contractAddress: string) {
+    super(client, contractAddress);
+    this.client = client;
+    this.sender = sender;
+    this.contractAddress = contractAddress;
+    this.registerHostZoneIcq = this.registerHostZoneIcq.bind(this);
+    this.removeHostZoneIcq = this.removeHostZoneIcq.bind(this);
+  }
+  registerHostZoneIcq = async (fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      register_host_zone_icq: {}
+    }, fee_, memo_, funds_);
+  };
+  removeHostZoneIcq = async (fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      remove_host_zone_icq: {}
+    }, fee_, memo_, funds_);
   };
 }

@@ -18,6 +18,19 @@
     {
       "type": "object",
       "required": [
+        "interchain_query_info"
+      ],
+      "properties": {
+        "interchain_query_info": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
         "denom_info"
       ],
       "properties": {

@@ -3,11 +3,25 @@
   "title": "InstantiateMsg",
   "type": "object",
   "required": [
+    "icq_update_period",
     "st_token_denom",
+    "stride_connection_id",
+    "stride_host_zone_id",
     "token_group_id"
   ],
   "properties": {
+    "icq_update_period": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
     "st_token_denom": {
+      "type": "string"
+    },
+    "stride_connection_id": {
+      "type": "string"
+    },
+    "stride_host_zone_id": {
       "type": "string"
     },
     "token_group_id": {
