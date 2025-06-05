@@ -1,3 +1,4 @@
+#![allow(clippy::unneeded_struct_pattern)]
 use crate::error::ContractError;
 use crate::msg::{
     BidResponse, BidsResponse, CreatePositionMsg, ExecuteMsg, InstantiateMsg,
