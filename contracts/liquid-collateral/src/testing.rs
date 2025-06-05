@@ -54,7 +54,8 @@ pub fn instantiate(
         principal_denom: OSMO_DENOM.to_owned(),
         round_duration: FIVE_SECONDS,
         principal_funds_owner: pool_mockup.principal_funds_owner.address(),
-        project_owner: None, // Addr
+        position_admin: None,
+        counterparty_owner: None,
         auction_duration: HUNDRED_SECONDS,
         principal_first,
     };
@@ -996,7 +997,7 @@ fn test_resolve_auction() {
         auction_end_time: Some(env.block.time.plus_seconds(0)), // Set the auction end time
         principal_to_replenish: Uint128::new(53805),            // Target principal to replenish
         counterparty_to_give: Some(Uint128::new(183999)),       // Total counterparty available
-        position_created_address: Some(Addr::unchecked("deployer")),
+        counterparty_owner: Some(Addr::unchecked("deployer")),
         principal_funds_owner: Addr::unchecked("principal_funds_owner"),
         pool_id: 1,
         counterparty_denom: "usdc".to_string(),
@@ -1007,7 +1008,7 @@ fn test_resolve_auction() {
         liquidity_shares: Some("92195444572928873195000".to_string()),
         auction_principal_deposited: Uint128::new(54345),
         auction_duration: 100,
-        project_owner: None,
+        position_admin: None,
         liquidator_address: None,
         round_end_time: env.block.time.plus_seconds(100),
         position_rewards: None,
@@ -1220,7 +1221,7 @@ fn test_withdraw_end_round_reply() {
         auction_end_time: Some(env.block.time.plus_seconds(0)), // Set the auction end time
         principal_to_replenish: Uint128::new(103333),           // Target principal to replenish
         counterparty_to_give: None,                             // Total counterparty available
-        position_created_address: Some(Addr::unchecked("deployer")),
+        counterparty_owner: Some(Addr::unchecked("deployer")),
         principal_funds_owner: Addr::unchecked("principal_funds_owner"),
         pool_id: 1,
         counterparty_denom: "ibc/9FF2B7A5F55038A7EE61F4FD6749D9A648B48E89830F2682B67B5DC158E2753C"
@@ -1232,7 +1233,7 @@ fn test_withdraw_end_round_reply() {
         liquidity_shares: Some("92195444572928873195000".to_string()),
         auction_principal_deposited: Uint128::new(0),
         auction_duration: 100,
-        project_owner: None,
+        position_admin: None,
         liquidator_address: None,
         round_end_time: env.block.time.plus_seconds(100),
         position_rewards: Some(vec![

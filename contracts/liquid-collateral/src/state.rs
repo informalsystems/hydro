@@ -5,15 +5,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug)]
 pub struct State {
     // Address which is optionally set during initialization. If set, only this address will have permission rights to execute 'create_position' msg.
-    pub project_owner: Option<Addr>,
+    pub position_admin: Option<Addr>,
     // Address which will receive replenished principal funds alongside pool rewards.
     pub principal_funds_owner: Addr,
     // Id of the existing cl pool on the Osmosis specified on initialization of the contract
     pub pool_id: u64,
-    // Address which actually makes contract create the position.
     // This address receives counterparty tokens in case of 'end_round' execution and potential excessive principal amount.
-    // Please note that if project_owner is set, the position_created_address and project_owner address will be the same.
-    pub position_created_address: Option<Addr>,
+    // Please note that if counterparty_owner is not set during init, the counterparty_owner will be assigned the value of the address which executed create_position.
+    pub counterparty_owner: Option<Addr>,
     // Placeholder for saving the id of the position in the reply of 'create_position' execution.
     pub position_id: Option<u64>,
     // Denom which the contract wants to replenish.

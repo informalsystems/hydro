@@ -110,4 +110,7 @@ pub enum ContractError {
 
     #[error("Bid already exists")]
     BidAlreadyExists,
+
+    #[error("Missing position creator")]
+    MissingPositionCreator,
 }

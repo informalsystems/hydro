@@ -26,12 +26,15 @@ pub fn instantiate(
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
     let state = State {
-        project_owner: match msg.project_owner {
-            Some(owner_str) => Some(deps.api.addr_validate(&owner_str)?),
+        position_admin: match msg.position_admin {
+            Some(admin_str) => Some(deps.api.addr_validate(&admin_str)?),
             None => None,
         },
         pool_id: msg.pool_id,
-        position_created_address: None,
+        counterparty_owner: match msg.counterparty_owner {
+            Some(owner_str) => Some(deps.api.addr_validate(&owner_str)?),
+            None => None,
+        },
         position_id: None,
         principal_denom: msg.principal_denom,
         counterparty_denom: msg.counterparty_denom,
@@ -111,9 +114,9 @@ pub fn create_position(
         return Err(ContractError::PositionAlreadyExists {});
     }
 
-    // Only owner can create position - if present
-    match &state.project_owner {
-        Some(owner) if info.sender != *owner => {
+    // Only admin can create position - if present
+    match &state.position_admin {
+        Some(admin) if info.sender != *admin => {
             return Err(ContractError::Unauthorized {});
         }
         _ => {}
@@ -160,8 +163,11 @@ pub fn create_position(
         token_min_amount1,
     };
 
-    // store the address which initiated position creation
-    state.position_created_address = Some(info.sender);
+    // Only assign if counterparty_owner wasn't already set during initialization
+    if state.counterparty_owner.is_none() {
+        state.counterparty_owner = Some(info.sender);
+    }
+
     STATE.save(deps.storage, &state)?;
 
     let submsg = SubMsg::reply_on_success(create_position_msg, 1);
@@ -387,13 +393,16 @@ fn handle_create_position_reply(deps: DepsMut, msg: Reply) -> Result<Response, C
 
     let mut messages = vec![];
 
+    // determine the refund address recipient
+    let position_created_address = state
+        .position_admin
+        .clone()
+        .or(state.counterparty_owner.clone())
+        .ok_or(ContractError::MissingPositionCreator)?;
+
     if state.initial_principal_amount > principal_used {
         let principal_diff = BankMsg::Send {
-            to_address: state
-                .position_created_address
-                .clone()
-                .unwrap()
-                .into_string(),
+            to_address: position_created_address.clone().into_string(),
             amount: vec![Coin {
                 denom: state.principal_denom.to_string(),
                 amount: state.initial_principal_amount - principal_used,
@@ -404,11 +413,7 @@ fn handle_create_position_reply(deps: DepsMut, msg: Reply) -> Result<Response, C
 
     if state.initial_counterparty_amount > counterparty_used {
         let counterparty_diff = BankMsg::Send {
-            to_address: state
-                .position_created_address
-                .clone()
-                .unwrap()
-                .into_string(),
+            to_address: position_created_address.clone().into_string(),
             amount: vec![Coin {
                 denom: state.counterparty_denom.to_string(),
                 amount: state.initial_counterparty_amount - counterparty_used,
@@ -522,7 +527,7 @@ pub fn handle_withdraw_position_end_round_reply(
         (amount_1, amount_0)
     };
 
-    let project_owner = state.position_created_address.clone();
+    let project_owner = state.counterparty_owner.clone();
     let principal_owner = state.principal_funds_owner.clone();
 
     // we have fully withdrawn position
@@ -1024,11 +1029,7 @@ pub fn resolve_auction(
 
     if !counterparty_to_project.is_zero() {
         let send_back_msg = BankMsg::Send {
-            to_address: state
-                .position_created_address
-                .clone()
-                .unwrap()
-                .into_string(),
+            to_address: state.counterparty_owner.clone().unwrap().into_string(),
             amount: vec![Coin {
                 denom: state.counterparty_denom.to_string(),
                 amount: counterparty_to_project,
@@ -1074,8 +1075,8 @@ pub fn query_get_state(deps: Deps) -> StdResult<StateResponse> {
 
     // Build the StateResponse using the loaded state
     let response = StateResponse {
-        project_owner: state.project_owner,
-        position_created_address: state.position_created_address,
+        position_admin: state.position_admin,
+        counterparty_owner: state.counterparty_owner,
         principal_funds_owner: state.principal_funds_owner.into_string(),
         pool_id: state.pool_id,
         counterparty_denom: state.counterparty_denom.clone(),
