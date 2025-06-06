@@ -87,6 +87,9 @@ pub const TOKEN_INFO_PROVIDERS: Map<String, TokenInfoProvider> = Map::new("token
 // determines if a user should be allowed to lock the given amount of tokens at a given time.
 pub const GATEKEEPER: Item<String> = Item::new("gatekeeper");
 
+// Address of the Drop contract that is used to convert the locked tokens into dtokens
+pub const DROP_TOKEN: Item<String> = Item::new("drop_token");
+
 // the total number of tokens locked in the contract
 pub const LOCKED_TOKENS: Item<u128> = Item::new("locked_tokens");
 
@@ -361,3 +364,5 @@ pub struct Approval {
 /// Stored as (granter, operator), giving operator full control over granter's NFTs.
 /// NOTE: granter is the owner, so operator has control only for NFTs owned by granter
 pub const NFT_OPERATORS: Map<(Addr, Addr), Expiration> = Map::new("nft_operators");
+
+pub const DROP_SENDERS: Map<u64, Addr> = Map::new("reply_senders");

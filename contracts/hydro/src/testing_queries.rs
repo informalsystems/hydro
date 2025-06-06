@@ -3,14 +3,15 @@ use std::str::FromStr;
 
 use crate::contract::{
     compute_current_round_id, query_all_user_lockups, query_all_user_lockups_with_tranche_infos,
-    query_all_votes, query_all_votes_round_tranche, query_specific_user_lockups,
-    query_specific_user_lockups_with_tranche_infos, query_user_votes,
+    query_all_votes, query_all_votes_round_tranche, query_simulate_dtoken_amounts,
+    query_specific_user_lockups, query_specific_user_lockups_with_tranche_infos, query_user_votes,
 };
-use crate::msg::ProposalToLockups;
+use crate::msg::{InstantiateMsg, ProposalToLockups};
 use crate::query::VoteEntry;
 use crate::state::{
-    HeightRange, RoundLockPowerSchedule, ValidatorInfo, Vote, LOCKS_MAP_V2, ROUND_TO_HEIGHT_RANGE,
-    SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, USER_LOCKS, VALIDATORS_INFO, VOTE_MAP_V2,
+    HeightRange, RoundLockPowerSchedule, ValidatorInfo, Vote, DROP_TOKEN, LOCKS_MAP_V2,
+    ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, USER_LOCKS,
+    VALIDATORS_INFO, VOTE_MAP_V2,
 };
 use crate::testing::{
     get_default_instantiate_msg, get_default_lsm_token_info_provider, get_message_info,
@@ -32,8 +33,14 @@ use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
     Coin, Env, OwnedDeps,
 };
-use cosmwasm_std::{Addr, Decimal, StdError, StdResult, Timestamp, Uint128};
+use cosmwasm_std::{
+    to_json_binary, Addr, ContractResult, Decimal, QuerierResult, StdError, StdResult, SystemError,
+    SystemResult, Timestamp, Uint128, WasmQuery,
+};
+use interface::drop::QueryMsg as DropQueryMsg;
 use neutron_sdk::bindings::query::NeutronQuery;
+
+pub type WasmQueryFunc = dyn Fn(&WasmQuery) -> QuerierResult;
 
 #[test]
 fn query_user_lockups_test() {
@@ -1163,4 +1170,130 @@ fn get_user_voting_power(
     assert!(res.is_ok());
 
     res.unwrap().voting_power
+}
+#[test]
+fn simulate_dtoken_amounts() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let user_address = deps.api.addr_make("addr0000");
+    let info = get_message_info(&deps.api, &user_address.to_string(), &[]);
+
+    let instantiate_msg: crate::msg::InstantiateMsg = get_default_instantiate_msg(&deps.api);
+
+    let res = instantiate(deps.as_mut(), env.clone(), info, instantiate_msg.clone());
+    assert!(res.is_ok());
+
+    // simulate user locking 1000 tokens for 1 month, one day after the round started
+    env.block.time = env.block.time.plus_days(1);
+
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+
+    let first_lockup_amount: u128 = 1000;
+    let info = get_message_info(
+        &deps.api,
+        &user_address.to_string(),
+        &[Coin::new(first_lockup_amount, IBC_DENOM_1.to_string())],
+    );
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    let ids: Vec<u64> = vec![1, 2];
+
+    USER_LOCKS
+        .save(
+            &mut deps.storage,
+            user_address.clone(),
+            &ids,
+            env.block.height,
+        )
+        .unwrap();
+
+    // simulate user locking 2000 tokens for 3 months, two days after the round started
+    env.block.time = env.block.time.plus_days(1);
+
+    // set validators for new round
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+
+    let second_lockup_amount: u128 = 2000;
+    let info = get_message_info(
+        &deps.api,
+        &user_address.to_string(),
+        &[Coin::new(second_lockup_amount, IBC_DENOM_1.to_string())],
+    );
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    let res_lock = LOCKS_MAP_V2.save(
+        &mut deps.storage,
+        1,
+        &LockEntryV2 {
+            lock_id: 1,
+            funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
+            owner: user_address.clone(),
+            lock_start: Timestamp::from_seconds(10),
+            lock_end: Timestamp::from_seconds(100),
+        },
+        env.block.height,
+    );
+    assert!(res_lock.is_ok(), "failed to save lock");
+
+    let res_lock_2 = LOCKS_MAP_V2.save(
+        &mut deps.storage,
+        2,
+        &LockEntryV2 {
+            lock_id: 2,
+            funds: Coin::new(Uint128::from(2000u128), IBC_DENOM_1.to_string()),
+            owner: user_address.clone(),
+            lock_start: Timestamp::from_seconds(10),
+            lock_end: Timestamp::from_seconds(100),
+        },
+        env.block.height,
+    );
+    assert!(res_lock_2.is_ok(), "failed to save lock");
+
+    let drop_address = deps.api.addr_make("drop");
+
+    let core_contract = DROP_TOKEN.save(&mut deps.storage, &drop_address.to_string());
+    assert!(core_contract.is_ok(), "failed to save core contract");
+
+    let current_ratio = Decimal::from_str("1.15").unwrap();
+    deps.querier.update_wasm(drop_contract_mock(current_ratio));
+
+    let res =
+        query_simulate_dtoken_amounts(&deps.as_ref(), &env, vec![1, 2], user_address.to_string());
+    assert!(res.is_ok());
+    let res = res.unwrap();
+    assert_eq!(res.dtokens_response.len(), 2);
+    assert!(res.dtokens_response[0].dtoken_amount == Uint128::from(869u128));
+    assert!(res.dtokens_response[1].dtoken_amount == Uint128::from(1739u128));
+}
+pub fn drop_contract_mock(current_ratio: Decimal) -> Box<WasmQueryFunc> {
+    Box::new(move |req| match req {
+        WasmQuery::Smart {
+            contract_addr: _,
+            msg,
+        } => {
+            if let Ok(DropQueryMsg::ExchangeRate {}) = cosmwasm_std::from_json(msg) {
+                return SystemResult::Ok(ContractResult::Ok(
+                    to_json_binary(&current_ratio).unwrap(),
+                ));
+            }
+
+            SystemResult::Err(SystemError::Unknown {})
+        }
+        _ => SystemResult::Err(SystemError::Unknown {}),
+    })
 }

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use cosmwasm_std::from_json;
+use cosmwasm_std::{from_json, Attribute, SubMsg, SubMsgResult, WasmMsg};
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 #[allow(unused_imports)]
 use cosmwasm_std::{
@@ -27,14 +27,15 @@ use crate::msg::{
 };
 use crate::query::{
     AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse,
-    CanLockDenomResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
-    GatekeeperResponse, ICQManagersResponse, LiquidityDeploymentResponse, LockEntryWithPower,
-    LockupWithPerTrancheInfo, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
-    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
-    RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse,
-    SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, TopNProposalsResponse,
-    TotalLockedTokensResponse, TranchesResponse, UserVotesResponse, UserVotingPowerResponse,
-    VoteEntry, WhitelistAdminsResponse, WhitelistResponse,
+    CanLockDenomResponse, ConstantsResponse, CurrentRoundResponse, DtokenAmountResponse,
+    DtokenAmountsResponse, ExpiredUserLockupsResponse, GatekeeperResponse, ICQManagersResponse,
+    LiquidityDeploymentResponse, LockEntryWithPower, LockupWithPerTrancheInfo, ProposalResponse,
+    QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
+    RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse,
+    SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse,
+    TokenInfoProvidersResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse,
+    UserVotesResponse, UserVotingPowerResponse, VoteEntry, WhitelistAdminsResponse,
+    WhitelistResponse,
 };
 use crate::score_keeper::{
     add_token_group_shares_to_proposal, add_token_group_shares_to_round_total,
@@ -44,11 +45,12 @@ use crate::score_keeper::{
 };
 use crate::state::{
     Constants, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo, Vote,
-    VoteWithPower, CONSTANTS, GATEKEEPER, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS,
-    LOCKS_MAP_V2, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, SNAPSHOTS_ACTIVATION_HEIGHT,
-    TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS, VALIDATORS_INFO,
-    VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1,
-    VOTE_MAP_V2, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
+    VoteWithPower, CONSTANTS, DROP_SENDERS, DROP_TOKEN, GATEKEEPER, ICQ_MANAGERS,
+    LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE,
+    PROP_ID, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP,
+    USER_LOCKS, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
+    VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1, VOTE_MAP_V2, VOTING_ALLOWED_ROUND, WHITELIST,
+    WHITELIST_ADMINS,
 };
 use crate::token_manager::{
     add_token_info_providers, handle_token_info_provider_add_remove,
@@ -68,6 +70,8 @@ use crate::validators_icqs::{
 use crate::vote::{
     process_unvotes, process_votes, validate_proposals_and_locks_for_voting, VoteProcessingContext,
 };
+use interface::drop::ExecuteMsg as DropExecuteMsg;
+use interface::drop::QueryMsg as DropQueryMsg;
 
 /// Contract name that is used for migration.
 pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -349,6 +353,9 @@ pub fn execute(
         }
         ExecuteMsg::RevokeAll { operator } => {
             cw721::handle_execute_revoke_all(deps, env, info, operator)
+        }
+        ExecuteMsg::ConvertLockupToDtoken { lock_ids } => {
+            convert_lockup_to_dtoken(deps, env, info, lock_ids)
         }
     }
 }
@@ -1728,6 +1735,118 @@ pub fn remove_token_info_provider(
         .add_attribute("provider_id", provider_id))
 }
 
+// converts existing lockup (of lsm token) to dToken
+fn convert_lockup_to_dtoken(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    lock_ids: Vec<u64>,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let lock_ids_set: HashSet<u64> = lock_ids.into_iter().collect();
+    let lockups: Vec<LockEntryWithPower> = get_user_lockups_with_predicate(
+        &deps.as_ref(),
+        &env,
+        info.sender.to_string(),
+        |lock| lock_ids_set.contains(&lock.lock_id),
+        0,
+        lock_ids_set.len() as u32,
+    )?;
+
+    let dtoken_contract = match DROP_TOKEN.may_load(deps.storage)? {
+        None => {
+            return Err(new_generic_error(format!(
+                "Drop token contract is not set."
+            )))
+        }
+        Some(drop_token) => drop_token,
+    };
+
+    let mut submsgs = vec![];
+
+    for lockup in lockups {
+        let convert_token_msg = DropExecuteMsg::Bond {
+            receiver: Some(info.sender.to_string()),
+            r#ref: None,
+        };
+
+        let wasm_execute_msg = WasmMsg::Execute {
+            contract_addr: dtoken_contract.to_string(),
+            msg: to_json_binary(&convert_token_msg)?,
+            funds: vec![lockup.lock_entry.funds.clone()],
+        };
+
+        let reply_id = lockup.lock_entry.lock_id;
+
+        submsgs.push(SubMsg::reply_always(wasm_execute_msg, reply_id));
+    }
+
+    Ok(Response::new()
+        .add_submessages(submsgs)
+        .add_attribute("action", "convert_lockup_to_dtoken"))
+}
+
+pub fn convert_lockup_to_dtoken_reply(
+    deps: DepsMut,
+    _env: Env,
+    msg: Reply,
+) -> Result<Response, ContractError> {
+    let lock_id = msg.id;
+
+    let sender: Addr = DROP_SENDERS.load(deps.storage, lock_id)?;
+
+    DROP_SENDERS.remove(deps.storage, lock_id);
+
+    let issue_amount = match msg.result {
+        SubMsgResult::Ok(res) => {
+            // Collect all attributes from events
+            let attrs: Vec<&Attribute> = res
+                .events
+                .iter()
+                .flat_map(|e| e.attributes.iter())
+                .collect();
+
+            let issue_amount_attr = attrs
+                .iter()
+                .find(|attr| attr.key == "issue_amount")
+                .ok_or_else(|| {
+                    ContractError::Std(cosmwasm_std::StdError::generic_err(
+                        "issue_amount attribute not found",
+                    ))
+                })?;
+
+            issue_amount_attr
+                .value
+                .parse::<u128>()
+                .map(Uint128::from)
+                .map_err(|_| {
+                    ContractError::Std(cosmwasm_std::StdError::generic_err(
+                        "Invalid issue_amount attribute",
+                    ))
+                })?
+        }
+        SubMsgResult::Err { .. } => {
+            return Err(ContractError::Std(cosmwasm_std::StdError::generic_err(
+                "Submessage execution failed",
+            )))
+        }
+    };
+
+    // TODO
+    // unvote for each lock id and tranche
+    // update the lock entry with new value - issue_amount and new denom
+    // vote again
+    let tranches: Vec<Tranche> = TRANCHE_MAP
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|t| t.unwrap().1)
+        .collect();
+
+    Ok(Response::new()
+        .add_attribute("action", "bond_success")
+        .add_attribute("lock_id", lock_id.to_string())
+        .add_attribute("sender", sender.to_string())
+        .add_attribute("issue_amount", issue_amount.to_string()))
+}
+
 fn validate_sender_is_whitelist_admin(
     deps: &DepsMut<NeutronQuery>,
     info: &MessageInfo,
@@ -1960,6 +2079,9 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> Result<Binary
             token_id,
             include_expired,
         )?),
+        QueryMsg::SimulateDtokenAmounts { lock_ids, address } => to_json_binary(
+            &query_simulate_dtoken_amounts(&deps, &env, lock_ids, address)?,
+        ),
     }?;
 
     Ok(binary)
@@ -2583,6 +2705,54 @@ pub fn query_icq_managers(deps: Deps<NeutronQuery>) -> StdResult<ICQManagersResp
                 }
             })
             .collect(),
+    })
+}
+
+pub fn query_simulate_dtoken_amounts(
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
+    lock_ids: Vec<u64>,
+    address: String,
+) -> StdResult<DtokenAmountsResponse> {
+    let lock_ids_set: HashSet<u64> = lock_ids.into_iter().collect();
+    let lockups: Vec<LockEntryWithPower> = get_user_lockups_with_predicate(
+        deps,
+        &env,
+        address,
+        |lock| lock_ids_set.contains(&lock.lock_id),
+        0,
+        lock_ids_set.len() as u32,
+    )?;
+
+    let dtoken_contract = match DROP_TOKEN.may_load(deps.storage)? {
+        None => {
+            return Err(StdError::generic_err("Dtoken contract is not set"));
+        }
+        Some(drop_token) => drop_token,
+    };
+
+    let ratio: Decimal = deps
+        .querier
+        .query_wasm_smart(dtoken_contract, &DropQueryMsg::ExchangeRate {})?;
+
+    let mut result: Vec<DtokenAmountResponse> = Vec::new();
+
+    for lockup in lockups {
+        let real_amount = Decimal::from_atomics(lockup.lock_entry.funds.amount, 0)
+            .map_err(|_| new_generic_error("Invalid fund amount".to_string()));
+
+        let issue_amount = real_amount.unwrap() * (Decimal::one() / ratio);
+
+        let issue_amount_uint = issue_amount.to_uint_floor();
+
+        result.push(DtokenAmountResponse {
+            lock_id: lockup.lock_entry.lock_id,
+            dtoken_amount: issue_amount_uint,
+        });
+    }
+
+    Ok(DtokenAmountsResponse {
+        dtokens_response: result,
     })
 }
 

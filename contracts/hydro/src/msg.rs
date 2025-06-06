@@ -245,6 +245,10 @@ pub enum ExecuteMsg {
     RevokeAll {
         operator: String,
     },
+
+    ConvertLockupToDtoken {
+        lock_ids: Vec<u64>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
