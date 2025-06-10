@@ -366,6 +366,8 @@ pub fn query_owner_of(
 
 /// Return an approval of spender about the given token_id.
 /// If include_expired is set (to true), show expired approval in the results, otherwise, ignore them.
+///
+/// It returns an error if there is no Approval for the token / spender
 pub fn query_approval(
     deps: Deps<NeutronQuery>,
     env: Env,
