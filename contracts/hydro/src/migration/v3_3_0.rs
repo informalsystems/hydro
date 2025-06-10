@@ -29,9 +29,9 @@ fn populate_user_locks_for_claim(deps: &mut DepsMut<NeutronQuery>) -> Result<(),
     // Users can claim tributes for locks they voted with (as they have not yet been transferred)
     //
     // Skip iterating over VOTE_MAP_V2 during this upgrade because:
-    // - This upgrade runs immediately after VOTE_MAP_V2 is introduced
-    // - Both maps contain identical data at this point
+    // - This upgrade runs soon after VOTE_MAP_V2 is introduced
     // - VOTE_MAP_V1 provides easier access to the owner information we need
+    // - Any data in VOTE_MAP_V2 not in VOTE_MAP_V1 should also be in USER_LOCKS
     let vote_map_iter = VOTE_MAP_V1
         .range(deps.storage, None, None, Order::Ascending)
         .collect::<StdResult<Vec<_>>>()?;
