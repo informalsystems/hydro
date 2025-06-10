@@ -37,4 +37,4 @@ fi
 
 EXECUTE='{"add_liquidity_deployment":{"deployed_funds":'"$DEPLOYED_FUNDS"',"destinations":["Secret1a65a9xgqrlsgdszqjtxhz069pgsh8h4a83hwt0"],"funds_before_deployment":[{"amount":"1000000","denom":"uatom"}],"proposal_id":'"$PROPOSAL_ID"',"remaining_rounds":0,"round_id":'"$ROUND_ID"',"total_rounds":0,"tranche_id":'"$TRANCHE_ID"'}}'
 $NEUTRON_BINARY tx wasm execute $HYDRO_CONTRACT_ADDRESS "$EXECUTE" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-sleep 10
+sleep 15

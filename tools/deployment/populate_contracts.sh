@@ -34,7 +34,7 @@ submit_proposals() {
 
     EXECUTE='{"create_proposal": {"tranche_id": '$TRANCHE_ID',"title": "Tranche '$TRANCHE_ID' Proposal 1 Title", "description": "Tranche '$TRANCHE_ID' Proposal 1 Description", "deployment_duration": 1,"minimum_atom_liquidity_request":"1000"}}'
     $NEUTRON_BINARY tx wasm execute $HYDRO_CONTRACT_ADDRESS "$EXECUTE" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS -o json > ./execute_res.json
-    sleep 10
+    sleep 15
 
     echo $(extract_proposal_details)
 
@@ -45,7 +45,7 @@ submit_proposals() {
 
     EXECUTE='{"create_proposal": {"tranche_id": '$TRANCHE_ID',"title": "Tranche '$TRANCHE_ID' Proposal 2 Title", "description": "Tranche '$TRANCHE_ID' Proposal 2 Description", "deployment_duration": 2,"minimum_atom_liquidity_request":"2000"}}'
     $NEUTRON_BINARY tx wasm execute $HYDRO_CONTRACT_ADDRESS "$EXECUTE" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS -o json > ./execute_res.json
-    sleep 10
+    sleep 15
 
     read PROPOSAL_ID_2 ROUND_ID_2 <<< "$(extract_proposal_details)"
 
@@ -53,7 +53,7 @@ submit_proposals() {
 
     EXECUTE='{"create_proposal": {"tranche_id": '$TRANCHE_ID',"title": "Tranche '$TRANCHE_ID' Proposal 3 Title", "description": "Tranche '$TRANCHE_ID' Proposal 3 Description", "deployment_duration": 3,"minimum_atom_liquidity_request":"3000"}}'
     $NEUTRON_BINARY tx wasm execute $HYDRO_CONTRACT_ADDRESS "$EXECUTE" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS -o json > ./execute_res.json
-    sleep 10
+    sleep 15
 
     read PROPOSAL_ID_3 ROUND_ID_3 <<< "$(extract_proposal_details)"
 
@@ -68,19 +68,19 @@ add_tributes() {
 
     EXECUTE='{"add_tribute":{"round_id":'"$ROUND_ID_1"',"tranche_id":'$TRANCHE_ID',"proposal_id":'"$PROPOSAL_ID_1"'}}'
     $NEUTRON_BINARY tx wasm execute $TRIBUTE_CONTRACT_ADDRESS "$EXECUTE" --amount 10$TRIBUTE_TOKEN_1 --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-    sleep 10
+    sleep 15
 
     echo 'Adding second tribute for the first proposal in tranche '$TRANCHE_ID'...'
 
     EXECUTE='{"add_tribute":{"round_id":'"$ROUND_ID_2"',"tranche_id":'$TRANCHE_ID',"proposal_id":'"$PROPOSAL_ID_1"'}}'
     $NEUTRON_BINARY tx wasm execute $TRIBUTE_CONTRACT_ADDRESS "$EXECUTE" --amount 10$TRIBUTE_TOKEN_2 --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-    sleep 10
+    sleep 15
 
     echo 'Adding tribute for the second proposal in tranche '$TRANCHE_ID'...'
 
     EXECUTE='{"add_tribute":{"round_id":'"$ROUND_ID_3"',"tranche_id":'$TRANCHE_ID',"proposal_id":'"$PROPOSAL_ID_2"'}}'
     $NEUTRON_BINARY tx wasm execute $TRIBUTE_CONTRACT_ADDRESS "$EXECUTE" --amount 10$TRIBUTE_TOKEN_3 --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS
-    sleep 10
+    sleep 15
 }
 
 # Extracts proposal ID and the curent round ID
