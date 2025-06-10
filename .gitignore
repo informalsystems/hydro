@@ -32,4 +32,9 @@ tools/build/*
 
 .seed
 
+# Node modules
+node_modules/
+
+contracts/liquid-collateral/package.json
+contracts/liquid-collateral/package-lock.json
 

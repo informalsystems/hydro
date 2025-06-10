@@ -1,5 +1,4 @@
-use std::collections::HashSet;
-
+#![allow(unused_imports)]
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Binary, Deps, DepsMut, Env, MessageInfo, Order,
     Response, StdError, StdResult, Timestamp,
@@ -8,6 +7,7 @@ use cw2::set_contract_version;
 use cw_storage_plus::Bound;
 use interface::gatekeeper::ExecuteLockTokensMsg;
 use sha2::Digest;
+use std::collections::HashSet;
 
 use crate::error::{new_generic_error, ContractError};
 use crate::msg::{ExecuteMsg, InstantiateMsg};
