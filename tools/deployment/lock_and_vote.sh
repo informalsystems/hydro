@@ -49,7 +49,7 @@ prepare_lockup_for_voting() {
         EXECUTE='{"lock_tokens": {"lock_duration": '$LOCK_EPOCH_LENGTH' }}'
         echo $EXECUTE
         $NEUTRON_BINARY tx wasm execute $HYDRO_CONTRACT_ADDRESS "$EXECUTE" --amount 10$TOKEN_TO_LOCK_1 --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS -o json > ./execute_res.json
-        sleep 10
+        sleep 15
 
         echo $(extract_new_lock_id)
 
@@ -60,7 +60,7 @@ prepare_lockup_for_voting() {
 
         EXECUTE='{"refresh_lock_duration": {"lock_ids": ['$LOCK_ID'], "lock_duration": '$LOCK_EPOCH_LENGTH' }}'
         $NEUTRON_BINARY tx wasm execute $HYDRO_CONTRACT_ADDRESS "$EXECUTE" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS -o json > ./execute_res.json
-        sleep 10
+        sleep 15
     fi
 
     QUERY='{"current_round": {}}'
@@ -103,7 +103,7 @@ vote() {
     PROPOSAL_ID=$(jq '.data.proposals[0].proposal_id' query_res.json)
     EXECUTE='{"vote": {"tranche_id": '$TRANCHE_ID', "proposals_votes": [{"proposal_id": '$PROPOSAL_ID', "lock_ids": ['$LOCK_ID']}] }}'
     $NEUTRON_BINARY tx wasm execute $HYDRO_CONTRACT_ADDRESS "$EXECUTE" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS -o json > ./execute_res.json
-    sleep 10
+    sleep 15
 }
 
 prepare_lockup_for_voting
