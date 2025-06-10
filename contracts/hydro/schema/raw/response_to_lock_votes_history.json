@@ -1,30 +1,15 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "UserVotedLocksResponse",
+  "title": "LockVotesHistoryResponse",
   "type": "object",
   "required": [
-    "voted_locks"
+    "vote_history"
   ],
   "properties": {
-    "voted_locks": {
+    "vote_history": {
       "type": "array",
       "items": {
-        "type": "array",
-        "items": [
-          {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0.0
-          },
-          {
-            "type": "array",
-            "items": {
-              "$ref": "#/definitions/VotedLockInfo"
-            }
-          }
-        ],
-        "maxItems": 2,
-        "minItems": 2
+        "$ref": "#/definitions/LockVotesHistoryEntry"
       }
     }
   },
@@ -34,14 +19,26 @@
       "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
       "type": "string"
     },
-    "VotedLockInfo": {
+    "LockVotesHistoryEntry": {
       "type": "object",
       "required": [
-        "lock_id",
+        "proposal_id",
+        "round_id",
+        "tranche_id",
         "vote_power"
       ],
       "properties": {
-        "lock_id": {
+        "proposal_id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "round_id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "tranche_id": {
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0

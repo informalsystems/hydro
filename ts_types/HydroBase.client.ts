@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Timestamp, Uint64, Binary, Uint128, Decimal, TokenInfoProviderInstantiateMsg, InstantiateMsg, CollectionInfo, InstantiateContractMsg, TrancheInfo, ExecuteMsg, Expiration, LockTokensProof, SignatureInfo, ProposalToLockups, Coin, QueryMsg, Addr, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponse, LockupWithPerTrancheInfo, LockEntryWithPower, LockEntryV2, PerTrancheLockupInfo, RoundWithBid, OperatorsResponse, TokensResponse, AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, ApprovalResponse, ApprovalsResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExpiredUserLockupsResponse, GatekeeperResponse, ICQManagersResponse, LiquidityDeploymentResponse, LiquidityDeployment, NumTokensResponse, ProposalResponse, Proposal, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSM, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistResponse, WhitelistAdminsResponse } from "./HydroBase.types";
+import { Timestamp, Uint64, Binary, Uint128, Decimal, TokenInfoProviderInstantiateMsg, InstantiateMsg, CollectionInfo, InstantiateContractMsg, TrancheInfo, ExecuteMsg, Expiration, LockTokensProof, SignatureInfo, ProposalToLockups, Coin, QueryMsg, Addr, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponse, LockupWithPerTrancheInfo, LockEntryWithPower, LockEntryV2, PerTrancheLockupInfo, RoundWithBid, OperatorsResponse, TokensResponse, AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, ApprovalResponse, ApprovalsResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExpiredUserLockupsResponse, GatekeeperResponse, ICQManagersResponse, LiquidityDeploymentResponse, LiquidityDeployment, LockVotesHistoryResponse, LockVotesHistoryEntry, NumTokensResponse, ProposalResponse, Proposal, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSM, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotedLocksResponse, VotedLockInfo, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistResponse, WhitelistAdminsResponse } from "./HydroBase.types";
 export interface HydroBaseReadOnlyInterface {
   contractAddress: string;
   constants: () => Promise<ConstantsResponse>;
@@ -68,6 +68,28 @@ export interface HydroBaseReadOnlyInterface {
     roundId: number;
     trancheId: number;
   }) => Promise<UserVotesResponse>;
+  userVotedLocks: ({
+    proposalId,
+    roundId,
+    trancheId,
+    userAddress
+  }: {
+    proposalId?: number;
+    roundId: number;
+    trancheId: number;
+    userAddress: string;
+  }) => Promise<UserVotedLocksResponse>;
+  lockVotesHistory: ({
+    lockId,
+    startFromRoundId,
+    stopAtRoundId,
+    trancheId
+  }: {
+    lockId: number;
+    startFromRoundId?: number;
+    stopAtRoundId?: number;
+    trancheId?: number;
+  }) => Promise<LockVotesHistoryResponse>;
   allVotes: ({
     limit,
     startFrom
@@ -250,6 +272,8 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     this.expiredUserLockups = this.expiredUserLockups.bind(this);
     this.userVotingPower = this.userVotingPower.bind(this);
     this.userVotes = this.userVotes.bind(this);
+    this.userVotedLocks = this.userVotedLocks.bind(this);
+    this.lockVotesHistory = this.lockVotesHistory.bind(this);
     this.allVotes = this.allVotes.bind(this);
     this.allVotesRoundTranche = this.allVotesRoundTranche.bind(this);
     this.currentRound = this.currentRound.bind(this);
@@ -402,6 +426,46 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
       user_votes: {
         address,
         round_id: roundId,
+        tranche_id: trancheId
+      }
+    });
+  };
+  userVotedLocks = async ({
+    proposalId,
+    roundId,
+    trancheId,
+    userAddress
+  }: {
+    proposalId?: number;
+    roundId: number;
+    trancheId: number;
+    userAddress: string;
+  }): Promise<UserVotedLocksResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      user_voted_locks: {
+        proposal_id: proposalId,
+        round_id: roundId,
+        tranche_id: trancheId,
+        user_address: userAddress
+      }
+    });
+  };
+  lockVotesHistory = async ({
+    lockId,
+    startFromRoundId,
+    stopAtRoundId,
+    trancheId
+  }: {
+    lockId: number;
+    startFromRoundId?: number;
+    stopAtRoundId?: number;
+    trancheId?: number;
+  }): Promise<LockVotesHistoryResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      lock_votes_history: {
+        lock_id: lockId,
+        start_from_round_id: startFromRoundId,
+        stop_at_round_id: stopAtRoundId,
         tranche_id: trancheId
       }
     });

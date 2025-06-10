@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use crate::{
     contract::{
         execute, instantiate, query, query_all_votes, query_specific_user_lockups,
-        MIN_DEPLOYMENT_DURATION,
+        query_user_voted_locks, MIN_DEPLOYMENT_DURATION,
     },
     cw721::{query_approval, query_collection_info, query_nft_info, query_owner_of},
     msg::{CollectionInfo, ExecuteMsg, ProposalToLockups, ReceiverExecuteMsg},
@@ -183,6 +183,68 @@ fn test_handle_execute_transfer_st_atom_success() {
 }
 
 #[test]
+fn test_handle_execute_transfer_oneself_fail() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                ST_ATOM_ON_NEUTRON.to_string(),
+                ST_ATOM_ON_STRIDE.to_string(),
+            ),
+        ]),
+    );
+
+    // Setup initial state
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+
+    let owner = "owner";
+    let info = get_message_info(&deps.api, owner, &[]);
+
+    // Proper contract initialization
+    let msg = get_default_instantiate_msg(&deps.api);
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+
+    // Setup ST_ATOM token info provider
+    let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
+    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+
+    // Lock tokens first to create a lock entry
+    let lock_info = get_message_info(
+        &deps.api,
+        owner,
+        &[Coin::new(1000u64, ST_ATOM_ON_NEUTRON.to_string())],
+    );
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+
+    // Recipient is the owner
+    let recipient = get_address_as_str(&deps.api, owner);
+    let token_id = "0".to_string(); // First lock ID is 0
+    let execute_msg = ExecuteMsg::TransferNft {
+        recipient: recipient.clone(),
+        token_id: token_id.clone(),
+    };
+
+    // Execute the message using the contract's execute function
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), execute_msg);
+
+    // Verify the response
+    assert!(res.is_err());
+
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .to_lowercase()
+        .contains("cannot transfer tokens to oneself"));
+}
+
+#[test]
 fn test_handle_execute_transfer_st_atom_with_vote_success() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
@@ -288,7 +350,7 @@ fn test_handle_execute_transfer_st_atom_with_vote_success() {
         .iter()
         .any(|attr| attr.key == "action" && attr.value == "transfer_nft"));
 
-    // Check that the owner does not have the lock anymore
+    // Check that the old owner does not have the lock anymore
     let res = query_specific_user_lockups(
         &deps.as_ref(),
         &env,
@@ -334,6 +396,192 @@ fn test_handle_execute_transfer_st_atom_with_vote_success() {
     assert_eq!(vote.sender_addr.to_string(), recipient);
     assert_eq!(0, vote.lock_id);
     assert_eq!(0, vote.vote.prop_id);
+}
+
+#[test]
+fn test_handle_execute_transfer_unlock_queries_for_tributes() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                ST_ATOM_ON_NEUTRON.to_string(),
+                ST_ATOM_ON_STRIDE.to_string(),
+            ),
+        ]),
+    );
+
+    // Setup initial state
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+
+    let user_address = "addr0000";
+    let info = get_message_info(&deps.api, user_address, &[]);
+
+    // Proper contract initialization
+    let msg = get_default_instantiate_msg(&deps.api);
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+
+    // Setup ST_ATOM token info provider
+    let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
+    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+
+    // Lock tokens first to create a lock entry
+    let lock_info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(1000u64, ST_ATOM_ON_NEUTRON.to_string())],
+    );
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+
+    // Create simple test proposal
+    let proposal_msg = ExecuteMsg::CreateProposal {
+        round_id: None,
+        tranche_id: 1,
+        title: "Test proposal".to_string(),
+        description: "1 month deployment".to_string(),
+        deployment_duration: MIN_DEPLOYMENT_DURATION,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
+    let proposal_res = execute(deps.as_mut(), env.clone(), info.clone(), proposal_msg);
+    assert!(
+        proposal_res.is_ok(),
+        "Failed to create proposal: {:?}",
+        proposal_res
+    );
+
+    // 1. Vote on proposal
+    let vote_msg = ExecuteMsg::Vote {
+        tranche_id: 1,
+        proposals_votes: vec![ProposalToLockups {
+            proposal_id: 0,
+            lock_ids: vec![0],
+        }],
+    };
+    let vote_res = execute(deps.as_mut(), env.clone(), info.clone(), vote_msg);
+    assert!(vote_res.is_ok(), "Failed to vote: {:?}", vote_res);
+
+    // 2. Advance the chain by one month + 1 nanosecond and transfer the token to another user
+    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
+
+    let recipient = get_address_as_str(&deps.api, "recipient");
+    let token_id = "0".to_string(); // First lock ID is 0
+    let transfer_msg = ExecuteMsg::TransferNft {
+        recipient: recipient.clone(),
+        token_id: token_id.clone(),
+    };
+
+    let transfer_res = execute(deps.as_mut(), env.clone(), info.clone(), transfer_msg);
+    assert!(
+        transfer_res.is_ok(),
+        "Failed to transfer NFT: {:?}",
+        transfer_res
+    );
+
+    // 3. New owner unlocks the lockup
+    let recipient_info = get_message_info(&deps.api, &recipient, &[]);
+    let unlock_msg = ExecuteMsg::UnlockTokens {
+        lock_ids: Some(vec![0]),
+    };
+    let unlock_res = execute(
+        deps.as_mut(),
+        env.clone(),
+        recipient_info.clone(),
+        unlock_msg,
+    );
+    assert!(
+        unlock_res.is_ok(),
+        "Failed to unlock tokens: {:?}",
+        unlock_res
+    );
+
+    // 4. query for query_user_voted_locks should return that lock_id for the new owner, and no lock for old owner
+    let user_address_str = get_address_as_str(&deps.api, user_address);
+    let old_owner_voted_locks = query_user_voted_locks(
+        deps.as_ref(),
+        user_address_str.clone(),
+        0, // round_id
+        1, // tranche_id
+        None,
+    );
+    assert!(
+        old_owner_voted_locks.is_ok(),
+        "Old owner voted locks query failed: {:?}",
+        old_owner_voted_locks
+    );
+    let old_owner_locks = old_owner_voted_locks.unwrap();
+    assert_eq!(
+        0,
+        old_owner_locks.voted_locks.len(),
+        "Old owner should have no voted locks"
+    );
+
+    let new_owner_voted_locks = query_user_voted_locks(
+        deps.as_ref(),
+        recipient.clone(),
+        0, // round_id
+        1, // tranche_id
+        None,
+    );
+    assert!(new_owner_voted_locks.is_ok());
+    let new_owner_locks = new_owner_voted_locks.unwrap();
+
+    assert_eq!(
+        1,
+        new_owner_locks.voted_locks.len(),
+        "New owner should have one proposal with voted locks"
+    );
+    let (proposal_id, voted_lock_infos) = &new_owner_locks.voted_locks[0];
+    assert_eq!(0, *proposal_id, "Should be proposal 0");
+    assert_eq!(1, voted_lock_infos.len(), "Should have one voted lock");
+    assert_eq!(0, voted_lock_infos[0].lock_id, "Should be lock_id 0");
+
+    // 5. query_user_voted_locks with proposal_id should also return that lock_id for new owner, and no lock for old owner
+    let old_owner_prop_locks = query_user_voted_locks(
+        deps.as_ref(),
+        user_address_str,
+        0,       // round_id
+        1,       // tranche_id
+        Some(0), // proposal_id
+    );
+    assert!(old_owner_prop_locks.is_ok());
+    let old_owner_prop_locks = old_owner_prop_locks.unwrap();
+    assert_eq!(
+        0,
+        old_owner_prop_locks.voted_locks.len(),
+        "Old owner should have no locks voted for proposal"
+    );
+
+    let new_owner_prop_locks = query_user_voted_locks(
+        deps.as_ref(),
+        recipient.clone(),
+        0,       // round_id
+        1,       // tranche_id
+        Some(0), // proposal_id
+    );
+    assert!(new_owner_prop_locks.is_ok());
+    let new_owner_prop_locks = new_owner_prop_locks.unwrap();
+    assert_eq!(
+        1,
+        new_owner_prop_locks.voted_locks.len(),
+        "New owner should have one proposal with voted locks"
+    );
+    let (proposal_id, voted_locks) = &new_owner_prop_locks.voted_locks[0];
+    assert_eq!(0, *proposal_id, "Should be proposal 0");
+    assert_eq!(
+        1,
+        voted_locks.len(),
+        "Should have one voted lock for this proposal"
+    );
+    assert_eq!(
+        0, voted_locks[0].lock_id,
+        "New owner should have lock_id 0 voted for proposal"
+    );
 }
 
 #[test]
@@ -1306,7 +1554,6 @@ fn test_handle_execute_approve_all_fail_expired() {
         &[Coin::new(1000u64, ST_ATOM_ON_NEUTRON.to_string())],
     );
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info.clone(), lock_msg);
-    println!("lock_res: {:?}", lock_res);
     assert!(lock_res.is_ok());
 
     // Try to approve operator with expired date

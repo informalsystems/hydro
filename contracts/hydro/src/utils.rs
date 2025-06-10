@@ -15,8 +15,8 @@ use crate::{
         Constants, HeightRange, LockEntryV2, Proposal, RoundLockPowerSchedule, Vote, CONSTANTS,
         EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND,
         LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V1, LOCKS_MAP_V2, PROPOSAL_MAP,
-        ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, VOTE_MAP_V2,
-        VOTING_ALLOWED_ROUND,
+        ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, USER_LOCKS_FOR_CLAIM,
+        VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
     },
     token_manager::TokenManager,
 };
@@ -509,7 +509,7 @@ fn historic_voted_on_proposals(
     // Get all votes from VOTE_MAP_V2 for this lock_id and tranche_id
     // In future, we might want to add fields like history_start_from and history_limit when querying lockups.
     for round_id in 0..current_round_id {
-        if let Some(vote) = VOTE_MAP_V2.may_load(storage, ((round_id, tranche_id), lock_id))? {
+        if let Some(vote) = get_lock_vote(storage, round_id, tranche_id, lock_id)? {
             let round_end = compute_round_end(constants, round_id).unwrap();
 
             historic_voted_on_proposals.push(RoundWithBid {
@@ -539,7 +539,7 @@ fn per_round_tranche_info(
     )?;
 
     if let Some(Vote { prop_id, .. }) =
-        VOTE_MAP_V2.may_load(deps.storage, ((current_round_id, tranche_id), lock_id))?
+        get_lock_vote(deps.storage, current_round_id, tranche_id, lock_id)?
     {
         return Ok(PerTrancheLockupInfo {
             tranche_id,
@@ -682,9 +682,7 @@ pub fn find_voted_proposal_for_lock(
 
     let mut check_round = current_round_id - 1;
     loop {
-        if let Some(prev_vote) =
-            VOTE_MAP_V2.may_load(deps.storage, ((check_round, tranche_id), lock_id))?
-        {
+        if let Some(prev_vote) = get_lock_vote(deps.storage, check_round, tranche_id, lock_id)? {
             // Found a vote, so get and return the proposal
             return PROPOSAL_MAP
                 .load(deps.storage, (check_round, tranche_id, prev_vote.prop_id))
@@ -763,4 +761,46 @@ pub fn get_owned_lock_entry(
     }
 
     Ok(lock_entry)
+}
+
+/// Helper function to get user's lock IDs (can be used to claim tributes)
+pub fn get_user_claimable_locks(storage: &dyn Storage, user_addr: Addr) -> StdResult<Vec<u64>> {
+    let user_lock_ids = USER_LOCKS_FOR_CLAIM
+        .may_load(storage, user_addr)?
+        .unwrap_or_default();
+    Ok(user_lock_ids)
+}
+
+/// Helper function to calculate vote power for a vote
+pub fn calculate_vote_power(
+    token_manager: &mut TokenManager,
+    deps: &Deps<NeutronQuery>,
+    round_id: u64,
+    vote: &Vote,
+) -> StdResult<Decimal> {
+    let vote_token_group_id = vote.time_weighted_shares.0.clone();
+    let token_ratio = token_manager.get_token_group_ratio(deps, round_id, vote_token_group_id)?;
+
+    let vote_power = vote.time_weighted_shares.1.checked_mul(token_ratio)?;
+
+    Ok(vote_power)
+}
+
+/// Helper function to get vote for a specific lock in a round/tranche
+pub fn get_lock_vote(
+    storage: &dyn Storage,
+    round_id: u64,
+    tranche_id: u64,
+    lock_id: u64,
+) -> StdResult<Option<Vote>> {
+    VOTE_MAP_V2.may_load(storage, ((round_id, tranche_id), lock_id))
+}
+
+pub fn get_proposal(
+    storage: &dyn Storage,
+    round_id: u64,
+    tranche_id: u64,
+    proposal_id: u64,
+) -> StdResult<Proposal> {
+    PROPOSAL_MAP.load(storage, (round_id, tranche_id, proposal_id))
 }

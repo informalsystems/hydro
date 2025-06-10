@@ -29,12 +29,13 @@ use crate::query::{
     AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse,
     CanLockDenomResponse, ConstantsResponse, CurrentRoundResponse, ExpiredUserLockupsResponse,
     GatekeeperResponse, ICQManagersResponse, LiquidityDeploymentResponse, LockEntryWithPower,
-    LockupWithPerTrancheInfo, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
-    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
-    RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse,
-    SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, TopNProposalsResponse,
-    TotalLockedTokensResponse, TranchesResponse, UserVotesResponse, UserVotingPowerResponse,
-    VoteEntry, WhitelistAdminsResponse, WhitelistResponse,
+    LockVotesHistoryEntry, LockVotesHistoryResponse, LockupWithPerTrancheInfo, ProposalResponse,
+    QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
+    RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse,
+    SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse,
+    TokenInfoProvidersResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse,
+    UserVotedLocksResponse, UserVotesResponse, UserVotingPowerResponse, VoteEntry, VotedLockInfo,
+    WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_token_group_shares_to_proposal, add_token_group_shares_to_round_total,
@@ -46,18 +47,19 @@ use crate::state::{
     Constants, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo, Vote,
     VoteWithPower, CONSTANTS, GATEKEEPER, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS,
     LOCKS_MAP_V2, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, SNAPSHOTS_ACTIVATION_HEIGHT,
-    TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS, VALIDATORS_INFO,
-    VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1,
-    VOTE_MAP_V2, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
+    TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM,
+    VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID,
+    VOTE_MAP_V1, VOTE_MAP_V2, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::token_manager::{
     add_token_info_providers, handle_token_info_provider_add_remove,
     token_manager_handle_submsg_reply, TokenManager,
 };
 use crate::utils::{
-    get_current_user_voting_power, get_highest_known_height_for_round_id,
-    get_lock_time_weighted_shares, get_owned_lock_entry, load_constants_active_at_timestamp,
-    load_current_constants, run_on_each_transaction, scale_lockup_power, to_lockup_with_power,
+    calculate_vote_power, get_current_user_voting_power, get_highest_known_height_for_round_id,
+    get_lock_time_weighted_shares, get_lock_vote, get_owned_lock_entry, get_proposal,
+    get_user_claimable_locks, load_constants_active_at_timestamp, load_current_constants,
+    run_on_each_transaction, scale_lockup_power, to_lockup_with_power,
     to_lockup_with_tranche_infos, update_locked_tokens_info, validate_locked_tokens_caps,
     verify_historical_data_availability,
 };
@@ -469,6 +471,21 @@ fn lock_tokens(
                 Some(mut current_locks) => {
                     current_locks.push(lock_id);
                     Ok(current_locks)
+                }
+            }
+        },
+    )?;
+
+    // Update USER_LOCKS_FOR_CLAIM to include this new lock for tribute claiming
+    USER_LOCKS_FOR_CLAIM.update(
+        deps.storage,
+        info.sender.clone(),
+        |current_claim_locks| -> Result<Vec<u64>, StdError> {
+            match current_claim_locks {
+                None => Ok(vec![lock_id]),
+                Some(mut current_claim_locks) => {
+                    current_claim_locks.push(lock_id);
+                    Ok(current_claim_locks)
                 }
             }
         },
@@ -978,7 +995,7 @@ fn vote(
     // Update the proposal in the proposal map, as well as the props by score map, after all changes
     // We can use update_proposal_and_props_by_score_maps as we already applied the proposal power changes
     for proposal_id in unique_proposals_to_update {
-        let proposal = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
+        let proposal = get_proposal(deps.storage, round_id, tranche_id, proposal_id)?;
         update_proposal_and_props_by_score_maps(deps.storage, round_id, tranche_id, &proposal)?;
     }
 
@@ -1059,7 +1076,7 @@ pub fn unvote(
     // Update the proposal in the proposal map, as well as the props by score map, after all changes
     // We can use update_proposal_and_props_by_score_maps as we already applied the proposal power changes
     for proposal_id in unique_proposals_to_update {
-        let proposal = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
+        let proposal = get_proposal(deps.storage, round_id, tranche_id, proposal_id)?;
         update_proposal_and_props_by_score_maps(deps.storage, round_id, tranche_id, &proposal)?;
     }
 
@@ -1821,6 +1838,31 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> Result<Binary
             tranche_id,
             address,
         } => to_json_binary(&query_user_votes(deps, round_id, tranche_id, address)?),
+        QueryMsg::UserVotedLocks {
+            user_address,
+            round_id,
+            tranche_id,
+            proposal_id,
+        } => to_json_binary(&query_user_voted_locks(
+            deps,
+            user_address,
+            round_id,
+            tranche_id,
+            proposal_id,
+        )?),
+        QueryMsg::LockVotesHistory {
+            lock_id,
+            start_from_round_id,
+            stop_at_round_id,
+            tranche_id,
+        } => to_json_binary(&query_lock_votes_history(
+            deps,
+            env,
+            lock_id,
+            start_from_round_id,
+            stop_at_round_id,
+            tranche_id,
+        )?),
         QueryMsg::AllVotes { start_from, limit } => {
             to_json_binary(&query_all_votes(deps, start_from, limit)?)
         }
@@ -2174,7 +2216,7 @@ pub fn query_proposal(
     proposal_id: u64,
 ) -> StdResult<ProposalResponse> {
     Ok(ProposalResponse {
-        proposal: PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?,
+        proposal: get_proposal(deps.storage, round_id, tranche_id, proposal_id)?,
     })
 }
 
@@ -2236,7 +2278,7 @@ pub fn query_user_votes(
 
         // Collect all votes for user's locks
         for lock_id in user_locks {
-            let vote = VOTE_MAP_V2.may_load(deps.storage, ((round_id, tranche_id), lock_id))?;
+            let vote = get_lock_vote(deps.storage, round_id, tranche_id, lock_id)?;
             if let Some(vote) = vote {
                 votes.push(vote);
             }
@@ -2246,11 +2288,9 @@ pub fn query_user_votes(
     let mut token_manager = TokenManager::new(&deps);
 
     for vote in votes {
-        let vote_token_group_id = vote.time_weighted_shares.0;
-        let token_ratio =
-            token_manager.get_token_group_ratio(&deps, round_id, vote_token_group_id)?;
+        let vote_power = calculate_vote_power(&mut token_manager, &deps, round_id, &vote)?;
 
-        let vote_power = vote.time_weighted_shares.1.checked_mul(token_ratio)?;
+        // vote.time_weighted_shares.1.checked_mul(token_ratio)?;
         if vote_power == Decimal::zero() {
             continue;
         }
@@ -2279,6 +2319,159 @@ pub fn query_user_votes(
         .collect();
 
     Ok(UserVotesResponse { votes })
+}
+
+/// Helper function that collects all voted locks for a user in a specific round/tranche,
+/// optionally filtered by a specific proposal ID.
+fn collect_user_voted_locks(
+    deps: Deps<NeutronQuery>,
+    user_addr: Addr,
+    round_id: u64,
+    tranche_id: u64,
+    filter_proposal_id: Option<u64>,
+) -> StdResult<HashMap<u64, Vec<VotedLockInfo>>> {
+    // Get lock IDs that the user can claim tributes for
+    let user_lock_ids = get_user_claimable_locks(deps.storage, user_addr.clone())?;
+
+    let mut proposal_locks: HashMap<u64, Vec<VotedLockInfo>> = HashMap::new();
+    let mut token_manager = TokenManager::new(&deps);
+
+    // Check each user lock to see if it voted in this round/tranche
+    for lock_id in user_lock_ids {
+        let Ok(Some(vote)) = get_lock_vote(deps.storage, round_id, tranche_id, lock_id) else {
+            // Skip this lock if it did not vote during that round
+            continue;
+        };
+
+        // If filtering by proposal ID, skip votes for other proposals
+        if let Some(target_proposal_id) = filter_proposal_id {
+            if vote.prop_id != target_proposal_id {
+                continue;
+            }
+        }
+
+        // Calculate vote power for this vote
+        let vote_power = calculate_vote_power(&mut token_manager, &deps, round_id, &vote)?;
+
+        proposal_locks
+            .entry(vote.prop_id)
+            .or_default()
+            .push(VotedLockInfo {
+                lock_id,
+                vote_power,
+            });
+    }
+
+    Ok(proposal_locks)
+}
+
+/// Returns all locks owned by a user that voted on proposals within a specific round and tranche.
+/// It includes all locks the user can claim tributes for (current owner or last known owner).
+///
+/// For each proposal the user's locks voted on in this round/tranche, returns:
+/// - Proposal ID
+/// - List of the locks that voted, with each lock's ID and voting power
+///
+/// If proposal_id is provided, only returns locks that voted for that specific proposal.
+///
+/// Response format: Vec<(proposal_id, Vec<VotedLockInfo>)>
+/// where VotedLockInfo contains { lock_id, vote_power }
+///
+/// Note: It is called by tribute contract's query_outstanding_tribute_claims
+pub fn query_user_voted_locks(
+    deps: Deps<NeutronQuery>,
+    user_address: String,
+    round_id: u64,
+    tranche_id: u64,
+    proposal_id: Option<u64>,
+) -> StdResult<UserVotedLocksResponse> {
+    let user_addr = deps.api.addr_validate(&user_address)?;
+
+    // If proposal_id is provided, validate that the proposal exists
+    if let Some(prop_id) = proposal_id {
+        get_proposal(deps.storage, round_id, tranche_id, prop_id)?;
+    }
+
+    // Collect voted locks, optionally filtered by proposal
+    let proposal_locks =
+        collect_user_voted_locks(deps, user_addr, round_id, tranche_id, proposal_id)?;
+
+    // Convert HashMap to Vec of tuples
+    let voted_locks = proposal_locks.into_iter().collect();
+
+    Ok(UserVotedLocksResponse { voted_locks })
+}
+
+/// Query to get the voting history for a specific lock with optional filters
+/// - start_from_round_id: optional minimum round to start from (inclusive)
+/// - stop_at_round_id: optional maximum round to stop at (exclusive)
+/// - tranche_id: optional filter to only show votes for a specific tranche
+///
+/// Note: It is called by tribute contract's query_outstanding_lockup_claimable_coins and claim_tribute
+pub fn query_lock_votes_history(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    lock_id: u64,
+    start_from_round_id: Option<u64>,
+    stop_at_round_id: Option<u64>,
+    tranche_id: Option<u64>,
+) -> StdResult<LockVotesHistoryResponse> {
+    let constants = load_current_constants(&deps, &env)?;
+    let current_round_id = compute_current_round_id(&env, &constants)?;
+
+    let mut vote_history = Vec::new();
+
+    // Determine the round range to query
+    let start_round = start_from_round_id.unwrap_or(0);
+    let end_round = std::cmp::min(
+        stop_at_round_id.unwrap_or(current_round_id),
+        current_round_id,
+    );
+
+    // Validate round range
+    if start_round > end_round {
+        return Err(StdError::generic_err(
+            "start_from_round_id must be less than or equal to stop_at_round_id",
+        ));
+    }
+
+    // Determine which tranches to check (computed once outside the loop)
+    let tranches_to_check: Vec<u64> = if let Some(specific_tranche_id) = tranche_id {
+        // Only check the specified tranche
+        vec![specific_tranche_id]
+    } else {
+        // Get all tranches
+        TRANCHE_MAP
+            .range(deps.storage, None, None, Order::Ascending)
+            .collect::<StdResult<Vec<_>>>()?
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
+    };
+
+    // Create token manager once outside the loops
+    let mut token_manager = TokenManager::new(&deps);
+
+    // Iterate through the specified round range
+    for round_id in start_round..=end_round {
+        for current_tranche_id in &tranches_to_check {
+            // Check if this lock voted in this round/tranche
+            if let Some(vote) = get_lock_vote(deps.storage, round_id, *current_tranche_id, lock_id)?
+            {
+                // Calculate the vote power for this vote
+                let vote_power = calculate_vote_power(&mut token_manager, &deps, round_id, &vote)?;
+
+                vote_history.push(LockVotesHistoryEntry {
+                    round_id,
+                    tranche_id: *current_tranche_id,
+                    proposal_id: vote.prop_id,
+                    vote_power,
+                });
+            }
+        }
+    }
+
+    Ok(LockVotesHistoryResponse { vote_history })
 }
 
 pub fn query_all_votes(
@@ -2420,7 +2613,7 @@ pub fn query_top_n_proposals(
     let mut top_props = vec![];
 
     for prop_id in top_prop_ids {
-        let prop = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, prop_id))?;
+        let prop = get_proposal(deps.storage, round_id, tranche_id, prop_id)?;
         top_props.push(prop);
     }
 
@@ -2696,8 +2889,7 @@ fn update_voting_power_on_proposals(
                 )));
             };
 
-            let proposal =
-                PROPOSAL_MAP.load(deps.storage, (current_round, tranche_id, vote.prop_id))?;
+            let proposal = get_proposal(deps.storage, current_round, tranche_id, vote.prop_id)?;
 
             // Ensure that lock entry spans long enough to be allowed to vote for this proposal.
             // If not, we will not have this lock vote for the proposal, even if user voted for
@@ -2786,9 +2978,11 @@ pub fn get_vote_for_update(
     token_group_id: &str,
 ) -> Result<Option<Vote>, ContractError> {
     if let Some(old_lock_entry) = old_lock_entry {
-        let vote = VOTE_MAP_V2.may_load(
+        let vote = get_lock_vote(
             deps.storage,
-            ((current_round, tranche_id), old_lock_entry.lock_id),
+            current_round,
+            tranche_id,
+            old_lock_entry.lock_id,
         )?;
         return Ok(vote);
     }

@@ -8,10 +8,8 @@ use cosmwasm_std::{entry_point, DepsMut, Env, Response, StdError};
 use cw2::{get_contract_version, set_contract_version};
 use neutron_sdk::bindings::msg::NeutronMsg;
 use neutron_sdk::bindings::query::NeutronQuery;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 
-use super::v3_2_0::migrate_v3_2_0_to_v3_3_0;
+use super::v3_3_0::{migrate_v3_3_0_to_v3_4_0, MigrateMsgV3_3_0};
 
 pub const CONTRACT_VERSION_V1_1_0: &str = "1.1.0";
 pub const CONTRACT_VERSION_V2_0_1: &str = "2.0.1";
@@ -21,24 +19,17 @@ pub const CONTRACT_VERSION_V3_0_0: &str = "3.0.0";
 pub const CONTRACT_VERSION_V3_1_0: &str = "3.1.0";
 pub const CONTRACT_VERSION_V3_1_1: &str = "3.1.1";
 pub const CONTRACT_VERSION_V3_2_1: &str = "3.2.1";
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub enum MigrateMsgV3_3_0 {
-    MigrateToV3_3_0 {},
-}
+pub const CONTRACT_VERSION_V3_3_0: &str = "3.3.0";
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(
     mut deps: DepsMut<NeutronQuery>,
     _env: Env,
-    msg: MigrateMsgV3_3_0,
+    _msg: MigrateMsgV3_3_0,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    check_contract_version(deps.storage, CONTRACT_VERSION_V3_2_1)?;
+    check_contract_version(deps.storage, CONTRACT_VERSION_V3_3_0)?;
 
-    let response = match msg {
-        // Constants must be migrated first in order for contract pausing not to break the state!
-        MigrateMsgV3_3_0::MigrateToV3_3_0 {} => migrate_v3_2_0_to_v3_3_0(&mut deps),
-    }?;
+    let response = migrate_v3_3_0_to_v3_4_0(&mut deps)?;
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
