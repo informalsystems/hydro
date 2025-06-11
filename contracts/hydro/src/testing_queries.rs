@@ -1473,5 +1473,5 @@ fn query_lock_votes_history_test() {
     assert!(res
         .unwrap_err()
         .to_string()
-        .contains("start_from_round_id must be less than or equal to stop_at_round_id"));
+        .contains("start_round (2) must be less than or equal to end_round (1)"));
 }
