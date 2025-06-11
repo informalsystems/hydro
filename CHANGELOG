@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## v3.4.0
+
+Date: June 11th, 2025
+
+### FEATURES
+
+- Added support for locking dTOKENS in Hydro.
+  ([\#258](https://github.com/informalsystems/hydro/pull/258))
+- Added support for updating stTOKEN ratio against the base token.
+  ([\#259](https://github.com/informalsystems/hydro/pull/259))
+- Tributes follow lockups.
+  ([\#260](https://github.com/informalsystems/hydro/pull/260))
+
+## v3.3.0
+
 ## v3.2.0
 
 Date: May 6th, 2025
