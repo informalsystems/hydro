@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Binary, Deps, DepsMut, Env, MessageInfo, Order,
     Response, StdError, StdResult, Timestamp,

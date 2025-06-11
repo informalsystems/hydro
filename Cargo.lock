@@ -1135,7 +1135,7 @@ dependencies = [
 
 [[package]]
 name = "cw-orch-interface"
-version = "3.3.0"
+version = "3.4.0"
 dependencies = [
  "cw-orch",
  "hydro",
@@ -1319,7 +1319,7 @@ dependencies = [
 
 [[package]]
 name = "d-token-info-provider"
-version = "3.3.0"
+version = "3.4.0"
 dependencies = [
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",
@@ -1360,7 +1360,7 @@ dependencies = [
 
 [[package]]
 name = "dao-voting-adapter"
-version = "3.3.0"
+version = "3.4.0"
 dependencies = [
  "cosmwasm-schema 1.5.10",
  "cosmwasm-std 1.5.10",
@@ -1769,7 +1769,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeeper"
-version = "3.3.0"
+version = "3.4.0"
 dependencies = [
  "bech32 0.11.0",
  "cosmwasm-schema 2.2.1",
@@ -2053,7 +2053,7 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hydro"
-version = "3.3.0"
+version = "3.4.0"
 dependencies = [
  "bech32 0.11.0",
  "cosmos-sdk-proto 0.20.0",
@@ -2389,7 +2389,7 @@ dependencies = [
 
 [[package]]
 name = "interface"
-version = "3.3.0"
+version = "3.4.0"
 dependencies = [
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",
@@ -3962,7 +3962,7 @@ dependencies = [
 
 [[package]]
 name = "st-token-info-provider"
-version = "3.3.0"
+version = "3.4.0"
 dependencies = [
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",
@@ -4327,7 +4327,7 @@ dependencies = [
 
 [[package]]
 name = "test-e2e"
-version = "3.3.0"
+version = "3.4.0"
 dependencies = [
  "cosmwasm-std 2.2.1",
  "cw-orch",
@@ -4637,7 +4637,7 @@ dependencies = [
 
 [[package]]
 name = "tribute"
-version = "3.3.0"
+version = "3.4.0"
 dependencies = [
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",

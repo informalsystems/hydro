@@ -51,11 +51,13 @@ export type QueryMsg = {
   };
 } | {
   outstanding_tribute_claims: {
-    limit: number;
     round_id: number;
-    start_from: number;
     tranche_id: number;
     user_address: string;
+  };
+} | {
+  outstanding_lockup_claimable_coins: {
+    lock_id: number;
   };
 };
 export type Addr = string;
@@ -79,6 +81,9 @@ export interface TributeClaim {
 export interface Coin {
   amount: Uint128;
   denom: string;
+}
+export interface OutstandingLockupClaimableCoinsResponse {
+  coins: Coin[];
 }
 export interface OutstandingTributeClaimsResponse {
   claims: TributeClaim[];

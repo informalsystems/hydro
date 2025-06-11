@@ -133,26 +133,14 @@
         "outstanding_tribute_claims": {
           "type": "object",
           "required": [
-            "limit",
             "round_id",
-            "start_from",
             "tranche_id",
             "user_address"
           ],
           "properties": {
-            "limit": {
-              "type": "integer",
-              "format": "uint32",
-              "minimum": 0.0
-            },
             "round_id": {
               "type": "integer",
               "format": "uint64",
-              "minimum": 0.0
-            },
-            "start_from": {
-              "type": "integer",
-              "format": "uint32",
               "minimum": 0.0
             },
             "tranche_id": {
@@ -162,6 +150,29 @@
             },
             "user_address": {
               "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "outstanding_lockup_claimable_coins"
+      ],
+      "properties": {
+        "outstanding_lockup_claimable_coins": {
+          "type": "object",
+          "required": [
+            "lock_id"
+          ],
+          "properties": {
+            "lock_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
             }
           },
           "additionalProperties": false

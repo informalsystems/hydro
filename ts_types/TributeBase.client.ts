@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { InstantiateMsg, ExecuteMsg, QueryMsg, Addr, ConfigResponse, Config, Uint128, HistoricalTributeClaimsResponse, TributeClaim, Coin, OutstandingTributeClaimsResponse, Timestamp, Uint64, ProposalTributesResponse, Tribute, RoundTributesResponse } from "./TributeBase.types";
+import { InstantiateMsg, ExecuteMsg, QueryMsg, Addr, ConfigResponse, Config, Uint128, HistoricalTributeClaimsResponse, TributeClaim, Coin, OutstandingLockupClaimableCoinsResponse, OutstandingTributeClaimsResponse, Timestamp, Uint64, ProposalTributesResponse, Tribute, RoundTributesResponse } from "./TributeBase.types";
 export interface TributeBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
@@ -40,18 +40,19 @@ export interface TributeBaseReadOnlyInterface {
     startFrom: number;
   }) => Promise<RoundTributesResponse>;
   outstandingTributeClaims: ({
-    limit,
     roundId,
-    startFrom,
     trancheId,
     userAddress
   }: {
-    limit: number;
     roundId: number;
-    startFrom: number;
     trancheId: number;
     userAddress: string;
   }) => Promise<OutstandingTributeClaimsResponse>;
+  outstandingLockupClaimableCoins: ({
+    lockId
+  }: {
+    lockId: number;
+  }) => Promise<OutstandingLockupClaimableCoinsResponse>;
 }
 export class TributeBaseQueryClient implements TributeBaseReadOnlyInterface {
   client: CosmWasmClient;
@@ -64,6 +65,7 @@ export class TributeBaseQueryClient implements TributeBaseReadOnlyInterface {
     this.historicalTributeClaims = this.historicalTributeClaims.bind(this);
     this.roundTributes = this.roundTributes.bind(this);
     this.outstandingTributeClaims = this.outstandingTributeClaims.bind(this);
+    this.outstandingLockupClaimableCoins = this.outstandingLockupClaimableCoins.bind(this);
   }
   config = async (): Promise<ConfigResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -125,25 +127,30 @@ export class TributeBaseQueryClient implements TributeBaseReadOnlyInterface {
     });
   };
   outstandingTributeClaims = async ({
-    limit,
     roundId,
-    startFrom,
     trancheId,
     userAddress
   }: {
-    limit: number;
     roundId: number;
-    startFrom: number;
     trancheId: number;
     userAddress: string;
   }): Promise<OutstandingTributeClaimsResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       outstanding_tribute_claims: {
-        limit,
         round_id: roundId,
-        start_from: startFrom,
         tranche_id: trancheId,
         user_address: userAddress
+      }
+    });
+  };
+  outstandingLockupClaimableCoins = async ({
+    lockId
+  }: {
+    lockId: number;
+  }): Promise<OutstandingLockupClaimableCoinsResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      outstanding_lockup_claimable_coins: {
+        lock_id: lockId
       }
     });
   };
