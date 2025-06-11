@@ -9,19 +9,20 @@ CONFIG_FILE="$1"
 ST_TOKEN_CONTRACT_ADDRESS=$2
 
 NEUTRON_CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
-NEUTRON_NODE=$(jq -r '.neutron_rpc_node' $CONFIG_FILE)
+NEUTRON_RPC_NODE=$(jq -r '.neutron_rpc_node' $CONFIG_FILE)
+NEUTRON_API_NODE=$(jq -r '.neutron_api_node' $CONFIG_FILE)
 TX_SENDER_WALLET=$(jq -r '.tx_sender_wallet' $CONFIG_FILE)
 
 NEUTRON_BINARY="neutrond"
 NEUTRON_CHAIN_ID_FLAG="--chain-id $NEUTRON_CHAIN_ID"
 KEYRING_TEST_FLAG="--keyring-backend test"
 TX_FLAG="--gas auto --gas-adjustment 1.3"
-NEUTRON_NODE_FLAG="--node $NEUTRON_NODE"
-NEUTRON_TX_FLAGS="$TX_FLAG --gas-prices 0.0053untrn --chain-id $NEUTRON_CHAIN_ID $NEUTRON_NODE_FLAG $KEYRING_TEST_FLAG -y"
+NEUTRON_RPC_NODE_FLAG="--node $NEUTRON_RPC_NODE"
+NEUTRON_TX_FLAGS="$TX_FLAG --gas-prices 0.0053untrn $NEUTRON_CHAIN_ID_FLAG $NEUTRON_RPC_NODE_FLAG $KEYRING_TEST_FLAG -y"
 
 # Check if the Interchain Query is already created
 QUERY_MSG='{"interchain_query_info":{}}'
-RESPONSE=$($NEUTRON_BINARY query wasm contract-state smart "$ST_TOKEN_CONTRACT_ADDRESS" "$QUERY_MSG" $NEUTRON_NODE_FLAG --output json)
+RESPONSE=$($NEUTRON_BINARY query wasm contract-state smart "$ST_TOKEN_CONTRACT_ADDRESS" "$QUERY_MSG" $NEUTRON_RPC_NODE_FLAG --output json)
 
 # If not, execute the transaction to create one
 if [ "$(echo "$RESPONSE" | jq '.data.info == null')" = "true" ]; then
@@ -34,11 +35,11 @@ fi
 
 export RELAYER_REGISTRY_ADDRESSES=$ST_TOKEN_CONTRACT_ADDRESS
 # populate the config for the ICQ relayer and the ICQ query creation
-export NEUTRON_CHAIN_ID="neutron-1"
-export RELAYER_NEUTRON_CHAIN_RPC_ADDR=https://neutron-rpc.publicnode.com:443
-export RELAYER_NEUTRON_CHAIN_REST_ADDR=https://neutron-rest.publicnode.com
+export NEUTRON_CHAIN_ID=$NEUTRON_CHAIN_ID
+export RELAYER_NEUTRON_CHAIN_RPC_ADDR=$NEUTRON_RPC_NODE
+export RELAYER_NEUTRON_CHAIN_REST_ADDR=$NEUTRON_API_NODE
 export RELAYER_NEUTRON_CHAIN_HOME_DIR=$HOME/.neutrond
-export RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=submitter
+export RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=$TX_SENDER_WALLET
 export RELAYER_NEUTRON_CHAIN_KEYRING_BACKEND=test
 export RELAYER_NEUTRON_CHAIN_DENOM=untrn
 export RELAYER_NEUTRON_CHAIN_GAS_PRICES=0.0055untrn

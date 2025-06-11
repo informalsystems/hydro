@@ -1,6 +1,6 @@
 {
     "chain_id": "neutron-1",
-    "neutron_rpc_node": "https://rpc-pulsarix.neutron-1.neutron.org",
+    "neutron_rpc_node": "https://neutron-rpc.publicnode.com:443",
     "neutron_api_node": "https://neutron-rest.publicnode.com",
     "hub_rpc_node": "https://cosmos-rpc.publicnode.com:443",
     "hub_api_node": "https://api.cosmos.nodestake.org",
