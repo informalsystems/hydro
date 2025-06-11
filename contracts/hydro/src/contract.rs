@@ -2290,7 +2290,6 @@ pub fn query_user_votes(
     for vote in votes {
         let vote_power = calculate_vote_power(&mut token_manager, &deps, round_id, &vote)?;
 
-        // vote.time_weighted_shares.1.checked_mul(token_ratio)?;
         if vote_power == Decimal::zero() {
             continue;
         }
@@ -2404,7 +2403,7 @@ pub fn query_user_voted_locks(
 
 /// Query to get the voting history for a specific lock with optional filters
 /// - start_from_round_id: optional minimum round to start from (inclusive)
-/// - stop_at_round_id: optional maximum round to stop at (exclusive)
+/// - stop_at_round_id: optional maximum round to stop at (inclusive)
 /// - tranche_id: optional filter to only show votes for a specific tranche
 ///
 /// Note: It is called by tribute contract's query_outstanding_lockup_claimable_coins and claim_tribute
@@ -2430,13 +2429,17 @@ pub fn query_lock_votes_history(
 
     // Validate round range
     if start_round > end_round {
-        return Err(StdError::generic_err(
-            "start_from_round_id must be less than or equal to stop_at_round_id",
-        ));
+        return Err(StdError::generic_err(format!(
+            "start_round ({}) must be less than or equal to end_round ({})",
+            start_round, end_round
+        )));
     }
 
     // Determine which tranches to check (computed once outside the loop)
     let tranches_to_check: Vec<u64> = if let Some(specific_tranche_id) = tranche_id {
+        // check that the tranche with the given id exists
+        TRANCHE_MAP.load(deps.storage, specific_tranche_id)?;
+
         // Only check the specified tranche
         vec![specific_tranche_id]
     } else {
