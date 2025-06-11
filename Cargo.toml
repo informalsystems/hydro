@@ -3,6 +3,7 @@ members = [
     "contracts/hydro",
     "contracts/tribute",
     "contracts/dao-voting-adapter",
+    "contracts/liquid-collateral",
     "contracts/token-info-providers/st-token-info-provider",
     "contracts/token-info-providers/d-token-info-provider",
     "contracts/marketplace",
