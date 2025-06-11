@@ -3985,8 +3985,13 @@ dependencies = [
  "cw-storage-plus 2.0.0",
  "cw2 2.0.0",
  "interface",
+ "neutron-sdk",
+ "neutron-std",
+ "prost 0.12.6",
+ "prost-types 0.12.6",
  "schemars",
  "serde",
+ "serde-json-wasm 1.0.1",
  "thiserror",
 ]
 

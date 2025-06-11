@@ -5,12 +5,21 @@
 */
 
 export interface InstantiateMsg {
+  icq_update_period: number;
   st_token_denom: string;
+  stride_connection_id: string;
+  stride_host_zone_id: string;
   token_group_id: string;
 }
-export type ExecuteMsg = string;
+export type ExecuteMsg = {
+  register_host_zone_icq: {};
+} | {
+  remove_host_zone_icq: {};
+};
 export type QueryMsg = {
   config: {};
+} | {
+  interchain_query_info: {};
 } | {
   denom_info: {
     round_id: number;
@@ -22,7 +31,10 @@ export interface ConfigResponse {
 }
 export interface Config {
   hydro_contract_address: Addr;
+  icq_update_period: number;
   st_token_denom: string;
+  stride_connection_id: string;
+  stride_host_zone_id: string;
   token_group_id: string;
 }
 export type Decimal = string;
@@ -30,4 +42,17 @@ export interface DenomInfoResponse {
   denom: string;
   ratio: Decimal;
   token_group_id: string;
+}
+export type Uint128 = string;
+export interface InterchainQueryInfoResponse {
+  info?: InterchainQueryInfo | null;
+}
+export interface InterchainQueryInfo {
+  creator: string;
+  deposit_paid: Coin[];
+  query_id: number;
+}
+export interface Coin {
+  amount: Uint128;
+  denom: string;
 }
