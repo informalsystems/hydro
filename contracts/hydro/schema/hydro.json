@@ -1,6 +1,6 @@
 {
   "contract_name": "hydro",
-  "contract_version": "3.3.0",
+  "contract_version": "3.4.0",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -1656,6 +1656,94 @@
               },
               "tranche_id": {
                 "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "user_voted_locks"
+        ],
+        "properties": {
+          "user_voted_locks": {
+            "type": "object",
+            "required": [
+              "round_id",
+              "tranche_id",
+              "user_address"
+            ],
+            "properties": {
+              "proposal_id": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "round_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "tranche_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "user_address": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "lock_votes_history"
+        ],
+        "properties": {
+          "lock_votes_history": {
+            "type": "object",
+            "required": [
+              "lock_id"
+            ],
+            "properties": {
+              "lock_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "start_from_round_id": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "stop_at_round_id": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "tranche_id": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
                 "format": "uint64",
                 "minimum": 0.0
               }
@@ -3891,6 +3979,59 @@
         }
       }
     },
+    "lock_votes_history": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "LockVotesHistoryResponse",
+      "type": "object",
+      "required": [
+        "vote_history"
+      ],
+      "properties": {
+        "vote_history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LockVotesHistoryEntry"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Decimal": {
+          "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
+          "type": "string"
+        },
+        "LockVotesHistoryEntry": {
+          "type": "object",
+          "required": [
+            "proposal_id",
+            "round_id",
+            "tranche_id",
+            "vote_power"
+          ],
+          "properties": {
+            "proposal_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "vote_power": {
+              "$ref": "#/definitions/Decimal"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
     "nft_info": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "NftInfoResponse",
@@ -5101,6 +5242,62 @@
             },
             "name": {
               "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "user_voted_locks": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "UserVotedLocksResponse",
+      "type": "object",
+      "required": [
+        "voted_locks"
+      ],
+      "properties": {
+        "voted_locks": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": [
+              {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/VotedLockInfo"
+                }
+              }
+            ],
+            "maxItems": 2,
+            "minItems": 2
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Decimal": {
+          "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
+          "type": "string"
+        },
+        "VotedLockInfo": {
+          "type": "object",
+          "required": [
+            "lock_id",
+            "vote_power"
+          ],
+          "properties": {
+            "lock_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "vote_power": {
+              "$ref": "#/definitions/Decimal"
             }
           },
           "additionalProperties": false

@@ -2,10 +2,11 @@ use crate::contract::{can_lock_vote_for_proposal, compute_round_end};
 use crate::error::ContractError;
 use crate::msg::ProposalToLockups;
 use crate::score_keeper::ProposalPowerUpdate;
-use crate::state::{Constants, LockEntryV2, Vote, PROPOSAL_MAP, VOTE_MAP_V2, VOTING_ALLOWED_ROUND};
+use crate::state::{Constants, LockEntryV2, Vote, VOTE_MAP_V2, VOTING_ALLOWED_ROUND};
 use crate::token_manager::TokenManager;
 use crate::utils::{
-    find_deployment_for_voted_lock, get_lock_time_weighted_shares, get_owned_lock_entry,
+    find_deployment_for_voted_lock, get_lock_time_weighted_shares, get_lock_vote,
+    get_owned_lock_entry, get_proposal,
 };
 use cosmwasm_std::{Addr, Decimal, DepsMut, Env, SignedDecimal, StdError, Storage, Uint128};
 use neutron_sdk::bindings::query::NeutronQuery;
@@ -101,9 +102,7 @@ pub fn process_unvotes(
     let mut locks_to_skip = HashSet::new();
 
     for (&lock_id, &target_proposal_id) in target_votes {
-        if let Some(existing_vote) =
-            VOTE_MAP_V2.may_load(storage, ((round_id, tranche_id), lock_id))?
-        {
+        if let Some(existing_vote) = get_lock_vote(storage, round_id, tranche_id, lock_id)? {
             // Skip if we have a target proposal and it matches the current vote
             // We also add to locks_to_skip, to inform process_votes to skip this lock when voting
             if let Some(target_id) = target_proposal_id {
@@ -184,9 +183,11 @@ pub fn process_votes(
 
     for proposal_to_lockups in proposals_votes {
         let proposal_id = proposal_to_lockups.proposal_id;
-        let proposal = PROPOSAL_MAP.load(
+        let proposal = get_proposal(
             deps.storage,
-            (context.round_id, context.tranche_id, proposal_id),
+            context.round_id,
+            context.tranche_id,
+            proposal_id,
         )?;
 
         for &lock_id in &proposal_to_lockups.lock_ids {
