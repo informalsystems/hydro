@@ -88,6 +88,8 @@ pub const NATIVE_TOKEN_DENOM: &str = "untrn";
 
 pub const MIN_DEPLOYMENT_DURATION: u64 = 1;
 
+pub const MIN_SPLIT_LOCK_SIZE: Uint128 = Uint128::new(10_000);
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     mut deps: DepsMut<NeutronQuery>,
@@ -224,6 +226,10 @@ pub fn execute(
             lock_ids,
             lock_duration,
         } => refresh_lock_duration(deps, env, info, &constants, lock_ids, lock_duration),
+        ExecuteMsg::SplitLock { lock_id, amount } => {
+            split_lock(deps, env, info, &constants, lock_id, amount)
+        }
+        ExecuteMsg::MergeLocks { lock_ids } => merge_locks(deps, env, info, &constants, lock_ids),
         ExecuteMsg::UnlockTokens { lock_ids } => unlock_tokens(deps, env, info, lock_ids),
         ExecuteMsg::CreateProposal {
             round_id,
@@ -707,6 +713,424 @@ fn refresh_single_lock(
     Ok((new_lock_end, old_lock_end))
 }
 
+// TODO: Docs
+fn split_lock(
+    mut deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    constants: &Constants,
+    lock_id_to_split: u64,
+    amount: Uint128,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let starting_lock_entry = get_owned_lock_entry(deps.storage, &info.sender, lock_id_to_split)?;
+
+    let resulting_lock_amount = starting_lock_entry
+        .funds
+        .amount
+        .checked_sub(amount)
+        .map_err(|_| {
+            new_generic_error(format!(
+                "Lock id: {} with size {} cannot be used to split out into new lock with size {}.",
+                amount, starting_lock_entry.funds.amount, amount,
+            ))
+        })?;
+
+    if resulting_lock_amount < MIN_SPLIT_LOCK_SIZE || amount < MIN_SPLIT_LOCK_SIZE {
+        return Err(new_generic_error(format!(
+            "Cannot split lock with amount: {}. Both resulting lockups must be at least of size: {}.",
+            starting_lock_entry.funds.amount, MIN_SPLIT_LOCK_SIZE,
+        )));
+    }
+
+    if get_lock_count(&deps.as_ref(), info.sender.clone()) >= MAX_LOCK_ENTRIES {
+        return Err(ContractError::Std(StdError::generic_err(format!(
+            "Cannot split lock. User has too many locks, only {} locks allowed",
+            MAX_LOCK_ENTRIES
+        ))));
+    }
+
+    // All other fields except amount should remain the same as with original lock entry
+    let resulting_lock_entry = LockEntryV2 {
+        funds: Coin {
+            denom: starting_lock_entry.funds.denom.clone(),
+            amount: resulting_lock_amount,
+        },
+        ..starting_lock_entry.clone()
+    };
+
+    let new_lock_id = LOCK_ID.load(deps.storage)?;
+    LOCK_ID.save(deps.storage, &(new_lock_id + 1))?;
+
+    let new_lock_entry = LockEntryV2 {
+        lock_id: new_lock_id,
+        owner: info.sender.clone(),
+        funds: Coin {
+            denom: starting_lock_entry.funds.denom.clone(),
+            amount,
+        },
+        lock_start: env.block.time,
+        lock_end: starting_lock_entry.lock_end,
+    };
+
+    // Update existing lock entry and insert new one
+    LOCKS_MAP_V2.save(
+        deps.storage,
+        resulting_lock_entry.lock_id,
+        &resulting_lock_entry,
+        env.block.height,
+    )?;
+    LOCKS_MAP_V2.save(
+        deps.storage,
+        new_lock_entry.lock_id,
+        &new_lock_entry,
+        env.block.height,
+    )?;
+
+    // Update information about locks owned by the user
+    USER_LOCKS.update(
+        deps.storage,
+        info.sender.clone(),
+        env.block.height,
+        |current_locks| -> Result<Vec<u64>, StdError> {
+            match current_locks {
+                None => Ok(vec![new_lock_id]),
+                Some(mut current_locks) => {
+                    current_locks.push(new_lock_id);
+
+                    Ok(current_locks)
+                }
+            }
+        },
+    )?;
+
+    // Update information about locks for which user is eligible to claim tributes
+    USER_LOCKS_FOR_CLAIM.update(
+        deps.storage,
+        info.sender.clone(),
+        |current_locks| -> Result<Vec<u64>, StdError> {
+            match current_locks {
+                None => Ok(vec![new_lock_id]),
+                Some(mut current_locks) => {
+                    current_locks.push(new_lock_id);
+
+                    Ok(current_locks)
+                }
+            }
+        },
+    )?;
+
+    let current_round_id = compute_current_round_id(&env, constants)?;
+
+    // Use both lock entries for revoting, if there was an existing vote
+    let lock_entries = HashMap::from_iter([
+        (resulting_lock_entry.lock_id, resulting_lock_entry.clone()),
+        (new_lock_entry.lock_id, new_lock_entry.clone()),
+    ]);
+
+    // Must populate the target votes in order for process_unvotes() to remove the existing vote, if there is any.
+    // Pretend that we are not going to vote with the existing lock again, so that the vote gets removed. This is
+    // mandatory to reflect the lock voting power change correctly, since its power decreased due to splitting.
+    // The vote will be re-added later, if there was an existing vote.
+    let target_votes = HashMap::from_iter([(resulting_lock_entry.lock_id, None)]);
+
+    let mut token_manager = TokenManager::new(&deps.as_ref());
+
+    let tranche_ids = TRANCHE_MAP
+        .keys(deps.storage, None, None, Order::Ascending)
+        .collect::<StdResult<Vec<u64>>>()?;
+
+    for tranche_id in tranche_ids {
+        // Go back through previous rounds, find if the splitted lock was used for voting,
+        // and insert 0-power votes for the new lock entry.
+        for round_id in 0..current_round_id {
+            if let Some(vote) = get_lock_vote(
+                deps.storage,
+                round_id,
+                tranche_id,
+                resulting_lock_entry.lock_id,
+            )? {
+                let new_vote = Vote {
+                    prop_id: vote.prop_id,
+                    time_weighted_shares: (vote.time_weighted_shares.0, Decimal::zero()),
+                };
+
+                VOTE_MAP_V2.save(
+                    deps.storage,
+                    ((round_id, tranche_id), new_lock_entry.lock_id),
+                    &new_vote,
+                )?;
+            }
+        }
+
+        let unvotes_result =
+            process_unvotes(deps.storage, current_round_id, tranche_id, &target_votes)?;
+
+        // If no vote was removed, there is no need to re-add it
+        let removed_votes = unvotes_result
+            .removed_votes
+            .iter()
+            .take(1)
+            .collect::<Vec<_>>();
+        let old_vote = match removed_votes.len() {
+            1 => removed_votes[0],
+            _ => {
+                // New lock inherits the voting allowed round from the original lock.
+                // If there was no vote in this round that got removed, then information
+                // comes from the previous rounds vote, if there were any.
+                // If the original lock was used for voting in the current round, then process_votes()
+                // will update the VOTING_ALLOWED_ROUND for new lock as well.
+                if let Some(voting_allowed_round) = VOTING_ALLOWED_ROUND
+                    .may_load(deps.storage, (tranche_id, resulting_lock_entry.lock_id))?
+                {
+                    VOTING_ALLOWED_ROUND.save(
+                        deps.storage,
+                        (tranche_id, new_lock_entry.lock_id),
+                        &voting_allowed_round,
+                    )?;
+                }
+
+                continue;
+            }
+        };
+
+        let votes = ProposalToLockups {
+            proposal_id: old_vote.1.prop_id,
+            lock_ids: vec![resulting_lock_entry.lock_id, new_lock_entry.lock_id],
+        };
+
+        process_votes_and_apply_proposal_changes(
+            &mut deps,
+            &env,
+            &mut token_manager,
+            constants,
+            current_round_id,
+            tranche_id,
+            &[votes],
+            &lock_entries,
+            unvotes_result,
+        )?;
+    }
+
+    Ok(Response::new()
+        .add_attribute("action", "split_lock")
+        .add_attribute("sender", info.sender)
+        .add_attribute("lock_id_to_split", lock_id_to_split.to_string())
+        .add_attribute("new_lock_id", new_lock_id.to_string())
+        .add_attribute("amount", amount.to_string()))
+}
+
+// TODO: Docs
+fn merge_locks(
+    mut deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    constants: &Constants,
+    lock_ids: Vec<u64>,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Eliminate duplicates from the lock_ids
+    let lock_ids: HashSet<u64> = HashSet::from_iter(lock_ids);
+    let mut input_locks = vec![];
+
+    // Verify that the user owns all the locks with provided IDs
+    for lock_id in &lock_ids {
+        input_locks.push(get_owned_lock_entry(deps.storage, &info.sender, *lock_id)?);
+    }
+
+    if input_locks.len() < 2 {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Must specify at least two lock IDs to merge.",
+        )));
+    }
+
+    let mut lock_denoms: HashSet<String> = HashSet::new();
+    let mut resulting_lock_amount = Uint128::zero();
+
+    let new_lock_end = input_locks
+        .iter()
+        .map(|lock_entry| {
+            lock_denoms.insert(lock_entry.funds.denom.clone());
+            resulting_lock_amount += lock_entry.funds.amount;
+
+            lock_entry.lock_end.nanos()
+        })
+        .max()
+        .expect("there must be at least two locks");
+
+    if lock_denoms.len() != 1 {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Cannot merge locks with different denoms.",
+        )));
+    }
+
+    let resulting_lock_id = LOCK_ID.load(deps.storage)?;
+    LOCK_ID.save(deps.storage, &(resulting_lock_id + 1))?;
+
+    let resulting_lock_entry = LockEntryV2 {
+        lock_id: resulting_lock_id,
+        owner: info.sender.clone(),
+        funds: Coin {
+            denom: input_locks[0].funds.denom.clone(),
+            amount: resulting_lock_amount,
+        },
+        lock_start: env.block.time,
+        lock_end: Timestamp::from_nanos(new_lock_end),
+    };
+
+    LOCKS_MAP_V2.save(
+        deps.storage,
+        resulting_lock_entry.lock_id,
+        &resulting_lock_entry,
+        env.block.height,
+    )?;
+
+    for lock_id in &lock_ids {
+        LOCKS_MAP_V2.remove(deps.storage, *lock_id, env.block.height)?;
+    }
+
+    // Remove merged locks and add new lock id to USER_LOCKS
+    USER_LOCKS.update(
+        deps.storage,
+        info.sender.clone(),
+        env.block.height,
+        |current_locks| -> Result<Vec<u64>, StdError> {
+            let mut current_locks = current_locks.expect("User locks must exist");
+
+            current_locks.push(resulting_lock_id);
+            current_locks.retain(|lock_id| !lock_ids.contains(lock_id));
+
+            Ok(current_locks)
+        },
+    )?;
+
+    // Add new lock id to USER_LOCKS_FOR_CLAIM (merged ones are retained)
+    USER_LOCKS_FOR_CLAIM.update(
+        deps.storage,
+        info.sender.clone(),
+        |current_locks| -> Result<Vec<u64>, StdError> {
+            let mut current_locks = current_locks.expect("User locks for claim must exist");
+            current_locks.push(resulting_lock_id);
+
+            Ok(current_locks)
+        },
+    )?;
+
+    let current_round_id = compute_current_round_id(&env, constants)?;
+
+    let target_votes = HashMap::from_iter(
+        input_locks
+            .iter()
+            .map(|lock_entry| (lock_entry.lock_id, None)),
+    );
+
+    let mut token_manager = TokenManager::new(&deps.as_ref());
+
+    let lock_entries =
+        HashMap::from_iter([(resulting_lock_entry.lock_id, resulting_lock_entry.clone())]);
+
+    let tranche_ids = TRANCHE_MAP
+        .keys(deps.storage, None, None, Order::Ascending)
+        .collect::<StdResult<Vec<u64>>>()?;
+
+    for tranche_id in tranche_ids {
+        // First run process_unvotes() in order to remove votes and voting allowed round
+        // information originating from the current round votes.
+        let unvotes_result =
+            process_unvotes(deps.storage, current_round_id, tranche_id, &target_votes)?;
+
+        // After removing the current round votes, check if any of the input lockups shouldn't be allowed to
+        // vote in the current round. If so, the resulting lockup will inherit the *highest* voting allowed round
+        // and we also insert 0-power vote for the new lock entry in the same round the original lock has voted.
+        // Note that there could be multiple such lockups, so we will take one of them.
+        if let Some(lock_voting_allowed) =
+            get_higest_voting_allowed_round(&deps.as_ref(), tranche_id, &lock_ids)?
+        {
+            if lock_voting_allowed.voting_allowed_round > current_round_id {
+                VOTING_ALLOWED_ROUND.save(
+                    deps.storage,
+                    (tranche_id, resulting_lock_id),
+                    &lock_voting_allowed.voting_allowed_round,
+                )?;
+
+                // Find the vote that implies next voting_allowed_round and insert a 0-power vote for the new lock entry
+                for round_id in (0..current_round_id).rev() {
+                    if let Some(vote) = VOTE_MAP_V2.may_load(
+                        deps.storage,
+                        ((round_id, tranche_id), lock_voting_allowed.lock_id),
+                    )? {
+                        VOTE_MAP_V2.save(
+                            deps.storage,
+                            ((round_id, tranche_id), resulting_lock_id),
+                            &Vote {
+                                prop_id: vote.prop_id,
+                                time_weighted_shares: (
+                                    vote.time_weighted_shares.0,
+                                    Decimal::zero(),
+                                ),
+                            },
+                        )?;
+
+                        // Break out of the inner loop as soon as we find a vote in round closest to the current one
+                        break;
+                    }
+
+                    if round_id == 0 {
+                        return Err(ContractError::Std(StdError::generic_err(format!(
+                        "Could not find vote for lock {} in tranche {} for any of previous rounds",
+                        lock_voting_allowed.lock_id, tranche_id
+                    ))));
+                    }
+                }
+
+                // If the resulting lock isn't allowed to vote in the current round
+                // and tranche, then move to the next tranche.
+                continue;
+            }
+        }
+
+        // If input lock entries didn't vote in current round, or they voted for multiple proposals,
+        // we will not add the vote for the resulting lock entry.
+        if unvotes_result.removed_votes.len() != 1 {
+            continue;
+        }
+
+        let old_vote = unvotes_result
+            .removed_votes
+            .iter()
+            .take(1)
+            .collect::<Vec<_>>()[0] // There must be exactly one removed vote
+            .1;
+
+        let votes = ProposalToLockups {
+            proposal_id: old_vote.prop_id,
+            lock_ids: vec![resulting_lock_entry.lock_id],
+        };
+
+        process_votes_and_apply_proposal_changes(
+            &mut deps,
+            &env,
+            &mut token_manager,
+            constants,
+            current_round_id,
+            tranche_id,
+            &[votes],
+            &lock_entries,
+            unvotes_result,
+        )?;
+    }
+
+    let lock_ids_attr = lock_ids
+        .iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<String>>()
+        .join(",");
+
+    Ok(Response::new()
+        .add_attribute("action", "merge_locks")
+        .add_attribute("sender", info.sender)
+        .add_attribute("lock_ids", lock_ids_attr)
+        .add_attribute("resulting_lock_id", resulting_lock_id.to_string()))
+}
+
 // Validate that the lock duration (given in nanos) is either 1, 2, 3, 6, or 12 epochs
 fn validate_lock_duration(
     round_lock_power_schedule: &RoundLockPowerSchedule,
@@ -990,9 +1414,11 @@ fn vote(
         tranche_id,
     };
 
+    let mut token_manager = TokenManager::new(&deps.as_ref());
     // Process new votes
     let votes_result = process_votes(
         &mut deps,
+        &mut token_manager,
         context,
         &proposals_votes,
         &lock_entries,
@@ -1004,7 +1430,6 @@ fn vote(
 
     let unique_proposals_to_update: HashSet<u64> = combined_power_changes.keys().copied().collect();
 
-    let mut token_manager = TokenManager::new(&deps.as_ref());
     // Apply combined proposal power changes from unvotes and votes
     apply_proposal_changes(
         &mut deps,
@@ -3409,6 +3834,103 @@ pub fn can_lock_vote_for_proposal(
     let power_required_round_end = compute_round_end(constants, power_required_round_id)?;
 
     Ok(lock_entry.lock_end >= power_required_round_end)
+}
+
+// TODO: Perhaps extract process_votes() from this function and try to use it in vote() as well. Good candidate for utils.
+#[allow(clippy::too_many_arguments)]
+fn process_votes_and_apply_proposal_changes(
+    deps: &mut DepsMut<NeutronQuery>,
+    env: &Env,
+    token_manager: &mut TokenManager,
+    constants: &Constants,
+    current_round_id: u64,
+    tranche_id: u64,
+    votes: &[ProposalToLockups],
+    lock_entries: &HashMap<u64, LockEntryV2>,
+    unvotes_result: ProcessUnvotesResult,
+) -> Result<(), ContractError> {
+    let context = VoteProcessingContext {
+        env,
+        constants,
+        round_id: current_round_id,
+        tranche_id,
+    };
+
+    let votes_result = process_votes(
+        deps,
+        token_manager,
+        context,
+        votes,
+        lock_entries,
+        unvotes_result.locks_to_skip,
+    )?;
+
+    let combined_power_changes =
+        combine_proposal_power_updates(unvotes_result.power_changes, votes_result.power_changes);
+
+    let unique_proposals_to_update: HashSet<u64> = combined_power_changes.keys().copied().collect();
+
+    // Apply combined proposal power changes from unvotes and votes
+    apply_proposal_changes(
+        deps,
+        token_manager,
+        current_round_id,
+        combined_power_changes,
+    )?;
+
+    // Update the proposal in the proposal map, as well as the props by score map, after all changes
+    // We can use update_proposal_and_props_by_score_maps as we already applied the proposal power changes
+    for proposal_id in unique_proposals_to_update {
+        let proposal =
+            PROPOSAL_MAP.load(deps.storage, (current_round_id, tranche_id, proposal_id))?;
+        update_proposal_and_props_by_score_maps(
+            deps.storage,
+            current_round_id,
+            tranche_id,
+            &proposal,
+        )?;
+    }
+
+    Ok(())
+}
+
+pub struct LockVotingAllowedRound {
+    pub lock_id: u64,
+    pub tranche_id: u64,
+    pub voting_allowed_round: u64,
+}
+
+// TODO: Move to utils
+fn get_higest_voting_allowed_round(
+    deps: &Deps<NeutronQuery>,
+    tranche_id: u64,
+    lock_ids: &HashSet<u64>,
+) -> Result<Option<LockVotingAllowedRound>, ContractError> {
+    let mut highest_voting_allowed_round: Option<LockVotingAllowedRound> = None;
+
+    for lock_id in lock_ids {
+        if let Some(voting_allowed_round) =
+            VOTING_ALLOWED_ROUND.may_load(deps.storage, (tranche_id, *lock_id))?
+        {
+            if let Some(current_highest) = &highest_voting_allowed_round {
+                if voting_allowed_round > current_highest.voting_allowed_round {
+                    highest_voting_allowed_round = Some(LockVotingAllowedRound {
+                        lock_id: *lock_id,
+                        tranche_id,
+                        voting_allowed_round,
+                    });
+                }
+            } else {
+                highest_voting_allowed_round = Some(LockVotingAllowedRound {
+                    lock_id: *lock_id,
+                    tranche_id,
+                    voting_allowed_round,
+                });
+            }
+        }
+    }
+
+    Ok(highest_voting_allowed_round)
 }
 
 /// This function relies on PROPOSAL_TOTAL_MAP and SCALED_PROPOSAL_SHARES_MAP being
