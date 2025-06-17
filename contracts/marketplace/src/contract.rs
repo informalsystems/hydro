@@ -441,9 +441,16 @@ pub fn execute_buy(
             listing.seller.clone(),
         )?;
 
+        // Refund payment to sender
+        let refund_sender_msg = BankMsg::Send {
+            to_address: info.sender.to_string(),
+            amount: info.funds,
+        };
+
         // Returning an Ok response, so that the listing removal can persist.
         // It is up to the frontend to display the error message.
         return Ok(Response::new()
+            .add_message(refund_sender_msg)
             .add_attribute("action", "buy_nft")
             .add_attribute("collection", collection)
             .add_attribute("token_id", token_id)

@@ -1329,7 +1329,7 @@ fn test_execute_buy_clean_listing_when_listing_exist_and_marketplace_not_approve
         token_id: token_id.to_string(),
     };
 
-    let res = execute(deps.as_mut(), env.clone(), info, msg);
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(
         res.is_ok(),
         "Failed to clean listing when marketplace is not approved"
@@ -1339,6 +1339,19 @@ fn test_execute_buy_clean_listing_when_listing_exist_and_marketplace_not_approve
         .attributes
         .iter()
         .any(|attr| attr.key == "success" && attr.value == "false"));
+
+    // Verify refund message is included
+    let refund_msg = res.messages.iter().find(|msg| {
+        if let CosmosMsg::Bank(BankMsg::Send { to_address, amount }) = &msg.msg {
+            to_address == &info.sender.to_string() && amount == &info.funds
+        } else {
+            false
+        }
+    });
+    assert!(
+        refund_msg.is_some(),
+        "Refund message should be present when marketplace is not approved"
+    );
 
     let query_msg = QueryMsg::Listing {
         collection: collection.clone(),
