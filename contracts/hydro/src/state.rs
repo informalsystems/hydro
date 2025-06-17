@@ -86,9 +86,13 @@ pub const TOKEN_INFO_PROVIDERS: Map<String, TokenInfoProvider> = Map::new("token
 // Keeps the address of the associated Gatekeeper contract, if Hydro uses one. The Gatekeeper contract
 // determines if a user should be allowed to lock the given amount of tokens at a given time.
 pub const GATEKEEPER: Item<String> = Item::new("gatekeeper");
-
-// Address of the Drop contract that is used to convert the locked tokens into dtokens
-pub const DROP_TOKEN: Item<String> = Item::new("drop_token");
+#[cw_serde]
+pub struct DropTokenInfo {
+    pub address: Addr,
+    pub d_token_denom: String,
+}
+// Stores the information about the drop token, used for conversion of locked tokens into drop tokens.
+pub const DROP_TOKEN_INFO: Item<DropTokenInfo> = Item::new("drop_token_info");
 
 // the total number of tokens locked in the contract
 pub const LOCKED_TOKENS: Item<u128> = Item::new("locked_tokens");

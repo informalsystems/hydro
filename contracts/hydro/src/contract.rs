@@ -45,7 +45,7 @@ use crate::score_keeper::{
 };
 use crate::state::{
     Constants, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo, Vote,
-    VoteWithPower, CONSTANTS, DROP_SENDERS, DROP_TOKEN, GATEKEEPER, ICQ_MANAGERS,
+    VoteWithPower, CONSTANTS, DROP_SENDERS, DROP_TOKEN_INFO, GATEKEEPER, ICQ_MANAGERS,
     LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE,
     PROP_ID, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP,
     USER_LOCKS, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
@@ -68,7 +68,8 @@ use crate::validators_icqs::{
     handle_submsg_reply, query_min_interchain_query_deposit,
 };
 use crate::vote::{
-    process_unvotes, process_votes, validate_proposals_and_locks_for_voting, VoteProcessingContext,
+    process_unvotes, process_votes, validate_proposals_and_locks_for_voting, ProcessUnvotesResult,
+    VoteProcessingContext,
 };
 use interface::drop::ExecuteMsg as DropExecuteMsg;
 use interface::drop::QueryMsg as DropQueryMsg;
@@ -1752,32 +1753,28 @@ fn convert_lockup_to_dtoken(
         lock_ids_set.len() as u32,
     )?;
 
-    let dtoken_contract = match DROP_TOKEN.may_load(deps.storage)? {
-        None => {
-            return Err(new_generic_error(format!(
-                "Drop token contract is not set."
-            )))
-        }
-        Some(drop_token) => drop_token,
-    };
+    let drop_info = DROP_TOKEN_INFO.load(deps.storage)?;
 
     let mut submsgs = vec![];
 
     for lockup in lockups {
+        // Save sender for this lock_id so it can be retreived in the reply handler
+        DROP_SENDERS.save(deps.storage, lockup.lock_entry.lock_id, &info.sender)?;
+
         let convert_token_msg = DropExecuteMsg::Bond {
-            receiver: Some(info.sender.to_string()),
+            receiver: None,
             r#ref: None,
         };
 
         let wasm_execute_msg = WasmMsg::Execute {
-            contract_addr: dtoken_contract.to_string(),
+            contract_addr: drop_info.address.to_string(),
             msg: to_json_binary(&convert_token_msg)?,
             funds: vec![lockup.lock_entry.funds.clone()],
         };
 
         let reply_id = lockup.lock_entry.lock_id;
 
-        submsgs.push(SubMsg::reply_always(wasm_execute_msg, reply_id));
+        submsgs.push(SubMsg::reply_on_success(wasm_execute_msg, reply_id));
     }
 
     Ok(Response::new()
@@ -1786,8 +1783,8 @@ fn convert_lockup_to_dtoken(
 }
 
 pub fn convert_lockup_to_dtoken_reply(
-    deps: DepsMut,
-    _env: Env,
+    mut deps: DepsMut<NeutronQuery>,
+    env: Env,
     msg: Reply,
 ) -> Result<Response, ContractError> {
     let lock_id = msg.id;
@@ -1795,6 +1792,10 @@ pub fn convert_lockup_to_dtoken_reply(
     let sender: Addr = DROP_SENDERS.load(deps.storage, lock_id)?;
 
     DROP_SENDERS.remove(deps.storage, lock_id);
+
+    let constants = load_current_constants(&deps.as_ref(), &env)?;
+
+    let current_round_id = compute_current_round_id(&env, &constants)?;
 
     let issue_amount = match msg.result {
         SubMsgResult::Ok(res) => {
@@ -1831,17 +1832,137 @@ pub fn convert_lockup_to_dtoken_reply(
         }
     };
 
-    // TODO
-    // unvote for each lock id and tranche
-    // update the lock entry with new value - issue_amount and new denom
-    // vote again
     let tranches: Vec<Tranche> = TRANCHE_MAP
         .range(deps.storage, None, None, Order::Ascending)
         .map(|t| t.unwrap().1)
         .collect();
 
+    let mut tranches_with_votes: Vec<(u64, Vote)> = Vec::new();
+
+    let mut unvotes_results_map: HashMap<u64, ProcessUnvotesResult> = HashMap::new();
+
+    // Collect tranches with existing votes
+    for tranche in tranches {
+        let tranche_id = tranche.id;
+        if let Some(vote) =
+            VOTE_MAP_V2.may_load(deps.storage, ((current_round_id, tranche_id), lock_id))?
+        {
+            tranches_with_votes.push((tranche_id, vote));
+        }
+    }
+
+    // If there were existing votes, unvote them using the old lock entry
+    for (tranche_id, _vote) in &tranches_with_votes {
+        let mut target_votes = HashMap::new();
+        target_votes.insert(lock_id, None);
+
+        let unvotes_result: ProcessUnvotesResult =
+            match process_unvotes(deps.storage, current_round_id, *tranche_id, &target_votes) {
+                Ok(result) => result,
+                Err(_) => continue,
+            };
+        unvotes_results_map.insert(*tranche_id, unvotes_result.clone());
+        let unique_proposals_to_update: HashSet<u64> =
+            unvotes_result.power_changes.keys().copied().collect();
+
+        let mut token_manager = TokenManager::new(&deps.as_ref());
+        // Apply proposal power changes from unvotes
+        apply_proposal_changes(
+            &mut deps,
+            &mut token_manager,
+            current_round_id,
+            unvotes_result.power_changes,
+        )?;
+
+        // Update the proposal in the proposal map, as well as the props by score map, after all changes
+        // We can use update_proposal_and_props_by_score_maps as we already applied the proposal power changes
+        for proposal_id in unique_proposals_to_update {
+            let proposal =
+                PROPOSAL_MAP.load(deps.storage, (current_round_id, *tranche_id, proposal_id))?;
+            update_proposal_and_props_by_score_maps(
+                deps.storage,
+                current_round_id,
+                *tranche_id,
+                &proposal,
+            )?;
+        }
+    }
+
+    // update lock entry with converted denom and amount
+    let drop_info = DROP_TOKEN_INFO.load(deps.storage)?;
+    let mut lock_entry = get_owned_lock_entry(deps.storage, &sender, lock_id)?;
+    let new_funds = Coin {
+        denom: drop_info.d_token_denom.to_string(),
+        amount: issue_amount,
+    };
+    lock_entry.funds = new_funds;
+    LOCKS_MAP_V2.save(deps.storage, lock_id, &lock_entry, env.block.height)?;
+
+    // Re-vote only if there were previous votes
+    if !tranches_with_votes.is_empty() {
+        for (tranche_id, vote) in &tranches_with_votes {
+            let unvotes_result = unvotes_results_map
+                .get(tranche_id)
+                .expect("unvotes_result must exist for tranche");
+            //vote with updated lock
+            // Prepare context for voting
+            let context = VoteProcessingContext {
+                env: &env,
+                constants: &constants,
+                round_id: current_round_id,
+                tranche_id: *tranche_id,
+            };
+
+            let proposals_votes = vec![ProposalToLockups {
+                proposal_id: vote.prop_id,
+                lock_ids: vec![lock_id],
+            }];
+
+            let mut lock_entries: HashMap<u64, LockEntryV2> = HashMap::new();
+            lock_entries.insert(lock_id, lock_entry.clone());
+
+            // Process new votes
+            let votes_result = process_votes(
+                &mut deps,
+                context,
+                &proposals_votes,
+                &lock_entries,
+                unvotes_result.locks_to_skip.clone(),
+            )?;
+
+            let combined_power_changes = combine_proposal_power_updates(
+                unvotes_result.power_changes.clone(),
+                votes_result.power_changes,
+            );
+
+            let unique_proposals_to_update: HashSet<u64> =
+                combined_power_changes.keys().copied().collect();
+
+            let mut token_manager = TokenManager::new(&deps.as_ref());
+            // Apply combined proposal power changes from unvotes and votes
+            apply_proposal_changes(
+                &mut deps,
+                &mut token_manager,
+                current_round_id,
+                combined_power_changes,
+            )?;
+
+            // Update the proposal in the proposal map, as well as the props by score map, after all changes
+            // We can use update_proposal_and_props_by_score_maps as we already applied the proposal power changes
+            for proposal_id in unique_proposals_to_update {
+                let proposal = PROPOSAL_MAP
+                    .load(deps.storage, (current_round_id, *tranche_id, proposal_id))?;
+                update_proposal_and_props_by_score_maps(
+                    deps.storage,
+                    current_round_id,
+                    *tranche_id,
+                    &proposal,
+                )?;
+            }
+        }
+    }
     Ok(Response::new()
-        .add_attribute("action", "bond_success")
+        .add_attribute("action", "convert_lockup_success")
         .add_attribute("lock_id", lock_id.to_string())
         .add_attribute("sender", sender.to_string())
         .add_attribute("issue_amount", issue_amount.to_string()))
@@ -2724,16 +2845,11 @@ pub fn query_simulate_dtoken_amounts(
         lock_ids_set.len() as u32,
     )?;
 
-    let dtoken_contract = match DROP_TOKEN.may_load(deps.storage)? {
-        None => {
-            return Err(StdError::generic_err("Dtoken contract is not set"));
-        }
-        Some(drop_token) => drop_token,
-    };
+    let drop_info = DROP_TOKEN_INFO.load(deps.storage)?;
 
     let ratio: Decimal = deps
         .querier
-        .query_wasm_smart(dtoken_contract, &DropQueryMsg::ExchangeRate {})?;
+        .query_wasm_smart(drop_info.address, &DropQueryMsg::ExchangeRate {})?;
 
     let mut result: Vec<DtokenAmountResponse> = Vec::new();
 
