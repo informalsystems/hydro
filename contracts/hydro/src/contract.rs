@@ -1739,27 +1739,34 @@ pub fn remove_token_info_provider(
 // converts existing lockup (of lsm token) to dToken
 fn convert_lockup_to_dtoken(
     deps: DepsMut<NeutronQuery>,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     lock_ids: Vec<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let lock_ids_set: HashSet<u64> = lock_ids.into_iter().collect();
-    let lockups: Vec<LockEntryWithPower> = get_user_lockups_with_predicate(
+
+    let lockups = query_user_lockups(
         &deps.as_ref(),
-        &env,
-        info.sender.to_string(),
+        info.sender.clone(),
         |lock| lock_ids_set.contains(&lock.lock_id),
         0,
         lock_ids_set.len() as u32,
-    )?;
+    );
 
     let drop_info = DROP_TOKEN_INFO.load(deps.storage)?;
 
     let mut submsgs = vec![];
 
     for lockup in lockups {
+        // Check if the lockup is already converted to dToken
+        if lockup.funds.denom == drop_info.d_token_denom {
+            return Err(ContractError::Std(StdError::generic_err(format!(
+                "Lockup {lock_id} is already converted to dToken",
+                lock_id = lockup.lock_id
+            ))));
+        }
         // Save sender for this lock_id so it can be retreived in the reply handler
-        DROP_SENDERS.save(deps.storage, lockup.lock_entry.lock_id, &info.sender)?;
+        DROP_SENDERS.save(deps.storage, lockup.lock_id, &info.sender)?;
 
         let convert_token_msg = DropExecuteMsg::Bond {
             receiver: None,
@@ -1769,10 +1776,10 @@ fn convert_lockup_to_dtoken(
         let wasm_execute_msg = WasmMsg::Execute {
             contract_addr: drop_info.address.to_string(),
             msg: to_json_binary(&convert_token_msg)?,
-            funds: vec![lockup.lock_entry.funds.clone()],
+            funds: vec![lockup.funds.clone()],
         };
 
-        let reply_id = lockup.lock_entry.lock_id;
+        let reply_id = lockup.lock_id;
 
         submsgs.push(SubMsg::reply_on_success(wasm_execute_msg, reply_id));
     }
