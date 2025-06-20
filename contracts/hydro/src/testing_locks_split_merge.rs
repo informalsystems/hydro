@@ -3,12 +3,14 @@ use crate::msg::{ExecuteMsg, ProposalToLockups};
 use crate::state::{PROPOSAL_MAP, VOTE_MAP_V2, VOTING_ALLOWED_ROUND};
 use crate::testing::{
     get_address_as_str, get_default_instantiate_msg, get_message_info,
-    set_default_validator_for_rounds, IBC_DENOM_1, ONE_MONTH_IN_NANO_SECONDS,
-    VALIDATOR_1_LST_DENOM_1,
+    set_default_validator_for_rounds, IBC_DENOM_1, IBC_DENOM_2, ONE_MONTH_IN_NANO_SECONDS,
+    VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
 };
+use crate::testing_lsm_integration::set_validator_infos_for_round;
 use crate::testing_mocks::denom_trace_grpc_query_mock;
 use cosmwasm_std::{testing::mock_env, Coin, Decimal, Uint128};
 use std::collections::{HashMap, HashSet};
+use std::vec;
 
 use crate::state::{LOCKS_MAP_V2, USER_LOCKS, USER_LOCKS_FOR_CLAIM};
 
@@ -281,10 +283,9 @@ fn test_lock_split_flow_multiple_rounds() {
     assert_eq!(third_lock_voting_allowed, 3);
 }
 
-// TODO: Draft version of test
 #[test]
 fn test_merge_locks_flow() {
-    // 1. Instantiate contract
+    // Instantiate contract
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
@@ -321,7 +322,7 @@ fn test_merge_locks_flow() {
     let mut lock_ids = vec![];
     let mut lock_amounts = vec![];
 
-    // 2. In round 0, create 8 lockups (4x1mo, 4x3mo)
+    // In round 0, create 8 lockups (4x1mo, 4x3mo)
     let one_month = ONE_MONTH_IN_NANO_SECONDS;
     let three_months = 3 * ONE_MONTH_IN_NANO_SECONDS;
     let base_amount = Uint128::from(10000u128);
@@ -345,7 +346,7 @@ fn test_merge_locks_flow() {
         lock_amounts.push(amount);
     }
 
-    // 3. Create 2 proposals: 1mo and 3mo deployment_duration
+    // Create 2 proposals: 1mo and 3mo deployment_duration
     let proposal_info = get_message_info(&deps.api, user_address, &[]);
     let create_prop1 = execute(
         deps.as_mut(),
@@ -376,7 +377,7 @@ fn test_merge_locks_flow() {
     );
     assert!(create_prop2.is_ok());
 
-    // 4. Vote with 2 lockups for proposal 1, and 2 other for proposal 2
+    // Vote with 2 lockups for proposal 1, and 2 other for proposal 2
     let vote_info = get_message_info(&deps.api, user_address, &[]);
     let vote_res1 = execute(
         deps.as_mut(),
@@ -398,10 +399,10 @@ fn test_merge_locks_flow() {
     );
     assert!(vote_res1.is_ok());
 
-    // 5. Move to next round
+    // Move to next round
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
 
-    // 6. Create two new proposals (1mo, 3mo)
+    // Create two new proposals (1mo and 3mo deployment duration)
     let create_prop3 = execute(
         deps.as_mut(),
         env.clone(),
@@ -416,6 +417,7 @@ fn test_merge_locks_flow() {
         },
     );
     assert!(create_prop3.is_ok());
+
     let create_prop4 = execute(
         deps.as_mut(),
         env.clone(),
@@ -455,7 +457,7 @@ fn test_merge_locks_flow() {
     );
     assert!(refresh_res2.is_ok());
 
-    // 7. Use 2 lockups unused in round 0 to vote for two new proposals, separately
+    // Use 2 lockups unused in round 0 to vote for two new proposals, separately
     let vote_res2 = execute(
         deps.as_mut(),
         env.clone(),
@@ -476,7 +478,7 @@ fn test_merge_locks_flow() {
     );
     assert!(vote_res2.is_ok());
 
-    // 8. Merge all 8 lockups into new lockup (provide some IDs twice)
+    // Merge all 8 lockups into new lockup (provide some IDs twice)
     let mut merge_ids = lock_ids.clone();
     merge_ids.push(0);
     merge_ids.push(1);
@@ -491,7 +493,8 @@ fn test_merge_locks_flow() {
     );
     assert!(merge_res.is_ok());
 
-    // 9. Verify storages modified in merge_locks()
+    // Verification
+
     // The new lockup should have id 8
     let new_lock_id = 8u64;
     let new_lock = LOCKS_MAP_V2
@@ -531,7 +534,7 @@ fn test_merge_locks_flow() {
     }
 
     // For round 1, only lock ids 2 and 6 voted, but their votes should be removed since they were merged into new lockup.
-    // Vote for new should not be created since some of the merged lockups were not allowed to vote in round 1.
+    // Vote for new lock should not be created since some of the merged lockups were not allowed to vote in round 1.
     // Also, lock ids 2 and 6 voted for different proposals, so no vote for new lockup in round 1 for that reason as well.
     let round_id = 1;
     for lock_id in [lock_id_3, lock_id_7, new_lock_id] {
@@ -540,6 +543,108 @@ fn test_merge_locks_flow() {
             .unwrap();
         assert!(vote_r0.is_none());
     }
+}
+
+#[test]
+fn test_merge_locks_basic_validation() {
+    // Instantiate contract
+    let user_address_1 = "addr0000";
+    let user_address_2 = "addr0001";
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+        ]),
+    );
+    let (mut deps, env) = (
+        crate::testing_mocks::mock_dependencies(grpc_query),
+        mock_env(),
+    );
+    let info = get_message_info(&deps.api, user_address_1, &[]);
+    let mut instantiate_msg = get_default_instantiate_msg(&deps.api);
+    instantiate_msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
+    instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address_1)];
+    instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
+
+    // Setup validator for round 0
+    set_validator_infos_for_round(
+        &mut deps.storage,
+        0,
+        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
+    )
+    .unwrap();
+
+    let lock_id_1 = 0;
+    let lock_id_2 = 1;
+    let lock_id_3 = 2;
+
+    // In round 0, have 2 users create 3 lockups
+    let base_amount = Uint128::from(10000u128);
+
+    let user_funds = vec![
+        (user_address_1, Coin::new(base_amount.u128(), IBC_DENOM_1)),
+        (user_address_1, Coin::new(base_amount.u128(), IBC_DENOM_2)),
+        (user_address_2, Coin::new(base_amount.u128(), IBC_DENOM_1)),
+    ];
+
+    for (user_address, funds) in user_funds {
+        let lock_info = get_message_info(&deps.api, user_address, &[funds]);
+        let lock_res = execute(
+            deps.as_mut(),
+            env.clone(),
+            lock_info,
+            ExecuteMsg::LockTokens {
+                lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+                proof: None,
+            },
+        );
+        assert!(lock_res.is_ok());
+    }
+
+    let user1_info = get_message_info(&deps.api, user_address_1, &[]);
+
+    // Have user 1 try to merge only one lock
+    let merge_res = execute(
+        deps.as_mut(),
+        env.clone(),
+        user1_info.clone(),
+        ExecuteMsg::MergeLocks {
+            lock_ids: vec![lock_id_1],
+        },
+    );
+    assert!(merge_res.is_err());
+    assert!(merge_res
+        .unwrap_err()
+        .to_string()
+        .contains("Must specify at least two lock IDs to merge."));
+
+    // Have user 1 try to merge their two locks with different denoms
+    let merge_res = execute(
+        deps.as_mut(),
+        env.clone(),
+        user1_info.clone(),
+        ExecuteMsg::MergeLocks {
+            lock_ids: vec![lock_id_1, lock_id_2],
+        },
+    );
+    assert!(merge_res.is_err());
+    assert!(merge_res
+        .unwrap_err()
+        .to_string()
+        .contains("Cannot merge locks with different denoms."));
+
+    // Have user 1 try to merge one of the locks that belongs to  another user
+    let merge_res = execute(
+        deps.as_mut(),
+        env.clone(),
+        user1_info.clone(),
+        ExecuteMsg::MergeLocks {
+            lock_ids: vec![lock_id_1, lock_id_3],
+        },
+    );
+    assert!(merge_res.is_err());
+    assert!(merge_res.unwrap_err().to_string().contains("Unauthorized"));
 }
 
 fn verify_new_lock_expected_round_votes(
