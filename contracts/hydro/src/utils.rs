@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use cosmwasm_std::{
     Addr, Decimal, Deps, DepsMut, Env, Order, StdError, StdResult, Storage, Timestamp, Uint128,
 };
@@ -803,4 +805,42 @@ pub fn get_proposal(
     proposal_id: u64,
 ) -> StdResult<Proposal> {
     PROPOSAL_MAP.load(storage, (round_id, tranche_id, proposal_id))
+}
+
+pub struct LockVotingAllowedRound {
+    pub lock_id: u64,
+    pub tranche_id: u64,
+    pub voting_allowed_round: u64,
+}
+
+pub fn get_higest_voting_allowed_round(
+    deps: &Deps<NeutronQuery>,
+    tranche_id: u64,
+    lock_ids: &HashSet<u64>,
+) -> Result<Option<LockVotingAllowedRound>, ContractError> {
+    let mut highest_voting_allowed_round: Option<LockVotingAllowedRound> = None;
+
+    for lock_id in lock_ids {
+        if let Some(voting_allowed_round) =
+            VOTING_ALLOWED_ROUND.may_load(deps.storage, (tranche_id, *lock_id))?
+        {
+            if let Some(current_highest) = &highest_voting_allowed_round {
+                if voting_allowed_round > current_highest.voting_allowed_round {
+                    highest_voting_allowed_round = Some(LockVotingAllowedRound {
+                        lock_id: *lock_id,
+                        tranche_id,
+                        voting_allowed_round,
+                    });
+                }
+            } else {
+                highest_voting_allowed_round = Some(LockVotingAllowedRound {
+                    lock_id: *lock_id,
+                    tranche_id,
+                    voting_allowed_round,
+                });
+            }
+        }
+    }
+
+    Ok(highest_voting_allowed_round)
 }
