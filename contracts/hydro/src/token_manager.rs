@@ -115,6 +115,7 @@ pub enum TokenInfoProvider {
     #[serde(rename = "lsm")]
     LSM(TokenInfoProviderLSM),
     Derivative(TokenInfoProviderDerivative),
+    DTOKEN(TokenInfoProviderDrop),
 }
 
 impl TokenInfoProvider {
@@ -129,6 +130,7 @@ impl TokenInfoProvider {
             TokenInfoProvider::Derivative(provider) => {
                 provider.resolve_denom(deps, round_id, denom)
             }
+            TokenInfoProvider::DTOKEN(provider) => provider.resolve_denom(deps, round_id, denom),
         }
     }
 
@@ -145,6 +147,9 @@ impl TokenInfoProvider {
             TokenInfoProvider::Derivative(provider) => {
                 provider.get_token_group_ratio(deps, round_id, token_group_id)
             }
+            TokenInfoProvider::DTOKEN(provider) => {
+                provider.get_token_group_ratio(deps, round_id, token_group_id)
+            }
         }
     }
 
@@ -156,6 +161,9 @@ impl TokenInfoProvider {
         match self {
             TokenInfoProvider::LSM(provider) => provider.get_all_token_group_ratios(deps, round_id),
             TokenInfoProvider::Derivative(provider) => {
+                provider.get_all_token_group_ratios(deps, round_id)
+            }
+            TokenInfoProvider::DTOKEN(provider) => {
                 provider.get_all_token_group_ratios(deps, round_id)
             }
         }
@@ -322,6 +330,50 @@ impl TokenInfoProviderLSM {
     }
 }
 
+#[cw_serde]
+pub struct TokenInfoProviderDrop {
+    pub contract: String,
+    pub cache: HashMap<u64, DenomInfoResponse>,
+}
+
+impl TokenInfoProviderDrop {
+    pub fn resolve_denom(
+        &mut self,
+        deps: &Deps<NeutronQuery>,
+        round_id: u64,
+        denom: String,
+    ) -> StdResult<String> {
+        // Hardcoded Drop dToken denom
+        if denom
+            == "factory/neutron1k6hr0f83e7un2wjf29cspk7j69jrnskk65k3ek2nj9dztrlzpj6q00rtsa/udatom"
+        {
+            return Ok(denom);
+        }
+
+        // If needed, fallback to default validator resolution here later
+        Err(StdError::generic_err(format!(
+            "Unsupported denom: {}",
+            denom
+        )))
+    }
+    pub fn get_token_group_ratio(
+        &mut self,
+        deps: &Deps<NeutronQuery>,
+        round_id: u64,
+        token_group_id: String,
+    ) -> StdResult<Decimal> {
+        todo!()
+    }
+
+    pub fn get_all_token_group_ratios(
+        &mut self,
+        deps: &Deps<NeutronQuery>,
+        round_id: u64,
+    ) -> StdResult<HashMap<String, Decimal>> {
+        todo!()
+    }
+}
+
 // This function builds token info providers from the given list of instantiation messages.
 // Token info provider of LSM type will be saved into the store immediatelly, while for the
 // Contract type this function prepares SubMsgs that will instantiate the derivative token
@@ -470,6 +522,7 @@ pub fn token_manager_handle_submsg_reply(
 
             Ok(Response::default())
         }
+        TokenInfoProvider::DTOKEN(_) => todo!(),
     }
 }
 

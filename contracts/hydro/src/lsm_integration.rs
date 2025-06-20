@@ -91,7 +91,7 @@ pub fn get_validator_power_ratio_for_round(
         .power_ratio)
 }
 
-fn query_ibc_denom_trace(deps: &Deps<NeutronQuery>, denom: String) -> StdResult<DenomTrace> {
+pub fn query_ibc_denom_trace(deps: &Deps<NeutronQuery>, denom: String) -> StdResult<DenomTrace> {
     TransferQuerier::new(&deps.querier)
         .denom_trace(denom)
         .map_err(|err| StdError::generic_err(format!("Failed to obtain IBC denom trace: {}", err)))?

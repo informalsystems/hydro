@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use cosmwasm_std::{from_json, Attribute, SubMsg, SubMsgResult, WasmMsg};
+use cosmwasm_std::{from_json, Attribute, Decimal256, SubMsg, SubMsgResult, Uint256, WasmMsg};
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 #[allow(unused_imports)]
 use cosmwasm_std::{
@@ -8,7 +8,9 @@ use cosmwasm_std::{
     MessageInfo, Order, Reply, Response, StdError, StdResult, Storage, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
+use cw_orch::core::serde_json::json;
 use cw_utils::must_pay;
+use interface::drop_puppeteer::{DelegationsResponse, PuppeteerQueryMsg, QueryExtMsg};
 use neutron_sdk::bindings::msg::NeutronMsg;
 use neutron_sdk::bindings::query::NeutronQuery;
 use neutron_sdk::interchain_queries::v047::register_queries::new_register_staking_validators_query_msg;
@@ -20,7 +22,7 @@ use crate::gatekeeper::{
     build_gatekeeper_lock_tokens_msg, build_init_gatekeeper_msg, gatekeeper_handle_submsg_reply,
 };
 use crate::governance::{query_total_power_at_height, query_voting_power_at_height};
-use crate::lsm_integration::COSMOS_VALIDATOR_PREFIX;
+use crate::lsm_integration::{query_ibc_denom_trace, COSMOS_VALIDATOR_PREFIX};
 use crate::msg::{
     CollectionInfo, ExecuteMsg, InstantiateMsg, LiquidityDeployment, LockTokensProof,
     ProposalToLockups, ReplyPayload, TokenInfoProviderInstantiateMsg, TrancheInfo,
@@ -71,8 +73,8 @@ use crate::vote::{
     process_unvotes, process_votes, validate_proposals_and_locks_for_voting, ProcessUnvotesResult,
     VoteProcessingContext,
 };
-use interface::drop::ExecuteMsg as DropExecuteMsg;
-use interface::drop::QueryMsg as DropQueryMsg;
+use interface::drop_core::ExecuteMsg as DropExecuteMsg;
+use interface::drop_core::QueryMsg as DropQueryMsg;
 
 /// Contract name that is used for migration.
 pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -1737,7 +1739,7 @@ pub fn remove_token_info_provider(
 }
 
 // converts existing lockup (of lsm token) to dToken
-fn convert_lockup_to_dtoken(
+pub fn convert_lockup_to_dtoken(
     deps: DepsMut<NeutronQuery>,
     _env: Env,
     info: MessageInfo,
@@ -1897,7 +1899,7 @@ pub fn convert_lockup_to_dtoken_reply(
 
     // update lock entry with converted denom and amount
     let drop_info = DROP_TOKEN_INFO.load(deps.storage)?;
-    let mut lock_entry = get_owned_lock_entry(deps.storage, &sender, lock_id)?;
+    let mut lock_entry = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
     let new_funds = Coin {
         denom: drop_info.d_token_denom.to_string(),
         amount: issue_amount,
@@ -2207,9 +2209,9 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> Result<Binary
             token_id,
             include_expired,
         )?),
-        QueryMsg::SimulateDtokenAmounts { lock_ids, address } => to_json_binary(
-            &query_simulate_dtoken_amounts(&deps, &env, lock_ids, address)?,
-        ),
+        QueryMsg::SimulateDtokenAmounts { lock_ids, address } => {
+            to_json_binary(&query_simulate_dtoken_amounts(&deps, lock_ids, address)?)
+        }
     }?;
 
     Ok(binary)
@@ -2838,19 +2840,18 @@ pub fn query_icq_managers(deps: Deps<NeutronQuery>) -> StdResult<ICQManagersResp
 
 pub fn query_simulate_dtoken_amounts(
     deps: &Deps<NeutronQuery>,
-    env: &Env,
     lock_ids: Vec<u64>,
     address: String,
 ) -> StdResult<DtokenAmountsResponse> {
     let lock_ids_set: HashSet<u64> = lock_ids.into_iter().collect();
-    let lockups: Vec<LockEntryWithPower> = get_user_lockups_with_predicate(
+
+    let lockups = query_user_lockups(
         deps,
-        &env,
-        address,
+        deps.api.addr_validate(&address)?,
         |lock| lock_ids_set.contains(&lock.lock_id),
         0,
         lock_ids_set.len() as u32,
-    )?;
+    );
 
     let drop_info = DROP_TOKEN_INFO.load(deps.storage)?;
 
@@ -2858,19 +2859,51 @@ pub fn query_simulate_dtoken_amounts(
         .querier
         .query_wasm_smart(drop_info.address, &DropQueryMsg::ExchangeRate {})?;
 
+    let delegations_response = deps.querier.query_wasm_smart::<DelegationsResponse>(
+        drop_info.puppeteer_address,
+        &PuppeteerQueryMsg::Extension {
+            msg: QueryExtMsg::Delegations {},
+        },
+    )?;
+
     let mut result: Vec<DtokenAmountResponse> = Vec::new();
 
     for lockup in lockups {
-        let real_amount = Decimal::from_atomics(lockup.lock_entry.funds.amount, 0)
-            .map_err(|_| new_generic_error("Invalid fund amount".to_string()));
+        let denom_trace = query_ibc_denom_trace(&deps, lockup.funds.denom)?;
+        let base_denom_parts: Vec<&str> = denom_trace.base_denom.split("/").collect();
+        let validator = base_denom_parts[0].to_string();
 
-        let issue_amount = real_amount.unwrap() * (Decimal::one() / ratio);
+        let validator_info = delegations_response
+            .delegations
+            .delegations
+            .iter()
+            .find(|one| one.validator == validator)
+            .ok_or_else(|| {
+                StdError::generic_err(format!("validator info not found: {validator}"))
+            })?;
 
-        let issue_amount_uint = issue_amount.to_uint_floor();
+        let input_amount = Decimal::from_atomics(lockup.funds.amount, 0)
+            .map_err(|_| new_generic_error("Invalid fund amount".to_string()))
+            .unwrap();
+
+        let share = Decimal256::from_atomics(input_amount.atomics(), 0).unwrap();
+
+        let real_amount = Uint128::try_from(
+            share.checked_mul(validator_info.share_ratio)?.atomics()
+                / Uint256::from(10u128.pow(18)),
+        )?;
+
+        let decimal_real = Decimal::from_atomics(real_amount, 18)
+            .map_err(|_| new_generic_error("Invalid real_amount for Decimal".to_string()));
+
+        let decimal_issue_amount = (Decimal::one() / ratio) * decimal_real.unwrap();
+
+        let precision = Uint128::from(10u128.pow(18));
+        let int_part = decimal_issue_amount.atomics() / precision;
 
         result.push(DtokenAmountResponse {
-            lock_id: lockup.lock_entry.lock_id,
-            dtoken_amount: issue_amount_uint,
+            lock_id: lockup.lock_id,
+            dtoken_amount: Uint128::try_from(int_part).unwrap(),
         });
     }
 

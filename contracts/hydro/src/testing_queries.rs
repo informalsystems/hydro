@@ -9,9 +9,9 @@ use crate::contract::{
 use crate::msg::{InstantiateMsg, ProposalToLockups};
 use crate::query::VoteEntry;
 use crate::state::{
-    HeightRange, RoundLockPowerSchedule, ValidatorInfo, Vote, DROP_TOKEN, LOCKS_MAP_V2,
-    ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, USER_LOCKS,
-    VALIDATORS_INFO, VOTE_MAP_V2,
+    DropTokenInfo, HeightRange, RoundLockPowerSchedule, ValidatorInfo, Vote, DROP_TOKEN_INFO,
+    LOCKS_MAP_V2, ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS,
+    USER_LOCKS, VALIDATORS_INFO, VOTE_MAP_V2,
 };
 use crate::testing::{
     get_default_instantiate_msg, get_default_lsm_token_info_provider, get_message_info,
@@ -29,15 +29,19 @@ use crate::{
     msg::ExecuteMsg,
     state::LockEntryV2,
 };
+use cosmwasm_std::Decimal256;
+use cosmwasm_std::{
+    from_json, to_json_binary, Addr, ContractResult, Decimal, QuerierResult, StdError, StdResult,
+    SystemError, SystemResult, Timestamp, Uint128, WasmQuery,
+};
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
     Coin, Env, OwnedDeps,
 };
-use cosmwasm_std::{
-    to_json_binary, Addr, ContractResult, Decimal, QuerierResult, StdError, StdResult, SystemError,
-    SystemResult, Timestamp, Uint128, WasmQuery,
+use interface::drop_core::QueryMsg as DropQueryMsg;
+use interface::drop_puppeteer::{
+    Delegations, DelegationsResponse, DropDelegation, PuppeteerQueryMsg, QueryExtMsg,
 };
-use interface::drop::QueryMsg as DropQueryMsg;
 use neutron_sdk::bindings::query::NeutronQuery;
 
 pub type WasmQueryFunc = dyn Fn(&WasmQuery) -> QuerierResult;
@@ -1265,30 +1269,86 @@ fn simulate_dtoken_amounts() {
     assert!(res_lock_2.is_ok(), "failed to save lock");
 
     let drop_address = deps.api.addr_make("drop");
+    let puppeteer_address = deps.api.addr_make("puppeteer");
+    let d_token_denom =
+        "factory/neutron1k6hr0f83e7un2wjf29cspk7j69jrnskk65k3ek2nj9dztrlzpj6q00rtsa/udatom"
+            .to_string();
 
-    let core_contract = DROP_TOKEN.save(&mut deps.storage, &drop_address.to_string());
-    assert!(core_contract.is_ok(), "failed to save core contract");
+    let drop_token_info = DropTokenInfo {
+        address: drop_address,
+        d_token_denom,
+        puppeteer_address,
+    };
+
+    let drop_contract = DROP_TOKEN_INFO.save(&mut deps.storage, &drop_token_info);
+    assert!(drop_contract.is_ok(), "failed to save drop contract info");
 
     let current_ratio = Decimal::from_str("1.15").unwrap();
-    deps.querier.update_wasm(drop_contract_mock(current_ratio));
 
-    let res =
-        query_simulate_dtoken_amounts(&deps.as_ref(), &env, vec![1, 2], user_address.to_string());
+    let mock_puppeteer_response = DelegationsResponse {
+        delegations: Delegations {
+            delegations: vec![
+                DropDelegation {
+                    delegator: Addr::unchecked(
+                        "cosmos1srjdd7y6duuukmaenghucasqlycddcc65qdj34k6spq8pwk4h6ms7j4w4j",
+                    ),
+                    validator: "cosmosvaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcvrj90c".to_string(),
+                    amount: Coin {
+                        denom: "uatom".to_string(),
+                        amount: 965_817_282_32u128.into(),
+                    },
+                    share_ratio: Decimal256::from_str("0.999800011043535397").unwrap(),
+                },
+                DropDelegation {
+                    delegator: Addr::unchecked(
+                        "cosmos1srjdd7y6duuukmaenghucasqlycddcc65qdj34k6spq8pwk4h6ms7j4w4j",
+                    ),
+                    validator: "cosmosvaloper157v7tczs40axfgejp2m43kwuzqe0wsy0rv8puv".to_string(),
+                    amount: Coin {
+                        denom: "uatom".to_string(),
+                        amount: 706_769_074_698u128.into(),
+                    },
+                    share_ratio: Decimal256::from_str("1").unwrap(),
+                },
+            ],
+        },
+        remote_height: 26227986,
+        local_height: 27676281,
+        timestamp: Timestamp::from_nanos(1750217292399260448),
+    };
+    deps.querier
+        .update_wasm(drop_mock(current_ratio, mock_puppeteer_response));
+
+    let res = query_simulate_dtoken_amounts(&deps.as_ref(), vec![1, 2], user_address.to_string());
     assert!(res.is_ok());
     let res = res.unwrap();
     assert_eq!(res.dtokens_response.len(), 2);
     assert!(res.dtokens_response[0].dtoken_amount == Uint128::from(869u128));
     assert!(res.dtokens_response[1].dtoken_amount == Uint128::from(1739u128));
 }
-pub fn drop_contract_mock(current_ratio: Decimal) -> Box<WasmQueryFunc> {
+pub fn drop_mock(
+    current_ratio: Decimal,
+    puppeteer_response: DelegationsResponse,
+) -> Box<WasmQueryFunc> {
     Box::new(move |req| match req {
         WasmQuery::Smart {
             contract_addr: _,
             msg,
         } => {
-            if let Ok(DropQueryMsg::ExchangeRate {}) = cosmwasm_std::from_json(msg) {
+            // First try DropQueryMsg::ExchangeRate
+            if let Ok(DropQueryMsg::ExchangeRate {}) = from_json(msg) {
                 return SystemResult::Ok(ContractResult::Ok(
                     to_json_binary(&current_ratio).unwrap(),
+                ));
+            }
+
+            // Then try PuppeteerQueryMsg::Extension::Delegations
+            if let Ok(PuppeteerQueryMsg::Extension {
+                msg: QueryExtMsg::Delegations {},
+            }) = from_json(msg)
+            {
+                return SystemResult::Ok(ContractResult::Ok(
+                    to_json_binary(&puppeteer_response).unwrap(),
                 ));
             }
 
