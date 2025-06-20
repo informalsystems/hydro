@@ -59,12 +59,12 @@ use crate::token_manager::{
     token_manager_handle_submsg_reply, TokenManager,
 };
 use crate::utils::{
-    calculate_vote_power, get_current_user_voting_power, get_highest_known_height_for_round_id,
-    get_lock_time_weighted_shares, get_lock_vote, get_owned_lock_entry, get_proposal,
-    get_user_claimable_locks, load_constants_active_at_timestamp, load_current_constants,
-    run_on_each_transaction, scale_lockup_power, to_lockup_with_power,
-    to_lockup_with_tranche_infos, update_locked_tokens_info, validate_locked_tokens_caps,
-    verify_historical_data_availability,
+    calculate_vote_power, get_current_user_voting_power, get_higest_voting_allowed_round,
+    get_highest_known_height_for_round_id, get_lock_time_weighted_shares, get_lock_vote,
+    get_owned_lock_entry, get_proposal, get_user_claimable_locks,
+    load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
+    scale_lockup_power, to_lockup_with_power, to_lockup_with_tranche_infos,
+    update_locked_tokens_info, validate_locked_tokens_caps, verify_historical_data_availability,
 };
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
@@ -72,7 +72,7 @@ use crate::validators_icqs::{
 };
 use crate::vote::{
     process_unvotes, process_votes, validate_proposals_and_locks_for_voting, ProcessUnvotesResult,
-    VoteProcessingContext,
+    ProcessVotesResult, VoteProcessingContext,
 };
 use interface::drop_core::ExecuteMsg as DropExecuteMsg;
 use interface::drop_core::QueryMsg as DropQueryMsg;
@@ -713,7 +713,13 @@ fn refresh_single_lock(
     Ok((new_lock_end, old_lock_end))
 }
 
-// TODO: Docs
+// SplitLock(lock_id_to_split, amount):
+//     Check that the lock_id_to_split is owned by the sender
+//     Check the amount to split out (e.g. existing lock amount, new lock amount, remaining lock amount)
+//     Check if user has reached the maximum number of locks it can own
+//     Create a new lock entry with the specified amount and update the existing lock entry to reduce its amount
+//     Check if the splitted lock voted in previous rounds and insert 0-power votes for the same proposals for the new lock entry
+//     If the splitted lock was used for voting in current round, remove the existing vote and add two new votes
 fn split_lock(
     mut deps: DepsMut<NeutronQuery>,
     env: Env,
@@ -919,7 +925,10 @@ fn split_lock(
         .add_attribute("amount", amount.to_string()))
 }
 
-// TODO: Docs
+// MergeLocks(lock_ids):
+//     Validate lock_ids to merge: eliminate duplicates, check ownership, check if there are at least two locks, and all locks hold the same denom
+//     Sum up the amounts of all input locks, and save a new lock entry into the store; Remove the input locks from the store
+//     Remove any votes in the current round that were cast by the input locks and, if the conditions are met, insert a new vote for the new lock entry
 fn merge_locks(
     mut deps: DepsMut<NeutronQuery>,
     env: Env,
@@ -945,6 +954,10 @@ fn merge_locks(
     let mut lock_denoms: HashSet<String> = HashSet::new();
     let mut resulting_lock_amount = Uint128::zero();
 
+    // Iterate over all input locks and:
+    //      1. calulate the resulting lock amount
+    //      2. collect all the denoms to ensure they are the same
+    //      3. find the latest lock end time
     let new_lock_end = input_locks
         .iter()
         .map(|lock_entry| {
@@ -1016,26 +1029,30 @@ fn merge_locks(
 
     let current_round_id = compute_current_round_id(&env, constants)?;
 
-    let target_votes = HashMap::from_iter(
+    let unvoting_target_votes = HashMap::from_iter(
         input_locks
             .iter()
             .map(|lock_entry| (lock_entry.lock_id, None)),
     );
 
-    let mut token_manager = TokenManager::new(&deps.as_ref());
-
-    let lock_entries =
+    let voting_lock_entries =
         HashMap::from_iter([(resulting_lock_entry.lock_id, resulting_lock_entry.clone())]);
 
     let tranche_ids = TRANCHE_MAP
         .keys(deps.storage, None, None, Order::Ascending)
         .collect::<StdResult<Vec<u64>>>()?;
 
+    let mut token_manager = TokenManager::new(&deps.as_ref());
+
     for tranche_id in tranche_ids {
         // First run process_unvotes() in order to remove votes and voting allowed round
         // information originating from the current round votes.
-        let unvotes_result =
-            process_unvotes(deps.storage, current_round_id, tranche_id, &target_votes)?;
+        let unvotes_result = process_unvotes(
+            deps.storage,
+            current_round_id,
+            tranche_id,
+            &unvoting_target_votes,
+        )?;
 
         // After removing the current round votes, check if any of the input lockups shouldn't be allowed to
         // vote in the current round. If so, the resulting lockup will inherit the *highest* voting allowed round
@@ -1113,7 +1130,7 @@ fn merge_locks(
             current_round_id,
             tranche_id,
             &[votes],
-            &lock_entries,
+            &voting_lock_entries,
             unvotes_result,
         )?;
     }
@@ -1405,45 +1422,20 @@ fn vote(
 
     // Process unvotes first
     let unvotes_result = process_unvotes(deps.storage, round_id, tranche_id, &target_votes)?;
+    let removed_votes = unvotes_result.removed_votes.clone();
 
-    // Prepare context for voting
-    let context = VoteProcessingContext {
-        env: &env,
+    let mut token_manager = TokenManager::new(&deps.as_ref());
+    let votes_result = process_votes_and_apply_proposal_changes(
+        &mut deps,
+        &env,
+        &mut token_manager,
         constants,
         round_id,
         tranche_id,
-    };
-
-    let mut token_manager = TokenManager::new(&deps.as_ref());
-    // Process new votes
-    let votes_result = process_votes(
-        &mut deps,
-        &mut token_manager,
-        context,
         &proposals_votes,
         &lock_entries,
-        unvotes_result.locks_to_skip,
+        unvotes_result,
     )?;
-
-    let combined_power_changes =
-        combine_proposal_power_updates(unvotes_result.power_changes, votes_result.power_changes);
-
-    let unique_proposals_to_update: HashSet<u64> = combined_power_changes.keys().copied().collect();
-
-    // Apply combined proposal power changes from unvotes and votes
-    apply_proposal_changes(
-        &mut deps,
-        &mut token_manager,
-        round_id,
-        combined_power_changes,
-    )?;
-
-    // Update the proposal in the proposal map, as well as the props by score map, after all changes
-    // We can use update_proposal_and_props_by_score_maps as we already applied the proposal power changes
-    for proposal_id in unique_proposals_to_update {
-        let proposal = get_proposal(deps.storage, round_id, tranche_id, proposal_id)?;
-        update_proposal_and_props_by_score_maps(deps.storage, round_id, tranche_id, &proposal)?;
-    }
 
     // Build response
     let mut response = Response::new()
@@ -1451,7 +1443,7 @@ fn vote(
         .add_attribute("sender", info.sender.to_string());
 
     // Add attributes for old votes that were removed
-    for (lock_id, vote) in unvotes_result.removed_votes {
+    for (lock_id, vote) in removed_votes {
         response = response.add_attribute(
             format!("lock_id_{}_old_proposal_id", lock_id),
             vote.prop_id.to_string(),
@@ -3836,23 +3828,22 @@ pub fn can_lock_vote_for_proposal(
     Ok(lock_entry.lock_end >= power_required_round_end)
 }
 
-// TODO: Perhaps extract process_votes() from this function and try to use it in vote() as well. Good candidate for utils.
 #[allow(clippy::too_many_arguments)]
 fn process_votes_and_apply_proposal_changes(
     deps: &mut DepsMut<NeutronQuery>,
     env: &Env,
     token_manager: &mut TokenManager,
     constants: &Constants,
-    current_round_id: u64,
+    round_id: u64,
     tranche_id: u64,
     votes: &[ProposalToLockups],
     lock_entries: &HashMap<u64, LockEntryV2>,
     unvotes_result: ProcessUnvotesResult,
-) -> Result<(), ContractError> {
+) -> Result<ProcessVotesResult, ContractError> {
     let context = VoteProcessingContext {
         env,
         constants,
-        round_id: current_round_id,
+        round_id,
         tranche_id,
     };
 
@@ -3865,72 +3856,24 @@ fn process_votes_and_apply_proposal_changes(
         unvotes_result.locks_to_skip,
     )?;
 
-    let combined_power_changes =
-        combine_proposal_power_updates(unvotes_result.power_changes, votes_result.power_changes);
+    let combined_power_changes = combine_proposal_power_updates(
+        unvotes_result.power_changes,
+        votes_result.power_changes.clone(),
+    );
 
     let unique_proposals_to_update: HashSet<u64> = combined_power_changes.keys().copied().collect();
 
     // Apply combined proposal power changes from unvotes and votes
-    apply_proposal_changes(
-        deps,
-        token_manager,
-        current_round_id,
-        combined_power_changes,
-    )?;
+    apply_proposal_changes(deps, token_manager, round_id, combined_power_changes)?;
 
     // Update the proposal in the proposal map, as well as the props by score map, after all changes
     // We can use update_proposal_and_props_by_score_maps as we already applied the proposal power changes
     for proposal_id in unique_proposals_to_update {
-        let proposal =
-            PROPOSAL_MAP.load(deps.storage, (current_round_id, tranche_id, proposal_id))?;
-        update_proposal_and_props_by_score_maps(
-            deps.storage,
-            current_round_id,
-            tranche_id,
-            &proposal,
-        )?;
+        let proposal = PROPOSAL_MAP.load(deps.storage, (round_id, tranche_id, proposal_id))?;
+        update_proposal_and_props_by_score_maps(deps.storage, round_id, tranche_id, &proposal)?;
     }
 
-    Ok(())
-}
-
-pub struct LockVotingAllowedRound {
-    pub lock_id: u64,
-    pub tranche_id: u64,
-    pub voting_allowed_round: u64,
-}
-
-// TODO: Move to utils
-fn get_higest_voting_allowed_round(
-    deps: &Deps<NeutronQuery>,
-    tranche_id: u64,
-    lock_ids: &HashSet<u64>,
-) -> Result<Option<LockVotingAllowedRound>, ContractError> {
-    let mut highest_voting_allowed_round: Option<LockVotingAllowedRound> = None;
-
-    for lock_id in lock_ids {
-        if let Some(voting_allowed_round) =
-            VOTING_ALLOWED_ROUND.may_load(deps.storage, (tranche_id, *lock_id))?
-        {
-            if let Some(current_highest) = &highest_voting_allowed_round {
-                if voting_allowed_round > current_highest.voting_allowed_round {
-                    highest_voting_allowed_round = Some(LockVotingAllowedRound {
-                        lock_id: *lock_id,
-                        tranche_id,
-                        voting_allowed_round,
-                    });
-                }
-            } else {
-                highest_voting_allowed_round = Some(LockVotingAllowedRound {
-                    lock_id: *lock_id,
-                    tranche_id,
-                    voting_allowed_round,
-                });
-            }
-        }
-    }
-
-    Ok(highest_voting_allowed_round)
+    Ok(votes_result)
 }
 
 /// This function relies on PROPOSAL_TOTAL_MAP and SCALED_PROPOSAL_SHARES_MAP being
