@@ -55,7 +55,7 @@ The score of a proposal is the sum of the voting power of all users that voted f
 It was already mentioned that users can lock LSM shares.
 We need to give a bit of background to explain one particularity that this has for the Hydro contract.
 
-Namely, an LSM share represents one share of a validator, and thus a claim to a part of the underlying Atom of that validator.
+Namely, an LSM share represents one share of a validator, and thus a claim on a part of the underlying Atom of that validator.
 
 However, one LSM share does *not* represent one staked Atom directly. Instead, different validators have different ratios of share<>staked Atom (we call this the "power ratio"). This means that the Hydro contract needs to keep track of the power ratios of all validators that users can lock tokens from. Additionally, in the worst case we need to iterate over all the different validators that users hold tokens from to calculate the voting power of a user and the scores of proposals.
 
