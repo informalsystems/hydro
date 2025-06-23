@@ -847,6 +847,63 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Allows whitelisted admin to set the drop token info for lockup conversions.",
+      "type": "object",
+      "required": [
+        "set_drop_token_info"
+      ],
+      "properties": {
+        "set_drop_token_info": {
+          "type": "object",
+          "required": [
+            "core_address",
+            "d_token_denom",
+            "puppeteer_address"
+          ],
+          "properties": {
+            "core_address": {
+              "type": "string"
+            },
+            "d_token_denom": {
+              "type": "string"
+            },
+            "puppeteer_address": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Allows users to convert their lockups to dTokens. This action is only available if the drop token info is set.",
+      "type": "object",
+      "required": [
+        "convert_lockup_to_dtoken"
+      ],
+      "properties": {
+        "convert_lockup_to_dtoken": {
+          "type": "object",
+          "required": [
+            "lock_ids"
+          ],
+          "properties": {
+            "lock_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {

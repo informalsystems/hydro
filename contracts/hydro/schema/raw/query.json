@@ -1082,6 +1082,37 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Lists token_ids controlled by the contract.",
+      "type": "object",
+      "required": [
+        "simulate_dtoken_amounts"
+      ],
+      "properties": {
+        "simulate_dtoken_amounts": {
+          "type": "object",
+          "required": [
+            "address",
+            "lock_ids"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "lock_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ]
 }

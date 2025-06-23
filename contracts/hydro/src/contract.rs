@@ -1796,7 +1796,11 @@ fn set_drop_token_info(
         .add_attribute("sender", info.sender))
 }
 
-// converts existing lockup (of lsm token) to dToken
+// Converts existing lockup (of lsm token) to dToken
+// The user specifies one or several lockups in order to convert it on drop
+// Hydro contract exectutes Bond message/s to drop core contract
+// https://github.com/hadronlabs-org/drop-contracts/blob/bdbb1a7986b4448aff10db3baaa150d71527e815/contracts/core/src/contract.rs#L1002-L1002
+// Drop core contract mints appropriate amount of dtoken given lsm shares sent
 pub fn convert_lockup_to_dtoken(
     deps: DepsMut<NeutronQuery>,
     _env: Env,
@@ -1849,6 +1853,12 @@ pub fn convert_lockup_to_dtoken(
         .add_attribute("action", "convert_lockup_to_dtoken"))
 }
 
+// For each reply the following happens: (reply_id is lock_id)
+// 1. If there are any votes with lock_id - unvote
+// 2. Apply proposal power changes
+// 3. Update lock entry with converted denom and amount
+// 4. Re-vote with the new lock entry if there were previous votes
+// 5. Apply proposal power changes
 pub fn convert_lockup_to_dtoken_reply(
     mut deps: DepsMut<NeutronQuery>,
     env: Env,
