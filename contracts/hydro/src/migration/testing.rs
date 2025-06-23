@@ -1,123 +1,223 @@
-use std::str::FromStr;
-
-use cosmwasm_std::{testing::mock_env, Decimal, Order, Timestamp};
-use cw_storage_plus::Map;
+use cosmwasm_std::{testing::mock_env, Addr, Decimal, Order};
 
 use crate::{
-    migration::v3_2_0::migrate_v3_2_0_to_v3_3_0,
-    state::{Constants, RoundLockPowerSchedule, CONSTANTS},
+    migration::v3_3_0::migrate_v3_3_0_to_v3_4_0,
+    state::{Vote, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VOTE_MAP_V1},
     testing_mocks::{mock_dependencies, no_op_grpc_query_mock},
 };
 
-use super::v3_2_0::ConstantsV3_2_0;
-
 #[test]
-fn migrate_test() {
-    const OLD_CONSTANTS: Map<u64, ConstantsV3_2_0> = Map::new("constants");
+fn test_migrate_v3_3_0_to_v3_4_0_comprehensive_scenarios() {
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
 
-    let (mut deps, mut env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
-    env.block.time = Timestamp::from_nanos(1742482800000000000);
+    let alice = Addr::unchecked("alice");
+    let bob = Addr::unchecked("bob");
+    let charlie = Addr::unchecked("charlie");
 
-    // Create first constants configuration for timestamp 1
-    let first_round_timestamp = 1730851140000000000;
-    let first_constants_config = ConstantsV3_2_0 {
-        round_length: 2628000000000000,
-        lock_epoch_length: 2628000000000000,
-        first_round_start: Timestamp::from_nanos(first_round_timestamp),
-        max_locked_tokens: 40000000000,
-        known_users_cap: 0,
-        paused: false,
-        max_deployment_duration: 3,
-        round_lock_power_schedule: RoundLockPowerSchedule::new(vec![
-            (1, Decimal::from_str("1").unwrap()),
-            (3, Decimal::from_str("2").unwrap()),
-        ]),
+    // Current lock ownership (USER_LOCKS)
+    // Alice currently owns: [1, 2]
+    // Bob currently owns: [3] (used to own lock 5, voted with it in round 1, then unlocked)
+    // Charlie owns nothing currently (used to own lock 7, never voted with it, later unlocked)
+    USER_LOCKS
+        .save(
+            &mut deps.storage,
+            alice.clone(),
+            &vec![1, 2],
+            env.block.height,
+        )
+        .unwrap();
+    USER_LOCKS
+        .save(&mut deps.storage, bob.clone(), &vec![3], env.block.height)
+        .unwrap();
+
+    let vote = Vote {
+        prop_id: 101,
+        time_weighted_shares: ("1".to_string(), Decimal::from_ratio(1000u128, 1u128)),
     };
 
-    // Create second constants configuration for timestamp 2
-    let second_timestamp = 1741190135000000000;
-    let second_constants_config = ConstantsV3_2_0 {
-        max_locked_tokens: 50000000000,
-        ..first_constants_config.clone()
-    };
+    // Historical voting in VOTE_MAP_V1 (round 1)
+    // Alice voted with locks 1, 2 (still owns them)
+    VOTE_MAP_V1
+        .save(&mut deps.storage, ((1, 1), alice.clone(), 1), &vote)
+        .unwrap();
+    VOTE_MAP_V1
+        .save(&mut deps.storage, ((1, 1), alice.clone(), 2), &vote)
+        .unwrap();
 
-    // Store original constants entries by timestamp
-    let original_constants_entries: Vec<(u64, ConstantsV3_2_0)> = vec![
-        (first_round_timestamp, first_constants_config),
-        (second_timestamp, second_constants_config),
-    ];
+    // Bob voted with lock 5 (currently also owns lock 3, but unlocked 5)
+    VOTE_MAP_V1
+        .save(&mut deps.storage, ((1, 1), bob.clone(), 5), &vote)
+        .unwrap();
 
-    // Save original constants to storage
-    for (timestamp, constants) in &original_constants_entries {
-        OLD_CONSTANTS
-            .save(&mut deps.storage, *timestamp, constants)
-            .unwrap();
-    }
+    // Charlie never voted, and unlocked the lock 7
+
+    // This migration happens right after VOTE_MAP_V2 migration (v3.3.0)
+    // No lock has been transferred yet between participants
+    // There is no entry in VOTE_MAP_V2
 
     // Perform migration
-    let migration_result = migrate_v3_2_0_to_v3_3_0(&mut deps.as_mut());
+    let migration_result = migrate_v3_3_0_to_v3_4_0(&mut deps.as_mut());
     assert!(migration_result.is_ok());
 
-    // Retrieve migrated constants
-    let migrated_constants_entries = CONSTANTS
+    // Verify USER_LOCKS_FOR_CLAIM results
+    let alice_claim_locks = USER_LOCKS_FOR_CLAIM
+        .load(&deps.storage, alice.clone())
+        .unwrap();
+
+    let bob_claim_locks = USER_LOCKS_FOR_CLAIM
+        .load(&deps.storage, bob.clone())
+        .unwrap();
+
+    // Charlie should not be able to claim for any lock:
+    // - Locks he currently owns: []
+    // - Locks he voted with historically: []
+    // Total: []
+    let charlie_claim_locks = USER_LOCKS_FOR_CLAIM.load(&deps.storage, charlie.clone());
+    assert!(charlie_claim_locks.is_err());
+
+    assert!(charlie_claim_locks
+        .unwrap_err()
+        .to_string()
+        .contains("not found"));
+
+    // Convert to sets for easier comparison
+    let alice_set: std::collections::HashSet<u64> = alice_claim_locks.into_iter().collect();
+    let bob_set: std::collections::HashSet<u64> = bob_claim_locks.into_iter().collect();
+
+    // Alice should be able to claim for:
+    // - Locks she currently owns: [1, 2]
+    // - Locks she voted with: [1]
+    // Total: [1, 2]
+    let expected_alice: std::collections::HashSet<u64> = vec![1, 2].into_iter().collect();
+    assert_eq!(alice_set, expected_alice);
+
+    // Bob should be able to claim for:
+    // - Locks he currently owns: [3]
+    // - Locks he voted with: [5]
+    // Total: [3, 5] (he cannot claim for lock 5 as he transferred it)
+    let expected_bob: std::collections::HashSet<u64> = vec![3, 5].into_iter().collect();
+    assert_eq!(bob_set, expected_bob);
+}
+
+#[test]
+fn test_migrate_v3_3_0_to_v3_4_0_no_duplicates() {
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+
+    let alice = Addr::unchecked("alice");
+
+    // Alice currently owns lock 1 and also voted with it in multiple rounds
+    USER_LOCKS
+        .save(&mut deps.storage, alice.clone(), &vec![1], env.block.height)
+        .unwrap();
+
+    let vote = Vote {
+        prop_id: 101,
+        time_weighted_shares: ("1".to_string(), Decimal::from_ratio(1000u128, 1u128)),
+    };
+
+    // Alice voted with the same lock in multiple rounds
+    // Round 1 on tranches 1 and 2
+    VOTE_MAP_V1
+        .save(&mut deps.storage, ((1, 1), alice.clone(), 1), &vote)
+        .unwrap();
+    VOTE_MAP_V1
+        .save(&mut deps.storage, ((1, 2), alice.clone(), 1), &vote)
+        .unwrap();
+    // Round 2 on tranche on
+    VOTE_MAP_V1
+        .save(&mut deps.storage, ((2, 1), alice.clone(), 1), &vote)
+        .unwrap();
+
+    // Perform migration
+    let migration_result = migrate_v3_3_0_to_v3_4_0(&mut deps.as_mut());
+    assert!(migration_result.is_ok());
+
+    // Alice should have lock 1 only once (no duplicates despite multiple votes)
+    let alice_claim_locks = USER_LOCKS_FOR_CLAIM
+        .load(&deps.storage, alice.clone())
+        .unwrap();
+
+    assert_eq!(alice_claim_locks.len(), 1);
+    assert!(alice_claim_locks.contains(&1));
+}
+
+#[test]
+fn test_migrate_v3_3_0_to_v3_4_0_only_current_locks() {
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+
+    let alice = Addr::unchecked("alice");
+
+    // Alice has current locks 1, 2 and 3, but no historical votes
+    USER_LOCKS
+        .save(
+            &mut deps.storage,
+            alice.clone(),
+            &vec![1, 2, 3],
+            env.block.height,
+        )
+        .unwrap();
+
+    // Perform migration
+    let migration_result = migrate_v3_3_0_to_v3_4_0(&mut deps.as_mut());
+    assert!(migration_result.is_ok());
+
+    // Alice should be able to claim for her current locks
+    let alice_claim_locks = USER_LOCKS_FOR_CLAIM
+        .load(&deps.storage, alice.clone())
+        .unwrap();
+
+    let expected: std::collections::HashSet<u64> = vec![1, 2, 3].into_iter().collect();
+    let actual: std::collections::HashSet<u64> = alice_claim_locks.into_iter().collect();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn test_migrate_v3_3_0_to_v3_4_0_only_historical_votes() {
+    let (mut deps, _env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+
+    let alice = Addr::unchecked("alice");
+
+    // Alice has no current locks but has historical votes
+    let vote = Vote {
+        prop_id: 101,
+        time_weighted_shares: ("1".to_string(), Decimal::from_ratio(1000u128, 1u128)),
+    };
+
+    // Historical votes with locks 1 and 2
+    VOTE_MAP_V1
+        .save(&mut deps.storage, ((1, 1), alice.clone(), 1), &vote)
+        .unwrap();
+    VOTE_MAP_V1
+        .save(&mut deps.storage, ((1, 1), alice.clone(), 2), &vote)
+        .unwrap();
+
+    // Perform migration
+    let migration_result = migrate_v3_3_0_to_v3_4_0(&mut deps.as_mut());
+    assert!(migration_result.is_ok());
+
+    // Alice should be able to claim for her historical voting locks
+    let alice_claim_locks = USER_LOCKS_FOR_CLAIM
+        .load(&deps.storage, alice.clone())
+        .unwrap();
+
+    let expected: std::collections::HashSet<u64> = vec![1, 2].into_iter().collect();
+    let actual: std::collections::HashSet<u64> = alice_claim_locks.into_iter().collect();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn test_migrate_v3_3_0_to_v3_4_0_empty_state() {
+    let (mut deps, _env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+
+    // No existing data - migration should succeed without error
+    let migration_result = migrate_v3_3_0_to_v3_4_0(&mut deps.as_mut());
+    assert!(migration_result.is_ok());
+
+    // Verify no entries in USER_LOCKS_FOR_CLAIM
+    let entries: Vec<_> = USER_LOCKS_FOR_CLAIM
         .range(&deps.storage, None, None, Order::Ascending)
-        .filter_map(|result| result.ok())
-        .collect::<Vec<(u64, Constants)>>();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
 
-    // Verify same number of entries
-    assert_eq!(
-        original_constants_entries.len(),
-        migrated_constants_entries.len()
-    );
-
-    // Compare each entry before and after migration
-    for (index, (original_timestamp, original_constants)) in
-        original_constants_entries.iter().enumerate()
-    {
-        let (migrated_timestamp, migrated_constants) = &migrated_constants_entries[index];
-
-        // Verify timestamp remains the same
-        assert_eq!(*original_timestamp, *migrated_timestamp);
-
-        // Verify all original fields are preserved
-        assert_eq!(
-            original_constants.round_length,
-            migrated_constants.round_length
-        );
-        assert_eq!(
-            original_constants.lock_epoch_length,
-            migrated_constants.lock_epoch_length
-        );
-        assert_eq!(
-            original_constants.first_round_start,
-            migrated_constants.first_round_start
-        );
-        assert_eq!(
-            original_constants.max_locked_tokens,
-            migrated_constants.max_locked_tokens
-        );
-        assert_eq!(
-            original_constants.known_users_cap,
-            migrated_constants.known_users_cap
-        );
-        assert_eq!(original_constants.paused, migrated_constants.paused);
-        assert_eq!(
-            original_constants.max_deployment_duration,
-            migrated_constants.max_deployment_duration
-        );
-        assert_eq!(
-            original_constants.round_lock_power_schedule,
-            migrated_constants.round_lock_power_schedule
-        );
-
-        // Verify new collection info field is added correctly
-        assert_eq!(
-            "Hydro Lockups",
-            migrated_constants.cw721_collection_info.name
-        );
-        assert_eq!(
-            "hydro-lockups",
-            migrated_constants.cw721_collection_info.symbol
-        );
-    }
+    assert!(entries.is_empty());
 }

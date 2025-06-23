@@ -8,7 +8,7 @@ use crate::{
     },
     state::{
         Approval, LockEntryV2, LOCKS_MAP_V2, LOCK_ID, NFT_APPROVALS, NFT_OPERATORS,
-        TOKEN_INFO_PROVIDERS, TRANCHE_MAP, USER_LOCKS,
+        TOKEN_INFO_PROVIDERS, TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM,
     },
     token_manager::{TokenInfoProvider, TokenManager, LSM_TOKEN_INFO_PROVIDER_ID},
     utils::{load_current_constants, to_lockup_with_power, to_lockup_with_tranche_infos},
@@ -51,6 +51,8 @@ pub enum Error {
     LSMNotRevokable,
     #[error("lsm token info provider is not lsm")]
     LSMTokenInfoProviderNotLSM,
+    #[error("cannot transfer tokens to oneself")]
+    ForbiddenTransferToOneself,
 }
 
 /// This transfers ownership of the token to recipient account.
@@ -142,17 +144,9 @@ fn transfer(
     let old_owner_addr = lock_entry.owner;
     let new_owner_addr = recipient;
 
-    // Remove the lock entry from the old owner
-    USER_LOCKS.update(
-        deps.storage,
-        old_owner_addr,
-        env.block.height,
-        |current_locks| {
-            let mut current_locks = current_locks.expect("old owner must have at least 1 lock");
-            current_locks.retain(|lock_id| lock_id != &lock_entry.lock_id);
-            StdResult::Ok(current_locks)
-        },
-    )?;
+    if old_owner_addr == new_owner_addr {
+        return Err(Error::ForbiddenTransferToOneself.into());
+    }
 
     // Update the owner of the lockup
     LOCKS_MAP_V2.update(
@@ -166,10 +160,28 @@ fn transfer(
         },
     )?;
 
+    // Remove the lock entry from the old owner
+    USER_LOCKS.update(
+        deps.storage,
+        old_owner_addr.clone(),
+        env.block.height,
+        |current_locks| {
+            let mut current_locks = current_locks.expect("old owner must have at least 1 lock");
+            current_locks.retain(|lock_id| lock_id != &lock_entry.lock_id);
+            StdResult::Ok(current_locks)
+        },
+    )?;
+
+    USER_LOCKS_FOR_CLAIM.update(deps.storage, old_owner_addr.clone(), |current_locks| {
+        let mut current_locks = current_locks.expect("old owner must have at least 1 lock");
+        current_locks.retain(|lock_id| lock_id != &lock_entry.lock_id);
+        StdResult::Ok(current_locks)
+    })?;
+
     // Add the lock entry to the new owner
     USER_LOCKS.update(
         deps.storage,
-        new_owner_addr,
+        new_owner_addr.clone(),
         env.block.height,
         |current_locks| {
             let mut locks = current_locks.unwrap_or_default();
@@ -177,6 +189,12 @@ fn transfer(
             StdResult::Ok(locks)
         },
     )?;
+
+    USER_LOCKS_FOR_CLAIM.update(deps.storage, new_owner_addr.clone(), |current_locks| {
+        let mut locks = current_locks.unwrap_or_default();
+        locks.push(lock_entry.lock_id);
+        StdResult::Ok(locks)
+    })?;
 
     Ok(())
 }

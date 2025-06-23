@@ -6,7 +6,7 @@ use crate::contract::{
     query_all_votes, query_all_votes_round_tranche, query_simulate_dtoken_amounts,
     query_specific_user_lockups, query_specific_user_lockups_with_tranche_infos, query_user_votes,
 };
-use crate::msg::{InstantiateMsg, ProposalToLockups, TokenInfoProviderInstantiateMsg};
+use crate::msg::{InstantiateMsg, ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo};
 use crate::query::VoteEntry;
 use crate::state::{
     DropTokenInfo, HeightRange, RoundLockPowerSchedule, ValidatorInfo, Vote, DROP_TOKEN_INFO,
@@ -14,9 +14,9 @@ use crate::state::{
     USER_LOCKS, VALIDATORS_INFO, VOTE_MAP_V2,
 };
 use crate::testing::{
-    get_default_instantiate_msg, get_default_lsm_token_info_provider, get_message_info,
-    set_default_validator_for_rounds, IBC_DENOM_1, ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1,
-    VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_3,
+    get_address_as_str, get_default_instantiate_msg, get_default_lsm_token_info_provider,
+    get_message_info, set_default_validator_for_rounds, IBC_DENOM_1, ONE_MONTH_IN_NANO_SECONDS,
+    VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_3,
 };
 use crate::testing_lsm_integration::set_validator_power_ratio;
 use crate::testing_mocks::{
@@ -1175,6 +1175,317 @@ fn get_user_voting_power(
 
     res.unwrap().voting_power
 }
+#[test]
+fn query_lock_votes_history_test() {
+    let user_address = "addr0000";
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[]);
+
+    let mut instantiate_msg = get_default_instantiate_msg(&deps.api);
+    instantiate_msg.round_length = ONE_MONTH_IN_NANO_SECONDS; // Set the round length to 1 month, to facilitate the tests when we advance 1 round
+    instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address)];
+    instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
+
+    set_default_validator_for_rounds(deps.as_mut(), 0, 2);
+
+    // Create some test locks
+    let lock_funds = vec![Coin {
+        denom: IBC_DENOM_1.to_string(),
+        amount: Uint128::from(1000u128),
+    }];
+
+    // Create message infos beforehand to avoid borrowing issues
+    let lock_info = get_message_info(&deps.api, user_address, &lock_funds);
+    let proposal_info = get_message_info(&deps.api, user_address, &[]);
+    let vote_info = get_message_info(&deps.api, user_address, &[]);
+
+    // Create additional tranche (default instantiation creates tranche ID 1)
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        proposal_info.clone(),
+        ExecuteMsg::AddTranche {
+            tranche: TrancheInfo {
+                name: "Tranche 2".to_string(),
+                metadata: "Second tranche".to_string(),
+            },
+        },
+    )
+    .unwrap();
+
+    // We advance 1 nano second before locking, so we have correct voting power
+    env.block.time = env.block.time.plus_nanos(1);
+
+    // Lock tokens (creates lock_id 0)
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        lock_info.clone(),
+        ExecuteMsg::LockTokens {
+            lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS, // 1500 VP at round 0, 1250 VP at round 1
+            proof: None,
+        },
+    )
+    .unwrap();
+
+    // Lock more tokens (creates lock_id 1)
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        lock_info.clone(),
+        ExecuteMsg::LockTokens {
+            lock_duration: 2 * ONE_MONTH_IN_NANO_SECONDS, // 1250 VP at round 0, 1000 VP at round 1
+            proof: None,
+        },
+    )
+    .unwrap();
+
+    // Create some proposals
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        proposal_info.clone(),
+        ExecuteMsg::CreateProposal {
+            round_id: None,
+            tranche_id: 1,
+            title: "Test Proposal 1".to_string(),
+            description: "First test proposal".to_string(),
+            deployment_duration: 1,
+            minimum_atom_liquidity_request: Uint128::from(100u128),
+        },
+    )
+    .unwrap();
+
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        proposal_info.clone(),
+        ExecuteMsg::CreateProposal {
+            round_id: None,
+            tranche_id: 2,
+            title: "Test Proposal 2".to_string(),
+            description: "Second test proposal".to_string(),
+            deployment_duration: 1,
+            minimum_atom_liquidity_request: Uint128::from(200u128),
+        },
+    )
+    .unwrap();
+
+    // Vote with lock_id 0 for proposal 0 in tranche 1
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        vote_info.clone(),
+        ExecuteMsg::Vote {
+            tranche_id: 1,
+            proposals_votes: vec![ProposalToLockups {
+                proposal_id: 0,
+                lock_ids: vec![0],
+            }],
+        },
+    )
+    .unwrap();
+
+    // Vote with lock_id 1 for proposal 1 in tranche 2
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        vote_info.clone(),
+        ExecuteMsg::Vote {
+            tranche_id: 2,
+            proposals_votes: vec![ProposalToLockups {
+                proposal_id: 1,
+                lock_ids: vec![1],
+            }],
+        },
+    )
+    .unwrap();
+
+    // Advance to next round to create more voting history
+    let constants = load_current_constants(&deps.as_ref(), &env).unwrap();
+    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
+    let current_round_id = compute_current_round_id(&env, &constants).unwrap();
+    assert_eq!(current_round_id, 1);
+
+    set_default_validator_for_rounds(deps.as_mut(), 1, 2);
+
+    // Create another proposal in current round (ID 1)
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        proposal_info.clone(),
+        ExecuteMsg::CreateProposal {
+            round_id: None,
+            tranche_id: 1,
+            title: "Test Proposal 3".to_string(),
+            description: "Third test proposal".to_string(),
+            deployment_duration: 1,
+            minimum_atom_liquidity_request: Uint128::from(100u128),
+        },
+    )
+    .unwrap();
+
+    // Vote with lock_id 0 again in round 1
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        vote_info.clone(),
+        ExecuteMsg::Vote {
+            tranche_id: 1,
+            proposals_votes: vec![ProposalToLockups {
+                proposal_id: 2,
+                lock_ids: vec![0],
+            }],
+        },
+    )
+    .unwrap();
+
+    // Test: Query lock votes history for lock_id 0 (should have votes in rounds 0 and 1)
+    let res = crate::contract::query_lock_votes_history(
+        deps.as_ref(),
+        env.clone(),
+        0, // lock_id
+        None,
+        None,
+        None, // no filters
+    )
+    .unwrap();
+
+    // Should have 2 votes (round 0 and round 1, both in tranche 1, both for proposal 0)
+    println!("{:?}", res.vote_history);
+    assert_eq!(res.vote_history.len(), 2);
+
+    // Check first vote (round 0) - VP 1500
+    let vote1 = &res.vote_history[0];
+    assert_eq!(vote1.round_id, 0);
+    assert_eq!(vote1.tranche_id, 1);
+    assert_eq!(vote1.proposal_id, 0);
+    assert_eq!(vote1.vote_power, Decimal::from_ratio(1500u128, 1u128));
+
+    // Check second vote (round 1) - VP 1250
+    let vote2 = &res.vote_history[1];
+    assert_eq!(vote2.round_id, 1);
+    assert_eq!(vote2.tranche_id, 1);
+    assert_eq!(vote2.proposal_id, 2);
+    assert_eq!(vote2.vote_power, Decimal::from_ratio(1250u128, 1u128));
+
+    // Test: Query lock votes history for lock_id 1 (should have vote only in round 0)
+    let res = crate::contract::query_lock_votes_history(
+        deps.as_ref(),
+        env.clone(),
+        1, // lock_id
+        None,
+        None,
+        None, // no filters
+    )
+    .unwrap();
+
+    // Should have 1 vote (round 0, tranche 2, proposal 1)
+    assert_eq!(res.vote_history.len(), 1);
+    let vote = &res.vote_history[0];
+    assert_eq!(vote.round_id, 0);
+    assert_eq!(vote.tranche_id, 2);
+    assert_eq!(vote.proposal_id, 1);
+    assert!(vote.vote_power > Decimal::zero());
+
+    // Test: Query with round filter (only round 0)
+    let res = crate::contract::query_lock_votes_history(
+        deps.as_ref(),
+        env.clone(),
+        0,       // lock_id
+        Some(0), // start_from_round_id
+        Some(0), // stop_at_round_id (inclusive)
+        None,    // no tranche filter
+    )
+    .unwrap();
+
+    // Should have 1 vote (only round 0)
+    assert_eq!(res.vote_history.len(), 1);
+    assert_eq!(res.vote_history[0].round_id, 0);
+
+    // Test: Query with tranche filter (only tranche 1)
+    let res = crate::contract::query_lock_votes_history(
+        deps.as_ref(),
+        env.clone(),
+        0, // lock_id
+        None,
+        None,    // no round filters
+        Some(1), // tranche_id filter
+    )
+    .unwrap();
+
+    // Should have 2 votes (both in tranche 1)
+    assert_eq!(res.vote_history.len(), 2);
+    for vote in &res.vote_history {
+        assert_eq!(vote.tranche_id, 1);
+    }
+
+    // Test: Query for lock 2
+    let res = crate::contract::query_lock_votes_history(
+        deps.as_ref(),
+        env.clone(),
+        1, // lock_id
+        None,
+        None, // no round filters
+        None, // tranche_id filter (lock 1 never voted in tranche 1)
+    )
+    .unwrap();
+
+    // Should have 1 vote (tranche ID 2)
+    assert_eq!(res.vote_history.len(), 1);
+    assert_eq!(res.vote_history[0].round_id, 0);
+    assert_eq!(res.vote_history[0].tranche_id, 2);
+
+    // Test: Query with tranche filter for lock that didn't vote in that tranche
+    let res = crate::contract::query_lock_votes_history(
+        deps.as_ref(),
+        env.clone(),
+        1, // lock_id
+        None,
+        None,    // no round filters
+        Some(1), // tranche_id filter (lock 1 never voted in tranche 1)
+    )
+    .unwrap();
+
+    // Should have 0 votes
+    assert_eq!(res.vote_history.len(), 0);
+
+    // Test: Query non-existent lock
+    let res = crate::contract::query_lock_votes_history(
+        deps.as_ref(),
+        env.clone(),
+        999, // non-existent lock_id
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    // Should have 0 votes
+    assert_eq!(res.vote_history.len(), 0);
+
+    // Test: Invalid round range (start > end)
+    let res = crate::contract::query_lock_votes_history(
+        deps.as_ref(),
+        env.clone(),
+        0,       // lock_id
+        Some(2), // start_from_round_id
+        Some(1), // stop_at_round_id (smaller than start)
+        None,
+    );
+
+    // Should return error
+    assert!(res.is_err());
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .contains("start_round (2) must be less than or equal to end_round (1)"));
+}
+
 #[test]
 fn simulate_dtoken_amounts() {
     let grpc_query = denom_trace_grpc_query_mock(

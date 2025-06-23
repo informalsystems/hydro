@@ -42,9 +42,10 @@ pub enum QueryMsg {
         user_address: String,
         round_id: u64,
         tranche_id: u64,
-        start_from: u32,
-        limit: u32,
     },
+
+    #[returns(OutstandingLockupClaimableCoinsResponse)]
+    OutstandingLockupClaimableCoins { lock_id: u64 },
 }
 
 #[cw_serde]
@@ -79,4 +80,9 @@ pub struct RoundTributesResponse {
 #[cw_serde]
 pub struct OutstandingTributeClaimsResponse {
     pub claims: Vec<TributeClaim>,
+}
+
+#[cw_serde]
+pub struct OutstandingLockupClaimableCoinsResponse {
+    pub coins: Vec<Coin>,
 }

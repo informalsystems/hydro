@@ -369,5 +369,9 @@ pub struct Approval {
 /// Stored as (granter, operator), giving operator full control over granter's NFTs.
 /// NOTE: granter is the owner, so operator has control only for NFTs owned by granter
 pub const NFT_OPERATORS: Map<(Addr, Addr), Expiration> = Map::new("nft_operators");
+// Maps users to the lock IDs they can claim tributes for (either they are current owner,
+// or last owner before lock was removed)
+// USER_LOCKS_FOR_CLAIM: key(user_address) -> Vec<lock_ids>
+pub const USER_LOCKS_FOR_CLAIM: Map<Addr, Vec<u64>> = Map::new("user_locks_for_claim");
 
 pub const DROP_SENDERS: Map<u64, Addr> = Map::new("reply_senders");

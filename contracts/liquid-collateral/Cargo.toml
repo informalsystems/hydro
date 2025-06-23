@@ -1,0 +1,38 @@
+[package]
+name = "liquid-collateral"
+version = "0.1.0"
+edition = "2021"
+authors = ["Marko Juric", "Philip Offtermatt", "Jehan Tremback"]
+
+exclude = [
+  # Those files are rust-optimizer artifacts. You might want to commit them for convenience but they should not be part of the source code publication.
+  "contract.wasm",
+  "hash.txt",
+]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+library = []
+
+[dependencies]
+serde = { version = "1.0.202", default-features = false, features = ["derive"] }
+cosmwasm-std = { version = "1.5.0"}
+cosmwasm-schema = { workspace = true }
+cw-storage-plus = "1.1.0"
+thiserror = "1.0.50"
+osmosis-std = "0.25.0"
+serde_json = "1.0.0"
+schemars = "0.8"
+bigdecimal = "0.3" 
+num-bigint = "0.4"
+num-traits = "0.2"
+once_cell = "1.17.1"
+[dev-dependencies]
+cosmwasm-schema = { workspace = true }
+proptest = { workspace = true }
+osmosis-test-tube = "25.0.0"
+anyhow = "1.0.75" 
+prost = "0.12.6"
+prost-derive = "0.9"

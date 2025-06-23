@@ -272,6 +272,20 @@ export type QueryMsg = {
     tranche_id: number;
   };
 } | {
+  user_voted_locks: {
+    proposal_id?: number | null;
+    round_id: number;
+    tranche_id: number;
+    user_address: string;
+  };
+} | {
+  lock_votes_history: {
+    lock_id: number;
+    start_from_round_id?: number | null;
+    stop_at_round_id?: number | null;
+    tranche_id?: number | null;
+  };
+} | {
   all_votes: {
     limit: number;
     start_from: number;
@@ -526,6 +540,15 @@ export interface LiquidityDeployment {
   total_rounds: number;
   tranche_id: number;
 }
+export interface LockVotesHistoryResponse {
+  vote_history: LockVotesHistoryEntry[];
+}
+export interface LockVotesHistoryEntry {
+  proposal_id: number;
+  round_id: number;
+  tranche_id: number;
+  vote_power: Decimal;
+}
 export interface NumTokensResponse {
   count: number;
 }
@@ -599,6 +622,13 @@ export interface Tranche {
   id: number;
   metadata: string;
   name: string;
+}
+export interface UserVotedLocksResponse {
+  voted_locks: [number, VotedLockInfo[]][];
+}
+export interface VotedLockInfo {
+  lock_id: number;
+  vote_power: Decimal;
 }
 export interface UserVotesResponse {
   votes: VoteWithPower[];

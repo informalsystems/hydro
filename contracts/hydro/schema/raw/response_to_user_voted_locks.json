@@ -38,7 +38,7 @@
       "type": "object",
       "required": [
         "lock_id",
-        "power"
+        "vote_power"
       ],
       "properties": {
         "lock_id": {
@@ -46,7 +46,7 @@
           "format": "uint64",
           "minimum": 0.0
         },
-        "power": {
+        "vote_power": {
           "$ref": "#/definitions/Decimal"
         }
       },
