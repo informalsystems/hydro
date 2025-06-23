@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, to_json_vec, Addr, BankMsg, Binary, Coin, Decimal,
     Deps, DepsMut, Env, MessageInfo, Reply, Response, StdError, StdResult, Storage, SubMsg,
@@ -20,6 +18,7 @@ use neutron_sdk::sudo::msg::SudoMsg;
 use neutron_sdk::NeutronResult;
 use prost::Message;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, HydroExecuteMsg, InstantiateMsg};

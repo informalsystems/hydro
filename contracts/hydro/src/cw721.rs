@@ -134,7 +134,7 @@ fn transfer(
     }
 
     // Error out if the lockup denom is LSM. This is temporary until we allow LSM lockups to be transferred
-    if is_denom_lsm(&deps, lock_entry.funds.denom)? {
+    if is_denom_lsm(&deps.as_ref(), lock_entry.funds.denom)? {
         return Err(Error::LSMNotTransferrable.into());
     }
 
@@ -239,7 +239,7 @@ pub fn handle_execute_approve(
     }
 
     // Error out if the lockup denom is LSM. This is temporary until we allow LSM lockups to be transferred
-    if is_denom_lsm(&deps, lock_entry.funds.denom)? {
+    if is_denom_lsm(&deps.as_ref(), lock_entry.funds.denom)? {
         return Err(Error::LSMNotApprovable.into());
     }
 
@@ -287,7 +287,7 @@ pub fn handle_execute_revoke(
     }
 
     // Error out if the lockup denom is LSM. This is temporary until we allow LSM lockups to be transferred
-    if is_denom_lsm(&deps, lock_entry.funds.denom)? {
+    if is_denom_lsm(&deps.as_ref(), lock_entry.funds.denom)? {
         return Err(Error::LSMNotRevokable.into());
     }
 
@@ -384,6 +384,8 @@ pub fn query_owner_of(
 
 /// Return an approval of spender about the given token_id.
 /// If include_expired is set (to true), show expired approval in the results, otherwise, ignore them.
+///
+/// It returns an error if there is no Approval for the token / spender
 pub fn query_approval(
     deps: Deps<NeutronQuery>,
     env: Env,
@@ -621,10 +623,22 @@ pub fn query_all_tokens(
     // Order::Ascending returns ordered keys, thanks to big-endian storage of u64 keys
     // see https://github.com/CosmWasm/cw-storage-plus/blob/main/src/int_key.rs
     let tokens: Vec<String> = LOCKS_MAP_V2
-        .keys(deps.storage, start_bound, None, Order::Ascending)
+        .range(deps.storage, start_bound, None, Order::Ascending)
+        .filter_map(|res| {
+            match res {
+                Ok((lock_id, lock_entry)) => {
+                    // Filter out LSM-based lockups
+                    match is_denom_lsm(&deps, lock_entry.funds.denom) {
+                        Ok(true) => None,                           // Skip LSM tokens
+                        Ok(false) => Some(Ok(lock_id.to_string())), // Include non-LSM tokens
+                        Err(e) => Some(Err(e)),                     // Propagate errors
+                    }
+                }
+                Err(e) => Some(Err(e.into())), // Propagate storage errors
+            }
+        })
         .take(limit)
-        .map(|res| res.map(|lock_id| lock_id.to_string()))
-        .collect::<StdResult<_>>()?;
+        .collect::<Result<Vec<_>, ContractError>>()?;
 
     Ok(TokensResponse { tokens })
 }
@@ -681,7 +695,7 @@ fn can_user_create_approval(
 }
 
 /// Returns true if the denom is LSM, false otherwise.
-fn is_denom_lsm(deps: &DepsMut<'_, NeutronQuery>, denom: String) -> Result<bool, ContractError> {
+fn is_denom_lsm(deps: &Deps<NeutronQuery>, denom: String) -> Result<bool, ContractError> {
     let lsm_info_provider =
         TOKEN_INFO_PROVIDERS.may_load(deps.storage, LSM_TOKEN_INFO_PROVIDER_ID.to_string())?;
 
@@ -694,7 +708,7 @@ fn is_denom_lsm(deps: &DepsMut<'_, NeutronQuery>, denom: String) -> Result<bool,
             }
         };
 
-        if lsm_info_provider.is_lsm_denom(&deps.as_ref(), denom) {
+        if lsm_info_provider.is_lsm_denom(deps, denom) {
             return Ok(true);
         }
     }
