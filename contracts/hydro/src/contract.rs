@@ -22,7 +22,7 @@ use crate::gatekeeper::{
     build_gatekeeper_lock_tokens_msg, build_init_gatekeeper_msg, gatekeeper_handle_submsg_reply,
 };
 use crate::governance::{query_total_power_at_height, query_voting_power_at_height};
-use crate::lsm_integration::{query_ibc_denom_trace, COSMOS_VALIDATOR_PREFIX};
+use crate::lsm_integration::{query_ibc_denom_trace, COSMOS_VALIDATOR_PREFIX, TRANSFER_PORT};
 use crate::msg::{
     CollectionInfo, ExecuteMsg, InstantiateMsg, LiquidityDeployment, LockTokensProof,
     ProposalToLockups, ReplyPayload, TokenInfoProviderInstantiateMsg, TrancheInfo,
@@ -46,11 +46,11 @@ use crate::score_keeper::{
     remove_token_group_shares_from_proposal, TokenGroupRatioChange,
 };
 use crate::state::{
-    Constants, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche, ValidatorInfo, Vote,
-    VoteWithPower, CONSTANTS, DROP_SENDERS, DROP_TOKEN_INFO, GATEKEEPER, ICQ_MANAGERS,
-    LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE,
-    PROP_ID, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP,
-    USER_LOCKS, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
+    Constants, DropTokenInfo, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche,
+    ValidatorInfo, Vote, VoteWithPower, CONSTANTS, DROP_SENDERS, DROP_TOKEN_INFO, GATEKEEPER,
+    ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCK_ID, PROPOSAL_MAP,
+    PROPS_BY_SCORE, PROP_ID, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID,
+    TRANCHE_MAP, USER_LOCKS, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
     VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1, VOTE_MAP_V2, VOTING_ALLOWED_ROUND, WHITELIST,
     WHITELIST_ADMINS,
 };
@@ -357,6 +357,18 @@ pub fn execute(
         ExecuteMsg::RevokeAll { operator } => {
             cw721::handle_execute_revoke_all(deps, env, info, operator)
         }
+        ExecuteMsg::SetDropTokenInfo {
+            core_address,
+            d_token_denom,
+            puppeteer_address,
+        } => set_drop_token_info(
+            deps,
+            env,
+            info,
+            core_address,
+            d_token_denom,
+            puppeteer_address,
+        ),
         ExecuteMsg::ConvertLockupToDtoken { lock_ids } => {
             convert_lockup_to_dtoken(deps, env, info, lock_ids)
         }
@@ -1738,6 +1750,36 @@ pub fn remove_token_info_provider(
         .add_attribute("provider_id", provider_id))
 }
 
+// Inserts or updates the drop info needed for conversion of lockups to dTokens
+// Validate that the sender is a whitelist admin
+// Sets the address of the drop core contract, the dToken denom, and the puppeteer address.
+fn set_drop_token_info(
+    deps: DepsMut<'_, NeutronQuery>,
+    _env: Env,
+    info: MessageInfo,
+    core_address: String,
+    d_token_denom: String,
+    puppeteer_address: String,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
+
+    if !whitelist_admins.contains(&info.sender) {
+        return Err(ContractError::Unauthorized);
+    }
+
+    let drop_token_info = DropTokenInfo {
+        address: deps.api.addr_validate(&core_address)?,
+        d_token_denom,
+        puppeteer_address: deps.api.addr_validate(&puppeteer_address)?,
+    };
+
+    DROP_TOKEN_INFO.save(deps.storage, &drop_token_info)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "set_drop_token_info")
+        .add_attribute("sender", info.sender))
+}
+
 // converts existing lockup (of lsm token) to dToken
 pub fn convert_lockup_to_dtoken(
     deps: DepsMut<NeutronQuery>,
@@ -1939,21 +1981,16 @@ pub fn convert_lockup_to_dtoken_reply(
                 unvotes_result.locks_to_skip.clone(),
             )?;
 
-            let combined_power_changes = combine_proposal_power_updates(
-                unvotes_result.power_changes.clone(),
-                votes_result.power_changes,
-            );
-
             let unique_proposals_to_update: HashSet<u64> =
-                combined_power_changes.keys().copied().collect();
+                votes_result.power_changes.keys().copied().collect();
 
             let mut token_manager = TokenManager::new(&deps.as_ref());
-            // Apply combined proposal power changes from unvotes and votes
+            // Apply power changes from votes
             apply_proposal_changes(
                 &mut deps,
                 &mut token_manager,
                 current_round_id,
-                combined_power_changes,
+                votes_result.power_changes,
             )?;
 
             // Update the proposal in the proposal map, as well as the props by score map, after all changes
@@ -2870,6 +2907,10 @@ pub fn query_simulate_dtoken_amounts(
 
     for lockup in lockups {
         let denom_trace = query_ibc_denom_trace(&deps, lockup.funds.denom)?;
+        let path_parts: Vec<&str> = denom_trace.path.split("/").collect();
+        if path_parts.len() != 2 || path_parts[0] != TRANSFER_PORT || path_parts[1] != "channel-1" {
+            return Err(StdError::generic_err("Invalid IBC denom path".to_string()));
+        }
         let base_denom_parts: Vec<&str> = denom_trace.base_denom.split("/").collect();
         let validator = base_denom_parts[0].to_string();
 
