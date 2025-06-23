@@ -1954,6 +1954,135 @@ fn test_query_all_tokens() {
 }
 
 #[test]
+fn test_query_all_tokens_filters_lsm() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                ST_ATOM_ON_NEUTRON.to_string(),
+                ST_ATOM_ON_STRIDE.to_string(),
+            ),
+        ]),
+    );
+
+    // Setup initial state
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+
+    let owner1 = "owner1";
+    let owner1_addr = deps.api.addr_make(owner1);
+    let owner2 = "owner2";
+    let owner2_addr = deps.api.addr_make(owner2);
+    let info = get_message_info(&deps.api, owner1, &[]);
+
+    // Proper contract initialization
+    let msg = get_default_instantiate_msg(&deps.api);
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+
+    // Setup ST_ATOM token info provider (non-LSM)
+    let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
+    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+
+    // Set up validators for LSM rounds
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+
+    // Create first non-LSM lock (owner1, ST_ATOM) - should appear in results
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let lock_info1 = get_message_info(
+        &deps.api,
+        owner1_addr.as_ref(),
+        &[Coin::new(1000u64, ST_ATOM_ON_NEUTRON.to_string())],
+    );
+    let lock_res1 = execute(deps.as_mut(), env.clone(), lock_info1, lock_msg.clone());
+    assert!(lock_res1.is_ok(), "Failed to create first non-LSM lock");
+
+    // Create first LSM lock (owner1, IBC_DENOM_1) - should NOT appear in results
+    let lock_info2 = get_message_info(
+        &deps.api,
+        owner1_addr.as_ref(),
+        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+    );
+    let lock_res2 = execute(deps.as_mut(), env.clone(), lock_info2, lock_msg.clone());
+    assert!(lock_res2.is_ok(), "Failed to create first LSM lock");
+
+    // Create second non-LSM lock (owner2, ST_ATOM) - should appear in results
+    let lock_info3 = get_message_info(
+        &deps.api,
+        owner2_addr.as_ref(),
+        &[Coin::new(1000u64, ST_ATOM_ON_NEUTRON.to_string())],
+    );
+    let lock_res3 = execute(deps.as_mut(), env.clone(), lock_info3, lock_msg.clone());
+    assert!(lock_res3.is_ok(), "Failed to create second non-LSM lock");
+
+    // Create second LSM lock (owner2, IBC_DENOM_1) - should NOT appear in results
+    let lock_info4 = get_message_info(
+        &deps.api,
+        owner2_addr.as_ref(),
+        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+    );
+    let lock_res4 = execute(deps.as_mut(), env.clone(), lock_info4, lock_msg);
+    assert!(lock_res4.is_ok(), "Failed to create second LSM lock");
+
+    // Query all tokens - should only return non-LSM tokens (IDs 0 and 2)
+    let query_msg = QueryMsg::AllTokens {
+        start_after: None,
+        limit: None,
+    };
+    let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(query_res.is_ok(), "Failed to query all tokens");
+    let tokens: TokensResponse = from_json(query_res.unwrap()).unwrap();
+
+    // Should only have 2 tokens (the non-LSM ones)
+    assert_eq!(tokens.tokens.len(), 2);
+    assert_eq!(tokens.tokens[0], "0"); // First non-LSM lock
+    assert_eq!(tokens.tokens[1], "2"); // Second non-LSM lock
+                                       // Note: tokens "1" and "3" (LSM locks) should be filtered out
+
+    // Test with limit
+    let query_msg = QueryMsg::AllTokens {
+        start_after: None,
+        limit: Some(1),
+    };
+    let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(query_res.is_ok(), "Failed to query tokens with limit");
+    let tokens: TokensResponse = from_json(query_res.unwrap()).unwrap();
+
+    assert_eq!(tokens.tokens.len(), 1);
+    assert_eq!(tokens.tokens[0], "0");
+
+    // Test with start_after
+    let query_msg = QueryMsg::AllTokens {
+        start_after: Some("0".to_string()),
+        limit: None,
+    };
+    let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(query_res.is_ok(), "Failed to query tokens with start_after");
+    let tokens: TokensResponse = from_json(query_res.unwrap()).unwrap();
+
+    assert_eq!(tokens.tokens.len(), 1);
+    assert_eq!(tokens.tokens[0], "2"); // Should skip "0" and "1" (LSM), return "2"
+
+    // Test with both start_after and limit
+    let query_msg = QueryMsg::AllTokens {
+        start_after: Some("0".to_string()),
+        limit: Some(1),
+    };
+    let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(
+        query_res.is_ok(),
+        "Failed to query tokens with start_after and limit"
+    );
+    let tokens: TokensResponse = from_json(query_res.unwrap()).unwrap();
+
+    assert_eq!(tokens.tokens.len(), 1);
+    assert_eq!(tokens.tokens[0], "2");
+}
+
+#[test]
 fn test_query_all_operators() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
