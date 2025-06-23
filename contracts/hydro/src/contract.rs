@@ -8,7 +8,6 @@ use cosmwasm_std::{
     MessageInfo, Order, Reply, Response, StdError, StdResult, Storage, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
-use cw_orch::core::serde_json::json;
 use cw_utils::must_pay;
 use interface::drop_puppeteer::{DelegationsResponse, PuppeteerQueryMsg, QueryExtMsg};
 use neutron_sdk::bindings::msg::NeutronMsg;
@@ -3102,7 +3101,7 @@ pub fn query_simulate_dtoken_amounts(
     let mut result: Vec<DtokenAmountResponse> = Vec::new();
 
     for lockup in lockups {
-        let denom_trace = query_ibc_denom_trace(&deps, lockup.funds.denom)?;
+        let denom_trace = query_ibc_denom_trace(deps, lockup.funds.denom)?;
         let path_parts: Vec<&str> = denom_trace.path.split("/").collect();
         if path_parts.len() != 2 || path_parts[0] != TRANSFER_PORT || path_parts[1] != "channel-1" {
             return Err(StdError::generic_err("Invalid IBC denom path".to_string()));
@@ -3140,7 +3139,7 @@ pub fn query_simulate_dtoken_amounts(
 
         result.push(DtokenAmountResponse {
             lock_id: lockup.lock_id,
-            dtoken_amount: Uint128::try_from(int_part).unwrap(),
+            dtoken_amount: int_part,
         });
     }
 

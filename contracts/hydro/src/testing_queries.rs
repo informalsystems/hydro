@@ -6,7 +6,7 @@ use crate::contract::{
     query_all_votes, query_all_votes_round_tranche, query_simulate_dtoken_amounts,
     query_specific_user_lockups, query_specific_user_lockups_with_tranche_infos, query_user_votes,
 };
-use crate::msg::{InstantiateMsg, ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo};
+use crate::msg::{ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo};
 use crate::query::VoteEntry;
 use crate::state::{
     DropTokenInfo, HeightRange, RoundLockPowerSchedule, ValidatorInfo, Vote, DROP_TOKEN_INFO,
@@ -1494,7 +1494,7 @@ fn simulate_dtoken_amounts() {
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let user_address = deps.api.addr_make("addr0000");
-    let info = get_message_info(&deps.api, &user_address.to_string(), &[]);
+    let info = get_message_info(&deps.api, user_address.as_ref(), &[]);
 
     let mut instantiate_msg: crate::msg::InstantiateMsg = get_default_instantiate_msg(&deps.api);
     instantiate_msg.token_info_providers[0] = TokenInfoProviderInstantiateMsg::LSM {
@@ -1515,7 +1515,7 @@ fn simulate_dtoken_amounts() {
     let first_lockup_amount: u128 = 1000;
     let info = get_message_info(
         &deps.api,
-        &user_address.to_string(),
+        user_address.as_ref(),
         &[Coin::new(first_lockup_amount, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
@@ -1546,7 +1546,7 @@ fn simulate_dtoken_amounts() {
     let second_lockup_amount: u128 = 2000;
     let info = get_message_info(
         &deps.api,
-        &user_address.to_string(),
+        user_address.as_ref(),
         &[Coin::new(second_lockup_amount, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
@@ -1612,7 +1612,7 @@ fn simulate_dtoken_amounts() {
                     validator: "cosmosvaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcvrj90c".to_string(),
                     amount: Coin {
                         denom: "uatom".to_string(),
-                        amount: 965_817_282_32u128.into(),
+                        amount: 96_581_728_232u128.into(),
                     },
                     share_ratio: Decimal256::from_str("0.999800011043535397").unwrap(),
                 },

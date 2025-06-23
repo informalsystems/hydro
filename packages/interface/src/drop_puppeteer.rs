@@ -1,4 +1,4 @@
-use cosmwasm_schema::{cw_serde, serde::Deserialize};
+use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Decimal256, Timestamp};
 
 #[cw_serde]

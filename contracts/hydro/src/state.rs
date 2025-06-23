@@ -88,6 +88,7 @@ pub const TOKEN_INFO_PROVIDERS: Map<String, TokenInfoProvider> = Map::new("token
 pub const GATEKEEPER: Item<String> = Item::new("gatekeeper");
 #[cw_serde]
 pub struct DropTokenInfo {
+    // The core drop address
     pub address: Addr,
     pub d_token_denom: String,
     pub puppeteer_address: Addr,
