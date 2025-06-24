@@ -1,14 +1,40 @@
-use cosmwasm_std::{testing::mock_env, Addr, Decimal, Order};
+use std::str::FromStr;
+
+use cosmwasm_std::{testing::mock_env, Addr, Decimal, Order, Storage};
+use cw_storage_plus::Map;
 
 use crate::{
-    migration::v3_3_0::migrate_v3_3_0_to_v3_4_0,
-    state::{Vote, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VOTE_MAP_V1},
+    migration::{v3_2_0::ConstantsV3_2_0, v3_4_1::migrate_v3_2_0_to_v3_4_1},
+    state::{RoundLockPowerSchedule, Vote, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VOTE_MAP_V1},
     testing_mocks::{mock_dependencies, no_op_grpc_query_mock},
 };
 
+fn insert_old_constants(storage: &mut dyn Storage) {
+    const OLD_CONSTANTS: Map<u64, ConstantsV3_2_0> = Map::new("constants");
+
+    let timestamp = 1730851140000000000;
+    let constants = ConstantsV3_2_0 {
+        round_length: 100,
+        lock_epoch_length: 10,
+        first_round_start: mock_env().block.time,
+        max_locked_tokens: 1_000_000u128,
+        known_users_cap: 10_000u128,
+        paused: false,
+        max_deployment_duration: 3600,
+        round_lock_power_schedule: RoundLockPowerSchedule::new(vec![
+            (1, Decimal::from_str("1.0").unwrap()),
+            (2, Decimal::from_str("1.25").unwrap()),
+            (3, Decimal::from_str("1.5").unwrap()),
+        ]),
+    };
+
+    OLD_CONSTANTS.save(storage, timestamp, &constants).unwrap();
+}
+
 #[test]
-fn test_migrate_v3_3_0_to_v3_4_0_comprehensive_scenarios() {
+fn test_migrate_v3_2_0_to_v3_4_1_comprehensive_scenarios() {
     let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    insert_old_constants(&mut deps.storage);
 
     let alice = Addr::unchecked("alice");
     let bob = Addr::unchecked("bob");
@@ -56,7 +82,7 @@ fn test_migrate_v3_3_0_to_v3_4_0_comprehensive_scenarios() {
     // There is no entry in VOTE_MAP_V2
 
     // Perform migration
-    let migration_result = migrate_v3_3_0_to_v3_4_0(&mut deps.as_mut());
+    let migration_result = migrate_v3_2_0_to_v3_4_1(&mut deps.as_mut());
     assert!(migration_result.is_ok());
 
     // Verify USER_LOCKS_FOR_CLAIM results
@@ -100,8 +126,9 @@ fn test_migrate_v3_3_0_to_v3_4_0_comprehensive_scenarios() {
 }
 
 #[test]
-fn test_migrate_v3_3_0_to_v3_4_0_no_duplicates() {
+fn test_migrate_v3_2_0_to_v3_4_1_no_duplicates() {
     let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    insert_old_constants(&mut deps.storage);
 
     let alice = Addr::unchecked("alice");
 
@@ -129,7 +156,7 @@ fn test_migrate_v3_3_0_to_v3_4_0_no_duplicates() {
         .unwrap();
 
     // Perform migration
-    let migration_result = migrate_v3_3_0_to_v3_4_0(&mut deps.as_mut());
+    let migration_result = migrate_v3_2_0_to_v3_4_1(&mut deps.as_mut());
     assert!(migration_result.is_ok());
 
     // Alice should have lock 1 only once (no duplicates despite multiple votes)
@@ -142,8 +169,9 @@ fn test_migrate_v3_3_0_to_v3_4_0_no_duplicates() {
 }
 
 #[test]
-fn test_migrate_v3_3_0_to_v3_4_0_only_current_locks() {
+fn test_migrate_v3_2_0_to_v3_4_1_only_current_locks() {
     let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    insert_old_constants(&mut deps.storage);
 
     let alice = Addr::unchecked("alice");
 
@@ -158,7 +186,7 @@ fn test_migrate_v3_3_0_to_v3_4_0_only_current_locks() {
         .unwrap();
 
     // Perform migration
-    let migration_result = migrate_v3_3_0_to_v3_4_0(&mut deps.as_mut());
+    let migration_result = migrate_v3_2_0_to_v3_4_1(&mut deps.as_mut());
     assert!(migration_result.is_ok());
 
     // Alice should be able to claim for her current locks
@@ -172,8 +200,9 @@ fn test_migrate_v3_3_0_to_v3_4_0_only_current_locks() {
 }
 
 #[test]
-fn test_migrate_v3_3_0_to_v3_4_0_only_historical_votes() {
+fn test_migrate_v3_2_0_to_v3_4_1_only_historical_votes() {
     let (mut deps, _env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    insert_old_constants(&mut deps.storage);
 
     let alice = Addr::unchecked("alice");
 
@@ -192,7 +221,7 @@ fn test_migrate_v3_3_0_to_v3_4_0_only_historical_votes() {
         .unwrap();
 
     // Perform migration
-    let migration_result = migrate_v3_3_0_to_v3_4_0(&mut deps.as_mut());
+    let migration_result = migrate_v3_2_0_to_v3_4_1(&mut deps.as_mut());
     assert!(migration_result.is_ok());
 
     // Alice should be able to claim for her historical voting locks
@@ -206,11 +235,12 @@ fn test_migrate_v3_3_0_to_v3_4_0_only_historical_votes() {
 }
 
 #[test]
-fn test_migrate_v3_3_0_to_v3_4_0_empty_state() {
+fn test_migrate_v3_2_0_to_v3_4_1_empty_state() {
     let (mut deps, _env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    insert_old_constants(&mut deps.storage);
 
     // No existing data - migration should succeed without error
-    let migration_result = migrate_v3_3_0_to_v3_4_0(&mut deps.as_mut());
+    let migration_result = migrate_v3_2_0_to_v3_4_1(&mut deps.as_mut());
     assert!(migration_result.is_ok());
 
     // Verify no entries in USER_LOCKS_FOR_CLAIM

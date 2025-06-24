@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v3.4.1
+
+Date: June 24th, 2025
+
+- Fixed contracts migration issue from version v3.4.0
+
 ## v3.4.0
 
 Date: June 11th, 2025
