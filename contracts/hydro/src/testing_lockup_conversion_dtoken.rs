@@ -42,7 +42,7 @@ fn convert_lockup_to_dtoken_test() {
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let user_address = deps.api.addr_make("addr0000");
-    let info = get_message_info(&deps.api, user_address.as_ref(), &[]);
+    let info = get_message_info(&deps.api, "addr0000", &[]);
 
     let mut instantiate_msg: crate::msg::InstantiateMsg = get_default_instantiate_msg(&deps.api);
     instantiate_msg.token_info_providers[0] = TokenInfoProviderInstantiateMsg::LSM {
@@ -64,7 +64,7 @@ fn convert_lockup_to_dtoken_test() {
     let first_lockup_amount: u128 = 1000;
     let info = get_message_info(
         &deps.api,
-        user_address.as_ref(),
+        "addr0000",
         &[Coin::new(first_lockup_amount, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
@@ -99,7 +99,7 @@ fn convert_lockup_to_dtoken_test() {
     let first_lockup_amount: u128 = 1000;
     let info = get_message_info(
         &deps.api,
-        user_address.as_ref(),
+        "addr0000",
         &[Coin::new(first_lockup_amount, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
@@ -113,7 +113,7 @@ fn convert_lockup_to_dtoken_test() {
     let second_lockup_amount: u128 = 2000;
     let info = get_message_info(
         &deps.api,
-        user_address.as_ref(),
+        "addr0000",
         &[Coin::new(second_lockup_amount, IBC_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
@@ -210,7 +210,7 @@ fn convert_lockup_to_dtoken_test() {
     let res = execute(deps.as_mut(), env.clone(), info_prop.clone(), vote_msg);
     assert!(res.is_ok());
 
-    let info = get_message_info(&deps.api, user_address.as_ref(), &[]);
+    let info = get_message_info(&deps.api, "addr0000", &[]);
 
     let res = convert_lockup_to_dtoken(deps.as_mut(), env, info, vec![1, 2]).unwrap();
     assert_eq!(res.messages.len(), 2);

@@ -1822,6 +1822,10 @@ pub fn convert_lockup_to_dtoken(
     let mut submsgs = vec![];
 
     for lockup in lockups {
+        // Sender needs to be the owner of the lockups
+        if lockup.owner != info.sender {
+            return Err(ContractError::Unauthorized);
+        }
         // Check if the lockup is already converted to dToken
         if lockup.funds.denom == drop_info.d_token_denom {
             return Err(ContractError::Std(StdError::generic_err(format!(
