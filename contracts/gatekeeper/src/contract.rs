@@ -31,9 +31,13 @@ pub fn instantiate(
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-    let config = Config {
-        hydro_contract: info.sender.clone(),
+
+    let hydro_contract = match msg.hydro_contract {
+        Some(hydro_contract) => deps.api.addr_validate(&hydro_contract)?,
+        None => info.sender.clone(),
     };
+
+    let config = Config { hydro_contract };
 
     CONFIG.save(deps.storage, &config)?;
     STAGE_ID.save(deps.storage, &0)?;
