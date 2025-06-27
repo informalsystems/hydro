@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## v3.4.2
+
+Date: June 27th, 2025
+
+### BUG_FIXES
+
+- Added minor security fix to avoid blocking funds from refunded bids in the Vortex contract
+  ([\#273](https://github.com/informalsystems/hydro/pull/273))
+- Allow Gatekeeper contract to be instantiated by an arbitrary transaction sender.
+  ([\#274](https://github.com/informalsystems/hydro/pull/274))
+
 ## v3.4.1
 
 Date: June 24th, 2025

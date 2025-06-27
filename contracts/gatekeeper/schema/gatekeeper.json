@@ -15,6 +15,12 @@
         "items": {
           "type": "string"
         }
+      },
+      "hydro_contract": {
+        "type": [
+          "string",
+          "null"
+        ]
       }
     },
     "additionalProperties": false

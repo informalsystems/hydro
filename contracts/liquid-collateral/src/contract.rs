@@ -828,6 +828,7 @@ pub fn place_bid(
     SORTED_BIDS.save(deps.storage, &sorted_bids)?;
 
     Ok(Response::new()
+        .add_messages(messages)
         .add_attribute("action", "end_round_bid")
         .add_attribute("bidder", info.sender)
         .add_attribute("principal", principal.amount)
