@@ -6,6 +6,7 @@
 
 export interface InstantiateMsg {
   admins: string[];
+  hydro_contract?: string | null;
 }
 export type ExecuteMsg = {
   register_stage: {
