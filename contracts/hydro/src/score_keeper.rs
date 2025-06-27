@@ -286,7 +286,7 @@ pub fn add_many_token_group_shares_to_proposal(
 }
 
 // Struct to track voting power changes for a proposal
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ProposalPowerUpdate {
     pub token_group_shares: HashMap<String, SignedDecimal>, // token_group_id -> shares
 }

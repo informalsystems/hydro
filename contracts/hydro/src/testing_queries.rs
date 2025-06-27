@@ -3,14 +3,15 @@ use std::str::FromStr;
 
 use crate::contract::{
     compute_current_round_id, query_all_user_lockups, query_all_user_lockups_with_tranche_infos,
-    query_all_votes, query_all_votes_round_tranche, query_specific_user_lockups,
-    query_specific_user_lockups_with_tranche_infos, query_user_votes,
+    query_all_votes, query_all_votes_round_tranche, query_simulate_dtoken_amounts,
+    query_specific_user_lockups, query_specific_user_lockups_with_tranche_infos, query_user_votes,
 };
-use crate::msg::{ProposalToLockups, TrancheInfo};
+use crate::msg::{ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo};
 use crate::query::VoteEntry;
 use crate::state::{
-    HeightRange, RoundLockPowerSchedule, ValidatorInfo, Vote, LOCKS_MAP_V2, ROUND_TO_HEIGHT_RANGE,
-    SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, USER_LOCKS, VALIDATORS_INFO, VOTE_MAP_V2,
+    DropTokenInfo, HeightRange, RoundLockPowerSchedule, ValidatorInfo, Vote, DROP_TOKEN_INFO,
+    LOCKS_MAP_V2, ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS,
+    USER_LOCKS, VALIDATORS_INFO, VOTE_MAP_V2,
 };
 use crate::testing::{
     get_address_as_str, get_default_instantiate_msg, get_default_lsm_token_info_provider,
@@ -28,12 +29,22 @@ use crate::{
     msg::ExecuteMsg,
     state::LockEntryV2,
 };
+use cosmwasm_std::Decimal256;
+use cosmwasm_std::{
+    from_json, to_json_binary, Addr, ContractResult, Decimal, QuerierResult, StdError, StdResult,
+    SystemError, SystemResult, Timestamp, Uint128, WasmQuery,
+};
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
     Coin, Env, OwnedDeps,
 };
-use cosmwasm_std::{Addr, Decimal, StdError, StdResult, Timestamp, Uint128};
+use interface::drop_core::QueryMsg as DropQueryMsg;
+use interface::drop_puppeteer::{
+    Delegations, DelegationsResponse, DropDelegation, PuppeteerQueryMsg, QueryExtMsg,
+};
 use neutron_sdk::bindings::query::NeutronQuery;
+
+pub type WasmQueryFunc = dyn Fn(&WasmQuery) -> QuerierResult;
 
 #[test]
 fn query_user_lockups_test() {
@@ -1164,7 +1175,6 @@ fn get_user_voting_power(
 
     res.unwrap().voting_power
 }
-
 #[test]
 fn query_lock_votes_history_test() {
     let user_address = "addr0000";
@@ -1474,4 +1484,193 @@ fn query_lock_votes_history_test() {
         .unwrap_err()
         .to_string()
         .contains("start_round (2) must be less than or equal to end_round (1)"));
+}
+
+#[test]
+fn simulate_dtoken_amounts() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-1".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let user_address = deps.api.addr_make("addr0000");
+    let info = get_message_info(&deps.api, user_address.as_ref(), &[]);
+
+    let mut instantiate_msg: crate::msg::InstantiateMsg = get_default_instantiate_msg(&deps.api);
+    instantiate_msg.token_info_providers[0] = TokenInfoProviderInstantiateMsg::LSM {
+        max_validator_shares_participating: 100,
+        hub_connection_id: "connection-0".to_string(),
+        hub_transfer_channel_id: "channel-1".to_string(),
+        icq_update_period: 100,
+    };
+
+    let res = instantiate(deps.as_mut(), env.clone(), info, instantiate_msg.clone());
+    assert!(res.is_ok());
+
+    // simulate user locking 1000 tokens for 1 month, one day after the round started
+    env.block.time = env.block.time.plus_days(1);
+
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+
+    let first_lockup_amount: u128 = 1000;
+    let info = get_message_info(
+        &deps.api,
+        user_address.as_ref(),
+        &[Coin::new(first_lockup_amount, IBC_DENOM_1.to_string())],
+    );
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    let ids: Vec<u64> = vec![1, 2];
+
+    USER_LOCKS
+        .save(
+            &mut deps.storage,
+            user_address.clone(),
+            &ids,
+            env.block.height,
+        )
+        .unwrap();
+
+    // simulate user locking 2000 tokens for 3 months, two days after the round started
+    env.block.time = env.block.time.plus_days(1);
+
+    // set validators for new round
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+
+    let second_lockup_amount: u128 = 2000;
+    let info = get_message_info(
+        &deps.api,
+        user_address.as_ref(),
+        &[Coin::new(second_lockup_amount, IBC_DENOM_1.to_string())],
+    );
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    let res_lock = LOCKS_MAP_V2.save(
+        &mut deps.storage,
+        1,
+        &LockEntryV2 {
+            lock_id: 1,
+            funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
+            owner: user_address.clone(),
+            lock_start: Timestamp::from_seconds(10),
+            lock_end: Timestamp::from_seconds(100),
+        },
+        env.block.height,
+    );
+    assert!(res_lock.is_ok(), "failed to save lock");
+
+    let res_lock_2 = LOCKS_MAP_V2.save(
+        &mut deps.storage,
+        2,
+        &LockEntryV2 {
+            lock_id: 2,
+            funds: Coin::new(Uint128::from(2000u128), IBC_DENOM_1.to_string()),
+            owner: user_address.clone(),
+            lock_start: Timestamp::from_seconds(10),
+            lock_end: Timestamp::from_seconds(100),
+        },
+        env.block.height,
+    );
+    assert!(res_lock_2.is_ok(), "failed to save lock");
+
+    let drop_address = deps.api.addr_make("drop");
+    let puppeteer_address = deps.api.addr_make("puppeteer");
+    let d_token_denom =
+        "factory/neutron1k6hr0f83e7un2wjf29cspk7j69jrnskk65k3ek2nj9dztrlzpj6q00rtsa/udatom"
+            .to_string();
+
+    let drop_token_info = DropTokenInfo {
+        address: drop_address,
+        d_token_denom,
+        puppeteer_address,
+    };
+
+    let drop_contract = DROP_TOKEN_INFO.save(&mut deps.storage, &drop_token_info);
+    assert!(drop_contract.is_ok(), "failed to save drop contract info");
+
+    let current_ratio = Decimal::from_str("1.15").unwrap();
+
+    let mock_puppeteer_response = DelegationsResponse {
+        delegations: Delegations {
+            delegations: vec![
+                DropDelegation {
+                    delegator: Addr::unchecked(
+                        "cosmos1srjdd7y6duuukmaenghucasqlycddcc65qdj34k6spq8pwk4h6ms7j4w4j",
+                    ),
+                    validator: "cosmosvaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcvrj90c".to_string(),
+                    amount: Coin {
+                        denom: "uatom".to_string(),
+                        amount: 96_581_728_232u128.into(),
+                    },
+                    share_ratio: Decimal256::from_str("0.999800011043535397").unwrap(),
+                },
+                DropDelegation {
+                    delegator: Addr::unchecked(
+                        "cosmos1srjdd7y6duuukmaenghucasqlycddcc65qdj34k6spq8pwk4h6ms7j4w4j",
+                    ),
+                    validator: "cosmosvaloper157v7tczs40axfgejp2m43kwuzqe0wsy0rv8puv".to_string(),
+                    amount: Coin {
+                        denom: "uatom".to_string(),
+                        amount: 706_769_074_698u128.into(),
+                    },
+                    share_ratio: Decimal256::from_str("1").unwrap(),
+                },
+            ],
+        },
+        remote_height: 26227986,
+        local_height: 27676281,
+        timestamp: Timestamp::from_nanos(1750217292399260448),
+    };
+    deps.querier
+        .update_wasm(drop_mock(current_ratio, mock_puppeteer_response));
+
+    let res = query_simulate_dtoken_amounts(&deps.as_ref(), vec![1, 2], user_address.to_string());
+    assert!(res.is_ok());
+    let res = res.unwrap();
+    assert_eq!(res.dtokens_response.len(), 2);
+    assert!(res.dtokens_response[0].dtoken_amount == Uint128::from(869u128));
+    assert!(res.dtokens_response[1].dtoken_amount == Uint128::from(1739u128));
+}
+pub fn drop_mock(
+    current_ratio: Decimal,
+    puppeteer_response: DelegationsResponse,
+) -> Box<WasmQueryFunc> {
+    Box::new(move |req| match req {
+        WasmQuery::Smart {
+            contract_addr: _,
+            msg,
+        } => {
+            // First try DropQueryMsg::ExchangeRate
+            if let Ok(DropQueryMsg::ExchangeRate {}) = from_json(msg) {
+                return SystemResult::Ok(ContractResult::Ok(
+                    to_json_binary(&current_ratio).unwrap(),
+                ));
+            }
+
+            // Then try PuppeteerQueryMsg::Extension::Delegations
+            if let Ok(PuppeteerQueryMsg::Extension {
+                msg: QueryExtMsg::Delegations {},
+            }) = from_json(msg)
+            {
+                return SystemResult::Ok(ContractResult::Ok(
+                    to_json_binary(&puppeteer_response).unwrap(),
+                ));
+            }
+
+            SystemResult::Err(SystemError::Unknown {})
+        }
+        _ => SystemResult::Err(SystemError::Unknown {}),
+    })
 }
