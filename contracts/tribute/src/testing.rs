@@ -1761,3 +1761,151 @@ fn test_query_outstanding_lockup_claimable_coins() {
     let result = query_outstanding_lockup_claimable_coins(&deps.as_ref(), lock_id).unwrap();
     assert_eq!(result.coins.len(), 0); // Should be empty since tribute was claimed
 }
+
+// Verifies that a user cannot claim additional tribute after splitting or merging the lock that was used for voting.
+// During split/merge process, 0-power votes are inserted for the new locks, which means that all rewards remain
+// with the original lock(s) that have been splitted/merged.
+#[test]
+fn claim_tribute_after_lock_split_or_merge_test() {
+    let mut current_round = 10;
+
+    let mock_proposal = Proposal {
+        round_id: current_round,
+        tranche_id: 0,
+        proposal_id: 5,
+        title: "proposal title 1".to_string(),
+        description: "proposal description 1".to_string(),
+        power: Uint128::new(10000),
+        percentage: MIN_PROP_PERCENT_FOR_CLAIMABLE_TRIBUTES,
+        minimum_atom_liquidity_request: Uint128::zero(),
+        deployment_duration: 1,
+    };
+
+    let mock_proposals = vec![mock_proposal.clone()];
+
+    let deployments = mock_proposals
+        .iter()
+        .map(|p| get_nonzero_deployment_for_proposal(p.clone()))
+        .collect::<Vec<LiquidityDeployment>>();
+
+    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
+
+    let lock_id1 = 0;
+    let lock_id2 = 1;
+    let tribute_id = 0;
+
+    let hydro_contract_address = get_address_as_str(&deps.api, HYDRO_CONTRACT_ADDRESS);
+    let mock_querier = MockWasmQuerier::new(
+        hydro_contract_address.clone(),
+        current_round,
+        mock_proposals.clone(),
+        vec![],
+        vec![],
+        None,
+    );
+    deps.querier.update_wasm(move |q| mock_querier.handler(q));
+
+    let msg = get_instantiate_msg(hydro_contract_address.clone());
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    let tribute_payer = USER_ADDRESS_1;
+    let tribute = Coin::new(1000u64, DEFAULT_DENOM);
+    let info = get_message_info(&deps.api, tribute_payer, &[tribute.clone()]);
+    let msg = ExecuteMsg::AddTribute {
+        tranche_id: mock_proposal.tranche_id,
+        round_id: current_round,
+        proposal_id: mock_proposal.proposal_id,
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok());
+
+    // Update the expected round, proposals deployment info and user votes so that the tribute can be claimed.
+    // Claim the tribute before splitting the lock that was used for voting.
+    current_round += 1;
+
+    let tribute_claimer = get_address_as_str(&deps.api, USER_ADDRESS_2);
+    let user_votes = vec![(
+        mock_proposal.round_id,
+        mock_proposal.tranche_id,
+        tribute_claimer.clone(),
+        VoteWithPower {
+            prop_id: mock_proposal.proposal_id,
+            power: Decimal::from_ratio(mock_proposal.power, Uint128::one()),
+        },
+        lock_id1,
+    )];
+    let mock_querier = MockWasmQuerier::new(
+        hydro_contract_address.clone(),
+        current_round,
+        mock_proposals.clone(),
+        user_votes,
+        deployments.clone(),
+        None,
+    );
+    deps.querier.update_wasm(move |q| mock_querier.handler(q));
+
+    let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
+    let msg = ExecuteMsg::ClaimTribute {
+        round_id: mock_proposal.round_id,
+        tranche_id: mock_proposal.tranche_id,
+        tribute_id,
+        voter_address: tribute_claimer.clone(),
+    };
+
+    // Just verify that the result is ok. More detailed checks are done in other tests.
+    // Here we focus only on split/merge testing.
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // Then mock use case if user splits the lock that was used for voting and tries to claim additional tribute.
+    let user_votes = vec![
+        (
+            mock_proposal.round_id,
+            mock_proposal.tranche_id,
+            tribute_claimer.clone(),
+            VoteWithPower {
+                prop_id: mock_proposal.proposal_id,
+                power: Decimal::from_ratio(mock_proposal.power, Uint128::one()),
+            },
+            lock_id1,
+        ),
+        (
+            mock_proposal.round_id,
+            mock_proposal.tranche_id,
+            tribute_claimer.clone(),
+            VoteWithPower {
+                prop_id: mock_proposal.proposal_id,
+                power: Decimal::zero(),
+            },
+            lock_id2,
+        ),
+    ];
+    let mock_querier = MockWasmQuerier::new(
+        hydro_contract_address.clone(),
+        current_round,
+        mock_proposals.clone(),
+        user_votes,
+        deployments.clone(),
+        None,
+    );
+    deps.querier.update_wasm(move |q| mock_querier.handler(q));
+
+    let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
+    let msg = ExecuteMsg::ClaimTribute {
+        round_id: mock_proposal.round_id,
+        tranche_id: mock_proposal.tranche_id,
+        tribute_id,
+        voter_address: tribute_claimer.clone(),
+    };
+
+    // Verify that an error is received, which means user can't claim additional tributes for the lock
+    // that was created by either splitting or merging the lock that has already claimed the tribute.
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .contains("Nothing to claim - all locks have already claimed this tribute"));
+}

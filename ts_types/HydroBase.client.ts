@@ -854,6 +854,18 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
     lockDuration: number;
     lockIds: number[];
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  splitLock: ({
+    amount,
+    lockId
+  }: {
+    amount: Uint128;
+    lockId: number;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  mergeLocks: ({
+    lockIds
+  }: {
+    lockIds: number[];
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
   unlockTokens: ({
     lockIds
   }: {
@@ -1073,6 +1085,8 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.contractAddress = contractAddress;
     this.lockTokens = this.lockTokens.bind(this);
     this.refreshLockDuration = this.refreshLockDuration.bind(this);
+    this.splitLock = this.splitLock.bind(this);
+    this.mergeLocks = this.mergeLocks.bind(this);
     this.unlockTokens = this.unlockTokens.bind(this);
     this.createProposal = this.createProposal.bind(this);
     this.vote = this.vote.bind(this);
@@ -1127,6 +1141,31 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     return await this.client.execute(this.sender, this.contractAddress, {
       refresh_lock_duration: {
         lock_duration: lockDuration,
+        lock_ids: lockIds
+      }
+    }, fee_, memo_, funds_);
+  };
+  splitLock = async ({
+    amount,
+    lockId
+  }: {
+    amount: Uint128;
+    lockId: number;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      split_lock: {
+        amount,
+        lock_id: lockId
+      }
+    }, fee_, memo_, funds_);
+  };
+  mergeLocks = async ({
+    lockIds
+  }: {
+    lockIds: number[];
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      merge_locks: {
         lock_ids: lockIds
       }
     }, fee_, memo_, funds_);

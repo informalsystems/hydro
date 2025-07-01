@@ -64,6 +64,15 @@ export type ExecuteMsg = {
     lock_ids: number[];
   };
 } | {
+  split_lock: {
+    amount: Uint128;
+    lock_id: number;
+  };
+} | {
+  merge_locks: {
+    lock_ids: number[];
+  };
+} | {
   unlock_tokens: {
     lock_ids?: number[] | null;
   };
