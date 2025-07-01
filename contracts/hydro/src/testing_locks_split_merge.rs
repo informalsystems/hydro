@@ -1,15 +1,17 @@
-use crate::contract::{execute, instantiate};
+use crate::contract::{execute, instantiate, query_user_voted_locks};
 use crate::msg::{ExecuteMsg, ProposalToLockups};
 use crate::state::{PROPOSAL_MAP, VOTE_MAP_V2, VOTING_ALLOWED_ROUND};
 use crate::testing::{
     get_address_as_str, get_default_instantiate_msg, get_message_info,
-    set_default_validator_for_rounds, IBC_DENOM_1, IBC_DENOM_2, ONE_MONTH_IN_NANO_SECONDS,
-    VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
+    set_default_validator_for_rounds, IBC_DENOM_1, IBC_DENOM_2, ONE_DAY_IN_NANO_SECONDS,
+    ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
+    VALIDATOR_2_LST_DENOM_1,
 };
 use crate::testing_lsm_integration::set_validator_infos_for_round;
 use crate::testing_mocks::denom_trace_grpc_query_mock;
 use cosmwasm_std::{testing::mock_env, Coin, Decimal, Uint128};
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 use std::vec;
 
 use crate::state::{LOCKS_MAP_V2, USER_LOCKS, USER_LOCKS_FOR_CLAIM};
@@ -281,6 +283,40 @@ fn test_lock_split_flow_multiple_rounds() {
         .load(&deps.storage, (tranche_id, third_lock_id))
         .unwrap();
     assert_eq!(third_lock_voting_allowed, 3);
+
+    // Verify that the query_user_voted_locks() returns the correct votes and powers.
+    // This query is called from the Tribute SC when a user wants to claim tribute.
+    let round_id = 0;
+    let round_votes = query_user_voted_locks(
+        deps.as_ref(),
+        info.sender.to_string(),
+        round_id,
+        tranche_id,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(1, round_votes.voted_locks.len());
+
+    let first_proposal_votes = round_votes.voted_locks[0].clone();
+    assert_eq!(first_proposal_votes.0, first_proposal_id);
+
+    // Initial lock was split twice, so there should be 3 votes for the first proposal,
+    // where only the vote belonging to the first lock has power.
+    assert_eq!(first_proposal_votes.1.len(), 3);
+
+    let first_lock_voting_power = Decimal::from_ratio(initial_lock_amount, 1u128)
+        .checked_mul(Decimal::from_str("1.5").unwrap())
+        .unwrap();
+    assert_eq!(first_proposal_votes.1[0].lock_id, first_lock_id);
+    assert_eq!(
+        first_proposal_votes.1[0].vote_power,
+        first_lock_voting_power
+    );
+    assert_eq!(first_proposal_votes.1[1].lock_id, second_lock_id);
+    assert_eq!(first_proposal_votes.1[1].vote_power, Decimal::zero());
+    assert_eq!(first_proposal_votes.1[2].lock_id, third_lock_id);
+    assert_eq!(first_proposal_votes.1[2].vote_power, Decimal::zero());
 }
 
 #[test]
@@ -323,6 +359,8 @@ fn test_merge_locks_flow() {
     let mut lock_amounts = vec![];
 
     // In round 0, create 8 lockups (4x1mo, 4x3mo)
+    env.block.time = env.block.time.plus_nanos(ONE_DAY_IN_NANO_SECONDS);
+
     let one_month = ONE_MONTH_IN_NANO_SECONDS;
     let three_months = 3 * ONE_MONTH_IN_NANO_SECONDS;
     let base_amount = Uint128::from(10000u128);
@@ -526,14 +564,82 @@ fn test_merge_locks_flow() {
     // Old lock votes (lock ids: 0, 1, 4, 5) in round 0 should remain in the storage
     // Also, 0-power vote should be created for new lockup
     let round_id = 0;
-    for lock_id in [lock_id_1, lock_id_2, lock_id_5, lock_id_6, new_lock_id] {
+    let locks_voted_powers = HashMap::from([
+        (
+            lock_id_1,
+            Decimal::from_ratio(Uint128::new(10000u128), Uint128::one()),
+        ),
+        (
+            lock_id_2,
+            Decimal::from_ratio(Uint128::new(11000u128), Uint128::one()),
+        ),
+        (
+            lock_id_5,
+            Decimal::from_ratio(Uint128::new(14000u128), Uint128::one())
+                .checked_mul(Decimal::from_str("1.5").unwrap())
+                .unwrap(),
+        ),
+        (
+            lock_id_6,
+            Decimal::from_ratio(Uint128::new(15000u128), Uint128::one())
+                .checked_mul(Decimal::from_str("1.5").unwrap())
+                .unwrap(),
+        ),
+        (new_lock_id, Decimal::zero()),
+    ]);
+
+    for lock_vote in &locks_voted_powers {
         let vote_r0 = VOTE_MAP_V2
-            .may_load(&deps.storage, ((round_id, tranche_id), lock_id))
+            .may_load(&deps.storage, ((round_id, tranche_id), *lock_vote.0))
             .unwrap();
         assert!(vote_r0.is_some());
     }
 
-    // For round 1, only lock ids 2 and 6 voted, but their votes should be removed since they were merged into new lockup.
+    // Verify that the query_user_voted_locks() for round 0 returns the correct votes and powers.
+    // This query is called from the Tribute SC when a user wants to claim tribute.
+    let round_votes = query_user_voted_locks(
+        deps.as_ref(),
+        info.sender.to_string(),
+        round_id,
+        tranche_id,
+        None,
+    )
+    .unwrap();
+    assert_eq!(2, round_votes.voted_locks.len());
+
+    let first_proposal_votes = round_votes
+        .voted_locks
+        .iter()
+        .find(|prop_votes| prop_votes.0 == proposal_id_1)
+        .unwrap();
+
+    // Locks 0 and 1 voted for proposal_id_1, so there should be 2 votes.
+    assert_eq!(first_proposal_votes.1.len(), 2);
+
+    for voted_lock in &first_proposal_votes.1 {
+        assert_eq!(
+            voted_lock.vote_power,
+            locks_voted_powers[&voted_lock.lock_id]
+        );
+    }
+
+    let second_proposal_votes = round_votes
+        .voted_locks
+        .iter()
+        .find(|prop_votes| prop_votes.0 == proposal_id_2)
+        .unwrap();
+
+    // Locks 4 and 5 voted for proposal_id_2, and 0-power vote was inserted for new lock, so there should be 3 votes.
+    assert_eq!(second_proposal_votes.1.len(), 3);
+
+    for voted_lock in &second_proposal_votes.1 {
+        assert_eq!(
+            voted_lock.vote_power,
+            locks_voted_powers[&voted_lock.lock_id]
+        );
+    }
+
+    // For round 1, only lock ids (2 and 6) voted, but their votes should be removed since they were merged into new lockup.
     // Vote for new lock should not be created since some of the merged lockups were not allowed to vote in round 1.
     // Also, lock ids 2 and 6 voted for different proposals, so no vote for new lockup in round 1 for that reason as well.
     let round_id = 1;

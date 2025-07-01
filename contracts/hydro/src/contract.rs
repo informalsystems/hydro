@@ -61,7 +61,7 @@ use crate::token_manager::{
 use crate::utils::{
     calculate_vote_power, get_current_user_voting_power, get_higest_voting_allowed_round,
     get_highest_known_height_for_round_id, get_lock_time_weighted_shares, get_lock_vote,
-    get_owned_lock_entry, get_proposal, get_user_claimable_locks,
+    get_next_lock_id, get_owned_lock_entry, get_proposal, get_user_claimable_locks,
     load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
     scale_lockup_power, to_lockup_with_power, to_lockup_with_tranche_infos,
     update_locked_tokens_info, validate_locked_tokens_caps, verify_historical_data_availability,
@@ -475,9 +475,7 @@ fn lock_tokens(
         ))));
     }
 
-    let lock_id = LOCK_ID.load(deps.storage)?;
-    LOCK_ID.save(deps.storage, &(lock_id + 1))?;
-
+    let lock_id = get_next_lock_id(deps.storage)?;
     let lock_entry = LockEntryV2 {
         lock_id,
         owner: info.sender.clone(),
@@ -764,9 +762,7 @@ fn split_lock(
         ..starting_lock_entry.clone()
     };
 
-    let new_lock_id = LOCK_ID.load(deps.storage)?;
-    LOCK_ID.save(deps.storage, &(new_lock_id + 1))?;
-
+    let new_lock_id = get_next_lock_id(deps.storage)?;
     let new_lock_entry = LockEntryV2 {
         lock_id: new_lock_id,
         owner: info.sender.clone(),
@@ -847,7 +843,10 @@ fn split_lock(
 
     for tranche_id in tranche_ids {
         // Go back through previous rounds, find if the splitted lock was used for voting,
-        // and insert 0-power votes for the new lock entry.
+        // and insert 0-power votes for the new lock entry. This is needed since we will
+        // (in some cases) populate VOTING_ALLOWED_ROUND for the new lock entry, and the
+        // query_all/specific_user_lockups_with_tranche_infos() is relaying on vote existance
+        // in that case.
         for round_id in 0..current_round_id {
             if let Some(vote) = get_lock_vote(
                 deps.storage,
@@ -975,9 +974,7 @@ fn merge_locks(
         )));
     }
 
-    let resulting_lock_id = LOCK_ID.load(deps.storage)?;
-    LOCK_ID.save(deps.storage, &(resulting_lock_id + 1))?;
-
+    let resulting_lock_id = get_next_lock_id(deps.storage)?;
     let resulting_lock_entry = LockEntryV2 {
         lock_id: resulting_lock_id,
         owner: info.sender.clone(),
