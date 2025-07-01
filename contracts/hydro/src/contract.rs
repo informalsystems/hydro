@@ -2346,6 +2346,8 @@ pub fn convert_lockup_to_dtoken_reply(
         }
     }
 
+    let mut token_manager = TokenManager::new(&deps.as_ref());
+
     // If there were existing votes, unvote them using the old lock entry
     for (tranche_id, _vote) in &tranches_with_votes {
         let mut target_votes = HashMap::new();
@@ -2360,7 +2362,6 @@ pub fn convert_lockup_to_dtoken_reply(
         let unique_proposals_to_update: HashSet<u64> =
             unvotes_result.power_changes.keys().copied().collect();
 
-        let mut token_manager = TokenManager::new(&deps.as_ref());
         // Apply proposal power changes from unvotes
         apply_proposal_changes(
             &mut deps,
@@ -2419,6 +2420,7 @@ pub fn convert_lockup_to_dtoken_reply(
             // Process new votes
             let votes_result = process_votes(
                 &mut deps,
+                &mut token_manager,
                 context,
                 &proposals_votes,
                 &lock_entries,
@@ -2428,7 +2430,6 @@ pub fn convert_lockup_to_dtoken_reply(
             let unique_proposals_to_update: HashSet<u64> =
                 votes_result.power_changes.keys().copied().collect();
 
-            let mut token_manager = TokenManager::new(&deps.as_ref());
             // Apply power changes from votes
             apply_proposal_changes(
                 &mut deps,
