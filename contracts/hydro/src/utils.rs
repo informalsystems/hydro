@@ -16,9 +16,9 @@ use crate::{
     state::{
         Constants, HeightRange, LockEntryV2, Proposal, RoundLockPowerSchedule, Vote, CONSTANTS,
         EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND,
-        LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V1, LOCKS_MAP_V2, PROPOSAL_MAP,
-        ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, USER_LOCKS_FOR_CLAIM,
-        VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
+        LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V1, LOCKS_MAP_V2, LOCK_ID,
+        PROPOSAL_MAP, ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS,
+        USER_LOCKS_FOR_CLAIM, VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
     },
     token_manager::TokenManager,
 };
@@ -843,4 +843,12 @@ pub fn get_higest_voting_allowed_round(
     }
 
     Ok(highest_voting_allowed_round)
+}
+
+// Retrieves the next lock id and increments the stored value for the next lock id.
+pub fn get_next_lock_id(storage: &mut dyn Storage) -> StdResult<u64> {
+    let next_lock_id = LOCK_ID.load(storage)?;
+    LOCK_ID.save(storage, &(next_lock_id + 1))?;
+
+    Ok(next_lock_id)
 }
