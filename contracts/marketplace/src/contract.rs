@@ -165,8 +165,7 @@ pub fn execute(
 /// Proposes a new admin for the marketplace.
 /// Only the current admin can propose a new admin. The new admin must claim the role.
 ///
-/// Setting `new_admin` to `None` removes any existing proposed admin,
-/// preventing anyone from claiming admin privileges.
+/// Setting `new_admin` to `None` allows us to "cancel a new admin proposal"
 ///
 /// # Errors
 /// Returns `Unauthorized` if sender is not the current admin.
@@ -349,6 +348,10 @@ pub fn execute_list(
     {
         // Listing already exists, update price and seller
         listing.price = price.clone();
+
+        // The listing may have outdated seller info if the NFT was transferred
+        // without unlisting from the marketplace. The new owner can still list
+        // and will become the seller.
         listing.seller = info.sender;
         state::update_listing(deps, &listing)?;
 
