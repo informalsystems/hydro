@@ -2,7 +2,7 @@
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     coins, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, MessageInfo,
-    Response, Uint128,
+    Response, StdError, Uint128,
 };
 use cw2::set_contract_version;
 use hydro::msg::ExecuteMsg as HydroExecuteMsg;
@@ -164,6 +164,9 @@ pub fn execute(
 
 /// Proposes a new admin for the marketplace.
 /// Only the current admin can propose a new admin. The new admin must claim the role.
+///
+/// Setting `new_admin` to `None` removes any existing proposed admin,
+/// preventing anyone from claiming admin privileges.
 ///
 /// # Errors
 /// Returns `Unauthorized` if sender is not the current admin.
@@ -469,7 +472,11 @@ pub fn execute_buy(
         .expect("royalty calculation should never overflow")
         .to_uint_floor();
 
-    let seller_amount = listing.price.amount - royalty_amount;
+    let seller_amount = listing
+        .price
+        .amount
+        .checked_sub(royalty_amount)
+        .map_err(|e| ContractError::Std(StdError::overflow(e)))?;
 
     // Prepare messages
     let transfer_nft = HydroExecuteMsg::TransferNft {
@@ -631,7 +638,7 @@ fn verify_nft_ownership(
 }
 
 // This function queries Hydro contract to check whether the marketplace is approved for the token_id on the collection
-// It returns an error if the collection is not a valid address or if
+// It returns an error if the collection is not a valid address or if it cannot find the Approval
 fn validate_marketplace_approval(
     deps: Deps,
     marketplace_contract_address: String,
