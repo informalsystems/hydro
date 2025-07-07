@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "type": "object",
+  "required": [
+    "admin",
+    "collections"
+  ],
+  "properties": {
+    "admin": {
+      "type": "string"
+    },
+    "collections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Collection"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "Collection": {
+      "type": "object",
+      "required": [
+        "address",
+        "config"
+      ],
+      "properties": {
+        "address": {
+          "type": "string"
+        },
+        "config": {
+          "$ref": "#/definitions/CollectionConfig"
+        }
+      },
+      "additionalProperties": false
+    },
+    "CollectionConfig": {
+      "type": "object",
+      "required": [
+        "royalty_fee_bps",
+        "royalty_fee_recipient",
+        "sell_denoms"
+      ],
+      "properties": {
+        "royalty_fee_bps": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0.0
+        },
+        "royalty_fee_recipient": {
+          "type": "string"
+        },
+        "sell_denoms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
