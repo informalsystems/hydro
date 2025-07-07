@@ -715,8 +715,8 @@ fn refresh_single_lock(
 //     Check that the lock_id_to_split is owned by the sender
 //     Check the amount to split out (e.g. existing lock amount, new lock amount, remaining lock amount)
 //     Check if user has reached the maximum number of locks it can own
-//     Create a new lock entry with the specified amount and update the existing lock entry to reduce its amount
-//     Check if the splitted lock voted in previous rounds and insert 0-power votes for the same proposals for the new lock entry
+//     Create two new lock entres, one with the specified amount and another one with the remaining amount
+//     Check if the splitted lock voted in previous rounds and insert 0-power votes for the same proposals for the new lock entries
 //     If the splitted lock was used for voting in current round, remove the existing vote and add two new votes
 fn split_lock(
     mut deps: DepsMut<NeutronQuery>,
@@ -753,8 +753,10 @@ fn split_lock(
         ))));
     }
 
-    // All other fields except amount should remain the same as with original lock entry
-    let resulting_lock_entry = LockEntryV2 {
+    // All other fields except lock_id and amount should remain the same as with original lock entry
+    let new_lock_id_1 = get_next_lock_id(deps.storage)?;
+    let new_lock_entry_1 = LockEntryV2 {
+        lock_id: new_lock_id_1,
         funds: Coin {
             denom: starting_lock_entry.funds.denom.clone(),
             amount: resulting_lock_amount,
@@ -762,9 +764,9 @@ fn split_lock(
         ..starting_lock_entry.clone()
     };
 
-    let new_lock_id = get_next_lock_id(deps.storage)?;
-    let new_lock_entry = LockEntryV2 {
-        lock_id: new_lock_id,
+    let new_lock_id_2 = get_next_lock_id(deps.storage)?;
+    let new_lock_entry_2 = LockEntryV2 {
+        lock_id: new_lock_id_2,
         owner: info.sender.clone(),
         funds: Coin {
             denom: starting_lock_entry.funds.denom.clone(),
@@ -774,19 +776,18 @@ fn split_lock(
         lock_end: starting_lock_entry.lock_end,
     };
 
-    // Update existing lock entry and insert new one
-    LOCKS_MAP_V2.save(
-        deps.storage,
-        resulting_lock_entry.lock_id,
-        &resulting_lock_entry,
-        env.block.height,
-    )?;
-    LOCKS_MAP_V2.save(
-        deps.storage,
-        new_lock_entry.lock_id,
-        &new_lock_entry,
-        env.block.height,
-    )?;
+    // Remove starting lock entry
+    LOCKS_MAP_V2.remove(deps.storage, starting_lock_entry.lock_id, env.block.height)?;
+
+    // Insert new lock entries
+    for lock_entry in [&new_lock_entry_1, &new_lock_entry_2] {
+        LOCKS_MAP_V2.save(
+            deps.storage,
+            lock_entry.lock_id,
+            lock_entry,
+            env.block.height,
+        )?;
+    }
 
     // Update information about locks owned by the user
     USER_LOCKS.update(
@@ -794,30 +795,26 @@ fn split_lock(
         info.sender.clone(),
         env.block.height,
         |current_locks| -> Result<Vec<u64>, StdError> {
-            match current_locks {
-                None => Ok(vec![new_lock_id]),
-                Some(mut current_locks) => {
-                    current_locks.push(new_lock_id);
+            let mut current_locks = current_locks.expect("User locks must exist");
 
-                    Ok(current_locks)
-                }
-            }
+            current_locks.extend_from_slice(&[new_lock_entry_1.lock_id, new_lock_entry_2.lock_id]);
+            current_locks.retain(|&lock_id| lock_id != lock_id_to_split);
+
+            Ok(current_locks)
         },
     )?;
 
-    // Update information about locks for which user is eligible to claim tributes
+    // Update information about locks for which the user is eligible to claim the tributes.
+    // Keep the lock_id_to_split in the list so that the user can claim past round tributes.
     USER_LOCKS_FOR_CLAIM.update(
         deps.storage,
         info.sender.clone(),
         |current_locks| -> Result<Vec<u64>, StdError> {
-            match current_locks {
-                None => Ok(vec![new_lock_id]),
-                Some(mut current_locks) => {
-                    current_locks.push(new_lock_id);
+            let mut current_locks = current_locks.expect("User locks must exist");
 
-                    Ok(current_locks)
-                }
-            }
+            current_locks.extend_from_slice(&[new_lock_entry_1.lock_id, new_lock_entry_2.lock_id]);
+
+            Ok(current_locks)
         },
     )?;
 
@@ -825,15 +822,12 @@ fn split_lock(
 
     // Use both lock entries for revoting, if there was an existing vote
     let lock_entries = HashMap::from_iter([
-        (resulting_lock_entry.lock_id, resulting_lock_entry.clone()),
-        (new_lock_entry.lock_id, new_lock_entry.clone()),
+        (new_lock_entry_1.lock_id, new_lock_entry_1.clone()),
+        (new_lock_entry_2.lock_id, new_lock_entry_2.clone()),
     ]);
 
-    // Must populate the target votes in order for process_unvotes() to remove the existing vote, if there is any.
-    // Pretend that we are not going to vote with the existing lock again, so that the vote gets removed. This is
-    // mandatory to reflect the lock voting power change correctly, since its power decreased due to splitting.
-    // The vote will be re-added later, if there was an existing vote.
-    let target_votes = HashMap::from_iter([(resulting_lock_entry.lock_id, None)]);
+    // Prepare target_votes for process_unvotes() function to remove the existing lock vote, if there is any.
+    let target_votes = HashMap::from_iter([(lock_id_to_split, None)]);
 
     let mut token_manager = TokenManager::new(&deps.as_ref());
 
@@ -843,27 +837,21 @@ fn split_lock(
 
     for tranche_id in tranche_ids {
         // Go back through previous rounds, find if the splitted lock was used for voting,
-        // and insert 0-power votes for the new lock entry. This is needed since we will
-        // (in some cases) populate VOTING_ALLOWED_ROUND for the new lock entry, and the
+        // and insert 0-power votes for the new lock entries. This is needed since we will
+        // (in some cases) populate VOTING_ALLOWED_ROUND for the new lock entries, and the
         // query_all/specific_user_lockups_with_tranche_infos() is relaying on vote existance
         // in that case.
         for round_id in 0..current_round_id {
-            if let Some(vote) = get_lock_vote(
-                deps.storage,
-                round_id,
-                tranche_id,
-                resulting_lock_entry.lock_id,
-            )? {
+            if let Some(vote) = get_lock_vote(deps.storage, round_id, tranche_id, lock_id_to_split)?
+            {
                 let new_vote = Vote {
                     prop_id: vote.prop_id,
                     time_weighted_shares: (vote.time_weighted_shares.0, Decimal::zero()),
                 };
 
-                VOTE_MAP_V2.save(
-                    deps.storage,
-                    ((round_id, tranche_id), new_lock_entry.lock_id),
-                    &new_vote,
-                )?;
+                for lock_id in [new_lock_entry_1.lock_id, new_lock_entry_2.lock_id] {
+                    VOTE_MAP_V2.save(deps.storage, ((round_id, tranche_id), lock_id), &new_vote)?;
+                }
             }
         }
 
@@ -879,19 +867,21 @@ fn split_lock(
         let old_vote = match removed_votes.len() {
             1 => removed_votes[0],
             _ => {
-                // New lock inherits the voting allowed round from the original lock.
+                // New locks inherit the voting allowed round from the original lock.
                 // If there was no vote in this round that got removed, then information
                 // comes from the previous rounds vote, if there were any.
                 // If the original lock was used for voting in the current round, then process_votes()
-                // will update the VOTING_ALLOWED_ROUND for new lock as well.
-                if let Some(voting_allowed_round) = VOTING_ALLOWED_ROUND
-                    .may_load(deps.storage, (tranche_id, resulting_lock_entry.lock_id))?
+                // will update the VOTING_ALLOWED_ROUND for new locks as well.
+                if let Some(voting_allowed_round) =
+                    VOTING_ALLOWED_ROUND.may_load(deps.storage, (tranche_id, lock_id_to_split))?
                 {
-                    VOTING_ALLOWED_ROUND.save(
-                        deps.storage,
-                        (tranche_id, new_lock_entry.lock_id),
-                        &voting_allowed_round,
-                    )?;
+                    for lock_id in [new_lock_entry_1.lock_id, new_lock_entry_2.lock_id] {
+                        VOTING_ALLOWED_ROUND.save(
+                            deps.storage,
+                            (tranche_id, lock_id),
+                            &voting_allowed_round,
+                        )?;
+                    }
                 }
 
                 continue;
@@ -900,7 +890,7 @@ fn split_lock(
 
         let votes = ProposalToLockups {
             proposal_id: old_vote.1.prop_id,
-            lock_ids: vec![resulting_lock_entry.lock_id, new_lock_entry.lock_id],
+            lock_ids: vec![new_lock_entry_1.lock_id, new_lock_entry_2.lock_id],
         };
 
         process_votes_and_apply_proposal_changes(
@@ -920,8 +910,16 @@ fn split_lock(
         .add_attribute("action", "split_lock")
         .add_attribute("sender", info.sender)
         .add_attribute("lock_id_to_split", lock_id_to_split.to_string())
-        .add_attribute("new_lock_id", new_lock_id.to_string())
-        .add_attribute("amount", amount.to_string()))
+        .add_attribute("new_lock_1_id", new_lock_entry_1.lock_id.to_string())
+        .add_attribute(
+            "new_lock_1_amount",
+            new_lock_entry_1.funds.amount.to_string(),
+        )
+        .add_attribute("new_lock_2_id", new_lock_entry_2.lock_id.to_string())
+        .add_attribute(
+            "new_lock_2_amount",
+            new_lock_entry_2.funds.amount.to_string(),
+        ))
 }
 
 // MergeLocks(lock_ids):

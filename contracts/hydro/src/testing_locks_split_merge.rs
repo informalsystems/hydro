@@ -40,6 +40,8 @@ fn test_lock_split_flow_multiple_rounds() {
     let first_lock_id = 0;
     let second_lock_id = 1;
     let third_lock_id = 2;
+    let fourth_lock_id = 3;
+    let fifth_lock_id = 4;
     let first_proposal_id = 0;
     let second_proposal_id = 1;
     let third_proposal_id = 2;
@@ -178,14 +180,20 @@ fn test_lock_split_flow_multiple_rounds() {
     );
     assert!(split_res.is_ok());
 
-    // Check that both locks exist and have correct amounts
-    let first_lock = crate::state::LOCKS_MAP_V2
+    // Verify that the lockup with id 0 is removed
+    assert!(crate::state::LOCKS_MAP_V2
         .may_load(&deps.storage, first_lock_id)
+        .unwrap()
+        .is_none());
+
+    // Check that both new locks exist and have correct amounts
+    let first_lock = crate::state::LOCKS_MAP_V2
+        .may_load(&deps.storage, second_lock_id)
         .unwrap()
         .unwrap();
 
     let second_lock = crate::state::LOCKS_MAP_V2
-        .may_load(&deps.storage, second_lock_id)
+        .may_load(&deps.storage, third_lock_id)
         .unwrap()
         .unwrap();
 
@@ -196,33 +204,39 @@ fn test_lock_split_flow_multiple_rounds() {
     assert_eq!(second_lock.funds.amount, split_amount_1);
     assert_eq!(first_lock.owner, second_lock.owner);
 
-    // Verify votes for current round (round 2) for both old and new lockup
+    // Verify votes for current round (round 2) for both new lockups
     let round_id = 2;
-    let vote_old = VOTE_MAP_V2
-        .may_load(&deps.storage, ((round_id, tranche_id), first_lock_id))
-        .unwrap()
-        .unwrap();
-    let vote_new = VOTE_MAP_V2
+    let vote_new_lock_1 = VOTE_MAP_V2
         .may_load(&deps.storage, ((round_id, tranche_id), second_lock_id))
         .unwrap()
         .unwrap();
+    let vote_new_lock_2 = VOTE_MAP_V2
+        .may_load(&deps.storage, ((round_id, tranche_id), third_lock_id))
+        .unwrap()
+        .unwrap();
 
-    assert_eq!(vote_old.prop_id, third_proposal_id);
-    assert_eq!(vote_new.prop_id, third_proposal_id);
+    assert_eq!(vote_new_lock_1.prop_id, third_proposal_id);
+    assert_eq!(vote_new_lock_2.prop_id, third_proposal_id);
 
-    // Verify votes for new lockup in previous rounds (should exist with 0 power)
+    // Verify votes for new lockups in previous rounds (should exist with 0 power)
     verify_new_lock_expected_round_votes(
         &deps.storage,
         tranche_id,
         second_lock_id,
         &[(0, first_proposal_id), (1, second_proposal_id)],
     );
+    verify_new_lock_expected_round_votes(
+        &deps.storage,
+        tranche_id,
+        third_lock_id,
+        &[(0, first_proposal_id), (1, second_proposal_id)],
+    );
 
     let first_lock_voting_allowed = VOTING_ALLOWED_ROUND
-        .load(&deps.storage, (tranche_id, first_lock_id))
+        .load(&deps.storage, (tranche_id, second_lock_id))
         .unwrap();
     let second_lock_voting_allowed = VOTING_ALLOWED_ROUND
-        .load(&deps.storage, (tranche_id, second_lock_id))
+        .load(&deps.storage, (tranche_id, third_lock_id))
         .unwrap();
 
     assert_eq!(first_lock_voting_allowed, 3);
@@ -238,40 +252,56 @@ fn test_lock_split_flow_multiple_rounds() {
     // Move to round 3
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
 
-    // Split the lockup 1 in round 3 when the lockup hasn't voted yet
+    // Split the lockup 2 in round 3 when the lockup hasn't voted yet
     let split_amount_2 = Uint128::from(20000u128);
     let split_res = execute(
         deps.as_mut(),
         env.clone(),
         vote_info.clone(),
         ExecuteMsg::SplitLock {
-            lock_id: first_lock_id,
+            lock_id: second_lock_id,
             amount: split_amount_2,
         },
     );
     assert!(split_res.is_ok());
 
-    // Verify that both locks exist and have correct amounts
-    let first_lock = crate::state::LOCKS_MAP_V2
-        .may_load(&deps.storage, first_lock_id)
+    // Verify that the lockup with id 1 is removed
+    assert!(crate::state::LOCKS_MAP_V2
+        .may_load(&deps.storage, second_lock_id)
+        .unwrap()
+        .is_none());
+
+    // Verify that both new locks exist and have correct amounts
+    let fourth_lock = crate::state::LOCKS_MAP_V2
+        .may_load(&deps.storage, fourth_lock_id)
         .unwrap()
         .unwrap();
-    let third_lock = crate::state::LOCKS_MAP_V2
-        .may_load(&deps.storage, third_lock_id)
+    let fifth_lock = crate::state::LOCKS_MAP_V2
+        .may_load(&deps.storage, fifth_lock_id)
         .unwrap()
         .unwrap();
 
     assert_eq!(
-        first_lock.funds.amount,
+        fourth_lock.funds.amount,
         initial_lock_amount - split_amount_1 - split_amount_2
     );
-    assert_eq!(third_lock.funds.amount, split_amount_2);
+    assert_eq!(fifth_lock.funds.amount, split_amount_2);
 
-    // Verify votes for new lockup in previous rounds (should exist with 0 power)
+    // Verify votes for new lockups in previous rounds (should exist with 0 power)
     verify_new_lock_expected_round_votes(
         &deps.storage,
         tranche_id,
-        third_lock_id,
+        fourth_lock_id,
+        &[
+            (0, first_proposal_id),
+            (1, second_proposal_id),
+            (2, third_proposal_id),
+        ],
+    );
+    verify_new_lock_expected_round_votes(
+        &deps.storage,
+        tranche_id,
+        fifth_lock_id,
         &[
             (0, first_proposal_id),
             (1, second_proposal_id),
@@ -279,10 +309,15 @@ fn test_lock_split_flow_multiple_rounds() {
         ],
     );
 
-    let third_lock_voting_allowed = VOTING_ALLOWED_ROUND
-        .load(&deps.storage, (tranche_id, third_lock_id))
+    let fourth_lock_voting_allowed = VOTING_ALLOWED_ROUND
+        .load(&deps.storage, (tranche_id, fourth_lock_id))
         .unwrap();
-    assert_eq!(third_lock_voting_allowed, 3);
+    assert_eq!(fourth_lock_voting_allowed, 3);
+
+    let fifth_lock_voting_allowed = VOTING_ALLOWED_ROUND
+        .load(&deps.storage, (tranche_id, fifth_lock_id))
+        .unwrap();
+    assert_eq!(fifth_lock_voting_allowed, 3);
 
     // Verify that the query_user_voted_locks() returns the correct votes and powers.
     // This query is called from the Tribute SC when a user wants to claim tribute.
@@ -301,9 +336,9 @@ fn test_lock_split_flow_multiple_rounds() {
     let first_proposal_votes = round_votes.voted_locks[0].clone();
     assert_eq!(first_proposal_votes.0, first_proposal_id);
 
-    // Initial lock was split twice, so there should be 3 votes for the first proposal,
-    // where only the vote belonging to the first lock has power.
-    assert_eq!(first_proposal_votes.1.len(), 3);
+    // Initial lock was split resulting in 2 new locks, then one of the resulting locks was also split,
+    // so there should be 5 votes for the first proposal, where only the vote belonging to the first lock has power.
+    assert_eq!(first_proposal_votes.1.len(), 5);
 
     let first_lock_voting_power = Decimal::from_ratio(initial_lock_amount, 1u128)
         .checked_mul(Decimal::from_str("1.5").unwrap())
@@ -317,6 +352,10 @@ fn test_lock_split_flow_multiple_rounds() {
     assert_eq!(first_proposal_votes.1[1].vote_power, Decimal::zero());
     assert_eq!(first_proposal_votes.1[2].lock_id, third_lock_id);
     assert_eq!(first_proposal_votes.1[2].vote_power, Decimal::zero());
+    assert_eq!(first_proposal_votes.1[3].lock_id, fourth_lock_id);
+    assert_eq!(first_proposal_votes.1[3].vote_power, Decimal::zero());
+    assert_eq!(first_proposal_votes.1[4].lock_id, fifth_lock_id);
+    assert_eq!(first_proposal_votes.1[4].vote_power, Decimal::zero());
 }
 
 #[test]
