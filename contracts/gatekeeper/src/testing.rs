@@ -49,6 +49,7 @@ fn register_stage_test() {
     let non_admin_info = get_message_info(&deps.api, "addr0002", &[]);
 
     let init_msg = InstantiateMsg {
+        hydro_contract: None,
         admins: vec![admin_info.sender.to_string()],
     };
 
@@ -244,6 +245,7 @@ fn lock_tokens_basic_test() {
     let admin_info = get_message_info(&deps.api, "addr0000", &[]);
 
     let init_msg = InstantiateMsg {
+        hydro_contract: None,
         admins: vec![admin_info.sender.to_string()],
     };
 
@@ -410,6 +412,7 @@ fn lock_tokens_stage_epoch_caps_test() {
     let admin_info = get_message_info(&deps.api, "addr0000", &[]);
 
     let init_msg = InstantiateMsg {
+        hydro_contract: None,
         admins: vec![admin_info.sender.to_string()],
     };
 
@@ -692,6 +695,7 @@ fn lock_tokens_external_addresses_test() {
     let admin_info = get_message_info(&deps.api, "addr0000", &[]);
 
     let init_msg = InstantiateMsg {
+        hydro_contract: None,
         admins: vec![admin_info.sender.to_string()],
     };
 
@@ -849,6 +853,7 @@ fn add_remove_admin_test() {
     let new_admin_info2 = get_message_info(&deps.api, "addr0002", &[]);
 
     let init_msg = InstantiateMsg {
+        hydro_contract: None,
         admins: vec![admin_info.sender.to_string()],
     };
 

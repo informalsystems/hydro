@@ -245,6 +245,18 @@ pub enum ExecuteMsg {
     RevokeAll {
         operator: String,
     },
+    /// Allows whitelisted admin to set the drop token info for lockup conversions.
+    SetDropTokenInfo {
+        core_address: String,
+        d_token_denom: String,
+        puppeteer_address: String,
+    },
+
+    /// Allows users to convert their lockups to dTokens.
+    /// This action is only available if the drop token info is set.
+    ConvertLockupToDtoken {
+        lock_ids: Vec<u64>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

@@ -1,3 +1,4 @@
+use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{entry_point, DepsMut, Env, Response, StdError};
 use cw2::{get_contract_version, set_contract_version};
 
@@ -6,27 +7,27 @@ use crate::{
     error::ContractError,
 };
 
-use super::v3_3_0::{migrate_v3_3_0_to_v3_4_0, MigrateMsgV3_3_0};
+use super::v3_4_1::migrate_v3_2_0_to_v3_4_1;
 
 pub const CONTRACT_VERSION_V1_1_1: &str = "1.1.1";
 pub const CONTRACT_VERSION_V2_0_1: &str = "2.0.1";
 pub const CONTRACT_VERSION_V2_0_2: &str = "2.0.2";
 pub const CONTRACT_VERSION_V3_0_0: &str = "3.0.0";
 pub const CONTRACT_VERSION_V3_1_1: &str = "3.1.1";
-pub const CONTRACT_VERSION_V3_3_0: &str = "3.3.0";
+pub const CONTRACT_VERSION_V3_2_0: &str = "3.2.0";
+pub const CONTRACT_VERSION_V3_4_1: &str = "3.4.1";
+
+#[cw_serde]
+pub struct MigrateMsg {}
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(
-    mut deps: DepsMut,
-    _env: Env,
-    _msg: MigrateMsgV3_3_0,
-) -> Result<Response, ContractError> {
-    check_contract_version(deps.storage, CONTRACT_VERSION_V3_3_0)?;
+pub fn migrate(mut deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+    check_contract_version(deps.storage, CONTRACT_VERSION_V3_2_0)?;
 
     // Run migrations based on current version
-    let response = migrate_v3_3_0_to_v3_4_0(&mut deps).map_err(|e| {
+    let response = migrate_v3_2_0_to_v3_4_1(&mut deps).map_err(|e| {
         ContractError::Std(StdError::generic_err(format!(
-            "Migration to v3_4_0 failed: {}",
+            "Migration to v3_4_1 failed: {}",
             e
         )))
     })?;

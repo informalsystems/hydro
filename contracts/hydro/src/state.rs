@@ -86,6 +86,15 @@ pub const TOKEN_INFO_PROVIDERS: Map<String, TokenInfoProvider> = Map::new("token
 // Keeps the address of the associated Gatekeeper contract, if Hydro uses one. The Gatekeeper contract
 // determines if a user should be allowed to lock the given amount of tokens at a given time.
 pub const GATEKEEPER: Item<String> = Item::new("gatekeeper");
+#[cw_serde]
+pub struct DropTokenInfo {
+    // The core drop address
+    pub address: Addr,
+    pub d_token_denom: String,
+    pub puppeteer_address: Addr,
+}
+// Stores the information about the drop token, used for conversion of locked tokens into drop tokens.
+pub const DROP_TOKEN_INFO: Item<DropTokenInfo> = Item::new("drop_token_info");
 
 // the total number of tokens locked in the contract
 pub const LOCKED_TOKENS: Item<u128> = Item::new("locked_tokens");
@@ -361,8 +370,9 @@ pub struct Approval {
 /// Stored as (granter, operator), giving operator full control over granter's NFTs.
 /// NOTE: granter is the owner, so operator has control only for NFTs owned by granter
 pub const NFT_OPERATORS: Map<(Addr, Addr), Expiration> = Map::new("nft_operators");
-
 // Maps users to the lock IDs they can claim tributes for (either they are current owner,
 // or last owner before lock was removed)
 // USER_LOCKS_FOR_CLAIM: key(user_address) -> Vec<lock_ids>
 pub const USER_LOCKS_FOR_CLAIM: Map<Addr, Vec<u64>> = Map::new("user_locks_for_claim");
+
+pub const DROP_SENDERS: Map<u64, Addr> = Map::new("reply_senders");

@@ -1,4 +1,3 @@
-use cosmwasm_schema::cw_serde;
 use std::collections::HashMap;
 
 use cosmwasm_std::{Addr, DepsMut, Order, Response};
@@ -7,9 +6,6 @@ use crate::{
     error::ContractError,
     state::{Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMED_LOCKS, TRIBUTE_CLAIMS},
 };
-
-#[cw_serde]
-pub struct MigrateMsgV3_3_0 {}
 
 // A struct to represent a unique round/tranche/voter combination
 #[derive(Hash, Eq, PartialEq, Clone)]
@@ -28,7 +24,7 @@ struct TributeClaimInfo {
 /// Migrates the contract to version 3.4.0
 /// This migration adds the TRIBUTE_CLAIMED_LOCKS state to track which locks have claimed which tributes
 /// It populates this state from the existing TRIBUTE_CLAIMS
-pub fn migrate_v3_3_0_to_v3_4_0(deps: &mut DepsMut) -> Result<Response, ContractError> {
+pub fn migrate_v3_2_0_to_v3_4_1(deps: &mut DepsMut) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
 
     let mut context_to_tributes: HashMap<VoterRoundContext, Vec<TributeClaimInfo>> = HashMap::new();
@@ -91,6 +87,6 @@ pub fn migrate_v3_3_0_to_v3_4_0(deps: &mut DepsMut) -> Result<Response, Contract
     }
 
     Ok(Response::new()
-        .add_attribute("action", "migrate_v3_3_0_to_v3_4_0")
+        .add_attribute("action", "migrate_v3_2_0_to_v3_4_1")
         .add_attribute("tribute_claimed_locks", tribute_claimed_locks.to_string()))
 }

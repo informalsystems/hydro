@@ -4,6 +4,7 @@ use interface::gatekeeper::ExecuteLockTokensMsg;
 
 #[cw_serde]
 pub struct InstantiateMsg {
+    pub hydro_contract: Option<String>,
     pub admins: Vec<String>,
 }
 

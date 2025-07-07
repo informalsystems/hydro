@@ -81,7 +81,7 @@ pub fn validate_proposals_and_locks_for_voting(
     Ok((target_votes, lock_entries))
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ProcessUnvotesResult {
     pub power_changes: HashMap<u64, ProposalPowerUpdate>, // prop_id -> ProposalPowerUpdate
     pub removed_votes: HashMap<u64, Vote>,                // lock_id -> Previous vote
