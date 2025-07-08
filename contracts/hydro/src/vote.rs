@@ -167,6 +167,7 @@ pub struct VoteProcessingContext<'a> {
 //  (as it was determined during process_unvotes that ).
 pub fn process_votes(
     deps: &mut DepsMut<NeutronQuery>,
+    token_manager: &mut TokenManager,
     context: VoteProcessingContext,
     proposals_votes: &[ProposalToLockups],
     lock_entries: &LockEntries,
@@ -174,7 +175,6 @@ pub fn process_votes(
 ) -> Result<ProcessVotesResult, ContractError> {
     let round_end = compute_round_end(context.constants, context.round_id)?;
     let lock_epoch_length = context.constants.lock_epoch_length;
-    let mut token_manager = TokenManager::new(&deps.as_ref());
 
     let mut locks_voted = vec![];
     let mut locks_skipped = vec![];

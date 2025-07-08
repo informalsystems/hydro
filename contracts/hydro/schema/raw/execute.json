@@ -70,6 +70,59 @@
     {
       "type": "object",
       "required": [
+        "split_lock"
+      ],
+      "properties": {
+        "split_lock": {
+          "type": "object",
+          "required": [
+            "amount",
+            "lock_id"
+          ],
+          "properties": {
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "lock_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "merge_locks"
+      ],
+      "properties": {
+        "merge_locks": {
+          "type": "object",
+          "required": [
+            "lock_ids"
+          ],
+          "properties": {
+            "lock_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
         "unlock_tokens"
       ],
       "properties": {

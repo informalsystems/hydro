@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use cosmwasm_std::{
     Addr, Decimal, Deps, DepsMut, Env, Order, StdError, StdResult, Storage, Timestamp, Uint128,
 };
@@ -14,9 +16,9 @@ use crate::{
     state::{
         Constants, HeightRange, LockEntryV2, Proposal, RoundLockPowerSchedule, Vote, CONSTANTS,
         EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND,
-        LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V1, LOCKS_MAP_V2, PROPOSAL_MAP,
-        ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, USER_LOCKS_FOR_CLAIM,
-        VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
+        LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V1, LOCKS_MAP_V2, LOCK_ID,
+        PROPOSAL_MAP, ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS,
+        USER_LOCKS_FOR_CLAIM, VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
     },
     token_manager::TokenManager,
 };
@@ -803,4 +805,50 @@ pub fn get_proposal(
     proposal_id: u64,
 ) -> StdResult<Proposal> {
     PROPOSAL_MAP.load(storage, (round_id, tranche_id, proposal_id))
+}
+
+pub struct LockVotingAllowedRound {
+    pub lock_id: u64,
+    pub tranche_id: u64,
+    pub voting_allowed_round: u64,
+}
+
+pub fn get_higest_voting_allowed_round(
+    deps: &Deps<NeutronQuery>,
+    tranche_id: u64,
+    lock_ids: &HashSet<u64>,
+) -> Result<Option<LockVotingAllowedRound>, ContractError> {
+    let mut highest_voting_allowed_round: Option<LockVotingAllowedRound> = None;
+
+    for lock_id in lock_ids {
+        if let Some(voting_allowed_round) =
+            VOTING_ALLOWED_ROUND.may_load(deps.storage, (tranche_id, *lock_id))?
+        {
+            if let Some(current_highest) = &highest_voting_allowed_round {
+                if voting_allowed_round > current_highest.voting_allowed_round {
+                    highest_voting_allowed_round = Some(LockVotingAllowedRound {
+                        lock_id: *lock_id,
+                        tranche_id,
+                        voting_allowed_round,
+                    });
+                }
+            } else {
+                highest_voting_allowed_round = Some(LockVotingAllowedRound {
+                    lock_id: *lock_id,
+                    tranche_id,
+                    voting_allowed_round,
+                });
+            }
+        }
+    }
+
+    Ok(highest_voting_allowed_round)
+}
+
+// Retrieves the next lock id and increments the stored value for the next lock id.
+pub fn get_next_lock_id(storage: &mut dyn Storage) -> StdResult<u64> {
+    let next_lock_id = LOCK_ID.load(storage)?;
+    LOCK_ID.save(storage, &(next_lock_id + 1))?;
+
+    Ok(next_lock_id)
 }
