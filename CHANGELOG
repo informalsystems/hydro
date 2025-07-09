@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## v3.5.0
+
+Date: July 9th, 2025
+
+### FEATURES
+
+- Added support for conversion of lockups to dTOKENS in Hydro (currently supported conversion to dATOM).
+  ([\#264](https://github.com/informalsystems/hydro/pull/264))
+- Add marketplace contract.
+  ([\#267](https://github.com/informalsystems/hydro/pull/267))
+- Allow splitting and merging of existing locks.
+  ([\#278](https://github.com/informalsystems/hydro/pull/278))
+
 ## v3.4.2
 
 Date: June 27th, 2025
@@ -23,21 +36,14 @@ Date: June 11th, 2025
 
 ### FEATURES
 
+- Implement CW721 specifications for Hydro lockups.
+  ([\#254](https://github.com/informalsystems/hydro/pull/254))
 - Added support for locking dTOKENS in Hydro.
   ([\#258](https://github.com/informalsystems/hydro/pull/258))
 - Added support for updating stTOKEN ratio against the base token.
   ([\#259](https://github.com/informalsystems/hydro/pull/259))
 - Tributes follow lockups.
   ([\#260](https://github.com/informalsystems/hydro/pull/260))
-
-## v3.3.0
-
-Date: June 11th, 2025
-
-### FEATURES
-
-- Implement CW721 specifications for Hydro lockups.
-  ([\#254](https://github.com/informalsystems/hydro/pull/254))
 
 ## v3.2.0
 
