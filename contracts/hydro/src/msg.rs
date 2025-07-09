@@ -88,11 +88,7 @@ impl Display for TokenInfoProviderInstantiateMsg {
                 icq_update_period,
             } => write!(
                 f,
-                "LSM(max_validator_shares_participating: {}, hub_connection_id: {}, hub_transfer_channel_id: {}, icq_update_period: {})",
-                max_validator_shares_participating,
-                hub_connection_id,
-                hub_transfer_channel_id,
-                icq_update_period
+                "LSM(max_validator_shares_participating: {max_validator_shares_participating}, hub_connection_id: {hub_connection_id}, hub_transfer_channel_id: {hub_transfer_channel_id}, icq_update_period: {icq_update_period})"
             ),
             TokenInfoProviderInstantiateMsg::TokenInfoProviderContract {
                 code_id,
@@ -101,11 +97,7 @@ impl Display for TokenInfoProviderInstantiateMsg {
                 admin,
             } => write!(
                 f,
-                "TokenInfoProviderContract(code_id: {}, msg: {}, label: {}, admin: {:?})",
-                code_id,
-                msg,
-                label,
-                admin
+                "TokenInfoProviderContract(code_id: {code_id}, msg: {msg}, label: {label}, admin: {admin:?})"
             ),
         }
     }

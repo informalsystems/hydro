@@ -55,8 +55,7 @@ pub fn validate_proposals_and_locks_for_voting(
             // Ensure each lock ID is unique
             if !lock_ids.insert(lock_id) {
                 return Err(ContractError::Std(StdError::generic_err(format!(
-                    "Duplicate lock ID {} provided",
-                    lock_id
+                    "Duplicate lock ID {lock_id} provided"
                 ))));
             }
 

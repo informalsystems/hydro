@@ -62,7 +62,7 @@ fn test_user_locks_snapshoting() {
         proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     let current_round = 0;
     let current_round_expected_initial_height = env.block.height;
@@ -81,7 +81,7 @@ fn test_user_locks_snapshoting() {
         proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     verify_round_height_mappings(
         &deps.storage,
@@ -100,7 +100,7 @@ fn test_user_locks_snapshoting() {
         lock_duration: 3 * instantiate_msg.lock_epoch_length,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     verify_round_height_mappings(
         &deps.storage,
@@ -117,7 +117,7 @@ fn test_user_locks_snapshoting() {
         proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     expected_user_locks.push((env.block.height + 1, vec![0, 1, 2]));
 
@@ -132,7 +132,7 @@ fn test_user_locks_snapshoting() {
         lock_ids: Some(vec![1, 2]),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     expected_user_locks.push((env.block.height + 1, vec![0]));
 
@@ -154,7 +154,7 @@ fn test_user_locks_snapshoting() {
         lock_ids: Some(vec![0]),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     expected_user_locks.push((env.block.height + 1, vec![]));
 

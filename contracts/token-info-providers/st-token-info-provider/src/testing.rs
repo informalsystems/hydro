@@ -125,7 +125,7 @@ pub fn custom_interchain_query_mock(
     Box::new(move |query: &NeutronQuery| match *query {
         NeutronQuery::RegisteredInterchainQuery { query_id } => {
             if query_id != host_zone_query_id {
-                panic!("no mock data for interchain query with id: {}", query_id);
+                panic!("no mock data for interchain query with id: {query_id}");
             }
 
             system_result_ok_from(
@@ -138,7 +138,7 @@ pub fn custom_interchain_query_mock(
         }
         NeutronQuery::InterchainQueryResult { query_id } => {
             if query_id != host_zone_query_id {
-                panic!("no mock data for interchain query with id: {}", query_id);
+                panic!("no mock data for interchain query with id: {query_id}");
             }
 
             let registered_query_result_response = QueryRegisteredQueryResultResponse {
@@ -398,7 +398,7 @@ fn token_ratio_update_test() {
                 msg: _,
             } => {
                 if contract_addr != &hydro_sender.to_string() {
-                    panic!("Unexpected contract address: {}", contract_addr);
+                    panic!("Unexpected contract address: {contract_addr}");
                 }
 
                 let response = to_json_binary(&HydroCurrentRoundResponse {
@@ -410,7 +410,7 @@ fn token_ratio_update_test() {
                 SystemResult::Ok(ContractResult::Ok(response))
             }
             _ => {
-                panic!("Unexpected Wasm query type: {:?}", query);
+                panic!("Unexpected Wasm query type: {query:?}");
             }
         });
 

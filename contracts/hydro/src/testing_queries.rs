@@ -1028,7 +1028,7 @@ fn query_all_votes_test() {
             lock_id: vote_to_create.lock_id,
             vote: vote_to_create.vote.clone(),
         };
-        assert_eq!(response.votes[i], expected_vote, "Mismatch at index {}", i);
+        assert_eq!(response.votes[i], expected_vote, "Mismatch at index {i}");
     }
 }
 

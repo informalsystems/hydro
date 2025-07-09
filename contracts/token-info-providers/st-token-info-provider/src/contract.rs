@@ -229,9 +229,7 @@ pub fn reply(
                     .value
                     .to_vec(),
             )
-            .map_err(|e| {
-                StdError::generic_err(format!("failed to parse reply message: {:?}", e))
-            })?;
+            .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {e:?}")))?;
 
             INTERCHAIN_QUERY_INFO.save(
                 deps.storage,
@@ -258,9 +256,7 @@ pub fn reply(
                     .value
                     .to_vec(),
             )
-            .map_err(|e| {
-                StdError::generic_err(format!("failed to parse reply message: {:?}", e))
-            })?;
+            .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {e:?}")))?;
 
             INTERCHAIN_QUERY_INFO.remove(deps.storage);
 

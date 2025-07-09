@@ -257,7 +257,7 @@ fn test_validate_denom() {
         TestCase {
             description: "validator not in top validators set".to_string(),
             denom: IBC_DENOM_1.to_string(),
-            expected_result: Err(StdError::generic_err(format!("Validator {} is not present; possibly they are not part of the top 100 validators by delegated tokens", VALIDATOR_1))),
+            expected_result: Err(StdError::generic_err(format!("Validator {VALIDATOR_1} is not present; possibly they are not part of the top 100 validators by delegated tokens"))),
             setup: Box::new(|storage, _env| {
                 let validators = vec![VALIDATOR_2.to_string(), VALIDATOR_3.to_string()];
                 let res = set_validator_infos_for_round(storage, 0, validators);
@@ -273,7 +273,7 @@ fn test_validate_denom() {
         TestCase {
             description: "validator not in top validators set".to_string(),
             denom: IBC_DENOM_1.to_string(),
-            expected_result: Err(StdError::generic_err(format!("Validator {} is not present; possibly they are not part of the top 100 validators by delegated tokens", VALIDATOR_1))),
+            expected_result: Err(StdError::generic_err(format!("Validator {VALIDATOR_1} is not present; possibly they are not part of the top 100 validators by delegated tokens"))),
             setup: Box::new(|storage, env| {
                 let res = set_validator_infos_for_round(storage, 0, vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()]);
                 assert!(res.is_ok());
@@ -466,7 +466,7 @@ fn unlock_tokens_multiple_denoms() {
     let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok(), "instantiating contract: {:?}", res);
+    assert!(res.is_ok(), "instantiating contract: {res:?}");
 
     set_validators_constant_power_ratios_for_rounds(
         deps.as_mut(),
@@ -484,13 +484,13 @@ fn unlock_tokens_multiple_denoms() {
         proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok(), "locking tokens: {:?}", res);
+    assert!(res.is_ok(), "locking tokens: {res:?}");
 
     info.funds = vec![user_token2.clone()];
 
     // lock tokens from validator2
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "locking tokens: {:?}", res);
+    assert!(res.is_ok(), "locking tokens: {res:?}");
 
     // advance the chain by one month + 1 nano second and check that user can unlock tokens
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
@@ -503,7 +503,7 @@ fn unlock_tokens_multiple_denoms() {
         info.clone(),
         ExecuteMsg::UnlockTokens { lock_ids: None },
     );
-    assert!(res.is_ok(), "unlocking tokens: {:?}", res);
+    assert!(res.is_ok(), "unlocking tokens: {res:?}");
 
     let res = res.unwrap();
     assert_eq!(2, res.messages.len());
@@ -548,7 +548,7 @@ fn unlock_tokens_multiple_users() {
     let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info1.clone(), msg.clone());
-    assert!(res.is_ok(), "instantiating contract: {:?}", res);
+    assert!(res.is_ok(), "instantiating contract: {res:?}");
 
     set_validators_constant_power_ratios_for_rounds(
         deps.as_mut(),
@@ -564,11 +564,11 @@ fn unlock_tokens_multiple_users() {
         proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg.clone());
-    assert!(res.is_ok(), "locking tokens: {:?}", res);
+    assert!(res.is_ok(), "locking tokens: {res:?}");
 
     // user2 locks tokens
     let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
-    assert!(res.is_ok(), "locking tokens: {:?}", res);
+    assert!(res.is_ok(), "locking tokens: {res:?}");
 
     // advance the chain by one month + 1 nano second and check that users can unlock tokens
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
@@ -580,7 +580,7 @@ fn unlock_tokens_multiple_users() {
         info1.clone(),
         ExecuteMsg::UnlockTokens { lock_ids: None },
     );
-    assert!(res.is_ok(), "unlocking tokens: {:?}", res);
+    assert!(res.is_ok(), "unlocking tokens: {res:?}");
 
     let res = res.unwrap();
     assert_eq!(1, res.messages.len());
@@ -655,7 +655,7 @@ fn lock_tokens_multiple_validators_and_vote() {
     let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok(), "instantiating contract: {:?}", res);
+    assert!(res.is_ok(), "instantiating contract: {res:?}");
 
     set_validators_constant_power_ratios_for_rounds(
         deps.as_mut(),
@@ -676,17 +676,17 @@ fn lock_tokens_multiple_validators_and_vote() {
         proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok(), "locking tokens: {:?}", res);
+    assert!(res.is_ok(), "locking tokens: {res:?}");
 
     // Lock tokens from validator2
     info.funds = vec![user_token2.clone()];
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok(), "locking tokens: {:?}", res);
+    assert!(res.is_ok(), "locking tokens: {res:?}");
 
     // Lock tokens from validator3
     info.funds = vec![user_token3.clone()];
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "locking tokens: {:?}", res);
+    assert!(res.is_ok(), "locking tokens: {res:?}");
 
     // create two proposals
     let msg1 = ExecuteMsg::CreateProposal {
@@ -927,7 +927,7 @@ fn validator_set_initialization_test() {
             info.clone(),
             test_case.message.clone(),
         );
-        assert!(res.is_ok(), "Failed to execute message: {:?}", res);
+        assert!(res.is_ok(), "Failed to execute message: {res:?}");
 
         // Check that the validator set storage is correctly initialized for round 1
         for round in 0..=2 {
@@ -1040,7 +1040,7 @@ fn icq_validator_set_initialization_test() {
     // Send the SudoMsg as a result of the interchain query
     let msg = SudoMsg::KVQueryResult { query_id: 1 };
     let res = sudo(deps.as_mut(), env.clone(), msg);
-    assert!(res.is_ok(), "Failed to execute message: {:?}", res);
+    assert!(res.is_ok(), "Failed to execute message: {res:?}");
 
     // Check that the validator set storage is correctly initialized for rounds 0, 1, and 2
     for round in 0..=2 {

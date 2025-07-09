@@ -545,14 +545,13 @@ fn test_icq_managers_feature() {
     instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, admin)];
     instantiate_msg.icq_managers = vec![initial_icq_manager_addr.clone()];
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg);
-    assert!(res.is_ok(), "Error: {:?}", res);
+    assert!(res.is_ok(), "Error: {res:?}");
 
     // query the initial icq managers to make sure that the manager was added correctly
     let managers = query_icq_managers(deps.as_ref()).unwrap().managers;
     assert!(
         managers.contains(&deps.api.addr_make(initial_icq_manager)),
-        "Managers: {:?}",
-        managers
+        "Managers: {managers:?}"
     );
 
     // Scenario 1: An address that is not an ICQ manager cannot withdraw funds
@@ -576,13 +575,12 @@ fn test_icq_managers_feature() {
         address: non_manager_addr.clone(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), add_manager_msg);
-    assert!(res.is_ok(), "Error: {:?}", res);
+    assert!(res.is_ok(), "Error: {res:?}");
 
     let managers = query_icq_managers(deps.as_ref()).unwrap().managers;
     assert!(
         managers.contains(&deps.api.addr_make(non_manager)),
-        "Managers: {:?}",
-        managers
+        "Managers: {managers:?}"
     );
 
     // Scenario 3: Check that the manager address can withdraw funds

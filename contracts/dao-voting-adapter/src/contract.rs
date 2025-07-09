@@ -83,8 +83,7 @@ fn query_total_power_at_height(
         .query_wasm_smart(hydro_contract, &QueryMsg::TotalPowerAtHeight { height })
         .map_err(|err| {
             StdError::generic_err(format!(
-                "Failed to query total voting power from Hydro contract. Error: {}",
-                err
+                "Failed to query total voting power from Hydro contract. Error: {err}"
             ))
         })?;
 
@@ -108,8 +107,7 @@ fn query_voting_power_at_height(
         )
         .map_err(|err| {
             StdError::generic_err(format!(
-                "Failed to query user voting power from Hydro contract. Error: {}",
-                err
+                "Failed to query user voting power from Hydro contract. Error: {err}"
             ))
         })?;
 

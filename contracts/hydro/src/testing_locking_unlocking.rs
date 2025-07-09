@@ -43,7 +43,7 @@ fn lock_tokens_basic_test() {
         proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     let info2 = get_message_info(
         &deps.api,
@@ -155,7 +155,7 @@ fn lock_tokens_various_denoms_test() {
         proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     let info3 = get_message_info(
         &deps.api,
