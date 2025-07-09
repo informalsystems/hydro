@@ -6,6 +6,7 @@ members = [
     "contracts/liquid-collateral",
     "contracts/token-info-providers/st-token-info-provider",
     "contracts/token-info-providers/d-token-info-provider",
+    "contracts/marketplace",
     "contracts/gatekeeper",
     "packages/cw-orch-interface",
     "packages/interface",
@@ -14,7 +15,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "3.4.2"
+version = "3.5.0"
 edition = "2021"
 
 [profile.release]
@@ -32,6 +33,7 @@ overflow-checks = true
 cosmwasm-std = { version = "2.1.2", features = ["cosmwasm_2_0"] }
 schemars = "0.8.21"
 serde = { version = "1.0.204", default-features = false, features = ["derive"] }
+serde_json = "1.0.117"
 thiserror = { version = "1.0.62" }
 cw-storage-plus = "2.0.0"
 cw2 = "2.0.0"

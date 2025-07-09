@@ -88,11 +88,7 @@ impl Display for TokenInfoProviderInstantiateMsg {
                 icq_update_period,
             } => write!(
                 f,
-                "LSM(max_validator_shares_participating: {}, hub_connection_id: {}, hub_transfer_channel_id: {}, icq_update_period: {})",
-                max_validator_shares_participating,
-                hub_connection_id,
-                hub_transfer_channel_id,
-                icq_update_period
+                "LSM(max_validator_shares_participating: {max_validator_shares_participating}, hub_connection_id: {hub_connection_id}, hub_transfer_channel_id: {hub_transfer_channel_id}, icq_update_period: {icq_update_period})"
             ),
             TokenInfoProviderInstantiateMsg::TokenInfoProviderContract {
                 code_id,
@@ -101,11 +97,7 @@ impl Display for TokenInfoProviderInstantiateMsg {
                 admin,
             } => write!(
                 f,
-                "TokenInfoProviderContract(code_id: {}, msg: {}, label: {}, admin: {:?})",
-                code_id,
-                msg,
-                label,
-                admin
+                "TokenInfoProviderContract(code_id: {code_id}, msg: {msg}, label: {label}, admin: {admin:?})"
             ),
         }
     }
@@ -122,6 +114,13 @@ pub enum ExecuteMsg {
     RefreshLockDuration {
         lock_ids: Vec<u64>,
         lock_duration: u64,
+    },
+    SplitLock {
+        lock_id: u64,
+        amount: Uint128,
+    },
+    MergeLocks {
+        lock_ids: Vec<u64>,
     },
     UnlockTokens {
         lock_ids: Option<Vec<u64>>,
@@ -244,6 +243,18 @@ pub enum ExecuteMsg {
     /// Remove previously granted ApproveAll permission
     RevokeAll {
         operator: String,
+    },
+    /// Allows whitelisted admin to set the drop token info for lockup conversions.
+    SetDropTokenInfo {
+        core_address: String,
+        d_token_denom: String,
+        puppeteer_address: String,
+    },
+
+    /// Allows users to convert their lockups to dTokens.
+    /// This action is only available if the drop token info is set.
+    ConvertLockupToDtoken {
+        lock_ids: Vec<u64>,
     },
 }
 

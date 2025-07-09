@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Timestamp, Uint64, Binary, Uint128, Decimal, TokenInfoProviderInstantiateMsg, InstantiateMsg, CollectionInfo, InstantiateContractMsg, TrancheInfo, ExecuteMsg, Expiration, LockTokensProof, SignatureInfo, ProposalToLockups, Coin, QueryMsg, Addr, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponse, LockupWithPerTrancheInfo, LockEntryWithPower, LockEntryV2, PerTrancheLockupInfo, RoundWithBid, OperatorsResponse, TokensResponse, AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, ApprovalResponse, ApprovalsResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExpiredUserLockupsResponse, GatekeeperResponse, ICQManagersResponse, LiquidityDeploymentResponse, LiquidityDeployment, LockVotesHistoryResponse, LockVotesHistoryEntry, NumTokensResponse, ProposalResponse, Proposal, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSM, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotedLocksResponse, VotedLockInfo, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistResponse, WhitelistAdminsResponse } from "./HydroBase.types";
+import { Timestamp, Uint64, Binary, Uint128, Decimal, TokenInfoProviderInstantiateMsg, InstantiateMsg, CollectionInfo, InstantiateContractMsg, TrancheInfo, ExecuteMsg, Expiration, LockTokensProof, SignatureInfo, ProposalToLockups, Coin, QueryMsg, Addr, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponse, LockupWithPerTrancheInfo, LockEntryWithPower, LockEntryV2, PerTrancheLockupInfo, RoundWithBid, OperatorsResponse, TokensResponse, AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, ApprovalResponse, ApprovalsResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExpiredUserLockupsResponse, GatekeeperResponse, ICQManagersResponse, LiquidityDeploymentResponse, LiquidityDeployment, LockVotesHistoryResponse, LockVotesHistoryEntry, NumTokensResponse, ProposalResponse, Proposal, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, DtokenAmountsResponse, DtokenAmountResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSM, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotedLocksResponse, VotedLockInfo, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistResponse, WhitelistAdminsResponse } from "./HydroBase.types";
 export interface HydroBaseReadOnlyInterface {
   contractAddress: string;
   constants: () => Promise<ConstantsResponse>;
@@ -254,6 +254,13 @@ export interface HydroBaseReadOnlyInterface {
     limit?: number;
     startAfter?: string;
   }) => Promise<TokensResponse>;
+  simulateDtokenAmounts: ({
+    address,
+    lockIds
+  }: {
+    address: string;
+    lockIds: number[];
+  }) => Promise<DtokenAmountsResponse>;
 }
 export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
   client: CosmWasmClient;
@@ -302,6 +309,7 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     this.allNftInfo = this.allNftInfo.bind(this);
     this.tokens = this.tokens.bind(this);
     this.allTokens = this.allTokens.bind(this);
+    this.simulateDtokenAmounts = this.simulateDtokenAmounts.bind(this);
   }
   constants = async (): Promise<ConstantsResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -814,6 +822,20 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
       }
     });
   };
+  simulateDtokenAmounts = async ({
+    address,
+    lockIds
+  }: {
+    address: string;
+    lockIds: number[];
+  }): Promise<DtokenAmountsResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      simulate_dtoken_amounts: {
+        address,
+        lock_ids: lockIds
+      }
+    });
+  };
 }
 export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   contractAddress: string;
@@ -830,6 +852,18 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
     lockIds
   }: {
     lockDuration: number;
+    lockIds: number[];
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  splitLock: ({
+    amount,
+    lockId
+  }: {
+    amount: Uint128;
+    lockId: number;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  mergeLocks: ({
+    lockIds
+  }: {
     lockIds: number[];
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
   unlockTokens: ({
@@ -1025,6 +1059,20 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   }: {
     operator: string;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  setDropTokenInfo: ({
+    coreAddress,
+    dTokenDenom,
+    puppeteerAddress
+  }: {
+    coreAddress: string;
+    dTokenDenom: string;
+    puppeteerAddress: string;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  convertLockupToDtoken: ({
+    lockIds
+  }: {
+    lockIds: number[];
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
 }
 export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseInterface {
   client: SigningCosmWasmClient;
@@ -1037,6 +1085,8 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.contractAddress = contractAddress;
     this.lockTokens = this.lockTokens.bind(this);
     this.refreshLockDuration = this.refreshLockDuration.bind(this);
+    this.splitLock = this.splitLock.bind(this);
+    this.mergeLocks = this.mergeLocks.bind(this);
     this.unlockTokens = this.unlockTokens.bind(this);
     this.createProposal = this.createProposal.bind(this);
     this.vote = this.vote.bind(this);
@@ -1064,6 +1114,8 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.revoke = this.revoke.bind(this);
     this.approveAll = this.approveAll.bind(this);
     this.revokeAll = this.revokeAll.bind(this);
+    this.setDropTokenInfo = this.setDropTokenInfo.bind(this);
+    this.convertLockupToDtoken = this.convertLockupToDtoken.bind(this);
   }
   lockTokens = async ({
     lockDuration,
@@ -1089,6 +1141,31 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     return await this.client.execute(this.sender, this.contractAddress, {
       refresh_lock_duration: {
         lock_duration: lockDuration,
+        lock_ids: lockIds
+      }
+    }, fee_, memo_, funds_);
+  };
+  splitLock = async ({
+    amount,
+    lockId
+  }: {
+    amount: Uint128;
+    lockId: number;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      split_lock: {
+        amount,
+        lock_id: lockId
+      }
+    }, fee_, memo_, funds_);
+  };
+  mergeLocks = async ({
+    lockIds
+  }: {
+    lockIds: number[];
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      merge_locks: {
         lock_ids: lockIds
       }
     }, fee_, memo_, funds_);
@@ -1474,6 +1551,34 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     return await this.client.execute(this.sender, this.contractAddress, {
       revoke_all: {
         operator
+      }
+    }, fee_, memo_, funds_);
+  };
+  setDropTokenInfo = async ({
+    coreAddress,
+    dTokenDenom,
+    puppeteerAddress
+  }: {
+    coreAddress: string;
+    dTokenDenom: string;
+    puppeteerAddress: string;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      set_drop_token_info: {
+        core_address: coreAddress,
+        d_token_denom: dTokenDenom,
+        puppeteer_address: puppeteerAddress
+      }
+    }, fee_, memo_, funds_);
+  };
+  convertLockupToDtoken = async ({
+    lockIds
+  }: {
+    lockIds: number[];
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      convert_lockup_to_dtoken: {
+        lock_ids: lockIds
       }
     }, fee_, memo_, funds_);
   };

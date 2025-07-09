@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## v3.5.0
+
+Date: July 9th, 2025
+
+### FEATURES
+
+- Added support for conversion of lockups to dTOKENS in Hydro (currently supported conversion to dATOM).
+  ([\#264](https://github.com/informalsystems/hydro/pull/264))
+- Add marketplace contract.
+  ([\#267](https://github.com/informalsystems/hydro/pull/267))
+- Allow splitting and merging of existing locks.
+  ([\#278](https://github.com/informalsystems/hydro/pull/278))
+
 ## v3.4.2
 
 Date: June 27th, 2025
@@ -23,6 +36,8 @@ Date: June 11th, 2025
 
 ### FEATURES
 
+- Implement CW721 specifications for Hydro lockups.
+  ([\#254](https://github.com/informalsystems/hydro/pull/254))
 - Added support for locking dTOKENS in Hydro.
   ([\#258](https://github.com/informalsystems/hydro/pull/258))
 - Added support for updating stTOKEN ratio against the base token.
@@ -30,13 +45,11 @@ Date: June 11th, 2025
 - Tributes follow lockups.
   ([\#260](https://github.com/informalsystems/hydro/pull/260))
 
-## v3.3.0
-
 ## v3.2.0
 
 Date: May 6th, 2025
 
-### FEATURE
+### FEATURES
 
 - Allow voting with locks that voted for a proposal which did not receive any funds in its deployment
   ([\#231](https://github.com/informalsystems/hydro/pull/231))
@@ -58,7 +71,6 @@ Date: May 6th, 2025
 
     If you don't change this message, or if this file is empty, the release
     will not be created. -->
-
 
 Date: Feburary 25th, 2025
 
@@ -208,6 +220,7 @@ Date: October 22nd, 2024
 ## v1.0.3
 
 Date: October 15th, 2024
+
 <!--
     Add a summary for the release here.
 
@@ -234,11 +247,11 @@ Date: September 24th, 2023
 
 This is the first version of the auction and tribute contracts for the Hydro liquidity auction platform.
 It includes:
-* The main _Hydro_ contract, where:
-  * Users can lock, relock, and unlock staked ATOM in the form of LSM shares
-  * Projects can create proposals to deploy liquidity
-  * Users can vote on proposals
-* The _Tribute_ contract, where:
-  * Projects can add tributes to their proposals
-  * Users can claim tributes for the proposals that they voted on
 
+- The main _Hydro_ contract, where:
+  - Users can lock, relock, and unlock staked ATOM in the form of LSM shares
+  - Projects can create proposals to deploy liquidity
+  - Users can vote on proposals
+- The _Tribute_ contract, where:
+  - Projects can add tributes to their proposals
+  - Users can claim tributes for the proposals that they voted on

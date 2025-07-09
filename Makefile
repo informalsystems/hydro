@@ -42,6 +42,7 @@ schema:
 	cd contracts/token-info-providers/st-token-info-provider && cargo run --bin st_token_info_provider_schema
 	cd contracts/token-info-providers/d-token-info-provider && cargo run --bin d_token_info_provider_schema
 	cd contracts/gatekeeper && cargo run --bin gatekeeper_schema
+	cd contracts/marketplace && cargo run --bin marketplace_schema
 
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/hydro/schema NAME=HydroBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/tribute/schema NAME=TributeBase
@@ -49,6 +50,7 @@ schema:
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/st-token-info-provider/schema NAME=STTokenInfoProviderBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/d-token-info-provider/schema NAME=DTokenInfoProviderBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/gatekeeper/schema NAME=GatekeeperBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/marketplace/schema NAME=MarketplaceBase
 
 ts-codegen-inner:
 	cosmwasm-ts-codegen generate \

@@ -220,6 +220,10 @@ pub enum QueryMsg {
         start_after: Option<String>,
         limit: Option<u32>,
     },
+
+    /// Lists token_ids controlled by the contract.
+    #[returns(DtokenAmountsResponse)]
+    SimulateDtokenAmounts { lock_ids: Vec<u64>, address: String },
 }
 
 #[cw_serde]
@@ -295,6 +299,17 @@ pub struct GatekeeperResponse {
 #[cw_serde]
 pub struct TranchesResponse {
     pub tranches: Vec<Tranche>,
+}
+
+#[cw_serde]
+pub struct DtokenAmountsResponse {
+    pub dtokens_response: Vec<DtokenAmountResponse>,
+}
+
+#[cw_serde]
+pub struct DtokenAmountResponse {
+    pub lock_id: u64,
+    pub dtoken_amount: Uint128,
 }
 
 // LockEntryWithPower is a LockEntry with the current voting power of the sender

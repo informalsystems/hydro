@@ -79,9 +79,7 @@ pub fn handle_submsg_reply(
                     .value
                     .to_vec(),
             )
-            .map_err(|e| {
-                StdError::generic_err(format!("failed to parse reply message: {:?}", e))
-            })?;
+            .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {e:?}")))?;
 
             QUERY_ID_TO_VALIDATOR.save(deps.storage, register_query_resp.id, &validator_address)?;
             VALIDATOR_TO_QUERY_ID.save(deps.storage, validator_address, &register_query_resp.id)?;
@@ -97,9 +95,7 @@ pub fn handle_submsg_reply(
                     .value
                     .to_vec(),
             )
-            .map_err(|e| {
-                StdError::generic_err(format!("failed to parse reply message: {:?}", e))
-            })?;
+            .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {e:?}")))?;
 
             let validator_address = QUERY_ID_TO_VALIDATOR.load(deps.storage, query_id)?;
             QUERY_ID_TO_VALIDATOR.remove(deps.storage, query_id);
@@ -384,8 +380,7 @@ fn get_interchain_query_result(
         || staking_validator.validators[0].operator_address.is_empty()
     {
         return Err(NeutronError::Std(StdError::generic_err(format!(
-            "failed to obtain validator info from interchain query with id: {}",
-            query_id
+            "failed to obtain validator info from interchain query with id: {query_id}"
         ))));
     }
 

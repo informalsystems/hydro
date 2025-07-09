@@ -293,7 +293,7 @@ fn fractional_voting_test() {
                     proposal_id: proposal_id_1,
                     lock_ids: vec![],
                 }],
-                expected_error: Some(format!("No lock IDs provided to vote for proposal ID {}", proposal_id_1).to_string()),
+                expected_error: Some(format!("No lock IDs provided to vote for proposal ID {proposal_id_1}").to_string()),
                 expected_proposal_powers: vec![],
                 expected_user_votes: vec![],
             },
@@ -317,8 +317,7 @@ fn fractional_voting_test() {
                     },
                 ],
                 expected_error: Some(format!(
-                    "Duplicate proposal ID {} provided",
-                    proposal_id_1
+                    "Duplicate proposal ID {proposal_id_1} provided"
                 ).to_string()),
                 expected_proposal_powers: vec![],
                 expected_user_votes: vec![],

@@ -55,3 +55,9 @@ mod testing_locking_unlocking;
 
 #[cfg(test)]
 mod testing_cw721;
+
+#[cfg(test)]
+mod testing_lockup_conversion_dtoken;
+
+#[cfg(test)]
+mod testing_locks_split_merge;

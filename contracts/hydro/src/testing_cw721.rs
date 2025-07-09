@@ -46,7 +46,7 @@ fn test_handle_execute_transfer_lsm_fail() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
     set_default_validator_for_rounds(deps.as_mut(), 0, 100);
@@ -62,7 +62,7 @@ fn test_handle_execute_transfer_lsm_fail() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     let recipient = get_address_as_str(&deps.api, "recipient");
     let token_id = "0".to_string(); // First lock ID is 0
@@ -77,8 +77,7 @@ fn test_handle_execute_transfer_lsm_fail() {
     // Verify the response
     assert!(
         res.is_err(),
-        "Should not be able to transfer LSM lockups {:?}",
-        res
+        "Should not be able to transfer LSM lockups {res:?}"
     );
     assert!(res
         .unwrap_err()
@@ -109,7 +108,7 @@ fn test_handle_execute_transfer_st_atom_success() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -126,7 +125,7 @@ fn test_handle_execute_transfer_st_atom_success() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     let recipient = get_address_as_str(&deps.api, "recipient");
     let token_id = "0".to_string(); // First lock ID is 0
@@ -204,7 +203,7 @@ fn test_handle_execute_transfer_oneself_fail() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -221,7 +220,7 @@ fn test_handle_execute_transfer_oneself_fail() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Recipient is the owner
     let recipient = get_address_as_str(&deps.api, owner);
@@ -266,7 +265,7 @@ fn test_handle_execute_transfer_st_atom_with_vote_success() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -283,7 +282,7 @@ fn test_handle_execute_transfer_st_atom_with_vote_success() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Create simple test proposal
     let proposal_msg = ExecuteMsg::CreateProposal {
@@ -297,8 +296,7 @@ fn test_handle_execute_transfer_st_atom_with_vote_success() {
     let proposal_res = execute(deps.as_mut(), env.clone(), info.clone(), proposal_msg);
     assert!(
         proposal_res.is_ok(),
-        "Failed to create proposal: {:?}",
-        proposal_res
+        "Failed to create proposal: {proposal_res:?}"
     );
 
     // Vote on proposal
@@ -310,14 +308,13 @@ fn test_handle_execute_transfer_st_atom_with_vote_success() {
         }],
     };
     let vote_res = execute(deps.as_mut(), env.clone(), info.clone(), vote_msg);
-    assert!(vote_res.is_ok(), "Failed to vote: {:?}", vote_res);
+    assert!(vote_res.is_ok(), "Failed to vote: {vote_res:?}");
 
     // verify user's vote worked
     let vote_query_res = query_all_votes(deps.as_ref(), 0, 100);
     assert!(
         vote_query_res.is_ok(),
-        "Vote query should not fail: {:?}",
-        vote_query_res
+        "Vote query should not fail: {vote_query_res:?}"
     );
     let votes = vote_query_res.unwrap().votes;
     assert_eq!(1, votes.len());
@@ -339,8 +336,7 @@ fn test_handle_execute_transfer_st_atom_with_vote_success() {
     // Verify the response
     assert!(
         transfer_res.is_ok(),
-        "Failed to transfer NFT: {:?}",
-        transfer_res
+        "Failed to transfer NFT: {transfer_res:?}"
     );
     let transfer_res = transfer_res.unwrap();
 
@@ -387,8 +383,7 @@ fn test_handle_execute_transfer_st_atom_with_vote_success() {
     let vote_query_res = query_all_votes(deps.as_ref(), 0, 100);
     assert!(
         vote_query_res.is_ok(),
-        "Vote query should not fail: {:?}",
-        vote_query_res
+        "Vote query should not fail: {vote_query_res:?}"
     );
     let votes = vote_query_res.unwrap().votes;
     assert_eq!(1, votes.len());
@@ -420,7 +415,7 @@ fn test_handle_execute_transfer_unlock_queries_for_tributes() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -437,7 +432,7 @@ fn test_handle_execute_transfer_unlock_queries_for_tributes() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Create simple test proposal
     let proposal_msg = ExecuteMsg::CreateProposal {
@@ -451,8 +446,7 @@ fn test_handle_execute_transfer_unlock_queries_for_tributes() {
     let proposal_res = execute(deps.as_mut(), env.clone(), info.clone(), proposal_msg);
     assert!(
         proposal_res.is_ok(),
-        "Failed to create proposal: {:?}",
-        proposal_res
+        "Failed to create proposal: {proposal_res:?}"
     );
 
     // 1. Vote on proposal
@@ -464,7 +458,7 @@ fn test_handle_execute_transfer_unlock_queries_for_tributes() {
         }],
     };
     let vote_res = execute(deps.as_mut(), env.clone(), info.clone(), vote_msg);
-    assert!(vote_res.is_ok(), "Failed to vote: {:?}", vote_res);
+    assert!(vote_res.is_ok(), "Failed to vote: {vote_res:?}");
 
     // 2. Advance the chain by one month + 1 nanosecond and transfer the token to another user
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
@@ -479,8 +473,7 @@ fn test_handle_execute_transfer_unlock_queries_for_tributes() {
     let transfer_res = execute(deps.as_mut(), env.clone(), info.clone(), transfer_msg);
     assert!(
         transfer_res.is_ok(),
-        "Failed to transfer NFT: {:?}",
-        transfer_res
+        "Failed to transfer NFT: {transfer_res:?}"
     );
 
     // 3. New owner unlocks the lockup
@@ -496,8 +489,7 @@ fn test_handle_execute_transfer_unlock_queries_for_tributes() {
     );
     assert!(
         unlock_res.is_ok(),
-        "Failed to unlock tokens: {:?}",
-        unlock_res
+        "Failed to unlock tokens: {unlock_res:?}"
     );
 
     // 4. query for query_user_voted_locks should return that lock_id for the new owner, and no lock for old owner
@@ -511,8 +503,7 @@ fn test_handle_execute_transfer_unlock_queries_for_tributes() {
     );
     assert!(
         old_owner_voted_locks.is_ok(),
-        "Old owner voted locks query failed: {:?}",
-        old_owner_voted_locks
+        "Old owner voted locks query failed: {old_owner_voted_locks:?}"
     );
     let old_owner_locks = old_owner_voted_locks.unwrap();
     assert_eq!(
@@ -607,7 +598,7 @@ fn test_handle_execute_send_nft_lsm_fail() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup dependencies with custom wasm querier that recognizes "contract-address" as a contract
     let contract_addr = deps.api.addr_make(contract_address);
@@ -627,7 +618,7 @@ fn test_handle_execute_send_nft_lsm_fail() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Recipient is the contract address
     let recipient = contract_addr.to_string();
@@ -644,8 +635,7 @@ fn test_handle_execute_send_nft_lsm_fail() {
     // Verify the response
     assert!(
         res.is_err(),
-        "Should not be able to send LSM lockup {:?}",
-        res
+        "Should not be able to send LSM lockup {res:?}"
     );
     assert!(res
         .unwrap_err()
@@ -677,7 +667,7 @@ fn test_handle_execute_send_nft_st_atom_success() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -694,7 +684,7 @@ fn test_handle_execute_send_nft_st_atom_success() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Now that we locked, we setup dependencies with custom wasm querier that recognizes "contract-address" as a contract
     let contract_addr = deps.api.addr_make(contract_address);
@@ -713,7 +703,7 @@ fn test_handle_execute_send_nft_st_atom_success() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), execute_msg);
 
     // Verify the response
-    assert!(res.is_ok(), "Failed to send NFT: {:?}", res);
+    assert!(res.is_ok(), "Failed to send NFT: {res:?}");
     let res = res.unwrap();
 
     check_send_nft_result(
@@ -746,7 +736,7 @@ fn test_handle_execute_send_nft_st_atom_with_vote_success() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), admin_info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -784,7 +774,7 @@ fn test_handle_execute_send_nft_st_atom_with_vote_success() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Now we vote on the proposal with the locked tokens
     let info = get_message_info(&deps.api, owner, &[]);
@@ -801,8 +791,7 @@ fn test_handle_execute_send_nft_st_atom_with_vote_success() {
     let vote_query_res = query_all_votes(deps.as_ref(), 0, 100);
     assert!(
         vote_query_res.is_ok(),
-        "Vote query should not fail: {:?}",
-        vote_query_res
+        "Vote query should not fail: {vote_query_res:?}"
     );
     let votes = vote_query_res.unwrap().votes;
     assert_eq!(1, votes.len());
@@ -830,7 +819,7 @@ fn test_handle_execute_send_nft_st_atom_with_vote_success() {
     let send_res = execute(deps.as_mut(), env.clone(), info.clone(), send_msg);
 
     // Verify the response
-    assert!(send_res.is_ok(), "Failed to send NFT: {:?}", send_res);
+    assert!(send_res.is_ok(), "Failed to send NFT: {send_res:?}");
     let send_res = send_res.unwrap();
 
     check_send_nft_result(
@@ -920,7 +909,7 @@ fn test_handle_execute_approve() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
     set_default_validator_for_rounds(deps.as_mut(), 0, 100);
@@ -940,7 +929,7 @@ fn test_handle_execute_approve() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Create an approval message for spender over token_id
     let spender = "spender";
@@ -989,8 +978,7 @@ fn test_handle_execute_approve() {
     let transfer_res = execute(deps.as_mut(), env.clone(), spender_info, transfer_msg);
     assert!(
         transfer_res.is_ok(),
-        "Spender should be able to transfer token: {:?}",
-        transfer_res
+        "Spender should be able to transfer token: {transfer_res:?}"
     );
 
     // Verify the token was transferred
@@ -1017,7 +1005,7 @@ fn test_handle_execute_approve_fail_for_lsm() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
     set_default_validator_for_rounds(deps.as_mut(), 0, 100);
@@ -1033,7 +1021,7 @@ fn test_handle_execute_approve_fail_for_lsm() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Try to create an approval for spender
     let spender = get_address_as_str(&deps.api, "spender");
@@ -1079,7 +1067,7 @@ fn test_handle_execute_revoke() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
     set_default_validator_for_rounds(deps.as_mut(), 0, 100);
@@ -1099,7 +1087,7 @@ fn test_handle_execute_revoke() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Try to create an approval for spender
     let spender = get_address_as_str(&deps.api, "spender");
@@ -1173,7 +1161,7 @@ fn test_handle_execute_revoke_fail_for_lsm() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
     set_default_validator_for_rounds(deps.as_mut(), 0, 100);
@@ -1189,7 +1177,7 @@ fn test_handle_execute_revoke_fail_for_lsm() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Try to create a revoke for spender
     let spender = get_address_as_str(&deps.api, "spender");
@@ -1225,7 +1213,7 @@ fn test_query_owner_of() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
     set_default_validator_for_rounds(deps.as_mut(), 0, 100);
@@ -1241,7 +1229,7 @@ fn test_query_owner_of() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Query owner of the lock
     let token_id = "0".to_string(); // First lock ID is 0
@@ -1271,7 +1259,7 @@ fn test_query_nft_info() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
     set_default_validator_for_rounds(deps.as_mut(), 0, 100);
@@ -1287,7 +1275,7 @@ fn test_query_nft_info() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Query NFT Info
     let token_id = "0".to_string(); // First lock ID is 0
@@ -1324,7 +1312,7 @@ fn test_query_approval() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
     set_default_validator_for_rounds(deps.as_mut(), 0, 100);
@@ -1344,7 +1332,7 @@ fn test_query_approval() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Create an approval for spender
     let spender = get_address_as_str(&deps.api, "spender");
@@ -1392,7 +1380,7 @@ fn test_query_approval_for_owner() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
     set_default_validator_for_rounds(deps.as_mut(), 0, 100);
@@ -1412,7 +1400,7 @@ fn test_query_approval_for_owner() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // No need to create an Approval, owners are always approved
     let spender = get_address_as_str(&deps.api, "owner");
@@ -1448,7 +1436,7 @@ fn test_handle_execute_approve_all() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -1462,8 +1450,7 @@ fn test_handle_execute_approve_all() {
     let approve_res = execute(deps.as_mut(), env.clone(), info.clone(), approve_all_msg);
     assert!(
         approve_res.is_ok(),
-        "Failed to approve operator: {:?}",
-        approve_res
+        "Failed to approve operator: {approve_res:?}"
     );
 
     // Verify the response attributes
@@ -1492,7 +1479,7 @@ fn test_handle_execute_approve_all() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Verify that operator can transfer the token
     let operator_info = get_message_info(&deps.api, operator, &[]);
@@ -1504,8 +1491,7 @@ fn test_handle_execute_approve_all() {
     let transfer_res = execute(deps.as_mut(), env.clone(), operator_info, transfer_msg);
     assert!(
         transfer_res.is_ok(),
-        "Operator should be able to transfer token: {:?}",
-        transfer_res
+        "Operator should be able to transfer token: {transfer_res:?}"
     );
 
     // Verify the token was transferred
@@ -1536,7 +1522,7 @@ fn test_handle_execute_approve_all_fail_expired() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -1602,7 +1588,7 @@ fn test_handle_execute_revoke_all() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -1706,7 +1692,7 @@ fn test_handle_execute_revoke_all_no_approval() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -1778,7 +1764,7 @@ fn test_query_num_tokens() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -1832,7 +1818,7 @@ fn test_query_tokens() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -1897,7 +1883,7 @@ fn test_query_all_tokens() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -1954,6 +1940,135 @@ fn test_query_all_tokens() {
 }
 
 #[test]
+fn test_query_all_tokens_filters_lsm() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                ST_ATOM_ON_NEUTRON.to_string(),
+                ST_ATOM_ON_STRIDE.to_string(),
+            ),
+        ]),
+    );
+
+    // Setup initial state
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+
+    let owner1 = "owner1";
+    let owner1_addr = deps.api.addr_make(owner1);
+    let owner2 = "owner2";
+    let owner2_addr = deps.api.addr_make(owner2);
+    let info = get_message_info(&deps.api, owner1, &[]);
+
+    // Proper contract initialization
+    let msg = get_default_instantiate_msg(&deps.api);
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
+
+    // Setup ST_ATOM token info provider (non-LSM)
+    let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
+    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+
+    // Set up validators for LSM rounds
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+
+    // Create first non-LSM lock (owner1, ST_ATOM) - should appear in results
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let lock_info1 = get_message_info(
+        &deps.api,
+        owner1_addr.as_ref(),
+        &[Coin::new(1000u64, ST_ATOM_ON_NEUTRON.to_string())],
+    );
+    let lock_res1 = execute(deps.as_mut(), env.clone(), lock_info1, lock_msg.clone());
+    assert!(lock_res1.is_ok(), "Failed to create first non-LSM lock");
+
+    // Create first LSM lock (owner1, IBC_DENOM_1) - should NOT appear in results
+    let lock_info2 = get_message_info(
+        &deps.api,
+        owner1_addr.as_ref(),
+        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+    );
+    let lock_res2 = execute(deps.as_mut(), env.clone(), lock_info2, lock_msg.clone());
+    assert!(lock_res2.is_ok(), "Failed to create first LSM lock");
+
+    // Create second non-LSM lock (owner2, ST_ATOM) - should appear in results
+    let lock_info3 = get_message_info(
+        &deps.api,
+        owner2_addr.as_ref(),
+        &[Coin::new(1000u64, ST_ATOM_ON_NEUTRON.to_string())],
+    );
+    let lock_res3 = execute(deps.as_mut(), env.clone(), lock_info3, lock_msg.clone());
+    assert!(lock_res3.is_ok(), "Failed to create second non-LSM lock");
+
+    // Create second LSM lock (owner2, IBC_DENOM_1) - should NOT appear in results
+    let lock_info4 = get_message_info(
+        &deps.api,
+        owner2_addr.as_ref(),
+        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+    );
+    let lock_res4 = execute(deps.as_mut(), env.clone(), lock_info4, lock_msg);
+    assert!(lock_res4.is_ok(), "Failed to create second LSM lock");
+
+    // Query all tokens - should only return non-LSM tokens (IDs 0 and 2)
+    let query_msg = QueryMsg::AllTokens {
+        start_after: None,
+        limit: None,
+    };
+    let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(query_res.is_ok(), "Failed to query all tokens");
+    let tokens: TokensResponse = from_json(query_res.unwrap()).unwrap();
+
+    // Should only have 2 tokens (the non-LSM ones)
+    assert_eq!(tokens.tokens.len(), 2);
+    assert_eq!(tokens.tokens[0], "0"); // First non-LSM lock
+    assert_eq!(tokens.tokens[1], "2"); // Second non-LSM lock
+                                       // Note: tokens "1" and "3" (LSM locks) should be filtered out
+
+    // Test with limit
+    let query_msg = QueryMsg::AllTokens {
+        start_after: None,
+        limit: Some(1),
+    };
+    let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(query_res.is_ok(), "Failed to query tokens with limit");
+    let tokens: TokensResponse = from_json(query_res.unwrap()).unwrap();
+
+    assert_eq!(tokens.tokens.len(), 1);
+    assert_eq!(tokens.tokens[0], "0");
+
+    // Test with start_after
+    let query_msg = QueryMsg::AllTokens {
+        start_after: Some("0".to_string()),
+        limit: None,
+    };
+    let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(query_res.is_ok(), "Failed to query tokens with start_after");
+    let tokens: TokensResponse = from_json(query_res.unwrap()).unwrap();
+
+    assert_eq!(tokens.tokens.len(), 1);
+    assert_eq!(tokens.tokens[0], "2"); // Should skip "0" and "1" (LSM), return "2"
+
+    // Test with both start_after and limit
+    let query_msg = QueryMsg::AllTokens {
+        start_after: Some("0".to_string()),
+        limit: Some(1),
+    };
+    let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(
+        query_res.is_ok(),
+        "Failed to query tokens with start_after and limit"
+    );
+    let tokens: TokensResponse = from_json(query_res.unwrap()).unwrap();
+
+    assert_eq!(tokens.tokens.len(), 1);
+    assert_eq!(tokens.tokens[0], "2");
+}
+
+#[test]
 fn test_query_all_operators() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
@@ -1975,7 +2090,7 @@ fn test_query_all_operators() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -2045,10 +2160,10 @@ fn test_query_collection_info() {
         symbol: "hydro-lockups-for-test".to_string(),
     });
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     let res = query_collection_info(deps.as_ref(), env);
-    assert!(res.is_ok(), "Failed to query collection info: {:?}", res);
+    assert!(res.is_ok(), "Failed to query collection info: {res:?}");
 
     let res = res.unwrap();
     assert_eq!(res.name, "Hydro Lockups for test");
@@ -2075,7 +2190,7 @@ fn test_query_tokens_with_transfer() {
     // Initialize contract
     let instantiate_msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
     setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
@@ -2095,7 +2210,7 @@ fn test_query_tokens_with_transfer() {
         lock_info_owner1.clone(),
         lock_msg,
     );
-    assert!(res.is_ok(), "Failed to create lockup for owner1: {:?}", res);
+    assert!(res.is_ok(), "Failed to create lockup for owner1: {res:?}");
 
     // Create lockup for owner2
     let lock_info_owner2 = get_message_info(
@@ -2113,7 +2228,7 @@ fn test_query_tokens_with_transfer() {
         lock_info_owner2.clone(),
         lock_msg2,
     );
-    assert!(res.is_ok(), "Failed to create lockup for owner2: {:?}", res);
+    assert!(res.is_ok(), "Failed to create lockup for owner2: {res:?}");
 
     // Transfer lockup from owner1 to owner2
     let transfer_msg = ExecuteMsg::TransferNft {
@@ -2121,7 +2236,7 @@ fn test_query_tokens_with_transfer() {
         token_id: "0".to_string(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), transfer_msg);
-    assert!(res.is_ok(), "Failed to transfer lockup: {:?}", res);
+    assert!(res.is_ok(), "Failed to transfer lockup: {res:?}");
 
     // Query tokens for owner2 with limit 1
     let query_msg = QueryMsg::Tokens {
@@ -2130,7 +2245,7 @@ fn test_query_tokens_with_transfer() {
         limit: Some(1),
     };
     let res = query(deps.as_ref(), env.clone(), query_msg);
-    assert!(res.is_ok(), "Failed to query tokens: {:?}", res);
+    assert!(res.is_ok(), "Failed to query tokens: {res:?}");
     let tokens: TokensResponse = from_json(res.unwrap()).unwrap();
     assert_eq!(tokens.tokens.len(), 1);
     assert_eq!(tokens.tokens[0], "0");
@@ -2142,7 +2257,7 @@ fn test_query_tokens_with_transfer() {
         limit: None,
     };
     let res = query(deps.as_ref(), env, query_msg);
-    assert!(res.is_ok(), "Failed to query tokens: {:?}", res);
+    assert!(res.is_ok(), "Failed to query tokens: {res:?}");
     let tokens: TokensResponse = from_json(res.unwrap()).unwrap();
     assert_eq!(tokens.tokens.len(), 2);
     assert_eq!(tokens.tokens[0], "0");
@@ -2170,7 +2285,7 @@ fn test_operator_approve_for_token() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -2187,7 +2302,7 @@ fn test_operator_approve_for_token() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Create an approval message for spender over token_id
     let spender = get_address_as_str(&deps.api, "spender");
@@ -2216,8 +2331,7 @@ fn test_operator_approve_for_token() {
     let approve_res = execute(deps.as_mut(), env.clone(), info.clone(), approve_all_msg);
     assert!(
         approve_res.is_ok(),
-        "Failed to approve operator: {:?}",
-        approve_res
+        "Failed to approve operator: {approve_res:?}"
     );
 
     // Verify that operator can now create an Approval on the token
@@ -2265,7 +2379,7 @@ fn test_operator_revoke_for_token() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -2282,7 +2396,7 @@ fn test_operator_revoke_for_token() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Create an approval message for spender over token_id
     let spender = get_address_as_str(&deps.api, "spender");
@@ -2323,8 +2437,7 @@ fn test_operator_revoke_for_token() {
     let approve_res = execute(deps.as_mut(), env.clone(), info.clone(), approve_all_msg);
     assert!(
         approve_res.is_ok(),
-        "Failed to approve operator: {:?}",
-        approve_res
+        "Failed to approve operator: {approve_res:?}"
     );
 
     // Verify that operator can now revoke an Approval on the token
@@ -2372,7 +2485,7 @@ fn test_handle_execute_approve_then_unlock() {
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
@@ -2389,7 +2502,7 @@ fn test_handle_execute_approve_then_unlock() {
         proof: None,
     };
     let lock_res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
-    assert!(lock_res.is_ok(), "Failed to lock tokens: {:?}", lock_res);
+    assert!(lock_res.is_ok(), "Failed to lock tokens: {lock_res:?}");
 
     // Try to create an approval for spender
     let spender_addr = deps.api.addr_make("spender");

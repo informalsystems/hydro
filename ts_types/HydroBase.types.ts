@@ -64,6 +64,15 @@ export type ExecuteMsg = {
     lock_ids: number[];
   };
 } | {
+  split_lock: {
+    amount: Uint128;
+    lock_id: number;
+  };
+} | {
+  merge_locks: {
+    lock_ids: number[];
+  };
+} | {
   unlock_tokens: {
     lock_ids?: number[] | null;
   };
@@ -199,6 +208,16 @@ export type ExecuteMsg = {
 } | {
   revoke_all: {
     operator: string;
+  };
+} | {
+  set_drop_token_info: {
+    core_address: string;
+    d_token_denom: string;
+    puppeteer_address: string;
+  };
+} | {
+  convert_lockup_to_dtoken: {
+    lock_ids: number[];
   };
 };
 export type Expiration = {
@@ -409,6 +428,11 @@ export type QueryMsg = {
     limit?: number | null;
     start_after?: string | null;
   };
+} | {
+  simulate_dtoken_amounts: {
+    address: string;
+    lock_ids: number[];
+  };
 };
 export type Addr = string;
 export interface AllNftInfoResponse {
@@ -580,6 +604,13 @@ export interface RoundTotalVotingPowerResponse {
 }
 export interface RoundTrancheLiquidityDeploymentsResponse {
   liquidity_deployments: LiquidityDeployment[];
+}
+export interface DtokenAmountsResponse {
+  dtokens_response: DtokenAmountResponse[];
+}
+export interface DtokenAmountResponse {
+  dtoken_amount: Uint128;
+  lock_id: number;
 }
 export interface SpecificUserLockupsResponse {
   lockups: LockEntryWithPower[];

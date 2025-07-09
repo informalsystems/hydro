@@ -73,7 +73,7 @@ pub fn instantiate(
         .data
         .address;
 
-    println!("Contract deployed at: {}\n", contract_addr);
+    println!("Contract deployed at: {contract_addr}\n");
 
     contract_addr // Return the contract address
 }
@@ -107,15 +107,15 @@ pub fn print_position_details(full_position: &FullPositionBreakdown) {
         .unwrap_or_else(|| (String::from("0"), String::from("unknown")));
 
     // Print asset details
-    println!("Asset0: {} {}", asset0_amount, asset0_denom);
-    println!("Asset1: {} {}", asset1_amount, asset1_denom);
+    println!("Asset0: {asset0_amount} {asset0_denom}");
+    println!("Asset1: {asset1_amount} {asset1_denom}");
 
     // Print claimable spread rewards
     println!("Claimable Spread Rewards:\n");
     for reward in &full_position.claimable_spread_rewards {
         let denom = &reward.denom;
         let amount = &reward.amount;
-        println!("Denom: {}, Amount: {}", denom, amount);
+        println!("Denom: {denom}, Amount: {amount}");
     }
 
     // Print claimable incentives
@@ -152,7 +152,7 @@ fn query_and_print_balance(
         .unwrap()
         .amount;
 
-    println!("{}'s balance for {}: {}", user_name, denom, amount);
+    println!("{user_name}'s balance for {denom}: {amount}");
     amount
 }
 
@@ -268,7 +268,7 @@ fn test_create_and_withdraw_position_in_pool() {
     let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
 
     // Print the state response
-    println!("{}", formatted_output);
+    println!("{formatted_output}");
 
     println!("Printing position details...\n");
     let _liquidity = if let Ok(full_position) = position_response {
@@ -301,7 +301,7 @@ fn test_create_and_withdraw_position_in_pool() {
     let response = pm.query_spot_price(&request).unwrap();
     let price: Decimal = response.spot_price.parse().unwrap();
 
-    println!("Spot price before swap: {}", price);
+    println!("Spot price before swap: {price}");
 
     // this swap should make price goes below lower range - should make OSMO amount in pool be zero
     let usdc_needed: u128 = 117_647_058_823;
@@ -335,7 +335,7 @@ fn test_create_and_withdraw_position_in_pool() {
     let response = pm.query_spot_price(&request).unwrap();
     let price: Decimal = response.spot_price.parse().unwrap();
 
-    println!("Spot price after swap: {}", price);
+    println!("Spot price after swap: {price}");
 
     //92195444572928873195000
     let liquidate_msg = ExecuteMsg::Liquidate;
@@ -380,7 +380,7 @@ fn test_create_and_withdraw_position_in_pool() {
     let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
 
     // Print the state response
-    println!("{}", formatted_output);
+    println!("{formatted_output}");
 
     println!("\nQuery-ing contract bank balances after liquidation...\n");
     let bank = Bank::new(&pool_mockup.app);
@@ -440,7 +440,7 @@ fn test_create_and_withdraw_position_in_pool() {
 
     let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
     // Print the state response
-    println!("{}", formatted_output);
+    println!("{formatted_output}");
 
     println!("Printing position details...\n");
     let position_response = pool_mockup.position_query(1);
@@ -513,7 +513,7 @@ fn test_partial_liquidations() {
     let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
 
     // Print the state response
-    println!("{}", formatted_output);
+    println!("{formatted_output}");
 
     // this swap should make price goes below lower range - should make OSMO amount in pool be zero
     let usdc_needed: u128 = 117_647_058_823;
@@ -543,7 +543,7 @@ fn test_partial_liquidations() {
     let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
 
     // Print the state response
-    println!("{}", formatted_output);
+    println!("{formatted_output}");
 
     let liquidate_msg = ExecuteMsg::Liquidate;
 
@@ -586,7 +586,7 @@ fn test_partial_liquidations() {
     let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
 
     // Print the state response
-    println!("{}", formatted_output);
+    println!("{formatted_output}");
 
     let coins = &[Coin::new(30001u128, OSMO_DENOM)];
 
@@ -627,7 +627,7 @@ fn test_partial_liquidations() {
     let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
 
     // Print the state response
-    println!("{}", formatted_output);
+    println!("{formatted_output}");
     let coins = &[Coin::new(19999u128, OSMO_DENOM)];
 
     println!("Executing third/final partial liquidate msg...\n");
@@ -667,7 +667,7 @@ fn test_partial_liquidations() {
     let formatted_output = serde_json::to_string_pretty(&state_response).unwrap();
 
     // Print the state response
-    println!("{}", formatted_output);
+    println!("{formatted_output}");
 }
 #[test]
 fn test_end_of_round_principal_higher_or_equal() {
@@ -739,7 +739,7 @@ fn test_end_of_round_principal_higher_or_equal() {
 
     println!("Printing contract state...\n");
     // Print the state response
-    println!("{}", formatted_output);
+    println!("{formatted_output}");
 
     println!("Query-ing contract bank balances after liquidation...\n");
     let bank = Bank::new(&pool_mockup.app);
@@ -762,8 +762,8 @@ fn test_end_of_round_principal_higher_or_equal() {
         .unwrap()
         .amount;
 
-    println!("Contract USDC after withdrawal: {}", amount_usdc); // Print the value
-    println!("Contract OSMO after withdrawal: {}", amount_osmo);
+    println!("Contract USDC after withdrawal: {amount_usdc}"); // Print the value
+    println!("Contract OSMO after withdrawal: {amount_osmo}");
 }
 #[test]
 fn test_auction() {
@@ -833,7 +833,7 @@ fn test_auction() {
 
     println!("Printing contract state...\n");
     // Print the state response
-    println!("{}", formatted_output);
+    println!("{formatted_output}");
 
     // Execute the first bid
     let first_bid = ExecuteMsg::PlaceBid(PlaceBidMsg {
@@ -889,7 +889,7 @@ fn test_auction() {
 
     println!("Printing contract state...\n");
     // Print the state response
-    println!("{}", formatted_output);
+    println!("{formatted_output}");
 
     let fifth_bid = ExecuteMsg::PlaceBid(PlaceBidMsg {
         requested_amount: 1u128.into(),
@@ -909,7 +909,7 @@ fn test_auction() {
 
     println!("Printing contract state...\n");
     // Print the state response
-    println!("{}", formatted_output);
+    println!("{formatted_output}");
 
     // Query the sorted bids
     let query_msg = QueryMsg::SortedBids {};
@@ -1119,10 +1119,10 @@ fn test_tick_to_price() {
     let tick = 11046100; // Example tick value
     let price = tick_to_sqrt_price(tick).unwrap();
 
-    println!("Sqrt price: {}", price);
+    println!("Sqrt price: {price}");
 
     let sqrt_price_f64 = price.to_string().parse::<f64>().unwrap_or(f64::NAN);
-    println!("Sqrt price (f64): {}", sqrt_price_f64);
+    println!("Sqrt price (f64): {sqrt_price_f64}");
 }
 
 #[test]
@@ -1144,12 +1144,12 @@ fn test_calculate_amount_1() {
     let liquidation_bonus = "0.0";
     let liquidation_bonus = BigDecimal::from_str(liquidation_bonus).unwrap();
 
-    println!("Token1 amount on entering position: {}", amount1);
+    println!("Token1 amount on entering position: {amount1}");
 
     let response = calc_required_token1_with_bonus(amount0, amount1, lower_tick, liquidation_bonus);
     //921954445729288730000575
     //92195444572928873195000
-    println!("Token1 amount on liquidation: {}", response);
+    println!("Token1 amount on liquidation: {response}");
 }
 
 #[test]
@@ -1170,7 +1170,7 @@ fn test_calculate_amount_0() {
         current_sqrt_price.clone(),
     );
 
-    println!("Token0 amount on entering position: {}", response); // <-- BigInt supports {}
+    println!("Token0 amount on entering position: {response}"); // <-- BigInt supports {}
 }
 
 #[test]
@@ -1315,17 +1315,8 @@ fn test_calculate_final_amount_at_lower_tick_with_bonus() {
             bonus,
         );
 
-    println!("Token0 amount at lower tick (no bonus): {}", amount0);
-    println!(
-        "Token0 amount at lower tick (with bonus): {}",
-        amount0_with_bonus
-    );
-    println!(
-        "Value of token0 at lower tick (no bonus) in token1: {}",
-        value_without_bonus
-    );
-    println!(
-        "Value of token0 at lower tick (with bonus) in token1: {}",
-        value_with_bonus
-    );
+    println!("Token0 amount at lower tick (no bonus): {amount0}");
+    println!("Token0 amount at lower tick (with bonus): {amount0_with_bonus}");
+    println!("Value of token0 at lower tick (no bonus) in token1: {value_without_bonus}");
+    println!("Value of token0 at lower tick (with bonus) in token1: {value_with_bonus}");
 }

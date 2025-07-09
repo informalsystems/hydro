@@ -193,7 +193,16 @@ fn claim_tribute(
     for lock_info in prop_locks {
         if !TRIBUTE_CLAIMED_LOCKS.has(deps.storage, (tribute_id, lock_info.lock_id)) {
             unclaimed_voting_power += lock_info.vote_power;
-            unclaimed_locks.push(lock_info.lock_id);
+
+            // During locks split/merge, we are inserting 0-power votes for the past rounds for newly created locks.
+            // These locks should not be allowed to claim previous rounds tributes. Furthermore, users could repeat
+            // the split/merge actions many times, which could result in some lock being marked here as if it has claimed a
+            // specific tribute, and later a user could merge such lock with a new one that voted on a different proposal.
+            // If this happens, when the second claim attempt is made, we would mark the same lock as if it has claimed both
+            // tributes, which isn't the case.
+            if !lock_info.vote_power.is_zero() {
+                unclaimed_locks.push(lock_info.lock_id);
+            }
         }
     }
 
@@ -652,7 +661,7 @@ pub fn query_outstanding_tribute_claims(
         tranche_id,
         None,
     )
-    .map_err(|err| StdError::generic_err(format!("Failed to get user voted locks: {}", err)))?;
+    .map_err(|err| StdError::generic_err(format!("Failed to get user voted locks: {err}")))?;
 
     let mut claims = vec![];
 
@@ -660,7 +669,7 @@ pub fn query_outstanding_tribute_claims(
     for (proposal_id, lock_infos) in user_voted_locks.voted_locks {
         // Check if tributes for this proposal are claimable
         if get_proposal_tributes_info(deps, &config, round_id, tranche_id, proposal_id)
-            .map_err(|err| StdError::generic_err(format!("Failed to get proposal info: {}", err)))?
+            .map_err(|err| StdError::generic_err(format!("Failed to get proposal info: {err}")))?
             .are_tributes_claimable()
             .is_err()
         {
@@ -668,7 +677,7 @@ pub fn query_outstanding_tribute_claims(
         }
 
         let proposal = get_proposal(deps, &config, round_id, tranche_id, proposal_id)
-            .map_err(|err| StdError::generic_err(format!("Failed to get proposal: {}", err)))?;
+            .map_err(|err| StdError::generic_err(format!("Failed to get proposal: {err}")))?;
 
         // get all tributes for this proposal
         let tributes = get_proposal_tributes(deps, round_id, proposal_id, None, None)?;
@@ -751,8 +760,7 @@ fn get_liquidity_deployment(
         )
         .map_err(|err| {
             StdError::generic_err(format!(
-                "No liquidity deployment was entered yet for proposal. Error: {:?}",
-                err
+                "No liquidity deployment was entered yet for proposal. Error: {err:?}"
             ))
         })?;
 
@@ -788,9 +796,8 @@ pub fn query_outstanding_lockup_claimable_coins(
     let config = CONFIG.load(deps.storage)?;
 
     // Step 1: Get the lock's voting history from Hydro contract
-    let lock_votes_history = query_lock_votes_history(deps, &config, lock_id).map_err(|err| {
-        StdError::generic_err(format!("Failed to get lock votes history: {}", err))
-    })?;
+    let lock_votes_history = query_lock_votes_history(deps, &config, lock_id)
+        .map_err(|err| StdError::generic_err(format!("Failed to get lock votes history: {err}")))?;
 
     let mut claimable_coins = Coins::default();
 
@@ -804,7 +811,7 @@ pub fn query_outstanding_lockup_claimable_coins(
             vote_entry.tranche_id,
             vote_entry.proposal_id,
         )
-        .map_err(|err| StdError::generic_err(format!("Failed to get proposal info: {}", err)))?
+        .map_err(|err| StdError::generic_err(format!("Failed to get proposal info: {err}")))?
         .are_tributes_claimable()
         .is_err()
         {
@@ -818,7 +825,7 @@ pub fn query_outstanding_lockup_claimable_coins(
             vote_entry.tranche_id,
             vote_entry.proposal_id,
         )
-        .map_err(|err| StdError::generic_err(format!("Failed to get proposal: {}", err)))?;
+        .map_err(|err| StdError::generic_err(format!("Failed to get proposal: {err}")))?;
 
         // get all tributes for this proposal
         let tributes = get_proposal_tributes(

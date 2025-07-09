@@ -71,8 +71,7 @@ impl TokenManager {
         }
 
         Err(StdError::generic_err(format!(
-            "Token with denom {} can not be locked in Hydro.",
-            denom
+            "Token with denom {denom} can not be locked in Hydro."
         )))
     }
 
@@ -184,8 +183,7 @@ impl TokenInfoProviderDerivative {
             true => {
                 if denom_info.ratio.is_zero() {
                     Err(StdError::generic_err(format!(
-                        "Token ratio not available for round: {}",
-                        round_id
+                        "Token ratio not available for round: {round_id}"
                     )))
                 } else {
                     Ok(denom_info.token_group_id.clone())
@@ -284,9 +282,7 @@ impl TokenInfoProviderLSM {
             Ok(validator)
         } else {
             Err(StdError::generic_err(format!(
-                "Validator {} is not present; possibly they are not part of the top {} validators by delegated tokens",
-                validator,
-                max_validators
+                "Validator {validator} is not present; possibly they are not part of the top {max_validators} validators by delegated tokens"
             )))
         }
     }
@@ -436,7 +432,7 @@ pub fn token_manager_handle_submsg_reply(
 
             let instantiate_msg_response = cw_utils::parse_instantiate_response_data(bytes)
                 .map_err(|e| {
-                    StdError::generic_err(format!("failed to parse reply message: {:?}", e))
+                    StdError::generic_err(format!("failed to parse reply message: {e:?}"))
                 })?;
 
             token_info_provider.contract = instantiate_msg_response.contract_address.clone();
