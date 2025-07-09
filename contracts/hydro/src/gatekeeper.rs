@@ -53,7 +53,7 @@ pub fn gatekeeper_handle_submsg_reply(
         .to_vec();
 
     let instantiate_msg_response = cw_utils::parse_instantiate_response_data(bytes)
-        .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {:?}", e)))?;
+        .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {e:?}")))?;
 
     GATEKEEPER.save(deps.storage, &instantiate_msg_response.contract_address)?;
 

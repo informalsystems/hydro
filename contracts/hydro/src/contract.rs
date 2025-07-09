@@ -454,7 +454,7 @@ fn lock_tokens(
     let mut token_manager = TokenManager::new(&deps.as_ref());
     let token_group_id = token_manager
         .validate_denom(&deps.as_ref(), current_round, funds.denom)
-        .map_err(|err| new_generic_error(format!("validating denom: {}", err)))?;
+        .map_err(|err| new_generic_error(format!("validating denom: {err}")))?;
 
     let total_locked_tokens = LOCKED_TOKENS.load(deps.storage)?;
     let amount_to_lock = info.funds[0].amount.u128();
@@ -470,8 +470,7 @@ fn lock_tokens(
     // validate that the user does not have too many locks
     if get_lock_count(&deps.as_ref(), info.sender.clone()) >= MAX_LOCK_ENTRIES {
         return Err(ContractError::Std(StdError::generic_err(format!(
-            "User has too many locks, only {} locks allowed",
-            MAX_LOCK_ENTRIES
+            "User has too many locks, only {MAX_LOCK_ENTRIES} locks allowed"
         ))));
     }
 
@@ -625,11 +624,11 @@ fn refresh_lock_duration(
         )?;
 
         response = response.add_attribute(
-            format!("lock_id_{}_old_end", lock_id),
+            format!("lock_id_{lock_id}_old_end"),
             old_lock_end.to_string(),
         );
         response = response.add_attribute(
-            format!("lock_id_{}_new_end", lock_id),
+            format!("lock_id_{lock_id}_new_end"),
             new_lock_end.to_string(),
         );
     }
@@ -669,7 +668,7 @@ fn refresh_single_lock(
 
     let token_group_id = match validate_denom_result {
         Ok(token_group_id) => token_group_id,
-        Err(err) => return Err(new_generic_error(format!("validating denom: {}", err))),
+        Err(err) => return Err(new_generic_error(format!("validating denom: {err}"))),
     };
 
     update_voting_power_on_proposals(
@@ -748,8 +747,7 @@ fn split_lock(
 
     if get_lock_count(&deps.as_ref(), info.sender.clone()) >= MAX_LOCK_ENTRIES {
         return Err(ContractError::Std(StdError::generic_err(format!(
-            "Cannot split lock. User has too many locks, only {} locks allowed",
-            MAX_LOCK_ENTRIES
+            "Cannot split lock. User has too many locks, only {MAX_LOCK_ENTRIES} locks allowed"
         ))));
     }
 
@@ -1157,8 +1155,7 @@ fn validate_lock_duration(
 
     if !lock_times.contains(&lock_duration) {
         return Err(ContractError::Std(StdError::generic_err(format!(
-            "Lock duration must be one of: {:?}; but was: {}",
-            lock_times, lock_duration
+            "Lock duration must be one of: {lock_times:?}; but was: {lock_duration}"
         ))));
     }
 
@@ -1440,7 +1437,7 @@ fn vote(
     // Add attributes for old votes that were removed
     for (lock_id, vote) in removed_votes {
         response = response.add_attribute(
-            format!("lock_id_{}_old_proposal_id", lock_id),
+            format!("lock_id_{lock_id}_old_proposal_id"),
             vote.prop_id.to_string(),
         );
     }
@@ -1521,7 +1518,7 @@ pub fn unvote(
     // Add attributes for removed votes
     for (lock_id, vote) in unvotes_result.removed_votes {
         response = response.add_attribute(
-            format!("lock_id_{}_old_proposal_id", lock_id),
+            format!("lock_id_{lock_id}_old_proposal_id"),
             vote.prop_id.to_string(),
         );
     }
@@ -1842,8 +1839,7 @@ fn create_icqs_for_validators(
         )
         .map_err(|err| {
             StdError::generic_err(format!(
-                "Failed to create staking validators interchain query. Error: {}",
-                err
+                "Failed to create staking validators interchain query. Error: {err}"
             ))
         })?;
 
@@ -1999,8 +1995,7 @@ pub fn add_liquidity_deployment(
         .load(deps.storage, (round_id, tranche_id, proposal_id))
         .map_err(|_| {
             ContractError::Std(StdError::generic_err(format!(
-                "Proposal for round {}, tranche {}, and id {} does not exist",
-                round_id, tranche_id, proposal_id
+                "Proposal for round {round_id}, tranche {tranche_id}, and id {proposal_id} does not exist"
             )))
         })?;
 
@@ -3145,8 +3140,7 @@ pub fn query_lock_votes_history(
     // Validate round range
     if start_round > end_round {
         return Err(StdError::generic_err(format!(
-            "start_round ({}) must be less than or equal to end_round ({})",
-            start_round, end_round
+            "start_round ({start_round}) must be less than or equal to end_round ({end_round})"
         )));
     }
 
@@ -3416,7 +3410,7 @@ pub fn query_registered_validator_queries(
         .filter_map(|l| {
             if l.is_err() {
                 deps.api
-                    .debug(&format!("Error when querying validator query id: {:?}", l));
+                    .debug(&format!("Error when querying validator query id: {l:?}"));
             }
             l.ok()
         })

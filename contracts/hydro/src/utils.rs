@@ -184,8 +184,7 @@ fn can_user_lock_in_known_users_cap(
     // Prevent division by zero or break early in case user had no voting power in previous round.
     if total_voting_power == Decimal::zero() || users_voting_power == Decimal::zero() {
         return Err(new_generic_error(format!(
-            "Can not lock {} tokens in known users cap. User had zero voting power in previous round.",
-            amount_to_lock
+            "Can not lock {amount_to_lock} tokens in known users cap. User had zero voting power in previous round."
         )));
     }
 
@@ -212,8 +211,7 @@ fn can_user_lock_in_known_users_cap(
     // total voting power, then don't allow this user to lock the given amount of tokens.
     if users_extra_lock_share > users_voting_power_share {
         return Err(new_generic_error(format!(
-            "Can not lock {} tokens in known users cap. User reached the personal cap for locking tokens in the known users cap.",
-            amount_to_lock
+            "Can not lock {amount_to_lock} tokens in known users cap. User reached the personal cap for locking tokens in the known users cap."
         )));
     }
 
@@ -328,8 +326,7 @@ pub fn get_round_id_for_height(storage: &dyn Storage, height: u64) -> StdResult<
         1 => round_id[0],
         _ => {
             return Err(StdError::generic_err(format!(
-                "Failed to load round ID for height {}.",
-                height
+                "Failed to load round ID for height {height}."
             )));
         }
     })
@@ -349,8 +346,7 @@ pub fn verify_historical_data_availability(storage: &dyn Storage, height: u64) -
     let snapshot_activation_height = SNAPSHOTS_ACTIVATION_HEIGHT.load(storage)?;
     if height < snapshot_activation_height {
         return Err(StdError::generic_err(format!(
-            "Historical data not available before height: {}. Height requested: {}",
-            snapshot_activation_height, height,
+            "Historical data not available before height: {snapshot_activation_height}. Height requested: {height}",
         )));
     }
 
@@ -693,8 +689,7 @@ pub fn find_voted_proposal_for_lock(
         // If we reached the beginning of the tranche, there is an error
         if check_round == 0 {
             return Err(ContractError::Std(StdError::generic_err(format!(
-                "Could not find previous vote for lock_id {} in tranche {}.",
-                lock_id, tranche_id,
+                "Could not find previous vote for lock_id {lock_id} in tranche {tranche_id}.",
             ))));
         }
 

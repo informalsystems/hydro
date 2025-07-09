@@ -7,8 +7,6 @@ use crate::{
     error::ContractError,
 };
 
-use super::v3_4_1::migrate_v3_2_0_to_v3_4_1;
-
 pub const CONTRACT_VERSION_V1_1_1: &str = "1.1.1";
 pub const CONTRACT_VERSION_V2_0_1: &str = "2.0.1";
 pub const CONTRACT_VERSION_V2_0_2: &str = "2.0.2";
@@ -16,26 +14,20 @@ pub const CONTRACT_VERSION_V3_0_0: &str = "3.0.0";
 pub const CONTRACT_VERSION_V3_1_1: &str = "3.1.1";
 pub const CONTRACT_VERSION_V3_2_0: &str = "3.2.0";
 pub const CONTRACT_VERSION_V3_4_1: &str = "3.4.1";
+pub const CONTRACT_VERSION_V3_4_2: &str = "3.4.2";
 
 #[cw_serde]
 pub struct MigrateMsg {}
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(mut deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
-    check_contract_version(deps.storage, CONTRACT_VERSION_V3_2_0)?;
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+    check_contract_version(deps.storage, CONTRACT_VERSION_V3_4_1)?;
 
-    // Run migrations based on current version
-    let response = migrate_v3_2_0_to_v3_4_1(&mut deps).map_err(|e| {
-        ContractError::Std(StdError::generic_err(format!(
-            "Migration to v3_4_1 failed: {}",
-            e
-        )))
-    })?;
+    // No state migrations needed from v3.4.1 to v3.5.0
 
-    // Update contract version
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    Ok(response)
+    Ok(Response::new())
 }
 
 fn check_contract_version(

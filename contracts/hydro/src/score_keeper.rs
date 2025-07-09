@@ -814,7 +814,7 @@ mod tests {
                 SCALED_PROPOSAL_SHARES_MAP,
                 PROPOSAL_TOTAL_MAP,
                 token_group.to_string(), num_shares, power_ratio);
-            assert!(res.is_ok(), "Error adding token group shares: {:?}", res);
+            assert!(res.is_ok(), "Error adding token group shares: {res:?}");
             let (shares, total_power) = get_shares_and_power_for_proposal(storage, key, token_group.to_string());
 
             // Check if shares and power are correct after adding
@@ -831,7 +831,7 @@ mod tests {
                 storage,
                 key,
                 &tokens_ratio_changes);
-            assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
+            assert!(res.is_ok(), "Error updating power ratio: {res:?}");
 
             // add the second shares
             let res = add_token_group_shares(
@@ -840,7 +840,7 @@ mod tests {
                 SCALED_PROPOSAL_SHARES_MAP,
                 PROPOSAL_TOTAL_MAP,
                 token_group.to_string(), num_shares2, power_ratio2);
-            assert!(res.is_ok(), "Error adding token group shares: {:?}", res);
+            assert!(res.is_ok(), "Error adding token group shares: {res:?}");
             let (shares, total_power) = get_shares_and_power_for_proposal(storage, key, token_group.to_string());
 
             // Check if shares and power are correct after the second addition
@@ -852,7 +852,7 @@ mod tests {
                 SCALED_PROPOSAL_SHARES_MAP,
                 PROPOSAL_TOTAL_MAP,
                 token_group.to_string(), num_shares2, power_ratio2);
-            assert!(res.is_ok(), "Error removing token group shares: {:?}", res);
+            assert!(res.is_ok(), "Error removing token group shares: {res:?}");
             let (shares, total_power) = get_shares_and_power_for_proposal(storage, key, token_group.to_string());
 
             // Check if shares and power are correct after removing
@@ -866,7 +866,7 @@ mod tests {
                 new_ratio: power_ratio,
             }];
             let res = update_power_ratio_for_proposal(storage, key, &tokens_ratio_changes);
-            assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
+            assert!(res.is_ok(), "Error updating power ratio: {res:?}");
 
             let (_, total_power) = get_shares_and_power_for_proposal(storage, key, token_group.to_string());
 
@@ -877,7 +877,7 @@ mod tests {
                 SCALED_PROPOSAL_SHARES_MAP,
                 PROPOSAL_TOTAL_MAP,
                 token_group.to_string(), num_shares, power_ratio);
-            assert!(res.is_ok(), "Error removing token group shares: {:?}", res);
+            assert!(res.is_ok(), "Error removing token group shares: {res:?}");
             let (shares, total_power) = get_shares_and_power_for_proposal(storage, key, token_group.to_string());
 
             // Check if shares and power are zero after removing the second batch of shares
@@ -903,13 +903,13 @@ mod tests {
                 new_ratio: old_power_ratio,
             }];
             let res = update_power_ratio_for_proposal(storage, key, &tokens_ratio_changes);
-            assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
+            assert!(res.is_ok(), "Error updating power ratio: {res:?}");
 
             let res = add_token_group_shares(storage, key,
                 SCALED_PROPOSAL_SHARES_MAP,
                 PROPOSAL_TOTAL_MAP,
                 token_group.to_string(), num_shares, old_power_ratio);
-            assert!(res.is_ok(), "Error adding token group shares: {:?}", res);
+            assert!(res.is_ok(), "Error adding token group shares: {res:?}");
 
             // set the power ratio
             let tokens_ratio_changes = vec![TokenGroupRatioChange {
@@ -918,7 +918,7 @@ mod tests {
                 new_ratio: new_power_ratio,
             }];
             let res = update_power_ratio_for_proposal(storage, key, &tokens_ratio_changes);
-            assert!(res.is_ok(), "Error updating power ratio: {:?}", res);
+            assert!(res.is_ok(), "Error updating power ratio: {res:?}");
 
             let (_, total_power) = get_shares_and_power_for_proposal(storage, key, token_group.to_string());
 
@@ -1075,7 +1075,7 @@ mod tests {
             Err(StdError::GenericErr { msg, .. }) => {
                 assert_eq!(msg, "Insufficient shares for the token group")
             }
-            _ => panic!("Expected error, but got {:?}", result),
+            _ => panic!("Expected error, but got {result:?}"),
         }
     }
 }

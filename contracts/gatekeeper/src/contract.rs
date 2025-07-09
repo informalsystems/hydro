@@ -192,8 +192,7 @@ fn execute_lock_tokens(
             let signed_address = sig.extract_addr_from_claim_msg()?;
             if signed_address != user_address.to_string() {
                 return Err(new_generic_error(
-                    format!("Signature verification failed. Signed address ({}) doesn't match the expected one ({}).",
-                    signed_address, user_address)));
+                    format!("Signature verification failed. Signed address ({signed_address}) doesn't match the expected one ({user_address}).")));
             }
 
             proof_addr
@@ -365,8 +364,7 @@ pub fn get_epoch_start_for_stage_id(deps: &Deps, stage_id: u64) -> Result<u64, C
     match epoch_start_stage_id.len() {
         1 => Ok(epoch_start_stage_id[0]),
         _ => Err(new_generic_error(format!(
-            "Failed to load epoch start stage id for provided stage id: {}",
-            stage_id
+            "Failed to load epoch start stage id for provided stage id: {stage_id}"
         ))),
     }
 }

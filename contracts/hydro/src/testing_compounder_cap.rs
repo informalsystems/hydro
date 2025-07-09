@@ -177,7 +177,7 @@ fn test_compounder_cap() {
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     // 3.  Round 0: Update config to close the known_users_cap after some time in round 1.
 
@@ -194,7 +194,7 @@ fn test_compounder_cap() {
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     // 4.  Round 0: Update all validator power ratios to verify that the total voting power changes, and users
     // voting power also gets updated proportinally.
@@ -296,7 +296,7 @@ fn test_compounder_cap() {
         lock_ids: Some(vec![0]),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
     assert_eq!(res.unwrap().messages.len(), 1);
 
     // 6.  Round 1: Have a known user lock some tokens in public_cap, then a completely new user lock tokens
@@ -425,7 +425,7 @@ fn test_compounder_cap() {
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     // 12. Round 1: Update config to close the known_users_cap after some time in round 2.
     let msg = ExecuteMsg::UpdateConfig {
@@ -437,7 +437,7 @@ fn test_compounder_cap() {
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     // Advance the chain into the round 2 plus 1 day
     env.block.time = FIRST_ROUND_START.plus_nanos(2 * ROUND_LENGTH + 1 + ONE_DAY_IN_NANO_SECONDS);
@@ -523,7 +523,7 @@ fn execute_locking_and_verify(
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
         match locking_info.3 {
             None => {
-                assert!(res.is_ok(), "error: {:?}", res);
+                assert!(res.is_ok(), "error: {res:?}");
             }
             Some(error_message) => {
                 assert!(res.unwrap_err().to_string().contains(error_message));

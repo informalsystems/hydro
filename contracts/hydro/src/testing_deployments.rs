@@ -35,7 +35,7 @@ mod tests {
         let mut instantiate_msg = get_default_instantiate_msg(&deps.api);
         instantiate_msg.whitelist_admins = vec![admin_address.clone()];
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg);
-        assert!(res.is_ok(), "{:?}", res);
+        assert!(res.is_ok(), "{res:?}");
 
         // Add a proposal to the store
         let proposal_id = 1;
@@ -111,7 +111,7 @@ mod tests {
             let res = execute(deps.as_mut(), env.clone(), info.clone(), add_liquidity_msg);
 
             if case.expect_error {
-                assert!(res.is_err(), "Expected error for case: {:#?}", case);
+                assert!(res.is_err(), "Expected error for case: {case:#?}");
             } else {
                 assert!(
                     res.is_ok(),
@@ -140,7 +140,7 @@ mod tests {
         let mut instantiate_msg = get_default_instantiate_msg(&deps.api);
         instantiate_msg.whitelist_admins = vec![admin_address.clone()];
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg);
-        assert!(res.is_ok(), "{:?}", res);
+        assert!(res.is_ok(), "{res:?}");
 
         // Add a proposal and a liquidity deployment to the store
         let proposal_id = 1;
@@ -233,7 +233,7 @@ mod tests {
             );
 
             if case.expect_error {
-                assert!(res.is_err(), "Expected error for case: {:#?}", case);
+                assert!(res.is_err(), "Expected error for case: {case:#?}");
             } else {
                 assert!(
                     res.is_ok(),

@@ -201,7 +201,7 @@ pub fn store_contracts_code(wasm: &Wasm<OsmosisTestApp>, deployer: &SigningAccou
     let resolved_path = wasm_path
         .canonicalize()
         .expect("Failed to resolve absolute path of wasm");
-    println!("Resolved wasm path: {:?}", resolved_path);
+    println!("Resolved wasm path: {resolved_path:?}");
 
     // Read the contract bytecode
     let contract_bytecode = std::fs::read(resolved_path)

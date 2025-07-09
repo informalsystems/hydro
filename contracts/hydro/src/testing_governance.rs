@@ -269,7 +269,7 @@ fn advance_chain_and_lock_tokens(
         proof: None,
     };
     let res = execute(deps.as_mut(), env.clone(), msg_info.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 }
 
 fn verify_voting_powers(
