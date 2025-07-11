@@ -48,11 +48,12 @@ use crate::score_keeper::{
 use crate::state::{
     Constants, DropTokenInfo, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche,
     ValidatorInfo, Vote, VoteWithPower, CONSTANTS, DROP_SENDERS, DROP_TOKEN_INFO, GATEKEEPER,
-    ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCK_ID, PROPOSAL_MAP,
-    PROPS_BY_SCORE, PROP_ID, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID,
-    TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
-    VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1, VOTE_MAP_V2,
-    VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
+    ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCK_ID, LOCK_ID_EXPIRY,
+    LOCK_ID_TRACKING, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, REVERSE_LOCK_ID_TRACKING,
+    SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS,
+    USER_LOCKS_FOR_CLAIM, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
+    VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1, VOTE_MAP_V2, VOTING_ALLOWED_ROUND, WHITELIST,
+    WHITELIST_ADMINS,
 };
 use crate::token_manager::{
     add_token_info_providers, handle_token_info_provider_add_remove,
@@ -89,6 +90,10 @@ pub const NATIVE_TOKEN_DENOM: &str = "untrn";
 pub const MIN_DEPLOYMENT_DURATION: u64 = 1;
 
 pub const MIN_SPLIT_LOCK_SIZE: Uint128 = Uint128::new(10_000);
+
+pub const LOCK_EXPIRY_DURATION_SECONDS: u64 = 60 * 60 * 24 * 30; // 30 days
+
+pub const LOCK_DEPTH_LIMIT: u32 = 5;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -776,6 +781,39 @@ fn split_lock(
         lock_end: starting_lock_entry.lock_end,
     };
 
+    let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), starting_lock_entry.lock_id)?;
+    if depth >= LOCK_DEPTH_LIMIT {
+        return Err(ContractError::Std(StdError::generic_err(format!(
+            "Cannot split lock. Depth limit {} for lock id {} reached",
+            LOCK_DEPTH_LIMIT, starting_lock_entry.lock_id
+        ))));
+    }
+
+    // Forward lock tracking
+    let total = resulting_lock_amount + amount;
+    let frac_1 = Decimal::from_ratio(resulting_lock_amount, total);
+    let frac_2 = Decimal::one() - frac_1;
+    LOCK_ID_TRACKING.save(
+        deps.storage,
+        starting_lock_entry.lock_id,
+        &vec![(new_lock_id_1, frac_1), (new_lock_id_2, frac_2)],
+    )?;
+
+    // Reverse lock tracking
+    REVERSE_LOCK_ID_TRACKING.save(
+        deps.storage,
+        new_lock_id_1,
+        &vec![starting_lock_entry.lock_id],
+    )?;
+    REVERSE_LOCK_ID_TRACKING.save(
+        deps.storage,
+        new_lock_id_2,
+        &vec![starting_lock_entry.lock_id],
+    )?;
+
+    // Expiry
+    LOCK_ID_EXPIRY.save(deps.storage, starting_lock_entry.lock_id, &env.block.time)?;
+
     // Remove starting lock entry
     LOCKS_MAP_V2.remove(deps.storage, starting_lock_entry.lock_id, env.block.height)?;
 
@@ -991,9 +1029,33 @@ fn merge_locks(
         env.block.height,
     )?;
 
+    let mut parents = REVERSE_LOCK_ID_TRACKING
+        .may_load(deps.storage, resulting_lock_id)?
+        .unwrap_or_default();
+
     for lock_id in &lock_ids {
+        let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), *lock_id)?;
+
+        if depth >= LOCK_DEPTH_LIMIT {
+            return Err(ContractError::Std(StdError::generic_err(format!(
+                "Cannot merge locks. Depth limit {} for lock id {} reached",
+                LOCK_DEPTH_LIMIT, lock_id
+            ))));
+        }
+        LOCK_ID_TRACKING.save(
+            deps.storage,
+            *lock_id,
+            &vec![(resulting_lock_id, Decimal::one())],
+        )?;
+
+        if !parents.contains(lock_id) {
+            parents.push(*lock_id);
+        }
+        LOCK_ID_EXPIRY.save(deps.storage, *lock_id, &env.block.time)?;
+        // Remove merged lock from locks map
         LOCKS_MAP_V2.remove(deps.storage, *lock_id, env.block.height)?;
     }
+    REVERSE_LOCK_ID_TRACKING.save(deps.storage, resulting_lock_id, &parents)?;
 
     // Remove merged locks and add new lock id to USER_LOCKS
     USER_LOCKS.update(
@@ -1141,6 +1203,93 @@ fn merge_locks(
         .add_attribute("sender", info.sender)
         .add_attribute("lock_ids", lock_ids_attr)
         .add_attribute("resulting_lock_id", resulting_lock_id.to_string()))
+}
+
+/// Recursively resolves the final leaf composition of a lock
+pub fn get_current_lock_composition(
+    deps: &Deps<NeutronQuery>,
+    lock_id: u64,
+) -> StdResult<Vec<(u64, Decimal)>> {
+    fn resolve(deps: &Deps<NeutronQuery>, lock_id: u64) -> StdResult<HashMap<u64, Decimal>> {
+        let maybe_children = LOCK_ID_TRACKING.may_load(deps.storage, lock_id)?;
+
+        // If not in tracking, it's a leaf
+        if maybe_children.is_none() {
+            let mut map = HashMap::new();
+            map.insert(lock_id, Decimal::one());
+            return Ok(map);
+        }
+
+        let mut result = HashMap::new();
+        for (child_id, fraction) in maybe_children.unwrap() {
+            let child_composition = resolve(deps, child_id)?;
+            for (leaf_id, weight) in child_composition {
+                let entry = result.entry(leaf_id).or_insert(Decimal::zero());
+                *entry += weight * fraction;
+            }
+        }
+
+        Ok(result)
+    }
+
+    let map = resolve(deps, lock_id)?;
+    let mut out = map.into_iter().collect::<Vec<_>>();
+    out.sort_by_key(|(id, _)| *id);
+    Ok(out)
+}
+
+pub fn get_lock_ancestor_depth(
+    deps: &Deps<NeutronQuery>,
+    env: Env,
+    lock_id: u64,
+) -> StdResult<u32> {
+    if let Some(expiry_time) = LOCK_ID_EXPIRY.may_load(deps.storage, lock_id)? {
+        let cutoff = expiry_time.plus_seconds(LOCK_EXPIRY_DURATION_SECONDS);
+        if env.block.time > cutoff {
+            return Ok(0); // lock itself is expired
+        }
+    }
+
+    fn recurse(
+        deps: &Deps<NeutronQuery>,
+        env: Env,
+        current_id: u64,
+        visited: &mut Vec<u64>,
+    ) -> StdResult<u32> {
+        // Prevent infinite loops in case of cycles
+        if visited.contains(&current_id) {
+            return Ok(0);
+        }
+        visited.push(current_id);
+
+        let parents = REVERSE_LOCK_ID_TRACKING
+            .may_load(deps.storage, current_id)?
+            .unwrap_or_default();
+
+        if parents.is_empty() {
+            return Ok(0);
+        }
+
+        let mut max_depth = 0;
+        for parent_id in parents {
+            if let Some(expiry_time) = LOCK_ID_EXPIRY.may_load(deps.storage, parent_id)? {
+                let expiry_cutoff = expiry_time.plus_seconds(LOCK_EXPIRY_DURATION_SECONDS);
+                if env.block.time > expiry_cutoff {
+                    // Parent expired → stop all and return 0
+                    return Ok(0);
+                }
+            }
+
+            let depth = recurse(deps, env.clone(), parent_id, visited)?;
+            if depth > max_depth {
+                max_depth = depth;
+            }
+        }
+
+        Ok(max_depth + 1)
+    }
+
+    recurse(deps, env, lock_id, &mut vec![])
 }
 
 // Validate that the lock duration (given in nanos) is either 1, 2, 3, 6, or 12 epochs

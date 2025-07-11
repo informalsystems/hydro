@@ -174,6 +174,11 @@ pub const USER_LOCKS: SnapshotMap<Addr, Vec<u64>> = SnapshotMap::new(
     Strategy::EveryBlock,
 );
 
+//Locks tracking
+pub const LOCK_ID_TRACKING: Map<u64, Vec<(u64, Decimal)>> = Map::new("lock_id_tracking");
+pub const REVERSE_LOCK_ID_TRACKING: Map<u64, Vec<u64>> = Map::new("reverse_lock_id_tracking");
+pub const LOCK_ID_EXPIRY: Map<u64, Timestamp> = Map::new("lock_id_expiry");
+
 // This is the total voting power of all users combined.
 // TOTAL_VOTING_POWER_PER_ROUND: key(round_id) -> total_voting_power
 pub const TOTAL_VOTING_POWER_PER_ROUND: SnapshotMap<u64, Uint128> = SnapshotMap::new(
