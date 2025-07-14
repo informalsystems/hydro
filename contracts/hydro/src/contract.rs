@@ -1205,7 +1205,48 @@ fn merge_locks(
         .add_attribute("resulting_lock_id", resulting_lock_id.to_string()))
 }
 
-/// Recursively resolves the final leaf composition of a lock
+/// Recursively resolves the final (leaf-level) composition of a given `lock_id`.
+///
+/// This function traces the ancestry tree from the given lock down to its leaves,
+/// applying all split and merge fractions, and produces a weighted composition
+/// of how much each final leaf lock contributes to the given lock.
+///
+/// A "leaf" lock is one that has no further children in `LOCK_ID_TRACKING`.
+///
+/// ## How it works:
+/// - If the given `lock_id` is not found in `LOCK_ID_TRACKING`, it is treated as a leaf
+///   and assigned 100% (`Decimal::one()`) weight.
+/// - Otherwise, the function recursively traverses the child locks and accumulates
+///   their weighted fractions, multiplying fractions at each level.
+/// - The final result is a vector of `(leaf_lock_id, fraction)` pairs that sum to 1.0.
+///
+/// ## Example
+/// Consider the following actions and resulting tracking:
+/// ```text
+/// LOCK_ID(s)           ACTION          RESULT
+/// 1                    split 50-50     lock_id_tracking[1] = [(2, 0.5), (3, 0.5)]
+/// 2                    split 70-30     lock_id_tracking[2] = [(4, 0.7), (5, 0.3)]
+/// 3, 4                 merge           lock_id_tracking[3] = [(6, 1.0)]
+///                                      lock_id_tracking[4] = [(6, 1.0)]
+///
+/// Here, lock 1 was used for voting before being split.
+///
+/// Then calling:
+///
+/// get_current_lock_composition(..., 1)
+///
+/// returns:
+///
+/// [(5, 0.15), (6, 0.85)]
+///
+/// Explanation:
+/// - Lock 1 splits into 2 (0.5) and 3 (0.5)
+/// - Lock 2 splits into 4 (0.7) and 5 (0.3)
+/// - Locks 3 and 4 merge into 6 (1.0 each)
+/// - So final composition for 1 is:
+///   - Lock 5: 0.5 * 0.3 = 0.15
+///   - Lock 6: 0.5 * (from lock 3) 1.0 + 0.5 * (from lock 4) 0.7 = 0.5 + 0.35 = 0.85
+///
 pub fn get_current_lock_composition(
     deps: &Deps<NeutronQuery>,
     lock_id: u64,
@@ -1238,6 +1279,56 @@ pub fn get_current_lock_composition(
     Ok(out)
 }
 
+/// Calculates the depth of non-expired ancestor locks for a given `lock_id`.
+///
+/// Depth is defined as the length of the longest chain of parent locks, starting from `lock_id`
+/// and following its ancestors recursively, **excluding any locks that have expired**.
+///
+/// - The depth includes the input `lock_id` itself (depth 1 for a valid leaf).
+/// - If the input lock is expired, the function returns `0`.
+/// - If an ancestor lock is expired, the recursion **stops along that path**, but may continue along others.
+/// - Expired parents are **skipped**, not counted, and not recursed into.
+/// - Cycle prevention is enforced using a `visited` list (cloned per path).
+///
+/// Example cases:
+/// - Root node with no parents: returns `1`
+/// - Lock with 3 non-expired ancestors: returns `4`
+/// - Lock with expired ancestors: returns the depth up to the first expired ancestor
+/// /// ## Example
+/// Given the following reverse tracking and all locks unexpired:
+///
+/// REVERSE_LOCK_ID_TRACKING:
+/// Lock ID 1 => [0]
+/// Lock ID 2 => [0]
+/// Lock ID 3 => [1]
+/// Lock ID 4 => [1]
+/// Lock ID 5 => [2, 3]
+///
+/// Then:
+///
+/// get_lock_ancestor_depth(..., 5) == Ok(4)
+///
+/// Explanation: Longest valid path is: 5 → 3 → 1 → 0 (4 hops).
+///
+/// If lock `0` is expired:
+///
+/// get_lock_ancestor_depth(..., 5) == Ok(3)  // path 5 → 3 → 1 still valid
+///
+///
+/// If lock `1` and `2` are expired:
+///
+/// get_lock_ancestor_depth(..., 5) == Ok(2)  // path 5 → 3
+///
+///
+/// If lock `3` is expired:
+///
+/// get_lock_ancestor_depth(..., 5) == Ok(1)  // only 5 itself counts
+///
+///
+/// If lock `5` is expired:
+///
+/// get_lock_ancestor_depth(..., 5) == Ok(0)  // root is expired
+///
 pub fn get_lock_ancestor_depth(
     deps: &Deps<NeutronQuery>,
     env: Env,
@@ -1256,18 +1347,12 @@ pub fn get_lock_ancestor_depth(
         current_id: u64,
         visited: &mut Vec<u64>,
     ) -> StdResult<u32> {
-        // Prevent infinite loops in case of cycles
-        if visited.contains(&current_id) {
-            return Ok(0);
-        }
-        visited.push(current_id);
-
         let parents = REVERSE_LOCK_ID_TRACKING
             .may_load(deps.storage, current_id)?
             .unwrap_or_default();
 
         if parents.is_empty() {
-            return Ok(0);
+            return Ok(1);
         }
 
         let mut max_depth = 0;
@@ -1275,10 +1360,15 @@ pub fn get_lock_ancestor_depth(
             if let Some(expiry_time) = LOCK_ID_EXPIRY.may_load(deps.storage, parent_id)? {
                 let expiry_cutoff = expiry_time.plus_seconds(LOCK_EXPIRY_DURATION_SECONDS);
                 if env.block.time > expiry_cutoff {
-                    // Skip this expired parent, keep checking others
                     continue;
                 }
             }
+
+            let mut local_visited = visited.clone();
+            if local_visited.contains(&parent_id) {
+                continue;
+            }
+            local_visited.push(parent_id);
 
             let depth = recurse(deps, env.clone(), parent_id, visited)?;
             if depth > max_depth {

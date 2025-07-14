@@ -170,7 +170,7 @@ fn test_get_lock_ancestor_depth() {
     assert!(depth.is_ok());
     let depth_value = depth.unwrap();
     assert!(depth_value <= crate::contract::LOCK_DEPTH_LIMIT);
-    assert!(depth_value == 3);
+    assert!(depth_value == 4);
 }
 #[test]
 fn test_split_merge_composition_and_depth() {
@@ -286,9 +286,9 @@ fn test_split_merge_composition_and_depth() {
     let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), lock_id);
     println!("Ancestor depth for {} = {:?}", lock_id, depth);
     assert!(depth.is_ok());
-    assert_eq!(depth.unwrap(), 3);
+    assert_eq!(depth.unwrap(), 4);
 
-    // Simulate lock 0,1 and 2 are expired
+    // Simulate lock 0 expired
     let fake_expiry = env
         .clone()
         .block
@@ -296,6 +296,12 @@ fn test_split_merge_composition_and_depth() {
         .minus_seconds(LOCK_EXPIRY_DURATION_SECONDS + 1);
     let _ = LOCK_ID_EXPIRY.save(&mut deps.storage, 0, &fake_expiry);
 
+    let lock_id = 5;
+    let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), lock_id);
+    println!("Ancestor depth for {} = {:?}", lock_id, depth);
+    assert_eq!(depth.unwrap(), 3);
+
+    // Simulate lock 1 and 2 expired
     let fake_expiry = env
         .clone()
         .block
