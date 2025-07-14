@@ -1275,8 +1275,8 @@ pub fn get_lock_ancestor_depth(
             if let Some(expiry_time) = LOCK_ID_EXPIRY.may_load(deps.storage, parent_id)? {
                 let expiry_cutoff = expiry_time.plus_seconds(LOCK_EXPIRY_DURATION_SECONDS);
                 if env.block.time > expiry_cutoff {
-                    // Parent expired → stop all and return 0
-                    return Ok(0);
+                    // Skip this expired parent, keep checking others
+                    continue;
                 }
             }
 
