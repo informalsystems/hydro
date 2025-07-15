@@ -1,4 +1,4 @@
-use cosmwasm_std::{testing::mock_env, Coin, Decimal, Order, Uint128};
+use cosmwasm_std::{testing::mock_env, Coin, Decimal, Uint128};
 use std::collections::HashMap;
 
 use crate::{
@@ -28,11 +28,8 @@ fn test_get_current_lock_composition() {
         mock_env(),
     );
     let info = get_message_info(&deps.api, user_address, &[]);
-    let mut instantiate_msg = get_default_instantiate_msg(&deps.api);
-    instantiate_msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
-    instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address)];
+    let instantiate_msg = get_default_instantiate_msg(&deps.api);
     instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
-    set_default_validator_for_rounds(deps.as_mut(), 0, 3);
 
     // First split
     let starting_lock_entry_1 = 1;
@@ -84,17 +81,13 @@ fn test_get_current_lock_composition() {
         &vec![(into_lock_id, Decimal::one())],
     );
 
-    let tracking_entries = LOCK_ID_TRACKING.range(&deps.storage, None, None, Order::Ascending);
-
-    println!("--- LOCK_ID_TRACKING contents ---");
-    for entry in tracking_entries {
-        let (key, value) = entry.unwrap();
-        println!("lock_id {} => {:?}", key, value);
-    }
-
     let res = get_current_lock_composition(&deps.as_ref(), starting_lock_entry_1);
     assert!(res.is_ok());
-    println!("Composition: {:?}", res);
+    let expected = vec![
+        (5, Decimal::percent(15)), // 0.15
+        (6, Decimal::percent(85)), // 0.85
+    ];
+    assert_eq!(res.unwrap(), expected);
 }
 
 #[test]
@@ -109,11 +102,8 @@ fn test_get_lock_ancestor_depth() {
         mock_env(),
     );
     let info = get_message_info(&deps.api, user_address, &[]);
-    let mut instantiate_msg = get_default_instantiate_msg(&deps.api);
-    instantiate_msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
-    instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address)];
+    let instantiate_msg = get_default_instantiate_msg(&deps.api);
     instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
-    set_default_validator_for_rounds(deps.as_mut(), 0, 3);
 
     // First split
     let starting_lock_entry_1 = 1;
@@ -156,17 +146,7 @@ fn test_get_lock_ancestor_depth() {
     let parents = vec![from_id_first, from_id_second];
     let _ = REVERSE_LOCK_ID_TRACKING.save(&mut deps.storage, into_lock_id, &parents);
 
-    // Print REVERSE_LOCK_ID_TRACKING before calling get_lock_ancestor_depth
-    REVERSE_LOCK_ID_TRACKING
-        .range(&deps.storage, None, None, cosmwasm_std::Order::Ascending)
-        .for_each(|item| {
-            let (key, parents) = item.unwrap();
-            println!("REVERSE_TRACKING[{}] = {:?}", key, parents);
-        });
-
-    // Call and print result of get_lock_ancestor_depth
     let depth = get_lock_ancestor_depth(&deps.as_ref(), env, 6);
-    println!("Ancestor depth for {} = {:?}", into_lock_id, depth);
     assert!(depth.is_ok());
     let depth_value = depth.unwrap();
     assert!(depth_value <= crate::contract::LOCK_DEPTH_LIMIT);
@@ -250,28 +230,6 @@ fn test_split_merge_composition_and_depth() {
         },
     );
     assert!(merge_res.is_ok());
-    // Print LOCK_ID_TRACKING
-    println!("--- LOCK_ID_TRACKING ---");
-    for item in LOCK_ID_TRACKING.range(&deps.storage, None, None, cosmwasm_std::Order::Ascending) {
-        let (lock_id, children) = item.unwrap();
-        println!("Lock ID {} => {:?}", lock_id, children);
-    }
-
-    // Print REVERSE_LOCK_ID_TRACKING
-    println!("--- REVERSE_LOCK_ID_TRACKING ---");
-    for item in
-        REVERSE_LOCK_ID_TRACKING.range(&deps.storage, None, None, cosmwasm_std::Order::Ascending)
-    {
-        let (lock_id, parents) = item.unwrap();
-        println!("Lock ID {} => {:?}", lock_id, parents);
-    }
-
-    // Print LOCK_ID_EXPIRY
-    println!("--- LOCK_ID_EXPIRY ---");
-    for item in LOCK_ID_EXPIRY.range(&deps.storage, None, None, cosmwasm_std::Order::Ascending) {
-        let (lock_id, timestamp) = item.unwrap();
-        println!("Lock ID {} => {}", lock_id, timestamp);
-    }
 
     let res = get_current_lock_composition(&deps.as_ref(), first_lock_id);
     assert!(res.is_ok());
@@ -284,7 +242,7 @@ fn test_split_merge_composition_and_depth() {
 
     let lock_id = 5;
     let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), lock_id);
-    println!("Ancestor depth for {} = {:?}", lock_id, depth);
+
     assert!(depth.is_ok());
     assert_eq!(depth.unwrap(), 4);
 
@@ -298,7 +256,7 @@ fn test_split_merge_composition_and_depth() {
 
     let lock_id = 5;
     let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), lock_id);
-    println!("Ancestor depth for {} = {:?}", lock_id, depth);
+
     assert_eq!(depth.unwrap(), 3);
 
     // Simulate lock 1 and 2 expired
@@ -318,7 +276,7 @@ fn test_split_merge_composition_and_depth() {
 
     let lock_id = 5;
     let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), lock_id);
-    println!("Ancestor depth for {} = {:?}", lock_id, depth);
+
     assert_eq!(depth.unwrap(), 2);
 
     // Simulate lock 3 is expired
@@ -331,7 +289,7 @@ fn test_split_merge_composition_and_depth() {
 
     let lock_id = 5;
     let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), lock_id);
-    println!("Ancestor depth for {} = {:?}", lock_id, depth);
+
     assert_eq!(depth.unwrap(), 1);
 
     // Simulate lock 5 is expired
@@ -344,6 +302,6 @@ fn test_split_merge_composition_and_depth() {
 
     let lock_id = 5;
     let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), lock_id);
-    println!("Ancestor depth for {} = {:?}", lock_id, depth);
+
     assert_eq!(depth.unwrap(), 0);
 }
