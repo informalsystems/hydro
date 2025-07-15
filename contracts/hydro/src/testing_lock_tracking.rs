@@ -217,9 +217,7 @@ fn test_split_merge_composition_and_depth() {
     assert!(split_res.is_ok());
 
     // Merge lockups into new lockup
-    let mut merge_ids = vec![];
-    merge_ids.push(2);
-    merge_ids.push(3);
+    let merge_ids = vec![2, 3];
 
     let merge_res = execute(
         deps.as_mut(),

@@ -1036,8 +1036,7 @@ fn merge_locks(
 
         if depth >= LOCK_DEPTH_LIMIT {
             return Err(ContractError::Std(StdError::generic_err(format!(
-                "Cannot merge locks. Depth limit {} for lock id {} reached",
-                LOCK_DEPTH_LIMIT, lock_id
+                "Cannot merge locks. Depth limit {LOCK_DEPTH_LIMIT} for lock id {lock_id} reached"
             ))));
         }
         LOCK_ID_TRACKING.save(
@@ -1292,7 +1291,7 @@ pub fn get_current_lock_composition(
 /// - Root node with no parents: returns `1`
 /// - Lock with 3 non-expired ancestors: returns `4`
 /// - Lock with expired ancestors: returns the depth up to the first expired ancestor
-/// /// ## Example
+///  
 /// Given the following reverse tracking and all locks unexpired:
 ///
 /// REVERSE_LOCK_ID_TRACKING:
