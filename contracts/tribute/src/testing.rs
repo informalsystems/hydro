@@ -130,7 +130,7 @@ impl MockWasmQuerier {
                             Ok(res) => res,
                             Err(_) => {
                                 return SystemResult::Err(SystemError::InvalidRequest {
-                                    error: format!("proposal couldn't be found: round_id={}, tranche_id={}, proposal_id={}", round_id, tranche_id, proposal_id),
+                                    error: format!("proposal couldn't be found: round_id={round_id}, tranche_id={tranche_id}, proposal_id={proposal_id}"),
                                     request: Binary::new(vec![]),
                                 })
                             }
@@ -169,7 +169,7 @@ impl MockWasmQuerier {
                                 Ok(res) => res,
                                 Err(_) => {
                                     return SystemResult::Err(SystemError::InvalidRequest {
-                                        error: format!("liquidity deployment couldn't be found: round_id={}, tranche_id={}, proposal_id={}", round_id, tranche_id, proposal_id),
+                                        error: format!("liquidity deployment couldn't be found: round_id={round_id}, tranche_id={tranche_id}, proposal_id={proposal_id}"),
                                         request: Binary::new(vec![]),
                                     })
                                 }
@@ -214,8 +214,7 @@ impl MockWasmQuerier {
                             Err(_) => {
                                 return SystemResult::Err(SystemError::InvalidRequest {
                                     error: format!(
-                                        "lock votes history couldn't be found for lock_id={}",
-                                        lock_id
+                                        "lock votes history couldn't be found for lock_id={lock_id}"
                                     ),
                                     request: Binary::new(vec![]),
                                 })

@@ -1126,7 +1126,7 @@ pub fn query_sorted_bids(deps: Deps) -> StdResult<SortedBidsResponse> {
 pub fn query_is_liquidatable(deps: Deps) -> StdResult<IsLiquidatableResponse> {
     let state = STATE
         .load(deps.storage)
-        .map_err(|e| StdError::generic_err(format!("State load failed: {}", e)))?;
+        .map_err(|e| StdError::generic_err(format!("State load failed: {e}")))?;
 
     let position = ConcentratedliquidityQuerier::new(&deps.querier)
         .position_by_id(
@@ -1157,7 +1157,7 @@ pub fn query_simulate_liquidation(
 ) -> StdResult<SimulateLiquidationResponse> {
     let state = STATE
         .load(deps.storage)
-        .map_err(|e| StdError::generic_err(format!("State load failed: {}", e)))?;
+        .map_err(|e| StdError::generic_err(format!("State load failed: {e}")))?;
 
     let position = ConcentratedliquidityQuerier::new(&deps.querier)
         .position_by_id(

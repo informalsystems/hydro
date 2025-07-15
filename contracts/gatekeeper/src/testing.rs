@@ -750,8 +750,7 @@ fn lock_tokens_external_addresses_test() {
     let res = execute(deps.as_mut(), env.clone(), hydro_info.clone(), msg.clone());
     assert!(res.is_err());
     assert!(res.unwrap_err().to_string().contains(&format!(
-        "Signature verification failed. Signed address ({}) doesn't match the expected one ({}).",
-        address_to_sign2, address_to_sign1
+        "Signature verification failed. Signed address ({address_to_sign2}) doesn't match the expected one ({address_to_sign1})."
     )));
 
     // Sign the correct address and verify that user can now lock tokens

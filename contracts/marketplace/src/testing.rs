@@ -26,7 +26,7 @@ fn mock_nft_contract(
     owner: &str,
     contract_addr_to_approve: Option<Addr>,
 ) {
-    let owner_response = format!(r#"{{"owner":"{}","approvals":[]}}"#, owner);
+    let owner_response = format!(r#"{{"owner":"{owner}","approvals":[]}}"#);
 
     // Mock the NFT contract responses
     deps.querier.update_wasm(
@@ -44,8 +44,7 @@ fn mock_nft_contract(
             } else if msg_str.contains("approval") && contract_addr_to_approve.is_some() {
                 let marketplace_addr = contract_addr_to_approve.as_ref().unwrap().to_string();
                 let approval_response = format!(
-                    r#"{{"approval":{{"spender":"{}","expires":{{"never":{{}}}}}}}}"#,
-                    marketplace_addr
+                    r#"{{"approval":{{"spender":"{marketplace_addr}","expires":{{"never":{{}}}}}}}}"#
                 );
                 SystemResult::Ok(ContractResult::Ok(Binary::from(
                     approval_response.as_bytes().to_vec(),
@@ -1084,7 +1083,7 @@ fn test_execute_list_fail_collection_not_exists() {
         .expect_err("should fail because collection is not whitelisted");
     assert!(err
         .to_string()
-        .contains(&format!("Collection {} is not whitelisted", collection)));
+        .contains(&format!("Collection {collection} is not whitelisted")));
 }
 
 #[test]
@@ -1398,7 +1397,7 @@ fn test_execute_buy_fail_collection_not_whitelisted() {
         funds: vec![],
     };
     let res = execute(deps.as_mut(), env.clone(), seller_info, listing_msg);
-    println!("res: {:?}", res);
+    println!("res: {res:?}");
     assert!(res.is_ok(), "Failed to list NFT");
 
     let remove_collection_msg = ExecuteMsg::RemoveCollection {
@@ -1427,10 +1426,9 @@ fn test_execute_buy_fail_collection_not_whitelisted() {
 
     let res = execute(deps.as_mut(), env, info, msg)
         .expect_err("should fail because collection is not whitelisted");
-    assert!(res.to_string().contains(&format!(
-        "Collection {} is not whitelisted",
-        collection_addr
-    )));
+    assert!(res
+        .to_string()
+        .contains(&format!("Collection {collection_addr} is not whitelisted")));
 }
 
 #[test]
@@ -1813,7 +1811,7 @@ fn test_execute_buy_insufficient_funds() {
     };
 
     let res = execute(deps.as_mut(), env, info, msg);
-    println!("{:?}", res);
+    println!("{res:?}");
     assert!(res.is_err(), "The purchase should fail");
     let err = res.unwrap_err();
 
@@ -1849,7 +1847,7 @@ fn instantiate_marketplace_with_collection(
         admin_info.clone(),
         instantiate_msg,
     );
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
     config
 }
 
@@ -1883,7 +1881,7 @@ fn instantiate_marketplace_with_collection_with_multiple_denoms(
         admin_info.clone(),
         instantiate_msg,
     );
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
     config
 }
 
@@ -1929,7 +1927,7 @@ fn test_execute_unlist_unauthorized() {
         admin_info.clone(),
         instantiate_msg,
     );
-    assert!(res.is_ok(), "Failed to instantiate contract: {:?}", res);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Create a listing first
     let listing_input = ListingInput {
@@ -2108,7 +2106,7 @@ fn test_query_get_listings() {
         };
         let msg = ExecuteMsg::List {
             collection: collection.clone(),
-            token_id: format!("token{}", i),
+            token_id: format!("token{i}"),
             price: price.clone(),
         };
         execute(deps.as_mut(), env.clone(), info, msg).unwrap();
@@ -2178,8 +2176,7 @@ fn test_query_get_whitelisted_collections() {
     let res = execute(deps.as_mut(), env.clone(), admin_info, add_msg2);
     assert!(
         res.is_ok(),
-        "Failed to add collection to whitelist: {:?}",
-        res
+        "Failed to add collection to whitelist: {res:?}"
     );
 
     // Query all listings
@@ -2239,7 +2236,7 @@ fn test_query_get_listings_by_owner() {
         };
         let msg = ExecuteMsg::List {
             collection: collection.clone(),
-            token_id: format!("token{}", i),
+            token_id: format!("token{i}"),
             price: price.clone(),
         };
         execute(deps.as_mut(), env.clone(), info, msg).unwrap();
@@ -2341,7 +2338,7 @@ fn test_query_get_listings_by_collection() {
         };
         let msg = ExecuteMsg::List {
             collection: collection1_addr.to_string(),
-            token_id: format!("token{}", i),
+            token_id: format!("token{i}"),
             price: price.clone(),
         };
         execute(deps.as_mut(), env.clone(), info, msg).unwrap();

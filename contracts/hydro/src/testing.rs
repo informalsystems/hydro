@@ -281,7 +281,7 @@ fn create_proposal_basic_test() {
 
     let expected_round_id = 0;
     let res = query_round_tranche_proposals(deps.as_ref(), expected_round_id, 1, 0, 3000);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     let res = res.unwrap();
     assert_eq!(2, res.proposals.len());
@@ -297,7 +297,7 @@ fn create_proposal_basic_test() {
     // assert that the proposals are not added to top N proposals
     // immediately upon creation, as their voting power is 0
     let res = query_top_n_proposals(deps.as_ref(), expected_round_id, 1, 2);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     let res = res.unwrap();
     assert_eq!(0, res.proposals.len());
@@ -316,7 +316,7 @@ fn create_proposal_basic_test() {
 
     let res = query_round_tranche_proposals(deps.as_ref(), 5, 1, 0, 3000);
 
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     let res = res.unwrap();
     assert_eq!(1, res.proposals.len());
@@ -502,7 +502,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         first_tranche_id,
         info.sender.to_string(),
     );
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
     assert_eq!(first_proposal_id, res.unwrap().votes[0].prop_id);
 
     assert_proposal_voting_power(
@@ -531,7 +531,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         second_tranche_id,
         info.sender.to_string(),
     );
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
     assert_eq!(second_proposal_id, res.unwrap().votes[0].prop_id);
 
     assert_proposal_voting_power(
@@ -707,7 +707,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         first_tranche_id,
         info.sender.to_string(),
     );
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
     assert_eq!(fourth_proposal_id, res.unwrap().votes[0].prop_id);
 
     assert_proposal_voting_power(
@@ -774,7 +774,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         first_tranche_id,
         info.sender.to_string(),
     );
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
     assert_eq!(fifth_proposal_id, res.unwrap().votes[0].prop_id);
 
     assert_proposal_voting_power(
@@ -928,7 +928,7 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
         tranche_id,
         info1.sender.to_string(),
     );
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
     assert_eq!(first_proposal_id, res.unwrap().votes[0].prop_id);
 
     let res = query_proposal(deps.as_ref(), round_id, tranche_id, first_proposal_id);
@@ -948,7 +948,7 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
         }],
     };
     let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg.clone());
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     // verify users vote for the second proposal
     let res = query_user_votes(
@@ -1112,7 +1112,7 @@ fn vote_extended_proposals_test() {
 
     // check that users voted for the third proposal
     let res = query_user_votes(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
     assert_eq!(third_proposal_id, res.unwrap().votes[0].prop_id);
 
     // switch vote from the third proposal p(3) to the second proposals p(2)
@@ -1128,7 +1128,7 @@ fn vote_extended_proposals_test() {
 
     // check that users voted for the second proposal
     let res = query_user_votes(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
     let user_vote = res.unwrap().votes[0].clone();
     assert_eq!(second_proposal_id, user_vote.prop_id);
 
@@ -1157,13 +1157,12 @@ fn vote_extended_proposals_test() {
     }
     assert!(
         second_lock_skipped,
-        "lock with ID {} should be skipped, but it wasn't",
-        second_lock_id
+        "lock with ID {second_lock_id} should be skipped, but it wasn't"
     );
 
     // verify that user's vote didn't change
     let res = query_user_votes(deps.as_ref(), round_id, tranche_id, info.sender.to_string());
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
     let user_vote = res.unwrap().votes[0].clone();
     assert_eq!(second_proposal_id, user_vote.prop_id);
     assert_eq!(old_vote_power, user_vote.power);
@@ -1256,9 +1255,7 @@ fn vote_extended_proposals_test() {
     let res = query_user_votes(deps.as_ref(), round_no, tranche_id, info.sender.to_string());
     assert!(
         res.is_ok(),
-        "querying vote for round {:?} failed {:?}",
-        round_no,
-        res
+        "querying vote for round {round_no:?} failed {res:?}"
     );
     assert_eq!(fifth_proposal_id, res.unwrap().votes[0].prop_id);
 }
@@ -1356,7 +1353,7 @@ fn switch_vote_between_short_and_long_props_test() {
         tranche_id,
         info.sender.to_string(),
     );
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
     assert_eq!(first_proposal_id, res.unwrap().votes[0].prop_id);
 
     let res = query_proposal(
@@ -1380,7 +1377,7 @@ fn switch_vote_between_short_and_long_props_test() {
         }],
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     // no vote for second proposal will be created since the lock doesn't span long enough
     let res = query_user_votes(
@@ -1408,7 +1405,7 @@ fn switch_vote_between_short_and_long_props_test() {
         tranche_id,
         info.sender.to_string(),
     );
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
     assert_eq!(first_proposal_id, res.unwrap().votes[0].prop_id);
 
     let res = query_proposal(
@@ -1813,7 +1810,7 @@ fn disable_voting_in_next_round_with_auto_voted_lock_test() {
         tranche_id,
         info.sender.to_string(),
     );
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
     assert_eq!(first_proposal_id, res.unwrap().votes[0].prop_id);
 
     let res = query_proposal(
@@ -2054,14 +2051,10 @@ fn multi_tranches_test() {
     // top proposals for tranche 1
     // (round 0, tranche 1, show 2 proposals)
     let res = query_top_n_proposals(deps.as_ref(), 0, 1, 2);
-    assert!(
-        res.is_ok(),
-        "error when querying top n proposals: {:?}",
-        res
-    );
+    assert!(res.is_ok(), "error when querying top n proposals: {res:?}");
     let res = res.unwrap().proposals;
     // check that there are two proposals
-    assert_eq!(2, res.len(), "expected 2 proposals, got {:?}", res);
+    assert_eq!(2, res.len(), "expected 2 proposals, got {res:?}");
     // check that the voting power of the first proposal is 1000
     assert_eq!(1000, res[0].power.u128());
     // check that the voting power of the second proposal is 0
@@ -2073,7 +2066,7 @@ fn multi_tranches_test() {
     assert!(res.is_ok());
     let res = res.unwrap().proposals;
     // check that there are two proposals
-    assert_eq!(2, res.len(), "expected 2 proposals, got {:?}", res);
+    assert_eq!(2, res.len(), "expected 2 proposals, got {res:?}");
     // check that the voting power of the first proposal is 3000
     assert_eq!(3000, res[0].power.u128());
     // check that the voting power of the second proposal is 0
@@ -2099,8 +2092,8 @@ fn test_query_round_tranche_proposals_pagination() {
         let create_proposal_msg = ExecuteMsg::CreateProposal {
             round_id: None,
             tranche_id: 1,
-            title: format!("proposal title {}", i),
-            description: format!("proposal description {}", i),
+            title: format!("proposal title {i}"),
+            description: format!("proposal description {i}"),
             deployment_duration: 1,
             minimum_atom_liquidity_request: Uint128::zero(),
         };
@@ -2189,7 +2182,7 @@ fn add_edit_tranche_test() {
     msg.whitelist_admins = vec![get_address_as_str(&deps.api, "addr0000")];
 
     let res = instantiate(deps.as_mut(), env.clone(), admin_info.clone(), msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     let tranches = query_tranches(deps.as_ref());
     assert_eq!(tranches.unwrap().tranches.len(), 2);
@@ -2523,7 +2516,7 @@ proptest! {
         let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg);
 
         // different user cannot refresh the lock
-        assert!(res.is_err(), "different user should not be able to refresh the lock: {:?}", res);
+        assert!(res.is_err(), "different user should not be able to refresh the lock: {res:?}");
 
         // refresh the lock duration
         let info = get_message_info(&deps.api, "addr0001", &[]);
@@ -2777,11 +2770,11 @@ pub fn whitelist_proposal_submission_test() {
         info.clone(),
         proposal_msg.clone(),
     );
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     // now, the proposal should exist
     let res = query_proposal(deps.as_ref(), 0, 1, 0);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     // add the first sender to the whitelist
     info = get_message_info(&deps.api, whitelist_admin, &[]);
@@ -2789,7 +2782,7 @@ pub fn whitelist_proposal_submission_test() {
         address: get_address_as_str(&deps.api, "addr0002"),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     // now, try to submit the proposal again as the first sender
     info = get_message_info(&deps.api, "addr0002", &[]);
@@ -2799,11 +2792,11 @@ pub fn whitelist_proposal_submission_test() {
         info.clone(),
         proposal_msg.clone(),
     );
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     // now, there should be a second proposal (with id 1)
     let res = query_proposal(deps.as_ref(), 0, 1, 1);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 }
 
 fn assert_proposal_voting_power(
@@ -2898,7 +2891,7 @@ pub fn pilot_round_lock_duration_test() {
 
             let expected_error = "Lock duration must be one of";
             let err = res.err().unwrap().to_string();
-            assert!(err.contains(expected_error), "Error: {}", err);
+            assert!(err.contains(expected_error), "Error: {err}");
         } else {
             assert!(
                 res.is_ok(),
@@ -3055,9 +3048,7 @@ fn test_refresh_multiple_locks() {
                 let error = res.unwrap_err().to_string();
                 assert!(
                     error.contains(expected_error),
-                    "Expected error message to contain: {}, but was: {}",
-                    expected_error,
-                    error
+                    "Expected error message to contain: {expected_error}, but was: {error}"
                 );
             }
             None => {
@@ -3335,8 +3326,7 @@ fn test_cannot_vote_while_long_deployment_ongoing() {
     let error = res.unwrap_err().to_string();
     assert!(
         error.contains("Cannot vote again with this lock_id until round"),
-        "Error: {}",
-        error
+        "Error: {error}"
     );
 
     // Add zero liquidity deployment to first proposal
@@ -3352,7 +3342,7 @@ fn test_cannot_vote_while_long_deployment_ongoing() {
     };
     let admin_info = get_message_info(&deps.api, "admin", &[]);
     let res = execute(deps.as_mut(), env.clone(), admin_info, msg);
-    assert!(res.is_ok(), "error: {:?}", res);
+    assert!(res.is_ok(), "error: {res:?}");
 
     // now, voting should be possible
     let res = execute(deps.as_mut(), env.clone(), info.clone(), vote_msg);

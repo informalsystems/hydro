@@ -222,7 +222,7 @@ pub struct ICQMockData {
 pub fn custom_interchain_query_mock(mock_data: HashMap<u64, ICQMockData>) -> Box<CustomQueryFunc> {
     Box::new(move |query: &NeutronQuery| match *query {
         NeutronQuery::RegisteredInterchainQuery { query_id } => match mock_data.get(&query_id) {
-            None => panic!("no mock data for interchain query with id: {}", query_id),
+            None => panic!("no mock data for interchain query with id: {query_id}"),
             Some(mock_data) => {
                 if mock_data.should_query_return_error {
                     system_result_err_from("mock error".to_string())
@@ -238,7 +238,7 @@ pub fn custom_interchain_query_mock(mock_data: HashMap<u64, ICQMockData>) -> Box
             }
         },
         NeutronQuery::InterchainQueryResult { query_id } => match mock_data.get(&query_id) {
-            None => panic!("no mock data for interchain query with id: {}", query_id),
+            None => panic!("no mock data for interchain query with id: {query_id}"),
             Some(mock_data) => {
                 if mock_data.should_query_result_return_error {
                     system_result_err_from("mock error".to_string())

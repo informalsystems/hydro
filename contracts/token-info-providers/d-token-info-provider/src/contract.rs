@@ -63,8 +63,7 @@ fn execute_update_token_ratio(deps: DepsMut, info: MessageInfo) -> Result<Respon
     let current_round = query_current_round_id(&deps.as_ref(), &config.hydro_contract_address)
         .map_err(|e| {
             ContractError::Std(StdError::generic_err(format!(
-                "failed to query current round id: {}",
-                e
+                "failed to query current round id: {e}"
             )))
         })?;
 
