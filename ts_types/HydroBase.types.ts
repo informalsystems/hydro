@@ -30,7 +30,9 @@ export interface InstantiateMsg {
   gatekeeper?: InstantiateContractMsg | null;
   icq_managers: string[];
   initial_whitelist: string[];
+  lock_depth_limit: number;
   lock_epoch_length: number;
+  lock_expiry_duration_seconds: number;
   max_deployment_duration: number;
   max_locked_tokens: Uint128;
   round_length: number;
@@ -108,6 +110,8 @@ export type ExecuteMsg = {
     activate_at: Timestamp;
     cw721_collection_info?: CollectionInfo | null;
     known_users_cap?: number | null;
+    lock_depth_limit?: number | null;
+    lock_expiry_duration_seconds?: number | null;
     max_deployment_duration?: number | null;
     max_locked_tokens?: number | null;
   };
@@ -524,7 +528,9 @@ export interface Constants {
   cw721_collection_info: CollectionInfo;
   first_round_start: Timestamp;
   known_users_cap: number;
+  lock_depth_limit: number;
   lock_epoch_length: number;
+  lock_expiry_duration_seconds: number;
   max_deployment_duration: number;
   max_locked_tokens: number;
   paused: boolean;
