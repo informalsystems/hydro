@@ -6,7 +6,9 @@
     "first_round_start",
     "icq_managers",
     "initial_whitelist",
+    "lock_depth_limit",
     "lock_epoch_length",
+    "lock_expiry_duration_seconds",
     "max_deployment_duration",
     "max_locked_tokens",
     "round_length",
@@ -51,7 +53,17 @@
         "type": "string"
       }
     },
+    "lock_depth_limit": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
     "lock_epoch_length": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "lock_expiry_duration_seconds": {
       "type": "integer",
       "format": "uint64",
       "minimum": 0.0

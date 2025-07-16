@@ -36,6 +36,10 @@ pub struct InstantiateMsg {
     pub gatekeeper: Option<InstantiateContractMsg>,
     // The CW721 Collection Info (default: name: "Hydro Lockups", symbol: "hydro-lockups")
     pub cw721_collection_info: Option<CollectionInfo>,
+    // Maximum duration (in seconds) after which a lock is considered expired in lock tracking.
+    pub lock_expiry_duration_seconds: u64,
+    // Maximum allowed depth of a lock's ancestor tree to prevent excessive nesting and state complexity.
+    pub lock_depth_limit: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -153,6 +157,8 @@ pub enum ExecuteMsg {
         known_users_cap: Option<u128>,
         max_deployment_duration: Option<u64>,
         cw721_collection_info: Option<CollectionInfo>,
+        lock_depth_limit: Option<u64>,
+        lock_expiry_duration_seconds: Option<u64>,
     },
     DeleteConfigs {
         timestamps: Vec<Timestamp>,

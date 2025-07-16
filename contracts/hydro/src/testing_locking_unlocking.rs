@@ -580,6 +580,8 @@ fn max_locked_tokens_test() {
         known_users_cap: None,
         max_deployment_duration: None,
         cw721_collection_info: None,
+        lock_depth_limit: None,
+        lock_expiry_duration_seconds: None,
     };
     let res = execute(
         deps.as_mut(),
@@ -599,6 +601,8 @@ fn max_locked_tokens_test() {
         known_users_cap: None,
         max_deployment_duration: None,
         cw721_collection_info: None,
+        lock_depth_limit: None,
+        lock_expiry_duration_seconds: None,
     };
     let res = execute(
         deps.as_mut(),
@@ -638,6 +642,8 @@ fn max_locked_tokens_test() {
         known_users_cap: None,
         max_deployment_duration: None,
         cw721_collection_info: None,
+        lock_depth_limit: None,
+        lock_expiry_duration_seconds: None,
     };
     let res = execute(
         deps.as_mut(),
