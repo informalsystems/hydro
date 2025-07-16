@@ -139,6 +139,8 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         token_info_providers: vec![get_default_lsm_token_info_provider_init_msg()],
         gatekeeper: None,
         cw721_collection_info: None,
+        lock_expiry_duration_seconds: 60 * 60 * 24 * 30 * 6, // 6 months
+        lock_depth_limit: 50,
     }
 }
 
@@ -2572,6 +2574,8 @@ fn delete_configs_test() {
             known_users_cap: None,
             max_deployment_duration: None,
             cw721_collection_info: None,
+            lock_depth_limit: None,
+            lock_expiry_duration_seconds: None,
         };
         let res = execute(
             deps.as_mut(),
@@ -2660,6 +2664,8 @@ fn contract_pausing_test() {
             known_users_cap: None,
             max_deployment_duration: None,
             cw721_collection_info: None,
+            lock_depth_limit: None,
+            lock_expiry_duration_seconds: None,
         },
         ExecuteMsg::DeleteConfigs { timestamps: vec![] },
         ExecuteMsg::Pause {},

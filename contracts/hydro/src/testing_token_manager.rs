@@ -223,6 +223,8 @@ fn handle_token_info_provider_instantiate_reply_test() {
         max_deployment_duration: 3,
         round_lock_power_schedule: get_default_power_schedule(),
         cw721_collection_info: get_default_cw721_collection_info(),
+        lock_depth_limit: 50,
+        lock_expiry_duration_seconds: 60 * 60 * 24 * 30 * 6, // 6 months
     };
     CONSTANTS
         .save(&mut deps.storage, env.block.time.nanos(), &constants)
@@ -306,6 +308,8 @@ fn add_remove_token_info_provider_test() {
                 max_deployment_duration: 3,
                 round_lock_power_schedule: RoundLockPowerSchedule::new(vec![]),
                 cw721_collection_info: get_default_cw721_collection_info(),
+                lock_depth_limit: 50,
+                lock_expiry_duration_seconds: 60 * 60 * 24 * 30 * 6, // 6 months
             },
         )
         .unwrap();

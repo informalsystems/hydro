@@ -75,6 +75,8 @@ pub struct Constants {
     pub max_deployment_duration: u64,
     pub round_lock_power_schedule: RoundLockPowerSchedule,
     pub cw721_collection_info: CollectionInfo,
+    pub lock_expiry_duration_seconds: u64,
+    pub lock_depth_limit: u64,
 }
 
 // Used to store a set of token info providers that are able to validate various denoms allowed to be locked
@@ -174,9 +176,19 @@ pub const USER_LOCKS: SnapshotMap<Addr, Vec<u64>> = SnapshotMap::new(
     Strategy::EveryBlock,
 );
 
-//Locks tracking
+// Tracks how a lock was split or merged. Each parent lock ID maps to its resulting child lock IDs
+// along with the corresponding fraction of value each child represents.
+// LOCK_ID_TRACKING: key(parent_lock_id) -> Vec<(child_lock_id, fraction)>
 pub const LOCK_ID_TRACKING: Map<u64, Vec<(u64, Decimal)>> = Map::new("lock_id_tracking");
+
+// Inverse of LOCK_ID_TRACKING. Allows upward traversal to find all parent lock IDs for a given lock.
+// Used for computing ancestry depth of lock compositions.
+// REVERSE_LOCK_ID_TRACKING: key(child_lock_id) -> Vec<parent_lock_id>
 pub const REVERSE_LOCK_ID_TRACKING: Map<u64, Vec<u64>> = Map::new("reverse_lock_id_tracking");
+
+// Stores the deletion timestamp of each lock. Used to determine whether a lock (or its ancestors)
+// is still active or has expired
+// LOCK_ID_EXPIRY: key(lock_id) -> expiry_time (Timestamp)
 pub const LOCK_ID_EXPIRY: Map<u64, Timestamp> = Map::new("lock_id_expiry");
 
 // This is the total voting power of all users combined.

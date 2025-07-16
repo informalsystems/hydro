@@ -2,10 +2,7 @@ use cosmwasm_std::{testing::mock_env, Coin, Decimal, Uint128};
 use std::collections::HashMap;
 
 use crate::{
-    contract::{
-        execute, get_current_lock_composition, get_lock_ancestor_depth, instantiate,
-        LOCK_EXPIRY_DURATION_SECONDS,
-    },
+    contract::{execute, get_current_lock_composition, get_lock_ancestor_depth, instantiate},
     msg::ExecuteMsg,
     state::{LOCK_ID_EXPIRY, LOCK_ID_TRACKING, REVERSE_LOCK_ID_TRACKING},
     testing::{
@@ -105,6 +102,9 @@ fn test_get_lock_ancestor_depth() {
     let instantiate_msg = get_default_instantiate_msg(&deps.api);
     instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
 
+    let lock_depth_limit = 5;
+    let lock_expiry_duration_seconds = 60 * 60 * 24 * 30 * 6; // 6 months
+
     // First split
     let starting_lock_entry_1 = 1;
     let new_lock_id_1 = 2;
@@ -146,10 +146,10 @@ fn test_get_lock_ancestor_depth() {
     let parents = vec![from_id_first, from_id_second];
     let _ = REVERSE_LOCK_ID_TRACKING.save(&mut deps.storage, into_lock_id, &parents);
 
-    let depth = get_lock_ancestor_depth(&deps.as_ref(), env, 6);
+    let depth = get_lock_ancestor_depth(&deps.as_ref(), env, 6, lock_expiry_duration_seconds);
     assert!(depth.is_ok());
     let depth_value = depth.unwrap();
-    assert!(depth_value <= crate::contract::LOCK_DEPTH_LIMIT);
+    assert!(depth_value <= lock_depth_limit);
     assert!(depth_value == 4);
 }
 #[test]
@@ -169,6 +169,8 @@ fn test_split_merge_composition_and_depth() {
     instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address)];
     instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
     set_default_validator_for_rounds(deps.as_mut(), 0, 3);
+
+    let lock_expiry_duration_seconds = 60 * 60 * 24 * 30 * 6; // 6 months
 
     // Lock tokens
     let initial_lock_amount = Uint128::from(50000u128);
@@ -239,7 +241,12 @@ fn test_split_merge_composition_and_depth() {
     assert_eq!(res.unwrap(), expected);
 
     let lock_id = 5;
-    let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), lock_id);
+    let depth = get_lock_ancestor_depth(
+        &deps.as_ref(),
+        env.clone(),
+        lock_id,
+        lock_expiry_duration_seconds,
+    );
 
     assert!(depth.is_ok());
     assert_eq!(depth.unwrap(), 4);
@@ -249,11 +256,16 @@ fn test_split_merge_composition_and_depth() {
         .clone()
         .block
         .time
-        .minus_seconds(LOCK_EXPIRY_DURATION_SECONDS + 1);
+        .minus_seconds(lock_expiry_duration_seconds + 1);
     let _ = LOCK_ID_EXPIRY.save(&mut deps.storage, 0, &fake_expiry);
 
     let lock_id = 5;
-    let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), lock_id);
+    let depth = get_lock_ancestor_depth(
+        &deps.as_ref(),
+        env.clone(),
+        lock_id,
+        lock_expiry_duration_seconds,
+    );
 
     assert_eq!(depth.unwrap(), 3);
 
@@ -262,18 +274,23 @@ fn test_split_merge_composition_and_depth() {
         .clone()
         .block
         .time
-        .minus_seconds(LOCK_EXPIRY_DURATION_SECONDS + 1);
+        .minus_seconds(lock_expiry_duration_seconds + 1);
     let _ = LOCK_ID_EXPIRY.save(&mut deps.storage, 1, &fake_expiry);
 
     let fake_expiry = env
         .clone()
         .block
         .time
-        .minus_seconds(LOCK_EXPIRY_DURATION_SECONDS + 1);
+        .minus_seconds(lock_expiry_duration_seconds + 1);
     let _ = LOCK_ID_EXPIRY.save(&mut deps.storage, 2, &fake_expiry);
 
     let lock_id = 5;
-    let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), lock_id);
+    let depth = get_lock_ancestor_depth(
+        &deps.as_ref(),
+        env.clone(),
+        lock_id,
+        lock_expiry_duration_seconds,
+    );
 
     assert_eq!(depth.unwrap(), 2);
 
@@ -282,11 +299,16 @@ fn test_split_merge_composition_and_depth() {
         .clone()
         .block
         .time
-        .minus_seconds(LOCK_EXPIRY_DURATION_SECONDS + 1);
+        .minus_seconds(lock_expiry_duration_seconds + 1);
     let _ = LOCK_ID_EXPIRY.save(&mut deps.storage, 3, &fake_expiry);
 
     let lock_id = 5;
-    let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), lock_id);
+    let depth = get_lock_ancestor_depth(
+        &deps.as_ref(),
+        env.clone(),
+        lock_id,
+        lock_expiry_duration_seconds,
+    );
 
     assert_eq!(depth.unwrap(), 1);
 
@@ -295,11 +317,16 @@ fn test_split_merge_composition_and_depth() {
         .clone()
         .block
         .time
-        .minus_seconds(LOCK_EXPIRY_DURATION_SECONDS + 1);
+        .minus_seconds(lock_expiry_duration_seconds + 1);
     let _ = LOCK_ID_EXPIRY.save(&mut deps.storage, 5, &fake_expiry);
 
     let lock_id = 5;
-    let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), lock_id);
+    let depth = get_lock_ancestor_depth(
+        &deps.as_ref(),
+        env.clone(),
+        lock_id,
+        lock_expiry_duration_seconds,
+    );
 
     assert_eq!(depth.unwrap(), 0);
 }

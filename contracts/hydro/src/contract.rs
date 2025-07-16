@@ -91,10 +91,6 @@ pub const MIN_DEPLOYMENT_DURATION: u64 = 1;
 
 pub const MIN_SPLIT_LOCK_SIZE: Uint128 = Uint128::new(10_000);
 
-pub const LOCK_EXPIRY_DURATION_SECONDS: u64 = 60 * 60 * 24 * 30; // 30 days
-
-pub const LOCK_DEPTH_LIMIT: u32 = 5;
-
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     mut deps: DepsMut<NeutronQuery>,
@@ -126,6 +122,8 @@ pub fn instantiate(
         paused: false,
         round_lock_power_schedule: RoundLockPowerSchedule::new(msg.round_lock_power_schedule),
         cw721_collection_info,
+        lock_expiry_duration_seconds: msg.lock_expiry_duration_seconds,
+        lock_depth_limit: msg.lock_depth_limit,
     };
 
     CONSTANTS.save(deps.storage, env.block.time.nanos(), &state)?;
@@ -273,6 +271,8 @@ pub fn execute(
             known_users_cap,
             max_deployment_duration,
             cw721_collection_info,
+            lock_depth_limit,
+            lock_expiry_duration_seconds,
         } => update_config(
             deps,
             env,
@@ -282,6 +282,8 @@ pub fn execute(
             known_users_cap,
             max_deployment_duration,
             cw721_collection_info,
+            lock_depth_limit,
+            lock_expiry_duration_seconds,
         ),
         ExecuteMsg::DeleteConfigs { timestamps } => delete_configs(deps, &env, info, timestamps),
         ExecuteMsg::Pause {} => pause_contract(deps, &env, info),
@@ -779,11 +781,16 @@ fn split_lock(
         lock_end: starting_lock_entry.lock_end,
     };
 
-    let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), starting_lock_entry.lock_id)?;
-    if depth >= LOCK_DEPTH_LIMIT {
+    let depth = get_lock_ancestor_depth(
+        &deps.as_ref(),
+        env.clone(),
+        starting_lock_entry.lock_id,
+        constants.lock_expiry_duration_seconds,
+    )?;
+    if depth >= constants.lock_depth_limit {
         return Err(ContractError::Std(StdError::generic_err(format!(
             "Cannot split lock. Depth limit {} for lock id {} reached",
-            LOCK_DEPTH_LIMIT, starting_lock_entry.lock_id
+            constants.lock_depth_limit, starting_lock_entry.lock_id
         ))));
     }
 
@@ -1027,17 +1034,22 @@ fn merge_locks(
         env.block.height,
     )?;
 
-    let mut parents = REVERSE_LOCK_ID_TRACKING
-        .may_load(deps.storage, resulting_lock_id)?
-        .unwrap_or_default();
+    let mut parents = vec![];
 
     for lock_id in &lock_ids {
-        let depth = get_lock_ancestor_depth(&deps.as_ref(), env.clone(), *lock_id)?;
+        let depth = get_lock_ancestor_depth(
+            &deps.as_ref(),
+            env.clone(),
+            *lock_id,
+            constants.lock_expiry_duration_seconds,
+        )?;
 
-        if depth >= LOCK_DEPTH_LIMIT {
-            return Err(ContractError::Std(StdError::generic_err(format!(
-                "Cannot merge locks. Depth limit {LOCK_DEPTH_LIMIT} for lock id {lock_id} reached"
-            ))));
+        if depth >= constants.lock_depth_limit {
+            let msg = format!(
+                "Cannot merge locks. Depth limit {} for lock id {} reached",
+                constants.lock_depth_limit, lock_id
+            );
+            return Err(ContractError::Std(StdError::generic_err(msg)));
         }
         LOCK_ID_TRACKING.save(
             deps.storage,
@@ -1045,9 +1057,13 @@ fn merge_locks(
             &vec![(resulting_lock_id, Decimal::one())],
         )?;
 
-        if !parents.contains(lock_id) {
-            parents.push(*lock_id);
-        }
+        assert!(
+            !parents.contains(lock_id),
+            "Parent list unexpectedly contains lock_id {lock_id}"
+        );
+
+        parents.push(*lock_id);
+
         LOCK_ID_EXPIRY.save(deps.storage, *lock_id, &env.block.time)?;
         // Remove merged lock from locks map
         LOCKS_MAP_V2.remove(deps.storage, *lock_id, env.block.height)?;
@@ -1330,9 +1346,10 @@ pub fn get_lock_ancestor_depth(
     deps: &Deps<NeutronQuery>,
     env: Env,
     lock_id: u64,
-) -> StdResult<u32> {
+    lock_expiry_duration_seconds: u64,
+) -> StdResult<u64> {
     if let Some(expiry_time) = LOCK_ID_EXPIRY.may_load(deps.storage, lock_id)? {
-        let cutoff = expiry_time.plus_seconds(LOCK_EXPIRY_DURATION_SECONDS);
+        let cutoff = expiry_time.plus_seconds(lock_expiry_duration_seconds);
         if env.block.time > cutoff {
             return Ok(0); // lock itself is expired
         }
@@ -1342,8 +1359,9 @@ pub fn get_lock_ancestor_depth(
         deps: &Deps<NeutronQuery>,
         env: Env,
         current_id: u64,
+        lock_expiry_duration_seconds: u64,
         visited: &mut Vec<u64>,
-    ) -> StdResult<u32> {
+    ) -> StdResult<u64> {
         let parents = REVERSE_LOCK_ID_TRACKING
             .may_load(deps.storage, current_id)?
             .unwrap_or_default();
@@ -1355,7 +1373,7 @@ pub fn get_lock_ancestor_depth(
         let mut max_depth = 0;
         for parent_id in parents {
             if let Some(expiry_time) = LOCK_ID_EXPIRY.may_load(deps.storage, parent_id)? {
-                let expiry_cutoff = expiry_time.plus_seconds(LOCK_EXPIRY_DURATION_SECONDS);
+                let expiry_cutoff = expiry_time.plus_seconds(lock_expiry_duration_seconds);
                 if env.block.time > expiry_cutoff {
                     continue;
                 }
@@ -1367,7 +1385,13 @@ pub fn get_lock_ancestor_depth(
             }
             local_visited.push(parent_id);
 
-            let depth = recurse(deps, env.clone(), parent_id, visited)?;
+            let depth = recurse(
+                deps,
+                env.clone(),
+                parent_id,
+                lock_expiry_duration_seconds,
+                visited,
+            )?;
             if depth > max_depth {
                 max_depth = depth;
             }
@@ -1376,7 +1400,13 @@ pub fn get_lock_ancestor_depth(
         Ok(max_depth + 1)
     }
 
-    recurse(deps, env, lock_id, &mut vec![])
+    recurse(
+        deps,
+        env,
+        lock_id,
+        lock_expiry_duration_seconds,
+        &mut vec![],
+    )
 }
 
 // Validate that the lock duration (given in nanos) is either 1, 2, 3, 6, or 12 epochs
@@ -1826,6 +1856,8 @@ fn update_config(
     known_users_cap: Option<u128>,
     max_deployment_duration: Option<u64>,
     cw721_collection_info: Option<CollectionInfo>,
+    lock_depth_limit: Option<u64>,
+    lock_expiry_duration_seconds: Option<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     if env.block.time > activate_at {
         return Err(ContractError::Std(StdError::generic_err(
@@ -1874,6 +1906,19 @@ fn update_config(
                 "new_cw721_collection_info_symbol",
                 &cw721_collection_info.symbol,
             );
+    }
+
+    if let Some(lock_depth_limit) = lock_depth_limit {
+        constants.lock_depth_limit = lock_depth_limit;
+        response = response.add_attribute("new_lock_depth_limit", lock_depth_limit.to_string());
+    }
+
+    if let Some(lock_expiry_duration_seconds) = lock_expiry_duration_seconds {
+        constants.lock_expiry_duration_seconds = lock_expiry_duration_seconds;
+        response = response.add_attribute(
+            "new_lock_expiry_duration_seconds",
+            lock_expiry_duration_seconds.to_string(),
+        );
     }
 
     CONSTANTS.save(deps.storage, activate_at.nanos(), &constants)?;
