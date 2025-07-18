@@ -376,3 +376,6 @@ pub const NFT_OPERATORS: Map<(Addr, Addr), Expiration> = Map::new("nft_operators
 pub const USER_LOCKS_FOR_CLAIM: Map<Addr, Vec<u64>> = Map::new("user_locks_for_claim");
 
 pub const DROP_SENDERS: Map<u64, Addr> = Map::new("reply_senders");
+
+// LOCKS_PENDING_SLASHES: key(lock_id) -> token_num_to_slash
+pub const LOCKS_PENDING_SLASHES: Map<u64, Uint128> = Map::new("locks_pending_slashes");

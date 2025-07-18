@@ -256,6 +256,10 @@ pub enum ExecuteMsg {
     ConvertLockupToDtoken {
         lock_ids: Vec<u64>,
     },
+    /// Allows users to remove/reduce pending slash fully or partially by inserting funds
+    BuyoutPendingSlash {
+        lock_id: u64,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

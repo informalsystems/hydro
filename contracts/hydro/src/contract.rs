@@ -48,11 +48,11 @@ use crate::score_keeper::{
 use crate::state::{
     Constants, DropTokenInfo, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche,
     ValidatorInfo, Vote, VoteWithPower, CONSTANTS, DROP_SENDERS, DROP_TOKEN_INFO, GATEKEEPER,
-    ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCK_ID, PROPOSAL_MAP,
-    PROPS_BY_SCORE, PROP_ID, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID,
-    TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
-    VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1, VOTE_MAP_V2,
-    VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
+    ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES,
+    LOCK_ID, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, SNAPSHOTS_ACTIVATION_HEIGHT,
+    TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM,
+    VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID,
+    VOTE_MAP_V1, VOTE_MAP_V2, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::token_manager::{
     add_token_info_providers, handle_token_info_provider_add_remove,
@@ -378,6 +378,9 @@ pub fn execute(
         ),
         ExecuteMsg::ConvertLockupToDtoken { lock_ids } => {
             convert_lockup_to_dtoken(deps, env, info, lock_ids)
+        }
+        ExecuteMsg::BuyoutPendingSlash { lock_id } => {
+            buyout_pending_slash(deps, env, info, &constants, lock_id)
         }
     }
 }
@@ -2452,6 +2455,136 @@ pub fn convert_lockup_to_dtoken_reply(
         .add_attribute("issue_amount", issue_amount.to_string()))
 }
 
+pub fn buyout_pending_slash(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    constants: &Constants,
+    lock_id: u64,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Step 1: Get the lockup
+    let mut lockups = query_user_lockups(
+        &deps.as_ref(),
+        info.sender.clone(),
+        |lock| lock.lock_id == lock_id,
+        0,
+        1,
+    );
+    let Some(lockup) = lockups.pop() else {
+        return Err(new_generic_error(format!(
+            "Lockup with id {} not found",
+            lock_id
+        )));
+    };
+    if lockup.owner != info.sender {
+        return Err(ContractError::Unauthorized);
+    }
+
+    // Step 2: Load pending slash
+    let Some(slash_amount) = LOCKS_PENDING_SLASHES.may_load(deps.storage, lock_id)? else {
+        return Err(new_generic_error(format!(
+            "Pending slash for lock id: {} doesn't exist.",
+            lock_id
+        )));
+    };
+
+    let current_round = compute_current_round_id(&env, constants)?;
+    let mut token_manager = TokenManager::new(&deps.as_ref());
+
+    let slash_denom = lockup.funds.denom.clone();
+    let token_group_id = token_manager
+        .validate_denom(&deps.as_ref(), current_round, slash_denom.clone())
+        .map_err(|err| {
+            new_generic_error(format!("Error validating denom '{}': {}", slash_denom, err))
+        })?;
+
+    let slash_ratio = token_manager
+        .get_token_group_ratio(&deps.as_ref(), current_round, token_group_id)
+        .map_err(|err| {
+            new_generic_error(format!(
+                "Error fetching token group ratio for '{}': {}",
+                slash_denom, err
+            ))
+        })?;
+
+    let slash_base_atom = Decimal::from_atomics(slash_amount.u128(), 18).unwrap() * slash_ratio;
+
+    // Step 3: Track how much is available and per-denom info
+    let mut available_base_atom = 0u128;
+    let mut fund_conversion: Vec<(String, u128, Decimal)> = vec![]; // (denom, original amount, ratio)
+    for coin in &info.funds {
+        let token_group_id = token_manager
+            .validate_denom(&deps.as_ref(), current_round, coin.denom.clone())
+            .map_err(|err| {
+                new_generic_error(format!("Error validating denom '{}': {}", coin.denom, err))
+            })?;
+        let ratio = token_manager
+            .get_token_group_ratio(&deps.as_ref(), current_round, token_group_id)
+            .map_err(|err| {
+                new_generic_error(format!(
+                    "Error fetching token group ratio for '{}': {}",
+                    coin.denom, err
+                ))
+            })?;
+        let coin_as_base = Decimal::from_atomics(coin.amount.u128(), 18).unwrap() * ratio;
+        available_base_atom += coin_as_base.atomics().u128();
+        fund_conversion.push((coin.denom.clone(), coin.amount.u128(), ratio));
+    }
+
+    // Step 4: Determine how much to deduct and update state
+    let full_payment = available_base_atom >= slash_base_atom.atomics().u128();
+    if full_payment {
+        LOCKS_PENDING_SLASHES.remove(deps.storage, lockup.lock_id);
+    } else {
+        let remaining_base =
+            slash_base_atom - Decimal::from_atomics(available_base_atom, 18).unwrap();
+        let remaining_original = remaining_base / slash_ratio;
+        LOCKS_PENDING_SLASHES.save(
+            deps.storage,
+            lockup.lock_id,
+            &Uint128::from(remaining_original.atomics().u128()),
+        )?;
+    }
+
+    // Step 5: Figure out what was used and what should be refunded
+    let mut funds_used: HashMap<String, u128> = HashMap::new();
+    let mut remaining_atom = core::cmp::min(slash_base_atom.atomics().u128(), available_base_atom);
+
+    for (denom, original_amount, ratio) in &fund_conversion {
+        if remaining_atom == 0 {
+            break;
+        }
+        let coin_as_atom = Decimal::from_atomics(*original_amount, 18).unwrap() * *ratio;
+        let take_atom = core::cmp::min(coin_as_atom.atomics().u128(), remaining_atom);
+        let take_original = Decimal::from_atomics(Uint128::from(take_atom), 18).unwrap() / *ratio;
+
+        funds_used.insert(denom.clone(), take_original.atomics().u128());
+        remaining_atom -= take_atom;
+    }
+
+    // Step 6: Prepare refund messages
+    let mut refund_msgs: Vec<BankMsg> = vec![];
+    for (denom, original_amount, _) in &fund_conversion {
+        let used = funds_used.get(denom).copied().unwrap_or(0);
+        let total = *original_amount;
+        if total > used {
+            let refund_amount = total - used;
+            if refund_amount > 0 {
+                refund_msgs.push(BankMsg::Send {
+                    to_address: info.sender.to_string(),
+                    amount: vec![Coin {
+                        denom: denom.clone(),
+                        amount: Uint128::from(refund_amount),
+                    }],
+                });
+            }
+        }
+    }
+
+    Ok(Response::new()
+        .add_attribute("action", "buyout_pending_slash")
+        .add_messages(refund_msgs))
+}
 fn validate_sender_is_whitelist_admin(
     deps: &DepsMut<NeutronQuery>,
     info: &MessageInfo,
