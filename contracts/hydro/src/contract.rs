@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use cosmwasm_std::{from_json, Attribute, Decimal256, SubMsg, SubMsgResult, Uint256, WasmMsg};
+use cosmwasm_std::{
+    from_json, to_json_vec, Attribute, Decimal256, SubMsg, SubMsgResult, Uint256, WasmMsg,
+};
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 #[allow(unused_imports)]
 use cosmwasm_std::{
@@ -23,8 +25,8 @@ use crate::gatekeeper::{
 use crate::governance::{query_total_power_at_height, query_voting_power_at_height};
 use crate::lsm_integration::{query_ibc_denom_trace, COSMOS_VALIDATOR_PREFIX, TRANSFER_PORT};
 use crate::msg::{
-    CollectionInfo, ExecuteMsg, InstantiateMsg, LiquidityDeployment, LockTokensProof,
-    ProposalToLockups, ReplyPayload, TokenInfoProviderInstantiateMsg, TrancheInfo,
+    CollectionInfo, ConvertLockupPayload, ExecuteMsg, InstantiateMsg, LiquidityDeployment,
+    LockTokensProof, ProposalToLockups, ReplyPayload, TokenInfoProviderInstantiateMsg, TrancheInfo,
 };
 use crate::query::{
     AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse,
@@ -47,8 +49,8 @@ use crate::score_keeper::{
 };
 use crate::state::{
     Constants, DropTokenInfo, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche,
-    ValidatorInfo, Vote, VoteWithPower, CONSTANTS, DROP_SENDERS, DROP_TOKEN_INFO, GATEKEEPER,
-    ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCK_ID, LOCK_ID_EXPIRY,
+    ValidatorInfo, Vote, VoteWithPower, CONSTANTS, DROP_TOKEN_INFO, GATEKEEPER, ICQ_MANAGERS,
+    LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCK_ID, LOCK_ID_EXPIRY,
     LOCK_ID_TRACKING, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, REVERSE_LOCK_ID_TRACKING,
     SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS,
     USER_LOCKS_FOR_CLAIM, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
@@ -2509,6 +2511,8 @@ pub fn convert_lockup_to_dtoken(
 
     let drop_info = DROP_TOKEN_INFO.load(deps.storage)?;
 
+    let mut total_locked_tokens = LOCKED_TOKENS.load(deps.storage)?;
+
     let mut submsgs = vec![];
 
     for lockup in lockups {
@@ -2523,8 +2527,10 @@ pub fn convert_lockup_to_dtoken(
                 lock_id = lockup.lock_id
             ))));
         }
-        // Save sender for this lock_id so it can be retreived in the reply handler
-        DROP_SENDERS.save(deps.storage, lockup.lock_id, &info.sender)?;
+
+        total_locked_tokens = total_locked_tokens
+            .checked_sub(lockup.funds.amount.into())
+            .ok_or_else(|| new_generic_error("Locked tokens underflow".to_string()))?;
 
         let convert_token_msg = DropExecuteMsg::Bond {
             receiver: None,
@@ -2537,10 +2543,17 @@ pub fn convert_lockup_to_dtoken(
             funds: vec![lockup.funds.clone()],
         };
 
-        let reply_id = lockup.lock_id;
+        let reply_payload = ConvertLockupPayload {
+            lock_id: lockup.lock_id,
+            sender: info.sender.to_string(),
+        };
 
-        submsgs.push(SubMsg::reply_on_success(wasm_execute_msg, reply_id));
+        submsgs.push(
+            SubMsg::reply_on_success(wasm_execute_msg, lockup.lock_id)
+                .with_payload(to_json_vec(&ReplyPayload::ConvertLockup(reply_payload))?),
+        );
     }
+    LOCKED_TOKENS.save(deps.storage, &total_locked_tokens)?;
 
     Ok(Response::new()
         .add_submessages(submsgs)
@@ -2556,17 +2569,18 @@ pub fn convert_lockup_to_dtoken(
 pub fn convert_lockup_to_dtoken_reply(
     mut deps: DepsMut<NeutronQuery>,
     env: Env,
+    convert_lockup_payload: ConvertLockupPayload,
     msg: Reply,
-) -> Result<Response, ContractError> {
-    let lock_id = msg.id;
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let lock_id = convert_lockup_payload.lock_id;
 
-    let sender: Addr = DROP_SENDERS.load(deps.storage, lock_id)?;
-
-    DROP_SENDERS.remove(deps.storage, lock_id);
+    let sender: Addr = deps.api.addr_validate(&convert_lockup_payload.sender)?;
 
     let constants = load_current_constants(&deps.as_ref(), &env)?;
 
     let current_round_id = compute_current_round_id(&env, &constants)?;
+
+    let mut total_locked_tokens = LOCKED_TOKENS.load(deps.storage)?;
 
     let issue_amount = match msg.result {
         SubMsgResult::Ok(res) => {
@@ -2602,6 +2616,12 @@ pub fn convert_lockup_to_dtoken_reply(
             )))
         }
     };
+
+    total_locked_tokens = total_locked_tokens
+        .checked_add(issue_amount.into())
+        .ok_or_else(|| new_generic_error("Locked tokens overflow"))?;
+
+    LOCKED_TOKENS.save(deps.storage, &total_locked_tokens)?;
 
     let tranches: Vec<Tranche> = TRANCHE_MAP
         .range(deps.storage, None, None, Order::Ascending)
@@ -4264,6 +4284,9 @@ pub fn reply(
                 token_manager_handle_submsg_reply(deps, &env, token_info_provider, msg)
             }
             ReplyPayload::InstantiateGatekeeper => gatekeeper_handle_submsg_reply(deps, msg),
+            ReplyPayload::ConvertLockup(convert_lockup_payload) => {
+                convert_lockup_to_dtoken_reply(deps, env, convert_lockup_payload, msg)
+            }
         },
         Err(_) => handle_submsg_reply(deps, msg),
     }

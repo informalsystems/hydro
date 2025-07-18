@@ -298,10 +298,17 @@ pub struct LockTokensProof {
     pub sig_info: Option<SignatureInfo>,
 }
 
+#[cw_serde]
+pub struct ConvertLockupPayload {
+    pub lock_id: u64,
+    pub sender: String,
+}
+
 #[derive(Serialize, Deserialize)]
 pub enum ReplyPayload {
     InstantiateTokenInfoProvider(TokenInfoProvider),
     InstantiateGatekeeper,
+    ConvertLockup(ConvertLockupPayload),
 }
 
 #[cw_serde]
