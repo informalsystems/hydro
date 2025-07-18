@@ -93,6 +93,8 @@ pub const MIN_DEPLOYMENT_DURATION: u64 = 1;
 
 pub const MIN_SPLIT_LOCK_SIZE: Uint128 = Uint128::new(10_000);
 
+const UNUSED_MSG_ID: u64 = 0;
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     mut deps: DepsMut<NeutronQuery>,
@@ -2511,8 +2513,6 @@ pub fn convert_lockup_to_dtoken(
 
     let drop_info = DROP_TOKEN_INFO.load(deps.storage)?;
 
-    let mut total_locked_tokens = LOCKED_TOKENS.load(deps.storage)?;
-
     let mut submsgs = vec![];
 
     for lockup in lockups {
@@ -2528,10 +2528,6 @@ pub fn convert_lockup_to_dtoken(
             ))));
         }
 
-        total_locked_tokens = total_locked_tokens
-            .checked_sub(lockup.funds.amount.into())
-            .ok_or_else(|| new_generic_error("Locked tokens underflow".to_string()))?;
-
         let convert_token_msg = DropExecuteMsg::Bond {
             receiver: None,
             r#ref: None,
@@ -2545,15 +2541,15 @@ pub fn convert_lockup_to_dtoken(
 
         let reply_payload = ConvertLockupPayload {
             lock_id: lockup.lock_id,
-            sender: info.sender.to_string(),
+            amount: lockup.funds.amount,
+            sender: info.sender.clone(),
         };
 
         submsgs.push(
-            SubMsg::reply_on_success(wasm_execute_msg, lockup.lock_id)
+            SubMsg::reply_on_success(wasm_execute_msg, UNUSED_MSG_ID)
                 .with_payload(to_json_vec(&ReplyPayload::ConvertLockup(reply_payload))?),
         );
     }
-    LOCKED_TOKENS.save(deps.storage, &total_locked_tokens)?;
 
     Ok(Response::new()
         .add_submessages(submsgs)
@@ -2574,7 +2570,7 @@ pub fn convert_lockup_to_dtoken_reply(
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let lock_id = convert_lockup_payload.lock_id;
 
-    let sender: Addr = deps.api.addr_validate(&convert_lockup_payload.sender)?;
+    let sender: Addr = convert_lockup_payload.sender;
 
     let constants = load_current_constants(&deps.as_ref(), &env)?;
 
@@ -2618,8 +2614,10 @@ pub fn convert_lockup_to_dtoken_reply(
     };
 
     total_locked_tokens = total_locked_tokens
+        .checked_sub(convert_lockup_payload.amount.into())
+        .ok_or_else(|| new_generic_error("Locked tokens underflow in reply"))?
         .checked_add(issue_amount.into())
-        .ok_or_else(|| new_generic_error("Locked tokens overflow"))?;
+        .ok_or_else(|| new_generic_error("Locked tokens overflow in reply"))?;
 
     LOCKED_TOKENS.save(deps.storage, &total_locked_tokens)?;
 

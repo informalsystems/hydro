@@ -223,7 +223,8 @@ fn convert_lockup_to_dtoken_test() {
 
     let payload = ConvertLockupPayload {
         lock_id: 1,
-        sender: user_address.to_string(),
+        amount: Uint128::new(1000),
+        sender: user_address.clone(),
     };
 
     let reply_payload = ReplyPayload::ConvertLockup(payload);
@@ -265,7 +266,8 @@ fn convert_lockup_to_dtoken_test() {
 
     let payload = ConvertLockupPayload {
         lock_id: 2,
-        sender: user_address.to_string(),
+        amount: Uint128::new(2000),
+        sender: user_address,
     };
 
     let reply_payload = ReplyPayload::ConvertLockup(payload);
