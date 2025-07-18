@@ -270,6 +270,10 @@ pub enum ExecuteMsg {
         start_from: u64,
         limit: u64,
     },
+    /// Allows users to remove/reduce pending slash fully or partially by inserting funds
+    BuyoutPendingSlash {
+        lock_id: u64,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
