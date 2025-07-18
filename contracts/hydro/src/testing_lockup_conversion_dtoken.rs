@@ -2,17 +2,18 @@ use std::{collections::HashMap, str::FromStr};
 
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
-    Addr, Binary, Coin, Decimal, Event, OwnedDeps, Reply, SubMsgResponse, SubMsgResult, Uint128,
+    to_json_binary, Addr, Coin, Decimal, Event, OwnedDeps, Reply, SubMsgResponse, SubMsgResult,
+    Uint128,
 };
 use interface::token_info_provider::DenomInfoResponse;
 use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
-    contract::{
-        compute_current_round_id, convert_lockup_to_dtoken, convert_lockup_to_dtoken_reply,
-        execute, instantiate,
+    contract::{compute_current_round_id, convert_lockup_to_dtoken, execute, instantiate, reply},
+    msg::{
+        ConvertLockupPayload, ExecuteMsg, ProposalToLockups, ReplyPayload,
+        TokenInfoProviderInstantiateMsg,
     },
-    msg::{ExecuteMsg, ProposalToLockups, TokenInfoProviderInstantiateMsg},
     score_keeper::get_total_power_for_proposal,
     state::{
         DropTokenInfo, LockEntryV2, DROP_TOKEN_INFO, LOCKS_MAP_V2, TOKEN_INFO_PROVIDERS, USER_LOCKS,
@@ -220,10 +221,19 @@ fn convert_lockup_to_dtoken_test() {
     let current_ratio = Decimal::from_str("1.15").unwrap();
     setup_d_atom_token_info_provider_mock(&mut deps, contract_address.clone(), current_ratio);
 
+    let payload = ConvertLockupPayload {
+        lock_id: 1,
+        amount: Uint128::new(1000),
+        sender: user_address.clone(),
+    };
+
+    let reply_payload = ReplyPayload::ConvertLockup(payload);
+    let serialized_payload = to_json_binary(&reply_payload).unwrap();
+
     // simulate replies
     let reply_1 = Reply {
         id: 1,
-        payload: Binary::default(),
+        payload: serialized_payload,
         gas_used: 0,
         #[allow(deprecated)]
         result: SubMsgResult::Ok(SubMsgResponse {
@@ -239,8 +249,7 @@ fn convert_lockup_to_dtoken_test() {
     assert_eq!(power_before, before);
 
     let env = mock_env();
-    let reply_response_1 =
-        convert_lockup_to_dtoken_reply(deps.as_mut(), env.clone(), reply_1).unwrap();
+    let reply_response_1 = reply(deps.as_mut(), env.clone(), reply_1).unwrap();
     assert_eq!(
         reply_response_1.attributes[0].value,
         "convert_lockup_success"
@@ -255,9 +264,18 @@ fn convert_lockup_to_dtoken_test() {
     let after = Decimal::from_atomics(atomics, 18).unwrap();
     assert_eq!(power_after, after);
 
+    let payload = ConvertLockupPayload {
+        lock_id: 2,
+        amount: Uint128::new(2000),
+        sender: user_address,
+    };
+
+    let reply_payload = ReplyPayload::ConvertLockup(payload);
+    let serialized_payload = to_json_binary(&reply_payload).unwrap();
+
     let reply_2 = Reply {
         id: 2,
-        payload: Binary::default(),
+        payload: serialized_payload,
         gas_used: 0,
         #[allow(deprecated)]
         result: SubMsgResult::Ok(SubMsgResponse {
@@ -267,8 +285,7 @@ fn convert_lockup_to_dtoken_test() {
         }),
     };
 
-    let reply_response_2 =
-        convert_lockup_to_dtoken_reply(deps.as_mut(), env.clone(), reply_2).unwrap();
+    let reply_response_2 = reply(deps.as_mut(), env.clone(), reply_2).unwrap();
     assert_eq!(
         reply_response_2.attributes[0].value,
         "convert_lockup_success"
