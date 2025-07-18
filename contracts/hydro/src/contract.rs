@@ -52,12 +52,17 @@ use crate::slashing::{query_slashable_token_num_for_voting_on_proposal, slash_pr
 use crate::state::{
     Constants, DropTokenInfo, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche,
     ValidatorInfo, Vote, VoteWithPower, CONSTANTS, DROP_TOKEN_INFO, GATEKEEPER, ICQ_MANAGERS,
-    LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES, LOCK_ID,
-    LOCK_ID_EXPIRY, LOCK_ID_TRACKING, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID,
-    REVERSE_LOCK_ID_TRACKING, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID,
-    TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
-    VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1, VOTE_MAP_V2,
-    VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
+    LIQUIDITY_DEPLOYMENTS_MAP, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKED_TOKENS,
+    LOCKS_MAP_V2, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES, LOCKS_PENDING_SLASHES, LOCK_ID, LOCK_ID,
+    LOCK_ID_EXPIRY, LOCK_ID_EXPIRY, LOCK_ID_TRACKING, LOCK_ID_TRACKING, PROPOSAL_MAP, PROPOSAL_MAP,
+    PROPS_BY_SCORE, PROPS_BY_SCORE, PROP_ID, PROP_ID, REVERSE_LOCK_ID_TRACKING,
+    REVERSE_LOCK_ID_TRACKING, SNAPSHOTS_ACTIVATION_HEIGHT, SNAPSHOTS_ACTIVATION_HEIGHT,
+    TOKEN_INFO_PROVIDERS, TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_ID, TRANCHE_MAP, TRANCHE_MAP,
+    USER_LOCKS, USER_LOCKS, USER_LOCKS_FOR_CLAIM, USER_LOCKS_FOR_CLAIM, VALIDATORS_INFO,
+    VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
+    VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1,
+    VOTE_MAP_V1, VOTE_MAP_V2, VOTE_MAP_V2, VOTING_ALLOWED_ROUND, VOTING_ALLOWED_ROUND, WHITELIST,
+    WHITELIST, WHITELIST_ADMINS, WHITELIST_ADMINS,
 };
 use crate::token_manager::{
     add_token_info_providers, handle_token_info_provider_add_remove,
@@ -2825,7 +2830,46 @@ pub fn convert_lockup_to_dtoken_reply(
     // update lock entry with converted denom and amount
     let drop_info = DROP_TOKEN_INFO.load(deps.storage)?;
     let mut lock_entry = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
-    let initial_token_amount = lock_entry.funds.amount;
+
+    // convert pending slash to new denom if it exists
+    if let Some(slash_amount_old_denom) = LOCKS_PENDING_SLASHES.may_load(deps.storage, lock_id)? {
+        let old_denom = lock_entry.funds.denom.clone();
+        let new_denom = drop_info.d_token_denom.clone();
+
+        let constants = load_current_constants(&deps.as_ref(), &env)?;
+        let current_round = compute_current_round_id(&env, &constants)?;
+
+        let old_token_group_id =
+            token_manager.validate_denom(&deps.as_ref(), current_round, old_denom.clone())?;
+        let new_token_group_id =
+            token_manager.validate_denom(&deps.as_ref(), current_round, new_denom.clone())?;
+
+        // Get ratios for both denoms
+        let ratio_old = token_manager.get_token_group_ratio(
+            &deps.as_ref(),
+            current_round,
+            old_token_group_id,
+        )?;
+        let ratio_new = token_manager.get_token_group_ratio(
+            &deps.as_ref(),
+            current_round,
+            new_token_group_id,
+        )?;
+
+        // Convert slash_amount to base atom (18 decimals)
+        let slash_decimal =
+            Decimal::from_atomics(slash_amount_old_denom.u128(), 18).map_err(|e| {
+                ContractError::Std(StdError::generic_err(format!("Decimal error: {e}")))
+            })?;
+        let base = slash_decimal.checked_div(ratio_old)?;
+        // Now convert back to new denom
+        let slash_new_denom_decimal = base.checked_mul(ratio_new)?;
+        let slash_new_denom_amount = slash_new_denom_decimal.atomics().into();
+
+        // Save updated slash
+        LOCKS_PENDING_SLASHES.save(deps.storage, lock_id, &slash_new_denom_amount)?;
+    }
+
     let new_funds = Coin {
         denom: drop_info.d_token_denom.to_string(),
         amount: issue_amount,
