@@ -332,6 +332,22 @@
               "format": "uint128",
               "minimum": 0.0
             },
+            "lock_depth_limit": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "lock_expiry_duration_seconds": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "max_deployment_duration": {
               "type": [
                 "integer",

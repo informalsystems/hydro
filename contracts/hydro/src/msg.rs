@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{
-    to_json_binary, Binary, Coin, CosmosMsg, Decimal, StdResult, Timestamp, Uint128, WasmMsg,
+    to_json_binary, Addr, Binary, Coin, CosmosMsg, Decimal, StdResult, Timestamp, Uint128, WasmMsg,
 };
 use cw_utils::Expiration;
 use interface::gatekeeper::SignatureInfo;
@@ -36,6 +36,10 @@ pub struct InstantiateMsg {
     pub gatekeeper: Option<InstantiateContractMsg>,
     // The CW721 Collection Info (default: name: "Hydro Lockups", symbol: "hydro-lockups")
     pub cw721_collection_info: Option<CollectionInfo>,
+    // Maximum duration (in seconds) after which a lock is considered expired in lock tracking.
+    pub lock_expiry_duration_seconds: u64,
+    // Maximum allowed depth of a lock's ancestor tree to prevent excessive nesting and state complexity.
+    pub lock_depth_limit: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -153,6 +157,8 @@ pub enum ExecuteMsg {
         known_users_cap: Option<u128>,
         max_deployment_duration: Option<u64>,
         cw721_collection_info: Option<CollectionInfo>,
+        lock_depth_limit: Option<u64>,
+        lock_expiry_duration_seconds: Option<u64>,
     },
     DeleteConfigs {
         timestamps: Vec<Timestamp>,
@@ -296,10 +302,18 @@ pub struct LockTokensProof {
     pub sig_info: Option<SignatureInfo>,
 }
 
+#[cw_serde]
+pub struct ConvertLockupPayload {
+    pub lock_id: u64,
+    pub amount: Uint128,
+    pub sender: Addr,
+}
+
 #[derive(Serialize, Deserialize)]
 pub enum ReplyPayload {
     InstantiateTokenInfoProvider(TokenInfoProvider),
     InstantiateGatekeeper,
+    ConvertLockup(ConvertLockupPayload),
 }
 
 #[cw_serde]

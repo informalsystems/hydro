@@ -28,6 +28,8 @@ fn load_current_constants_test() {
         max_deployment_duration: 12,
         round_lock_power_schedule: get_default_power_schedule(),
         cw721_collection_info: get_default_cw721_collection_info(),
+        lock_depth_limit: 50,
+        lock_expiry_duration_seconds: 60 * 60 * 24 * 30 * 6, // 6 months
     };
 
     // Change max_locked_tokens each time we insert new Constants so that we can differentiate them

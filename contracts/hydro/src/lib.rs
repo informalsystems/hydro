@@ -63,4 +63,7 @@ mod testing_lockup_conversion_dtoken;
 mod testing_locks_split_merge;
 
 #[cfg(test)]
+mod testing_lock_tracking;
+
+#[cfg(test)]
 mod testing_buyout_pending_slash;
