@@ -186,7 +186,7 @@ pub fn instantiate(
     let mut submsgs = vec![];
 
     // Save token info providers into the store and build SubMsgs to instantiate contracts, if there are any needed
-    let (token_info_provider_init_msgs, _) =
+    let (token_info_provider_init_msgs, _, _) =
         add_token_info_providers(&mut deps, msg.token_info_providers)?;
     submsgs.extend(token_info_provider_init_msgs);
 
@@ -2395,7 +2395,7 @@ pub fn add_token_info_provider(
 ) -> Result<Response<NeutronMsg>, ContractError> {
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
-    let (token_info_provider_init_msgs, lsm_token_info_provider) =
+    let (token_info_provider_init_msgs, lsm_token_info_provider, base_token_info_provider) =
         add_token_info_providers(&mut deps, vec![provider_info.clone()])?;
 
     // If LSM token info provider was added, apply proposal and round power changes immediately.
@@ -2405,6 +2405,20 @@ pub fn add_token_info_provider(
             &env,
             constants,
             &mut lsm_token_info_provider,
+            |token_group| TokenGroupRatioChange {
+                token_group_id: token_group.0.clone(),
+                old_ratio: Decimal::zero(),
+                new_ratio: *token_group.1,
+            },
+        )?;
+    }
+
+    if let Some(mut base_token_info_provider) = base_token_info_provider {
+        handle_token_info_provider_add_remove(
+            &mut deps,
+            &env,
+            constants,
+            &mut base_token_info_provider,
             |token_group| TokenGroupRatioChange {
                 token_group_id: token_group.0.clone(),
                 old_ratio: Decimal::zero(),
@@ -2718,7 +2732,7 @@ pub fn convert_lockup_to_dtoken_reply(
         let base = slash_decimal.checked_div(ratio_old)?;
         // Now convert back to new denom
         let slash_new_denom_decimal = base.checked_mul(ratio_new)?;
-        let slash_new_denom_amount = slash_new_denom_decimal.atomics().into();
+        let slash_new_denom_amount = slash_new_denom_decimal.atomics();
 
         // Save updated slash
         LOCKS_PENDING_SLASHES.save(deps.storage, lock_id, &slash_new_denom_amount)?;
@@ -2813,8 +2827,7 @@ pub fn buyout_pending_slash(
     );
     let Some(lockup) = lockups.pop() else {
         return Err(new_generic_error(format!(
-            "Lockup with id {} not found",
-            lock_id
+            "Lockup with id {lock_id} not found",
         )));
     };
     if lockup.owner != info.sender {
@@ -2824,8 +2837,7 @@ pub fn buyout_pending_slash(
     // Step 2: Load pending slash
     let Some(slash_amount) = LOCKS_PENDING_SLASHES.may_load(deps.storage, lock_id)? else {
         return Err(new_generic_error(format!(
-            "Pending slash for lock id: {} doesn't exist.",
-            lock_id
+            "Pending slash for lock id: {lock_id} doesn't exist.",
         )));
     };
 
@@ -2836,15 +2848,14 @@ pub fn buyout_pending_slash(
     let token_group_id = token_manager
         .validate_denom(&deps.as_ref(), current_round, slash_denom.clone())
         .map_err(|err| {
-            new_generic_error(format!("Error validating denom '{}': {}", slash_denom, err))
+            new_generic_error(format!("Error validating denom '{slash_denom}': {err}"))
         })?;
 
     let slash_ratio = token_manager
         .get_token_group_ratio(&deps.as_ref(), current_round, token_group_id)
         .map_err(|err| {
             new_generic_error(format!(
-                "Error fetching token group ratio for '{}': {}",
-                slash_denom, err
+                "Error fetching token group ratio for '{slash_denom}': {err}",
             ))
         })?;
 
