@@ -914,12 +914,16 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
     activateAt,
     cw721CollectionInfo,
     knownUsersCap,
+    lockDepthLimit,
+    lockExpiryDurationSeconds,
     maxDeploymentDuration,
     maxLockedTokens
   }: {
     activateAt: Timestamp;
     cw721CollectionInfo?: CollectionInfo;
     knownUsersCap?: number;
+    lockDepthLimit?: number;
+    lockExpiryDurationSeconds?: number;
     maxDeploymentDuration?: number;
     maxLockedTokens?: number;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
@@ -1261,12 +1265,16 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     activateAt,
     cw721CollectionInfo,
     knownUsersCap,
+    lockDepthLimit,
+    lockExpiryDurationSeconds,
     maxDeploymentDuration,
     maxLockedTokens
   }: {
     activateAt: Timestamp;
     cw721CollectionInfo?: CollectionInfo;
     knownUsersCap?: number;
+    lockDepthLimit?: number;
+    lockExpiryDurationSeconds?: number;
     maxDeploymentDuration?: number;
     maxLockedTokens?: number;
   }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
@@ -1275,6 +1283,8 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
         activate_at: activateAt,
         cw721_collection_info: cw721CollectionInfo,
         known_users_cap: knownUsersCap,
+        lock_depth_limit: lockDepthLimit,
+        lock_expiry_duration_seconds: lockExpiryDurationSeconds,
         max_deployment_duration: maxDeploymentDuration,
         max_locked_tokens: maxLockedTokens
       }

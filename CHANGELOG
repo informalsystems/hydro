@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## v3.5.1
+
+Date: July 21st, 2025
+
+### BUG FIXES
+
+-Fix call to lockup conversion reply method with using payloads. Also update LOCKED_TOKENS on conversion.
+  ([\#282](https://github.com/informalsystems/hydro/pull/282))
+
+### FEATURES
+
+-This update introduces internal tracking for lock operations and adds depth validation to prevent excessively nested lock structures.
+  ([\#281](https://github.com/informalsystems/hydro/pull/281))
+
 ## v3.5.0
 
 Date: July 9th, 2025
@@ -49,7 +63,7 @@ Date: June 11th, 2025
 
 Date: May 6th, 2025
 
-### FEATURES
+### FEATURE
 
 - Allow voting with locks that voted for a proposal which did not receive any funds in its deployment
   ([\#231](https://github.com/informalsystems/hydro/pull/231))
@@ -71,6 +85,7 @@ Date: May 6th, 2025
 
     If you don't change this message, or if this file is empty, the release
     will not be created. -->
+
 
 Date: Feburary 25th, 2025
 
@@ -220,7 +235,6 @@ Date: October 22nd, 2024
 ## v1.0.3
 
 Date: October 15th, 2024
-
 <!--
     Add a summary for the release here.
 
@@ -247,11 +261,11 @@ Date: September 24th, 2023
 
 This is the first version of the auction and tribute contracts for the Hydro liquidity auction platform.
 It includes:
+* The main _Hydro_ contract, where:
+  * Users can lock, relock, and unlock staked ATOM in the form of LSM shares
+  * Projects can create proposals to deploy liquidity
+  * Users can vote on proposals
+* The _Tribute_ contract, where:
+  * Projects can add tributes to their proposals
+  * Users can claim tributes for the proposals that they voted on
 
-- The main _Hydro_ contract, where:
-  - Users can lock, relock, and unlock staked ATOM in the form of LSM shares
-  - Projects can create proposals to deploy liquidity
-  - Users can vote on proposals
-- The _Tribute_ contract, where:
-  - Projects can add tributes to their proposals
-  - Users can claim tributes for the proposals that they voted on

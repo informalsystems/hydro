@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use cosmwasm_std::{from_json, Attribute, Decimal256, SubMsg, SubMsgResult, Uint256, WasmMsg};
+use cosmwasm_std::{
+    from_json, to_json_vec, Attribute, Decimal256, SubMsg, SubMsgResult, Uint256, WasmMsg,
+};
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 #[allow(unused_imports)]
 use cosmwasm_std::{
@@ -23,8 +25,8 @@ use crate::gatekeeper::{
 use crate::governance::{query_total_power_at_height, query_voting_power_at_height};
 use crate::lsm_integration::{query_ibc_denom_trace, COSMOS_VALIDATOR_PREFIX, TRANSFER_PORT};
 use crate::msg::{
-    CollectionInfo, ExecuteMsg, InstantiateMsg, LiquidityDeployment, LockTokensProof,
-    ProposalToLockups, ReplyPayload, TokenInfoProviderInstantiateMsg, TrancheInfo,
+    CollectionInfo, ConvertLockupPayload, ExecuteMsg, InstantiateMsg, LiquidityDeployment,
+    LockTokensProof, ProposalToLockups, ReplyPayload, TokenInfoProviderInstantiateMsg, TrancheInfo,
 };
 use crate::query::{
     AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse,
@@ -47,12 +49,13 @@ use crate::score_keeper::{
 };
 use crate::state::{
     Constants, DropTokenInfo, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche,
-    ValidatorInfo, Vote, VoteWithPower, CONSTANTS, DROP_SENDERS, DROP_TOKEN_INFO, GATEKEEPER,
-    ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCK_ID, PROPOSAL_MAP,
-    PROPS_BY_SCORE, PROP_ID, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID,
-    TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
-    VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1, VOTE_MAP_V2,
-    VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
+    ValidatorInfo, Vote, VoteWithPower, CONSTANTS, DROP_TOKEN_INFO, GATEKEEPER, ICQ_MANAGERS,
+    LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCK_ID, LOCK_ID_EXPIRY,
+    LOCK_ID_TRACKING, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, REVERSE_LOCK_ID_TRACKING,
+    SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS,
+    USER_LOCKS_FOR_CLAIM, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
+    VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1, VOTE_MAP_V2, VOTING_ALLOWED_ROUND, WHITELIST,
+    WHITELIST_ADMINS,
 };
 use crate::token_manager::{
     add_token_info_providers, handle_token_info_provider_add_remove,
@@ -90,6 +93,8 @@ pub const MIN_DEPLOYMENT_DURATION: u64 = 1;
 
 pub const MIN_SPLIT_LOCK_SIZE: Uint128 = Uint128::new(10_000);
 
+const UNUSED_MSG_ID: u64 = 0;
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     mut deps: DepsMut<NeutronQuery>,
@@ -121,6 +126,8 @@ pub fn instantiate(
         paused: false,
         round_lock_power_schedule: RoundLockPowerSchedule::new(msg.round_lock_power_schedule),
         cw721_collection_info,
+        lock_expiry_duration_seconds: msg.lock_expiry_duration_seconds,
+        lock_depth_limit: msg.lock_depth_limit,
     };
 
     CONSTANTS.save(deps.storage, env.block.time.nanos(), &state)?;
@@ -268,6 +275,8 @@ pub fn execute(
             known_users_cap,
             max_deployment_duration,
             cw721_collection_info,
+            lock_depth_limit,
+            lock_expiry_duration_seconds,
         } => update_config(
             deps,
             env,
@@ -277,6 +286,8 @@ pub fn execute(
             known_users_cap,
             max_deployment_duration,
             cw721_collection_info,
+            lock_depth_limit,
+            lock_expiry_duration_seconds,
         ),
         ExecuteMsg::DeleteConfigs { timestamps } => delete_configs(deps, &env, info, timestamps),
         ExecuteMsg::Pause {} => pause_contract(deps, &env, info),
@@ -774,6 +785,44 @@ fn split_lock(
         lock_end: starting_lock_entry.lock_end,
     };
 
+    let depth = get_lock_ancestor_depth(
+        &deps.as_ref(),
+        env.clone(),
+        starting_lock_entry.lock_id,
+        constants.lock_expiry_duration_seconds,
+    )?;
+    if depth >= constants.lock_depth_limit {
+        return Err(ContractError::Std(StdError::generic_err(format!(
+            "Cannot split lock. Depth limit {} for lock id {} reached",
+            constants.lock_depth_limit, starting_lock_entry.lock_id
+        ))));
+    }
+
+    // Forward lock tracking
+    let total = resulting_lock_amount + amount;
+    let frac_1 = Decimal::from_ratio(resulting_lock_amount, total);
+    let frac_2 = Decimal::one() - frac_1;
+    LOCK_ID_TRACKING.save(
+        deps.storage,
+        starting_lock_entry.lock_id,
+        &vec![(new_lock_id_1, frac_1), (new_lock_id_2, frac_2)],
+    )?;
+
+    // Reverse lock tracking
+    REVERSE_LOCK_ID_TRACKING.save(
+        deps.storage,
+        new_lock_id_1,
+        &vec![starting_lock_entry.lock_id],
+    )?;
+    REVERSE_LOCK_ID_TRACKING.save(
+        deps.storage,
+        new_lock_id_2,
+        &vec![starting_lock_entry.lock_id],
+    )?;
+
+    // Expiry
+    LOCK_ID_EXPIRY.save(deps.storage, starting_lock_entry.lock_id, &env.block.time)?;
+
     // Remove starting lock entry
     LOCKS_MAP_V2.remove(deps.storage, starting_lock_entry.lock_id, env.block.height)?;
 
@@ -989,9 +1038,41 @@ fn merge_locks(
         env.block.height,
     )?;
 
+    let mut parents = vec![];
+
     for lock_id in &lock_ids {
+        let depth = get_lock_ancestor_depth(
+            &deps.as_ref(),
+            env.clone(),
+            *lock_id,
+            constants.lock_expiry_duration_seconds,
+        )?;
+
+        if depth >= constants.lock_depth_limit {
+            let msg = format!(
+                "Cannot merge locks. Depth limit {} for lock id {} reached",
+                constants.lock_depth_limit, lock_id
+            );
+            return Err(ContractError::Std(StdError::generic_err(msg)));
+        }
+        LOCK_ID_TRACKING.save(
+            deps.storage,
+            *lock_id,
+            &vec![(resulting_lock_id, Decimal::one())],
+        )?;
+
+        assert!(
+            !parents.contains(lock_id),
+            "Parent list unexpectedly contains lock_id {lock_id}"
+        );
+
+        parents.push(*lock_id);
+
+        LOCK_ID_EXPIRY.save(deps.storage, *lock_id, &env.block.time)?;
+        // Remove merged lock from locks map
         LOCKS_MAP_V2.remove(deps.storage, *lock_id, env.block.height)?;
     }
+    REVERSE_LOCK_ID_TRACKING.save(deps.storage, resulting_lock_id, &parents)?;
 
     // Remove merged locks and add new lock id to USER_LOCKS
     USER_LOCKS.update(
@@ -1139,6 +1220,197 @@ fn merge_locks(
         .add_attribute("sender", info.sender)
         .add_attribute("lock_ids", lock_ids_attr)
         .add_attribute("resulting_lock_id", resulting_lock_id.to_string()))
+}
+
+/// Recursively resolves the final (leaf-level) composition of a given `lock_id`.
+///
+/// This function traces the ancestry tree from the given lock down to its leaves,
+/// applying all split and merge fractions, and produces a weighted composition
+/// of how much each final leaf lock contributes to the given lock.
+///
+/// A "leaf" lock is one that has no further children in `LOCK_ID_TRACKING`.
+///
+/// ## How it works:
+/// - If the given `lock_id` is not found in `LOCK_ID_TRACKING`, it is treated as a leaf
+///   and assigned 100% (`Decimal::one()`) weight.
+/// - Otherwise, the function recursively traverses the child locks and accumulates
+///   their weighted fractions, multiplying fractions at each level.
+/// - The final result is a vector of `(leaf_lock_id, fraction)` pairs that sum to 1.0.
+///
+/// ## Example
+/// Consider the following actions and resulting tracking:
+/// ```text
+/// LOCK_ID(s)           ACTION          RESULT
+/// 1                    split 50-50     lock_id_tracking[1] = [(2, 0.5), (3, 0.5)]
+/// 2                    split 70-30     lock_id_tracking[2] = [(4, 0.7), (5, 0.3)]
+/// 3, 4                 merge           lock_id_tracking[3] = [(6, 1.0)]
+///                                      lock_id_tracking[4] = [(6, 1.0)]
+///
+/// Here, lock 1 was used for voting before being split.
+///
+/// Then calling:
+///
+/// get_current_lock_composition(..., 1)
+///
+/// returns:
+///
+/// [(5, 0.15), (6, 0.85)]
+///
+/// Explanation:
+/// - Lock 1 splits into 2 (0.5) and 3 (0.5)
+/// - Lock 2 splits into 4 (0.7) and 5 (0.3)
+/// - Locks 3 and 4 merge into 6 (1.0 each)
+/// - So final composition for 1 is:
+///   - Lock 5: 0.5 * 0.3 = 0.15
+///   - Lock 6: 0.5 * (from lock 3) 1.0 + 0.5 * (from lock 4) 0.7 = 0.5 + 0.35 = 0.85
+///
+pub fn get_current_lock_composition(
+    deps: &Deps<NeutronQuery>,
+    lock_id: u64,
+) -> StdResult<Vec<(u64, Decimal)>> {
+    fn resolve(deps: &Deps<NeutronQuery>, lock_id: u64) -> StdResult<HashMap<u64, Decimal>> {
+        let maybe_children = LOCK_ID_TRACKING.may_load(deps.storage, lock_id)?;
+
+        // If not in tracking, it's a leaf
+        if maybe_children.is_none() {
+            let mut map = HashMap::new();
+            map.insert(lock_id, Decimal::one());
+            return Ok(map);
+        }
+
+        let mut result = HashMap::new();
+        for (child_id, fraction) in maybe_children.unwrap() {
+            let child_composition = resolve(deps, child_id)?;
+            for (leaf_id, weight) in child_composition {
+                let entry = result.entry(leaf_id).or_insert(Decimal::zero());
+                *entry += weight * fraction;
+            }
+        }
+
+        Ok(result)
+    }
+
+    let map = resolve(deps, lock_id)?;
+    let mut out = map.into_iter().collect::<Vec<_>>();
+    out.sort_by_key(|(id, _)| *id);
+    Ok(out)
+}
+
+/// Calculates the depth of non-expired ancestor locks for a given `lock_id`.
+///
+/// Depth is defined as the length of the longest chain of parent locks, starting from `lock_id`
+/// and following its ancestors recursively, **excluding any locks that have expired**.
+///
+/// - The depth includes the input `lock_id` itself (depth 1 for a valid leaf).
+/// - If the input lock is expired, the function returns `0`.
+/// - If an ancestor lock is expired, the recursion **stops along that path**, but may continue along others.
+/// - Expired parents are **skipped**, not counted, and not recursed into.
+/// - Cycle prevention is enforced using a `visited` list (cloned per path).
+///
+/// Example cases:
+/// - Root node with no parents: returns `1`
+/// - Lock with 3 non-expired ancestors: returns `4`
+/// - Lock with expired ancestors: returns the depth up to the first expired ancestor
+///  
+/// Given the following reverse tracking and all locks unexpired:
+///
+/// REVERSE_LOCK_ID_TRACKING:
+/// Lock ID 1 => [0]
+/// Lock ID 2 => [0]
+/// Lock ID 3 => [1]
+/// Lock ID 4 => [1]
+/// Lock ID 5 => [2, 3]
+///
+/// Then:
+///
+/// get_lock_ancestor_depth(..., 5) == Ok(4)
+///
+/// Explanation: Longest valid path is: 5 → 3 → 1 → 0 (4 hops).
+///
+/// If lock `0` is expired:
+///
+/// get_lock_ancestor_depth(..., 5) == Ok(3)  // path 5 → 3 → 1 still valid
+///
+///
+/// If lock `1` and `2` are expired:
+///
+/// get_lock_ancestor_depth(..., 5) == Ok(2)  // path 5 → 3
+///
+///
+/// If lock `3` is expired:
+///
+/// get_lock_ancestor_depth(..., 5) == Ok(1)  // only 5 itself counts
+///
+///
+/// If lock `5` is expired:
+///
+/// get_lock_ancestor_depth(..., 5) == Ok(0)  // root is expired
+///
+pub fn get_lock_ancestor_depth(
+    deps: &Deps<NeutronQuery>,
+    env: Env,
+    lock_id: u64,
+    lock_expiry_duration_seconds: u64,
+) -> StdResult<u64> {
+    if let Some(expiry_time) = LOCK_ID_EXPIRY.may_load(deps.storage, lock_id)? {
+        let cutoff = expiry_time.plus_seconds(lock_expiry_duration_seconds);
+        if env.block.time > cutoff {
+            return Ok(0); // lock itself is expired
+        }
+    }
+
+    fn recurse(
+        deps: &Deps<NeutronQuery>,
+        env: Env,
+        current_id: u64,
+        lock_expiry_duration_seconds: u64,
+        visited: &mut Vec<u64>,
+    ) -> StdResult<u64> {
+        let parents = REVERSE_LOCK_ID_TRACKING
+            .may_load(deps.storage, current_id)?
+            .unwrap_or_default();
+
+        if parents.is_empty() {
+            return Ok(1);
+        }
+
+        let mut max_depth = 0;
+        for parent_id in parents {
+            if let Some(expiry_time) = LOCK_ID_EXPIRY.may_load(deps.storage, parent_id)? {
+                let expiry_cutoff = expiry_time.plus_seconds(lock_expiry_duration_seconds);
+                if env.block.time > expiry_cutoff {
+                    continue;
+                }
+            }
+
+            let mut local_visited = visited.clone();
+            if local_visited.contains(&parent_id) {
+                continue;
+            }
+            local_visited.push(parent_id);
+
+            let depth = recurse(
+                deps,
+                env.clone(),
+                parent_id,
+                lock_expiry_duration_seconds,
+                visited,
+            )?;
+            if depth > max_depth {
+                max_depth = depth;
+            }
+        }
+
+        Ok(max_depth + 1)
+    }
+
+    recurse(
+        deps,
+        env,
+        lock_id,
+        lock_expiry_duration_seconds,
+        &mut vec![],
+    )
 }
 
 // Validate that the lock duration (given in nanos) is either 1, 2, 3, 6, or 12 epochs
@@ -1588,6 +1860,8 @@ fn update_config(
     known_users_cap: Option<u128>,
     max_deployment_duration: Option<u64>,
     cw721_collection_info: Option<CollectionInfo>,
+    lock_depth_limit: Option<u64>,
+    lock_expiry_duration_seconds: Option<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     if env.block.time > activate_at {
         return Err(ContractError::Std(StdError::generic_err(
@@ -1636,6 +1910,19 @@ fn update_config(
                 "new_cw721_collection_info_symbol",
                 &cw721_collection_info.symbol,
             );
+    }
+
+    if let Some(lock_depth_limit) = lock_depth_limit {
+        constants.lock_depth_limit = lock_depth_limit;
+        response = response.add_attribute("new_lock_depth_limit", lock_depth_limit.to_string());
+    }
+
+    if let Some(lock_expiry_duration_seconds) = lock_expiry_duration_seconds {
+        constants.lock_expiry_duration_seconds = lock_expiry_duration_seconds;
+        response = response.add_attribute(
+            "new_lock_expiry_duration_seconds",
+            lock_expiry_duration_seconds.to_string(),
+        );
     }
 
     CONSTANTS.save(deps.storage, activate_at.nanos(), &constants)?;
@@ -2240,8 +2527,6 @@ pub fn convert_lockup_to_dtoken(
                 lock_id = lockup.lock_id
             ))));
         }
-        // Save sender for this lock_id so it can be retreived in the reply handler
-        DROP_SENDERS.save(deps.storage, lockup.lock_id, &info.sender)?;
 
         let convert_token_msg = DropExecuteMsg::Bond {
             receiver: None,
@@ -2254,9 +2539,16 @@ pub fn convert_lockup_to_dtoken(
             funds: vec![lockup.funds.clone()],
         };
 
-        let reply_id = lockup.lock_id;
+        let reply_payload = ConvertLockupPayload {
+            lock_id: lockup.lock_id,
+            amount: lockup.funds.amount,
+            sender: info.sender.clone(),
+        };
 
-        submsgs.push(SubMsg::reply_on_success(wasm_execute_msg, reply_id));
+        submsgs.push(
+            SubMsg::reply_on_success(wasm_execute_msg, UNUSED_MSG_ID)
+                .with_payload(to_json_vec(&ReplyPayload::ConvertLockup(reply_payload))?),
+        );
     }
 
     Ok(Response::new()
@@ -2273,17 +2565,18 @@ pub fn convert_lockup_to_dtoken(
 pub fn convert_lockup_to_dtoken_reply(
     mut deps: DepsMut<NeutronQuery>,
     env: Env,
+    convert_lockup_payload: ConvertLockupPayload,
     msg: Reply,
-) -> Result<Response, ContractError> {
-    let lock_id = msg.id;
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let lock_id = convert_lockup_payload.lock_id;
 
-    let sender: Addr = DROP_SENDERS.load(deps.storage, lock_id)?;
-
-    DROP_SENDERS.remove(deps.storage, lock_id);
+    let sender: Addr = convert_lockup_payload.sender;
 
     let constants = load_current_constants(&deps.as_ref(), &env)?;
 
     let current_round_id = compute_current_round_id(&env, &constants)?;
+
+    let mut total_locked_tokens = LOCKED_TOKENS.load(deps.storage)?;
 
     let issue_amount = match msg.result {
         SubMsgResult::Ok(res) => {
@@ -2319,6 +2612,14 @@ pub fn convert_lockup_to_dtoken_reply(
             )))
         }
     };
+
+    total_locked_tokens = total_locked_tokens
+        .checked_sub(convert_lockup_payload.amount.into())
+        .ok_or_else(|| new_generic_error("Locked tokens underflow in reply"))?
+        .checked_add(issue_amount.into())
+        .ok_or_else(|| new_generic_error("Locked tokens overflow in reply"))?;
+
+    LOCKED_TOKENS.save(deps.storage, &total_locked_tokens)?;
 
     let tranches: Vec<Tranche> = TRANCHE_MAP
         .range(deps.storage, None, None, Order::Ascending)
@@ -3981,6 +4282,9 @@ pub fn reply(
                 token_manager_handle_submsg_reply(deps, &env, token_info_provider, msg)
             }
             ReplyPayload::InstantiateGatekeeper => gatekeeper_handle_submsg_reply(deps, msg),
+            ReplyPayload::ConvertLockup(convert_lockup_payload) => {
+                convert_lockup_to_dtoken_reply(deps, env, convert_lockup_payload, msg)
+            }
         },
         Err(_) => handle_submsg_reply(deps, msg),
     }

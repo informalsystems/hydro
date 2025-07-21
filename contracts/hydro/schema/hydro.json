@@ -1,6 +1,6 @@
 {
   "contract_name": "hydro",
-  "contract_version": "3.5.0",
+  "contract_version": "3.5.1",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -10,7 +10,9 @@
       "first_round_start",
       "icq_managers",
       "initial_whitelist",
+      "lock_depth_limit",
       "lock_epoch_length",
+      "lock_expiry_duration_seconds",
       "max_deployment_duration",
       "max_locked_tokens",
       "round_length",
@@ -55,7 +57,17 @@
           "type": "string"
         }
       },
+      "lock_depth_limit": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
       "lock_epoch_length": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "lock_expiry_duration_seconds": {
         "type": "integer",
         "format": "uint64",
         "minimum": 0.0
@@ -608,6 +620,22 @@
                   "null"
                 ],
                 "format": "uint128",
+                "minimum": 0.0
+              },
+              "lock_depth_limit": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "lock_expiry_duration_seconds": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
                 "minimum": 0.0
               },
               "max_deployment_duration": {
@@ -3770,7 +3798,9 @@
             "cw721_collection_info",
             "first_round_start",
             "known_users_cap",
+            "lock_depth_limit",
             "lock_epoch_length",
+            "lock_expiry_duration_seconds",
             "max_deployment_duration",
             "max_locked_tokens",
             "paused",
@@ -3789,7 +3819,17 @@
               "format": "uint128",
               "minimum": 0.0
             },
+            "lock_depth_limit": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "lock_epoch_length": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "lock_expiry_duration_seconds": {
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
