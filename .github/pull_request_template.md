@@ -17,6 +17,7 @@ I have...
 * [ ] Targeted the correct branch
 * [ ] Included the necessary unit tests
 * [ ] Added/adjusted the necessary [interchain tests](./test/interchain/)
+* [ ] Added necessary migration code for all stores that were adjusted or added
 * [ ] Added a changelog entry in `.changelog`
 * [ ] Compiled the contracts by using `make compile` and included content of the *artifacts* directory into the PR
 * [ ] Regenerated front-end schema by using `make schema` and included generated files into the PR
