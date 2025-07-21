@@ -23,7 +23,7 @@ pub struct MigrateMsg {}
 pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
     check_contract_version(deps.storage)?;
 
-    // No state migrations needed from v3.4.1/v3.5.0 to v3.5.1
+    // No state migrations needed from v3.5.0 to v3.5.1
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
