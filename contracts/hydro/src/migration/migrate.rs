@@ -1,5 +1,5 @@
 use crate::contract::{CONTRACT_NAME, CONTRACT_VERSION};
-use crate::error::{new_generic_error, ContractError};
+use crate::error::ContractError;
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 use cosmwasm_schema::cw_serde;
 #[allow(unused_imports)]
@@ -28,31 +28,21 @@ pub fn migrate(
     _env: Env,
     _msg: MigrateMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    check_contract_version(deps.storage, CONTRACT_VERSION_V3_4_1)?;
+    check_contract_version(deps.storage)?;
 
-    // No state migrations needed from v3.4.1 to v3.5.0
+    // No state migrations needed from v3.4.1/v3.5.0 to v3.5.1
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     Ok(Response::new())
 }
 
-fn check_contract_version(
-    storage: &dyn cosmwasm_std::Storage,
-    expected_version: &str,
-) -> Result<(), ContractError> {
+fn check_contract_version(storage: &dyn cosmwasm_std::Storage) -> Result<(), ContractError> {
     let contract_version = get_contract_version(storage)?;
 
     if contract_version.version == CONTRACT_VERSION {
         return Err(ContractError::Std(StdError::generic_err(
             "Contract is already migrated to the newest version.",
-        )));
-    }
-
-    if contract_version.version != expected_version {
-        return Err(new_generic_error(format!(
-            "In order to migrate the contract to the newest version, its current version must be {}, got {}.",
-            expected_version, contract_version.version
         )));
     }
 
