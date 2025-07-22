@@ -1394,7 +1394,7 @@ pub fn get_lock_ancestor_depth(
                 env.clone(),
                 parent_id,
                 lock_expiry_duration_seconds,
-                visited,
+                &mut local_visited,
             )?;
             if depth > max_depth {
                 max_depth = depth;
