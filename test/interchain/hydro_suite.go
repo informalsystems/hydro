@@ -304,6 +304,8 @@ func (s *HydroSuite) InstantiateHydroContract(
 		"gatekeeper":                   gatekeeperInitMsg,
 		"lock_expiry_duration_seconds": DefaultLockExpiryDuration,
 		"lock_depth_limit":             DefaultLockDepthLimit,
+		"slash_percentage_threshold":   "0.05",
+		"slash_tokens_receiver_addr":   adminAddr,
 	}
 
 	return s.InstantiateContract(codeId, initHydro, adminAddr, "Hydro Smart Contract")
@@ -671,8 +673,10 @@ func (s *HydroSuite) RefreshLock(contractAddr string, new_lock_duration, lock_id
 func (s *HydroSuite) UpdateMaxLockedTokens(contractAddr string, newMaxLockedTokens, activate_at int64) error {
 	updateMaxLockedTokensTxData := map[string]interface{}{
 		"update_config": map[string]interface{}{
-			"activate_at":       strconv.FormatInt(activate_at, 10),
-			"max_locked_tokens": newMaxLockedTokens,
+			"config": map[string]interface{}{
+				"activate_at":       strconv.FormatInt(activate_at, 10),
+				"max_locked_tokens": newMaxLockedTokens,
+			},
 		},
 	}
 

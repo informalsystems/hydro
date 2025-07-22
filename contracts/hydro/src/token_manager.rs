@@ -92,6 +92,23 @@ impl TokenManager {
         Ok(Decimal::zero())
     }
 
+    pub fn get_token_denom_ratio(
+        &mut self,
+        deps: &Deps<NeutronQuery>,
+        round_id: u64,
+        denom: String,
+    ) -> Decimal {
+        let token_group_id = match self.validate_denom(deps, round_id, denom) {
+            Err(_) => return Decimal::zero(),
+            Ok(token_group_id) => token_group_id,
+        };
+
+        match self.get_token_group_ratio(deps, round_id, token_group_id) {
+            Err(_) => Decimal::zero(),
+            Ok(token_group_ratio) => token_group_ratio,
+        }
+    }
+
     pub fn get_lsm_token_info_provider(&self) -> Option<TokenInfoProviderLSM> {
         for token_info_provider in &self.token_info_providers {
             if let TokenInfoProvider::LSM(token_info_provider) = token_info_provider {

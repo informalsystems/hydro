@@ -20,7 +20,8 @@ use crate::{
     query::{QueryMsg, TokensResponse},
     score_keeper::get_total_power_for_proposal,
     state::{
-        DropTokenInfo, LockEntryV2, DROP_TOKEN_INFO, LOCKS_MAP_V2, TOKEN_INFO_PROVIDERS, USER_LOCKS,
+        DropTokenInfo, LockEntryV2, DROP_TOKEN_INFO, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES,
+        TOKEN_INFO_PROVIDERS, USER_LOCKS,
     },
     testing::{
         get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
@@ -294,13 +295,18 @@ fn convert_lockup_to_dtoken_test() {
     let reply_payload = ReplyPayload::ConvertLockup(payload);
     let serialized_payload = to_json_binary(&reply_payload).unwrap();
 
+    // Mock pending slash for lock with id 2
+    LOCKS_PENDING_SLASHES
+        .save(&mut deps.storage, 2, &Uint128::from(100u128))
+        .unwrap();
+
     let reply_2 = Reply {
         id: 2,
         payload: serialized_payload,
         gas_used: 0,
         #[allow(deprecated)]
         result: SubMsgResult::Ok(SubMsgResponse {
-            events: vec![Event::new("wasm").add_attribute("issue_amount", "2000")],
+            events: vec![Event::new("wasm").add_attribute("issue_amount", "1700")],
             data: None,
             msg_responses: vec![],
         }),
@@ -314,7 +320,11 @@ fn convert_lockup_to_dtoken_test() {
 
     let updated_lock_2 = LOCKS_MAP_V2.load(&deps.storage, 2).unwrap();
     assert_eq!(updated_lock_2.funds.denom, drop_token_info.d_token_denom);
-    assert_eq!(updated_lock_2.funds.amount, Uint128::new(2000));
+    assert_eq!(updated_lock_2.funds.amount, Uint128::new(1700));
+
+    assert_eq!(
+        LOCKS_PENDING_SLASHES.load(&deps.storage, 2).unwrap().u128(),
+        85);
 
     // Query all tokens after conversion - should return both lockups since they are now d-tokens (non-LSM)
     let query_msg = QueryMsg::AllTokens {

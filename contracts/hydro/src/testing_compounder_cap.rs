@@ -13,7 +13,7 @@ use neutron_sdk::{
 
 use crate::{
     contract::{execute, instantiate, sudo},
-    msg::ExecuteMsg,
+    msg::{ExecuteMsg, UpdateConfigData},
     score_keeper::get_total_power_for_round,
     state::{EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, LOCKED_TOKENS},
     testing::{
@@ -169,13 +169,17 @@ fn test_compounder_cap() {
     env.block.height += BLOCKS_PER_DAY;
 
     let msg = ExecuteMsg::UpdateConfig {
-        activate_at: FIRST_ROUND_START.plus_nanos(ROUND_LENGTH + 1),
-        max_locked_tokens: Some(40000),
-        known_users_cap: Some(2000),
-        max_deployment_duration: None,
-        cw721_collection_info: None,
-        lock_depth_limit: None,
-        lock_expiry_duration_seconds: None,
+        config: UpdateConfigData {
+            activate_at: FIRST_ROUND_START.plus_nanos(ROUND_LENGTH + 1),
+            max_locked_tokens: Some(40000),
+            known_users_cap: Some(2000),
+            max_deployment_duration: None,
+            cw721_collection_info: None,
+            lock_depth_limit: None,
+            lock_expiry_duration_seconds: None,
+            slash_percentage_threshold: None,
+            slash_tokens_receiver_addr: None,
+        },
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
@@ -188,13 +192,17 @@ fn test_compounder_cap() {
     env.block.height += BLOCKS_PER_DAY;
 
     let msg = ExecuteMsg::UpdateConfig {
-        activate_at: FIRST_ROUND_START.plus_nanos(ROUND_LENGTH + TEN_DAYS_IN_NANOS + 1),
-        max_locked_tokens: None,
-        known_users_cap: Some(0),
-        max_deployment_duration: None,
-        cw721_collection_info: None,
-        lock_depth_limit: None,
-        lock_expiry_duration_seconds: None,
+        config: UpdateConfigData {
+            activate_at: FIRST_ROUND_START.plus_nanos(ROUND_LENGTH + TEN_DAYS_IN_NANOS + 1),
+            max_locked_tokens: None,
+            known_users_cap: Some(0),
+            max_deployment_duration: None,
+            cw721_collection_info: None,
+            lock_depth_limit: None,
+            lock_expiry_duration_seconds: None,
+            slash_percentage_threshold: None,
+            slash_tokens_receiver_addr: None,
+        },
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
@@ -421,13 +429,17 @@ fn test_compounder_cap() {
     env.block.height += BLOCKS_PER_DAY;
 
     let msg = ExecuteMsg::UpdateConfig {
-        activate_at: FIRST_ROUND_START.plus_nanos(2 * ROUND_LENGTH + 1),
-        max_locked_tokens: Some(50000),
-        known_users_cap: Some(5000),
-        max_deployment_duration: None,
-        cw721_collection_info: None,
-        lock_depth_limit: None,
-        lock_expiry_duration_seconds: None,
+        config: UpdateConfigData {
+            activate_at: FIRST_ROUND_START.plus_nanos(2 * ROUND_LENGTH + 1),
+            max_locked_tokens: Some(50000),
+            known_users_cap: Some(5000),
+            max_deployment_duration: None,
+            cw721_collection_info: None,
+            lock_depth_limit: None,
+            lock_expiry_duration_seconds: None,
+            slash_percentage_threshold: None,
+            slash_tokens_receiver_addr: None,
+        },
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);
@@ -435,13 +447,17 @@ fn test_compounder_cap() {
 
     // 12. Round 1: Update config to close the known_users_cap after some time in round 2.
     let msg = ExecuteMsg::UpdateConfig {
-        activate_at: FIRST_ROUND_START.plus_nanos(2 * ROUND_LENGTH + TEN_DAYS_IN_NANOS + 1),
-        max_locked_tokens: None,
-        known_users_cap: Some(0),
-        max_deployment_duration: None,
-        cw721_collection_info: None,
-        lock_depth_limit: None,
-        lock_expiry_duration_seconds: None,
+        config: UpdateConfigData {
+            activate_at: FIRST_ROUND_START.plus_nanos(2 * ROUND_LENGTH + TEN_DAYS_IN_NANOS + 1),
+            max_locked_tokens: None,
+            known_users_cap: Some(0),
+            max_deployment_duration: None,
+            cw721_collection_info: None,
+            lock_depth_limit: None,
+            lock_expiry_duration_seconds: None,
+            slash_percentage_threshold: None,
+            slash_tokens_receiver_addr: None,
+        },
     };
 
     let res = execute(deps.as_mut(), env.clone(), admin_msg_info.clone(), msg);

@@ -5,7 +5,10 @@ use crate::contract::{
     get_vote_for_update, query_all_user_lockups_with_tranche_infos, query_current_round_id,
     query_gatekeeper, query_tranches, query_user_votes, query_whitelist, query_whitelist_admins,
 };
-use crate::msg::{CollectionInfo, ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo};
+use crate::msg::{
+    CollectionInfo, ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo,
+    UpdateConfigData,
+};
 use crate::state::{
     LockEntryV2, RoundLockPowerSchedule, Vote, CONSTANTS, TOKEN_INFO_PROVIDERS, USER_LOCKS,
     VOTE_MAP_V2,
@@ -121,6 +124,7 @@ pub fn get_default_lsm_token_info_provider() -> TokenInfoProvider {
 
 pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
     let user_address = get_address_as_str(mock_api, "addr0000");
+    let slashed_tokens_receiver_address = get_address_as_str(mock_api, "addr0000");
 
     InstantiateMsg {
         round_length: TWO_WEEKS_IN_NANO_SECONDS,
@@ -141,6 +145,8 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         cw721_collection_info: None,
         lock_expiry_duration_seconds: 60 * 60 * 24 * 30 * 6, // 6 months
         lock_depth_limit: 50,
+        slash_percentage_threshold: Decimal::percent(50),
+        slash_tokens_receiver_addr: slashed_tokens_receiver_address,
     }
 }
 
@@ -2575,13 +2581,17 @@ fn delete_configs_test() {
         configs_timestamps.push(timestamp);
 
         let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
-            activate_at: timestamp,
-            max_locked_tokens: Some((i * 1000) as u128),
-            known_users_cap: None,
-            max_deployment_duration: None,
-            cw721_collection_info: None,
-            lock_depth_limit: None,
-            lock_expiry_duration_seconds: None,
+            config: UpdateConfigData {
+                activate_at: timestamp,
+                max_locked_tokens: Some((i * 1000) as u128),
+                known_users_cap: None,
+                max_deployment_duration: None,
+                cw721_collection_info: None,
+                lock_depth_limit: None,
+                lock_expiry_duration_seconds: None,
+                slash_percentage_threshold: None,
+                slash_tokens_receiver_addr: None,
+            },
         };
         let res = execute(
             deps.as_mut(),
@@ -2665,13 +2675,17 @@ fn contract_pausing_test() {
             address: whitelist_admin.to_string(),
         },
         ExecuteMsg::UpdateConfig {
-            activate_at: env.block.time,
-            max_locked_tokens: None,
-            known_users_cap: None,
-            max_deployment_duration: None,
-            cw721_collection_info: None,
-            lock_depth_limit: None,
-            lock_expiry_duration_seconds: None,
+            config: UpdateConfigData {
+                activate_at: env.block.time,
+                max_locked_tokens: None,
+                known_users_cap: None,
+                max_deployment_duration: None,
+                cw721_collection_info: None,
+                lock_depth_limit: None,
+                lock_expiry_duration_seconds: None,
+                slash_percentage_threshold: None,
+                slash_tokens_receiver_addr: None,
+            },
         },
         ExecuteMsg::DeleteConfigs { timestamps: vec![] },
         ExecuteMsg::Pause {},

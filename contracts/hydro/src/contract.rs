@@ -27,19 +27,20 @@ use crate::lsm_integration::{query_ibc_denom_trace, COSMOS_VALIDATOR_PREFIX, TRA
 use crate::msg::{
     CollectionInfo, ConvertLockupPayload, ExecuteMsg, InstantiateMsg, LiquidityDeployment,
     LockTokensProof, ProposalToLockups, ReplyPayload, TokenInfoProviderInstantiateMsg, TrancheInfo,
+    UpdateConfigData,
 };
 use crate::query::{
     AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse,
     CanLockDenomResponse, ConstantsResponse, CurrentRoundResponse, DtokenAmountResponse,
     DtokenAmountsResponse, ExpiredUserLockupsResponse, GatekeeperResponse, ICQManagersResponse,
     LiquidityDeploymentResponse, LockEntryWithPower, LockVotesHistoryEntry,
-    LockVotesHistoryResponse, LockupWithPerTrancheInfo, ProposalResponse, QueryMsg,
-    RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
-    RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse,
-    SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse,
-    TokenInfoProvidersResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse,
-    UserVotedLocksResponse, UserVotesResponse, UserVotingPowerResponse, VoteEntry, VotedLockInfo,
-    WhitelistAdminsResponse, WhitelistResponse,
+    LockVotesHistoryResponse, LockupWithPerTrancheInfo, LockupsPendingSlashesResponse,
+    ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse,
+    RoundProposalsResponse, RoundTotalVotingPowerResponse,
+    RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse,
+    SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, TopNProposalsResponse,
+    TotalLockedTokensResponse, TranchesResponse, UserVotedLocksResponse, UserVotesResponse,
+    UserVotingPowerResponse, VoteEntry, VotedLockInfo, WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_token_group_shares_to_proposal, add_token_group_shares_to_round_total,
@@ -47,15 +48,16 @@ use crate::score_keeper::{
     get_total_power_for_proposal, get_total_power_for_round,
     remove_token_group_shares_from_proposal, TokenGroupRatioChange,
 };
+use crate::slashing::slash_proposal_voters;
 use crate::state::{
     Constants, DropTokenInfo, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche,
     ValidatorInfo, Vote, VoteWithPower, CONSTANTS, DROP_TOKEN_INFO, GATEKEEPER, ICQ_MANAGERS,
-    LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCK_ID, LOCK_ID_EXPIRY,
-    LOCK_ID_TRACKING, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, REVERSE_LOCK_ID_TRACKING,
-    SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS,
-    USER_LOCKS_FOR_CLAIM, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
-    VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1, VOTE_MAP_V2, VOTING_ALLOWED_ROUND, WHITELIST,
-    WHITELIST_ADMINS,
+    LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES, LOCK_ID,
+    LOCK_ID_EXPIRY, LOCK_ID_TRACKING, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID,
+    REVERSE_LOCK_ID_TRACKING, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID,
+    TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
+    VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1, VOTE_MAP_V2,
+    VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::token_manager::{
     add_token_info_providers, handle_token_info_provider_add_remove,
@@ -64,10 +66,11 @@ use crate::token_manager::{
 use crate::utils::{
     calculate_vote_power, get_current_user_voting_power, get_higest_voting_allowed_round,
     get_highest_known_height_for_round_id, get_lock_time_weighted_shares, get_lock_vote,
-    get_next_lock_id, get_owned_lock_entry, get_proposal, get_user_claimable_locks,
-    load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
-    scale_lockup_power, to_lockup_with_power, to_lockup_with_tranche_infos,
-    update_locked_tokens_info, validate_locked_tokens_caps, verify_historical_data_availability,
+    get_next_lock_id, get_owned_lock_entry, get_proposal, get_slice_as_attribute,
+    get_user_claimable_locks, load_constants_active_at_timestamp, load_current_constants,
+    run_on_each_transaction, scale_lockup_power, to_lockup_with_power,
+    to_lockup_with_tranche_infos, update_locked_tokens_info, validate_locked_tokens_caps,
+    verify_historical_data_availability,
 };
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
@@ -111,6 +114,12 @@ pub fn instantiate(
         )));
     }
 
+    if msg.slash_percentage_threshold > Decimal::percent(100) {
+        return Err(new_generic_error(
+            "Slash percentage threshold must not be greater than 100%",
+        ));
+    }
+
     let cw721_collection_info = msg.cw721_collection_info.unwrap_or(CollectionInfo {
         name: "Hydro Lockups".to_string(),
         symbol: "hydro-lockups".to_string(),
@@ -128,6 +137,11 @@ pub fn instantiate(
         cw721_collection_info,
         lock_expiry_duration_seconds: msg.lock_expiry_duration_seconds,
         lock_depth_limit: msg.lock_depth_limit,
+        slash_percentage_threshold: msg.slash_percentage_threshold,
+        slash_tokens_receiver_addr: deps
+            .api
+            .addr_validate(&msg.slash_tokens_receiver_addr)?
+            .into_string(),
     };
 
     CONSTANTS.save(deps.storage, env.block.time.nanos(), &state)?;
@@ -237,7 +251,9 @@ pub fn execute(
             split_lock(deps, env, info, &constants, lock_id, amount)
         }
         ExecuteMsg::MergeLocks { lock_ids } => merge_locks(deps, env, info, &constants, lock_ids),
-        ExecuteMsg::UnlockTokens { lock_ids } => unlock_tokens(deps, env, info, lock_ids),
+        ExecuteMsg::UnlockTokens { lock_ids } => {
+            unlock_tokens(deps, env, info, &constants, lock_ids)
+        }
         ExecuteMsg::CreateProposal {
             round_id,
             tranche_id,
@@ -269,26 +285,7 @@ pub fn execute(
         ExecuteMsg::RemoveAccountFromWhitelist { address } => {
             remove_from_whitelist(deps, env, info, address)
         }
-        ExecuteMsg::UpdateConfig {
-            activate_at,
-            max_locked_tokens,
-            known_users_cap,
-            max_deployment_duration,
-            cw721_collection_info,
-            lock_depth_limit,
-            lock_expiry_duration_seconds,
-        } => update_config(
-            deps,
-            env,
-            info,
-            activate_at,
-            max_locked_tokens,
-            known_users_cap,
-            max_deployment_duration,
-            cw721_collection_info,
-            lock_depth_limit,
-            lock_expiry_duration_seconds,
-        ),
+        ExecuteMsg::UpdateConfig { config } => update_config(deps, env, info, config),
         ExecuteMsg::DeleteConfigs { timestamps } => delete_configs(deps, &env, info, timestamps),
         ExecuteMsg::Pause {} => pause_contract(deps, &env, info),
         ExecuteMsg::AddTranche { tranche } => add_tranche(deps, env, info, tranche),
@@ -390,6 +387,25 @@ pub fn execute(
         ExecuteMsg::ConvertLockupToDtoken { lock_ids } => {
             convert_lockup_to_dtoken(deps, env, info, lock_ids)
         }
+        ExecuteMsg::SlashProposalVoters {
+            round_id,
+            tranche_id,
+            proposal_id,
+            slash_percent,
+            start_from,
+            limit,
+        } => slash_proposal_voters(
+            deps,
+            env,
+            info,
+            &constants,
+            round_id,
+            tranche_id,
+            proposal_id,
+            slash_percent,
+            start_from,
+            limit,
+        ),
     }
 }
 
@@ -729,6 +745,7 @@ fn refresh_single_lock(
 //     Check the amount to split out (e.g. existing lock amount, new lock amount, remaining lock amount)
 //     Check if user has reached the maximum number of locks it can own
 //     Create two new lock entres, one with the specified amount and another one with the remaining amount
+//     If the lock entry being split had pending slashes attached, split them between newly created lock entries
 //     Check if the splitted lock voted in previous rounds and insert 0-power votes for the same proposals for the new lock entries
 //     If the splitted lock was used for voting in current round, remove the existing vote and add two new votes
 fn split_lock(
@@ -874,6 +891,25 @@ fn split_lock(
             Ok(current_locks)
         },
     )?;
+
+    // If the lock being split had pending slash, we need to split it between the new locks.
+    if let Some(pending_slash) = LOCKS_PENDING_SLASHES.may_load(deps.storage, lock_id_to_split)? {
+        let pending_slash = Decimal::from_ratio(pending_slash, Uint128::one());
+        let new_lock1_pending_slash = pending_slash.checked_mul(frac_1)?.to_uint_floor();
+        let new_lock2_pending_slash = pending_slash.checked_mul(frac_2)?.to_uint_floor();
+
+        LOCKS_PENDING_SLASHES.save(
+            deps.storage,
+            new_lock_entry_1.lock_id,
+            &new_lock1_pending_slash,
+        )?;
+        LOCKS_PENDING_SLASHES.save(
+            deps.storage,
+            new_lock_entry_2.lock_id,
+            &new_lock2_pending_slash,
+        )?;
+        LOCKS_PENDING_SLASHES.remove(deps.storage, lock_id_to_split);
+    }
 
     let current_round_id = compute_current_round_id(&env, constants)?;
 
@@ -1120,6 +1156,28 @@ fn merge_locks(
             Ok(current_locks)
         },
     )?;
+
+    // Accumulate any pending slashes from the input lock entries and attach them to the resulting lock entry
+    let mut resulting_lock_pending_slash = Uint128::zero();
+
+    for input_lock in &input_locks {
+        if let Some(pending_slash) =
+            LOCKS_PENDING_SLASHES.may_load(deps.storage, input_lock.lock_id)?
+        {
+            resulting_lock_pending_slash =
+                resulting_lock_pending_slash.checked_add(pending_slash)?;
+
+            LOCKS_PENDING_SLASHES.remove(deps.storage, input_lock.lock_id);
+        }
+    }
+
+    if resulting_lock_pending_slash > Uint128::zero() {
+        LOCKS_PENDING_SLASHES.save(
+            deps.storage,
+            resulting_lock_entry.lock_id,
+            &resulting_lock_pending_slash,
+        )?;
+    }
 
     let current_round_id = compute_current_round_id(&env, constants)?;
 
@@ -1459,17 +1517,16 @@ fn validate_lock_duration(
 //     Validate that the caller didn't vote in previous round
 //     Validate caller
 //     Validate `lock_end` < now
-//     Send `amount` tokens back to caller
+//     Send `amount` tokens back to caller, reduced by any pending slashes
+//     If there are pending slashes, send those amounts to predefined address
 //     Delete entry from LocksMap
 fn unlock_tokens(
     deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
+    constants: &Constants,
     lock_ids: Option<Vec<u64>>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    // TODO: reenable this when we implement slashing
-    // validate_previous_round_vote(&deps, &env, info.sender.clone())?;
-
     let locks: Vec<_> = USER_LOCKS
         .may_load(deps.storage, info.sender.clone())?
         .into_iter()
@@ -1487,41 +1544,46 @@ fn unlock_tokens(
         .collect::<Result<_, _>>()?;
 
     let mut total_unlocked_amount = Uint128::zero();
-
-    let mut response = Response::new()
-        .add_attribute("action", "unlock_tokens")
-        .add_attribute("sender", info.sender.to_string());
-
     let mut removed_lock_ids = HashSet::new();
-    let mut unlocked_tokens = vec![];
+
+    let mut unlocks: HashMap<String, Uint128> = HashMap::new();
+    let mut slashes: HashMap<String, Uint128> = HashMap::new();
+
+    let current_round_id = compute_current_round_id(&env, constants)?;
+    let locks = get_lockups_allowed_to_unlock(&deps, &env, current_round_id, &locks)?;
 
     for (lock_id, lock_entry) in locks {
-        if lock_entry.lock_end < env.block.time {
-            // Send tokens back to caller
-            let send = Coin {
-                denom: lock_entry.funds.denom,
-                amount: lock_entry.funds.amount,
-            };
+        let amount_to_slash = LOCKS_PENDING_SLASHES
+            .may_load(deps.storage, lock_id)?
+            .unwrap_or_default();
 
-            response = response.add_message(BankMsg::Send {
-                to_address: info.sender.to_string(),
-                amount: vec![send.clone()],
-            });
-
-            total_unlocked_amount += send.amount;
-
-            // Delete unlocked lock
-            LOCKS_MAP_V2.remove(deps.storage, lock_id, env.block.height)?;
-
-            // Remove from TOKEN_IDS
-            cw721::maybe_remove_token_id(deps.storage, lock_id);
-
-            // Clear any CW721 Approval on the lock
-            cw721::clear_nft_approvals(deps.storage, lock_id)?;
-
-            removed_lock_ids.insert(lock_id);
-            unlocked_tokens.push(send.to_string());
+        if amount_to_slash > Uint128::zero() {
+            slashes
+                .entry(lock_entry.funds.denom.clone())
+                .and_modify(|current_amount_to_slash| *current_amount_to_slash += amount_to_slash)
+                .or_insert(amount_to_slash);
         }
+
+        let amount_to_unlock = lock_entry.funds.amount.checked_sub(amount_to_slash)?;
+
+        unlocks
+            .entry(lock_entry.funds.denom.clone())
+            .and_modify(|current_amount| *current_amount += amount_to_unlock)
+            .or_insert(amount_to_unlock);
+
+        total_unlocked_amount = total_unlocked_amount.checked_add(lock_entry.funds.amount)?;
+
+        // Delete unlocked lock and any pending slashes attached to it
+        LOCKS_MAP_V2.remove(deps.storage, lock_id, env.block.height)?;
+        LOCKS_PENDING_SLASHES.remove(deps.storage, lock_id);
+
+        // Clear any CW721 Approval on the lock
+        cw721::clear_nft_approvals(deps.storage, lock_id)?;
+
+        // Remove from TOKEN_IDS
+        cw721::maybe_remove_token_id(deps.storage, lock_id);
+
+        removed_lock_ids.insert(lock_id);
     }
 
     USER_LOCKS.update(
@@ -1548,6 +1610,46 @@ fn unlock_tokens(
         )?;
     }
 
+    let unlocked_tokens = unlocks
+        .iter()
+        .map(|(denom, amount)| Coin {
+            denom: denom.clone(),
+            amount: *amount,
+        })
+        .collect::<Vec<Coin>>();
+
+    let slashed_tokens = slashes
+        .iter()
+        .map(|(denom, amount)| Coin {
+            denom: denom.clone(),
+            amount: *amount,
+        })
+        .collect::<Vec<Coin>>();
+
+    let mut response = Response::new()
+        .add_attribute("action", "unlock_tokens")
+        .add_attribute("sender", info.sender.to_string());
+
+    // Convert unlocked and slashed tokens to string for the response attributes
+    let unlocked_tokens_attr = get_slice_as_attribute(&unlocked_tokens);
+    let slashed_tokens_attr = get_slice_as_attribute(&slashed_tokens);
+
+    // Send unlocked tokens back to caller
+    if !unlocked_tokens.is_empty() {
+        response = response.add_message(BankMsg::Send {
+            to_address: info.sender.to_string(),
+            amount: unlocked_tokens,
+        });
+    }
+
+    // Send slashed tokens to slashes recipient
+    if !slashed_tokens.is_empty() {
+        response = response.add_message(BankMsg::Send {
+            to_address: constants.slash_tokens_receiver_addr.clone(),
+            amount: slashed_tokens,
+        });
+    }
+
     // Convert removed_lock_ids to strings for the response attributes
     let unlocked_lock_ids = removed_lock_ids
         .iter()
@@ -1556,41 +1658,41 @@ fn unlock_tokens(
 
     Ok(response
         .add_attribute("unlocked_lock_ids", unlocked_lock_ids.join(", "))
-        .add_attribute("unlocked_tokens", unlocked_tokens.join(", ")))
+        .add_attribute("unlocked_tokens", unlocked_tokens_attr)
+        .add_attribute("slashed_tokens", slashed_tokens_attr))
 }
 
-// prevent clippy from warning for unused function
-// TODO: reenable this when we enable slashing
-// Note: this function is outdated and would need to be fixed when reinstated
-// When we want to reinstate the function, the process should probably be:
-// 1. Receive list of lock_ids (already confirmed that they belong to the user) to unlock
-// 2. For each lock_id, check that the last vote's bid duration does not prevent the unlock to happen at this round
-// 3. Return the list of lock_ids that are allowed to be unlocked.
-#[allow(dead_code)]
-fn validate_previous_round_vote(
+fn get_lockups_allowed_to_unlock(
     deps: &DepsMut<NeutronQuery>,
     env: &Env,
-    _sender: &Addr,
-) -> Result<(), ContractError> {
-    let constants = load_current_constants(&deps.as_ref(), env)?;
-    let current_round_id = compute_current_round_id(env, &constants)?;
-    if current_round_id > 0 {
-        let previous_round_id = current_round_id - 1;
-        for tranche_id in TRANCHE_MAP.keys(deps.storage, None, None, Order::Ascending) {
-            if VOTE_MAP_V2
-                .prefix((previous_round_id, tranche_id?))
-                .range(deps.storage, None, None, Order::Ascending)
-                .count()
-                > 0
+    current_round_id: u64,
+    locks: &[(u64, LockEntryV2)],
+) -> Result<Vec<(u64, LockEntryV2)>, ContractError> {
+    let tranche_ids = TRANCHE_MAP
+        .keys(deps.storage, None, None, Order::Ascending)
+        .collect::<StdResult<Vec<u64>>>()?;
+
+    let mut filtered_locks = vec![];
+
+    for lock_entry in locks {
+        if lock_entry.1.lock_end >= env.block.time {
+            continue;
+        }
+
+        for tranche_id in &tranche_ids {
+            if let Some(voting_allowed_round) =
+                VOTING_ALLOWED_ROUND.may_load(deps.storage, (*tranche_id, lock_entry.1.lock_id))?
             {
-                return Err(ContractError::Std(StdError::generic_err(
-                    "Tokens can not be unlocked, user voted for at least one proposal in previous round",
-                )));
+                if voting_allowed_round >= current_round_id {
+                    continue;
+                }
             }
         }
+
+        filtered_locks.push((lock_entry.0, lock_entry.1.clone()));
     }
 
-    Ok(())
+    Ok(filtered_locks)
 }
 
 // Creates a new proposal in the store.
@@ -1874,20 +1976,13 @@ fn remove_from_whitelist(
         .add_attribute("removed_whitelist_address", whitelist_account_addr))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn update_config(
     deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
-    activate_at: Timestamp,
-    max_locked_tokens: Option<u128>,
-    known_users_cap: Option<u128>,
-    max_deployment_duration: Option<u64>,
-    cw721_collection_info: Option<CollectionInfo>,
-    lock_depth_limit: Option<u64>,
-    lock_expiry_duration_seconds: Option<u64>,
+    config: UpdateConfigData,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    if env.block.time > activate_at {
+    if env.block.time > config.activate_at {
         return Err(ContractError::Std(StdError::generic_err(
             "Can not update config in the past.",
         )));
@@ -1897,7 +1992,7 @@ fn update_config(
     // This allows us to update the Constants in arbitrary order. E.g. at the similar block
     // height we can schedule multiple updates for the future, where each new Constants will
     // have the changes introduced by earlier ones.
-    let mut constants = load_constants_active_at_timestamp(&deps.as_ref(), activate_at)?.1;
+    let mut constants = load_constants_active_at_timestamp(&deps.as_ref(), config.activate_at)?.1;
 
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
@@ -1905,17 +2000,17 @@ fn update_config(
         .add_attribute("action", "update_config")
         .add_attribute("sender", info.sender);
 
-    if let Some(max_locked_tokens) = max_locked_tokens {
+    if let Some(max_locked_tokens) = config.max_locked_tokens {
         constants.max_locked_tokens = max_locked_tokens;
         response = response.add_attribute("new_max_locked_tokens", max_locked_tokens.to_string());
     }
 
-    if let Some(known_users_cap) = known_users_cap {
+    if let Some(known_users_cap) = config.known_users_cap {
         constants.known_users_cap = known_users_cap;
         response = response.add_attribute("new_known_users_cap", known_users_cap.to_string());
     }
 
-    if let Some(max_deployment_duration) = max_deployment_duration {
+    if let Some(max_deployment_duration) = config.max_deployment_duration {
         constants.max_deployment_duration = max_deployment_duration;
         response = response.add_attribute(
             "new_max_deployment_duration",
@@ -1923,7 +2018,7 @@ fn update_config(
         );
     }
 
-    if let Some(cw721_collection_info) = cw721_collection_info {
+    if let Some(cw721_collection_info) = config.cw721_collection_info {
         constants.cw721_collection_info = cw721_collection_info.clone();
         response = response
             .add_attribute(
@@ -1936,12 +2031,12 @@ fn update_config(
             );
     }
 
-    if let Some(lock_depth_limit) = lock_depth_limit {
+    if let Some(lock_depth_limit) = config.lock_depth_limit {
         constants.lock_depth_limit = lock_depth_limit;
         response = response.add_attribute("new_lock_depth_limit", lock_depth_limit.to_string());
     }
 
-    if let Some(lock_expiry_duration_seconds) = lock_expiry_duration_seconds {
+    if let Some(lock_expiry_duration_seconds) = config.lock_expiry_duration_seconds {
         constants.lock_expiry_duration_seconds = lock_expiry_duration_seconds;
         response = response.add_attribute(
             "new_lock_expiry_duration_seconds",
@@ -1949,7 +2044,28 @@ fn update_config(
         );
     }
 
-    CONSTANTS.save(deps.storage, activate_at.nanos(), &constants)?;
+    if let Some(slash_percentage_threshold) = config.slash_percentage_threshold {
+        if slash_percentage_threshold > Decimal::percent(100) {
+            return Err(new_generic_error(
+                "Slash percentage threshold must be between 0% and 100%",
+            ));
+        }
+
+        constants.slash_percentage_threshold = slash_percentage_threshold;
+        response = response.add_attribute(
+            "slash_percentage_threshold",
+            slash_percentage_threshold.to_string(),
+        );
+    }
+
+    if let Some(slash_tokens_receiver_addr) = config.slash_tokens_receiver_addr {
+        let slash_tokens_receiver_addr = deps.api.addr_validate(&slash_tokens_receiver_addr)?;
+
+        constants.slash_tokens_receiver_addr = slash_tokens_receiver_addr.to_string();
+        response = response.add_attribute("slash_tokens_receiver_addr", slash_tokens_receiver_addr);
+    }
+
+    CONSTANTS.save(deps.storage, config.activate_at.nanos(), &constants)?;
 
     Ok(response)
 }
@@ -2584,8 +2700,9 @@ pub fn convert_lockup_to_dtoken(
 // 1. If there are any votes with lock_id - unvote
 // 2. Apply proposal power changes
 // 3. Update lock entry with converted denom and amount
-// 4. Re-vote with the new lock entry if there were previous votes
-// 5. Apply proposal power changes
+// 4. Convert any pending slash into dtoken amount
+// 5. Re-vote with the new lock entry if there were previous votes
+// 6. Apply proposal power changes
 pub fn convert_lockup_to_dtoken_reply(
     mut deps: DepsMut<NeutronQuery>,
     env: Env,
@@ -2705,6 +2822,7 @@ pub fn convert_lockup_to_dtoken_reply(
     // update lock entry with converted denom and amount
     let drop_info = DROP_TOKEN_INFO.load(deps.storage)?;
     let mut lock_entry = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
+    let initial_token_amount = lock_entry.funds.amount;
     let new_funds = Coin {
         denom: drop_info.d_token_denom.to_string(),
         amount: issue_amount,
@@ -2717,6 +2835,15 @@ pub fn convert_lockup_to_dtoken_reply(
     // We use the generic functions to handle edge cases and future NFT criteria changes.
     cw721::maybe_remove_token_id(deps.storage, lock_id);
     cw721::maybe_add_token_id(&mut deps, &lock_entry)?;
+    
+    // Convert any pending slashes as well
+    if let Some(pending_slash) = LOCKS_PENDING_SLASHES.may_load(deps.storage, lock_entry.lock_id)? {
+        let new_pending_slash = Decimal::from_ratio(lock_entry.funds.amount, initial_token_amount)
+            .checked_mul(Decimal::from_ratio(pending_slash, Uint128::one()))?
+            .to_uint_floor();
+
+        LOCKS_PENDING_SLASHES.save(deps.storage, lock_entry.lock_id, &new_pending_slash)?;
+    }
 
     // Re-vote only if there were previous votes
     if !tranches_with_votes.is_empty() {
@@ -2783,7 +2910,7 @@ pub fn convert_lockup_to_dtoken_reply(
         .add_attribute("issue_amount", issue_amount.to_string()))
 }
 
-fn validate_sender_is_whitelist_admin(
+pub fn validate_sender_is_whitelist_admin(
     deps: &DepsMut<NeutronQuery>,
     info: &MessageInfo,
 ) -> Result<(), ContractError> {
@@ -2868,6 +2995,9 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> Result<Binary
         } => to_json_binary(&query_expired_user_lockups(
             &deps, &env, address, start_from, limit,
         )?),
+        QueryMsg::LockupsPendingSlashes { lockup_ids } => {
+            to_json_binary(&query_lockups_pending_slashes(deps, lockup_ids)?)
+        }
         QueryMsg::UserVotingPower { address } => {
             to_json_binary(&query_user_voting_power(deps, env, address)?)
         }
@@ -3248,6 +3378,20 @@ pub fn query_expired_user_lockups(
             limit,
         ),
     })
+}
+
+pub fn query_lockups_pending_slashes(
+    deps: Deps<NeutronQuery>,
+    lockup_ids: Vec<u64>,
+) -> StdResult<LockupsPendingSlashesResponse> {
+    let mut pending_slashes = vec![];
+
+    for lock_id in lockup_ids {
+        let pending_slash = LOCKS_PENDING_SLASHES.may_load(deps.storage, lock_id)?;
+        pending_slashes.push((lock_id, pending_slash));
+    }
+
+    Ok(LockupsPendingSlashesResponse { pending_slashes })
 }
 
 pub fn query_proposal(
@@ -4160,7 +4304,7 @@ pub fn can_lock_vote_for_proposal(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn process_votes_and_apply_proposal_changes(
+pub fn process_votes_and_apply_proposal_changes(
     deps: &mut DepsMut<NeutronQuery>,
     env: &Env,
     token_manager: &mut TokenManager,

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 use cosmos_sdk_proto::prost::Message;
 use cosmwasm_std::{
@@ -47,6 +47,8 @@ pub fn get_default_constants() -> crate::state::Constants {
         cw721_collection_info: get_default_cw721_collection_info(),
         lock_depth_limit: 50,
         lock_expiry_duration_seconds: 60 * 60 * 24 * 30 * 6, // 6 months
+        slash_percentage_threshold: Decimal::from_str("0.5").unwrap(),
+        slash_tokens_receiver_addr: String::new(),
     }
 }
 
@@ -508,27 +510,28 @@ fn unlock_tokens_multiple_denoms() {
     assert!(res.is_ok(), "unlocking tokens: {res:?}");
 
     let res = res.unwrap();
-    assert_eq!(2, res.messages.len());
+    assert_eq!(1, res.messages.len());
 
-    // check that all messages are BankMsg::Send
-    for msg in res.messages.iter() {
-        match msg.msg.clone() {
-            CosmosMsg::Bank(bank_msg) => match bank_msg {
-                BankMsg::Send { to_address, amount } => {
-                    assert_eq!(info.sender.to_string(), *to_address);
-                    assert_eq!(1, amount.len());
-                    if amount[0].denom == user_token1.denom {
-                        assert_eq!(user_token1.amount.u128(), amount[0].amount.u128());
-                    } else if amount[0].denom == user_token2.denom {
-                        assert_eq!(user_token2.amount.u128(), amount[0].amount.u128());
+    // check that the message is BankMsg::Send
+    match res.messages[0].clone().msg {
+        CosmosMsg::Bank(bank_msg) => match bank_msg {
+            BankMsg::Send { to_address, amount } => {
+                assert_eq!(info.sender.to_string(), *to_address);
+                assert_eq!(2, amount.len());
+
+                for amount in amount.iter() {
+                    if amount.denom == user_token1.denom {
+                        assert_eq!(user_token1.amount.u128(), amount.amount.u128());
+                    } else if amount.denom == user_token2.denom {
+                        assert_eq!(user_token2.amount.u128(), amount.amount.u128());
                     } else {
                         panic!("unexpected denom");
                     }
                 }
-                _ => panic!("expected BankMsg::Send message"),
-            },
-            _ => panic!("expected CosmosMsg::Bank msg"),
-        }
+            }
+            _ => panic!("expected BankMsg::Send message"),
+        },
+        _ => panic!("expected CosmosMsg::Bank msg"),
     }
 }
 

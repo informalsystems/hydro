@@ -548,7 +548,7 @@ pub fn add_token_group_shares_to_round_total(
 ) -> StdResult<()> {
     let current_shares =
         get_token_group_shares_for_round(storage, round_id, token_group_id.clone())?;
-    let new_shares = current_shares + num_shares;
+    let new_shares = current_shares.checked_add(num_shares)?;
     SCALED_ROUND_POWER_SHARES_MAP.save(storage, (round_id, token_group_id.clone()), &new_shares)?;
 
     // Update total voting power for the round
