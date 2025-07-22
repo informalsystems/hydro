@@ -40,6 +40,11 @@ pub struct InstantiateMsg {
     pub lock_expiry_duration_seconds: u64,
     // Maximum allowed depth of a lock's ancestor tree to prevent excessive nesting and state complexity.
     pub lock_depth_limit: u64,
+    // Pending slashes are accumulated for a lockup until the slash percentage threshold is reached.
+    // After that, pending slashes will be applied to the lockup and tokens will be deducted from it.
+    pub slash_percentage_threshold: Decimal,
+    // Address that will receive the tokens slashed from the lockups.
+    pub slash_tokens_receiver_addr: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -152,13 +157,7 @@ pub enum ExecuteMsg {
         address: String,
     },
     UpdateConfig {
-        activate_at: Timestamp,
-        max_locked_tokens: Option<u128>,
-        known_users_cap: Option<u128>,
-        max_deployment_duration: Option<u64>,
-        cw721_collection_info: Option<CollectionInfo>,
-        lock_depth_limit: Option<u64>,
-        lock_expiry_duration_seconds: Option<u64>,
+        config: UpdateConfigData,
     },
     DeleteConfigs {
         timestamps: Vec<Timestamp>,
@@ -262,6 +261,15 @@ pub enum ExecuteMsg {
     ConvertLockupToDtoken {
         lock_ids: Vec<u64>,
     },
+    /// Allows whitelisted admins to slash lockups that voted for a given proposal.
+    SlashProposalVoters {
+        round_id: u64,
+        tranche_id: u64,
+        proposal_id: u64,
+        slash_percent: Decimal,
+        start_from: u64,
+        limit: u64,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -303,6 +311,19 @@ pub struct ConvertLockupPayload {
     pub lock_id: u64,
     pub amount: Uint128,
     pub sender: Addr,
+}
+
+#[cw_serde]
+pub struct UpdateConfigData {
+    pub activate_at: Timestamp,
+    pub max_locked_tokens: Option<u128>,
+    pub known_users_cap: Option<u128>,
+    pub max_deployment_duration: Option<u64>,
+    pub cw721_collection_info: Option<CollectionInfo>,
+    pub lock_depth_limit: Option<u64>,
+    pub lock_expiry_duration_seconds: Option<u64>,
+    pub slash_percentage_threshold: Option<Decimal>,
+    pub slash_tokens_receiver_addr: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]

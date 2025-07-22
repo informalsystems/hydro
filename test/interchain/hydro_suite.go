@@ -32,6 +32,9 @@ const (
 	DAOVotingAdapterWasm    = "dao_voting_adapter.wasm"
 	STTokenInfoProviderWasm = "st_token_info_provider.wasm"
 	GatekeeperWasm          = "gatekeeper.wasm"
+
+	LockExpiryDurationSeconds = 15552000 // 180 days in seconds
+
 )
 
 var (
@@ -291,15 +294,19 @@ func (s *HydroSuite) InstantiateHydroContract(
 				"metadata": "Consumer chains tranche metadata",
 			},
 		},
-		"first_round_start":         strconv.FormatInt(firstRoundStartTime, 10),
-		"max_locked_tokens":         "1000000000",
-		"whitelist_admins":          []string{adminAddr},
-		"initial_whitelist":         []string{adminAddr},
-		"icq_managers":              []string{adminAddr},
-		"max_deployment_duration":   12,
-		"round_lock_power_schedule": [][]any{{1, "1"}, {2, "1.25"}, {3, "1.5"}, {6, "2"}, {12, "4"}},
-		"token_info_providers":      tokenInfoProvidersInitMsgs,
-		"gatekeeper":                gatekeeperInitMsg,
+		"first_round_start":            strconv.FormatInt(firstRoundStartTime, 10),
+		"max_locked_tokens":            "1000000000",
+		"whitelist_admins":             []string{adminAddr},
+		"initial_whitelist":            []string{adminAddr},
+		"icq_managers":                 []string{adminAddr},
+		"max_deployment_duration":      12,
+		"round_lock_power_schedule":    [][]any{{1, "1"}, {2, "1.25"}, {3, "1.5"}, {6, "2"}, {12, "4"}},
+		"token_info_providers":         tokenInfoProvidersInitMsgs,
+		"gatekeeper":                   gatekeeperInitMsg,
+		"lock_expiry_duration_seconds": LockExpiryDurationSeconds,
+		"lock_depth_limit":             50,
+		"slash_percentage_threshold":   "0.05",
+		"slash_tokens_receiver_addr":   adminAddr,
 	}
 
 	return s.InstantiateContract(codeId, initHydro, adminAddr, "Hydro Smart Contract")
@@ -667,8 +674,10 @@ func (s *HydroSuite) RefreshLock(contractAddr string, new_lock_duration, lock_id
 func (s *HydroSuite) UpdateMaxLockedTokens(contractAddr string, newMaxLockedTokens, activate_at int64) error {
 	updateMaxLockedTokensTxData := map[string]interface{}{
 		"update_config": map[string]interface{}{
-			"activate_at":       strconv.FormatInt(activate_at, 10),
-			"max_locked_tokens": newMaxLockedTokens,
+			"config": map[string]interface{}{
+				"activate_at":       strconv.FormatInt(activate_at, 10),
+				"max_locked_tokens": newMaxLockedTokens,
+			},
 		},
 	}
 
