@@ -561,14 +561,12 @@ fn buyout_pending_slash_lsm_statom_exact_amount_test() {
 
     let buyout_amount_lsm: u128 = 500;
     let buyout_amount_st: u128 = 500;
-    let _buyout_amount_d: u128 = 500;
     let buyout_info = get_message_info(
         &deps.api,
         "addr0000",
         &[
             Coin::new(buyout_amount_lsm, IBC_DENOM_1.to_string()),
             Coin::new(buyout_amount_st, ST_ATOM_ON_NEUTRON.to_string()),
-            //Coin::new(buyout_amount_d, DROP_D_TOKEN_DENOM.to_string()),
         ],
     );
 
