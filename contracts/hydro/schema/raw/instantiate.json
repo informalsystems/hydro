@@ -230,6 +230,31 @@
         {
           "type": "object",
           "required": [
+            "base"
+          ],
+          "properties": {
+            "base": {
+              "type": "object",
+              "required": [
+                "denom",
+                "token_group_id"
+              ],
+              "properties": {
+                "denom": {
+                  "type": "string"
+                },
+                "token_group_id": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
             "token_info_provider_contract"
           ],
           "properties": {

@@ -2971,6 +2971,15 @@ pub fn convert_lockup_to_dtoken_reply(
         .add_attribute("issue_amount", issue_amount.to_string()))
 }
 
+/// Allows a user to buy out (i.e., pay off) the pending slash on a specific lockup.
+///
+/// This function:
+/// - Validates ownership of the lockup.
+/// - Loads the pending slash amount and calculates its value in base denomination. (ATOM)
+/// - Accepts user funds, converts them into base denomination using token group ratios,
+///   and determines if the slash is fully paid off.
+/// - If fully paid, removes the pending slash; otherwise, updates it with the remaining amount.
+/// - Tracks how much of each token was used and refunds any excess back to the user.
 pub fn buyout_pending_slash(
     deps: DepsMut<NeutronQuery>,
     env: Env,

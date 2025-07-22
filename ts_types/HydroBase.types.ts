@@ -17,6 +17,11 @@ export type TokenInfoProviderInstantiateMsg = {
     max_validator_shares_participating: number;
   };
 } | {
+  base: {
+    denom: string;
+    token_group_id: string;
+  };
+} | {
   token_info_provider_contract: {
     admin?: string | null;
     code_id: number;
@@ -227,6 +232,10 @@ export type ExecuteMsg = {
     slash_percent: Decimal;
     start_from: number;
     tranche_id: number;
+  };
+} | {
+  buyout_pending_slash: {
+    lock_id: number;
   };
 };
 export type Expiration = {
@@ -658,6 +667,8 @@ export interface SpecificUserLockupsWithTrancheInfosResponse {
 export type TokenInfoProvider = {
   lsm: TokenInfoProviderLSM;
 } | {
+  base: TokenInfoProviderBase;
+} | {
   derivative: TokenInfoProviderDerivative;
 };
 export interface TokenInfoProvidersResponse {
@@ -668,6 +679,11 @@ export interface TokenInfoProviderLSM {
   hub_transfer_channel_id: string;
   icq_update_period: number;
   max_validator_shares_participating: number;
+}
+export interface TokenInfoProviderBase {
+  denom: string;
+  ratio: Decimal;
+  token_group_id: string;
 }
 export interface TokenInfoProviderDerivative {
   cache: {};

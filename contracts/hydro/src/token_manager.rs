@@ -361,6 +361,7 @@ pub struct TokenInfoProviderBase {
 }
 
 impl TokenInfoProviderBase {
+    // Returns OK if the denom is same as the denom of the Base token info provider (for example: "ibc/C4CFF46FD6DE35CA4CF4CE031E643C8FDC9BA4B99AE598E9B0ED98FE3A2319F9") ATOM on Neutron).
     pub fn resolve_denom(&mut self, deps: &Deps<NeutronQuery>, denom: String) -> StdResult<String> {
         let res =
             TOKEN_INFO_PROVIDERS.load(deps.storage, BASE_TOKEN_INFO_PROVIDER_ID.to_string())?;

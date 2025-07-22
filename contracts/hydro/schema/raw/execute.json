@@ -975,6 +975,30 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Allows users to remove/reduce pending slash fully or partially by inserting funds",
+      "type": "object",
+      "required": [
+        "buyout_pending_slash"
+      ],
+      "properties": {
+        "buyout_pending_slash": {
+          "type": "object",
+          "required": [
+            "lock_id"
+          ],
+          "properties": {
+            "lock_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {
@@ -1174,6 +1198,31 @@
                   "type": "integer",
                   "format": "uint64",
                   "minimum": 0.0
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "base"
+          ],
+          "properties": {
+            "base": {
+              "type": "object",
+              "required": [
+                "denom",
+                "token_group_id"
+              ],
+              "properties": {
+                "denom": {
+                  "type": "string"
+                },
+                "token_group_id": {
+                  "type": "string"
                 }
               },
               "additionalProperties": false
