@@ -55,6 +55,14 @@ impl RoundLockPowerSchedule {
             round_lock_power_schedule,
         }
     }
+
+    pub fn get_maximum_rounds_to_lock(&self) -> u64 {
+        self.round_lock_power_schedule
+            .iter()
+            .map(|lock_power_entry| lock_power_entry.locked_rounds)
+            .max()
+            .unwrap_or_default()
+    }
 }
 
 #[cw_serde]
@@ -77,6 +85,8 @@ pub struct Constants {
     pub cw721_collection_info: CollectionInfo,
     pub lock_expiry_duration_seconds: u64,
     pub lock_depth_limit: u64,
+    pub slash_percentage_threshold: Decimal,
+    pub slash_tokens_receiver_addr: String,
 }
 
 // Used to store a set of token info providers that are able to validate various denoms allowed to be locked
@@ -136,6 +146,10 @@ pub const LOCKS_MAP_V2: SnapshotMap<u64, LockEntryV2> = SnapshotMap::new(
     "locks_map_v2__changelog",
     Strategy::EveryBlock,
 );
+
+// Tracks the number of tokens that are pending to be slashed for a given lock ID.
+// LOCKS_PENDING_SLASHES: key(lock_id) -> token_num_to_slash
+pub const LOCKS_PENDING_SLASHES: Map<u64, Uint128> = Map::new("locks_pending_slashes");
 
 #[cw_serde]
 pub struct LockEntryV1 {

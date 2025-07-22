@@ -847,3 +847,38 @@ pub fn get_next_lock_id(storage: &mut dyn Storage) -> StdResult<u64> {
 
     Ok(next_lock_id)
 }
+
+// Updates `USER_LOCKS` with locks to be added and removed
+pub fn update_user_locks(
+    storage: &mut dyn Storage,
+    env: &Env,
+    user_addr: &Addr,
+    locks_to_add: Vec<u64>,
+    locks_to_remove: Vec<u64>,
+) -> StdResult<()> {
+    USER_LOCKS.update(
+        storage,
+        user_addr.clone(),
+        env.block.height,
+        |current_locks| -> Result<Vec<u64>, StdError> {
+            let mut current_locks = current_locks.unwrap_or_default();
+            current_locks.extend_from_slice(&locks_to_add);
+
+            let locks_to_remove: HashSet<u64> = HashSet::from_iter(locks_to_remove);
+            current_locks.retain(|lock_id| !locks_to_remove.contains(lock_id));
+
+            Ok(current_locks)
+        },
+    )?;
+
+    Ok(())
+}
+
+/// Converts a slice of items into a comma-separated string of their string representations.
+pub fn get_slice_as_attribute<T: ToString>(input: &[T]) -> String {
+    input
+        .iter()
+        .map(|v| v.to_string())
+        .collect::<Vec<String>>()
+        .join(",")
+}
