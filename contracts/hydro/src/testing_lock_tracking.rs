@@ -351,6 +351,6 @@ fn test_infinite_loop_in_get_lock_ancestor_depth() {
     // Call the function with a lock ID involved in the cycle
     let result = get_lock_ancestor_depth(&deps.as_ref(), env, 1, 1000);
 
-    // just verify there is no infinite loop
+    // Verify there is no infinite loop
     assert!(result.is_ok());
 }
