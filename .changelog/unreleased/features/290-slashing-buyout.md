@@ -1,0 +1,2 @@
+- update which enables users to repay their slashed amount using any of the supported locking denominations, regardless of the original denom in which the slash was accrued.(including base denom- Atom)
+  ([\#290](https://github.com/informalsystems/hydro/pull/290))
