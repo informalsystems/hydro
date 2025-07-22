@@ -2699,45 +2699,6 @@ pub fn convert_lockup_to_dtoken_reply(
     let drop_info = DROP_TOKEN_INFO.load(deps.storage)?;
     let mut lock_entry = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
 
-    // convert pending slash to new denom if it exists
-    if let Some(slash_amount_old_denom) = LOCKS_PENDING_SLASHES.may_load(deps.storage, lock_id)? {
-        let old_denom = lock_entry.funds.denom.clone();
-        let new_denom = drop_info.d_token_denom.clone();
-
-        let constants = load_current_constants(&deps.as_ref(), &env)?;
-        let current_round = compute_current_round_id(&env, &constants)?;
-
-        let old_token_group_id =
-            token_manager.validate_denom(&deps.as_ref(), current_round, old_denom.clone())?;
-        let new_token_group_id =
-            token_manager.validate_denom(&deps.as_ref(), current_round, new_denom.clone())?;
-
-        // Get ratios for both denoms
-        let ratio_old = token_manager.get_token_group_ratio(
-            &deps.as_ref(),
-            current_round,
-            old_token_group_id,
-        )?;
-        let ratio_new = token_manager.get_token_group_ratio(
-            &deps.as_ref(),
-            current_round,
-            new_token_group_id,
-        )?;
-
-        // Convert slash_amount to base atom (18 decimals)
-        let slash_decimal =
-            Decimal::from_atomics(slash_amount_old_denom.u128(), 18).map_err(|e| {
-                ContractError::Std(StdError::generic_err(format!("Decimal error: {e}")))
-            })?;
-        let base = slash_decimal.checked_div(ratio_old)?;
-        // Now convert back to new denom
-        let slash_new_denom_decimal = base.checked_mul(ratio_new)?;
-        let slash_new_denom_amount = slash_new_denom_decimal.atomics();
-
-        // Save updated slash
-        LOCKS_PENDING_SLASHES.save(deps.storage, lock_id, &slash_new_denom_amount)?;
-    }
-
     let new_funds = Coin {
         denom: drop_info.d_token_denom.to_string(),
         amount: issue_amount,
