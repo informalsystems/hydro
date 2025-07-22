@@ -20,8 +20,7 @@ use crate::{
     query::{QueryMsg, TokensResponse},
     score_keeper::get_total_power_for_proposal,
     state::{
-        DropTokenInfo, LockEntryV2, DROP_TOKEN_INFO, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES,
-        TOKEN_INFO_PROVIDERS, USER_LOCKS,
+        DropTokenInfo, LockEntryV2, DROP_TOKEN_INFO, LOCKS_MAP_V2, TOKEN_INFO_PROVIDERS, USER_LOCKS,
     },
     testing::{
         get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
