@@ -138,7 +138,7 @@ impl TokenInfoProvider {
     ) -> StdResult<String> {
         match self {
             TokenInfoProvider::LSM(provider) => provider.resolve_denom(deps, round_id, denom),
-            TokenInfoProvider::Base(provider) => provider.resolve_denom(deps, denom),
+            TokenInfoProvider::Base(provider) => provider.resolve_denom(denom),
             TokenInfoProvider::Derivative(provider) => {
                 provider.resolve_denom(deps, round_id, denom)
             }
@@ -155,7 +155,7 @@ impl TokenInfoProvider {
             TokenInfoProvider::LSM(provider) => {
                 provider.get_token_group_ratio(deps, round_id, token_group_id)
             }
-            TokenInfoProvider::Base(provider) => provider.get_token_group_ratio(deps),
+            TokenInfoProvider::Base(provider) => provider.get_token_group_ratio(),
             TokenInfoProvider::Derivative(provider) => {
                 provider.get_token_group_ratio(deps, round_id, token_group_id)
             }
@@ -169,9 +169,7 @@ impl TokenInfoProvider {
     ) -> StdResult<HashMap<String, Decimal>> {
         match self {
             TokenInfoProvider::LSM(provider) => provider.get_all_token_group_ratios(deps, round_id),
-            TokenInfoProvider::Base(provider) => {
-                provider.get_all_token_group_ratios(deps, round_id)
-            }
+            TokenInfoProvider::Base(provider) => provider.get_all_token_group_ratios(),
             TokenInfoProvider::Derivative(provider) => {
                 provider.get_all_token_group_ratios(deps, round_id)
             }
@@ -344,46 +342,25 @@ pub struct TokenInfoProviderBase {
 }
 
 impl TokenInfoProviderBase {
-    // Returns OK if the denom is same as the denom of the Base token info provider (for example: "ibc/C4CFF46FD6DE35CA4CF4CE031E643C8FDC9BA4B99AE598E9B0ED98FE3A2319F9") ATOM on Neutron).
-    pub fn resolve_denom(&mut self, deps: &Deps<NeutronQuery>, denom: String) -> StdResult<String> {
-        let res =
-            TOKEN_INFO_PROVIDERS.load(deps.storage, BASE_TOKEN_INFO_PROVIDER_ID.to_string())?;
-
-        match res {
-            TokenInfoProvider::Base(base) => {
-                if base.denom != denom {
-                    return Err(StdError::generic_err(format!(
-                        "Mismatched denom: expected {}, got {}",
-                        base.denom, denom
-                    )));
-                }
-                Ok(base.token_group_id)
-            }
-            _ => Err(StdError::generic_err("Expected TokenInfoProvider::Base")),
+    // Returns OK if the denom is same as the denom of the base Hydro token (e.g. ATOM, OSMO, etc.).
+    pub fn resolve_denom(&mut self, denom: String) -> StdResult<String> {
+        if self.denom != denom {
+            return Err(StdError::generic_err(format!(
+                "Mismatched denom: expected {}, got {}",
+                self.denom, denom
+            )));
         }
+        Ok(self.token_group_id.clone())
     }
 
-    pub fn get_token_group_ratio(&mut self, deps: &Deps<NeutronQuery>) -> StdResult<Decimal> {
-        let res =
-            TOKEN_INFO_PROVIDERS.load(deps.storage, BASE_TOKEN_INFO_PROVIDER_ID.to_string())?;
-
-        match res {
-            TokenInfoProvider::Base(base) => Ok(base.ratio),
-            _ => Err(StdError::generic_err("Expected TokenInfoProvider::Base")),
-        }
+    pub fn get_token_group_ratio(&mut self) -> StdResult<Decimal> {
+        Ok(self.ratio)
     }
 
-    pub fn get_all_token_group_ratios(
-        &mut self,
-        deps: &Deps<NeutronQuery>,
-        round_id: u64,
-    ) -> StdResult<HashMap<String, Decimal>> {
-        let round_validators: Vec<(String, Decimal)> = get_round_validators(deps, round_id)
-            .iter()
-            .map(|validator_info| (validator_info.address.clone(), validator_info.power_ratio))
-            .collect();
-
-        Ok(HashMap::from_iter(round_validators))
+    pub fn get_all_token_group_ratios(&mut self) -> StdResult<HashMap<String, Decimal>> {
+        let mut ratios = HashMap::new();
+        ratios.insert(self.token_group_id.clone(), self.ratio);
+        Ok(ratios)
     }
 }
 
