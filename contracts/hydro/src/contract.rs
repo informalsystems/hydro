@@ -1404,13 +1404,7 @@ pub fn get_lock_ancestor_depth(
         Ok(max_depth + 1)
     }
 
-    recurse(
-        deps,
-        env,
-        lock_id,
-        lock_expiry_duration_seconds,
-        &mut vec![],
-    )
+    recurse(deps, env, lock_id, lock_expiry_duration_seconds, &mut [])
 }
 
 // Validate that the lock duration (given in nanos) is either 1, 2, 3, 6, or 12 epochs
