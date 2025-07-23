@@ -2949,21 +2949,7 @@ pub fn buyout_pending_slash(
     lock_id: u64,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     // Step 1: Get the lockup
-    let mut lockups = query_user_lockups(
-        &deps.as_ref(),
-        info.sender.clone(),
-        |lock| lock.lock_id == lock_id,
-        0,
-        1,
-    );
-    let Some(lockup) = lockups.pop() else {
-        return Err(new_generic_error(format!(
-            "Lockup with id {lock_id} not found",
-        )));
-    };
-    if lockup.owner != info.sender {
-        return Err(ContractError::Unauthorized);
-    }
+    let lockup = get_owned_lock_entry(deps.storage, &info.sender, lock_id)?;
 
     // Step 2: Load pending slash
     let Some(slash_amount) = LOCKS_PENDING_SLASHES.may_load(deps.storage, lock_id)? else {
