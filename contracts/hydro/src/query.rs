@@ -50,6 +50,9 @@ pub enum QueryMsg {
         limit: u32,
     },
 
+    #[returns(LockupsPendingSlashesResponse)]
+    LockupsPendingSlashes { lockup_ids: Vec<u64> },
+
     #[returns(UserVotingPowerResponse)]
     UserVotingPower { address: String },
 
@@ -514,6 +517,11 @@ pub struct LiquidityDeploymentResponse {
 #[cw_serde]
 pub struct RoundTrancheLiquidityDeploymentsResponse {
     pub liquidity_deployments: Vec<LiquidityDeployment>,
+}
+
+#[cw_serde]
+pub struct LockupsPendingSlashesResponse {
+    pub pending_slashes: Vec<(u64, Option<Uint128>)>,
 }
 
 //TotalPowerAtHeightResponse and VotingPowerAtHeightResponse conform to the DAODAO interface for a voting power module:
