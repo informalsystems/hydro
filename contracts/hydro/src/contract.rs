@@ -1365,12 +1365,18 @@ pub fn get_lock_ancestor_depth(
         current_id: u64,
         lock_expiry_duration_seconds: u64,
         visited: &mut Vec<u64>,
+        cache: &mut HashMap<u64, u64>,
     ) -> StdResult<u64> {
+        if let Some(&cached) = cache.get(&current_id) {
+            return Ok(cached);
+        }
+
         let parents = REVERSE_LOCK_ID_TRACKING
             .may_load(deps.storage, current_id)?
             .unwrap_or_default();
 
         if parents.is_empty() {
+            cache.insert(current_id, 1);
             return Ok(1);
         }
 
@@ -1383,11 +1389,10 @@ pub fn get_lock_ancestor_depth(
                 }
             }
 
-            let mut local_visited = visited.clone();
-            if local_visited.contains(&parent_id) {
+            if visited.contains(&parent_id) {
                 continue;
             }
-            local_visited.push(parent_id);
+            visited.push(parent_id);
 
             let depth = recurse(
                 deps,
@@ -1395,21 +1400,28 @@ pub fn get_lock_ancestor_depth(
                 parent_id,
                 lock_expiry_duration_seconds,
                 visited,
+                cache,
             )?;
             if depth > max_depth {
                 max_depth = depth;
             }
+
+            visited.pop(); // Remove after recursion
         }
 
-        Ok(max_depth + 1)
+        let result = max_depth + 1;
+        cache.insert(current_id, result);
+        Ok(result)
     }
 
+    let mut cache = HashMap::new();
     recurse(
         deps,
         env,
         lock_id,
         lock_expiry_duration_seconds,
         &mut vec![],
+        &mut cache,
     )
 }
 
