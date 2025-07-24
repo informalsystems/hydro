@@ -10,7 +10,7 @@ use crate::{
         set_default_validator_for_rounds, IBC_DENOM_1, ONE_MONTH_IN_NANO_SECONDS,
         VALIDATOR_1_LST_DENOM_1,
     },
-    testing_mocks::denom_trace_grpc_query_mock,
+    testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies},
 };
 
 #[test]
@@ -329,4 +329,28 @@ fn test_split_merge_composition_and_depth() {
     );
 
     assert_eq!(depth.unwrap(), 0);
+}
+
+#[test]
+fn test_infinite_loop_in_get_lock_ancestor_depth() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let mut deps = mock_dependencies(grpc_query);
+    let env = mock_env();
+
+    // Simulate a cycle in REVERSE_LOCK_ID_TRACKING
+    REVERSE_LOCK_ID_TRACKING
+        .save(deps.as_mut().storage, 1, &vec![2])
+        .unwrap();
+    REVERSE_LOCK_ID_TRACKING
+        .save(deps.as_mut().storage, 2, &vec![1])
+        .unwrap();
+
+    // Call the function with a lock ID involved in the cycle
+    let result = get_lock_ancestor_depth(&deps.as_ref(), env, 1, 1000);
+
+    // Verify there is no infinite loop
+    assert!(result.is_ok());
 }

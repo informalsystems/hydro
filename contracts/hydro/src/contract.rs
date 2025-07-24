@@ -1305,7 +1305,9 @@ pub fn get_current_lock_composition(
 /// - If the input lock is expired, the function returns `0`.
 /// - If an ancestor lock is expired, the recursion **stops along that path**, but may continue along others.
 /// - Expired parents are **skipped**, not counted, and not recursed into.
-/// - Cycle prevention is enforced using a `visited` list (cloned per path).
+/// - Cycle prevention is enforced using a `visited` list.
+/// - A per-call **in-memory cache** is used to memoize previously computed depths for lock IDs
+///   to avoid redundant computation and reduce storage reads across shared ancestors.
 ///
 /// Example cases:
 /// - Root node with no parents: returns `1`
