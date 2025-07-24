@@ -1367,7 +1367,7 @@ pub fn get_lock_ancestor_depth(
         env: Env,
         current_id: u64,
         lock_expiry_duration_seconds: u64,
-        visited: &mut Vec<u64>,
+        visited: &mut [u64],
     ) -> StdResult<u64> {
         let parents = REVERSE_LOCK_ID_TRACKING
             .may_load(deps.storage, current_id)?
@@ -1386,7 +1386,7 @@ pub fn get_lock_ancestor_depth(
                 }
             }
 
-            let mut local_visited = visited.clone();
+            let mut local_visited = visited.to_owned();
             if local_visited.contains(&parent_id) {
                 continue;
             }
@@ -1397,7 +1397,7 @@ pub fn get_lock_ancestor_depth(
                 env.clone(),
                 parent_id,
                 lock_expiry_duration_seconds,
-                visited,
+                &mut local_visited,
             )?;
             if depth > max_depth {
                 max_depth = depth;
@@ -1407,13 +1407,7 @@ pub fn get_lock_ancestor_depth(
         Ok(max_depth + 1)
     }
 
-    recurse(
-        deps,
-        env,
-        lock_id,
-        lock_expiry_duration_seconds,
-        &mut vec![],
-    )
+    recurse(deps, env, lock_id, lock_expiry_duration_seconds, &mut [])
 }
 
 // Validate that the lock duration (given in nanos) is either 1, 2, 3, 6, or 12 epochs
