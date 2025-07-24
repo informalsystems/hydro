@@ -2976,11 +2976,12 @@ pub fn buyout_pending_slash(
             ))
         })?;
 
-    let slash_base_atom = Decimal::from_atomics(slash_amount.u128(), 18).unwrap() * slash_ratio;
+    let slash_base_token =
+        Decimal::from_ratio(slash_amount, Uint128::one()).checked_mul(slash_ratio)?;
 
     // Step 3: Track how much is available and per-denom info
-    let mut available_base_atom = 0u128;
-    let mut fund_conversion: Vec<(String, u128, Decimal)> = vec![]; // (denom, original amount, ratio)
+    let mut available_base_token: Uint128 = Uint128::zero();
+    let mut fund_conversion: Vec<(String, Uint128, Decimal)> = vec![]; // (denom, original amount, ratio)
     for coin in &info.funds {
         let token_group_id = token_manager
             .validate_denom(&deps.as_ref(), current_round, coin.denom.clone())
@@ -2995,63 +2996,77 @@ pub fn buyout_pending_slash(
                     coin.denom, err
                 ))
             })?;
-        let coin_as_base = Decimal::from_atomics(coin.amount.u128(), 18).unwrap() * ratio;
-        available_base_atom += coin_as_base.atomics().u128();
-        fund_conversion.push((coin.denom.clone(), coin.amount.u128(), ratio));
+        let coin_as_base = Decimal::from_ratio(coin.amount, Uint128::one()).checked_mul(ratio)?;
+
+        available_base_token = available_base_token.checked_add(coin_as_base.to_uint_floor())?;
+
+        fund_conversion.push((coin.denom.clone(), coin.amount, ratio));
     }
 
     // Step 4: Determine how much to deduct and update state
-    let full_payment = available_base_atom >= slash_base_atom.atomics().u128();
-    if full_payment {
+    // Check if payment is full or partial
+    if available_base_token >= slash_base_token.to_uint_floor() {
         LOCKS_PENDING_SLASHES.remove(deps.storage, lockup.lock_id);
     } else {
-        let remaining_base =
-            slash_base_atom - Decimal::from_atomics(available_base_atom, 18).unwrap();
-        let remaining_original = remaining_base / slash_ratio;
+        let remaining_base = slash_base_token
+            .checked_sub(Decimal::from_ratio(available_base_token, Uint128::one()))?;
+
+        let remaining_original = remaining_base.checked_div(slash_ratio)?;
         LOCKS_PENDING_SLASHES.save(
             deps.storage,
             lockup.lock_id,
-            &Uint128::from(remaining_original.atomics().u128()),
+            &remaining_original.to_uint_floor(),
         )?;
     }
 
     // Step 5: Figure out what was used and what should be refunded
-    let mut funds_used: HashMap<String, u128> = HashMap::new();
-    let mut remaining_atom = core::cmp::min(slash_base_atom.atomics().u128(), available_base_atom);
+    let mut funds_used: HashMap<String, Uint128> = HashMap::new();
+    let mut remaining_base_token =
+        core::cmp::min(slash_base_token.to_uint_floor(), available_base_token);
 
     for (denom, original_amount, ratio) in &fund_conversion {
-        if remaining_atom == 0 {
+        if remaining_base_token.is_zero() {
             break;
         }
-        let coin_as_atom = Decimal::from_atomics(*original_amount, 18).unwrap() * *ratio;
-        let take_atom = core::cmp::min(coin_as_atom.atomics().u128(), remaining_atom);
-        let take_original = Decimal::from_atomics(Uint128::from(take_atom), 18).unwrap() / *ratio;
+        let coin_as_base =
+            Decimal::from_ratio(*original_amount, Uint128::one()).checked_mul(*ratio)?;
+        let take_base = core::cmp::min(coin_as_base.to_uint_floor(), remaining_base_token);
+        let take_original = Decimal::from_ratio(take_base, Uint128::one()).checked_div(*ratio)?;
 
-        funds_used.insert(denom.clone(), take_original.atomics().u128());
-        remaining_atom -= take_atom;
+        funds_used.insert(denom.clone(), take_original.to_uint_floor());
+        remaining_base_token = remaining_base_token.checked_sub(take_base)?
     }
 
     // Step 6: Prepare refund messages
     let mut refund_msgs: Vec<BankMsg> = vec![];
     for (denom, original_amount, _) in &fund_conversion {
-        let used = funds_used.get(denom).copied().unwrap_or(0);
+        let used = funds_used.get(denom).copied().unwrap_or(Uint128::zero());
         let total = *original_amount;
         if total > used {
-            let refund_amount = total - used;
-            if refund_amount > 0 {
+            let refund_amount = total.checked_sub(used).unwrap();
+            if refund_amount > Uint128::zero() {
                 refund_msgs.push(BankMsg::Send {
                     to_address: info.sender.to_string(),
                     amount: vec![Coin {
                         denom: denom.clone(),
-                        amount: Uint128::from(refund_amount),
+                        amount: refund_amount,
                     }],
                 });
             }
         }
     }
 
+    let coins_spent_str = funds_used
+        .iter()
+        .map(|(denom, amount)| format!("{amount}{denom}"))
+        .collect::<Vec<String>>()
+        .join(",");
+
     Ok(Response::new()
         .add_attribute("action", "buyout_pending_slash")
+        .add_attribute("sender", info.sender)
+        .add_attribute("lock_id", lock_id.to_string())
+        .add_attribute("coins_spent", coins_spent_str)
         .add_messages(refund_msgs))
 }
 pub fn validate_sender_is_whitelist_admin(
