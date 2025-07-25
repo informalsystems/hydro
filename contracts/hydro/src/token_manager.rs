@@ -138,7 +138,7 @@ impl TokenInfoProvider {
     ) -> StdResult<String> {
         match self {
             TokenInfoProvider::LSM(provider) => provider.resolve_denom(deps, round_id, denom),
-            TokenInfoProvider::Base(provider) => provider.resolve_denom(denom),
+            TokenInfoProvider::Base(provider) => provider.resolve_denom(deps, round_id, denom),
             TokenInfoProvider::Derivative(provider) => {
                 provider.resolve_denom(deps, round_id, denom)
             }
@@ -155,7 +155,9 @@ impl TokenInfoProvider {
             TokenInfoProvider::LSM(provider) => {
                 provider.get_token_group_ratio(deps, round_id, token_group_id)
             }
-            TokenInfoProvider::Base(provider) => provider.get_token_group_ratio(),
+            TokenInfoProvider::Base(provider) => {
+                provider.get_token_group_ratio(deps, round_id, token_group_id)
+            }
             TokenInfoProvider::Derivative(provider) => {
                 provider.get_token_group_ratio(deps, round_id, token_group_id)
             }
@@ -169,7 +171,9 @@ impl TokenInfoProvider {
     ) -> StdResult<HashMap<String, Decimal>> {
         match self {
             TokenInfoProvider::LSM(provider) => provider.get_all_token_group_ratios(deps, round_id),
-            TokenInfoProvider::Base(provider) => provider.get_all_token_group_ratios(),
+            TokenInfoProvider::Base(provider) => {
+                provider.get_all_token_group_ratios(deps, round_id)
+            }
             TokenInfoProvider::Derivative(provider) => {
                 provider.get_all_token_group_ratios(deps, round_id)
             }
@@ -343,7 +347,12 @@ pub struct TokenInfoProviderBase {
 
 impl TokenInfoProviderBase {
     // Returns OK if the denom is same as the denom of the base Hydro token (e.g. ATOM, OSMO, etc.).
-    pub fn resolve_denom(&mut self, denom: String) -> StdResult<String> {
+    pub fn resolve_denom(
+        &mut self,
+        _deps: &Deps<NeutronQuery>,
+        _round_id: u64,
+        denom: String,
+    ) -> StdResult<String> {
         if self.denom != denom {
             return Err(StdError::generic_err(format!(
                 "Mismatched denom: expected {}, got {}",
@@ -353,14 +362,29 @@ impl TokenInfoProviderBase {
         Ok(self.token_group_id.clone())
     }
 
-    pub fn get_token_group_ratio(&mut self) -> StdResult<Decimal> {
+    pub fn get_token_group_ratio(
+        &mut self,
+        _deps: &Deps<NeutronQuery>,
+        _round_id: u64,
+        token_group_id: String,
+    ) -> StdResult<Decimal> {
+        if self.token_group_id != token_group_id {
+            return Err(StdError::generic_err(
+                "Input token group ID doesn't match expected token group ID.",
+            ));
+        }
         Ok(self.ratio)
     }
 
-    pub fn get_all_token_group_ratios(&mut self) -> StdResult<HashMap<String, Decimal>> {
-        let mut ratios = HashMap::new();
-        ratios.insert(self.token_group_id.clone(), self.ratio);
-        Ok(ratios)
+    pub fn get_all_token_group_ratios(
+        &mut self,
+        _deps: &Deps<NeutronQuery>,
+        _round_id: u64,
+    ) -> StdResult<HashMap<String, Decimal>> {
+        Ok(HashMap::from_iter([(
+            self.token_group_id.clone(),
+            self.ratio,
+        )]))
     }
 }
 
