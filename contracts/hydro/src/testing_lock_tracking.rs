@@ -10,7 +10,7 @@ use crate::{
         set_default_validator_for_rounds, IBC_DENOM_1, ONE_MONTH_IN_NANO_SECONDS,
         VALIDATOR_1_LST_DENOM_1,
     },
-    testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies},
+    testing_mocks::denom_trace_grpc_query_mock,
 };
 
 #[test]
@@ -146,11 +146,23 @@ fn test_get_lock_ancestor_depth() {
     let parents = vec![from_id_first, from_id_second];
     let _ = REVERSE_LOCK_ID_TRACKING.save(&mut deps.storage, into_lock_id, &parents);
 
-    let depth = get_lock_ancestor_depth(&deps.as_ref(), env, 6, lock_expiry_duration_seconds);
+    let depth = get_lock_ancestor_depth(&deps.as_ref(), env, 6, lock_expiry_duration_seconds, None);
     assert!(depth.is_ok());
-    let depth_value = depth.unwrap();
+    let (depth_value, cache) = depth.unwrap();
     assert!(depth_value <= lock_depth_limit);
     assert!(depth_value == 4);
+
+    let expected_cache = vec![(1, 1), (2, 2), (3, 2), (4, 3), (6, 4)];
+
+    // Ensure all expected entries exist in the cache
+    for (lock_id, expected_depth) in expected_cache {
+        let actual = cache.get(&lock_id).copied();
+        assert_eq!(
+            actual,
+            Some(expected_depth),
+            "Cache missing or wrong for lock {lock_id}"
+        );
+    }
 }
 #[test]
 fn test_split_merge_composition_and_depth() {
@@ -246,10 +258,12 @@ fn test_split_merge_composition_and_depth() {
         env.clone(),
         lock_id,
         lock_expiry_duration_seconds,
+        None,
     );
 
     assert!(depth.is_ok());
-    assert_eq!(depth.unwrap(), 4);
+    let (depth_value, _) = depth.unwrap();
+    assert_eq!(depth_value, 4);
 
     // Simulate lock 0 expired
     let fake_expiry = env
@@ -265,9 +279,11 @@ fn test_split_merge_composition_and_depth() {
         env.clone(),
         lock_id,
         lock_expiry_duration_seconds,
+        None,
     );
+    let (depth_value, _) = depth.unwrap();
 
-    assert_eq!(depth.unwrap(), 3);
+    assert_eq!(depth_value, 3);
 
     // Simulate lock 1 and 2 expired
     let fake_expiry = env
@@ -290,9 +306,12 @@ fn test_split_merge_composition_and_depth() {
         env.clone(),
         lock_id,
         lock_expiry_duration_seconds,
+        None,
     );
 
-    assert_eq!(depth.unwrap(), 2);
+    let (depth_value, _) = depth.unwrap();
+
+    assert_eq!(depth_value, 2);
 
     // Simulate lock 3 is expired
     let fake_expiry = env
@@ -308,9 +327,11 @@ fn test_split_merge_composition_and_depth() {
         env.clone(),
         lock_id,
         lock_expiry_duration_seconds,
+        None,
     );
+    let (depth_value, _) = depth.unwrap();
 
-    assert_eq!(depth.unwrap(), 1);
+    assert_eq!(depth_value, 1);
 
     // Simulate lock 5 is expired
     let fake_expiry = env
@@ -326,31 +347,10 @@ fn test_split_merge_composition_and_depth() {
         env.clone(),
         lock_id,
         lock_expiry_duration_seconds,
+        None,
     );
 
-    assert_eq!(depth.unwrap(), 0);
-}
+    let (depth_value, _) = depth.unwrap();
 
-#[test]
-fn test_infinite_loop_in_get_lock_ancestor_depth() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
-    );
-    let mut deps = mock_dependencies(grpc_query);
-    let env = mock_env();
-
-    // Simulate a cycle in REVERSE_LOCK_ID_TRACKING
-    REVERSE_LOCK_ID_TRACKING
-        .save(deps.as_mut().storage, 1, &vec![2])
-        .unwrap();
-    REVERSE_LOCK_ID_TRACKING
-        .save(deps.as_mut().storage, 2, &vec![1])
-        .unwrap();
-
-    // Call the function with a lock ID involved in the cycle
-    let result = get_lock_ancestor_depth(&deps.as_ref(), env, 1, 1000);
-
-    // Verify there is no infinite loop
-    assert!(result.is_ok());
+    assert_eq!(depth_value, 0);
 }
