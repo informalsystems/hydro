@@ -66,6 +66,10 @@ pub enum TokenInfoProviderInstantiateMsg {
         hub_transfer_channel_id: String,
         icq_update_period: u64,
     },
+    Base {
+        token_group_id: String,
+        denom: String,
+    },
     TokenInfoProviderContract {
         code_id: u64,
         msg: Binary,
@@ -93,6 +97,13 @@ impl Display for TokenInfoProviderInstantiateMsg {
             } => write!(
                 f,
                 "LSM(max_validator_shares_participating: {max_validator_shares_participating}, hub_connection_id: {hub_connection_id}, hub_transfer_channel_id: {hub_transfer_channel_id}, icq_update_period: {icq_update_period})"
+            ),
+            TokenInfoProviderInstantiateMsg::Base {
+                token_group_id,
+                denom,
+            } => write!(
+                f,
+                "Base(token_group_id: {token_group_id}, denom: {denom})"
             ),
             TokenInfoProviderInstantiateMsg::TokenInfoProviderContract {
                 code_id,
@@ -261,6 +272,10 @@ pub enum ExecuteMsg {
     /// This action is only available if the drop token info is set.
     ConvertLockupToDtoken {
         lock_ids: Vec<u64>,
+    },
+    /// Allows users to remove/reduce pending slash fully or partially by inserting funds
+    BuyoutPendingSlash {
+        lock_id: u64,
     },
 }
 
