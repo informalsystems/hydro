@@ -2989,13 +2989,19 @@ pub fn buyout_pending_slash(
                 new_generic_error(format!("Error validating denom '{}': {}", coin.denom, err))
             })?;
         let ratio = token_manager
-            .get_token_group_ratio(&deps.as_ref(), current_round, token_group_id)
+            .get_token_group_ratio(&deps.as_ref(), current_round, token_group_id.clone())
             .map_err(|err| {
                 new_generic_error(format!(
                     "Error fetching token group ratio for '{}': {}",
                     coin.denom, err
                 ))
             })?;
+        if ratio.is_zero() {
+            return Err(new_generic_error(format!(
+                "Ratio for token group '{token_group_id}' is zero"
+            )));
+        }
+
         let coin_as_base = Decimal::from_ratio(coin.amount, Uint128::one()).checked_mul(ratio)?;
 
         available_base_token = available_base_token.checked_add(coin_as_base.to_uint_floor())?;
@@ -3011,18 +3017,13 @@ pub fn buyout_pending_slash(
         let remaining_base = slash_base_token
             .checked_sub(Decimal::from_ratio(available_base_token, Uint128::one()))?;
 
-        let remaining_original = remaining_base.checked_div(slash_ratio)?;
-        LOCKS_PENDING_SLASHES.save(
-            deps.storage,
-            lockup.lock_id,
-            &remaining_original.to_uint_floor(),
-        )?;
+        let remaining_original = remaining_base.checked_div(slash_ratio)?.to_uint_floor();
+        LOCKS_PENDING_SLASHES.save(deps.storage, lockup.lock_id, &remaining_original)?;
     }
 
     // Step 5: Figure out what was used and what should be refunded
     let mut funds_used: HashMap<String, Uint128> = HashMap::new();
-    let mut remaining_base_token =
-        core::cmp::min(slash_base_token.to_uint_floor(), available_base_token);
+    let mut remaining_base_token = slash_base_token.to_uint_floor().min(available_base_token);
 
     for (denom, original_amount, ratio) in &fund_conversion {
         if remaining_base_token.is_zero() {
@@ -3030,7 +3031,7 @@ pub fn buyout_pending_slash(
         }
         let coin_as_base =
             Decimal::from_ratio(*original_amount, Uint128::one()).checked_mul(*ratio)?;
-        let take_base = core::cmp::min(coin_as_base.to_uint_floor(), remaining_base_token);
+        let take_base = coin_as_base.to_uint_floor().min(remaining_base_token);
         let take_original = Decimal::from_ratio(take_base, Uint128::one()).checked_div(*ratio)?;
 
         funds_used.insert(denom.clone(), take_original.to_uint_floor());
@@ -3040,19 +3041,17 @@ pub fn buyout_pending_slash(
     // Step 6: Prepare refund messages
     let mut refund_msgs: Vec<BankMsg> = vec![];
     for (denom, original_amount, _) in &fund_conversion {
-        let used = funds_used.get(denom).copied().unwrap_or(Uint128::zero());
-        let total = *original_amount;
-        if total > used {
-            let refund_amount = total.checked_sub(used).unwrap();
-            if refund_amount > Uint128::zero() {
-                refund_msgs.push(BankMsg::Send {
-                    to_address: info.sender.to_string(),
-                    amount: vec![Coin {
-                        denom: denom.clone(),
-                        amount: refund_amount,
-                    }],
-                });
-            }
+        let used_amount = funds_used.get(denom).copied().unwrap_or(Uint128::zero());
+        let sent_amount = *original_amount;
+        if sent_amount > used_amount {
+            let refund_amount = sent_amount.checked_sub(used_amount)?;
+            refund_msgs.push(BankMsg::Send {
+                to_address: info.sender.to_string(),
+                amount: vec![Coin {
+                    denom: denom.clone(),
+                    amount: refund_amount,
+                }],
+            });
         }
     }
 
