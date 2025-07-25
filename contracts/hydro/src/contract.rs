@@ -2809,8 +2809,9 @@ pub fn buyout_pending_slash(
             ))
         })?;
 
-    let slash_base_token =
-        Decimal::from_ratio(slash_amount, Uint128::one()).checked_mul(slash_ratio)?;
+    let slash_base_token = Decimal::from_ratio(slash_amount, Uint128::one())
+        .checked_mul(slash_ratio)?
+        .to_uint_floor();
 
     // Step 3: Track how much is available and per-denom info
     let mut available_base_token: Uint128 = Uint128::zero();
@@ -2844,19 +2845,20 @@ pub fn buyout_pending_slash(
 
     // Step 4: Determine how much to deduct and update state
     // Check if payment is full or partial
-    if available_base_token >= slash_base_token.to_uint_floor() {
+    if available_base_token >= slash_base_token {
         LOCKS_PENDING_SLASHES.remove(deps.storage, lockup.lock_id);
     } else {
-        let remaining_base = slash_base_token
-            .checked_sub(Decimal::from_ratio(available_base_token, Uint128::one()))?;
+        let remaining_base = slash_base_token.checked_sub(available_base_token)?;
 
-        let remaining_original = remaining_base.checked_div(slash_ratio)?.to_uint_floor();
+        let remaining_original = Decimal::from_ratio(remaining_base, Uint128::one())
+            .checked_div(slash_ratio)?
+            .to_uint_floor();
         LOCKS_PENDING_SLASHES.save(deps.storage, lockup.lock_id, &remaining_original)?;
     }
 
     // Step 5: Figure out what was used and what should be refunded
     let mut funds_used: HashMap<String, Uint128> = HashMap::new();
-    let mut remaining_base_token = slash_base_token.to_uint_floor().min(available_base_token);
+    let mut remaining_base_token = slash_base_token.min(available_base_token);
 
     for (denom, original_amount, ratio) in &fund_conversion {
         if remaining_base_token.is_zero() {
