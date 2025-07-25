@@ -785,11 +785,12 @@ fn split_lock(
         lock_end: starting_lock_entry.lock_end,
     };
 
-    let depth = get_lock_ancestor_depth(
+    let (depth, _) = get_lock_ancestor_depth(
         &deps.as_ref(),
         env.clone(),
         starting_lock_entry.lock_id,
         constants.lock_expiry_duration_seconds,
+        None,
     )?;
     if depth >= constants.lock_depth_limit {
         return Err(ContractError::Std(StdError::generic_err(format!(
@@ -1040,13 +1041,17 @@ fn merge_locks(
 
     let mut parents = vec![];
 
+    let mut cache = HashMap::new();
+
     for lock_id in &lock_ids {
-        let depth = get_lock_ancestor_depth(
+        let (depth, new_cache) = get_lock_ancestor_depth(
             &deps.as_ref(),
             env.clone(),
             *lock_id,
             constants.lock_expiry_duration_seconds,
+            Some(cache),
         )?;
+        cache = new_cache;
 
         if depth >= constants.lock_depth_limit {
             let msg = format!(
@@ -1305,7 +1310,9 @@ pub fn get_current_lock_composition(
 /// - If the input lock is expired, the function returns `0`.
 /// - If an ancestor lock is expired, the recursion **stops along that path**, but may continue along others.
 /// - Expired parents are **skipped**, not counted, and not recursed into.
-/// - Cycle prevention is enforced using a `visited` list (cloned per path).
+/// - Cycle prevention is not implemented, as the design of merge and split prevents it.
+/// - A per-call **in-memory cache** is used to memoize previously computed depths for lock IDs
+///   to avoid redundant computation and reduce storage reads across shared ancestors.
 ///
 /// Example cases:
 /// - Root node with no parents: returns `1`
@@ -1351,11 +1358,14 @@ pub fn get_lock_ancestor_depth(
     env: Env,
     lock_id: u64,
     lock_expiry_duration_seconds: u64,
-) -> StdResult<u64> {
+    cache: Option<HashMap<u64, u64>>,
+) -> StdResult<(u64, HashMap<u64, u64>)> {
+    let mut cache = cache.unwrap_or_default();
+
     if let Some(expiry_time) = LOCK_ID_EXPIRY.may_load(deps.storage, lock_id)? {
         let cutoff = expiry_time.plus_seconds(lock_expiry_duration_seconds);
         if env.block.time > cutoff {
-            return Ok(0); // lock itself is expired
+            return Ok((0, cache)); // lock itself is expired
         }
     }
 
@@ -1364,13 +1374,18 @@ pub fn get_lock_ancestor_depth(
         env: Env,
         current_id: u64,
         lock_expiry_duration_seconds: u64,
-        visited: &mut [u64],
+        cache: &mut HashMap<u64, u64>,
     ) -> StdResult<u64> {
+        if let Some(&cached) = cache.get(&current_id) {
+            return Ok(cached);
+        }
+
         let parents = REVERSE_LOCK_ID_TRACKING
             .may_load(deps.storage, current_id)?
             .unwrap_or_default();
 
         if parents.is_empty() {
+            cache.insert(current_id, 1);
             return Ok(1);
         }
 
@@ -1383,28 +1398,25 @@ pub fn get_lock_ancestor_depth(
                 }
             }
 
-            let mut local_visited = visited.to_owned();
-            if local_visited.contains(&parent_id) {
-                continue;
-            }
-            local_visited.push(parent_id);
-
             let depth = recurse(
                 deps,
                 env.clone(),
                 parent_id,
                 lock_expiry_duration_seconds,
-                &mut local_visited,
+                cache,
             )?;
             if depth > max_depth {
                 max_depth = depth;
             }
         }
 
-        Ok(max_depth + 1)
+        let result = max_depth + 1;
+        cache.insert(current_id, result);
+        Ok(result)
     }
 
-    recurse(deps, env, lock_id, lock_expiry_duration_seconds, &mut [])
+    let depth = recurse(deps, env, lock_id, lock_expiry_duration_seconds, &mut cache)?;
+    Ok((depth, cache))
 }
 
 // Validate that the lock duration (given in nanos) is either 1, 2, 3, 6, or 12 epochs
