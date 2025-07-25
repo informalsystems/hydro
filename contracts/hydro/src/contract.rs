@@ -3037,7 +3037,7 @@ pub fn buyout_pending_slash(
         let take_original = Decimal::from_ratio(take_base, Uint128::one()).checked_div(*ratio)?;
 
         funds_used.insert(denom.clone(), take_original.to_uint_floor());
-        remaining_base_token = remaining_base_token.checked_sub(take_base)?
+        remaining_base_token = remaining_base_token.checked_sub(take_base)?;
     }
 
     // Step 6: Prepare refund messages
