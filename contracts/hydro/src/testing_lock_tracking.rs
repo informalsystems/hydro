@@ -146,11 +146,23 @@ fn test_get_lock_ancestor_depth() {
     let parents = vec![from_id_first, from_id_second];
     let _ = REVERSE_LOCK_ID_TRACKING.save(&mut deps.storage, into_lock_id, &parents);
 
-    let depth = get_lock_ancestor_depth(&deps.as_ref(), env, 6, lock_expiry_duration_seconds);
+    let depth = get_lock_ancestor_depth(&deps.as_ref(), env, 6, lock_expiry_duration_seconds, None);
     assert!(depth.is_ok());
-    let depth_value = depth.unwrap();
+    let (depth_value, cache) = depth.unwrap();
     assert!(depth_value <= lock_depth_limit);
     assert!(depth_value == 4);
+
+    let expected_cache = vec![(1, 1), (2, 2), (3, 2), (4, 3), (6, 4)];
+
+    // Ensure all expected entries exist in the cache
+    for (lock_id, expected_depth) in expected_cache {
+        let actual = cache.get(&lock_id).copied();
+        assert_eq!(
+            actual,
+            Some(expected_depth),
+            "Cache missing or wrong for lock {lock_id}"
+        );
+    }
 }
 #[test]
 fn test_split_merge_composition_and_depth() {
@@ -246,10 +258,12 @@ fn test_split_merge_composition_and_depth() {
         env.clone(),
         lock_id,
         lock_expiry_duration_seconds,
+        None,
     );
 
     assert!(depth.is_ok());
-    assert_eq!(depth.unwrap(), 4);
+    let (depth_value, _) = depth.unwrap();
+    assert_eq!(depth_value, 4);
 
     // Simulate lock 0 expired
     let fake_expiry = env
@@ -265,9 +279,11 @@ fn test_split_merge_composition_and_depth() {
         env.clone(),
         lock_id,
         lock_expiry_duration_seconds,
+        None,
     );
+    let (depth_value, _) = depth.unwrap();
 
-    assert_eq!(depth.unwrap(), 3);
+    assert_eq!(depth_value, 3);
 
     // Simulate lock 1 and 2 expired
     let fake_expiry = env
@@ -290,9 +306,12 @@ fn test_split_merge_composition_and_depth() {
         env.clone(),
         lock_id,
         lock_expiry_duration_seconds,
+        None,
     );
 
-    assert_eq!(depth.unwrap(), 2);
+    let (depth_value, _) = depth.unwrap();
+
+    assert_eq!(depth_value, 2);
 
     // Simulate lock 3 is expired
     let fake_expiry = env
@@ -308,9 +327,11 @@ fn test_split_merge_composition_and_depth() {
         env.clone(),
         lock_id,
         lock_expiry_duration_seconds,
+        None,
     );
+    let (depth_value, _) = depth.unwrap();
 
-    assert_eq!(depth.unwrap(), 1);
+    assert_eq!(depth_value, 1);
 
     // Simulate lock 5 is expired
     let fake_expiry = env
@@ -326,7 +347,10 @@ fn test_split_merge_composition_and_depth() {
         env.clone(),
         lock_id,
         lock_expiry_duration_seconds,
+        None,
     );
 
-    assert_eq!(depth.unwrap(), 0);
+    let (depth_value, _) = depth.unwrap();
+
+    assert_eq!(depth_value, 0);
 }
