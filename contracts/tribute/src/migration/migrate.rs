@@ -15,6 +15,9 @@ pub const CONTRACT_VERSION_V3_1_1: &str = "3.1.1";
 pub const CONTRACT_VERSION_V3_2_0: &str = "3.2.0";
 pub const CONTRACT_VERSION_V3_4_1: &str = "3.4.1";
 pub const CONTRACT_VERSION_V3_4_2: &str = "3.4.2";
+pub const CONTRACT_VERSION_V3_5_0: &str = "3.5.0";
+pub const CONTRACT_VERSION_V3_5_1: &str = "3.5.1";
+pub const CONTRACT_VERSION_V3_5_2: &str = "3.5.2";
 
 #[cw_serde]
 pub struct MigrateMsg {}
@@ -23,7 +26,7 @@ pub struct MigrateMsg {}
 pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
     check_contract_version(deps.storage)?;
 
-    // No state migrations needed from v3.5.0 to v3.5.1
+    // No state migrations needed from v3.5.1 to v3.5.2
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 

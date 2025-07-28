@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## v3.5.2
+
+Date: July 28th, 2025
+
+### BUG FIXES
+
+-Prevent a potential infinite loop in merging.
+  ([\#292](https://github.com/informalsystems/hydro/pull/292))
+-Get lock ancestor depth optimization to reduce gas costs.
+  ([\#293](https://github.com/informalsystems/hydro/pull/293))
+
 ## v3.5.1
 
 Date: July 21st, 2025
