@@ -16,13 +16,13 @@ use crate::{
     score_keeper::get_token_group_shares_for_round,
     state::{
         Constants, LockEntryV2, Vote, LOCKED_TOKENS, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES,
-        SCALED_ROUND_POWER_SHARES_MAP, TOTAL_VOTING_POWER_PER_ROUND, TRANCHE_MAP, VOTE_MAP_V2,
-        VOTING_ALLOWED_ROUND,
+        PROPOSAL_MAP, SCALED_ROUND_POWER_SHARES_MAP, TOTAL_VOTING_POWER_PER_ROUND, TRANCHE_MAP,
+        VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
     },
     token_manager::TokenManager,
     utils::{
-        get_highest_known_height_for_round_id, get_slice_as_attribute, scale_lockup_power,
-        update_user_locks,
+        get_highest_known_height_for_round_id, get_slice_as_attribute, load_current_constants,
+        scale_lockup_power, update_user_locks,
     },
     vote::process_unvotes,
 };
@@ -126,7 +126,7 @@ pub fn slash_proposal_voters(
                 Some(lockup) => lockup,
             };
 
-            let amount_to_slash = into_amount_to_slash(
+            let (amount_to_slash, _) = into_amount_to_slash(
                 &deps.as_ref(),
                 &mut token_manager,
                 &voted_lockup,
@@ -303,6 +303,8 @@ pub fn slash_proposal_voters(
 // If the lockup being slashed holds tokens of a different denom than the voted lockup,
 // the amount to slash is calculated by converting the `voted_lockup` token amount into
 // the `lockup_to_slash` token amount.
+// Returns the amount to slash denominated in the slashed lockup denom and the ratio of that token
+// towards the base token (e.g. ATOM).
 #[allow(clippy::too_many_arguments)]
 pub fn into_amount_to_slash(
     deps: &Deps<NeutronQuery>,
@@ -313,7 +315,7 @@ pub fn into_amount_to_slash(
     slash_percent: Decimal,
     voting_round: u64,
     slashing_round: u64,
-) -> Result<Uint128, ContractError> {
+) -> Result<(Uint128, Decimal), ContractError> {
     // Get the voted lockup token ratio for the round in which it voted on a proposal we want to slash.
     let vote_token_ratio =
         token_manager.get_token_denom_ratio(deps, voting_round, voted_lockup.funds.denom.clone());
@@ -321,7 +323,21 @@ pub fn into_amount_to_slash(
     // If the ratio of the token droped to 0 after user had voted, we should not slash such voters,
     // since their vote didn't contribute to the proposal voting power, nor did they receive any tribute.
     if vote_token_ratio.is_zero() {
-        return Ok(Uint128::zero());
+        return Ok((Uint128::zero(), Decimal::zero()));
+    }
+
+    // Get the token ratio of the lockup being slashed, for the round in which the slashing is performed.
+    // Note that we are not trying to obtain the ratio for the round in which the voting happend, since
+    // the given token might not even be allowed to be locked in that round.
+    let slash_token_ratio = token_manager.get_token_denom_ratio(
+        deps,
+        slashing_round,
+        lockup_to_slash.funds.denom.clone(),
+    );
+
+    // If the token ratio of the lockup being slashed droped to 0 in the current round, we will not slash it.
+    if slash_token_ratio.is_zero() {
+        return Ok((Uint128::zero(), Decimal::zero()));
     }
 
     // If the lockup denoms are the same, calculate slashable amount just as a `fraction` of the `voted_lockup`
@@ -336,9 +352,9 @@ pub fn into_amount_to_slash(
             .to_uint_floor();
 
         if amount_to_slash > lockup_to_slash.funds.amount {
-            return Ok(lockup_to_slash.funds.amount);
+            return Ok((lockup_to_slash.funds.amount, slash_token_ratio));
         } else {
-            return Ok(amount_to_slash);
+            return Ok((amount_to_slash, slash_token_ratio));
         }
     }
 
@@ -350,29 +366,15 @@ pub fn into_amount_to_slash(
             .checked_mul(slash_percent)?
             .checked_mul(vote_token_ratio)?;
 
-    // Get the token ratio of the lockup being slashed, for the round in which the slashing is performed.
-    // Note that we are not trying to obtain the ratio for the round in which the voting happend, since
-    // the given token might not even be allowed to be locked in that round.
-    let slash_token_ratio = token_manager.get_token_denom_ratio(
-        deps,
-        slashing_round,
-        lockup_to_slash.funds.denom.clone(),
-    );
-
-    // If the token ratio of the lockup being slashed droped to 0 in the current round, we will not slash it.
-    if slash_token_ratio.is_zero() {
-        return Ok(Uint128::zero());
-    }
-
     let amount_to_slash = amount_to_slash_base_tokens
         .checked_div(slash_token_ratio)?
         .to_uint_floor();
 
     if amount_to_slash > lockup_to_slash.funds.amount {
-        return Ok(lockup_to_slash.funds.amount);
+        return Ok((lockup_to_slash.funds.amount, slash_token_ratio));
     }
 
-    Ok(amount_to_slash)
+    Ok((amount_to_slash, slash_token_ratio))
 }
 
 // Remove potential current round votes for all lockups that were affected by slashing.
@@ -625,6 +627,103 @@ fn update_rounds_powers_and_scaled_shares(
     }
 
     Ok(())
+}
+
+/// Returns the maximum number of tokens held by the lockups that can be slashed for voting
+/// on the given proposal. The amount returned is denominated in the base token (e.g. ATOM).
+pub fn query_slashable_token_num_for_voting_on_proposal(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    round_id: u64,
+    tranche_id: u64,
+    proposal_id: u64,
+) -> StdResult<Uint128> {
+    let constants = load_current_constants(&deps, &env)?;
+    let current_round_id = compute_current_round_id(&env, &constants)?;
+
+    if round_id > current_round_id {
+        return Err(StdError::generic_err(
+            "cannot query slashable tokens number for the future round",
+        ));
+    }
+
+    if !PROPOSAL_MAP.has(deps.storage, (round_id, tranche_id, proposal_id)) {
+        return Err(StdError::generic_err(format!("proposal with id {proposal_id} in round {round_id} and tranche {tranche_id} does not exist")));
+    }
+
+    let voted_locks: Vec<(u64, Vote)> = VOTE_MAP_V2
+        .prefix((round_id, tranche_id))
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter_map(|vote| match vote {
+            Ok((lock_id, vote)) => {
+                if vote.prop_id == proposal_id {
+                    Some((lock_id, vote))
+                } else {
+                    None
+                }
+            }
+            Err(_) => None,
+        })
+        .collect();
+
+    let mut token_manager = TokenManager::new(&deps);
+
+    let voting_round_latest_height =
+        get_highest_known_height_for_round_id(deps.storage, round_id)? + 1;
+
+    let mut max_amount_to_slash_base_tokens = Uint128::zero();
+
+    for voted_lock in voted_locks {
+        if voted_lock.1.time_weighted_shares.1.is_zero() {
+            continue;
+        }
+
+        let Some(voted_lockup) = LOCKS_MAP_V2.may_load_at_height(
+            deps.storage,
+            voted_lock.0,
+            voting_round_latest_height,
+        )?
+        else {
+            continue;
+        };
+
+        for (lock_id, fraction) in get_current_lock_composition(&deps, voted_lock.0)? {
+            let Some(lockup_to_slash) = LOCKS_MAP_V2.may_load(deps.storage, lock_id)? else {
+                continue;
+            };
+
+            // pretend as if we are going to slash 100% of the lockup,
+            // in order to calculate the maximum that can be slashed.
+            let (max_amount_to_slash, ratio_to_base_token) = into_amount_to_slash(
+                &deps,
+                &mut token_manager,
+                &voted_lockup,
+                &lockup_to_slash,
+                fraction,
+                Decimal::percent(100),
+                round_id,
+                current_round_id,
+            )
+            .map_err(|e| {
+                StdError::generic_err(format!(
+                    "failed to compute maximum value that can be slashed for lockup {}, error: {e}",
+                    lockup_to_slash.lock_id
+                ))
+            })?;
+
+            if max_amount_to_slash.is_zero() {
+                continue;
+            }
+
+            max_amount_to_slash_base_tokens = max_amount_to_slash_base_tokens.checked_add(
+                Decimal::from_ratio(max_amount_to_slash, Uint128::one())
+                    .checked_mul(ratio_to_base_token)?
+                    .to_uint_floor(),
+            )?;
+        }
+    }
+
+    Ok(max_amount_to_slash_base_tokens)
 }
 
 struct SlashingContext {
