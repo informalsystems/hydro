@@ -128,6 +128,7 @@ pub fn instantiate(
         cw721_collection_info,
         lock_expiry_duration_seconds: msg.lock_expiry_duration_seconds,
         lock_depth_limit: msg.lock_depth_limit,
+        slash_tokens_receiver_addr: msg.slash_tokens_receiver_addr,
     };
 
     CONSTANTS.save(deps.storage, env.block.time.nanos(), &state)?;
@@ -2774,6 +2775,7 @@ pub fn convert_lockup_to_dtoken_reply(
 ///   and determines if the slash is fully paid off.
 /// - If fully paid, removes the pending slash; otherwise, updates it with the remaining amount.
 /// - Tracks how much of each token was used and refunds any excess back to the user.
+/// - Forwards the used portion of funds to the `slash_token_receiver` address specified in constants
 pub fn buyout_pending_slash(
     deps: DepsMut<NeutronQuery>,
     env: Env,
@@ -2873,14 +2875,23 @@ pub fn buyout_pending_slash(
         remaining_base_token = remaining_base_token.checked_sub(take_base)?;
     }
 
-    // Step 6: Prepare refund messages
-    let mut refund_msgs: Vec<BankMsg> = vec![];
+    // Step 6: Prepare forward and refund messages
+    let mut bank_msgs: Vec<BankMsg> = vec![];
     for (denom, original_amount, _) in &fund_conversion {
         let used_amount = funds_used.get(denom).copied().unwrap_or(Uint128::zero());
         let sent_amount = *original_amount;
+        if !used_amount.is_zero() {
+            bank_msgs.push(BankMsg::Send {
+                to_address: constants.slash_tokens_receiver_addr.clone(),
+                amount: vec![Coin {
+                    denom: denom.clone(),
+                    amount: used_amount,
+                }],
+            });
+        }
         if sent_amount > used_amount {
             let refund_amount = sent_amount.checked_sub(used_amount)?;
-            refund_msgs.push(BankMsg::Send {
+            bank_msgs.push(BankMsg::Send {
                 to_address: info.sender.to_string(),
                 amount: vec![Coin {
                     denom: denom.clone(),
@@ -2901,7 +2912,7 @@ pub fn buyout_pending_slash(
         .add_attribute("sender", info.sender)
         .add_attribute("lock_id", lock_id.to_string())
         .add_attribute("coins_spent", coins_spent_str)
-        .add_messages(refund_msgs))
+        .add_messages(bank_msgs))
 }
 fn validate_sender_is_whitelist_admin(
     deps: &DepsMut<NeutronQuery>,

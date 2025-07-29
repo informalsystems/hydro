@@ -121,6 +121,7 @@ pub fn get_default_lsm_token_info_provider() -> TokenInfoProvider {
 
 pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
     let user_address = get_address_as_str(mock_api, "addr0000");
+    let slashed_tokens_receiver_address = get_address_as_str(mock_api, "addr0000");
 
     InstantiateMsg {
         round_length: TWO_WEEKS_IN_NANO_SECONDS,
@@ -141,6 +142,7 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         cw721_collection_info: None,
         lock_expiry_duration_seconds: 60 * 60 * 24 * 30 * 6, // 6 months
         lock_depth_limit: 50,
+        slash_tokens_receiver_addr: slashed_tokens_receiver_address,
     }
 }
 

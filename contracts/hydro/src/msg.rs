@@ -40,6 +40,8 @@ pub struct InstantiateMsg {
     pub lock_expiry_duration_seconds: u64,
     // Maximum allowed depth of a lock's ancestor tree to prevent excessive nesting and state complexity.
     pub lock_depth_limit: u64,
+    // Address that will receive the tokens slashed from the lockups.
+    pub slash_tokens_receiver_addr: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

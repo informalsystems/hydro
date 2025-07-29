@@ -30,6 +30,7 @@ fn load_current_constants_test() {
         cw721_collection_info: get_default_cw721_collection_info(),
         lock_depth_limit: 50,
         lock_expiry_duration_seconds: 60 * 60 * 24 * 30 * 6, // 6 months
+        slash_tokens_receiver_addr: String::new(),
     };
 
     // Change max_locked_tokens each time we insert new Constants so that we can differentiate them

@@ -85,6 +85,7 @@ pub fn migrate_constants(deps: &mut DepsMut<NeutronQuery>) -> Result<(), Contrac
             cw721_collection_info: old_constants.cw721_collection_info,
             lock_expiry_duration_seconds: LOCK_EXPIRY_DURATION_SECONDS,
             lock_depth_limit: LOCK_DEPTH_LIMIT,
+            slash_tokens_receiver_addr: String::new(),
         };
 
         updated_constants_entries.push((timestamp, new_constants));

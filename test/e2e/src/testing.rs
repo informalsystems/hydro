@@ -104,6 +104,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             cw721_collection_info: None,
             lock_depth_limit: 50,
             lock_expiry_duration_seconds: 60 * 60 * 24 * 30 * 6, // 6 months,
+            slash_tokens_receiver_addr: String::new(),
         },
         Some(&Addr::unchecked(whitelist_admin_address.clone())),
         &[],

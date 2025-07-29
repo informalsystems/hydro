@@ -77,6 +77,7 @@ pub struct Constants {
     pub cw721_collection_info: CollectionInfo,
     pub lock_expiry_duration_seconds: u64,
     pub lock_depth_limit: u64,
+    pub slash_tokens_receiver_addr: String,
 }
 
 // Used to store a set of token info providers that are able to validate various denoms allowed to be locked
