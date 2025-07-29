@@ -161,6 +161,15 @@ pub enum QueryMsg {
         height: Option<u64>,
     },
 
+    /// Returns maximum number of tokens that can be slashed for voting on a proposal,
+    /// denominated in the base token (e.g. ATOM).
+    #[returns(Uint128)]
+    SlashableTokenNumForVotingOnProposal {
+        round_id: u64,
+        tranche_id: u64,
+        proposal_id: u64,
+    },
+
     /// Returns the owner of the given token, as well as anyone with approval on this particular token.
     /// If the token is unknown, returns an error.
     /// If include_expired is set (to true), shows expired approvals in the results, otherwise, ignore them.

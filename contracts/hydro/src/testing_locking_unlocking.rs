@@ -412,7 +412,7 @@ fn unlock_specific_tokens_test() {
     assert!(res.is_ok());
 
     let res = res.unwrap();
-    // Should have 1 message that summs up tokens from both locks
+    // Should have 1 message that sums up tokens from both locks
     assert_eq!(1, res.messages.len());
 
     // Verify the first attempt's messages and unlocked IDs

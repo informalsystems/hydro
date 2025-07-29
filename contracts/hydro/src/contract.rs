@@ -48,7 +48,7 @@ use crate::score_keeper::{
     get_total_power_for_proposal, get_total_power_for_round,
     remove_token_group_shares_from_proposal, TokenGroupRatioChange,
 };
-use crate::slashing::slash_proposal_voters;
+use crate::slashing::{query_slashable_token_num_for_voting_on_proposal, slash_proposal_voters};
 use crate::state::{
     Constants, DropTokenInfo, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche,
     ValidatorInfo, Vote, VoteWithPower, CONSTANTS, DROP_TOKEN_INFO, GATEKEEPER, ICQ_MANAGERS,
@@ -3106,6 +3106,17 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> Result<Binary
         }
         QueryMsg::TokenInfoProviders {} => to_json_binary(&query_token_info_providers(deps)?),
         QueryMsg::Gatekeeper {} => to_json_binary(&query_gatekeeper(deps)?),
+        QueryMsg::SlashableTokenNumForVotingOnProposal {
+            round_id,
+            tranche_id,
+            proposal_id,
+        } => to_json_binary(&query_slashable_token_num_for_voting_on_proposal(
+            deps,
+            env,
+            round_id,
+            tranche_id,
+            proposal_id,
+        )?),
         QueryMsg::OwnerOf {
             token_id,
             include_expired,

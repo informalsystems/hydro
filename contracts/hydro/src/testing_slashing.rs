@@ -1,5 +1,6 @@
 use crate::contract::{execute, instantiate, query_round_total_power};
 use crate::msg::{ExecuteMsg, TrancheInfo};
+use crate::slashing::query_slashable_token_num_for_voting_on_proposal;
 use crate::state::{
     LockEntryV2, LOCKED_TOKENS, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES, PROPOSAL_MAP, USER_LOCKS,
     VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
@@ -64,7 +65,7 @@ fn pending_slashes_accumulation_test() {
     )
     .unwrap();
 
-    for round_id in 0..1 {
+    for round_id in 0..=1 {
         let res = set_validator_infos_for_round(
             &mut deps.storage,
             round_id,
@@ -81,6 +82,7 @@ fn pending_slashes_accumulation_test() {
     env.block.time = env.block.time.plus_nanos(1000);
     env.block.height += 100;
 
+    let round_1 = 0;
     let tranche_1 = 1;
     let proposal_1 = 0;
 
@@ -179,6 +181,14 @@ fn pending_slashes_accumulation_test() {
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
     env.block.height += 100000;
 
+    // Verify the maximum number of tokens that can be slashed for voting on proposal_1
+    verify_expected_slashable_token_num(
+        &deps,
+        &env,
+        round_1,
+        &[(tranche_1, proposal_1, 6 * lock_amount_initial)],
+    );
+
     // Slash proposal_1 in (round 0, tranche 1) by 11%
     // Since it gets slashed by 11%, and the threshold for applying the actual slashing is 50%,
     // this should only add information about the pending slashes to all lockups that voted.
@@ -188,7 +198,7 @@ fn pending_slashes_accumulation_test() {
         env.clone(),
         slash_info.clone(),
         ExecuteMsg::SlashProposalVoters {
-            round_id: 0,
+            round_id: round_1,
             tranche_id: tranche_1,
             proposal_id: proposal_1,
             slash_percent: Decimal::from_str("0.11").unwrap(),
@@ -255,7 +265,7 @@ fn pending_slashes_accumulation_test() {
         env.clone(),
         slash_info.clone(),
         ExecuteMsg::SlashProposalVoters {
-            round_id: 0,
+            round_id: round_1,
             tranche_id: 1,
             proposal_id: proposal_1,
             slash_percent: Decimal::from_str("0.375").unwrap(),
@@ -354,20 +364,24 @@ fn slash_when_threshold_is_reached_test() {
     )
     .unwrap();
 
-    let res = set_validator_infos_for_round(
-        &mut deps.storage,
-        0,
-        vec![
-            VALIDATOR_1.to_string(),
-            VALIDATOR_2.to_string(),
-            VALIDATOR_3.to_string(),
-        ],
-    );
-    assert!(res.is_ok());
+    for round_id in 0..=1 {
+        let res = set_validator_infos_for_round(
+            &mut deps.storage,
+            round_id,
+            vec![
+                VALIDATOR_1.to_string(),
+                VALIDATOR_2.to_string(),
+                VALIDATOR_3.to_string(),
+            ],
+        );
+        assert!(res.is_ok());
+    }
 
     // Start round 0
     env.block.time = env.block.time.plus_nanos(1000);
     env.block.height += 100;
+
+    let round_1 = 0;
 
     let tranche_1 = 1;
     let tranche_2 = 2;
@@ -415,7 +429,7 @@ fn slash_when_threshold_is_reached_test() {
     ];
     for &user_locking_tokens in &users_locking_tokens {
         for &period in &lock_periods {
-            let funds = vec![Coin::new(1000u64, user_locking_tokens.1)];
+            let funds = vec![Coin::new(lock_amount_initial, user_locking_tokens.1)];
             let info = get_message_info(&deps.api, user_locking_tokens.0, &funds);
             let res = execute(
                 deps.as_mut(),
@@ -512,6 +526,17 @@ fn slash_when_threshold_is_reached_test() {
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
     env.block.height += 100000;
 
+    // Verify the maximum number of tokens that can be slashed for voting on proposals 1 and 2
+    verify_expected_slashable_token_num(
+        &deps,
+        &env,
+        round_1,
+        &[
+            (tranche_1, proposal_1, 6 * lock_amount_initial),
+            (tranche_2, proposal_2, 6 * lock_amount_initial),
+        ],
+    );
+
     // Slash proposal_1 from tranche_1
     // Since it gets slashed by 25%, and the threshold for applying the actual slashing is 50%,
     // this should just add information about the pending slashes to all lockups that voted.
@@ -521,7 +546,7 @@ fn slash_when_threshold_is_reached_test() {
         env.clone(),
         slash_info.clone(),
         ExecuteMsg::SlashProposalVoters {
-            round_id: 0,
+            round_id: round_1,
             tranche_id: tranche_1,
             proposal_id: proposal_1,
             slash_percent: Decimal::from_str("0.25").unwrap(),
@@ -540,7 +565,7 @@ fn slash_when_threshold_is_reached_test() {
         env.clone(),
         slash_info.clone(),
         ExecuteMsg::SlashProposalVoters {
-            round_id: 0,
+            round_id: round_1,
             tranche_id: tranche_2,
             proposal_id: proposal_2,
             slash_percent: Decimal::from_str("0.3").unwrap(),
@@ -620,6 +645,19 @@ fn slash_when_threshold_is_reached_test() {
         total_locked_after + 6 * expected_slashed_amount
     );
 
+    // Verify the maximum number of tokens that can be slashed for voting on proposals 1 and 2.
+    // Since actual slashing was applied and all lockups that voted were slashed by 550 tokens,
+    // the maximum number of tokens that can be slashed is reduced to 450 per each lockup.
+    verify_expected_slashable_token_num(
+        &deps,
+        &env,
+        round_1,
+        &[
+            (tranche_1, proposal_1, 6 * lock_amount_after_slash_1),
+            (tranche_2, proposal_2, 6 * lock_amount_after_slash_1),
+        ],
+    );
+
     // Then slash proposal_2 from tranche_2 again with 17% and verify that pending slashes are attached again.
     let slash_res = execute(
         deps.as_mut(),
@@ -686,6 +724,18 @@ fn slash_when_threshold_is_reached_test() {
             (user3_lock_4, lock_amount_initial, 0),
             (user3_lock_5, lock_amount_initial, 0),
             (user3_lock_6, lock_amount_initial, 0),
+        ],
+    );
+
+    // Verify the maximum number of tokens that can be slashed for voting on proposals 1 and 2.
+    // Adding pending slashes does not affect the maximum number of tokens that can be slashed.
+    verify_expected_slashable_token_num(
+        &deps,
+        &env,
+        round_1,
+        &[
+            (tranche_1, proposal_1, 6 * lock_amount_after_slash_1),
+            (tranche_2, proposal_2, 6 * lock_amount_after_slash_1),
         ],
     );
 }
@@ -860,6 +910,14 @@ fn slashing_removes_lockups_test() {
         .unwrap()
         .is_some());
 
+    // Verify the maximum number of tokens that can be slashed for voting on proposal 1
+    verify_expected_slashable_token_num(
+        &deps,
+        &env,
+        round_1,
+        &[(tranche_1, proposal_1, 2 * lock_amount_initial)],
+    );
+
     // Slash proposal_1 in (round 0, tranche 1) by 49%. This should only atach pending slashes.
     let slash_info = get_message_info(&deps.api, user1, &[]);
     let slash_res = execute(
@@ -920,6 +978,11 @@ fn slashing_removes_lockups_test() {
             .unwrap()
             .is_none());
     }
+
+    // Verify the maximum number of tokens that can be slashed for voting on proposal 1
+    // Since the lockups were removed during previous slash action, the maximum number
+    // of tokens that can be slashed should be 0.
+    verify_expected_slashable_token_num(&deps, &env, round_1, &[(tranche_1, proposal_1, 0)]);
 }
 
 #[test]
@@ -1320,6 +1383,12 @@ fn slashing_after_lock_split_merge_test() {
         .unwrap();
     assert_eq!(merged_lock_7.funds.amount, Uint128::from(70000u128));
 
+    // Verify the maximum number of tokens that can be slashed for voting on proposal 1
+    // The lockup that initially voted on this proposal (user1_lock_1) had 90.000 tokens,
+    // and it was split and merged multiple times, but the maximum number of tokens that
+    // can be slashed for voting on proposal 1 should remain 90.000 tokens.
+    verify_expected_slashable_token_num(&deps, &env, round_1, &[(tranche_1, proposal_1, 90000)]);
+
     // Slash proposal 1 with 60%
     let slash_res = execute(
         deps.as_mut(),
@@ -1472,6 +1541,14 @@ fn slash_after_dtoken_conversion_test() {
         )
         .unwrap();
 
+    // Verify the maximum number of tokens that can be slashed for voting on proposal 1
+    verify_expected_slashable_token_num(
+        &deps,
+        &env,
+        0,
+        &[(tranche_1, proposal_1, 999)], // should be 1000, but rounding down in our math made it 999
+    );
+
     // Slash proposal_1 from tranche_1 by 55%
     let slash_info = get_message_info(&deps.api, user1, &[]);
     let slash_res = execute(
@@ -1567,5 +1644,25 @@ fn verify_locks_and_pending_slashes(
                 .u128(),
             expected_result.1
         );
+    }
+}
+
+// expected_slashable_amounts: &[(tranche_id, proposal_id, expected_max_slashable_token_num)]
+fn verify_expected_slashable_token_num(
+    deps: &OwnedDeps<cosmwasm_std::MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    env: &Env,
+    round_id: u64,
+    expected_slashable_amounts: &[(u64, u64, u128)],
+) {
+    for expected_slashable_amount in expected_slashable_amounts {
+        let max_slashable_token_num = query_slashable_token_num_for_voting_on_proposal(
+            deps.as_ref(),
+            env.clone(),
+            round_id,
+            expected_slashable_amount.0,
+            expected_slashable_amount.1,
+        )
+        .unwrap();
+        assert_eq!(max_slashable_token_num.u128(), expected_slashable_amount.2);
     }
 }
