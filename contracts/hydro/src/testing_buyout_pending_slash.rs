@@ -127,7 +127,8 @@ fn buyout_pending_slash_same_denom_exact_amount_test() {
 
     let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 1 };
     let res = execute(deps.as_mut(), env.clone(), buyout_info.clone(), msg).unwrap();
-    assert_eq!(res.messages.len(), 0);
+    // only forward the used amount to the slash tokens receiver
+    assert_eq!(res.messages.len(), 1);
     let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
     assert!(result.unwrap().is_none());
 }
@@ -236,7 +237,8 @@ fn buyout_pending_slash_same_denom_partial_amount_test() {
 
     let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 1 };
     let res = execute(deps.as_mut(), env.clone(), buyout_info.clone(), msg).unwrap();
-    assert_eq!(res.messages.len(), 0);
+    // only forward the used amount to the slash tokens receiver
+    assert_eq!(res.messages.len(), 1);
     let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
     assert_eq!(result.unwrap(), Some(Uint128::new(100))); // 500 - 400 = 100 remaining slash amount
 }
@@ -345,7 +347,8 @@ fn buyout_pending_slash_same_denom_overpay_amount_test() {
 
     let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 1 };
     let res = execute(deps.as_mut(), env.clone(), buyout_info.clone(), msg).unwrap();
-    assert_eq!(res.messages.len(), 1);
+    // forward the used amount to the slash tokens receiver and return the excess
+    assert_eq!(res.messages.len(), 2);
     let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
     assert!(result.unwrap().is_none());
 }
@@ -456,7 +459,8 @@ fn buyout_pending_slash_same_denom_validator_slashed_test() {
 
     let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 1 };
     let res = execute(deps.as_mut(), env.clone(), buyout_info.clone(), msg).unwrap();
-    assert_eq!(res.messages.len(), 0);
+    // only forward the used amount to the slash tokens receiver
+    assert_eq!(res.messages.len(), 1);
     let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
     assert_eq!(result.unwrap(), Some(Uint128::new(25))); // 500 - 475 = 25 remaining slash amount
 }
@@ -572,7 +576,8 @@ fn buyout_pending_slash_lsm_statom_exact_amount_test() {
 
     let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 1 };
     let res = execute(deps.as_mut(), env.clone(), buyout_info.clone(), msg).unwrap();
-    assert_eq!(res.messages.len(), 1);
+    // forward the used amount to the slash tokens receiver and return the excess of other denom
+    assert_eq!(res.messages.len(), 2);
     let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
     assert!(result.unwrap().is_none());
 }
@@ -681,7 +686,8 @@ fn buyout_pending_slash_statom_lsm_test() {
 
     let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 1 };
     let res = execute(deps.as_mut(), env.clone(), buyout_info.clone(), msg).unwrap();
-    assert_eq!(res.messages.len(), 0);
+    // only forward the used amount to the slash tokens receiver
+    assert_eq!(res.messages.len(), 1);
     let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
     assert!(result.unwrap().is_some());
 }
@@ -796,7 +802,8 @@ fn buyout_pending_slash_with_atom_test() {
 
     let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 1 };
     let res = execute(deps.as_mut(), env.clone(), buyout_info.clone(), msg).unwrap();
-    assert_eq!(res.messages.len(), 0);
+    // only forward the used amount to the slash tokens receiver
+    assert_eq!(res.messages.len(), 1);
     let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
     assert!(result.unwrap().is_none());
 }
