@@ -338,7 +338,7 @@ fn test_create_and_withdraw_position_in_pool() {
     println!("Spot price after swap: {price}");
 
     //92195444572928873195000
-    let liquidate_msg = ExecuteMsg::Liquidate;
+    let liquidate_msg = ExecuteMsg::Liquidate {};
 
     //100000
     let coins = &[Coin::new(100000u128, OSMO_DENOM)];
@@ -545,7 +545,7 @@ fn test_partial_liquidations() {
     // Print the state response
     println!("{formatted_output}");
 
-    let liquidate_msg = ExecuteMsg::Liquidate;
+    let liquidate_msg = ExecuteMsg::Liquidate {};
 
     let coins = &[Coin::new(50000u128, OSMO_DENOM)];
 
@@ -723,7 +723,7 @@ fn test_end_of_round_principal_higher_or_equal() {
         String::from("0") // Default value
     };
 
-    let end_round_msg = ExecuteMsg::EndRound;
+    let end_round_msg = ExecuteMsg::EndRound {};
 
     println!("Executing end round msg...\n");
     let response = wasm
@@ -817,7 +817,7 @@ fn test_auction() {
         String::from("0") // Default value
     };
 
-    let end_round_msg = ExecuteMsg::EndRound;
+    let end_round_msg = ExecuteMsg::EndRound {};
 
     println!("Executing end round msg...\n");
     let response = wasm
@@ -949,7 +949,7 @@ fn test_auction() {
 );
     }
 
-    let resolve_auction_msg = ExecuteMsg::ResolveAuction;
+    let resolve_auction_msg = ExecuteMsg::ResolveAuction {};
 
     println!("Executing resolve auction msg...\n");
     let _response = wasm
