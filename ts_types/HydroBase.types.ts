@@ -42,6 +42,7 @@ export interface InstantiateMsg {
   max_locked_tokens: Uint128;
   round_length: number;
   round_lock_power_schedule: [number, Decimal][];
+  slash_tokens_receiver_addr: string;
   token_info_providers: TokenInfoProviderInstantiateMsg[];
   tranches: TrancheInfo[];
   whitelist_admins: string[];
@@ -545,6 +546,7 @@ export interface Constants {
   paused: boolean;
   round_length: number;
   round_lock_power_schedule: RoundLockPowerSchedule;
+  slash_tokens_receiver_addr: string;
 }
 export interface RoundLockPowerSchedule {
   round_lock_power_schedule: LockPowerEntry[];

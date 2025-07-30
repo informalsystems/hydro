@@ -1,12 +1,12 @@
 use crate::contract::{CONTRACT_NAME, CONTRACT_VERSION};
 use crate::error::{new_generic_error, ContractError};
-use crate::migration::v3_5_0::ConstantsV3_5_0;
+use crate::migration::v3_5_2::ConstantsV3_5_2;
 use crate::state::{Constants, CONSTANTS};
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::Order;
 #[allow(unused_imports)]
 use cosmwasm_std::{entry_point, DepsMut, Env, Response, StdError};
+use cosmwasm_std::{Decimal, Order};
 use cw2::{get_contract_version, set_contract_version};
 use cw_storage_plus::Map;
 use neutron_sdk::bindings::msg::NeutronMsg;
@@ -22,22 +22,25 @@ pub const CONTRACT_VERSION_V3_1_1: &str = "3.1.1";
 pub const CONTRACT_VERSION_V3_2_0: &str = "3.2.0";
 pub const CONTRACT_VERSION_V3_4_1: &str = "3.4.1";
 pub const CONTRACT_VERSION_V3_4_2: &str = "3.4.2";
-
-pub const LOCK_EXPIRY_DURATION_SECONDS: u64 = 60 * 60 * 24 * 180; // 180 days
-pub const LOCK_DEPTH_LIMIT: u64 = 50;
+pub const CONTRACT_VERSION_V3_5_0: &str = "3.5.0";
+pub const CONTRACT_VERSION_V3_5_1: &str = "3.5.1";
+pub const CONTRACT_VERSION_V3_5_2: &str = "3.5.2";
 
 #[cw_serde]
-pub struct MigrateMsg {}
+pub struct MigrateMsg {
+    pub slash_percentage_threshold: Decimal,
+    pub slash_tokens_receiver_addr: String,
+}
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(
     mut deps: DepsMut<NeutronQuery>,
     _env: Env,
-    _msg: MigrateMsg,
+    msg: MigrateMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     check_contract_version(deps.storage)?;
 
-    migrate_constants(&mut deps)?;
+    migrate_constants(&mut deps, msg)?;
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
@@ -56,17 +59,29 @@ fn check_contract_version(storage: &dyn cosmwasm_std::Storage) -> Result<(), Con
     Ok(())
 }
 
-pub fn migrate_constants(deps: &mut DepsMut<NeutronQuery>) -> Result<(), ContractError> {
-    const OLD_CONSTANTS: Map<u64, ConstantsV3_5_0> = Map::new("constants");
+pub fn migrate_constants(
+    deps: &mut DepsMut<NeutronQuery>,
+    migrate_msg: MigrateMsg,
+) -> Result<(), ContractError> {
+    const OLD_CONSTANTS: Map<u64, ConstantsV3_5_2> = Map::new("constants");
 
     let old_constants_entries = OLD_CONSTANTS
         .range(deps.storage, None, None, Order::Ascending)
         .filter_map(|result| result.ok())
-        .collect::<Vec<(u64, ConstantsV3_5_0)>>();
+        .collect::<Vec<(u64, ConstantsV3_5_2)>>();
 
     if old_constants_entries.is_empty() {
         return Err(new_generic_error(
             "Couldn't find any Constants in the store.",
+        ));
+    }
+
+    deps.api
+        .addr_validate(&migrate_msg.slash_tokens_receiver_addr)?;
+
+    if migrate_msg.slash_percentage_threshold > Decimal::percent(100) {
+        return Err(new_generic_error(
+            "Slash percentage threshold must be between 0% and 100%",
         ));
     }
 
@@ -83,9 +98,9 @@ pub fn migrate_constants(deps: &mut DepsMut<NeutronQuery>) -> Result<(), Contrac
             max_deployment_duration: old_constants.max_deployment_duration,
             round_lock_power_schedule: old_constants.round_lock_power_schedule,
             cw721_collection_info: old_constants.cw721_collection_info,
-            lock_expiry_duration_seconds: LOCK_EXPIRY_DURATION_SECONDS,
-            lock_depth_limit: LOCK_DEPTH_LIMIT,
-            slash_tokens_receiver_addr: String::new(),
+            lock_expiry_duration_seconds: old_constants.lock_expiry_duration_seconds,
+            lock_depth_limit: old_constants.lock_depth_limit,
+            slash_tokens_receiver_addr: migrate_msg.slash_tokens_receiver_addr.clone(),
         };
 
         updated_constants_entries.push((timestamp, new_constants));

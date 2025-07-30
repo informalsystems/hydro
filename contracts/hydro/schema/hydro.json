@@ -1,6 +1,6 @@
 {
   "contract_name": "hydro",
-  "contract_version": "3.5.1",
+  "contract_version": "3.5.2",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -17,6 +17,7 @@
       "max_locked_tokens",
       "round_length",
       "round_lock_power_schedule",
+      "slash_tokens_receiver_addr",
       "token_info_providers",
       "tranches",
       "whitelist_admins"
@@ -102,6 +103,9 @@
           "maxItems": 2,
           "minItems": 2
         }
+      },
+      "slash_tokens_receiver_addr": {
+        "type": "string"
       },
       "token_info_providers": {
         "type": "array",
@@ -3879,7 +3883,8 @@
             "max_locked_tokens",
             "paused",
             "round_length",
-            "round_lock_power_schedule"
+            "round_lock_power_schedule",
+            "slash_tokens_receiver_addr"
           ],
           "properties": {
             "cw721_collection_info": {
@@ -3928,6 +3933,9 @@
             },
             "round_lock_power_schedule": {
               "$ref": "#/definitions/RoundLockPowerSchedule"
+            },
+            "slash_tokens_receiver_addr": {
+              "type": "string"
             }
           },
           "additionalProperties": false

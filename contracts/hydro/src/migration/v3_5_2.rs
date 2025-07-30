@@ -4,7 +4,7 @@ use cosmwasm_std::Timestamp;
 use crate::{msg::CollectionInfo, state::RoundLockPowerSchedule};
 
 #[cw_serde]
-pub struct ConstantsV3_5_0 {
+pub struct ConstantsV3_5_2 {
     pub round_length: u64,
     pub lock_epoch_length: u64,
     pub first_round_start: Timestamp,
@@ -21,4 +21,6 @@ pub struct ConstantsV3_5_0 {
     pub max_deployment_duration: u64,
     pub round_lock_power_schedule: RoundLockPowerSchedule,
     pub cw721_collection_info: CollectionInfo,
+    pub lock_expiry_duration_seconds: u64,
+    pub lock_depth_limit: u64,
 }
