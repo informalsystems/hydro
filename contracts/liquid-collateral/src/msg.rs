@@ -36,11 +36,11 @@ pub struct WithdrawBidMsg {
 #[cw_serde]
 pub enum ExecuteMsg {
     CreatePosition(CreatePositionMsg),
-    Liquidate,
-    EndRound,
+    Liquidate {},
+    EndRound {},
     PlaceBid(PlaceBidMsg),
     WithdrawBid(WithdrawBidMsg),
-    ResolveAuction,
+    ResolveAuction {},
 }
 
 #[cw_serde]
@@ -55,7 +55,7 @@ pub enum QueryMsg {
     #[returns(SortedBidsResponse)]
     SortedBids {},
     #[returns(IsLiquidatableResponse)]
-    IsLiquidatable,
+    IsLiquidatable {},
     #[returns(SimulateLiquidationResponse)]
     SimulateLiquidation { principal_amount: Uint128 },
 }
