@@ -40,6 +40,8 @@ pub struct InstantiateMsg {
     pub lock_expiry_duration_seconds: u64,
     // Maximum allowed depth of a lock's ancestor tree to prevent excessive nesting and state complexity.
     pub lock_depth_limit: u64,
+    // Address that will receive the tokens slashed from the lockups.
+    pub slash_tokens_receiver_addr: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -65,6 +67,10 @@ pub enum TokenInfoProviderInstantiateMsg {
         hub_connection_id: String,
         hub_transfer_channel_id: String,
         icq_update_period: u64,
+    },
+    Base {
+        token_group_id: String,
+        denom: String,
     },
     TokenInfoProviderContract {
         code_id: u64,
@@ -93,6 +99,13 @@ impl Display for TokenInfoProviderInstantiateMsg {
             } => write!(
                 f,
                 "LSM(max_validator_shares_participating: {max_validator_shares_participating}, hub_connection_id: {hub_connection_id}, hub_transfer_channel_id: {hub_transfer_channel_id}, icq_update_period: {icq_update_period})"
+            ),
+            TokenInfoProviderInstantiateMsg::Base {
+                token_group_id,
+                denom,
+            } => write!(
+                f,
+                "Base(token_group_id: {token_group_id}, denom: {denom})"
             ),
             TokenInfoProviderInstantiateMsg::TokenInfoProviderContract {
                 code_id,
@@ -261,6 +274,10 @@ pub enum ExecuteMsg {
     /// This action is only available if the drop token info is set.
     ConvertLockupToDtoken {
         lock_ids: Vec<u64>,
+    },
+    /// Allows users to remove/reduce pending slash fully or partially by inserting funds
+    BuyoutPendingSlash {
+        lock_id: u64,
     },
 }
 

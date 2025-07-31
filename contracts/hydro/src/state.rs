@@ -77,6 +77,7 @@ pub struct Constants {
     pub cw721_collection_info: CollectionInfo,
     pub lock_expiry_duration_seconds: u64,
     pub lock_depth_limit: u64,
+    pub slash_tokens_receiver_addr: String,
 }
 
 // Used to store a set of token info providers that are able to validate various denoms allowed to be locked
@@ -391,3 +392,5 @@ pub const NFT_OPERATORS: Map<(Addr, Addr), Expiration> = Map::new("nft_operators
 // or last owner before lock was removed)
 // USER_LOCKS_FOR_CLAIM: key(user_address) -> Vec<lock_ids>
 pub const USER_LOCKS_FOR_CLAIM: Map<Addr, Vec<u64>> = Map::new("user_locks_for_claim");
+// LOCKS_PENDING_SLASHES: key(lock_id) -> token_num_to_slash
+pub const LOCKS_PENDING_SLASHES: Map<u64, Uint128> = Map::new("locks_pending_slashes");

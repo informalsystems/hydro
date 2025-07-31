@@ -295,6 +295,7 @@ fn convert_lockup_to_dtoken_test() {
     assert_eq!(updated_lock_2.funds.denom, drop_token_info.d_token_denom);
     assert_eq!(updated_lock_2.funds.amount, Uint128::new(2000));
 }
+
 pub fn setup_d_atom_token_info_provider_mock(
     deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
     token_info_provider_addr: Addr,

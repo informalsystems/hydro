@@ -17,6 +17,11 @@ export type TokenInfoProviderInstantiateMsg = {
     max_validator_shares_participating: number;
   };
 } | {
+  base: {
+    denom: string;
+    token_group_id: string;
+  };
+} | {
   token_info_provider_contract: {
     admin?: string | null;
     code_id: number;
@@ -37,6 +42,7 @@ export interface InstantiateMsg {
   max_locked_tokens: Uint128;
   round_length: number;
   round_lock_power_schedule: [number, Decimal][];
+  slash_tokens_receiver_addr: string;
   token_info_providers: TokenInfoProviderInstantiateMsg[];
   tranches: TrancheInfo[];
   whitelist_admins: string[];
@@ -222,6 +228,10 @@ export type ExecuteMsg = {
 } | {
   convert_lockup_to_dtoken: {
     lock_ids: number[];
+  };
+} | {
+  buyout_pending_slash: {
+    lock_id: number;
   };
 };
 export type Expiration = {
@@ -536,6 +546,7 @@ export interface Constants {
   paused: boolean;
   round_length: number;
   round_lock_power_schedule: RoundLockPowerSchedule;
+  slash_tokens_receiver_addr: string;
 }
 export interface RoundLockPowerSchedule {
   round_lock_power_schedule: LockPowerEntry[];
@@ -627,6 +638,8 @@ export interface SpecificUserLockupsWithTrancheInfosResponse {
 export type TokenInfoProvider = {
   lsm: TokenInfoProviderLSM;
 } | {
+  base: TokenInfoProviderBase;
+} | {
   derivative: TokenInfoProviderDerivative;
 };
 export interface TokenInfoProvidersResponse {
@@ -637,6 +650,11 @@ export interface TokenInfoProviderLSM {
   hub_transfer_channel_id: string;
   icq_update_period: number;
   max_validator_shares_participating: number;
+}
+export interface TokenInfoProviderBase {
+  denom: string;
+  ratio: Decimal;
+  token_group_id: string;
 }
 export interface TokenInfoProviderDerivative {
   cache: {};

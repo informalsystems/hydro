@@ -41,7 +41,8 @@
         "max_locked_tokens",
         "paused",
         "round_length",
-        "round_lock_power_schedule"
+        "round_lock_power_schedule",
+        "slash_tokens_receiver_addr"
       ],
       "properties": {
         "cw721_collection_info": {
@@ -90,6 +91,9 @@
         },
         "round_lock_power_schedule": {
           "$ref": "#/definitions/RoundLockPowerSchedule"
+        },
+        "slash_tokens_receiver_addr": {
+          "type": "string"
         }
       },
       "additionalProperties": false

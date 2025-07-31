@@ -13,6 +13,7 @@
     "max_locked_tokens",
     "round_length",
     "round_lock_power_schedule",
+    "slash_tokens_receiver_addr",
     "token_info_providers",
     "tranches",
     "whitelist_admins"
@@ -98,6 +99,9 @@
         "maxItems": 2,
         "minItems": 2
       }
+    },
+    "slash_tokens_receiver_addr": {
+      "type": "string"
     },
     "token_info_providers": {
       "type": "array",
@@ -212,6 +216,31 @@
                   "type": "integer",
                   "format": "uint64",
                   "minimum": 0.0
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "base"
+          ],
+          "properties": {
+            "base": {
+              "type": "object",
+              "required": [
+                "denom",
+                "token_group_id"
+              ],
+              "properties": {
+                "denom": {
+                  "type": "string"
+                },
+                "token_group_id": {
+                  "type": "string"
                 }
               },
               "additionalProperties": false

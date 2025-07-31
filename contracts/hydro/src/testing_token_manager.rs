@@ -71,6 +71,9 @@ fn instantiate_with_lsm_token_info_provider_test() {
         TokenInfoProvider::Derivative(_) => {
             panic!("Expected LSM token provider, found derivative one.");
         }
+        TokenInfoProvider::Base(_) => {
+            panic!("Expected LSM token provider, found base provider.");
+        }
         TokenInfoProvider::LSM(provider) => {
             assert_eq!(
                 lsm_token_info_provider.hub_connection_id,
@@ -225,6 +228,7 @@ fn handle_token_info_provider_instantiate_reply_test() {
         cw721_collection_info: get_default_cw721_collection_info(),
         lock_depth_limit: 50,
         lock_expiry_duration_seconds: 60 * 60 * 24 * 30 * 6, // 6 months
+        slash_tokens_receiver_addr: String::new(),
     };
     CONSTANTS
         .save(&mut deps.storage, env.block.time.nanos(), &constants)
@@ -275,6 +279,9 @@ fn handle_token_info_provider_instantiate_reply_test() {
         TokenInfoProvider::LSM(_) => {
             panic!("expected derivative token info provider, found LSM one.")
         }
+        TokenInfoProvider::Base(_) => {
+            panic!("expected derivative token info provider, found Base provider.")
+        }
         TokenInfoProvider::Derivative(provider) => {
             assert_eq!(provider.contract, contract_address.to_string());
         }
@@ -310,6 +317,7 @@ fn add_remove_token_info_provider_test() {
                 cw721_collection_info: get_default_cw721_collection_info(),
                 lock_depth_limit: 50,
                 lock_expiry_duration_seconds: 60 * 60 * 24 * 30 * 6, // 6 months
+                slash_tokens_receiver_addr: String::new(),
             },
         )
         .unwrap();
