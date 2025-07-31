@@ -74,7 +74,7 @@ osmosisd query concentratedliquidity position-by-id 2806 \
 ### Liquidate position
 Execution which makes contract partially or fully withdrawing from position if it goes out of range (Principal amount is zero).
 ```bash
-osmosisd tx wasm execute osmo1pv0epte... '"liquidate"' \
+osmosisd tx wasm execute osmo1pv0epte... '{"liquidate": {}}' \
   --amount 100000uosmo \
   --chain-id osmo-test-5 \
   --node https://rpc.testnet.osmosis.zone/ \
@@ -84,7 +84,7 @@ osmosisd tx wasm execute osmo1pv0epte... '"liquidate"' \
 ### End round
 Execution which makes contract fully withdrawing from position in case it wasn't fully liquidated beforehand but the Hydro round ended. In this case, it can be executed even if the position did not go out of range.
 ```bash
-osmosisd tx wasm execute osmo1pv0eptex4... '"end_round"' \
+osmosisd tx wasm execute osmo1pv0eptex4... '{"end_round": {}}' \
   --chain-id osmo-test-5 \
   --node https://rpc.testnet.osmosis.zone/ \
   --from vortex1 \
@@ -129,7 +129,7 @@ osmosisd query wasm contract-state smart osmo1dwdneu... \
 ### Resolve auction
 Can be executed only if the auction is finished.
 ```bash
-osmosisd tx wasm execute osmo1dwdneu... '"resolve_auction"' \
+osmosisd tx wasm execute osmo1dwdneu... '{"resolve_auction": {}}' \
   --chain-id osmo-test-5 \
   --node https://rpc.testnet.osmosis.zone/ \
   --from vortex1 \
@@ -138,7 +138,7 @@ osmosisd tx wasm execute osmo1dwdneu... '"resolve_auction"' \
 ### Query if liquidatable
 Queries if the position is out of range.
 ```bash
-osmosisd query wasm contract-state smart osmo1dwdneu... '"is_liquidatable"' \
+osmosisd query wasm contract-state smart osmo1dwdneu... '{"is_liquidatable": {}}' \
   --chain-id osmo-test-5 \
   --node https://rpc.testnet.osmosis.zone/
 ```
@@ -158,7 +158,7 @@ This section explains how to check if a position is eligible for liquidation and
 ## 1. Check if a Position is Liquidatable
 ```bash
 osmosisd query wasm contract-state smart <contract_address> \
-  '"is_liquidatable"' \
+  '{"is_liquidatable": {}}' \
   --chain-id osmo-test-5 \
   --node https://rpc.testnet.osmosis.zone/
  ```
@@ -207,7 +207,7 @@ This step performs the actual liquidation, causing the contract to partially or 
 To execute the liquidation:
 
 ```bash
-osmosisd tx wasm execute <contract_address> '"liquidate"' \
+osmosisd tx wasm execute <contract_address> '{"liquidate": {}}' \
   --amount 100000uosmo \
   --chain-id osmo-test-5 \
   --node https://rpc.testnet.osmosis.zone/ \

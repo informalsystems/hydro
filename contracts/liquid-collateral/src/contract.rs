@@ -70,11 +70,11 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::CreatePosition(msg) => create_position(deps, env, info, msg),
-        ExecuteMsg::Liquidate => liquidate(deps, env, info),
-        ExecuteMsg::EndRound => end_round(deps, env, info),
+        ExecuteMsg::Liquidate {} => liquidate(deps, env, info),
+        ExecuteMsg::EndRound {} => end_round(deps, env, info),
         ExecuteMsg::PlaceBid(msg) => place_bid(deps, env, info, msg),
         ExecuteMsg::WithdrawBid(msg) => withdraw_bid(deps, env, info, msg),
-        ExecuteMsg::ResolveAuction => resolve_auction(deps, env, info),
+        ExecuteMsg::ResolveAuction {} => resolve_auction(deps, env, info),
     }
 }
 
