@@ -615,7 +615,7 @@ export interface DtokenAmountsResponse {
   dtokens_response: DtokenAmountResponse[];
 }
 export interface DtokenAmountResponse {
-  dtoken_amount: Uint128;
+  dtoken_amount: string;
   lock_id: number;
 }
 export interface SpecificUserLockupsResponse {

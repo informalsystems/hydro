@@ -309,7 +309,7 @@ pub struct DtokenAmountsResponse {
 #[cw_serde]
 pub struct DtokenAmountResponse {
     pub lock_id: u64,
-    pub dtoken_amount: Uint128,
+    pub dtoken_amount: String,
 }
 
 // LockEntryWithPower is a LockEntry with the current voting power of the sender
