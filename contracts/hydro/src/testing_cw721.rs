@@ -1953,13 +1953,13 @@ fn test_query_all_tokens_filters_lsm() {
     );
 
     // Setup initial state
-    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
 
     let owner1 = "owner1";
     let owner1_addr = deps.api.addr_make(owner1);
     let owner2 = "owner2";
     let owner2_addr = deps.api.addr_make(owner2);
-    let info = get_message_info(&deps.api, owner1, &[]);
+    let info = get_message_info(&deps.api, owner1_addr.as_ref(), &[]);
 
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
@@ -2066,6 +2066,28 @@ fn test_query_all_tokens_filters_lsm() {
 
     assert_eq!(tokens.tokens.len(), 1);
     assert_eq!(tokens.tokens[0], "2");
+
+    // advance the chain by one month + 1 nano second and check that user can unlock tokens
+    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
+
+    let unlock_msg = ExecuteMsg::UnlockTokens {
+        lock_ids: Some(vec![0]),
+    };
+    let unlock_res = execute(deps.as_mut(), env.clone(), info, unlock_msg);
+    assert!(unlock_res.is_ok(), "Failed to unlock 1st non-LSM lock");
+
+    // Query all tokens - should only return non-LSM tokens (ID 2 as we unlocked ID 0)
+    let query_msg = QueryMsg::AllTokens {
+        start_after: None,
+        limit: None,
+    };
+    let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(query_res.is_ok(), "Failed to query all tokens");
+    let tokens: TokensResponse = from_json(query_res.unwrap()).unwrap();
+
+    // Should only have 1 token (the only non-LSM one left)
+    assert_eq!(tokens.tokens.len(), 1);
+    assert_eq!(tokens.tokens[0], "2"); // Only non-LSM lock left
 }
 
 #[test]

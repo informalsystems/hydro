@@ -1,6 +1,7 @@
 use std::{collections::HashMap, str::FromStr};
 
 use cosmwasm_std::{
+    from_json,
     testing::{mock_env, MockApi, MockStorage},
     to_json_binary, Addr, Coin, Decimal, Event, OwnedDeps, Reply, SubMsgResponse, SubMsgResult,
     Uint128,
@@ -9,11 +10,14 @@ use interface::token_info_provider::DenomInfoResponse;
 use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
-    contract::{compute_current_round_id, convert_lockup_to_dtoken, execute, instantiate, reply},
+    contract::{
+        compute_current_round_id, convert_lockup_to_dtoken, execute, instantiate, query, reply,
+    },
     msg::{
         ConvertLockupPayload, ExecuteMsg, ProposalToLockups, ReplyPayload,
         TokenInfoProviderInstantiateMsg,
     },
+    query::{QueryMsg, TokensResponse},
     score_keeper::get_total_power_for_proposal,
     state::{
         DropTokenInfo, LockEntryV2, DROP_TOKEN_INFO, LOCKS_MAP_V2, TOKEN_INFO_PROVIDERS, USER_LOCKS,
@@ -213,6 +217,23 @@ fn convert_lockup_to_dtoken_test() {
 
     let info = get_message_info(&deps.api, "addr0000", &[]);
 
+    // Query all tokens before conversion - should return nothing since both lockups are LSM-based
+    let query_msg = QueryMsg::AllTokens {
+        start_after: None,
+        limit: None,
+    };
+    let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(
+        query_res.is_ok(),
+        "Failed to query all tokens before conversion"
+    );
+    let tokens_before: TokensResponse = from_json(query_res.unwrap()).unwrap();
+    assert_eq!(
+        tokens_before.tokens.len(),
+        0,
+        "Expected no tokens before conversion since lockups are LSM-based"
+    );
+
     let res = convert_lockup_to_dtoken(deps.as_mut(), env, info, vec![1, 2]).unwrap();
     assert_eq!(res.messages.len(), 2);
     assert_eq!(res.attributes[0].value, "convert_lockup_to_dtoken");
@@ -294,7 +315,30 @@ fn convert_lockup_to_dtoken_test() {
     let updated_lock_2 = LOCKS_MAP_V2.load(&deps.storage, 2).unwrap();
     assert_eq!(updated_lock_2.funds.denom, drop_token_info.d_token_denom);
     assert_eq!(updated_lock_2.funds.amount, Uint128::new(2000));
+
+    // Query all tokens after conversion - should return both lockups since they are now d-tokens (non-LSM)
+    let query_msg = QueryMsg::AllTokens {
+        start_after: None,
+        limit: None,
+    };
+    let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(
+        query_res.is_ok(),
+        "Failed to query all tokens after conversion"
+    );
+    let tokens_after: TokensResponse = from_json(query_res.unwrap()).unwrap();
+    assert_eq!(
+        tokens_after.tokens.len(),
+        2,
+        "Expected both tokens after conversion to d-tokens"
+    );
+    assert_eq!(
+        tokens_after.tokens,
+        vec!["1".to_string(), "2".to_string()],
+        "Expected tokens 1 and 2 to be returned"
+    );
 }
+
 pub fn setup_d_atom_token_info_provider_mock(
     deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
     token_info_provider_addr: Addr,
