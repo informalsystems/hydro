@@ -16,7 +16,7 @@ use prost::Message;
 use crate::{
     error::ContractError,
     msg::{DenomMetadata, ExecuteMsg, InstantiateMsg, ReplyPayload},
-    query::{ConfigResponse, QueryMsg},
+    query::{ConfigResponse, QueryMsg, TotalPoolValueResponse},
     state::{load_config, Config, CONFIG, DEPLOYED_AMOUNT, VAULT_SHARES_DENOM, WHITELIST},
 };
 
@@ -104,6 +104,9 @@ pub fn execute(
         ExecuteMsg::AddToWhitelist { address } => add_to_whitelist(deps, env, info, address),
         ExecuteMsg::RemoveFromWhitelist { address } => {
             remove_from_whitelist(deps, env, info, address)
+        }
+        ExecuteMsg::SubmitDeployedAmount { amount } => {
+            submit_deployed_amount(deps, env, info, amount)
         }
     }
 }
@@ -289,11 +292,34 @@ pub fn calculate_number_of_shares_to_mint(
         .to_uint_floor())
 }
 
+fn submit_deployed_amount(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    amount: Uint128,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Check if the sender is in the whitelist
+    let is_whitelisted = WHITELIST.may_load(deps.storage, info.sender.clone())?;
+
+    if is_whitelisted.is_none() {
+        return Err(ContractError::Unauthorized);
+    }
+
+    // Save the deployed amount snapshot at current height
+    DEPLOYED_AMOUNT.save(deps.storage, &amount, env.block.height)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "submit_deployed_amount")
+        .add_attribute("sender", info.sender)
+        .add_attribute("amount", amount))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps<NeutronQuery>, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_json_binary(&query_config(&deps)?),
         QueryMsg::TotalSharesIssued {} => to_json_binary(&query_total_shares_issued(&deps)?),
+        QueryMsg::TotalPoolValue {} => to_json_binary(&query_total_pool_value(&deps, env)?),
     }
 }
 
@@ -308,6 +334,27 @@ fn query_total_shares_issued(deps: &Deps<NeutronQuery>) -> StdResult<Uint128> {
         .querier
         .query_supply(VAULT_SHARES_DENOM.load(deps.storage)?)?
         .amount)
+}
+
+fn query_total_pool_value(
+    deps: &Deps<NeutronQuery>,
+    env: Env,
+) -> StdResult<TotalPoolValueResponse> {
+    let config = CONFIG.load(deps.storage)?;
+    let denom = config.deposit_denom;
+
+    // Get the current balance of this contract in the deposit denom
+    let balance: Coin = deps
+        .querier
+        .query_balance(env.contract.address, denom.clone())?;
+
+    // Get the total deployed amount (from snapshot storage)
+    let deployed_amount = DEPLOYED_AMOUNT.may_load(deps.storage)?;
+
+    let total = balance
+        .amount
+        .checked_add(deployed_amount.unwrap_or_default())?;
+    Ok(TotalPoolValueResponse { total })
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
