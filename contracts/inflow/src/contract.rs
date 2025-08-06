@@ -1,3 +1,5 @@
+use std::env;
+
 use cosmos_sdk_proto::cosmos::bank::v1beta1::{DenomUnit, Metadata};
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, to_json_vec, Addr, AnyMsg, BankMsg, Binary, Coin,
@@ -16,7 +18,7 @@ use prost::Message;
 use crate::{
     error::ContractError,
     msg::{DenomMetadata, ExecuteMsg, InstantiateMsg, ReplyPayload},
-    query::{ConfigResponse, QueryMsg, TotalPoolValueResponse},
+    query::{ConfigResponse, QueryMsg, ShareEquivalentValueResponse, TotalPoolValueResponse},
     state::{load_config, Config, CONFIG, DEPLOYED_AMOUNT, VAULT_SHARES_DENOM, WHITELIST},
 };
 
@@ -310,6 +312,9 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         QueryMsg::Config {} => to_json_binary(&query_config(&deps)?),
         QueryMsg::TotalSharesIssued {} => to_json_binary(&query_total_shares_issued(&deps)?),
         QueryMsg::TotalPoolValue {} => to_json_binary(&query_total_pool_value(&deps, env)?),
+        QueryMsg::ShareEquivalentValue { address } => {
+            to_json_binary(&query_share_equivalent_value(&deps, env, address)?)
+        }
     }
 }
 
@@ -345,6 +350,37 @@ fn query_total_pool_value(
         .amount
         .checked_add(deployed_amount.unwrap_or_default())?;
     Ok(TotalPoolValueResponse { total })
+}
+
+fn query_share_equivalent_value(
+    deps: &Deps<NeutronQuery>,
+    env: Env,
+    address: String,
+) -> StdResult<ShareEquivalentValueResponse> {
+    let shares_denom = VAULT_SHARES_DENOM.load(deps.storage)?;
+
+    // Get the current balance of this address in the shares denom
+    let shares_balance: Uint128 = deps
+        .querier
+        .query_balance(address, shares_denom.clone())?
+        .amount;
+
+    let total_shares_supply = query_total_shares_issued(deps)?;
+
+    let total_pool_value = query_total_pool_value(deps, env)?.total;
+
+    // Avoid division by zero
+    let value = if total_shares_supply.is_zero() {
+        Uint128::zero()
+    } else {
+        // (user_shares * total_pool_value) / total_shares_supply
+        let share_ratio = Decimal::from_ratio(shares_balance, total_shares_supply);
+        share_ratio
+            .checked_mul(Decimal::from_ratio(total_pool_value, Uint128::one()))?
+            .to_uint_floor()
+    };
+
+    Ok(ShareEquivalentValueResponse { value })
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]

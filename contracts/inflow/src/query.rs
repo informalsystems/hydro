@@ -16,6 +16,9 @@ pub enum QueryMsg {
 
     #[returns(TotalPoolValueResponse)]
     TotalPoolValue {},
+
+    #[returns(ShareEquivalentValueResponse)]
+    ShareEquivalentValue { address: String },
 }
 
 #[cw_serde]
@@ -26,4 +29,9 @@ pub struct ConfigResponse {
 #[cw_serde]
 pub struct TotalPoolValueResponse {
     pub total: Uint128,
+}
+
+#[cw_serde]
+pub struct ShareEquivalentValueResponse {
+    pub value: Uint128,
 }
