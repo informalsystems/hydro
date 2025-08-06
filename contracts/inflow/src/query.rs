@@ -13,9 +13,17 @@ pub enum QueryMsg {
 
     #[returns(Uint128)]
     TotalSharesIssued {},
+
+    #[returns(TotalPoolValueResponse)]
+    TotalPoolValue {},
 }
 
 #[cw_serde]
 pub struct ConfigResponse {
     pub config: Config,
+}
+
+#[cw_serde]
+pub struct TotalPoolValueResponse {
+    pub total: Uint128,
 }

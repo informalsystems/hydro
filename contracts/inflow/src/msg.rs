@@ -39,6 +39,7 @@ pub struct DenomMetadata {
 #[cw_serde]
 pub enum ExecuteMsg {
     Deposit {},
+    SubmitDeployedAmount { amount: Uint128 },
     WithdrawForDeployment { amount: Uint128 },
     AddToWhitelist { address: String },
     RemoveFromWhitelist { address: String },
