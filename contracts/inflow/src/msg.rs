@@ -1,4 +1,5 @@
 use cosmwasm_schema::cw_serde;
+use cosmwasm_std::Uint128;
 use serde::{Deserialize, Serialize};
 
 // TODO: Fields description
@@ -31,6 +32,7 @@ pub struct DenomMetadata {
 #[cw_serde]
 pub enum ExecuteMsg {
     Deposit {},
+    SubmitDeployedAmount { amount: Uint128 },
 }
 
 #[derive(Serialize, Deserialize)]

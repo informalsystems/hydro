@@ -1,7 +1,7 @@
 use cosmos_sdk_proto::cosmos::bank::v1beta1::{DenomUnit, Metadata};
 use cosmwasm_std::{
-    entry_point, from_json, to_json_binary, to_json_vec, AnyMsg, Binary, CosmosMsg, Deps, DepsMut,
-    Env, MessageInfo, Reply, Response, StdError, StdResult, SubMsg, Uint128,
+    entry_point, from_json, to_json_binary, to_json_vec, AnyMsg, Binary, Coin, CosmosMsg, Deps,
+    DepsMut, Env, MessageInfo, Reply, Response, StdError, StdResult, SubMsg, Uint128,
 };
 use cw2::set_contract_version;
 use neutron_sdk::{
@@ -15,8 +15,11 @@ use prost::Message;
 use crate::{
     error::ContractError,
     msg::{DenomMetadata, ExecuteMsg, InstantiateMsg, ReplyPayload},
-    query::{ConfigResponse, QueryMsg},
-    state::{load_config, Config, CONFIG, TOKENS_DEPOSITED, VAULT_SHARES_DENOM, WHITELIST},
+    query::{ConfigResponse, QueryMsg, TotalPoolValueResponse},
+    state::{
+        load_config, Config, CONFIG, DEPLOYED_AMOUNT, TOKENS_DEPOSITED, VAULT_SHARES_DENOM,
+        WHITELIST,
+    },
 };
 
 /// Contract name that is used for migration.
@@ -80,13 +83,16 @@ pub fn instantiate(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut<NeutronQuery>,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     match msg {
         ExecuteMsg::Deposit {} => deposit(deps, info),
         // TODO: add/remove addresses from whitelist
+        ExecuteMsg::SubmitDeployedAmount { amount } => {
+            submit_deployed_amount(deps, env, info, amount)
+        }
     }
 }
 
@@ -115,10 +121,33 @@ fn deposit(
         .add_attribute("deposit_amount", deposit_amount))
 }
 
+fn submit_deployed_amount(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    amount: Uint128,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Check if the sender is in the whitelist
+    let is_whitelisted = WHITELIST.may_load(deps.storage, info.sender.clone())?;
+
+    if is_whitelisted.is_none() {
+        return Err(ContractError::Unauthorized);
+    }
+
+    // Save the deployed amount snapshot at current height
+    DEPLOYED_AMOUNT.save(deps.storage, &amount, env.block.height)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "submit_deployed_amount")
+        .add_attribute("sender", info.sender)
+        .add_attribute("amount", amount))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_json_binary(&query_config(deps)?),
+        QueryMsg::TotalPoolValue {} => to_json_binary(&query_total_pool_value(deps, env)?),
     }
 }
 
@@ -126,6 +155,24 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     Ok(ConfigResponse {
         config: CONFIG.load(deps.storage)?,
     })
+}
+
+fn query_total_pool_value(deps: Deps, env: Env) -> StdResult<TotalPoolValueResponse> {
+    let config = CONFIG.load(deps.storage)?;
+    let denom = config.deposit_denom;
+
+    // Get the current balance of this contract in the deposit denom
+    let balance: Coin = deps
+        .querier
+        .query_balance(env.contract.address, denom.clone())?;
+
+    // Get the total deployed amount (from snapshot storage)
+    let deployed_amount = DEPLOYED_AMOUNT.may_load(deps.storage)?;
+
+    let total = balance
+        .amount
+        .checked_add(deployed_amount.unwrap_or_default())?;
+    Ok(TotalPoolValueResponse { total })
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
