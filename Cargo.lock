@@ -2389,7 +2389,7 @@ dependencies = [
 
 [[package]]
 name = "inflow"
-version = "3.5.2"
+version = "3.5.3"
 dependencies = [
  "cosmos-sdk-proto 0.20.0",
  "cosmwasm-schema 2.2.1",
