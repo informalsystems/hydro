@@ -23,6 +23,3 @@ schemars = { workspace = true }
 prost = { workspace = true }
 neutron-sdk = { workspace = true }
 cosmos-sdk-proto = { workspace = true }
-
-[dev-dependencies]
-cw-multi-test = "0.16"
