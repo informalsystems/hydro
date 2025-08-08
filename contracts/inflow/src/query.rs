@@ -14,24 +14,20 @@ pub enum QueryMsg {
     #[returns(Uint128)]
     TotalSharesIssued {},
 
-    #[returns(TotalPoolValueResponse)]
+    #[returns(Uint128)]
     TotalPoolValue {},
 
-    #[returns(ShareEquivalentValueResponse)]
-    ShareEquivalentValue { address: String },
+    #[returns(Uint128)]
+    SharesEquivalentValue { shares: Uint128 },
+
+    #[returns(Uint128)]
+    UserSharesEquivalentValue { address: String },
+
+    #[returns(Uint128)]
+    DeployedAmount {},
 }
 
 #[cw_serde]
 pub struct ConfigResponse {
     pub config: Config,
-}
-
-#[cw_serde]
-pub struct TotalPoolValueResponse {
-    pub total: Uint128,
-}
-
-#[cw_serde]
-pub struct ShareEquivalentValueResponse {
-    pub value: Uint128,
 }
