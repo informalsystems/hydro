@@ -22,6 +22,10 @@ export interface DenomMetadata {
 export type ExecuteMsg = {
   deposit: {};
 } | {
+  submit_deployed_amount: {
+    amount: Uint128;
+  };
+} | {
   withdraw_for_deployment: {
     amount: Uint128;
   };
@@ -39,6 +43,18 @@ export type QueryMsg = {
   config: {};
 } | {
   total_shares_issued: {};
+} | {
+  total_pool_value: {};
+} | {
+  shares_equivalent_value: {
+    shares: Uint128;
+  };
+} | {
+  user_shares_equivalent_value: {
+    address: string;
+  };
+} | {
+  deployed_amount: {};
 };
 export interface ConfigResponse {
   config: Config;

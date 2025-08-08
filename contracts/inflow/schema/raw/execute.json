@@ -18,6 +18,27 @@
     {
       "type": "object",
       "required": [
+        "submit_deployed_amount"
+      ],
+      "properties": {
+        "submit_deployed_amount": {
+          "type": "object",
+          "required": [
+            "amount"
+          ],
+          "properties": {
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
         "withdraw_for_deployment"
       ],
       "properties": {

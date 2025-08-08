@@ -13,6 +13,18 @@ pub enum QueryMsg {
 
     #[returns(Uint128)]
     TotalSharesIssued {},
+
+    #[returns(Uint128)]
+    TotalPoolValue {},
+
+    #[returns(Uint128)]
+    SharesEquivalentValue { shares: Uint128 },
+
+    #[returns(Uint128)]
+    UserSharesEquivalentValue { address: String },
+
+    #[returns(Uint128)]
+    DeployedAmount {},
 }
 
 #[cw_serde]

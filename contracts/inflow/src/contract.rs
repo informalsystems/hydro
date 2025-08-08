@@ -1,3 +1,5 @@
+use std::env;
+
 use cosmos_sdk_proto::cosmos::bank::v1beta1::{DenomUnit, Metadata};
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, to_json_vec, Addr, AnyMsg, BankMsg, Binary, Coin,
@@ -104,6 +106,9 @@ pub fn execute(
         ExecuteMsg::AddToWhitelist { address } => add_to_whitelist(deps, env, info, address),
         ExecuteMsg::RemoveFromWhitelist { address } => {
             remove_from_whitelist(deps, env, info, address)
+        }
+        ExecuteMsg::SubmitDeployedAmount { amount } => {
+            submit_deployed_amount(deps, env, info, amount)
         }
     }
 }
@@ -289,11 +294,37 @@ pub fn calculate_number_of_shares_to_mint(
         .to_uint_floor())
 }
 
+fn submit_deployed_amount(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    amount: Uint128,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Check if the sender is in the whitelist
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    // Save the deployed amount snapshot at current height
+    DEPLOYED_AMOUNT.save(deps.storage, &amount, env.block.height)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "submit_deployed_amount")
+        .add_attribute("sender", info.sender)
+        .add_attribute("amount", amount))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps<NeutronQuery>, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_json_binary(&query_config(&deps)?),
         QueryMsg::TotalSharesIssued {} => to_json_binary(&query_total_shares_issued(&deps)?),
+        QueryMsg::TotalPoolValue {} => to_json_binary(&query_total_pool_value(&deps, env)?),
+        QueryMsg::SharesEquivalentValue { shares } => {
+            to_json_binary(&query_shares_equivalent_value(&deps, env, shares)?)
+        }
+        QueryMsg::UserSharesEquivalentValue { address } => {
+            to_json_binary(&query_user_shares_equivalent_value(&deps, env, address)?)
+        }
+        QueryMsg::DeployedAmount {} => to_json_binary(&query_deployed_amount(&deps)?),
     }
 }
 
@@ -308,6 +339,90 @@ fn query_total_shares_issued(deps: &Deps<NeutronQuery>) -> StdResult<Uint128> {
         .querier
         .query_supply(VAULT_SHARES_DENOM.load(deps.storage)?)?
         .amount)
+}
+
+fn query_total_pool_value(deps: &Deps<NeutronQuery>, env: Env) -> StdResult<Uint128> {
+    let config = load_config(deps.storage)?;
+    let denom = config.deposit_denom;
+
+    // Get the current balance of this contract in the deposit denom
+    let balance: Coin = deps
+        .querier
+        .query_balance(env.contract.address, denom.clone())?;
+
+    // Get the total deployed amount (from snapshot storage)
+    let deployed_amount = DEPLOYED_AMOUNT.may_load(deps.storage)?;
+
+    Ok(balance
+        .amount
+        .checked_add(deployed_amount.unwrap_or_default())?)
+}
+
+/// Returns the value equivalent of a given amount of shares based on the current total shares and pool value.
+fn query_shares_equivalent_value(
+    deps: &Deps<NeutronQuery>,
+    env: Env,
+    shares: Uint128,
+) -> StdResult<Uint128> {
+    let total_shares_supply = query_total_shares_issued(deps)?;
+
+    let total_pool_value = query_total_pool_value(deps, env)?;
+
+    calculate_shares_value(shares, total_shares_supply, total_pool_value)
+}
+
+/// Returns the value equivalent of a user's shares by querying their balance and calculating its worth based on total shares and pool value.
+fn query_user_shares_equivalent_value(
+    deps: &Deps<NeutronQuery>,
+    env: Env,
+    address: String,
+) -> StdResult<Uint128> {
+    let shares_denom = VAULT_SHARES_DENOM.load(deps.storage)?;
+
+    // Get the current balance of this address in the shares denom
+    let shares_balance: Uint128 = deps
+        .querier
+        .query_balance(address, shares_denom.clone())?
+        .amount;
+
+    let total_shares_supply = query_total_shares_issued(deps)?;
+
+    let total_pool_value = query_total_pool_value(deps, env)?;
+
+    calculate_shares_value(shares_balance, total_shares_supply, total_pool_value)
+}
+
+fn query_deployed_amount(deps: &Deps<NeutronQuery>) -> StdResult<Uint128> {
+    Ok(DEPLOYED_AMOUNT
+        .may_load(deps.storage)?
+        .unwrap_or_else(Uint128::zero))
+}
+
+/// Calculates the value of `shares` relative to the `total_pool_value` based on `total_shares_supply`.
+/// Caps value at `total_pool_value` if `shares` exceed supply. Returns zero if supply is zero.
+/// Formula: (user_shares * total_pool_value) / total_shares_supply
+fn calculate_shares_value(
+    shares: Uint128,
+    total_shares_supply: Uint128,
+    total_pool_value: Uint128,
+) -> StdResult<Uint128> {
+    if total_shares_supply.is_zero() {
+        return Ok(Uint128::zero());
+    }
+
+    if shares >= total_shares_supply {
+        return Ok(total_pool_value);
+    }
+
+    let share_ratio = Decimal::from_ratio(shares, Uint128::one());
+    let result = share_ratio
+        .checked_mul(Decimal::from_ratio(total_pool_value, Uint128::one()))
+        .map_err(|e| StdError::generic_err(format!("mul overflow: {e}")))?
+        .checked_div(Decimal::from_ratio(total_shares_supply, Uint128::one()))
+        .map_err(|e| StdError::generic_err(format!("div overflow: {e}")))?
+        .to_uint_floor();
+
+    Ok(result)
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
