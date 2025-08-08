@@ -1,8 +1,8 @@
 use cosmos_sdk_proto::cosmos::bank::v1beta1::{DenomUnit, Metadata};
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, to_json_vec, Addr, AnyMsg, BankMsg, Binary, Coin,
-    CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo, Reply, Response, StdError, StdResult,
-    SubMsg, Uint128,
+    CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo, Order, Reply, Response, StdError,
+    StdResult, SubMsg, Uint128,
 };
 use cw2::set_contract_version;
 use neutron_sdk::{
@@ -221,6 +221,16 @@ fn remove_from_whitelist(
     // Remove address from the whitelist
     WHITELIST.remove(deps.storage, whitelist_address.clone());
 
+    if WHITELIST
+        .keys(deps.storage, None, None, Order::Ascending)
+        .count()
+        == 0
+    {
+        return Err(ContractError::Std(StdError::generic_err(
+            "cannot remove last outstanding whitelisted address",
+        )));
+    }
+
     Ok(Response::new()
         .add_attribute("action", "remove_from_whitelist")
         .add_attribute("sender", info.sender)
@@ -239,7 +249,7 @@ fn validate_address_is_whitelisted(
     Ok(())
 }
 
-/// Given the `deposit amount`, this function will calculate how many vault shares tokens should be minted in return.
+/// Given the `deposit_amount`, this function will calculate how many vault shares tokens should be minted in return.
 pub fn calculate_number_of_shares_to_mint(
     deps: &Deps<NeutronQuery>,
     env: &Env,
