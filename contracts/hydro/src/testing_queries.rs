@@ -15,8 +15,9 @@ use crate::state::{
 };
 use crate::testing::{
     get_address_as_str, get_default_instantiate_msg, get_default_lsm_token_info_provider,
-    get_message_info, set_default_validator_for_rounds, IBC_DENOM_1, ONE_MONTH_IN_NANO_SECONDS,
-    VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_3,
+    get_message_info, set_default_validator_for_rounds, IBC_DENOM_1, IBC_DENOM_2,
+    ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
+    VALIDATOR_2_LST_DENOM_1, VALIDATOR_3,
 };
 use crate::testing_lsm_integration::set_validator_power_ratio;
 use crate::testing_mocks::{
@@ -1490,7 +1491,10 @@ fn query_lock_votes_history_test() {
 fn simulate_dtoken_amounts() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-1".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+        ]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let user_address = deps.api.addr_make("addr0000");
@@ -1526,7 +1530,7 @@ fn simulate_dtoken_amounts() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
-    let ids: Vec<u64> = vec![1, 2];
+    let ids: Vec<u64> = vec![1, 2, 3];
 
     USER_LOCKS
         .save(
@@ -1585,6 +1589,20 @@ fn simulate_dtoken_amounts() {
     );
     assert!(res_lock_2.is_ok(), "failed to save lock");
 
+    let res_lock_3 = LOCKS_MAP_V2.save(
+        &mut deps.storage,
+        3,
+        &LockEntryV2 {
+            lock_id: 3,
+            funds: Coin::new(Uint128::from(2000u128), IBC_DENOM_2.to_string()),
+            owner: user_address.clone(),
+            lock_start: Timestamp::from_seconds(10),
+            lock_end: Timestamp::from_seconds(100),
+        },
+        env.block.height,
+    );
+    assert!(res_lock_3.is_ok(), "failed to save lock");
+
     let drop_address = deps.api.addr_make("drop");
     let puppeteer_address = deps.api.addr_make("puppeteer");
     let d_token_denom =
@@ -1636,12 +1654,14 @@ fn simulate_dtoken_amounts() {
     deps.querier
         .update_wasm(drop_mock(current_ratio, mock_puppeteer_response));
 
-    let res = query_simulate_dtoken_amounts(&deps.as_ref(), vec![1, 2], user_address.to_string());
+    let res =
+        query_simulate_dtoken_amounts(&deps.as_ref(), vec![1, 2, 3], user_address.to_string());
     assert!(res.is_ok());
     let res = res.unwrap();
-    assert_eq!(res.dtokens_response.len(), 2);
-    assert!(res.dtokens_response[0].dtoken_amount == Uint128::from(869u128));
-    assert!(res.dtokens_response[1].dtoken_amount == Uint128::from(1739u128));
+    assert_eq!(res.dtokens_response.len(), 3);
+    assert_eq!(res.dtokens_response[0].dtoken_amount, "869".to_string());
+    assert_eq!(res.dtokens_response[1].dtoken_amount, "1739".to_string());
+    assert!(res.dtokens_response[2].dtoken_amount.contains("error"));
 }
 pub fn drop_mock(
     current_ratio: Decimal,
