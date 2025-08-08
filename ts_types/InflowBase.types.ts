@@ -46,7 +46,11 @@ export type QueryMsg = {
 } | {
   total_pool_value: {};
 } | {
-  share_equivalent_value: {
+  shares_equivalent_value: {
+    shares: Uint128;
+  };
+} | {
+  user_shares_equivalent_value: {
     address: string;
   };
 } | {

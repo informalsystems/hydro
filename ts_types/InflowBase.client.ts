@@ -12,7 +12,12 @@ export interface InflowBaseReadOnlyInterface {
   config: () => Promise<ConfigResponse>;
   totalSharesIssued: () => Promise<Uint128>;
   totalPoolValue: () => Promise<Uint128>;
-  shareEquivalentValue: ({
+  sharesEquivalentValue: ({
+    shares
+  }: {
+    shares: Uint128;
+  }) => Promise<Uint128>;
+  userSharesEquivalentValue: ({
     address
   }: {
     address: string;
@@ -28,7 +33,8 @@ export class InflowBaseQueryClient implements InflowBaseReadOnlyInterface {
     this.config = this.config.bind(this);
     this.totalSharesIssued = this.totalSharesIssued.bind(this);
     this.totalPoolValue = this.totalPoolValue.bind(this);
-    this.shareEquivalentValue = this.shareEquivalentValue.bind(this);
+    this.sharesEquivalentValue = this.sharesEquivalentValue.bind(this);
+    this.userSharesEquivalentValue = this.userSharesEquivalentValue.bind(this);
     this.deployedAmount = this.deployedAmount.bind(this);
   }
   config = async (): Promise<ConfigResponse> => {
@@ -46,13 +52,24 @@ export class InflowBaseQueryClient implements InflowBaseReadOnlyInterface {
       total_pool_value: {}
     });
   };
-  shareEquivalentValue = async ({
+  sharesEquivalentValue = async ({
+    shares
+  }: {
+    shares: Uint128;
+  }): Promise<Uint128> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      shares_equivalent_value: {
+        shares
+      }
+    });
+  };
+  userSharesEquivalentValue = async ({
     address
   }: {
     address: string;
   }): Promise<Uint128> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      share_equivalent_value: {
+      user_shares_equivalent_value: {
         address
       }
     });

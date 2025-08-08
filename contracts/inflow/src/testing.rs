@@ -7,7 +7,7 @@ use crate::{
     state::{DEPLOYED_AMOUNT, VAULT_SHARES_DENOM},
 };
 use cosmwasm_std::{
-    coin, from_json,
+    from_json,
     testing::{mock_env, MockApi, MockQuerier, MockStorage},
     Addr, BankMsg, Coin, CosmosMsg, Env, MemoryStorage, MessageInfo, OwnedDeps, Uint128,
 };
@@ -482,7 +482,7 @@ fn submit_deployed_amount_test() {
     };
     let info_user_1 = get_message_info(&deps.api, user1_address.as_ref(), &[]);
 
-    //try submitting deployed amount with a user that is not whitelisted
+    // Try submitting deployed amount with a user that is not whitelisted
     let res = execute(
         deps.as_mut(),
         env.clone(),
@@ -493,7 +493,7 @@ fn submit_deployed_amount_test() {
     assert!(res.err().unwrap().to_string().contains("Unauthorized"),);
 
     let query_msg = QueryMsg::DeployedAmount {};
-    //deployed amount should be zero before any submission
+    // Deployed amount should be zero before any submission
     let query_res = query(deps.as_ref(), env.clone(), query_msg.clone());
     assert!(query_res.is_ok());
     let value: Uint128 = from_json(query_res.unwrap()).unwrap();
@@ -509,14 +509,14 @@ fn submit_deployed_amount_test() {
     );
     assert!(res.is_ok());
 
-    // deployed amount should be updated after whitelisted user submits it
+    // Deployed amount should be updated after whitelisted user submits it
     let query_res = query(deps.as_ref(), env.clone(), query_msg);
     assert!(query_res.is_ok());
     let value: Uint128 = from_json(query_res.unwrap()).unwrap();
     assert_eq!(value, Uint128::from(100u128));
 }
 #[test]
-fn queries_test() {
+fn reporting_balance_queries_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 
     let inflow_contract_addr = deps.api.addr_make(INFLOW);
@@ -552,14 +552,6 @@ fn queries_test() {
 
     let deposit_amount = Uint128::from(500_000u128);
 
-    let info_user_funds = get_message_info(
-        &deps.api,
-        user1_address.as_str(),
-        &[coin(deposit_amount.into(), DEPOSIT_DENOM)], // 0.5
-    );
-
-    let exec_msg = ExecuteMsg::Deposit {};
-
     mock_address_balance(
         &mut deps,
         inflow_contract_addr.as_ref(),
@@ -567,11 +559,32 @@ fn queries_test() {
         deposit_amount,
     );
 
+    let user1_deposit1 = Uint128::new(500_000);
+    let user1_expected_shares1 = Uint128::new(500_000);
+
+    execute_deposit(
+        &mut deps,
+        &env,
+        USER1,
+        &user1_address,
+        &vault_shares_denom_str,
+        user1_deposit1,
+        user1_expected_shares1,
+        user1_expected_shares1,
+    );
+
+    let deployed_amount = Uint128::new(1000);
+
+    let exec_msg = ExecuteMsg::SubmitDeployedAmount {
+        amount: deployed_amount,
+    };
+    let whitelisted_info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+
     let res = execute(
         deps.as_mut(),
         env.clone(),
-        info_user_funds.clone(),
-        exec_msg,
+        whitelisted_info.clone(),
+        exec_msg.clone(),
     );
     assert!(res.is_ok());
 
@@ -580,7 +593,7 @@ fn queries_test() {
     assert!(query_res.is_ok());
 
     let total: Uint128 = from_json(query_res.unwrap()).unwrap();
-    assert_eq!(total, deposit_amount);
+    assert_eq!(total, deployed_amount + deposit_amount);
 
     mock_address_balance(
         &mut deps,
@@ -596,7 +609,7 @@ fn queries_test() {
     assert!(query_res.is_ok());
 
     let eq_value: Uint128 = from_json(query_res.unwrap()).unwrap();
-    assert_eq!(eq_value, deposit_amount);
+    assert_eq!(eq_value, deployed_amount + deposit_amount);
 
     let query_msg = QueryMsg::SharesEquivalentValue {
         shares: deposit_amount,
@@ -605,5 +618,5 @@ fn queries_test() {
     assert!(query_res.is_ok());
 
     let eq_value: Uint128 = from_json(query_res.unwrap()).unwrap();
-    assert_eq!(eq_value, deposit_amount);
+    assert_eq!(eq_value, deployed_amount + deposit_amount);
 }
