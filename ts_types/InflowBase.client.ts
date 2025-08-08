@@ -11,6 +11,13 @@ export interface InflowBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
   totalSharesIssued: () => Promise<Uint128>;
+  totalPoolValue: () => Promise<Uint128>;
+  shareEquivalentValue: ({
+    address
+  }: {
+    address: string;
+  }) => Promise<Uint128>;
+  deployedAmount: () => Promise<Uint128>;
 }
 export class InflowBaseQueryClient implements InflowBaseReadOnlyInterface {
   client: CosmWasmClient;
@@ -20,6 +27,9 @@ export class InflowBaseQueryClient implements InflowBaseReadOnlyInterface {
     this.contractAddress = contractAddress;
     this.config = this.config.bind(this);
     this.totalSharesIssued = this.totalSharesIssued.bind(this);
+    this.totalPoolValue = this.totalPoolValue.bind(this);
+    this.shareEquivalentValue = this.shareEquivalentValue.bind(this);
+    this.deployedAmount = this.deployedAmount.bind(this);
   }
   config = async (): Promise<ConfigResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -31,11 +41,37 @@ export class InflowBaseQueryClient implements InflowBaseReadOnlyInterface {
       total_shares_issued: {}
     });
   };
+  totalPoolValue = async (): Promise<Uint128> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      total_pool_value: {}
+    });
+  };
+  shareEquivalentValue = async ({
+    address
+  }: {
+    address: string;
+  }): Promise<Uint128> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      share_equivalent_value: {
+        address
+      }
+    });
+  };
+  deployedAmount = async (): Promise<Uint128> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      deployed_amount: {}
+    });
+  };
 }
 export interface InflowBaseInterface extends InflowBaseReadOnlyInterface {
   contractAddress: string;
   sender: string;
   deposit: (fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  submitDeployedAmount: ({
+    amount
+  }: {
+    amount: Uint128;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
   withdrawForDeployment: ({
     amount
   }: {
@@ -62,6 +98,7 @@ export class InflowBaseClient extends InflowBaseQueryClient implements InflowBas
     this.sender = sender;
     this.contractAddress = contractAddress;
     this.deposit = this.deposit.bind(this);
+    this.submitDeployedAmount = this.submitDeployedAmount.bind(this);
     this.withdrawForDeployment = this.withdrawForDeployment.bind(this);
     this.addToWhitelist = this.addToWhitelist.bind(this);
     this.removeFromWhitelist = this.removeFromWhitelist.bind(this);
@@ -69,6 +106,17 @@ export class InflowBaseClient extends InflowBaseQueryClient implements InflowBas
   deposit = async (fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       deposit: {}
+    }, fee_, memo_, funds_);
+  };
+  submitDeployedAmount = async ({
+    amount
+  }: {
+    amount: Uint128;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      submit_deployed_amount: {
+        amount
+      }
     }, fee_, memo_, funds_);
   };
   withdrawForDeployment = async ({

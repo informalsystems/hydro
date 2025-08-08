@@ -18,7 +18,7 @@ use prost::Message;
 use crate::{
     error::ContractError,
     msg::{DenomMetadata, ExecuteMsg, InstantiateMsg, ReplyPayload},
-    query::{ConfigResponse, QueryMsg, ShareEquivalentValueResponse, TotalPoolValueResponse},
+    query::{ConfigResponse, QueryMsg},
     state::{load_config, Config, CONFIG, DEPLOYED_AMOUNT, VAULT_SHARES_DENOM, WHITELIST},
 };
 
@@ -322,9 +322,13 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         QueryMsg::Config {} => to_json_binary(&query_config(&deps)?),
         QueryMsg::TotalSharesIssued {} => to_json_binary(&query_total_shares_issued(&deps)?),
         QueryMsg::TotalPoolValue {} => to_json_binary(&query_total_pool_value(&deps, env)?),
-        QueryMsg::ShareEquivalentValue { address } => {
-            to_json_binary(&query_share_equivalent_value(&deps, env, address)?)
+        QueryMsg::SharesEquivalentValue { shares } => {
+            to_json_binary(&query_shares_equivalent_value(&deps, env, shares)?)
         }
+        QueryMsg::UserSharesEquivalentValue { address } => {
+            to_json_binary(&query_user_shares_equivalent_value(&deps, env, address)?)
+        }
+        QueryMsg::DeployedAmount {} => to_json_binary(&query_deployed_amount(&deps)?),
     }
 }
 
@@ -341,10 +345,7 @@ fn query_total_shares_issued(deps: &Deps<NeutronQuery>) -> StdResult<Uint128> {
         .amount)
 }
 
-fn query_total_pool_value(
-    deps: &Deps<NeutronQuery>,
-    env: Env,
-) -> StdResult<TotalPoolValueResponse> {
+fn query_total_pool_value(deps: &Deps<NeutronQuery>, env: Env) -> StdResult<Uint128> {
     let config = CONFIG.load(deps.storage)?;
     let denom = config.deposit_denom;
 
@@ -356,17 +357,39 @@ fn query_total_pool_value(
     // Get the total deployed amount (from snapshot storage)
     let deployed_amount = DEPLOYED_AMOUNT.may_load(deps.storage)?;
 
-    let total = balance
+    Ok(balance
         .amount
-        .checked_add(deployed_amount.unwrap_or_default())?;
-    Ok(TotalPoolValueResponse { total })
+        .checked_add(deployed_amount.unwrap_or_default())?)
 }
 
-fn query_share_equivalent_value(
+fn query_shares_equivalent_value(
+    deps: &Deps<NeutronQuery>,
+    env: Env,
+    shares: Uint128,
+) -> StdResult<Uint128> {
+    let total_shares_supply = query_total_shares_issued(deps)?;
+
+    let total_pool_value = query_total_pool_value(deps, env)?;
+
+    // Avoid division by zero
+    let value = if total_shares_supply.is_zero() {
+        Uint128::zero()
+    } else {
+        // (shares * total_pool_value) / total_shares_supply
+        let share_ratio = Decimal::from_ratio(shares, total_shares_supply);
+        share_ratio
+            .checked_mul(Decimal::from_ratio(total_pool_value, Uint128::one()))?
+            .to_uint_floor()
+    };
+
+    Ok(value)
+}
+
+fn query_user_shares_equivalent_value(
     deps: &Deps<NeutronQuery>,
     env: Env,
     address: String,
-) -> StdResult<ShareEquivalentValueResponse> {
+) -> StdResult<Uint128> {
     let shares_denom = VAULT_SHARES_DENOM.load(deps.storage)?;
 
     // Get the current balance of this address in the shares denom
@@ -377,7 +400,7 @@ fn query_share_equivalent_value(
 
     let total_shares_supply = query_total_shares_issued(deps)?;
 
-    let total_pool_value = query_total_pool_value(deps, env)?.total;
+    let total_pool_value = query_total_pool_value(deps, env)?;
 
     // Avoid division by zero
     let value = if total_shares_supply.is_zero() {
@@ -390,7 +413,13 @@ fn query_share_equivalent_value(
             .to_uint_floor()
     };
 
-    Ok(ShareEquivalentValueResponse { value })
+    Ok(value)
+}
+
+fn query_deployed_amount(deps: &Deps<NeutronQuery>) -> StdResult<Uint128> {
+    Ok(DEPLOYED_AMOUNT
+        .may_load(deps.storage)?
+        .unwrap_or_else(Uint128::zero))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
