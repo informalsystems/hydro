@@ -1,6 +1,6 @@
 use crate::contract::{CONTRACT_NAME, CONTRACT_VERSION};
 use crate::error::{new_generic_error, ContractError};
-use crate::migration::v3_5_2::{
+use crate::migration::unreleased::{
     cleanup_migration_progress, is_token_ids_migration_done, migrate_populate_token_ids,
 };
 use crate::state::CONSTANTS;
@@ -27,26 +27,23 @@ pub const CONTRACT_VERSION_V3_4_2: &str = "3.4.2";
 pub const CONTRACT_VERSION_V3_5_0: &str = "3.5.0";
 pub const CONTRACT_VERSION_V3_5_1: &str = "3.5.1";
 pub const CONTRACT_VERSION_V3_5_2: &str = "3.5.2";
-pub const CONTRACT_VERSION_V3_5_3: &str = "3.5.3";
 
 #[cw_serde]
-pub enum MigrateMsgV3_5_3 {
-    PopulateTokenIds { limit: Option<u32> },
+pub enum MigrateMsg {
+    PopulateTokenIds { limit: u32 },
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(
     mut deps: DepsMut<NeutronQuery>,
     env: Env,
-    msg: MigrateMsgV3_5_3,
+    msg: MigrateMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     check_contract_version(deps.storage, CONTRACT_VERSION_V3_5_2)?;
     pause_contract_before_migration(&mut deps, &env)?;
 
     let response = match msg {
-        MigrateMsgV3_5_3::PopulateTokenIds { limit } => {
-            migrate_populate_token_ids(&mut deps, limit.unwrap_or(50))
-        }
+        MigrateMsg::PopulateTokenIds { limit } => migrate_populate_token_ids(&mut deps, limit),
     }?;
 
     let migration_done = is_token_ids_migration_done(deps.as_ref())?;

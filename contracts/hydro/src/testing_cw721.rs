@@ -1956,10 +1956,8 @@ fn test_query_all_tokens_filters_lsm() {
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
 
     let owner1 = "owner1";
-    let owner1_addr = deps.api.addr_make(owner1);
     let owner2 = "owner2";
-    let owner2_addr = deps.api.addr_make(owner2);
-    let info = get_message_info(&deps.api, owner1_addr.as_ref(), &[]);
+    let info = get_message_info(&deps.api, owner1, &[]);
 
     // Proper contract initialization
     let msg = get_default_instantiate_msg(&deps.api);
@@ -1980,7 +1978,7 @@ fn test_query_all_tokens_filters_lsm() {
     };
     let lock_info1 = get_message_info(
         &deps.api,
-        owner1_addr.as_ref(),
+        owner1,
         &[Coin::new(1000u64, ST_ATOM_ON_NEUTRON.to_string())],
     );
     let lock_res1 = execute(deps.as_mut(), env.clone(), lock_info1, lock_msg.clone());
@@ -1989,7 +1987,7 @@ fn test_query_all_tokens_filters_lsm() {
     // Create first LSM lock (owner1, IBC_DENOM_1) - should NOT appear in results
     let lock_info2 = get_message_info(
         &deps.api,
-        owner1_addr.as_ref(),
+        owner1,
         &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
     );
     let lock_res2 = execute(deps.as_mut(), env.clone(), lock_info2, lock_msg.clone());
@@ -1998,7 +1996,7 @@ fn test_query_all_tokens_filters_lsm() {
     // Create second non-LSM lock (owner2, ST_ATOM) - should appear in results
     let lock_info3 = get_message_info(
         &deps.api,
-        owner2_addr.as_ref(),
+        owner2,
         &[Coin::new(1000u64, ST_ATOM_ON_NEUTRON.to_string())],
     );
     let lock_res3 = execute(deps.as_mut(), env.clone(), lock_info3, lock_msg.clone());
@@ -2007,7 +2005,7 @@ fn test_query_all_tokens_filters_lsm() {
     // Create second LSM lock (owner2, IBC_DENOM_1) - should NOT appear in results
     let lock_info4 = get_message_info(
         &deps.api,
-        owner2_addr.as_ref(),
+        owner2,
         &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
     );
     let lock_res4 = execute(deps.as_mut(), env.clone(), lock_info4, lock_msg);

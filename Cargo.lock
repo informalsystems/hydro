@@ -1135,7 +1135,7 @@ dependencies = [
 
 [[package]]
 name = "cw-orch-interface"
-version = "3.5.3"
+version = "3.5.2"
 dependencies = [
  "cw-orch",
  "hydro",
@@ -1319,7 +1319,7 @@ dependencies = [
 
 [[package]]
 name = "d-token-info-provider"
-version = "3.5.3"
+version = "3.5.2"
 dependencies = [
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",
@@ -1360,7 +1360,7 @@ dependencies = [
 
 [[package]]
 name = "dao-voting-adapter"
-version = "3.5.3"
+version = "3.5.2"
 dependencies = [
  "cosmwasm-schema 1.5.10",
  "cosmwasm-std 1.5.10",
@@ -1769,7 +1769,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeeper"
-version = "3.5.3"
+version = "3.5.2"
 dependencies = [
  "bech32 0.11.0",
  "cosmwasm-schema 2.2.1",
@@ -2053,7 +2053,7 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hydro"
-version = "3.5.3"
+version = "3.5.2"
 dependencies = [
  "bech32 0.11.0",
  "cosmos-sdk-proto 0.20.0",
@@ -2389,7 +2389,7 @@ dependencies = [
 
 [[package]]
 name = "interface"
-version = "3.5.3"
+version = "3.5.2"
 dependencies = [
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",
@@ -2495,7 +2495,7 @@ checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
 
 [[package]]
 name = "liquid-collateral"
-version = "3.5.3"
+version = "3.5.2"
 dependencies = [
  "anyhow",
  "bigdecimal",
@@ -2540,7 +2540,7 @@ checksum = "04cbf5b083de1c7e0222a7a51dbfdba1cbe1c6ab0b15e29fff3f6c077fd9cd9f"
 
 [[package]]
 name = "marketplace"
-version = "3.5.3"
+version = "3.5.2"
 dependencies = [
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",
@@ -3978,7 +3978,7 @@ dependencies = [
 
 [[package]]
 name = "st-token-info-provider"
-version = "3.5.3"
+version = "3.5.2"
 dependencies = [
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",
@@ -4343,7 +4343,7 @@ dependencies = [
 
 [[package]]
 name = "test-e2e"
-version = "3.5.3"
+version = "3.5.2"
 dependencies = [
  "cosmwasm-std 2.2.1",
  "cw-orch",
@@ -4653,7 +4653,7 @@ dependencies = [
 
 [[package]]
 name = "tribute"
-version = "3.5.3"
+version = "3.5.2"
 dependencies = [
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",

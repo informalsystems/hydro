@@ -7,8 +7,8 @@ mod tests {
     use crate::{
         contract::{CONTRACT_NAME, CONTRACT_VERSION},
         migration::{
-            migrate::{migrate, MigrateMsgV3_5_3, CONTRACT_VERSION_V3_5_2},
-            v3_5_2::TOKEN_IDS_MIGRATION_PROGRESS,
+            migrate::{migrate, MigrateMsg, CONTRACT_VERSION_V3_5_2},
+            unreleased::TOKEN_IDS_MIGRATION_PROGRESS,
         },
         state::{LockEntryV2, CONSTANTS, LOCKS_MAP_V2, TOKEN_IDS, TOKEN_INFO_PROVIDERS},
         testing::{get_default_lsm_token_info_provider, IBC_DENOM_1, VALIDATOR_1_LST_DENOM_1},
@@ -103,7 +103,7 @@ mod tests {
             .is_none());
 
         // First migration call with limit=1 (should process only the first lockup)
-        let msg = MigrateMsgV3_5_3::PopulateTokenIds { limit: Some(1) };
+        let msg = MigrateMsg::PopulateTokenIds { limit: 1 };
         let result = migrate(deps.as_mut(), env.clone(), msg).unwrap();
 
         // Check that migration is incomplete (contract should still be paused)
@@ -147,7 +147,7 @@ mod tests {
         assert!(constants_after_first.paused);
 
         // Second migration call with limit=1 (should process the second lockup)
-        let msg = MigrateMsgV3_5_3::PopulateTokenIds { limit: Some(1) };
+        let msg = MigrateMsg::PopulateTokenIds { limit: 1 };
         let result = migrate(deps.as_mut(), env.clone(), msg).unwrap();
 
         // Check that migration is now complete (contract should be unpaused)

@@ -698,7 +698,7 @@ pub fn maybe_add_token_id(
 }
 
 /// Remove a lock ID from TOKEN_IDS
-pub fn remove_token_id(storage: &mut dyn Storage, lock_id: u64) {
+pub fn maybe_remove_token_id(storage: &mut dyn Storage, lock_id: u64) {
     TOKEN_IDS.remove(storage, lock_id);
 }
 

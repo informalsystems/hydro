@@ -40,7 +40,7 @@ pub fn migrate_populate_token_ids(
 
     for (lock_id, lock_entry) in lockups {
         // Check if this lockup should be a NFT (non-LSM lockup)
-        if !cw721::is_denom_lsm(&deps.as_ref(), lock_entry.funds.denom.clone())? {
+        if !cw721::is_denom_lsm(&deps.as_ref(), lock_entry.funds.denom)? {
             // Add to TOKEN_IDS if not already present
             if !TOKEN_IDS.has(deps.storage, lock_id) {
                 TOKEN_IDS.save(deps.storage, lock_id, &())?;

@@ -1,6 +1,6 @@
 use cw_orch::interface;
 
-use hydro::migration::migrate::MigrateMsgV3_5_3 as MigrateMsg;
+use hydro::migration::migrate::MigrateMsg;
 pub use hydro::msg::{ExecuteMsg, InstantiateMsg};
 pub use hydro::query::QueryMsg;
 
