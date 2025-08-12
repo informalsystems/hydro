@@ -850,7 +850,13 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                ST_ATOM_ON_NEUTRON.to_string(),
+                ST_ATOM_ON_STRIDE.to_string(),
+            ),
+        ]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let mut msg = get_default_instantiate_msg(&deps.api);

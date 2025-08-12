@@ -1,15 +1,16 @@
-use crate::contract::{execute, instantiate, query_user_voted_locks};
+use crate::contract::{execute, instantiate, query, query_user_voted_locks};
 use crate::msg::{ExecuteMsg, ProposalToLockups};
+use crate::query::{QueryMsg, TokensResponse};
 use crate::state::{PROPOSAL_MAP, VOTE_MAP_V2, VOTING_ALLOWED_ROUND};
 use crate::testing::{
     get_address_as_str, get_default_instantiate_msg, get_message_info,
-    set_default_validator_for_rounds, IBC_DENOM_1, IBC_DENOM_2, ONE_DAY_IN_NANO_SECONDS,
-    ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
-    VALIDATOR_2_LST_DENOM_1,
+    set_default_validator_for_rounds, setup_st_atom_token_info_provider_mock, IBC_DENOM_1,
+    IBC_DENOM_2, ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON,
+    ST_ATOM_ON_STRIDE, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
 };
 use crate::testing_lsm_integration::set_validator_infos_for_round;
 use crate::testing_mocks::denom_trace_grpc_query_mock;
-use cosmwasm_std::{testing::mock_env, Coin, Decimal, Uint128};
+use cosmwasm_std::{from_json, testing::mock_env, Coin, Decimal, Uint128};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::vec;
@@ -807,4 +808,187 @@ fn verify_new_lock_expected_round_votes(
         assert_eq!(vote.prop_id, *expected_prop_id);
         assert_eq!(vote.time_weighted_shares.1, Decimal::zero());
     }
+}
+
+#[test]
+fn test_split_merge_locks_query_all_tokens_behavior() {
+    let user_address = "addr0000";
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                ST_ATOM_ON_NEUTRON.to_string(),
+                ST_ATOM_ON_STRIDE.to_string(),
+            ),
+        ]),
+    );
+    let (mut deps, env) = (
+        crate::testing_mocks::mock_dependencies(grpc_query),
+        mock_env(),
+    );
+    let info = get_message_info(&deps.api, user_address, &[]);
+    let mut instantiate_msg = get_default_instantiate_msg(&deps.api);
+    instantiate_msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
+    instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address)];
+    instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
+
+    // Setup ST_ATOM token info provider (non-LSM)
+    let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
+    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+
+    set_default_validator_for_rounds(deps.as_mut(), 0, 3);
+
+    // Create a non-LSM lockup (using ST_ATOM_ON_NEUTRON which is not LSM)
+    let non_lsm_lock_info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(50000u64, ST_ATOM_ON_NEUTRON.to_string())],
+    );
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let lock_res = execute(
+        deps.as_mut(),
+        env.clone(),
+        non_lsm_lock_info,
+        lock_msg.clone(),
+    );
+    assert!(lock_res.is_ok(), "Failed to create non-LSM lock");
+
+    // Create an LSM lockup (using IBC_DENOM_1 which maps to LSM)
+    let lsm_lock_info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(60000u64, IBC_DENOM_1.to_string())],
+    );
+    let lock_res = execute(deps.as_mut(), env.clone(), lsm_lock_info, lock_msg);
+    assert!(lock_res.is_ok(), "Failed to create LSM lock");
+
+    // Query all tokens before split - should only show the non-LSM lockup (ID 0)
+    let query_msg = QueryMsg::AllTokens {
+        start_after: None,
+        limit: None,
+    };
+    let query_res = query(deps.as_ref(), env.clone(), query_msg.clone());
+    assert!(query_res.is_ok(), "Failed to query all tokens before split");
+    let tokens_before: TokensResponse = from_json(query_res.unwrap()).unwrap();
+    assert_eq!(
+        tokens_before.tokens.len(),
+        1,
+        "Expected 1 token before split (non-LSM only)"
+    );
+    assert_eq!(
+        tokens_before.tokens,
+        vec!["0".to_string()],
+        "Expected token 0 before split"
+    );
+
+    // Split the non-LSM lockup (ID 0) into two parts
+    let split_amount = Uint128::from(20000u128); // Results in 20000 and 30000
+    let split_msg = ExecuteMsg::SplitLock {
+        lock_id: 0,
+        amount: split_amount,
+    };
+    let split_res = execute(deps.as_mut(), env.clone(), info.clone(), split_msg);
+    assert!(split_res.is_ok(), "Failed to split non-LSM lock");
+
+    // Query all tokens after splitting non-LSM lock - should show both parts (IDs 2 and 3)
+    let query_res = query(deps.as_ref(), env.clone(), query_msg.clone());
+    assert!(
+        query_res.is_ok(),
+        "Failed to query all tokens after non-LSM split"
+    );
+    let tokens_after_non_lsm_split: TokensResponse = from_json(query_res.unwrap()).unwrap();
+    assert_eq!(
+        tokens_after_non_lsm_split.tokens.len(),
+        2,
+        "Expected 2 tokens after non-LSM split"
+    );
+    assert_eq!(
+        tokens_after_non_lsm_split.tokens,
+        vec!["2".to_string(), "3".to_string()],
+        "Expected tokens 2 and 3 after non-LSM split"
+    );
+
+    // Split the LSM lockup (ID 1) into two parts
+    let lsm_split_amount = Uint128::from(25000u128); // Results in 25000 and 35000
+    let split_msg = ExecuteMsg::SplitLock {
+        lock_id: 1,
+        amount: lsm_split_amount,
+    };
+    let split_res = execute(deps.as_mut(), env.clone(), info, split_msg);
+    assert!(split_res.is_ok(), "Failed to split LSM lock");
+
+    // Query all tokens after splitting LSM lock - should still only show the non-LSM tokens (IDs 2 and 3)
+    // The split LSM parts (IDs 4 and 5) should NOT appear since they're still LSM
+    let query_res = query(deps.as_ref(), env.clone(), query_msg.clone());
+    assert!(
+        query_res.is_ok(),
+        "Failed to query all tokens after LSM split"
+    );
+    let tokens_after_splits: TokensResponse = from_json(query_res.unwrap()).unwrap();
+    assert_eq!(
+        tokens_after_splits.tokens.len(),
+        2,
+        "Expected 2 tokens after LSM split (LSM splits should not appear)"
+    );
+    assert_eq!(
+        tokens_after_splits.tokens,
+        vec!["2".to_string(), "3".to_string()],
+        "Expected only non-LSM tokens 2 and 3 after LSM split"
+    );
+
+    // Now test merging: merge the two non-LSM split parts (IDs 2 and 3) back together
+    let info = get_message_info(&deps.api, user_address, &[]);
+    let merge_msg = ExecuteMsg::MergeLocks {
+        lock_ids: vec![2, 3],
+    };
+    let merge_res = execute(deps.as_mut(), env.clone(), info.clone(), merge_msg);
+    assert!(merge_res.is_ok(), "Failed to merge non-LSM locks");
+
+    // Query all tokens after merging non-LSM locks - should show single merged lock (ID 6)
+    let query_res = query(deps.as_ref(), env.clone(), query_msg.clone());
+    assert!(
+        query_res.is_ok(),
+        "Failed to query all tokens after non-LSM merge"
+    );
+    let tokens_after_non_lsm_merge: TokensResponse = from_json(query_res.unwrap()).unwrap();
+    assert_eq!(
+        tokens_after_non_lsm_merge.tokens.len(),
+        1,
+        "Expected 1 token after non-LSM merge"
+    );
+    assert_eq!(
+        tokens_after_non_lsm_merge.tokens,
+        vec!["6".to_string()],
+        "Expected merged token 6 after non-LSM merge"
+    );
+
+    // Merge the two LSM split parts (IDs 4 and 5) back together
+    let merge_msg = ExecuteMsg::MergeLocks {
+        lock_ids: vec![4, 5],
+    };
+    let merge_res = execute(deps.as_mut(), env.clone(), info, merge_msg);
+    assert!(merge_res.is_ok(), "Failed to merge LSM locks");
+
+    // Query all tokens after merging LSM locks - should still only show the non-LSM merged lock (ID 6)
+    // The merged LSM lock (ID 7) should NOT appear since it's still LSM
+    let query_res = query(deps.as_ref(), env, query_msg);
+    assert!(
+        query_res.is_ok(),
+        "Failed to query all tokens after LSM merge"
+    );
+    let tokens_final: TokensResponse = from_json(query_res.unwrap()).unwrap();
+    assert_eq!(
+        tokens_final.tokens.len(),
+        1,
+        "Expected 1 token after LSM merge (LSM merge should not appear)"
+    );
+    assert_eq!(
+        tokens_final.tokens,
+        vec!["6".to_string()],
+        "Expected only non-LSM merged token 6 after LSM merge"
+    );
 }

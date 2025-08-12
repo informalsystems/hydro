@@ -137,6 +137,11 @@ pub const LOCKS_MAP_V2: SnapshotMap<u64, LockEntryV2> = SnapshotMap::new(
     Strategy::EveryBlock,
 );
 
+// TOKEN_IDS: Stores lock IDs that are considered NFT "tokens" (i.e. non-LSM lockups)
+// This enables efficient pagination in query_all_tokens without iterating through all lockups
+// TOKEN_IDS: key(lock_id) -> ()
+pub const TOKEN_IDS: Map<u64, ()> = Map::new("token_ids");
+
 #[cw_serde]
 pub struct LockEntryV1 {
     pub lock_id: u64,

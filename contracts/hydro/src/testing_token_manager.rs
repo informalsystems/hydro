@@ -21,8 +21,8 @@ use crate::{
         get_default_cw721_collection_info, get_default_instantiate_msg,
         get_default_lsm_token_info_provider_init_msg, get_default_power_schedule, get_message_info,
         setup_st_atom_token_info_provider_mock, IBC_DENOM_1, IBC_DENOM_2,
-        ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, ST_ATOM_TOKEN_GROUP, VALIDATOR_1,
-        VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
+        ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, ST_ATOM_ON_STRIDE, ST_ATOM_TOKEN_GROUP,
+        VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
     },
     testing_lsm_integration::set_validator_infos_for_round,
     testing_mocks::{
@@ -477,6 +477,10 @@ fn token_info_provider_lifecycle_test() {
         HashMap::from([
             (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
             (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+            (
+                ST_ATOM_ON_NEUTRON.to_string(),
+                ST_ATOM_ON_STRIDE.to_string(),
+            ),
         ]),
     );
 

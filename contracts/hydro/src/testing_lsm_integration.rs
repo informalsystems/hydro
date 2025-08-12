@@ -34,7 +34,7 @@ use crate::{
     token_manager::{TokenManager, LSM_TOKEN_INFO_PROVIDER_ID},
 };
 
-fn get_default_constants() -> crate::state::Constants {
+pub fn get_default_constants() -> crate::state::Constants {
     crate::state::Constants {
         round_length: ONE_DAY_IN_NANO_SECONDS,
         lock_epoch_length: 1,
