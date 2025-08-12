@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "type": "object",
+  "required": [
+    "deposit_denom",
+    "subdenom",
+    "token_metadata",
+    "whitelist"
+  ],
+  "properties": {
+    "deposit_denom": {
+      "description": "The denom of the token that can be deposited into the vault.",
+      "type": "string"
+    },
+    "subdenom": {
+      "description": "Inflow vault shares token subdenom. Used to derive the full token denom. E.g. if the subdenom is \"hydro_inflow_uatom\" then the full denom will be \"factory/{inflow_contract_address}/hydro_inflow_uatom\"",
+      "type": "string"
+    },
+    "token_metadata": {
+      "description": "Additional metadata to be set for the newly created vault shares token.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/DenomMetadata"
+        }
+      ]
+    },
+    "whitelist": {
+      "description": "List of addresses allowed to execute permissioned actions.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "DenomMetadata": {
+      "type": "object",
+      "required": [
+        "description",
+        "display",
+        "exponent",
+        "name",
+        "symbol"
+      ],
+      "properties": {
+        "description": {
+          "description": "Even longer description, example: \"The native staking token of the Cosmos Hub\"",
+          "type": "string"
+        },
+        "display": {
+          "description": "Lowercase moniker to be displayed in clients, example: \"atom\" Also used as a denom for the non-base denom unit.",
+          "type": "string"
+        },
+        "exponent": {
+          "description": "Number of decimals used for denom unit other than the base one. E.g. \"uatom\" as a base denom unit has 0 decimals, and \"atom\" would have 6.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "name": {
+          "description": "Descriptive token name, example: \"Cosmos Hub Atom\"",
+          "type": "string"
+        },
+        "symbol": {
+          "description": "Symbol is the token symbol usually shown on exchanges (eg: ATOM). This can be the same as the display.",
+          "type": "string"
+        },
+        "uri": {
+          "description": "URI to a document (on or off-chain) that contains additional information.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "uri_hash": {
+          "description": "URIHash is a sha256 hash of a document pointed by URI. It's used to verify that the document didn't change.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

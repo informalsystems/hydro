@@ -8,6 +8,7 @@ members = [
     "contracts/token-info-providers/d-token-info-provider",
     "contracts/marketplace",
     "contracts/gatekeeper",
+    "contracts/inflow",
     "packages/cw-orch-interface",
     "packages/interface",
     "test/e2e",
