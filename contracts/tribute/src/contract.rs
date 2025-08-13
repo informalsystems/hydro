@@ -285,11 +285,15 @@ pub fn calculate_voter_claim_amount(
     user_voting_power: Decimal,
     total_proposal_power: Uint128,
 ) -> Result<Coin, ContractError> {
-    let amount = Decimal::from_ratio(tribute_funds.amount, Uint128::one())
-        .checked_mul(user_voting_power)
-        .map_err(|_| StdError::generic_err("Failed to compute numerator for tribute calculation"))?
+    // First calculate the user's percentage of the total power
+    let user_share = user_voting_power
         .checked_div(Decimal::from_ratio(total_proposal_power, Uint128::one()))
-        .map_err(|_| StdError::generic_err("Failed to compute users tribute share"))?
+        .map_err(|_| StdError::generic_err("Failed to compute user's share of total power"))?;
+
+    // Then multiply the tribute amount by their share
+    let amount = Decimal::from_ratio(tribute_funds.amount, Uint128::one())
+        .checked_mul(user_share)
+        .map_err(|_| StdError::generic_err("Failed to compute user's tribute amount"))?
         .to_uint_floor();
 
     Ok(Coin {
