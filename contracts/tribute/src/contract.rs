@@ -285,21 +285,19 @@ pub fn calculate_voter_claim_amount(
     user_voting_power: Decimal,
     total_proposal_power: Uint128,
 ) -> Result<Coin, ContractError> {
-    // Convert the tribute amount to decimal first
-    let tribute_decimal = Decimal::from_ratio(tribute_funds.amount, Uint128::one());
+    // Scale up total_proposal_power to match Decimal precision
+    let total_power_scaled = total_proposal_power
+        .checked_mul(Uint128::new(1_000_000_000_000_000_000u128))
+        .map_err(|_| StdError::generic_err("Failed to scale total power"))?;
 
-    // Multiply tribute by voting power first (as in original code)
-    let numerator = tribute_decimal
-        .checked_mul(user_voting_power)
-        .map_err(|_| {
-            StdError::generic_err("Failed to compute numerator for tribute calculation")
-        })?;
+    // Get user's voting power in atomic units
+    let user_power_atomics = user_voting_power.atomics();
 
-    // Then divide by total power (as in original code)
-    let amount = numerator
-        .checked_div(Decimal::from_ratio(total_proposal_power, Uint128::one()))
-        .map_err(|_| StdError::generic_err("Failed to compute users tribute share"))?
-        .to_uint_floor();
+    // Calculate amount using integer arithmetic with properly scaled values
+    let amount = tribute_funds
+        .amount
+        .checked_multiply_ratio(user_power_atomics, total_power_scaled)
+        .map_err(|_| StdError::generic_err("Failed to compute tribute amount"))?;
 
     Ok(Coin {
         denom: tribute_funds.denom,

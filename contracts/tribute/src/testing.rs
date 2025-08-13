@@ -1968,12 +1968,12 @@ fn test_calculate_voter_claim_amount_edge_cases() {
 
     // Test case 2: Max practical voting power ratio
     let result = calculate_voter_claim_amount(
-        coin(1_000_000, "uatom"),
-        Decimal::one(), // 100% of voting power
-        Uint128::new(1),
+        coin(13850000000000000000000, "uatom"),
+        Decimal::from_ratio(Uint128::new(10000000), Uint128::new(1)), // 100% of voting power
+        Uint128::new(10000000),
     )
     .unwrap();
-    assert_eq!(result.amount, Uint128::new(1_000_000));
+    assert_eq!(result.amount, Uint128::new(13850000000000000000000));
 
     // Test case 3: Large numbers within decimal precision
     let result = calculate_voter_claim_amount(
@@ -1986,7 +1986,7 @@ fn test_calculate_voter_claim_amount_edge_cases() {
 }
 
 #[test]
-#[should_panic(expected = "Failed to compute users tribute share")]
+#[should_panic(expected = "Failed to compute tribute amount")]
 fn test_calculate_voter_claim_amount_zero_total_power() {
     calculate_voter_claim_amount(
         coin(1000, "uatom"),
