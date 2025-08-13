@@ -1986,7 +1986,7 @@ fn test_calculate_voter_claim_amount_edge_cases() {
 }
 
 #[test]
-#[should_panic(expected = "Failed to compute user's share of total power")]
+#[should_panic(expected = "Failed to compute users tribute share")]
 fn test_calculate_voter_claim_amount_zero_total_power() {
     calculate_voter_claim_amount(
         coin(1000, "uatom"),
