@@ -22,6 +22,7 @@ pub const CONTRACT_VERSION_V3_4_2: &str = "3.4.2";
 pub const CONTRACT_VERSION_V3_5_0: &str = "3.5.0";
 pub const CONTRACT_VERSION_V3_5_1: &str = "3.5.1";
 pub const CONTRACT_VERSION_V3_5_2: &str = "3.5.2";
+pub const CONTRACT_VERSION_V3_5_3: &str = "3.5.3";
 
 #[cw_serde]
 pub struct MigrateMsg {}
@@ -34,7 +35,7 @@ pub fn migrate(
 ) -> Result<Response<NeutronMsg>, ContractError> {
     check_contract_version(deps.storage)?;
 
-    // No migration needed for v3.5.1 -> v3.5.2
+    // No migration needed for v3.5.2 -> v3.5.3
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
