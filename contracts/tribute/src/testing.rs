@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     contract::{
-        execute, instantiate, query_historical_tribute_claims,
+        calculate_voter_claim_amount, execute, instantiate, query_historical_tribute_claims,
         query_outstanding_lockup_claimable_coins, query_outstanding_tribute_claims,
         query_proposal_tributes, query_round_tributes,
     },
@@ -14,7 +14,7 @@ use crate::{
     },
 };
 use cosmwasm_std::{
-    coins, from_json,
+    coin, coins, from_json,
     testing::{mock_dependencies, mock_env, MockApi},
     to_json_binary, Addr, Binary, ContractResult, Decimal, MessageInfo, QuerierResult, Response,
     StdError, StdResult, SystemError, SystemResult, Timestamp, Uint128, WasmQuery,
@@ -1907,4 +1907,112 @@ fn claim_tribute_after_lock_split_or_merge_test() {
         .unwrap_err()
         .to_string()
         .contains("Nothing to claim - all locks have already claimed this tribute"));
+}
+
+#[test]
+fn test_calculate_voter_claim_amount() {
+    // Test case 1: Simple case with exact division
+    let result = calculate_voter_claim_amount(
+        coin(1000, "uatom"),
+        Decimal::from_ratio(Uint128::new(50), Uint128::new(1)), // 50 voting power
+        Uint128::new(100),                                      // Total power
+    )
+    .unwrap();
+    assert_eq!(result.amount, Uint128::new(500));
+    assert_eq!(result.denom, "uatom");
+
+    // Test case 2: Real world scenario with larger numbers
+    let result = calculate_voter_claim_amount(
+        coin(1_000_000_000, "uatom"), // 1000 ATOM
+        Decimal::from_ratio(Uint128::new(1_000_000), Uint128::new(1)), // 1_000_000 voting power
+        Uint128::new(10_000_000),
+    )
+    .unwrap();
+    assert_eq!(result.amount, Uint128::new(100_000_000)); // Should get 100 ATOM
+
+    // Test case 3: Very small fraction of vote
+    let result = calculate_voter_claim_amount(
+        coin(1000, "uatom"),
+        Decimal::from_ratio(Uint128::new(1), Uint128::new(1)), // 1 voting power
+        Uint128::new(1000),
+    )
+    .unwrap();
+    assert_eq!(result.amount, Uint128::new(1)); // Should get 1 unit (rounded down)
+
+    // Test case 4: Zero voting power
+    let result =
+        calculate_voter_claim_amount(coin(1000, "uatom"), Decimal::zero(), Uint128::new(100))
+            .unwrap();
+    assert_eq!(result.amount, Uint128::zero());
+
+    // Test case 5: Large but reasonable numbers
+    let result = calculate_voter_claim_amount(
+        coin(1_000_000_000_000, "uatom"),                      // 1M ATOM
+        Decimal::from_ratio(Uint128::new(25), Uint128::one()), // 25% of voting power
+        Uint128::new(100),                                     // Total power
+    )
+    .unwrap();
+    assert_eq!(result.amount, Uint128::new(250_000_000_000)); // 250k ATOM
+}
+
+#[test]
+fn test_calculate_voter_claim_amount_edge_cases() {
+    // Test case 1: Large tribute with small share
+    let result = calculate_voter_claim_amount(
+        coin(1_000_000_000_000, "uatom"),                      // 1M ATOM
+        Decimal::from_ratio(Uint128::new(1), Uint128::new(1)), // 0.0001% power
+        Uint128::new(1_000_000),
+    )
+    .unwrap();
+    assert_eq!(result.amount, Uint128::new(1_000_000)); // 1 ATOM
+
+    // Test case 2: Max practical voting power ratio
+    let result = calculate_voter_claim_amount(
+        coin(13850000000000000000000, "uatom"),
+        Decimal::from_ratio(Uint128::new(10000000), Uint128::new(1)), // 100% of voting power
+        Uint128::new(10000000),
+    )
+    .unwrap();
+    assert_eq!(result.amount, Uint128::new(13850000000000000000000));
+
+    // Test case 3: Large numbers within decimal precision
+    let result = calculate_voter_claim_amount(
+        coin(1_000_000_000_000, "uatom"), // 1M ATOM
+        Decimal::from_ratio(Uint128::new(1_000_000), Uint128::new(1)), // 100% power
+        Uint128::new(1_000_000),
+    )
+    .unwrap();
+    assert_eq!(result.amount, Uint128::new(1_000_000_000_000)); // Should get full amount
+}
+
+#[test]
+#[should_panic(expected = "Failed to compute tribute amount")]
+fn test_calculate_voter_claim_amount_zero_total_power() {
+    calculate_voter_claim_amount(
+        coin(1000, "uatom"),
+        Decimal::percent(50),
+        Uint128::zero(), // This should cause a division by zero error
+    )
+    .unwrap();
+}
+
+#[test]
+fn test_calculate_voter_claim_amount_precision() {
+    // Test rounding behavior with small amounts
+    let result = calculate_voter_claim_amount(
+        coin(10, "uatom"),
+        Decimal::from_ratio(Uint128::new(10), Uint128::new(3)), // 1/3 of voting power
+        Uint128::new(10),
+    )
+    .unwrap();
+    assert_eq!(result.amount, Uint128::new(3)); // Should round down to 3
+
+    // Test precision with typical staking amounts
+    let result = calculate_voter_claim_amount(
+        coin(1_000_000, "uatom"),                               // 1 ATOM
+        Decimal::from_ratio(Uint128::new(10), Uint128::new(3)), // 1/3 of voting power
+        Uint128::new(10),
+    )
+    .unwrap();
+    assert_eq!(result.amount, Uint128::new(333_333)); // Should get roughly 1/3
 }

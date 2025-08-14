@@ -3829,45 +3829,55 @@ pub fn query_simulate_dtoken_amounts(
     let mut result: Vec<DtokenAmountResponse> = Vec::new();
 
     for lockup in lockups {
-        let denom_trace = query_ibc_denom_trace(deps, lockup.funds.denom)?;
-        let path_parts: Vec<&str> = denom_trace.path.split("/").collect();
-        if path_parts.len() != 2 || path_parts[0] != TRANSFER_PORT || path_parts[1] != "channel-1" {
-            return Err(StdError::generic_err("Invalid IBC denom path".to_string()));
-        }
-        let base_denom_parts: Vec<&str> = denom_trace.base_denom.split("/").collect();
-        let validator = base_denom_parts[0].to_string();
+        let resp = (|| -> Result<String, StdError> {
+            let denom_trace = query_ibc_denom_trace(deps, lockup.funds.denom)?;
+            let path_parts: Vec<&str> = denom_trace.path.split("/").collect();
+            if path_parts.len() != 2
+                || path_parts[0] != TRANSFER_PORT
+                || path_parts[1] != "channel-1"
+            {
+                return Err(StdError::generic_err("Invalid IBC denom path".to_string()));
+            }
+            let base_denom_parts: Vec<&str> = denom_trace.base_denom.split("/").collect();
+            let validator = base_denom_parts[0].to_string();
 
-        let validator_info = delegations_response
-            .delegations
-            .delegations
-            .iter()
-            .find(|one| one.validator == validator)
-            .ok_or_else(|| {
-                StdError::generic_err(format!("validator info not found: {validator}"))
-            })?;
+            let validator_info = delegations_response
+                .delegations
+                .delegations
+                .iter()
+                .find(|one| one.validator == validator)
+                .ok_or_else(|| {
+                    StdError::generic_err(format!("validator info not found: {validator}"))
+                })?;
 
-        let input_amount = Decimal::from_atomics(lockup.funds.amount, 0)
-            .map_err(|_| new_generic_error("Invalid fund amount".to_string()))
-            .unwrap();
+            let input_amount = Decimal::from_atomics(lockup.funds.amount, 0)
+                .map_err(|_| new_generic_error("Invalid fund amount".to_string()))
+                .unwrap();
 
-        let share = Decimal256::from_atomics(input_amount.atomics(), 0).unwrap();
+            let share = Decimal256::from_atomics(input_amount.atomics(), 0).unwrap();
 
-        let real_amount = Uint128::try_from(
-            share.checked_mul(validator_info.share_ratio)?.atomics()
-                / Uint256::from(10u128.pow(18)),
-        )?;
+            let real_amount = Uint128::try_from(
+                share.checked_mul(validator_info.share_ratio)?.atomics()
+                    / Uint256::from(10u128.pow(18)),
+            )?;
 
-        let decimal_real = Decimal::from_atomics(real_amount, 18)
-            .map_err(|_| new_generic_error("Invalid real_amount for Decimal".to_string()));
+            let decimal_real = Decimal::from_atomics(real_amount, 18)
+                .map_err(|_| new_generic_error("Invalid real_amount for Decimal".to_string()));
 
-        let decimal_issue_amount = (Decimal::one() / ratio) * decimal_real.unwrap();
+            let decimal_issue_amount = (Decimal::one() / ratio) * decimal_real.unwrap();
 
-        let precision = Uint128::from(10u128.pow(18));
-        let int_part = decimal_issue_amount.atomics() / precision;
+            let precision = Uint128::from(10u128.pow(18));
+            let int_part = decimal_issue_amount.atomics() / precision;
+
+            Ok(int_part.to_string())
+        })();
 
         result.push(DtokenAmountResponse {
             lock_id: lockup.lock_id,
-            dtoken_amount: int_part,
+            dtoken_amount: match resp {
+                Ok(v) => v,
+                Err(e) => format!("error: {e}"),
+            },
         });
     }
 

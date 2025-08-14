@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## v3.5.3
+
+Date: August 14th, 2025
+<!--
+    Add a summary for the release here.
+
+    If you don't change this message, or if this file is empty, the release
+    will not be created. -->
+
+### BUG FIXES
+
+- Fix an overflow error that occurred when querying user tribute shares
+  ([\#302](https://github.com/informalsystems/hydro/pull/302))
+
+### FEATURES
+
+- Updates enum variants that previously had no input parameters, e.g., Liquidate, to use the {} syntax (e.g., Liquidate {}).
+  ([\#296](https://github.com/informalsystems/hydro/pull/296))
+- Updates simulate dtoken amounts query to return errors for invalid lockup simulation instead of whole query failure.
+  ([\#297](https://github.com/informalsystems/hydro/pull/297))
+
 ## v3.5.2
 
 Date: July 28th, 2025
@@ -219,11 +240,11 @@ Date: November 18th, 2024
 
 ### FEATURES
 
-- Add a minimum liquidity request value to proposals.
-  ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Adjusts tributes to only be claimable if their proposal received a non-zero fund deployment.
   ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Allow whitelist admins to register performed liquidity deployments in the Hydro contract.
+  ([\#164](https://github.com/informalsystems/hydro/pull/164))
+- Add a minimum liquidity request value to proposals.
   ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Allow bids to set a custom duration they would like to receive liquidity for.
   ([\#165](https://github.com/informalsystems/hydro/pull/165))
