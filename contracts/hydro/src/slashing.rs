@@ -144,7 +144,7 @@ pub fn slash_proposal_voters(
                 continue;
             }
 
-            // Caculate the amount to be slashed by adding newly computed value to already known pending slashes.
+            // Calculate the amount to be slashed by adding newly computed value to already known pending slashes.
             // If the amount to be slashed ends up being greater than total amount held by the lockup (highly unlikely),
             // then use the total lockup amount.
             let amount_to_slash = LOCKS_PENDING_SLASHES
@@ -153,7 +153,7 @@ pub fn slash_proposal_voters(
                 .checked_add(amount_to_slash)?
                 .min(lockup_to_slash.funds.amount);
 
-            // If the percentage of the lockup to be slashed is greater than or equalt to the
+            // If the percentage of the lockup to be slashed is greater than or equal to the
             // slashing percentage threshold, perform the actual slashing. Otherwise, just store
             // information about the pending slash and proceed to the next lockup to be checked.
             if Decimal::from_ratio(amount_to_slash, lockup_to_slash.funds.amount)
@@ -277,11 +277,11 @@ pub fn slash_proposal_voters(
         })
         .collect();
 
-    // Update the number of total locked tokens, since slashing opens up new locking capacaity.
+    // Update the number of total locked tokens, since slashing opens up new locking capacity.
     LOCKED_TOKENS.update(
         deps.storage,
         |current_locked_tokens| -> Result<u128, ContractError> {
-            Ok(current_locked_tokens - slashed_tokens_num)
+            Ok(current_locked_tokens.saturating_sub(slashed_tokens_num))
         },
     )?;
 
@@ -405,7 +405,7 @@ fn update_current_round_votes(
             .filter_map(|slashed_lockup_info| {
                 let slashed_lockup_id = slashed_lockup_info.1 .0.lock_id;
 
-                // Votes should be re-added only for those lockups that were not entirelly removed
+                // Votes should be re-added only for those lockups that were not entirely removed
                 if slashed_lockup_info.1 .0.funds.amount == Uint128::zero() {
                     return None;
                 }
