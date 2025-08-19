@@ -39,7 +39,7 @@ pub fn migrate(
     env: Env,
     msg: MigrateMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    check_contract_version(deps.storage, CONTRACT_VERSION_V3_5_2)?;
+    check_contract_version(deps.storage)?;
     pause_contract_before_migration(&mut deps, &env)?;
 
     let response = match msg {
@@ -61,22 +61,12 @@ pub fn migrate(
     Ok(response.add_attribute("migration_status", "incomplete"))
 }
 
-fn check_contract_version(
-    storage: &dyn cosmwasm_std::Storage,
-    expected_version: &str,
-) -> Result<(), ContractError> {
+fn check_contract_version(storage: &dyn cosmwasm_std::Storage) -> Result<(), ContractError> {
     let contract_version = get_contract_version(storage)?;
 
     if contract_version.version == CONTRACT_VERSION {
         return Err(ContractError::Std(StdError::generic_err(
             "Contract is already migrated to the newest version.",
-        )));
-    }
-
-    if contract_version.version != expected_version {
-        return Err(new_generic_error(format!(
-            "In order to migrate the contract to the newest version, its current version must be {}, got {}.",
-            expected_version, contract_version.version
         )));
     }
 

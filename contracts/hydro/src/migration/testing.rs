@@ -7,7 +7,7 @@ mod tests {
     use crate::{
         contract::{CONTRACT_NAME, CONTRACT_VERSION},
         migration::{
-            migrate::{migrate, MigrateMsg, CONTRACT_VERSION_V3_5_2},
+            migrate::{migrate, MigrateMsg, CONTRACT_VERSION_V3_5_1},
             unreleased::TOKEN_IDS_MIGRATION_PROGRESS,
         },
         state::{LockEntryV2, CONSTANTS, LOCKS_MAP_V2, TOKEN_IDS, TOKEN_INFO_PROVIDERS},
@@ -27,11 +27,11 @@ mod tests {
         let mut deps = mock_dependencies(grpc_query);
         let env = mock_env();
 
-        // Set up the contract version to v3.5.2 (the version we're migrating from)
+        // Set up the contract version to v3.5.1 (so we don't have error "already migrated to the newest version.")
         set_contract_version(
             deps.as_mut().storage,
             CONTRACT_NAME,
-            CONTRACT_VERSION_V3_5_2,
+            CONTRACT_VERSION_V3_5_1,
         )
         .unwrap();
 
