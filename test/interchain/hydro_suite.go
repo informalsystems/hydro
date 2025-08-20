@@ -27,11 +27,13 @@ import (
 )
 
 const (
-	HydroWasm               = "hydro.wasm"
-	TributeWasm             = "tribute.wasm"
-	DAOVotingAdapterWasm    = "dao_voting_adapter.wasm"
-	STTokenInfoProviderWasm = "st_token_info_provider.wasm"
-	GatekeeperWasm          = "gatekeeper.wasm"
+	HydroWasm                 = "hydro.wasm"
+	TributeWasm               = "tribute.wasm"
+	DAOVotingAdapterWasm      = "dao_voting_adapter.wasm"
+	STTokenInfoProviderWasm   = "st_token_info_provider.wasm"
+	GatekeeperWasm            = "gatekeeper.wasm"
+	DefaultLockExpiryDuration = 2592000 // 30 days in seconds
+	DefaultLockDepthLimit     = 50
 )
 
 var (
@@ -291,15 +293,17 @@ func (s *HydroSuite) InstantiateHydroContract(
 				"metadata": "Consumer chains tranche metadata",
 			},
 		},
-		"first_round_start":         strconv.FormatInt(firstRoundStartTime, 10),
-		"max_locked_tokens":         "1000000000",
-		"whitelist_admins":          []string{adminAddr},
-		"initial_whitelist":         []string{adminAddr},
-		"icq_managers":              []string{adminAddr},
-		"max_deployment_duration":   12,
-		"round_lock_power_schedule": [][]any{{1, "1"}, {2, "1.25"}, {3, "1.5"}, {6, "2"}, {12, "4"}},
-		"token_info_providers":      tokenInfoProvidersInitMsgs,
-		"gatekeeper":                gatekeeperInitMsg,
+		"first_round_start":            strconv.FormatInt(firstRoundStartTime, 10),
+		"max_locked_tokens":            "1000000000",
+		"whitelist_admins":             []string{adminAddr},
+		"initial_whitelist":            []string{adminAddr},
+		"icq_managers":                 []string{adminAddr},
+		"max_deployment_duration":      12,
+		"round_lock_power_schedule":    [][]any{{1, "1"}, {2, "1.25"}, {3, "1.5"}, {6, "2"}, {12, "4"}},
+		"token_info_providers":         tokenInfoProvidersInitMsgs,
+		"gatekeeper":                   gatekeeperInitMsg,
+		"lock_expiry_duration_seconds": DefaultLockExpiryDuration,
+		"lock_depth_limit":             DefaultLockDepthLimit,
 	}
 
 	return s.InstantiateContract(codeId, initHydro, adminAddr, "Hydro Smart Contract")
