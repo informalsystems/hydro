@@ -13,6 +13,8 @@
     "max_locked_tokens",
     "round_length",
     "round_lock_power_schedule",
+    "slash_percentage_threshold",
+    "slash_tokens_receiver_addr",
     "token_info_providers",
     "tranches",
     "whitelist_admins"
@@ -98,6 +100,12 @@
         "maxItems": 2,
         "minItems": 2
       }
+    },
+    "slash_percentage_threshold": {
+      "$ref": "#/definitions/Decimal"
+    },
+    "slash_tokens_receiver_addr": {
+      "type": "string"
     },
     "token_info_providers": {
       "type": "array",

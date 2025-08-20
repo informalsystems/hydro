@@ -5,7 +5,10 @@ use crate::contract::{
     get_vote_for_update, query_all_user_lockups_with_tranche_infos, query_current_round_id,
     query_gatekeeper, query_tranches, query_user_votes, query_whitelist, query_whitelist_admins,
 };
-use crate::msg::{CollectionInfo, ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo};
+use crate::msg::{
+    CollectionInfo, ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo,
+    UpdateConfigData,
+};
 use crate::state::{
     LockEntryV2, RoundLockPowerSchedule, Vote, CONSTANTS, TOKEN_INFO_PROVIDERS, USER_LOCKS,
     VOTE_MAP_V2,
@@ -121,6 +124,7 @@ pub fn get_default_lsm_token_info_provider() -> TokenInfoProvider {
 
 pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
     let user_address = get_address_as_str(mock_api, "addr0000");
+    let slashed_tokens_receiver_address = get_address_as_str(mock_api, "addr0000");
 
     InstantiateMsg {
         round_length: TWO_WEEKS_IN_NANO_SECONDS,
@@ -141,6 +145,8 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         cw721_collection_info: None,
         lock_expiry_duration_seconds: 60 * 60 * 24 * 30 * 6, // 6 months
         lock_depth_limit: 50,
+        slash_percentage_threshold: Decimal::percent(50),
+        slash_tokens_receiver_addr: slashed_tokens_receiver_address,
     }
 }
 
@@ -248,7 +254,7 @@ fn create_proposal_basic_test() {
     let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
 
     let (mut deps, mut env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
     let instantiate_message = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(
@@ -372,7 +378,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
         ]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token1.clone()]);
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token1));
 
     let mut msg = get_default_instantiate_msg(&deps.api);
     msg.lock_epoch_length = TWO_WEEKS_IN_NANO_SECONDS;
@@ -592,7 +598,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
     );
 
     // lock 1000 of a different LSM token
-    let info = get_message_info(&deps.api, user_address, &[user_token2.clone()]);
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token2));
     let msg = ExecuteMsg::LockTokens {
         lock_duration: TWO_WEEKS_IN_NANO_SECONDS,
         proof: None,
@@ -790,7 +796,7 @@ fn proposal_power_change_on_lock_and_refresh_test() {
     // lock more tokens for one round and verify that the fifth proposal power
     // didn't change since the lock doesn't span long enough to be allowed to
     // vote for this proposal.
-    let info = get_message_info(&deps.api, user_address, &[user_token1.clone()]);
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token1));
     let msg = ExecuteMsg::LockTokens {
         lock_duration: TWO_WEEKS_IN_NANO_SECONDS,
         proof: None,
@@ -862,8 +868,8 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
     let mut msg = get_default_instantiate_msg(&deps.api);
     msg.first_round_start = start_time;
 
-    let info1 = get_message_info(&deps.api, user_address, &[user_token1.clone()]);
-    let info2 = get_message_info(&deps.api, user_address, &[user_token2.clone()]);
+    let info1 = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token1));
+    let info2 = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token2));
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
 
     let res = instantiate(deps.as_mut(), env.clone(), info1.clone(), msg.clone());
@@ -1023,7 +1029,7 @@ fn vote_extended_proposals_test() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
     let mut init_params = get_default_instantiate_msg(&deps.api);
     init_params.first_round_start = env.block.time;
     init_params.round_length = ONE_MONTH_IN_NANO_SECONDS;
@@ -1284,7 +1290,7 @@ fn switch_vote_between_short_and_long_props_test() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
     let mut msg = get_default_instantiate_msg(&deps.api);
     msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
 
@@ -1444,7 +1450,7 @@ fn unvote_and_revote_test() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
     let mut msg = get_default_instantiate_msg(&deps.api);
     msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
 
@@ -1627,7 +1633,7 @@ fn unvote_forbidden_locks() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
     let mut msg = get_default_instantiate_msg(&deps.api);
     msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
 
@@ -1699,8 +1705,11 @@ fn unvote_forbidden_locks() {
     // Another user votes for the same proposal creating a new lock ID
     let other_user_address = "addr0001";
     let other_user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
-    let other_user_info =
-        get_message_info(&deps.api, other_user_address, &[other_user_token.clone()]);
+    let other_user_info = get_message_info(
+        &deps.api,
+        other_user_address,
+        std::slice::from_ref(&other_user_token),
+    );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
         proof: None,
@@ -1752,7 +1761,7 @@ fn disable_voting_in_next_round_with_auto_voted_lock_test() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
     let mut instantiate_msg = get_default_instantiate_msg(&deps.api);
     instantiate_msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
 
@@ -2575,13 +2584,17 @@ fn delete_configs_test() {
         configs_timestamps.push(timestamp);
 
         let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
-            activate_at: timestamp,
-            max_locked_tokens: Some((i * 1000) as u128),
-            known_users_cap: None,
-            max_deployment_duration: None,
-            cw721_collection_info: None,
-            lock_depth_limit: None,
-            lock_expiry_duration_seconds: None,
+            config: UpdateConfigData {
+                activate_at: timestamp,
+                max_locked_tokens: Some((i * 1000) as u128),
+                known_users_cap: None,
+                max_deployment_duration: None,
+                cw721_collection_info: None,
+                lock_depth_limit: None,
+                lock_expiry_duration_seconds: None,
+                slash_percentage_threshold: None,
+                slash_tokens_receiver_addr: None,
+            },
         };
         let res = execute(
             deps.as_mut(),
@@ -2665,13 +2678,17 @@ fn contract_pausing_test() {
             address: whitelist_admin.to_string(),
         },
         ExecuteMsg::UpdateConfig {
-            activate_at: env.block.time,
-            max_locked_tokens: None,
-            known_users_cap: None,
-            max_deployment_duration: None,
-            cw721_collection_info: None,
-            lock_depth_limit: None,
-            lock_expiry_duration_seconds: None,
+            config: UpdateConfigData {
+                activate_at: env.block.time,
+                max_locked_tokens: None,
+                known_users_cap: None,
+                max_deployment_duration: None,
+                cw721_collection_info: None,
+                lock_depth_limit: None,
+                lock_expiry_duration_seconds: None,
+                slash_percentage_threshold: None,
+                slash_tokens_receiver_addr: None,
+            },
         },
         ExecuteMsg::DeleteConfigs { timestamps: vec![] },
         ExecuteMsg::Pause {},
@@ -3261,7 +3278,7 @@ fn test_cannot_vote_while_long_deployment_ongoing() {
     );
 
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
 
     // Initialize with 1 month round length
     let mut msg = get_default_instantiate_msg(&deps.api);

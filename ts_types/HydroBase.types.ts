@@ -37,6 +37,8 @@ export interface InstantiateMsg {
   max_locked_tokens: Uint128;
   round_length: number;
   round_lock_power_schedule: [number, Decimal][];
+  slash_percentage_threshold: Decimal;
+  slash_tokens_receiver_addr: string;
   token_info_providers: TokenInfoProviderInstantiateMsg[];
   tranches: TrancheInfo[];
   whitelist_admins: string[];
@@ -107,13 +109,7 @@ export type ExecuteMsg = {
   };
 } | {
   update_config: {
-    activate_at: Timestamp;
-    cw721_collection_info?: CollectionInfo | null;
-    known_users_cap?: number | null;
-    lock_depth_limit?: number | null;
-    lock_expiry_duration_seconds?: number | null;
-    max_deployment_duration?: number | null;
-    max_locked_tokens?: number | null;
+    config: UpdateConfigData;
   };
 } | {
   delete_configs: {
@@ -223,6 +219,15 @@ export type ExecuteMsg = {
   convert_lockup_to_dtoken: {
     lock_ids: number[];
   };
+} | {
+  slash_proposal_voters: {
+    limit: number;
+    proposal_id: number;
+    round_id: number;
+    slash_percent: Decimal;
+    start_from: number;
+    tranche_id: number;
+  };
 };
 export type Expiration = {
   at_height: number;
@@ -243,6 +248,17 @@ export interface SignatureInfo {
 export interface ProposalToLockups {
   lock_ids: number[];
   proposal_id: number;
+}
+export interface UpdateConfigData {
+  activate_at: Timestamp;
+  cw721_collection_info?: CollectionInfo | null;
+  known_users_cap?: number | null;
+  lock_depth_limit?: number | null;
+  lock_expiry_duration_seconds?: number | null;
+  max_deployment_duration?: number | null;
+  max_locked_tokens?: number | null;
+  slash_percentage_threshold?: Decimal | null;
+  slash_tokens_receiver_addr?: string | null;
 }
 export interface Coin {
   amount: Uint128;
@@ -283,6 +299,10 @@ export type QueryMsg = {
     address: string;
     limit: number;
     start_from: number;
+  };
+} | {
+  lockups_pending_slashes: {
+    lockup_ids: number[];
   };
 } | {
   user_voting_power: {
@@ -384,6 +404,12 @@ export type QueryMsg = {
   voting_power_at_height: {
     address: string;
     height?: number | null;
+  };
+} | {
+  slashable_token_num_for_voting_on_proposal: {
+    proposal_id: number;
+    round_id: number;
+    tranche_id: number;
   };
 } | {
   owner_of: {
@@ -536,6 +562,8 @@ export interface Constants {
   paused: boolean;
   round_length: number;
   round_lock_power_schedule: RoundLockPowerSchedule;
+  slash_percentage_threshold: Decimal;
+  slash_tokens_receiver_addr: string;
 }
 export interface RoundLockPowerSchedule {
   round_lock_power_schedule: LockPowerEntry[];
@@ -578,6 +606,9 @@ export interface LockVotesHistoryEntry {
   round_id: number;
   tranche_id: number;
   vote_power: Decimal;
+}
+export interface LockupsPendingSlashesResponse {
+  pending_slashes: [number, Uint128 | null][];
 }
 export interface NumTokensResponse {
   count: number;

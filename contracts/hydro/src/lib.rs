@@ -8,6 +8,7 @@ pub mod migration;
 pub mod msg;
 pub mod query;
 pub mod score_keeper;
+pub mod slashing;
 pub mod state;
 pub mod token_manager;
 pub mod utils;
@@ -64,3 +65,6 @@ mod testing_locks_split_merge;
 
 #[cfg(test)]
 mod testing_lock_tracking;
+
+#[cfg(test)]
+mod testing_slashing;

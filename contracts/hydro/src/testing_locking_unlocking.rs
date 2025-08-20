@@ -4,8 +4,8 @@ use cosmwasm_std::{testing::mock_env, BankMsg, Coin, CosmosMsg, Decimal, Uint128
 
 use crate::{
     contract::{execute, instantiate, query_all_user_lockups, MAX_LOCK_ENTRIES},
-    msg::ExecuteMsg,
-    state::USER_LOCKS,
+    msg::{ExecuteMsg, UpdateConfigData},
+    state::{LOCKS_PENDING_SLASHES, USER_LOCKS},
     testing::{
         get_address_as_str, get_default_instantiate_msg, get_message_info,
         set_default_validator_for_rounds, setup_st_atom_token_info_provider_mock, IBC_DENOM_1,
@@ -202,7 +202,7 @@ fn unlock_tokens_basic_test() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
     let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -246,7 +246,7 @@ fn unlock_tokens_basic_test() {
     assert!(res.is_ok());
 
     let res = res.unwrap();
-    assert_eq!(2, res.messages.len());
+    assert_eq!(1, res.messages.len());
 
     // check that all messages are BankMsg::Send
     for msg in res.messages.iter() {
@@ -256,7 +256,96 @@ fn unlock_tokens_basic_test() {
                     assert_eq!(info.sender.to_string(), *to_address);
                     assert_eq!(1, amount.len());
                     assert_eq!(user_token.denom, amount[0].denom);
-                    assert_eq!(user_token.amount.u128(), amount[0].amount.u128());
+                    assert_eq!(user_token.amount.u128() * 2, amount[0].amount.u128());
+                }
+                _ => panic!("expected BankMsg::Send message"),
+            },
+            _ => panic!("expected CosmosMsg::Bank msg"),
+        }
+    }
+}
+
+#[test]
+fn unlock_tokens_pending_slashes_test() {
+    // Use address different from "addr0000" since that one is used to send slashed amounts to it
+    let user_address = "addr0001";
+    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
+    let instantiate_msg = get_default_instantiate_msg(&deps.api);
+
+    let res = instantiate(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        instantiate_msg.clone(),
+    );
+    assert!(res.is_ok());
+
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+
+    // lock 1000 tokens for one month
+    let msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // check that user can not unlock tokens immediately
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::UnlockTokens { lock_ids: None },
+    );
+    assert!(res.is_ok());
+
+    let res = res.unwrap();
+    assert_eq!(0, res.messages.len());
+
+    // Mock a pending slash
+    LOCKS_PENDING_SLASHES
+        .save(&mut deps.storage, 0, &Uint128::from(70u128))
+        .unwrap();
+
+    // advance the chain by one month + 1 nano second and check that user can unlock tokens
+    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
+
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::UnlockTokens { lock_ids: None },
+    );
+    assert!(res.is_ok());
+
+    let res = res.unwrap();
+    // Should contain 2 BankMsg::Send messages, one for unlocked amount and one for slashed amount
+    assert_eq!(2, res.messages.len());
+
+    // check that all messages are BankMsg::Send
+    for msg in res.messages.iter() {
+        match msg.msg.clone() {
+            CosmosMsg::Bank(bank_msg) => match bank_msg {
+                BankMsg::Send { to_address, amount } => {
+                    let expected_amount: u128 =
+                        if to_address == instantiate_msg.slash_tokens_receiver_addr {
+                            70
+                        } else if to_address == info.sender.to_string() {
+                            930
+                        } else {
+                            panic!("Unexpected recipient address: {to_address}");
+                        };
+
+                    assert_eq!(1, amount.len());
+                    assert_eq!(amount[0].denom, user_token.denom);
+                    assert_eq!(amount[0].amount.u128(), expected_amount);
                 }
                 _ => panic!("expected BankMsg::Send message"),
             },
@@ -275,7 +364,7 @@ fn unlock_specific_tokens_test() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
     let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -323,8 +412,8 @@ fn unlock_specific_tokens_test() {
     assert!(res.is_ok());
 
     let res = res.unwrap();
-    // Should have 2 messages (one for each unlocked token)
-    assert_eq!(2, res.messages.len());
+    // Should have 1 message that sums up tokens from both locks
+    assert_eq!(1, res.messages.len());
 
     // Verify the first attempt's messages and unlocked IDs
     let unlocked_ids: Vec<u64> = res
@@ -351,7 +440,7 @@ fn unlock_specific_tokens_test() {
                     assert_eq!(info.sender.to_string(), to_address);
                     assert_eq!(1, amount.len());
                     assert_eq!(user_token.denom, amount[0].denom);
-                    assert_eq!(user_token.amount.u128(), amount[0].amount.u128());
+                    assert_eq!(user_token.amount.u128() * 2, amount[0].amount.u128());
                 }
                 _ => panic!("expected BankMsg::Send message"),
             },
@@ -581,13 +670,17 @@ fn max_locked_tokens_test() {
     // a privileged user can update the maximum allowed locked tokens, but only for the future
     info = get_message_info(&deps.api, "addr0001", &[]);
     let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
-        activate_at: env.block.time.minus_hours(1),
-        max_locked_tokens: Some(3000),
-        known_users_cap: None,
-        max_deployment_duration: None,
-        cw721_collection_info: None,
-        lock_depth_limit: None,
-        lock_expiry_duration_seconds: None,
+        config: UpdateConfigData {
+            activate_at: env.block.time.minus_hours(1),
+            max_locked_tokens: Some(3000),
+            known_users_cap: None,
+            max_deployment_duration: None,
+            cw721_collection_info: None,
+            lock_depth_limit: None,
+            lock_expiry_duration_seconds: None,
+            slash_percentage_threshold: None,
+            slash_tokens_receiver_addr: None,
+        },
     };
     let res = execute(
         deps.as_mut(),
@@ -602,13 +695,17 @@ fn max_locked_tokens_test() {
 
     // this time with a valid activation timestamp
     let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
-        activate_at: env.block.time,
-        max_locked_tokens: Some(3000),
-        known_users_cap: None,
-        max_deployment_duration: None,
-        cw721_collection_info: None,
-        lock_depth_limit: None,
-        lock_expiry_duration_seconds: None,
+        config: UpdateConfigData {
+            activate_at: env.block.time,
+            max_locked_tokens: Some(3000),
+            known_users_cap: None,
+            max_deployment_duration: None,
+            cw721_collection_info: None,
+            lock_depth_limit: None,
+            lock_expiry_duration_seconds: None,
+            slash_percentage_threshold: None,
+            slash_tokens_receiver_addr: None,
+        },
     };
     let res = execute(
         deps.as_mut(),
@@ -643,13 +740,17 @@ fn max_locked_tokens_test() {
     // increase the maximum allowed locked tokens by 500, starting in 1 hour
     info = get_message_info(&deps.api, "addr0001", &[]);
     let update_max_locked_tokens_msg = ExecuteMsg::UpdateConfig {
-        activate_at: env.block.time.plus_hours(1),
-        max_locked_tokens: Some(3500),
-        known_users_cap: None,
-        max_deployment_duration: None,
-        cw721_collection_info: None,
-        lock_depth_limit: None,
-        lock_expiry_duration_seconds: None,
+        config: UpdateConfigData {
+            activate_at: env.block.time.plus_hours(1),
+            max_locked_tokens: Some(3500),
+            known_users_cap: None,
+            max_deployment_duration: None,
+            cw721_collection_info: None,
+            lock_depth_limit: None,
+            lock_expiry_duration_seconds: None,
+            slash_percentage_threshold: None,
+            slash_tokens_receiver_addr: None,
+        },
     };
     let res = execute(
         deps.as_mut(),

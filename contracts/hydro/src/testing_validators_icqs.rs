@@ -77,7 +77,7 @@ fn create_interchain_queries_test() {
     // in the msg above there are 2 valid addresses, hence 2 * min_deposit
     let min_deposit_required = Coin::new(2 * min_deposit.amount.u128(), min_deposit.denom.clone());
 
-    let info = get_message_info(&deps.api, "addr0000", &[user_token.clone()]);
+    let info = get_message_info(&deps.api, "addr0000", std::slice::from_ref(&user_token));
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone()).unwrap_err();
 
     assert!(
@@ -85,7 +85,11 @@ fn create_interchain_queries_test() {
         .to_string()
         .to_lowercase().contains(format!("insufficient tokens sent to pay for {} interchain queries deposits. sent: {}, required: {}", 2, user_token, min_deposit_required).as_str()));
 
-    let info = get_message_info(&deps.api, "addr0000", &[min_deposit_required.clone()]);
+    let info = get_message_info(
+        &deps.api,
+        "addr0000",
+        std::slice::from_ref(&min_deposit_required),
+    );
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
     let messages = res.unwrap().messages;

@@ -860,7 +860,11 @@ fn claim_tribute_test() {
 
         let tribute_payer = USER_ADDRESS_1;
         for tribute_to_add in test.tributes_to_add.iter() {
-            let info = get_message_info(&deps.api, tribute_payer, &[tribute_to_add.token.clone()]);
+            let info = get_message_info(
+                &deps.api,
+                tribute_payer,
+                std::slice::from_ref(&tribute_to_add.token),
+            );
             let msg = ExecuteMsg::AddTribute {
                 tranche_id: tribute_to_add.tranche_id,
                 round_id: tribute_to_add.round_id,
@@ -1811,7 +1815,7 @@ fn claim_tribute_after_lock_split_or_merge_test() {
 
     let tribute_payer = USER_ADDRESS_1;
     let tribute = Coin::new(1000u64, DEFAULT_DENOM);
-    let info = get_message_info(&deps.api, tribute_payer, &[tribute.clone()]);
+    let info = get_message_info(&deps.api, tribute_payer, std::slice::from_ref(&tribute));
     let msg = ExecuteMsg::AddTribute {
         tranche_id: mock_proposal.tranche_id,
         round_id: current_round,

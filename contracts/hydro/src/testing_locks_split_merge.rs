@@ -1,7 +1,7 @@
 use crate::contract::{execute, instantiate, query, query_user_voted_locks};
 use crate::msg::{ExecuteMsg, ProposalToLockups};
 use crate::query::{QueryMsg, TokensResponse};
-use crate::state::{PROPOSAL_MAP, VOTE_MAP_V2, VOTING_ALLOWED_ROUND};
+use crate::state::{LOCKS_PENDING_SLASHES, PROPOSAL_MAP, VOTE_MAP_V2, VOTING_ALLOWED_ROUND};
 use crate::testing::{
     get_address_as_str, get_default_instantiate_msg, get_message_info,
     set_default_validator_for_rounds, setup_st_atom_token_info_provider_mock, IBC_DENOM_1,
@@ -168,6 +168,11 @@ fn test_lock_split_flow_multiple_rounds() {
         .power;
     assert_eq!(prop_power_before_split, initial_lock_amount);
 
+    // Mock a pending slash being attached to the first lockup
+    LOCKS_PENDING_SLASHES
+        .save(&mut deps.storage, first_lock_id, &Uint128::from(9000u128))
+        .unwrap();
+
     // Split the lockup in round 2
     let split_amount_1 = Uint128::from(10000u128);
     let split_res = execute(
@@ -249,6 +254,26 @@ fn test_lock_split_flow_multiple_rounds() {
         .unwrap()
         .power;
     assert_eq!(prop_power_before_split, prop_power_after_split);
+
+    // Verify that the pending slashes are correctly split between the new locks
+    assert!(LOCKS_PENDING_SLASHES
+        .may_load(&deps.storage, first_lock_id)
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        LOCKS_PENDING_SLASHES
+            .load(&deps.storage, second_lock_id)
+            .unwrap()
+            .u128(),
+        7200
+    );
+    assert_eq!(
+        LOCKS_PENDING_SLASHES
+            .load(&deps.storage, third_lock_id)
+            .unwrap()
+            .u128(),
+        1800
+    );
 
     // Move to round 3
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
@@ -556,6 +581,17 @@ fn test_merge_locks_flow() {
     );
     assert!(vote_res2.is_ok());
 
+    // Mock a pending slashes being attached to some lockups that are being merged
+    let pending_slashes = [
+        (lock_id_2, &Uint128::from(600u128)),
+        (lock_id_5, &Uint128::from(300u128)),
+    ];
+    for pending_slash in &pending_slashes {
+        LOCKS_PENDING_SLASHES
+            .save(&mut deps.storage, pending_slash.0, pending_slash.1)
+            .unwrap();
+    }
+
     // Merge all 8 lockups into new lockup (provide some IDs twice)
     let mut merge_ids = lock_ids.clone();
     merge_ids.push(0);
@@ -689,6 +725,23 @@ fn test_merge_locks_flow() {
             .unwrap();
         assert!(vote_r0.is_none());
     }
+
+    // Verify that all pending slashes have been appended to the new lock entry.
+    assert!(LOCKS_PENDING_SLASHES
+        .may_load(&deps.storage, lock_id_2)
+        .unwrap()
+        .is_none());
+    assert!(LOCKS_PENDING_SLASHES
+        .may_load(&deps.storage, lock_id_5)
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        LOCKS_PENDING_SLASHES
+            .load(&deps.storage, new_lock_id)
+            .unwrap()
+            .u128(),
+        900
+    );
 }
 
 #[test]

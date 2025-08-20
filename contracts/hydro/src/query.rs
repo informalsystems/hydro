@@ -50,6 +50,9 @@ pub enum QueryMsg {
         limit: u32,
     },
 
+    #[returns(LockupsPendingSlashesResponse)]
+    LockupsPendingSlashes { lockup_ids: Vec<u64> },
+
     #[returns(UserVotingPowerResponse)]
     UserVotingPower { address: String },
 
@@ -156,6 +159,15 @@ pub enum QueryMsg {
     VotingPowerAtHeight {
         address: String,
         height: Option<u64>,
+    },
+
+    /// Returns maximum number of tokens that can be slashed for voting on a proposal,
+    /// denominated in the base token (e.g. ATOM).
+    #[returns(Uint128)]
+    SlashableTokenNumForVotingOnProposal {
+        round_id: u64,
+        tranche_id: u64,
+        proposal_id: u64,
     },
 
     /// Returns the owner of the given token, as well as anyone with approval on this particular token.
@@ -514,6 +526,11 @@ pub struct LiquidityDeploymentResponse {
 #[cw_serde]
 pub struct RoundTrancheLiquidityDeploymentsResponse {
     pub liquidity_deployments: Vec<LiquidityDeployment>,
+}
+
+#[cw_serde]
+pub struct LockupsPendingSlashesResponse {
+    pub pending_slashes: Vec<(u64, Option<Uint128>)>,
 }
 
 //TotalPowerAtHeightResponse and VotingPowerAtHeightResponse conform to the DAODAO interface for a voting power module:
