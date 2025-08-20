@@ -3,7 +3,7 @@ use crate::error::{new_generic_error, ContractError};
 use crate::migration::unreleased::{
     cleanup_migration_progress, is_token_ids_migration_done, migrate_populate_token_ids,
 };
-use crate::migration::v3_5_2::ConstantsV3_5_2;
+use crate::migration::v3_5_3::ConstantsV3_5_3;
 use crate::state::{Constants, CONSTANTS};
 use crate::utils::load_constants_active_at_timestamp;
 use cosmwasm_schema::cw_serde;
@@ -136,12 +136,12 @@ pub fn migrate_constants(
     slash_percentage_threshold: Decimal,
     slash_tokens_receiver_addr: String,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    const OLD_CONSTANTS: Map<u64, ConstantsV3_5_2> = Map::new("constants");
+    const OLD_CONSTANTS: Map<u64, ConstantsV3_5_3> = Map::new("constants");
 
     let old_constants_entries = OLD_CONSTANTS
         .range(deps.storage, None, None, Order::Ascending)
         .filter_map(|result| result.ok())
-        .collect::<Vec<(u64, ConstantsV3_5_2)>>();
+        .collect::<Vec<(u64, ConstantsV3_5_3)>>();
 
     if old_constants_entries.is_empty() {
         return Err(new_generic_error(
