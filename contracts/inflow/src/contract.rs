@@ -273,25 +273,20 @@ pub fn calculate_number_of_shares_to_mint(
 
     // `deposit_amount` has already been added to the smart contract balance even before `execute()` is called,
     // so we need to subtract it here in order to accurately calculate number of vault shares to mint.
-    let deposit_token_current_balance = Decimal::from_ratio(
-        contract_deposit_token_balance
-            .checked_sub(deposit_amount)?
-            .checked_add(deployed_amount)?,
-        Uint128::one(),
-    );
+    let deposit_token_current_balance = contract_deposit_token_balance
+        .checked_sub(deposit_amount)?
+        .checked_add(deployed_amount)?;
 
-    let total_shares_issued = Decimal::from_ratio(query_total_shares_issued(deps)?, Uint128::one());
+    let total_shares_issued = query_total_shares_issued(deps)?;
 
     // If it is the first deposit, vault shares have 1:1 ratio with the deposit token.
     if deposit_token_current_balance.is_zero() || total_shares_issued.is_zero() {
         return Ok(deposit_amount);
     }
 
-    let ratio = total_shares_issued.checked_div(deposit_token_current_balance)?;
-
-    Ok(Decimal::from_ratio(deposit_amount, Uint128::one())
-        .checked_mul(ratio)?
-        .to_uint_floor())
+    deposit_amount
+        .checked_multiply_ratio(total_shares_issued, deposit_token_current_balance)
+        .map_err(|e| ContractError::Std(StdError::generic_err(format!("overflow error: {e}"))))
 }
 
 fn submit_deployed_amount(
