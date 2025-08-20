@@ -496,6 +496,9 @@ fn lock_tokens(
     let lock_end = lock_entry.lock_end.nanos();
     LOCKS_MAP_V2.save(deps.storage, lock_id, &lock_entry, env.block.height)?;
 
+    // Add to TOKEN_IDS if it's a NFT (non-LSM lockup)
+    cw721::maybe_add_token_id(&mut deps, &lock_entry)?;
+
     USER_LOCKS.update(
         deps.storage,
         info.sender.clone(),
@@ -827,6 +830,9 @@ fn split_lock(
     // Remove starting lock entry
     LOCKS_MAP_V2.remove(deps.storage, starting_lock_entry.lock_id, env.block.height)?;
 
+    // Remove from TOKEN_IDS
+    cw721::maybe_remove_token_id(deps.storage, starting_lock_entry.lock_id);
+
     // Insert new lock entries
     for lock_entry in [&new_lock_entry_1, &new_lock_entry_2] {
         LOCKS_MAP_V2.save(
@@ -835,6 +841,9 @@ fn split_lock(
             lock_entry,
             env.block.height,
         )?;
+
+        // Add to TOKEN_IDS if it's a NFT (non-LSM lockup)
+        cw721::maybe_add_token_id(&mut deps, lock_entry)?;
     }
 
     // Update information about locks owned by the user
@@ -1039,6 +1048,9 @@ fn merge_locks(
         env.block.height,
     )?;
 
+    // Add to TOKEN_IDS if it's a NFT (non-LSM lockup)
+    cw721::maybe_add_token_id(&mut deps, &resulting_lock_entry)?;
+
     let mut parents = vec![];
 
     let mut cache = HashMap::new();
@@ -1076,6 +1088,9 @@ fn merge_locks(
         LOCK_ID_EXPIRY.save(deps.storage, *lock_id, &env.block.time)?;
         // Remove merged lock from locks map
         LOCKS_MAP_V2.remove(deps.storage, *lock_id, env.block.height)?;
+
+        // Remove from TOKEN_IDS
+        cw721::maybe_remove_token_id(deps.storage, *lock_id);
     }
     REVERSE_LOCK_ID_TRACKING.save(deps.storage, resulting_lock_id, &parents)?;
 
@@ -1497,6 +1512,9 @@ fn unlock_tokens(
 
             // Delete unlocked lock
             LOCKS_MAP_V2.remove(deps.storage, lock_id, env.block.height)?;
+
+            // Remove from TOKEN_IDS
+            cw721::maybe_remove_token_id(deps.storage, lock_id);
 
             // Clear any CW721 Approval on the lock
             cw721::clear_nft_approvals(deps.storage, lock_id)?;
@@ -2693,6 +2711,12 @@ pub fn convert_lockup_to_dtoken_reply(
     };
     lock_entry.funds = new_funds;
     LOCKS_MAP_V2.save(deps.storage, lock_id, &lock_entry, env.block.height)?;
+
+    // Update TOKEN_IDS for the converted lockup. Since only LSM tokens can be converted to dtokens,
+    // and dtokens are always NFTs, this typically removes nothing and adds the dtoken.
+    // We use the generic functions to handle edge cases and future NFT criteria changes.
+    cw721::maybe_remove_token_id(deps.storage, lock_id);
+    cw721::maybe_add_token_id(&mut deps, &lock_entry)?;
 
     // Re-vote only if there were previous votes
     if !tranches_with_votes.is_empty() {

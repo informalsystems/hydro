@@ -9,8 +9,8 @@ use crate::{
     testing::{
         get_address_as_str, get_default_instantiate_msg, get_message_info,
         set_default_validator_for_rounds, setup_st_atom_token_info_provider_mock, IBC_DENOM_1,
-        ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, THREE_MONTHS_IN_NANO_SECONDS, VALIDATOR_1,
-        VALIDATOR_1_LST_DENOM_1,
+        ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, ST_ATOM_ON_STRIDE,
+        THREE_MONTHS_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
     },
     testing_lsm_integration::set_validator_infos_for_round,
     testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies},
@@ -112,7 +112,13 @@ fn lock_tokens_basic_test() {
 fn lock_tokens_various_denoms_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                ST_ATOM_ON_NEUTRON.to_string(),
+                ST_ATOM_ON_STRIDE.to_string(),
+            ),
+        ]),
     );
 
     let user_address = "addr0000";

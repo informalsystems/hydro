@@ -7,7 +7,7 @@ use crate::{
         NftInfoResponse, NumTokensResponse, OperatorsResponse, OwnerOfResponse, TokensResponse,
     },
     state::{
-        Approval, LockEntryV2, LOCKS_MAP_V2, LOCK_ID, NFT_APPROVALS, NFT_OPERATORS,
+        Approval, LockEntryV2, LOCKS_MAP_V2, LOCK_ID, NFT_APPROVALS, NFT_OPERATORS, TOKEN_IDS,
         TOKEN_INFO_PROVIDERS, TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM,
     },
     token_manager::{TokenInfoProvider, TokenManager, LSM_TOKEN_INFO_PROVIDER_ID},
@@ -620,24 +620,16 @@ pub fn query_all_tokens(
 
     let start_bound = start_after.map(Bound::exclusive);
 
+    // Use TOKEN_IDS for efficient pagination without checking is_denom_lsm for every lockup
     // Order::Ascending returns ordered keys, thanks to big-endian storage of u64 keys
     // see https://github.com/CosmWasm/cw-storage-plus/blob/main/src/int_key.rs
-    let tokens: Vec<String> = LOCKS_MAP_V2
+    let tokens: Vec<String> = TOKEN_IDS
         .range(deps.storage, start_bound, None, Order::Ascending)
-        .filter_map(|res| {
-            match res {
-                Ok((lock_id, lock_entry)) => {
-                    // Filter out LSM-based lockups
-                    match is_denom_lsm(&deps, lock_entry.funds.denom) {
-                        Ok(true) => None,                           // Skip LSM tokens
-                        Ok(false) => Some(Ok(lock_id.to_string())), // Include non-LSM tokens
-                        Err(e) => Some(Err(e)),                     // Propagate errors
-                    }
-                }
-                Err(e) => Some(Err(e.into())), // Propagate storage errors
-            }
-        })
         .take(limit)
+        .map(|res| match res {
+            Ok((lock_id, _)) => Ok(lock_id.to_string()),
+            Err(e) => Err(e.into()),
+        })
         .collect::<Result<Vec<_>, ContractError>>()?;
 
     Ok(TokensResponse { tokens })
@@ -694,8 +686,24 @@ fn can_user_create_approval(
         || has_valid_operator_approval(storage, &lock_entry.owner, user_addr, block)?)
 }
 
+/// Add a lock ID to TOKEN_IDS if it's a NFT (non-LSM lockup)
+pub fn maybe_add_token_id(
+    deps: &mut DepsMut<NeutronQuery>,
+    lock_entry: &LockEntryV2,
+) -> Result<(), ContractError> {
+    if !is_denom_lsm(&deps.as_ref(), lock_entry.funds.denom.clone())? {
+        TOKEN_IDS.save(deps.storage, lock_entry.lock_id, &())?;
+    }
+    Ok(())
+}
+
+/// Remove a lock ID from TOKEN_IDS
+pub fn maybe_remove_token_id(storage: &mut dyn Storage, lock_id: u64) {
+    TOKEN_IDS.remove(storage, lock_id);
+}
+
 /// Returns true if the denom is LSM, false otherwise.
-fn is_denom_lsm(deps: &Deps<NeutronQuery>, denom: String) -> Result<bool, ContractError> {
+pub fn is_denom_lsm(deps: &Deps<NeutronQuery>, denom: String) -> Result<bool, ContractError> {
     let lsm_info_provider =
         TOKEN_INFO_PROVIDERS.may_load(deps.storage, LSM_TOKEN_INFO_PROVIDER_ID.to_string())?;
 
