@@ -2781,7 +2781,7 @@ pub fn convert_lockup_to_dtoken_reply(
 /// Allows a user to buy out (i.e., pay off) the pending slash on a specific lockup.
 ///
 /// This function:
-/// - Validates ownership of the lockup.
+/// - Gets the lockup - it is allowed to repay pending slash of any user.
 /// - Loads the pending slash amount and calculates its value in base denomination. (ATOM)
 /// - Accepts user funds, converts them into base denomination using token group ratios,
 ///   and determines if the slash is fully paid off.
@@ -2796,7 +2796,7 @@ pub fn buyout_pending_slash(
     lock_id: u64,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     // Step 1: Get the lockup
-    let lockup = get_owned_lock_entry(deps.storage, &info.sender, lock_id)?;
+    let lockup = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
 
     // Step 2: Load pending slash
     let Some(slash_amount) = LOCKS_PENDING_SLASHES.may_load(deps.storage, lock_id)? else {
@@ -2816,16 +2816,18 @@ pub fn buyout_pending_slash(
         })?;
 
     let slash_ratio = token_manager
-        .get_token_group_ratio(&deps.as_ref(), current_round, token_group_id)
+        .get_token_group_ratio(&deps.as_ref(), current_round, token_group_id.clone())
         .map_err(|err| {
             new_generic_error(format!(
-                "Error fetching token group ratio for '{slash_denom}': {err}",
+                "Error fetching token group ratio for denom '{slash_denom}', group_id '{token_group_id}': {err}",
             ))
         })?;
 
-    let slash_base_token = Decimal::from_ratio(slash_amount, Uint128::one())
-        .checked_mul(slash_ratio)?
-        .to_uint_floor();
+    let slash_base_token = slash_amount.checked_mul_floor(slash_ratio).map_err(|err| {
+        new_generic_error(format!(
+            "Overflow when calculating slash_base_token from slash_amount '{slash_amount}', slash_ratio '{slash_ratio}': {err}",
+        ))
+    })?;
 
     // Step 3: Track how much is available and per-denom info
     let mut available_base_token: Uint128 = Uint128::zero();
@@ -2840,8 +2842,8 @@ pub fn buyout_pending_slash(
             .get_token_group_ratio(&deps.as_ref(), current_round, token_group_id.clone())
             .map_err(|err| {
                 new_generic_error(format!(
-                    "Error fetching token group ratio for '{}': {}",
-                    coin.denom, err
+                    "Error fetching token group ratio for denom '{}', group_id '{}': {}",
+                    coin.denom, token_group_id, err
                 ))
             })?;
         if ratio.is_zero() {
@@ -2859,16 +2861,22 @@ pub fn buyout_pending_slash(
 
     // Step 4: Determine how much to deduct and update state
     // Check if payment is full or partial
-    if available_base_token >= slash_base_token {
+    let amount_left_to_repay = if available_base_token >= slash_base_token {
         LOCKS_PENDING_SLASHES.remove(deps.storage, lockup.lock_id);
+        Uint128::zero()
     } else {
         let remaining_base = slash_base_token.checked_sub(available_base_token)?;
 
-        let remaining_original = Decimal::from_ratio(remaining_base, Uint128::one())
-            .checked_div(slash_ratio)?
-            .to_uint_floor();
+        let remaining_original = remaining_base
+    .checked_div_floor(slash_ratio)
+     .map_err(|err| {
+    new_generic_error(format!(
+        "Error calculating remaining_original from remaining_base '{remaining_base}', slash_ratio '{slash_ratio}' : {err}"
+    ))})?;
+
         LOCKS_PENDING_SLASHES.save(deps.storage, lockup.lock_id, &remaining_original)?;
-    }
+        remaining_original
+    };
 
     // Step 5: Figure out what was used and what should be refunded
     let mut funds_used: HashMap<String, Uint128> = HashMap::new();
@@ -2881,9 +2889,14 @@ pub fn buyout_pending_slash(
         let coin_as_base =
             Decimal::from_ratio(*original_amount, Uint128::one()).checked_mul(*ratio)?;
         let take_base = coin_as_base.to_uint_floor().min(remaining_base_token);
-        let take_original = Decimal::from_ratio(take_base, Uint128::one()).checked_div(*ratio)?;
 
-        funds_used.insert(denom.clone(), take_original.to_uint_floor());
+        let take_original = take_base.checked_div_floor(*ratio).map_err(|err| {
+            new_generic_error(format!(
+        "Error calculating amount to take from take_base '{take_base}', ratio '{ratio}' : {err}"
+    ))
+        })?;
+
+        funds_used.insert(denom.clone(), take_original);
         remaining_base_token = remaining_base_token.checked_sub(take_base)?;
     }
 
@@ -2924,6 +2937,7 @@ pub fn buyout_pending_slash(
         .add_attribute("sender", info.sender)
         .add_attribute("lock_id", lock_id.to_string())
         .add_attribute("coins_spent", coins_spent_str)
+        .add_attribute("amount_left_to_repay", amount_left_to_repay.to_string())
         .add_messages(bank_msgs))
 }
 fn validate_sender_is_whitelist_admin(
