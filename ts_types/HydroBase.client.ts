@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Timestamp, Uint64, Binary, Uint128, Decimal, TokenInfoProviderInstantiateMsg, InstantiateMsg, CollectionInfo, InstantiateContractMsg, TrancheInfo, ExecuteMsg, Expiration, LockTokensProof, SignatureInfo, ProposalToLockups, Coin, QueryMsg, Addr, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponse, LockupWithPerTrancheInfo, LockEntryWithPower, LockEntryV2, PerTrancheLockupInfo, RoundWithBid, OperatorsResponse, TokensResponse, AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, ApprovalResponse, ApprovalsResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExpiredUserLockupsResponse, GatekeeperResponse, ICQManagersResponse, LiquidityDeploymentResponse, LiquidityDeployment, LockVotesHistoryResponse, LockVotesHistoryEntry, NumTokensResponse, ProposalResponse, Proposal, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, DtokenAmountsResponse, DtokenAmountResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSM, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotedLocksResponse, VotedLockInfo, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistResponse, WhitelistAdminsResponse } from "./HydroBase.types";
+import { Timestamp, Uint64, Binary, Uint128, Decimal, TokenInfoProviderInstantiateMsg, InstantiateMsg, CollectionInfo, InstantiateContractMsg, TrancheInfo, ExecuteMsg, Expiration, LockTokensProof, SignatureInfo, ProposalToLockups, UpdateConfigData, Coin, QueryMsg, Addr, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponse, LockupWithPerTrancheInfo, LockEntryWithPower, LockEntryV2, PerTrancheLockupInfo, RoundWithBid, OperatorsResponse, TokensResponse, AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, ApprovalResponse, ApprovalsResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExpiredUserLockupsResponse, GatekeeperResponse, ICQManagersResponse, LiquidityDeploymentResponse, LiquidityDeployment, LockVotesHistoryResponse, LockVotesHistoryEntry, LockupsPendingSlashesResponse, NumTokensResponse, ProposalResponse, Proposal, RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, DtokenAmountsResponse, DtokenAmountResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSM, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotedLocksResponse, VotedLockInfo, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistResponse, WhitelistAdminsResponse } from "./HydroBase.types";
 export interface HydroBaseReadOnlyInterface {
   contractAddress: string;
   constants: () => Promise<ConstantsResponse>;
@@ -54,6 +54,11 @@ export interface HydroBaseReadOnlyInterface {
     limit: number;
     startFrom: number;
   }) => Promise<ExpiredUserLockupsResponse>;
+  lockupsPendingSlashes: ({
+    lockupIds
+  }: {
+    lockupIds: number[];
+  }) => Promise<LockupsPendingSlashesResponse>;
   userVotingPower: ({
     address
   }: {
@@ -190,6 +195,15 @@ export interface HydroBaseReadOnlyInterface {
     address: string;
     height?: number;
   }) => Promise<VotingPowerAtHeightResponse>;
+  slashableTokenNumForVotingOnProposal: ({
+    proposalId,
+    roundId,
+    trancheId
+  }: {
+    proposalId: number;
+    roundId: number;
+    trancheId: number;
+  }) => Promise<Uint128>;
   ownerOf: ({
     includeExpired,
     tokenId
@@ -277,6 +291,7 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     this.allUserLockupsWithTrancheInfos = this.allUserLockupsWithTrancheInfos.bind(this);
     this.specificUserLockupsWithTrancheInfos = this.specificUserLockupsWithTrancheInfos.bind(this);
     this.expiredUserLockups = this.expiredUserLockups.bind(this);
+    this.lockupsPendingSlashes = this.lockupsPendingSlashes.bind(this);
     this.userVotingPower = this.userVotingPower.bind(this);
     this.userVotes = this.userVotes.bind(this);
     this.userVotedLocks = this.userVotedLocks.bind(this);
@@ -299,6 +314,7 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     this.roundTrancheLiquidityDeployments = this.roundTrancheLiquidityDeployments.bind(this);
     this.totalPowerAtHeight = this.totalPowerAtHeight.bind(this);
     this.votingPowerAtHeight = this.votingPowerAtHeight.bind(this);
+    this.slashableTokenNumForVotingOnProposal = this.slashableTokenNumForVotingOnProposal.bind(this);
     this.ownerOf = this.ownerOf.bind(this);
     this.approval = this.approval.bind(this);
     this.approvals = this.approvals.bind(this);
@@ -407,6 +423,17 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
         address,
         limit,
         start_from: startFrom
+      }
+    });
+  };
+  lockupsPendingSlashes = async ({
+    lockupIds
+  }: {
+    lockupIds: number[];
+  }): Promise<LockupsPendingSlashesResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      lockups_pending_slashes: {
+        lockup_ids: lockupIds
       }
     });
   };
@@ -691,6 +718,23 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
       }
     });
   };
+  slashableTokenNumForVotingOnProposal = async ({
+    proposalId,
+    roundId,
+    trancheId
+  }: {
+    proposalId: number;
+    roundId: number;
+    trancheId: number;
+  }): Promise<Uint128> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      slashable_token_num_for_voting_on_proposal: {
+        proposal_id: proposalId,
+        round_id: roundId,
+        tranche_id: trancheId
+      }
+    });
+  };
   ownerOf = async ({
     includeExpired,
     tokenId
@@ -911,21 +955,9 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
     address: string;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
   updateConfig: ({
-    activateAt,
-    cw721CollectionInfo,
-    knownUsersCap,
-    lockDepthLimit,
-    lockExpiryDurationSeconds,
-    maxDeploymentDuration,
-    maxLockedTokens
+    config
   }: {
-    activateAt: Timestamp;
-    cw721CollectionInfo?: CollectionInfo;
-    knownUsersCap?: number;
-    lockDepthLimit?: number;
-    lockExpiryDurationSeconds?: number;
-    maxDeploymentDuration?: number;
-    maxLockedTokens?: number;
+    config: UpdateConfigData;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
   deleteConfigs: ({
     timestamps
@@ -1077,6 +1109,21 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   }: {
     lockIds: number[];
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  slashProposalVoters: ({
+    limit,
+    proposalId,
+    roundId,
+    slashPercent,
+    startFrom,
+    trancheId
+  }: {
+    limit: number;
+    proposalId: number;
+    roundId: number;
+    slashPercent: Decimal;
+    startFrom: number;
+    trancheId: number;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
 }
 export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseInterface {
   client: SigningCosmWasmClient;
@@ -1120,6 +1167,7 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.revokeAll = this.revokeAll.bind(this);
     this.setDropTokenInfo = this.setDropTokenInfo.bind(this);
     this.convertLockupToDtoken = this.convertLockupToDtoken.bind(this);
+    this.slashProposalVoters = this.slashProposalVoters.bind(this);
   }
   lockTokens = async ({
     lockDuration,
@@ -1262,31 +1310,13 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     }, fee_, memo_, funds_);
   };
   updateConfig = async ({
-    activateAt,
-    cw721CollectionInfo,
-    knownUsersCap,
-    lockDepthLimit,
-    lockExpiryDurationSeconds,
-    maxDeploymentDuration,
-    maxLockedTokens
+    config
   }: {
-    activateAt: Timestamp;
-    cw721CollectionInfo?: CollectionInfo;
-    knownUsersCap?: number;
-    lockDepthLimit?: number;
-    lockExpiryDurationSeconds?: number;
-    maxDeploymentDuration?: number;
-    maxLockedTokens?: number;
+    config: UpdateConfigData;
   }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       update_config: {
-        activate_at: activateAt,
-        cw721_collection_info: cw721CollectionInfo,
-        known_users_cap: knownUsersCap,
-        lock_depth_limit: lockDepthLimit,
-        lock_expiry_duration_seconds: lockExpiryDurationSeconds,
-        max_deployment_duration: maxDeploymentDuration,
-        max_locked_tokens: maxLockedTokens
+        config
       }
     }, fee_, memo_, funds_);
   };
@@ -1589,6 +1619,32 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     return await this.client.execute(this.sender, this.contractAddress, {
       convert_lockup_to_dtoken: {
         lock_ids: lockIds
+      }
+    }, fee_, memo_, funds_);
+  };
+  slashProposalVoters = async ({
+    limit,
+    proposalId,
+    roundId,
+    slashPercent,
+    startFrom,
+    trancheId
+  }: {
+    limit: number;
+    proposalId: number;
+    roundId: number;
+    slashPercent: Decimal;
+    startFrom: number;
+    trancheId: number;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      slash_proposal_voters: {
+        limit,
+        proposal_id: proposalId,
+        round_id: roundId,
+        slash_percent: slashPercent,
+        start_from: startFrom,
+        tranche_id: trancheId
       }
     }, fee_, memo_, funds_);
   };

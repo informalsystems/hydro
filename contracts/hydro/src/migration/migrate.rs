@@ -38,7 +38,9 @@ pub enum MigrateMsg {
         slash_percentage_threshold: Decimal,
         slash_tokens_receiver_addr: String,
     },
-    PopulateTokenIds { limit: u32 },
+    PopulateTokenIds {
+        limit: u32,
+    },
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -50,9 +52,14 @@ pub fn migrate(
     check_contract_version(deps.storage)?;
 
     let response = match msg {
-        MigrateMsg::MigrateConstants { slash_percentage_threshold, slash_tokens_receiver_addr } => {
-            migrate_constants(&mut deps, slash_percentage_threshold, slash_tokens_receiver_addr)
-        }
+        MigrateMsg::MigrateConstants {
+            slash_percentage_threshold,
+            slash_tokens_receiver_addr,
+        } => migrate_constants(
+            &mut deps,
+            slash_percentage_threshold,
+            slash_tokens_receiver_addr,
+        ),
         MigrateMsg::PopulateTokenIds { limit } => {
             pause_contract_before_migration(&mut deps, &env)?;
             migrate_populate_token_ids(&mut deps, limit)
@@ -142,8 +149,7 @@ pub fn migrate_constants(
         ));
     }
 
-    deps.api
-        .addr_validate(&slash_tokens_receiver_addr)?;
+    deps.api.addr_validate(&slash_tokens_receiver_addr)?;
 
     if slash_percentage_threshold > Decimal::percent(100) {
         return Err(new_generic_error(
@@ -166,7 +172,7 @@ pub fn migrate_constants(
             cw721_collection_info: old_constants.cw721_collection_info,
             lock_expiry_duration_seconds: old_constants.lock_expiry_duration_seconds,
             lock_depth_limit: old_constants.lock_depth_limit,
-            slash_percentage_threshold: slash_percentage_threshold,
+            slash_percentage_threshold,
             slash_tokens_receiver_addr: slash_tokens_receiver_addr.clone(),
         };
 
@@ -179,6 +185,9 @@ pub fn migrate_constants(
 
     Ok(Response::new()
         .add_attribute("action", "migrate_constants")
-        .add_attribute("slash_percentage_threshold", slash_percentage_threshold.to_string())
+        .add_attribute(
+            "slash_percentage_threshold",
+            slash_percentage_threshold.to_string(),
+        )
         .add_attribute("slash_tokens_receiver_addr", slash_tokens_receiver_addr))
 }

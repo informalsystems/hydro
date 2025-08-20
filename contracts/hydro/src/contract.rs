@@ -2835,7 +2835,7 @@ pub fn convert_lockup_to_dtoken_reply(
     // We use the generic functions to handle edge cases and future NFT criteria changes.
     cw721::maybe_remove_token_id(deps.storage, lock_id);
     cw721::maybe_add_token_id(&mut deps, &lock_entry)?;
-    
+
     // Convert any pending slashes as well
     if let Some(pending_slash) = LOCKS_PENDING_SLASHES.may_load(deps.storage, lock_entry.lock_id)? {
         let new_pending_slash = Decimal::from_ratio(lock_entry.funds.amount, initial_token_amount)

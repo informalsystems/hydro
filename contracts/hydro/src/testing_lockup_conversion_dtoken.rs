@@ -324,7 +324,8 @@ fn convert_lockup_to_dtoken_test() {
 
     assert_eq!(
         LOCKS_PENDING_SLASHES.load(&deps.storage, 2).unwrap().u128(),
-        85);
+        85
+    );
 
     // Query all tokens after conversion - should return both lockups since they are now d-tokens (non-LSM)
     let query_msg = QueryMsg::AllTokens {

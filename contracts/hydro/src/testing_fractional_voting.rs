@@ -64,7 +64,11 @@ impl FractionalVotingTestCase {
         lock_epoch_length: u64,
     ) {
         for lockup in lockups {
-            let info = get_message_info(&deps.api, self.voter_address, &[lockup.token.clone()]);
+            let info = get_message_info(
+                &deps.api,
+                self.voter_address,
+                std::slice::from_ref(&lockup.token),
+            );
             let msg = ExecuteMsg::LockTokens {
                 lock_duration: lock_epoch_length,
                 proof: None,

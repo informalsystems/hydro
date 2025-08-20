@@ -202,7 +202,7 @@ fn unlock_tokens_basic_test() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
     let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -276,7 +276,7 @@ fn unlock_tokens_pending_slashes_test() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
     let instantiate_msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(
@@ -364,7 +364,7 @@ fn unlock_specific_tokens_test() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info = get_message_info(&deps.api, user_address, &[user_token.clone()]);
+    let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
     let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());

@@ -216,6 +216,32 @@
     {
       "type": "object",
       "required": [
+        "lockups_pending_slashes"
+      ],
+      "properties": {
+        "lockups_pending_slashes": {
+          "type": "object",
+          "required": [
+            "lockup_ids"
+          ],
+          "properties": {
+            "lockup_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
         "user_voting_power"
       ],
       "properties": {
@@ -800,6 +826,42 @@
                 "integer",
                 "null"
               ],
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Returns maximum number of tokens that can be slashed for voting on a proposal, denominated in the base token (e.g. ATOM).",
+      "type": "object",
+      "required": [
+        "slashable_token_num_for_voting_on_proposal"
+      ],
+      "properties": {
+        "slashable_token_num_for_voting_on_proposal": {
+          "type": "object",
+          "required": [
+            "proposal_id",
+            "round_id",
+            "tranche_id"
+          ],
+          "properties": {
+            "proposal_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             }

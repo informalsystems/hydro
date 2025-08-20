@@ -11,6 +11,7 @@ use crate::{
         compute_current_round_id, compute_round_end, get_current_lock_composition,
         process_votes_and_apply_proposal_changes, validate_sender_is_whitelist_admin,
     },
+    cw721,
     error::ContractError,
     msg::ProposalToLockups,
     score_keeper::get_token_group_shares_for_round,
@@ -166,6 +167,7 @@ pub fn slash_proposal_voters(
                 // If the amount left on the lockup is 0, the lockup should be removed from the store.
                 if lockup_to_slash.funds.amount == Uint128::zero() {
                     LOCKS_MAP_V2.remove(deps.storage, lockup_to_slash.lock_id, env.block.height)?;
+                    cw721::maybe_remove_token_id(deps.storage, lockup_to_slash.lock_id);
 
                     context
                         .users_removed_locks

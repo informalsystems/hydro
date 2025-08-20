@@ -422,7 +422,7 @@ fn lock_tokens_with_multiple_denoms() {
         );
 
         for fund in case.funds.iter() {
-            let info = get_message_info(&deps.api, "addr0001", &[fund.clone()]);
+            let info = get_message_info(&deps.api, "addr0001", std::slice::from_ref(fund));
             let msg = ExecuteMsg::LockTokens {
                 lock_duration: case.lock_duration,
                 proof: None,
@@ -548,8 +548,8 @@ fn unlock_tokens_multiple_users() {
     );
 
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let info1 = get_message_info(&deps.api, user1_address, &[user1_token.clone()]);
-    let info2 = get_message_info(&deps.api, user2_address, &[user2_token.clone()]);
+    let info1 = get_message_info(&deps.api, user1_address, std::slice::from_ref(&user1_token));
+    let info2 = get_message_info(&deps.api, user2_address, std::slice::from_ref(&user2_token));
     let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info1.clone(), msg.clone());

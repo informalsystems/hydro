@@ -308,61 +308,11 @@
         "update_config": {
           "type": "object",
           "required": [
-            "activate_at"
+            "config"
           ],
           "properties": {
-            "activate_at": {
-              "$ref": "#/definitions/Timestamp"
-            },
-            "cw721_collection_info": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/CollectionInfo"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "known_users_cap": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint128",
-              "minimum": 0.0
-            },
-            "lock_depth_limit": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "lock_expiry_duration_seconds": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "max_deployment_duration": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "max_locked_tokens": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint128",
-              "minimum": 0.0
+            "config": {
+              "$ref": "#/definitions/UpdateConfigData"
             }
           },
           "additionalProperties": false
@@ -973,6 +923,58 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Allows whitelisted admins to slash lockups that voted for a given proposal.",
+      "type": "object",
+      "required": [
+        "slash_proposal_voters"
+      ],
+      "properties": {
+        "slash_proposal_voters": {
+          "type": "object",
+          "required": [
+            "limit",
+            "proposal_id",
+            "round_id",
+            "slash_percent",
+            "start_from",
+            "tranche_id"
+          ],
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "proposal_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "slash_percent": {
+              "$ref": "#/definitions/Decimal"
+            },
+            "start_from": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tranche_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {
@@ -1241,6 +1243,84 @@
     "Uint64": {
       "description": "A thin wrapper around u64 that is using strings for JSON encoding/decoding, such that the full u64 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u64` to get the value out:\n\n``` # use cosmwasm_std::Uint64; let a = Uint64::from(42u64); assert_eq!(a.u64(), 42);\n\nlet b = Uint64::from(70u32); assert_eq!(b.u64(), 70); ```",
       "type": "string"
+    },
+    "UpdateConfigData": {
+      "type": "object",
+      "required": [
+        "activate_at"
+      ],
+      "properties": {
+        "activate_at": {
+          "$ref": "#/definitions/Timestamp"
+        },
+        "cw721_collection_info": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CollectionInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "known_users_cap": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint128",
+          "minimum": 0.0
+        },
+        "lock_depth_limit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "lock_expiry_duration_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "max_deployment_duration": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "max_locked_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint128",
+          "minimum": 0.0
+        },
+        "slash_percentage_threshold": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Decimal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "slash_tokens_receiver_addr": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
     }
   }
 }
