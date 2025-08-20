@@ -2388,6 +2388,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "inflow"
+version = "3.5.3"
+dependencies = [
+ "cosmos-sdk-proto 0.20.0",
+ "cosmwasm-schema 2.2.1",
+ "cosmwasm-std 2.2.1",
+ "cw-storage-plus 2.0.0",
+ "cw-utils 2.0.0",
+ "cw2 2.0.0",
+ "neutron-sdk",
+ "prost 0.12.6",
+ "schemars",
+ "serde",
+ "serde-json-wasm 1.0.1",
+ "thiserror",
+]
+
+[[package]]
 name = "interface"
 version = "3.5.3"
 dependencies = [
