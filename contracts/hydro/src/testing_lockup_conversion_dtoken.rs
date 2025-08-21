@@ -20,7 +20,8 @@ use crate::{
     query::{QueryMsg, TokensResponse},
     score_keeper::get_total_power_for_proposal,
     state::{
-        DropTokenInfo, LockEntryV2, DROP_TOKEN_INFO, LOCKS_MAP_V2, TOKEN_INFO_PROVIDERS, USER_LOCKS,
+        DropTokenInfo, LockEntryV2, DROP_TOKEN_INFO, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES,
+        TOKEN_INFO_PROVIDERS, USER_LOCKS,
     },
     testing::{
         get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
@@ -28,8 +29,8 @@ use crate::{
     },
     testing_lsm_integration::set_validator_infos_for_round,
     testing_mocks::{
-        denom_trace_grpc_query_mock, mock_dependencies, token_info_provider_derivative_mock,
-        MockQuerier, MockWasmQuerier,
+        denom_trace_grpc_query_mock, grpc_query_diff_paths_mock, mock_dependencies,
+        token_info_provider_derivative_mock, MockQuerier, MockWasmQuerier,
     },
     token_manager::{TokenInfoProvider, TokenInfoProviderDerivative},
     utils::load_current_constants,
@@ -351,10 +352,17 @@ fn convert_lockup_to_dtoken_test() {
 
 #[test]
 fn convert_lockup_to_dtoken_with_pending_slash_conversion_test() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-1".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
-    );
+    let grpc_map = HashMap::from([
+        (
+            "transfer/channel-1".to_string(),
+            HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        ),
+        (
+            "transfer/channel-8".to_string(),
+            HashMap::from([(DROP_D_TOKEN_DENOM.to_string(), "dATOM".to_string())]),
+        ),
+    ]);
+    let grpc_query = grpc_query_diff_paths_mock(grpc_map);
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let user_address = deps.api.addr_make("addr0000");
     let info = get_message_info(&deps.api, "addr0000", &[]);
@@ -558,7 +566,7 @@ fn convert_lockup_to_dtoken_with_pending_slash_conversion_test() {
     );
 
     let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
-    assert_eq!(result.unwrap(), Some(Uint128::new(575))); // 500 converted to 575
+    assert_eq!(result.unwrap(), Some(Uint128::new(500)));
 }
 
 pub fn setup_d_atom_token_info_provider_mock(

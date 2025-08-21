@@ -57,7 +57,7 @@ use crate::state::{
     REVERSE_LOCK_ID_TRACKING, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID,
     TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
     VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1, VOTE_MAP_V2,
-    VOTING_ALLOWED_ROUND, WHITELIST_ADMINS,
+    VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::token_manager::{
     add_token_info_providers, handle_token_info_provider_add_remove,
@@ -2839,7 +2839,7 @@ pub fn convert_lockup_to_dtoken_reply(
     // update lock entry with converted denom and amount
     let drop_info = DROP_TOKEN_INFO.load(deps.storage)?;
     let mut lock_entry = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
-
+    let initial_token_amount = lock_entry.funds.amount;
     let new_funds = Coin {
         denom: drop_info.d_token_denom.to_string(),
         amount: issue_amount,

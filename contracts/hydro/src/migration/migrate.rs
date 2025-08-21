@@ -1,13 +1,9 @@
 use crate::contract::{CONTRACT_NAME, CONTRACT_VERSION};
-use crate::error::{
-    new_generic_error, {new_generic_error, ContractError},
-};
+use crate::error::{new_generic_error, ContractError};
 use crate::migration::unreleased::{
     cleanup_migration_progress, is_token_ids_migration_done, migrate_populate_token_ids,
 };
-use crate::migration::v3_5_2::ConstantsV3_5_2;
 use crate::migration::v3_5_3::ConstantsV3_5_3;
-use crate::state::{Constants, CONSTANTS};
 use crate::state::{Constants, CONSTANTS};
 use crate::utils::load_constants_active_at_timestamp;
 use cosmwasm_std::{Decimal, DepsMut, Env, Order, Response, StdError};
@@ -15,9 +11,7 @@ use cw2::{get_contract_version, set_contract_version};
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 use cosmwasm_schema::cw_serde;
 #[allow(unused_imports)]
-use cosmwasm_std::{entry_point, DepsMut, Env, Response, StdError};
-use cosmwasm_std::{Decimal, Order};
-use cw2::{get_contract_version, set_contract_version};
+use cosmwasm_std::entry_point;
 use cw_storage_plus::Map;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use neutron_sdk::bindings::query::NeutronQuery;

@@ -16,7 +16,7 @@ use crate::{
     testing_lsm_integration::{
         set_validator_infos_for_round, set_validators_constant_power_ratios_for_rounds,
     },
-    testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies},
+    testing_mocks::{denom_trace_grpc_query_mock, grpc_query_diff_paths_mock, mock_dependencies},
     token_manager::TokenInfoProviderLSM,
 };
 
@@ -585,10 +585,18 @@ fn buyout_pending_slash_lsm_statom_exact_amount_test() {
 // slash denom: statom, buyout_denom: lsm
 #[test]
 fn buyout_pending_slash_statom_lsm_test() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
-    );
+    let grpc_map = HashMap::from([
+        (
+            "transfer/channel-0".to_string(),
+            HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        ),
+        (
+            "transfer/channel-8".to_string(),
+            HashMap::from([(ST_ATOM_ON_NEUTRON.to_string(), "stATOM".to_string())]),
+        ),
+    ]);
+    let grpc_query = grpc_query_diff_paths_mock(grpc_map);
+
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let user_address = deps.api.addr_make("addr0000");
     let info = get_message_info(&deps.api, "addr0000", &[]);
