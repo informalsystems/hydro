@@ -6,10 +6,10 @@ use crate::migration::unreleased::{
 use crate::migration::v3_5_3::ConstantsV3_5_3;
 use crate::state::{Constants, CONSTANTS};
 use crate::utils::load_constants_active_at_timestamp;
+use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Decimal, DepsMut, Env, Order, Response, StdError};
 use cw2::{get_contract_version, set_contract_version};
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
-use cosmwasm_schema::cw_serde;
 #[allow(unused_imports)]
 use cosmwasm_std::entry_point;
 use cw_storage_plus::Map;
