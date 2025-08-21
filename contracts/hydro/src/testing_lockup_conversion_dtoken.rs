@@ -560,6 +560,7 @@ fn convert_lockup_to_dtoken_with_pending_slash_conversion_test() {
     let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
     assert_eq!(result.unwrap(), Some(Uint128::new(575))); // 500 converted to 575
 }
+
 pub fn setup_d_atom_token_info_provider_mock(
     deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
     token_info_provider_addr: Addr,

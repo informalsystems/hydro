@@ -237,6 +237,10 @@ export type ExecuteMsg = {
   buyout_pending_slash: {
     lock_id: number;
   };
+} | {
+  buyout_pending_slash: {
+    lock_id: number;
+  };
 };
 export type Expiration = {
   at_height: number;
