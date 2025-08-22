@@ -20,8 +20,7 @@ use crate::{
     query::{QueryMsg, TokensResponse},
     score_keeper::get_total_power_for_proposal,
     state::{
-        DropTokenInfo, LockEntryV2, DROP_TOKEN_INFO, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES,
-        TOKEN_INFO_PROVIDERS, USER_LOCKS,
+        DropTokenInfo, DROP_TOKEN_INFO, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES, TOKEN_INFO_PROVIDERS,
     },
     testing::{
         get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
@@ -81,17 +80,6 @@ fn convert_lockup_to_dtoken_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
-    let ids: Vec<u64> = vec![1, 2];
-
-    USER_LOCKS
-        .save(
-            &mut deps.storage,
-            user_address.clone(),
-            &ids,
-            env.block.height,
-        )
-        .unwrap();
-
     // simulate user locking 2000 tokens for 3 months, two days after the round started
     env.block.time = env.block.time.plus_days(1);
 
@@ -144,36 +132,6 @@ fn convert_lockup_to_dtoken_test() {
 
     let drop_contract = DROP_TOKEN_INFO.save(&mut deps.storage, &drop_token_info);
     assert!(drop_contract.is_ok(), "failed to save drop contract info");
-
-    let lock_duration = 3 * ONE_MONTH_IN_NANO_SECONDS;
-
-    let res_lock = LOCKS_MAP_V2.save(
-        &mut deps.storage,
-        1,
-        &LockEntryV2 {
-            lock_id: 1,
-            funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
-            owner: user_address.clone(),
-            lock_start: env.block.time,
-            lock_end: env.block.time.plus_nanos(lock_duration),
-        },
-        env.block.height,
-    );
-    assert!(res_lock.is_ok(), "failed to save lock");
-
-    let res_lock_2 = LOCKS_MAP_V2.save(
-        &mut deps.storage,
-        2,
-        &LockEntryV2 {
-            lock_id: 2,
-            funds: Coin::new(Uint128::from(2000u128), IBC_DENOM_1.to_string()),
-            owner: user_address.clone(),
-            lock_start: env.block.time,
-            lock_end: env.block.time.plus_nanos(lock_duration),
-        },
-        env.block.height,
-    );
-    assert!(res_lock_2.is_ok(), "failed to save lock");
 
     let constants = load_current_constants(&deps.as_ref(), &env).unwrap();
     let current_round_id = compute_current_round_id(&env, &constants).unwrap();
@@ -398,17 +356,6 @@ fn convert_lockup_to_dtoken_with_pending_slash_conversion_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
-    let ids: Vec<u64> = vec![1];
-
-    USER_LOCKS
-        .save(
-            &mut deps.storage,
-            user_address.clone(),
-            &ids,
-            env.block.height,
-        )
-        .unwrap();
-
     // simulate user locking 2000 tokens for 3 months, two days after the round started
     env.block.time = env.block.time.plus_days(1);
 
@@ -461,22 +408,6 @@ fn convert_lockup_to_dtoken_with_pending_slash_conversion_test() {
 
     let drop_contract = DROP_TOKEN_INFO.save(&mut deps.storage, &drop_token_info);
     assert!(drop_contract.is_ok(), "failed to save drop contract info");
-
-    let lock_duration = 3 * ONE_MONTH_IN_NANO_SECONDS;
-
-    let res_lock = LOCKS_MAP_V2.save(
-        &mut deps.storage,
-        1,
-        &LockEntryV2 {
-            lock_id: 1,
-            funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
-            owner: user_address.clone(),
-            lock_start: env.block.time,
-            lock_end: env.block.time.plus_nanos(lock_duration),
-        },
-        env.block.height,
-    );
-    assert!(res_lock.is_ok(), "failed to save lock");
 
     let constants = load_current_constants(&deps.as_ref(), &env).unwrap();
     let current_round_id = compute_current_round_id(&env, &constants).unwrap();

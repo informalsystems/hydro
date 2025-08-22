@@ -5,7 +5,7 @@ use cosmwasm_std::{testing::mock_env, Coin, Decimal, Uint128};
 use crate::{
     contract::{execute, instantiate},
     msg::{ExecuteMsg, TokenInfoProviderInstantiateMsg},
-    state::{LockEntryV2, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES, USER_LOCKS},
+    state::LOCKS_PENDING_SLASHES,
     testing::{
         get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
         setup_st_atom_token_info_provider_mock, IBC_DENOM_1, IBC_DENOM_2,
@@ -31,7 +31,6 @@ fn buyout_pending_slash_same_denom_exact_amount_test() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
-    let user_address = deps.api.addr_make("addr0000");
     let info = get_message_info(&deps.api, "addr0000", &[]);
     let mut msg = get_default_instantiate_msg(&deps.api);
     let lsm_token_info_provider = TokenInfoProviderLSM {
@@ -91,32 +90,7 @@ fn buyout_pending_slash_same_denom_exact_amount_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
-    let ids: Vec<u64> = vec![1];
-
-    USER_LOCKS
-        .save(
-            &mut deps.storage,
-            user_address.clone(),
-            &ids,
-            env.block.height,
-        )
-        .unwrap();
-
-    let res_lock = LOCKS_MAP_V2.save(
-        &mut deps.storage,
-        1,
-        &LockEntryV2 {
-            lock_id: 1,
-            funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
-            owner: user_address.clone(),
-            lock_start: env.block.time,
-            lock_end: env.block.time.plus_nanos(3 * ONE_MONTH_IN_NANO_SECONDS),
-        },
-        env.block.height,
-    );
-    assert!(res_lock.is_ok(), "failed to save lock");
-
-    let _ = LOCKS_PENDING_SLASHES.save(&mut deps.storage, 1, &Uint128::new(500));
+    let _ = LOCKS_PENDING_SLASHES.save(&mut deps.storage, 0, &Uint128::new(500));
 
     let buyout_amount: u128 = 500;
     let buyout_info = get_message_info(
@@ -125,7 +99,7 @@ fn buyout_pending_slash_same_denom_exact_amount_test() {
         &[Coin::new(buyout_amount, IBC_DENOM_1.to_string())],
     );
 
-    let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 1 };
+    let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 0 };
     let res = execute(deps.as_mut(), env.clone(), buyout_info.clone(), msg).unwrap();
     // only forward the used amount to the slash tokens receiver
     assert_eq!(res.messages.len(), 1);
@@ -141,7 +115,6 @@ fn buyout_pending_slash_same_denom_partial_amount_test() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
-    let user_address = deps.api.addr_make("addr0000");
     let info = get_message_info(&deps.api, "addr0000", &[]);
     let mut msg = get_default_instantiate_msg(&deps.api);
     let lsm_token_info_provider = TokenInfoProviderLSM {
@@ -201,32 +174,7 @@ fn buyout_pending_slash_same_denom_partial_amount_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
-    let ids: Vec<u64> = vec![1];
-
-    USER_LOCKS
-        .save(
-            &mut deps.storage,
-            user_address.clone(),
-            &ids,
-            env.block.height,
-        )
-        .unwrap();
-
-    let res_lock = LOCKS_MAP_V2.save(
-        &mut deps.storage,
-        1,
-        &LockEntryV2 {
-            lock_id: 1,
-            funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
-            owner: user_address.clone(),
-            lock_start: env.block.time,
-            lock_end: env.block.time.plus_nanos(3 * ONE_MONTH_IN_NANO_SECONDS),
-        },
-        env.block.height,
-    );
-    assert!(res_lock.is_ok(), "failed to save lock");
-
-    let _ = LOCKS_PENDING_SLASHES.save(&mut deps.storage, 1, &Uint128::new(500));
+    let _ = LOCKS_PENDING_SLASHES.save(&mut deps.storage, 0, &Uint128::new(500));
 
     let buyout_amount: u128 = 400;
     let buyout_info = get_message_info(
@@ -235,11 +183,11 @@ fn buyout_pending_slash_same_denom_partial_amount_test() {
         &[Coin::new(buyout_amount, IBC_DENOM_1.to_string())],
     );
 
-    let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 1 };
+    let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 0 };
     let res = execute(deps.as_mut(), env.clone(), buyout_info.clone(), msg).unwrap();
     // only forward the used amount to the slash tokens receiver
     assert_eq!(res.messages.len(), 1);
-    let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
+    let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 0);
     assert_eq!(result.unwrap(), Some(Uint128::new(100))); // 500 - 400 = 100 remaining slash amount
 }
 
@@ -251,7 +199,6 @@ fn buyout_pending_slash_same_denom_overpay_amount_test() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
-    let user_address = deps.api.addr_make("addr0000");
     let info = get_message_info(&deps.api, "addr0000", &[]);
     let mut msg = get_default_instantiate_msg(&deps.api);
     let lsm_token_info_provider = TokenInfoProviderLSM {
@@ -311,32 +258,7 @@ fn buyout_pending_slash_same_denom_overpay_amount_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
-    let ids: Vec<u64> = vec![1];
-
-    USER_LOCKS
-        .save(
-            &mut deps.storage,
-            user_address.clone(),
-            &ids,
-            env.block.height,
-        )
-        .unwrap();
-
-    let res_lock = LOCKS_MAP_V2.save(
-        &mut deps.storage,
-        1,
-        &LockEntryV2 {
-            lock_id: 1,
-            funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
-            owner: user_address.clone(),
-            lock_start: env.block.time,
-            lock_end: env.block.time.plus_nanos(3 * ONE_MONTH_IN_NANO_SECONDS),
-        },
-        env.block.height,
-    );
-    assert!(res_lock.is_ok(), "failed to save lock");
-
-    let _ = LOCKS_PENDING_SLASHES.save(&mut deps.storage, 1, &Uint128::new(500));
+    let _ = LOCKS_PENDING_SLASHES.save(&mut deps.storage, 0, &Uint128::new(500));
 
     let buyout_amount: u128 = 600;
     let buyout_info = get_message_info(
@@ -345,11 +267,11 @@ fn buyout_pending_slash_same_denom_overpay_amount_test() {
         &[Coin::new(buyout_amount, IBC_DENOM_1.to_string())],
     );
 
-    let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 1 };
+    let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 0 };
     let res = execute(deps.as_mut(), env.clone(), buyout_info.clone(), msg).unwrap();
     // forward the used amount to the slash tokens receiver and return the excess
     assert_eq!(res.messages.len(), 2);
-    let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
+    let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 0);
     assert!(result.unwrap().is_none());
 }
 // slash denom: lsm, buyout_denom: lsm , exact amount, validator slashed
@@ -363,7 +285,6 @@ fn buyout_pending_slash_same_denom_validator_slashed_test() {
         ]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
-    let user_address = deps.api.addr_make("addr0000");
     let info = get_message_info(&deps.api, "addr0000", &[]);
     let mut msg = get_default_instantiate_msg(&deps.api);
     let lsm_token_info_provider = TokenInfoProviderLSM {
@@ -423,32 +344,7 @@ fn buyout_pending_slash_same_denom_validator_slashed_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
-    let ids: Vec<u64> = vec![1];
-
-    USER_LOCKS
-        .save(
-            &mut deps.storage,
-            user_address.clone(),
-            &ids,
-            env.block.height,
-        )
-        .unwrap();
-
-    let res_lock = LOCKS_MAP_V2.save(
-        &mut deps.storage,
-        1,
-        &LockEntryV2 {
-            lock_id: 1,
-            funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_2.to_string()),
-            owner: user_address.clone(),
-            lock_start: env.block.time,
-            lock_end: env.block.time.plus_nanos(3 * ONE_MONTH_IN_NANO_SECONDS),
-        },
-        env.block.height,
-    );
-    assert!(res_lock.is_ok(), "failed to save lock");
-
-    let _ = LOCKS_PENDING_SLASHES.save(&mut deps.storage, 1, &Uint128::new(500));
+    let _ = LOCKS_PENDING_SLASHES.save(&mut deps.storage, 0, &Uint128::new(500));
 
     let buyout_amount: u128 = 500;
     let buyout_info = get_message_info(
@@ -457,11 +353,11 @@ fn buyout_pending_slash_same_denom_validator_slashed_test() {
         &[Coin::new(buyout_amount, IBC_DENOM_1.to_string())],
     );
 
-    let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 1 };
+    let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 0 };
     let res = execute(deps.as_mut(), env.clone(), buyout_info.clone(), msg).unwrap();
     // only forward the used amount to the slash tokens receiver
     assert_eq!(res.messages.len(), 1);
-    let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
+    let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 0);
     assert_eq!(result.unwrap(), Some(Uint128::new(25))); // 500 - 475 = 25 remaining slash amount
 }
 // slash denom: lsm, buyout_denom: lsm and statom
@@ -472,7 +368,6 @@ fn buyout_pending_slash_lsm_statom_exact_amount_test() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
-    let user_address = deps.api.addr_make("addr0000");
     let info = get_message_info(&deps.api, "addr0000", &[]);
     let mut msg = get_default_instantiate_msg(&deps.api);
     let lsm_token_info_provider = TokenInfoProviderLSM {
@@ -520,7 +415,6 @@ fn buyout_pending_slash_lsm_statom_exact_amount_test() {
 
     let _contract_address = deps.api.addr_make("dtoken_info_provider");
     let _current_ratio = Decimal::from_str("1.15").unwrap();
-    //setup_d_atom_token_info_provider_mock(&mut deps, contract_address.clone(), current_ratio);
 
     let lockup_amount: u128 = 1000;
     let info = get_message_info(
@@ -536,32 +430,7 @@ fn buyout_pending_slash_lsm_statom_exact_amount_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
-    let ids: Vec<u64> = vec![1];
-
-    USER_LOCKS
-        .save(
-            &mut deps.storage,
-            user_address.clone(),
-            &ids,
-            env.block.height,
-        )
-        .unwrap();
-
-    let res_lock = LOCKS_MAP_V2.save(
-        &mut deps.storage,
-        1,
-        &LockEntryV2 {
-            lock_id: 1,
-            funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
-            owner: user_address.clone(),
-            lock_start: env.block.time,
-            lock_end: env.block.time.plus_nanos(3 * ONE_MONTH_IN_NANO_SECONDS),
-        },
-        env.block.height,
-    );
-    assert!(res_lock.is_ok(), "failed to save lock");
-
-    let _ = LOCKS_PENDING_SLASHES.save(&mut deps.storage, 1, &Uint128::new(500));
+    let _ = LOCKS_PENDING_SLASHES.save(&mut deps.storage, 0, &Uint128::new(500));
 
     let buyout_amount_lsm: u128 = 500;
     let buyout_amount_st: u128 = 500;
@@ -574,11 +443,11 @@ fn buyout_pending_slash_lsm_statom_exact_amount_test() {
         ],
     );
 
-    let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 1 };
+    let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 0 };
     let res = execute(deps.as_mut(), env.clone(), buyout_info.clone(), msg).unwrap();
     // forward the used amount to the slash tokens receiver and return the excess of other denom
     assert_eq!(res.messages.len(), 2);
-    let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
+    let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 0);
     assert!(result.unwrap().is_none());
 }
 
@@ -598,7 +467,6 @@ fn buyout_pending_slash_statom_lsm_test() {
     let grpc_query = grpc_query_diff_paths_mock(grpc_map);
 
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
-    let user_address = deps.api.addr_make("addr0000");
     let info = get_message_info(&deps.api, "addr0000", &[]);
     let mut msg = get_default_instantiate_msg(&deps.api);
     let lsm_token_info_provider = TokenInfoProviderLSM {
@@ -658,32 +526,7 @@ fn buyout_pending_slash_statom_lsm_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
-    let ids: Vec<u64> = vec![1];
-
-    USER_LOCKS
-        .save(
-            &mut deps.storage,
-            user_address.clone(),
-            &ids,
-            env.block.height,
-        )
-        .unwrap();
-
-    let res_lock = LOCKS_MAP_V2.save(
-        &mut deps.storage,
-        1,
-        &LockEntryV2 {
-            lock_id: 1,
-            funds: Coin::new(Uint128::from(1000u128), ST_ATOM_ON_NEUTRON.to_string()),
-            owner: user_address.clone(),
-            lock_start: env.block.time,
-            lock_end: env.block.time.plus_nanos(3 * ONE_MONTH_IN_NANO_SECONDS),
-        },
-        env.block.height,
-    );
-    assert!(res_lock.is_ok(), "failed to save lock");
-
-    let _ = LOCKS_PENDING_SLASHES.save(&mut deps.storage, 1, &Uint128::new(500));
+    let _ = LOCKS_PENDING_SLASHES.save(&mut deps.storage, 0, &Uint128::new(500));
 
     let buyout_amount_lsm: u128 = 500;
     let buyout_info = get_message_info(
@@ -692,11 +535,11 @@ fn buyout_pending_slash_statom_lsm_test() {
         &[Coin::new(buyout_amount_lsm, IBC_DENOM_1.to_string())],
     );
 
-    let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 1 };
+    let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 0 };
     let res = execute(deps.as_mut(), env.clone(), buyout_info.clone(), msg).unwrap();
     // only forward the used amount to the slash tokens receiver
     assert_eq!(res.messages.len(), 1);
-    let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
+    let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 0);
     assert!(result.unwrap().is_some());
 }
 // slash denom: lsm, buyout_denom: atom
@@ -707,7 +550,6 @@ fn buyout_pending_slash_with_atom_test() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
-    let user_address = deps.api.addr_make("addr0000");
     let info = get_message_info(&deps.api, "addr0000", &[]);
     let mut msg = get_default_instantiate_msg(&deps.api);
     let lsm_token_info_provider = TokenInfoProviderLSM {
@@ -774,32 +616,7 @@ fn buyout_pending_slash_with_atom_test() {
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
 
-    let ids: Vec<u64> = vec![1];
-
-    USER_LOCKS
-        .save(
-            &mut deps.storage,
-            user_address.clone(),
-            &ids,
-            env.block.height,
-        )
-        .unwrap();
-
-    let res_lock = LOCKS_MAP_V2.save(
-        &mut deps.storage,
-        1,
-        &LockEntryV2 {
-            lock_id: 1,
-            funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
-            owner: user_address.clone(),
-            lock_start: env.block.time,
-            lock_end: env.block.time.plus_nanos(3 * ONE_MONTH_IN_NANO_SECONDS),
-        },
-        env.block.height,
-    );
-    assert!(res_lock.is_ok(), "failed to save lock");
-
-    let _ = LOCKS_PENDING_SLASHES.save(&mut deps.storage, 1, &Uint128::new(500));
+    let _ = LOCKS_PENDING_SLASHES.save(&mut deps.storage, 0, &Uint128::new(500));
 
     let buyout_amount: u128 = 500;
     let buyout_info = get_message_info(
@@ -808,10 +625,10 @@ fn buyout_pending_slash_with_atom_test() {
         &[Coin::new(buyout_amount, ATOM_ON_NEUTRON.to_string())],
     );
 
-    let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 1 };
+    let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 0 };
     let res = execute(deps.as_mut(), env.clone(), buyout_info.clone(), msg).unwrap();
     // only forward the used amount to the slash tokens receiver
     assert_eq!(res.messages.len(), 1);
-    let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
+    let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 0);
     assert!(result.unwrap().is_none());
 }
