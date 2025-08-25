@@ -234,6 +234,31 @@
           {
             "type": "object",
             "required": [
+              "base"
+            ],
+            "properties": {
+              "base": {
+                "type": "object",
+                "required": [
+                  "denom",
+                  "token_group_id"
+                ],
+                "properties": {
+                  "denom": {
+                    "type": "string"
+                  },
+                  "token_group_id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
               "token_info_provider_contract"
             ],
             "properties": {
@@ -1273,6 +1298,30 @@
           }
         },
         "additionalProperties": false
+      },
+      {
+        "description": "Allows users to remove/reduce pending slash fully or partially by inserting funds",
+        "type": "object",
+        "required": [
+          "buyout_pending_slash"
+        ],
+        "properties": {
+          "buyout_pending_slash": {
+            "type": "object",
+            "required": [
+              "lock_id"
+            ],
+            "properties": {
+              "lock_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
       }
     ],
     "definitions": {
@@ -1472,6 +1521,31 @@
                     "type": "integer",
                     "format": "uint64",
                     "minimum": 0.0
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "base"
+            ],
+            "properties": {
+              "base": {
+                "type": "object",
+                "required": [
+                  "denom",
+                  "token_group_id"
+                ],
+                "properties": {
+                  "denom": {
+                    "type": "string"
+                  },
+                  "token_group_id": {
+                    "type": "string"
                   }
                 },
                 "additionalProperties": false
@@ -5438,6 +5512,18 @@
             {
               "type": "object",
               "required": [
+                "base"
+              ],
+              "properties": {
+                "base": {
+                  "$ref": "#/definitions/TokenInfoProviderBase"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
                 "derivative"
               ],
               "properties": {
@@ -5448,6 +5534,26 @@
               "additionalProperties": false
             }
           ]
+        },
+        "TokenInfoProviderBase": {
+          "type": "object",
+          "required": [
+            "denom",
+            "ratio",
+            "token_group_id"
+          ],
+          "properties": {
+            "denom": {
+              "type": "string"
+            },
+            "ratio": {
+              "$ref": "#/definitions/Decimal"
+            },
+            "token_group_id": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
         },
         "TokenInfoProviderDerivative": {
           "type": "object",

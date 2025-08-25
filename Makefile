@@ -31,7 +31,7 @@ compile-inner:
 	docker run --rm -v "$(WORK_DIR)":/code \
 		--mount type=volume,source="$(notdir $(WORK_DIR))_cache",target=/target \
 		--mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
-		cosmwasm/optimizer:0.16.0
+		cosmwasm/optimizer:0.17.0
 
 schema:
 	# to install TS tooling see here: https://docs.hyperweb.io/ts-codegen

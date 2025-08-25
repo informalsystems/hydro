@@ -25,6 +25,8 @@ use crate::{
 // as its identifier in the store, instead of the smart contract address.
 pub const LSM_TOKEN_INFO_PROVIDER_ID: &str = "lsm_token_info_provider";
 
+pub const BASE_TOKEN_INFO_PROVIDER_ID: &str = "base_token_info_provider";
+
 // This structure is a wrapper around supported token information providers and has the following responsibilities:
 //  - Validation of token denoms provided by users trying to lock tokens in the contract.
 //    The validate_denom() function returns the token group that the provided input denom belongs to,
@@ -118,6 +120,16 @@ impl TokenManager {
 
         None
     }
+
+    pub fn get_base_token_info_provider(&self) -> Option<TokenInfoProviderBase> {
+        for token_info_provider in &self.token_info_providers {
+            if let TokenInfoProvider::Base(token_info_provider) = token_info_provider {
+                return Some(token_info_provider.clone());
+            }
+        }
+
+        None
+    }
 }
 
 // This enum defines possible variants of token information providers. Instances of the enum are saved
@@ -130,6 +142,7 @@ impl TokenManager {
 pub enum TokenInfoProvider {
     #[serde(rename = "lsm")]
     LSM(TokenInfoProviderLSM),
+    Base(TokenInfoProviderBase),
     Derivative(TokenInfoProviderDerivative),
 }
 
@@ -142,6 +155,7 @@ impl TokenInfoProvider {
     ) -> StdResult<String> {
         match self {
             TokenInfoProvider::LSM(provider) => provider.resolve_denom(deps, round_id, denom),
+            TokenInfoProvider::Base(provider) => provider.resolve_denom(deps, round_id, denom),
             TokenInfoProvider::Derivative(provider) => {
                 provider.resolve_denom(deps, round_id, denom)
             }
@@ -158,6 +172,9 @@ impl TokenInfoProvider {
             TokenInfoProvider::LSM(provider) => {
                 provider.get_token_group_ratio(deps, round_id, token_group_id)
             }
+            TokenInfoProvider::Base(provider) => {
+                provider.get_token_group_ratio(deps, round_id, token_group_id)
+            }
             TokenInfoProvider::Derivative(provider) => {
                 provider.get_token_group_ratio(deps, round_id, token_group_id)
             }
@@ -171,6 +188,9 @@ impl TokenInfoProvider {
     ) -> StdResult<HashMap<String, Decimal>> {
         match self {
             TokenInfoProvider::LSM(provider) => provider.get_all_token_group_ratios(deps, round_id),
+            TokenInfoProvider::Base(provider) => {
+                provider.get_all_token_group_ratios(deps, round_id)
+            }
             TokenInfoProvider::Derivative(provider) => {
                 provider.get_all_token_group_ratios(deps, round_id)
             }
@@ -335,22 +355,82 @@ impl TokenInfoProviderLSM {
     }
 }
 
+#[cw_serde]
+pub struct TokenInfoProviderBase {
+    pub token_group_id: String,
+    pub denom: String,
+    pub ratio: Decimal,
+}
+
+impl TokenInfoProviderBase {
+    // Returns OK if the denom is same as the denom of the base Hydro token (e.g. ATOM, OSMO, etc.).
+    pub fn resolve_denom(
+        &mut self,
+        _deps: &Deps<NeutronQuery>,
+        _round_id: u64,
+        denom: String,
+    ) -> StdResult<String> {
+        if self.denom != denom {
+            return Err(StdError::generic_err(format!(
+                "Mismatched denom: expected {}, got {}",
+                self.denom, denom
+            )));
+        }
+        Ok(self.token_group_id.clone())
+    }
+
+    pub fn get_token_group_ratio(
+        &mut self,
+        _deps: &Deps<NeutronQuery>,
+        _round_id: u64,
+        token_group_id: String,
+    ) -> StdResult<Decimal> {
+        if self.token_group_id != token_group_id {
+            return Err(StdError::generic_err(
+                "Input token group ID doesn't match expected token group ID.",
+            ));
+        }
+        Ok(self.ratio)
+    }
+
+    pub fn get_all_token_group_ratios(
+        &mut self,
+        _deps: &Deps<NeutronQuery>,
+        _round_id: u64,
+    ) -> StdResult<HashMap<String, Decimal>> {
+        Ok(HashMap::from_iter([(
+            self.token_group_id.clone(),
+            self.ratio,
+        )]))
+    }
+}
+
 // This function builds token info providers from the given list of instantiation messages.
 // Token info provider of LSM type will be saved into the store immediatelly, while for the
 // Contract type this function prepares SubMsgs that will instantiate the derivative token
 // info provider smart contracts.
 // The function is used during the Hydro contract instantiation, as well as during the execute
 // action that adds a new token info provider.
+#[allow(clippy::type_complexity)]
 pub fn add_token_info_providers(
     deps: &mut DepsMut<NeutronQuery>,
     token_info_provider_msgs: Vec<TokenInfoProviderInstantiateMsg>,
-) -> Result<(Vec<SubMsg<NeutronMsg>>, Option<TokenInfoProvider>), ContractError> {
+) -> Result<
+    (
+        Vec<SubMsg<NeutronMsg>>,
+        Option<TokenInfoProvider>,
+        Option<TokenInfoProvider>,
+    ),
+    ContractError,
+> {
     let token_manager = TokenManager::new(&deps.as_ref());
     let mut token_info_provider_num = token_manager.token_info_providers.len();
     let mut found_lsm_provider = token_manager.get_lsm_token_info_provider().is_some();
+    let mut found_base_provider = token_manager.get_base_token_info_provider().is_some();
 
     let mut submsgs = vec![];
     let mut lsm_provider = None;
+    let mut base_provider = None;
 
     for token_info_provider_msg in token_info_provider_msgs {
         match token_info_provider_msg {
@@ -381,6 +461,32 @@ pub fn add_token_info_providers(
 
                 lsm_provider = Some(lsm_token_info_provider);
                 found_lsm_provider = true;
+                token_info_provider_num += 1;
+            }
+            TokenInfoProviderInstantiateMsg::Base {
+                token_group_id,
+                denom,
+            } => {
+                if found_base_provider {
+                    return Err(new_generic_error(
+                        "Only one Base token info provider can be used.",
+                    ));
+                }
+
+                let base_token_info_provider = TokenInfoProvider::Base(TokenInfoProviderBase {
+                    token_group_id,
+                    denom,
+                    ratio: Decimal::one(),
+                });
+
+                TOKEN_INFO_PROVIDERS.save(
+                    deps.storage,
+                    BASE_TOKEN_INFO_PROVIDER_ID.to_string(),
+                    &base_token_info_provider,
+                )?;
+
+                base_provider = Some(base_token_info_provider);
+                found_base_provider = true;
                 token_info_provider_num += 1;
             }
             TokenInfoProviderInstantiateMsg::TokenInfoProviderContract {
@@ -424,7 +530,7 @@ pub fn add_token_info_providers(
         ));
     }
 
-    Ok((submsgs, lsm_provider))
+    Ok((submsgs, lsm_provider, base_provider))
 }
 
 pub fn token_manager_handle_submsg_reply(
@@ -436,6 +542,9 @@ pub fn token_manager_handle_submsg_reply(
     match token_info_provider {
         TokenInfoProvider::LSM(_) => Err(new_generic_error(
             "Expected smart contract derivative token info provider, found the LSM one.",
+        )),
+        TokenInfoProvider::Base(_) => Err(new_generic_error(
+            "Expected smart contract derivative token info provider, found the Base one.",
         )),
         TokenInfoProvider::Derivative(mut token_info_provider) => {
             let bytes = &msg

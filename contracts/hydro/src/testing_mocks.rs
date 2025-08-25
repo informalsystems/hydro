@@ -140,6 +140,42 @@ pub fn denom_trace_grpc_query_mock(
     })
 }
 
+pub fn grpc_query_diff_paths_mock(
+    in_out_denom_map: HashMap<String, HashMap<String, String>>,
+) -> Box<GrpcQueryFunc> {
+    Box::new(move |query: GrpcQuery| {
+        match query.path.as_str() {
+            DENOM_TRACE_GRPC => {
+                let request = QueryDenomTraceRequest::decode(query.data.as_slice()).unwrap();
+                // Find the trace path and denom for the given hash
+                let (trace_path, denom) = in_out_denom_map
+                    .iter()
+                    .find_map(|(trace_path, map)| {
+                        map.get(request.hash.as_str())
+                            .map(|resolved| (trace_path.clone(), resolved.clone()))
+                    })
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "unexpected input token hash '{}' for path {}",
+                            request.hash, DENOM_TRACE_GRPC
+                        )
+                    });
+
+                system_result_ok_from(
+                    QueryDenomTraceResponse {
+                        denom_trace: Some(DenomTrace {
+                            path: trace_path,
+                            base_denom: denom,
+                        }),
+                    }
+                    .encode_to_vec(),
+                )
+            }
+            _ => system_result_ok_from(vec![]), // no-op
+        }
+    })
+}
+
 pub fn min_query_deposit_grpc_query_mock(mock_min_deposit: Coin) -> Box<GrpcQueryFunc> {
     Box::new(move |query: GrpcQuery| {
         if query.path != INTERCHAINQUERIES_PARAMS_GRPC {

@@ -71,6 +71,9 @@ fn instantiate_with_lsm_token_info_provider_test() {
         TokenInfoProvider::Derivative(_) => {
             panic!("Expected LSM token provider, found derivative one.");
         }
+        TokenInfoProvider::Base(_) => {
+            panic!("Expected LSM token provider, found base provider.");
+        }
         TokenInfoProvider::LSM(provider) => {
             assert_eq!(
                 lsm_token_info_provider.hub_connection_id,
@@ -276,6 +279,9 @@ fn handle_token_info_provider_instantiate_reply_test() {
     match res.unwrap() {
         TokenInfoProvider::LSM(_) => {
             panic!("expected derivative token info provider, found LSM one.")
+        }
+        TokenInfoProvider::Base(_) => {
+            panic!("expected derivative token info provider, found Base provider.")
         }
         TokenInfoProvider::Derivative(provider) => {
             assert_eq!(provider.contract, contract_address.to_string());
