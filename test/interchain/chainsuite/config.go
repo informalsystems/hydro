@@ -88,10 +88,19 @@ const (
 func DefaultConfigToml() testutil.Toml {
 	configToml := make(testutil.Toml)
 	consensusToml := make(testutil.Toml)
+	rpcToml := make(testutil.Toml)
+
 	consensusToml["timeout_commit"] = CommitTimeout
+
+	rpcToml["max_body_bytes"] = 2097152
+	rpcToml["max_header_bytes"] = 2097152
+
 	configToml["consensus"] = consensusToml
+	configToml["rpc"] = rpcToml
+
 	configToml["block_sync"] = false
 	configToml["fast_sync"] = false
+
 	return configToml
 }
 
