@@ -41,14 +41,20 @@ pub struct DenomMetadata {
 #[cw_serde]
 pub enum ExecuteMsg {
     Deposit {},
-    Withraw {},
-    CancelWithrawal { withdrawal_ids: Vec<u64> },
+    Withdraw {},
+    CancelWithdrawal { withdrawal_ids: Vec<u64> },
     FulfillPendingWithdrawals { limit: u64 },
     ClaimUnbondedWithdrawals { withdrawal_ids: Vec<u64> },
     SubmitDeployedAmount { amount: Uint128 },
     WithdrawForDeployment { amount: Uint128 },
     AddToWhitelist { address: String },
     RemoveFromWhitelist { address: String },
+    UpdateConfig { config: UpdateConfigData },
+}
+
+#[cw_serde]
+pub struct UpdateConfigData {
+    pub max_withdrawals_per_user: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize)]

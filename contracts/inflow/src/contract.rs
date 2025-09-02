@@ -21,7 +21,7 @@ use prost::Message;
 
 use crate::{
     error::{new_generic_error, ContractError},
-    msg::{DenomMetadata, ExecuteMsg, InstantiateMsg, ReplyPayload},
+    msg::{DenomMetadata, ExecuteMsg, InstantiateMsg, ReplyPayload, UpdateConfigData},
     query::{
         ConfigResponse, FundedWithdrawalRequestsResponse, QueryMsg, UserPayoutsHistoryResponse,
         UserWithdrawalRequestsResponse, WithdrawalQueueInfoResponse,
@@ -129,8 +129,8 @@ pub fn execute(
 
     match msg {
         ExecuteMsg::Deposit {} => deposit(deps, env, info, &config),
-        ExecuteMsg::Withraw {} => withdraw(deps, env, info, &config),
-        ExecuteMsg::CancelWithrawal { withdrawal_ids } => {
+        ExecuteMsg::Withdraw {} => withdraw(deps, env, info, &config),
+        ExecuteMsg::CancelWithdrawal { withdrawal_ids } => {
             cancel_withdrawal(deps, info, &config, withdrawal_ids)
         }
         ExecuteMsg::FulfillPendingWithdrawals { limit } => {
@@ -149,6 +149,7 @@ pub fn execute(
         ExecuteMsg::SubmitDeployedAmount { amount } => {
             submit_deployed_amount(deps, env, info, amount)
         }
+        ExecuteMsg::UpdateConfig { config } => update_config(deps, info, config),
     }
 }
 
@@ -267,6 +268,7 @@ fn withdraw(
             config,
             Some(vec![withdrawal_id]),
             None,
+            true,
         )?;
 
         response = response
@@ -367,6 +369,7 @@ fn cancel_withdrawal(
         config,
         None,
         Some(withdrawals_to_process.into_iter().collect()),
+        false,
     )?;
 
     // Subtract the burned shares and canceled amounts from the withdrawal queue info
@@ -573,6 +576,7 @@ fn claim_unbonded_withdrawals(
             config,
             None,
             Some(withdrawal_ids_to_remove),
+            false,
         )?;
 
         // Prepare bank message to send the tokens to the user
@@ -796,6 +800,34 @@ fn submit_deployed_amount(
         .add_attribute("amount", amount))
 }
 
+fn update_config(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    config_update: UpdateConfigData,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Check if the sender is in the whitelist
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    let mut config = load_config(deps.storage)?;
+
+    let mut response = Response::new()
+        .add_attribute("action", "update_config")
+        .add_attribute("sender", info.sender);
+
+    if let Some(max_withdrawals_per_user) = config_update.max_withdrawals_per_user {
+        config.max_withdrawals_per_user = max_withdrawals_per_user;
+
+        response = response.add_attribute(
+            "max_withdrawals_per_user",
+            max_withdrawals_per_user.to_string(),
+        );
+    }
+
+    CONFIG.save(deps.storage, &config)?;
+
+    Ok(response)
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
@@ -839,7 +871,7 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
 
 fn query_config(deps: &Deps<NeutronQuery>) -> StdResult<ConfigResponse> {
     Ok(ConfigResponse {
-        config: CONFIG.load(deps.storage)?,
+        config: load_config(deps.storage)?,
     })
 }
 
@@ -1140,13 +1172,14 @@ fn create_set_denom_metadata_msg(
     })
 }
 
-/// Updates the list of user's pending withdrawal requestss by adding and/or removing specified withdrawal IDs.
+/// Updates the list of user's pending withdrawal requests by adding and/or removing specified withdrawal IDs.
 fn update_user_withdrawal_requests_info(
     storage: &mut dyn Storage,
     user: Addr,
     config: &Config,
     withdrawals_to_add: Option<Vec<u64>>,
     withdrawals_to_remove: Option<Vec<u64>>,
+    should_check_withdrawal_limit: bool,
 ) -> Result<(), ContractError> {
     USER_WITHDRAWAL_REQUESTS.update(
         storage,
@@ -1164,7 +1197,9 @@ fn update_user_withdrawal_requests_info(
                 current_withdrawals.retain(|id| !withdrawals_to_remove.contains(id));
             }
 
-            if (current_withdrawals.len() as u64) > config.max_withdrawals_per_user {
+            if should_check_withdrawal_limit
+                && (current_withdrawals.len() as u64) > config.max_withdrawals_per_user
+            {
                 return Err(new_generic_error(format!(
                     "user {} has reached the maximum number of pending withdrawals: {}",
                     user, config.max_withdrawals_per_user

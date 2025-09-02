@@ -7,7 +7,7 @@ use crate::{
         query_withdrawal_queue_info,
     },
     error::ContractError,
-    msg::{DenomMetadata, ExecuteMsg, InstantiateMsg},
+    msg::{DenomMetadata, ExecuteMsg, InstantiateMsg, UpdateConfigData},
     query::QueryMsg,
     state::{CONFIG, DEPLOYED_AMOUNT, LAST_FUNDED_WITHDRAWAL_ID},
 };
@@ -1563,6 +1563,179 @@ fn reporting_balance_queries_test() {
     assert_eq!(eq_value, deployed_amount + deposit_amount);
 }
 
+#[test]
+fn withdrawal_with_config_update_test() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+
+    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let user1_addr = deps.api.addr_make(USER1);
+
+    env.contract.address = inflow_contract_addr.clone();
+
+    let instantiate_msg = get_default_instantiate_msg(DEPOSIT_DENOM, whitelist_addr.clone());
+
+    let info = get_message_info(&deps.api, "creator", &[]);
+
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg.clone()).unwrap();
+
+    let vault_shares_denom_str: String =
+        format!("factory/{inflow_contract_addr}/hydro_inflow_uatom");
+
+    set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
+
+    // User1 deposits 10000 tokens
+    let user1_deposit1 = Uint128::new(10000);
+    let user1_deposit_shares1 = Uint128::new(10000);
+
+    execute_deposit(
+        &mut deps,
+        &env,
+        &inflow_contract_addr,
+        USER1,
+        &vault_shares_denom_str,
+        user1_deposit1,
+        user1_deposit_shares1,
+        user1_deposit_shares1,
+        user1_deposit1,
+    );
+
+    // Whitelisted address withdraws 10000 tokens for deployment
+    execute_withdraw_for_deployment(
+        &mut deps,
+        &env,
+        inflow_contract_addr.as_ref(),
+        WHITELIST_ADDR,
+        user1_deposit1,
+        Uint128::zero(),
+    );
+
+    // User1 requests withdrawal of 100 shares 10 times (enters the queue each time)
+    let user1_withdrawal_shares1 = Uint128::new(100);
+    let mut total_user_shares_after = user1_deposit_shares1;
+
+    for _ in 0..10 {
+        total_user_shares_after -= user1_withdrawal_shares1;
+        execute_withdraw(
+            &mut deps,
+            &env,
+            inflow_contract_addr.as_ref(),
+            USER1,
+            &vault_shares_denom_str,
+            user1_withdrawal_shares1,
+            false,
+            Uint128::zero(),
+            total_user_shares_after,
+            Uint128::zero(),
+        );
+    }
+
+    // Verify withdrawal requests for both users and withdrawal queue info
+    verify_user_withdrawal_requests(
+        &deps,
+        &user1_addr,
+        vec![
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+        ],
+    );
+
+    verify_withdrawal_queue_info(
+        &deps,
+        Uint128::new(1000),
+        Uint128::new(1000),
+        Uint128::new(1000),
+    );
+
+    // Try to create one more withdrawal request and verify the error returned
+    let user_info = get_message_info(
+        &deps.api,
+        USER1,
+        &[Coin {
+            denom: vault_shares_denom_str.to_string(),
+            amount: user1_withdrawal_shares1,
+        }],
+    );
+    let withdraw_res = execute(
+        deps.as_mut(),
+        env.clone(),
+        user_info.clone(),
+        ExecuteMsg::Withdraw {},
+    )
+    .unwrap_err();
+
+    assert!(withdraw_res.to_string().contains(&format!(
+        "user {user1_addr} has reached the maximum number of pending withdrawals: {}",
+        instantiate_msg.max_withdrawals_per_user
+    )));
+
+    // Update config so that only 5 withdrawal requests per user are allowed
+    let new_max_withdrawals_per_user = 5;
+    let whitelisted_addr_info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        whitelisted_addr_info.clone(),
+        ExecuteMsg::UpdateConfig {
+            config: UpdateConfigData {
+                max_withdrawals_per_user: Some(new_max_withdrawals_per_user),
+            },
+        },
+    )
+    .unwrap();
+
+    // User1 cancels their withdrawal requests 0, 1 and 2. This should be allowed since they created
+    // 10 requests while it was allowed. After the cancelation they should have 7 pending requests.
+    execute_cancel_withdrawal(
+        &mut deps,
+        &env,
+        USER1,
+        vec![0, 1, 2],
+        &vault_shares_denom_str,
+        Some((
+            user1_withdrawal_shares1 * Uint128::new(3),
+            Uint128::new(9300),
+        )),
+    );
+
+    // Verify 7 remaining withdrawal requests for User1
+    verify_user_withdrawal_requests(
+        &deps,
+        &user1_addr,
+        vec![
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+            (user1_withdrawal_shares1, Uint128::new(100), false),
+        ],
+    );
+
+    // User1 tries to create 8th withdrawal request which isn't allowed because the limit changed to 5.
+    let withdraw_res = execute(
+        deps.as_mut(),
+        env.clone(),
+        user_info.clone(),
+        ExecuteMsg::Withdraw {},
+    )
+    .unwrap_err();
+
+    assert!(withdraw_res.to_string().contains(&format!(
+        "user {user1_addr} has reached the maximum number of pending withdrawals: {}",
+        new_max_withdrawals_per_user,
+    )));
+}
+
 #[allow(clippy::too_many_arguments)]
 fn execute_deposit(
     deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
@@ -1726,7 +1899,7 @@ fn execute_withdraw(
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::Withraw {},
+        ExecuteMsg::Withdraw {},
     )
     .unwrap();
 
@@ -1794,7 +1967,7 @@ fn execute_cancel_withdrawal(
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::CancelWithrawal { withdrawal_ids },
+        ExecuteMsg::CancelWithdrawal { withdrawal_ids },
     )
     .unwrap();
 
