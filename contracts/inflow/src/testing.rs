@@ -73,6 +73,7 @@ fn get_default_instantiate_msg(deposit_denom: &str, whitelist_addr: Addr) -> Ins
             uri_hash: None,
         },
         max_withdrawals_per_user: 10,
+        deposit_cap: Uint128::new(10000000),
     }
 }
 
@@ -1687,6 +1688,7 @@ fn withdrawal_with_config_update_test() {
         ExecuteMsg::UpdateConfig {
             config: UpdateConfigData {
                 max_withdrawals_per_user: Some(new_max_withdrawals_per_user),
+                deposit_cap: None,
             },
         },
     )

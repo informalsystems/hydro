@@ -53,6 +53,8 @@ pub struct Config {
     pub vault_shares_denom: String,
     /// Maximum number of pending withdrawal requests allowed per user.
     pub max_withdrawals_per_user: u64,
+    /// Maximum number of tokens that can be deposited into the vault.
+    pub deposit_cap: Uint128,
 }
 #[cw_serde]
 pub struct WithdrawalQueueInfo {
@@ -87,6 +89,10 @@ pub struct PayoutEntry {
 
 pub fn load_config(storage: &dyn Storage) -> StdResult<Config> {
     CONFIG.load(storage)
+}
+
+pub fn load_withdrawal_queue_info(storage: &dyn Storage) -> StdResult<WithdrawalQueueInfo> {
+    WITHDRAWAL_QUEUE_INFO.load(storage)
 }
 
 /// Retrieves the withdrawal ID to be used and increments the stored value for the next withdrawal ID.

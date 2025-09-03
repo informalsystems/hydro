@@ -16,6 +16,8 @@ pub struct InstantiateMsg {
     pub whitelist: Vec<String>,
     /// Maximum number of pending withdrawals per single user.
     pub max_withdrawals_per_user: u64,
+    /// Maximum number of tokens that can be deposited into the vault.
+    pub deposit_cap: Uint128,
 }
 
 #[cw_serde]
@@ -55,6 +57,7 @@ pub enum ExecuteMsg {
 #[cw_serde]
 pub struct UpdateConfigData {
     pub max_withdrawals_per_user: Option<u64>,
+    pub deposit_cap: Option<Uint128>,
 }
 
 #[derive(Serialize, Deserialize)]
