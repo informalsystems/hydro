@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## v3.6.0
+
+Date: September 3rd, 2025
+
+### BUG FIXES
+
+-Prevents "out-of-gas" errors in `query_all_tokens`.
+([\#298](https://github.com/informalsystems/hydro/pull/298))
+
+### FEATURES
+
+- Allow users to buy out their pending slashes.
+  ([\#290](https://github.com/informalsystems/hydro/pull/290))
+- Introducing ability to slash voters that voted on poorly performing proposals.
+  ([\#291](https://github.com/informalsystems/hydro/pull/291))
+- Enables users to deposit into inflow contract and reporting on user balance
+  ([\#300](https://github.com/informalsystems/hydro/pull/300))
+
 ## v3.5.3
 
 Date: August 14th, 2025
@@ -242,9 +260,9 @@ Date: November 18th, 2024
 
 - Adjusts tributes to only be claimable if their proposal received a non-zero fund deployment.
   ([\#164](https://github.com/informalsystems/hydro/pull/164))
-- Allow whitelist admins to register performed liquidity deployments in the Hydro contract.
-  ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Add a minimum liquidity request value to proposals.
+  ([\#164](https://github.com/informalsystems/hydro/pull/164))
+- Allow whitelist admins to register performed liquidity deployments in the Hydro contract.
   ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Allow bids to set a custom duration they would like to receive liquidity for.
   ([\#165](https://github.com/informalsystems/hydro/pull/165))
