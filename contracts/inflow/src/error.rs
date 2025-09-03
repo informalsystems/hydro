@@ -1,4 +1,4 @@
-use cosmwasm_std::{CheckedFromRatioError, OverflowError, StdError};
+use cosmwasm_std::{CheckedFromRatioError, ConversionOverflowError, OverflowError, StdError};
 use cw_utils::PaymentError;
 use neutron_sdk::NeutronError;
 use thiserror::Error;
@@ -17,9 +17,16 @@ pub enum ContractError {
     #[error("{0}")]
     CheckedFromRatioError(#[from] CheckedFromRatioError),
 
+    #[error("{0}")]
+    ConversionOverflowError(#[from] ConversionOverflowError),
+
     #[error(transparent)]
     NeutronError(#[from] NeutronError),
 
     #[error("Unauthorized")]
     Unauthorized,
+}
+
+pub fn new_generic_error(msg: impl Into<String>) -> ContractError {
+    ContractError::Std(StdError::generic_err(msg))
 }
