@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
-import { InstantiateMsg, DenomMetadata, ExecuteMsg, Uint128, QueryMsg, ConfigResponse, Config } from "./InflowBase.types";
+import { Uint128, InstantiateMsg, DenomMetadata, ExecuteMsg, UpdateConfigData, QueryMsg, Order, ConfigResponse, Config, FundedWithdrawalRequestsResponse, Timestamp, Uint64, Addr, UserPayoutsHistoryResponse, PayoutEntry, UserWithdrawalRequestsResponse, WithdrawalEntry, WithdrawalQueueInfoResponse, WithdrawalQueueInfo } from "./InflowBase.types";
 export interface InflowBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
@@ -23,6 +23,34 @@ export interface InflowBaseReadOnlyInterface {
     address: string;
   }) => Promise<Uint128>;
   deployedAmount: () => Promise<Uint128>;
+  availableForDeployment: () => Promise<Uint128>;
+  withdrawalQueueInfo: () => Promise<WithdrawalQueueInfoResponse>;
+  amountToFundPendingWithdrawals: () => Promise<Uint128>;
+  fundedWithdrawalRequests: ({
+    limit
+  }: {
+    limit: number;
+  }) => Promise<FundedWithdrawalRequestsResponse>;
+  userWithdrawalRequests: ({
+    address,
+    limit,
+    startFrom
+  }: {
+    address: string;
+    limit: number;
+    startFrom: number;
+  }) => Promise<UserWithdrawalRequestsResponse>;
+  userPayoutsHistory: ({
+    address,
+    limit,
+    order,
+    startFrom
+  }: {
+    address: string;
+    limit: number;
+    order: Order;
+    startFrom: number;
+  }) => Promise<UserPayoutsHistoryResponse>;
 }
 export class InflowBaseQueryClient implements InflowBaseReadOnlyInterface {
   client: CosmWasmClient;
@@ -36,6 +64,12 @@ export class InflowBaseQueryClient implements InflowBaseReadOnlyInterface {
     this.sharesEquivalentValue = this.sharesEquivalentValue.bind(this);
     this.userSharesEquivalentValue = this.userSharesEquivalentValue.bind(this);
     this.deployedAmount = this.deployedAmount.bind(this);
+    this.availableForDeployment = this.availableForDeployment.bind(this);
+    this.withdrawalQueueInfo = this.withdrawalQueueInfo.bind(this);
+    this.amountToFundPendingWithdrawals = this.amountToFundPendingWithdrawals.bind(this);
+    this.fundedWithdrawalRequests = this.fundedWithdrawalRequests.bind(this);
+    this.userWithdrawalRequests = this.userWithdrawalRequests.bind(this);
+    this.userPayoutsHistory = this.userPayoutsHistory.bind(this);
   }
   config = async (): Promise<ConfigResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -79,11 +113,90 @@ export class InflowBaseQueryClient implements InflowBaseReadOnlyInterface {
       deployed_amount: {}
     });
   };
+  availableForDeployment = async (): Promise<Uint128> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      available_for_deployment: {}
+    });
+  };
+  withdrawalQueueInfo = async (): Promise<WithdrawalQueueInfoResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      withdrawal_queue_info: {}
+    });
+  };
+  amountToFundPendingWithdrawals = async (): Promise<Uint128> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      amount_to_fund_pending_withdrawals: {}
+    });
+  };
+  fundedWithdrawalRequests = async ({
+    limit
+  }: {
+    limit: number;
+  }): Promise<FundedWithdrawalRequestsResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      funded_withdrawal_requests: {
+        limit
+      }
+    });
+  };
+  userWithdrawalRequests = async ({
+    address,
+    limit,
+    startFrom
+  }: {
+    address: string;
+    limit: number;
+    startFrom: number;
+  }): Promise<UserWithdrawalRequestsResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      user_withdrawal_requests: {
+        address,
+        limit,
+        start_from: startFrom
+      }
+    });
+  };
+  userPayoutsHistory = async ({
+    address,
+    limit,
+    order,
+    startFrom
+  }: {
+    address: string;
+    limit: number;
+    order: Order;
+    startFrom: number;
+  }): Promise<UserPayoutsHistoryResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      user_payouts_history: {
+        address,
+        limit,
+        order,
+        start_from: startFrom
+      }
+    });
+  };
 }
 export interface InflowBaseInterface extends InflowBaseReadOnlyInterface {
   contractAddress: string;
   sender: string;
   deposit: (fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  withdraw: (fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  cancelWithdrawal: ({
+    withdrawalIds
+  }: {
+    withdrawalIds: number[];
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  fulfillPendingWithdrawals: ({
+    limit
+  }: {
+    limit: number;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  claimUnbondedWithdrawals: ({
+    withdrawalIds
+  }: {
+    withdrawalIds: number[];
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
   submitDeployedAmount: ({
     amount
   }: {
@@ -104,6 +217,11 @@ export interface InflowBaseInterface extends InflowBaseReadOnlyInterface {
   }: {
     address: string;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
+  updateConfig: ({
+    config
+  }: {
+    config: UpdateConfigData;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
 }
 export class InflowBaseClient extends InflowBaseQueryClient implements InflowBaseInterface {
   client: SigningCosmWasmClient;
@@ -115,14 +233,57 @@ export class InflowBaseClient extends InflowBaseQueryClient implements InflowBas
     this.sender = sender;
     this.contractAddress = contractAddress;
     this.deposit = this.deposit.bind(this);
+    this.withdraw = this.withdraw.bind(this);
+    this.cancelWithdrawal = this.cancelWithdrawal.bind(this);
+    this.fulfillPendingWithdrawals = this.fulfillPendingWithdrawals.bind(this);
+    this.claimUnbondedWithdrawals = this.claimUnbondedWithdrawals.bind(this);
     this.submitDeployedAmount = this.submitDeployedAmount.bind(this);
     this.withdrawForDeployment = this.withdrawForDeployment.bind(this);
     this.addToWhitelist = this.addToWhitelist.bind(this);
     this.removeFromWhitelist = this.removeFromWhitelist.bind(this);
+    this.updateConfig = this.updateConfig.bind(this);
   }
   deposit = async (fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       deposit: {}
+    }, fee_, memo_, funds_);
+  };
+  withdraw = async (fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      withdraw: {}
+    }, fee_, memo_, funds_);
+  };
+  cancelWithdrawal = async ({
+    withdrawalIds
+  }: {
+    withdrawalIds: number[];
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      cancel_withdrawal: {
+        withdrawal_ids: withdrawalIds
+      }
+    }, fee_, memo_, funds_);
+  };
+  fulfillPendingWithdrawals = async ({
+    limit
+  }: {
+    limit: number;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      fulfill_pending_withdrawals: {
+        limit
+      }
+    }, fee_, memo_, funds_);
+  };
+  claimUnbondedWithdrawals = async ({
+    withdrawalIds
+  }: {
+    withdrawalIds: number[];
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      claim_unbonded_withdrawals: {
+        withdrawal_ids: withdrawalIds
+      }
     }, fee_, memo_, funds_);
   };
   submitDeployedAmount = async ({
@@ -166,6 +327,17 @@ export class InflowBaseClient extends InflowBaseQueryClient implements InflowBas
     return await this.client.execute(this.sender, this.contractAddress, {
       remove_from_whitelist: {
         address
+      }
+    }, fee_, memo_, funds_);
+  };
+  updateConfig = async ({
+    config
+  }: {
+    config: UpdateConfigData;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      update_config: {
+        config
       }
     }, fee_, memo_, funds_);
   };
