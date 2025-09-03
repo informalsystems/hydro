@@ -6,8 +6,8 @@ use std::{
 use cosmos_sdk_proto::cosmos::bank::v1beta1::{DenomUnit, Metadata};
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, to_json_vec, Addr, AnyMsg, BankMsg, Binary, Coin,
-    ConversionOverflowError, CosmosMsg, Decimal, Deps, DepsMut, Env, Int128, MessageInfo, Order,
-    Reply, Response, StdError, StdResult, Storage, SubMsg, Uint128,
+    ConversionOverflowError, CosmosMsg, Deps, DepsMut, Env, Int128, MessageInfo, Order, Reply,
+    Response, StdError, StdResult, Storage, SubMsg, Uint128,
 };
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
@@ -27,10 +27,10 @@ use crate::{
         UserWithdrawalRequestsResponse, WithdrawalQueueInfoResponse,
     },
     state::{
-        get_next_payout_id, get_next_withdrawal_id, load_config, Config, PayoutEntry,
-        WithdrawalEntry, WithdrawalQueueInfo, CONFIG, DEPLOYED_AMOUNT, LAST_FUNDED_WITHDRAWAL_ID,
-        NEXT_PAYOUT_ID, NEXT_WITHDRAWAL_ID, PAYOUTS_HISTORY, USER_WITHDRAWAL_REQUESTS, WHITELIST,
-        WITHDRAWAL_QUEUE_INFO, WITHDRAWAL_REQUESTS,
+        get_next_payout_id, get_next_withdrawal_id, load_config, load_withdrawal_queue_info,
+        Config, PayoutEntry, WithdrawalEntry, WithdrawalQueueInfo, CONFIG, DEPLOYED_AMOUNT,
+        LAST_FUNDED_WITHDRAWAL_ID, NEXT_PAYOUT_ID, NEXT_WITHDRAWAL_ID, PAYOUTS_HISTORY,
+        USER_WITHDRAWAL_REQUESTS, WHITELIST, WITHDRAWAL_QUEUE_INFO, WITHDRAWAL_REQUESTS,
     },
 };
 
@@ -56,6 +56,7 @@ pub fn instantiate(
             deposit_denom: msg.deposit_denom.clone(),
             vault_shares_denom: String::new(),
             max_withdrawals_per_user: msg.max_withdrawals_per_user,
+            deposit_cap: msg.deposit_cap,
         },
     )?;
 
@@ -162,6 +163,12 @@ fn deposit(
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let deposit_amount = cw_utils::must_pay(&info, &config.deposit_denom)?;
 
+    let total_pool_value =
+        get_total_pool_value(&deps.as_ref(), &env, config.deposit_denom.clone())?;
+    if total_pool_value > config.deposit_cap {
+        return Err(new_generic_error("deposit cap has been reached"));
+    }
+
     let vault_shares_to_mint =
         calculate_number_of_shares_to_mint(&deps.as_ref(), &env, config, deposit_amount)?;
 
@@ -211,9 +218,7 @@ fn withdraw(
         .amount;
 
     // Get the total amount already requested for withdrawal
-    let withdrawal_queue_amount = WITHDRAWAL_QUEUE_INFO
-        .load(deps.storage)?
-        .total_withdrawal_amount;
+    let withdrawal_queue_amount = load_withdrawal_queue_info(deps.storage)?.total_withdrawal_amount;
 
     let mut response = Response::new()
         .add_attribute("action", "withdraw")
@@ -228,7 +233,7 @@ fn withdraw(
                 to_address: info.sender.to_string(),
                 amount: vec![Coin::new(amount_to_withdraw, config.deposit_denom.clone())],
             })
-            .add_attribute("withdrawn_amount", amount_to_withdraw);
+            .add_attribute("paid_out_amount", amount_to_withdraw);
 
         // Add entry to the payout history
         add_payout_history_entry(
@@ -273,7 +278,7 @@ fn withdraw(
 
         response = response
             .add_attribute("withdrawal_id", withdrawal_id.to_string())
-            .add_attribute("amount_to_withdraw", amount_to_withdraw);
+            .add_attribute("amount_queued_for_withdrawal", amount_to_withdraw);
     }
 
     // Burn the vault shares tokens sent by the user
@@ -431,7 +436,7 @@ fn fulfill_pending_withdrawals(
         })
         .collect::<Vec<WithdrawalEntry>>();
 
-    let withdrawal_queue_info = WITHDRAWAL_QUEUE_INFO.load(deps.storage)?;
+    let withdrawal_queue_info = load_withdrawal_queue_info(deps.storage)?;
 
     let mut available_balance = get_balance_available_for_pending_withdrawals(
         &deps.as_ref(),
@@ -757,9 +762,7 @@ pub fn calculate_number_of_shares_to_mint(
         .amount;
 
     let deployed_amount = DEPLOYED_AMOUNT.load(deps.storage)?;
-    let withdrawal_queue_amount = WITHDRAWAL_QUEUE_INFO
-        .load(deps.storage)?
-        .total_withdrawal_amount;
+    let withdrawal_queue_amount = load_withdrawal_queue_info(deps.storage)?.total_withdrawal_amount;
 
     // `deposit_amount` has already been added to the smart contract balance even before `execute()` is called,
     // so we need to subtract it here in order to accurately calculate number of vault shares to mint.
@@ -772,7 +775,7 @@ pub fn calculate_number_of_shares_to_mint(
 
     let total_shares_issued = query_total_shares_issued(deps)?;
 
-    // If it is the first deposit, vault shares have 1:1 ratio with the deposit token.
+    // If there are currently no vault shares minted, then vault shares have 1:1 ratio with the deposit token.
     if deposit_token_current_balance.is_zero() || total_shares_issued.is_zero() {
         return Ok(deposit_amount);
     }
@@ -821,6 +824,12 @@ fn update_config(
             "max_withdrawals_per_user",
             max_withdrawals_per_user.to_string(),
         );
+    }
+
+    if let Some(deposit_cap) = config_update.deposit_cap {
+        config.deposit_cap = deposit_cap;
+
+        response = response.add_attribute("deposit_cap", deposit_cap.to_string());
     }
 
     CONFIG.save(deps.storage, &config)?;
@@ -883,28 +892,7 @@ fn query_total_shares_issued(deps: &Deps<NeutronQuery>) -> StdResult<Uint128> {
 }
 
 fn query_total_pool_value(deps: &Deps<NeutronQuery>, env: &Env) -> StdResult<Uint128> {
-    let config = load_config(deps.storage)?;
-    let denom = config.deposit_denom;
-
-    // Get the current balance of this contract in the deposit denom
-    let balance: Coin = deps
-        .querier
-        .query_balance(env.contract.address.clone(), denom.clone())?;
-
-    // Get the total deployed amount (from snapshot storage)
-    let deployed_amount = DEPLOYED_AMOUNT.may_load(deps.storage)?;
-
-    // Get the total amount already requested for withdrawal. This amount should be
-    // subtracted from the total pool value, since we cannot count on it anymore.
-    let withdrawal_queue_amount = WITHDRAWAL_QUEUE_INFO
-        .load(deps.storage)?
-        .total_withdrawal_amount;
-
-    Ok(balance
-        .amount
-        .checked_add(deployed_amount.unwrap_or_default())?
-        .checked_sub(withdrawal_queue_amount)
-        .unwrap_or_default())
+    get_total_pool_value(deps, env, load_config(deps.storage)?.deposit_denom)
 }
 
 /// Returns the value equivalent of a given amount of shares based on the current total shares and pool value.
@@ -941,7 +929,7 @@ fn query_deployed_amount(deps: &Deps<NeutronQuery>) -> StdResult<Uint128> {
 
 pub fn query_available_for_deployment(deps: &Deps<NeutronQuery>, env: &Env) -> StdResult<Uint128> {
     let config = load_config(deps.storage)?;
-    let withdrawal_queue_info = WITHDRAWAL_QUEUE_INFO.load(deps.storage)?;
+    let withdrawal_queue_info = load_withdrawal_queue_info(deps.storage)?;
 
     let contract_balance = deps
         .querier
@@ -961,7 +949,7 @@ pub fn query_withdrawal_queue_info(
     deps: &Deps<NeutronQuery>,
 ) -> StdResult<WithdrawalQueueInfoResponse> {
     Ok(WithdrawalQueueInfoResponse {
-        info: WITHDRAWAL_QUEUE_INFO.load(deps.storage)?,
+        info: load_withdrawal_queue_info(deps.storage)?,
     })
 }
 
@@ -970,7 +958,7 @@ pub fn query_amount_to_fund_pending_withdrawals(
     env: &Env,
 ) -> StdResult<Uint128> {
     let config = load_config(deps.storage)?;
-    let withdrawal_queue_info = WITHDRAWAL_QUEUE_INFO.load(deps.storage)?;
+    let withdrawal_queue_info = load_withdrawal_queue_info(deps.storage)?;
 
     // Determine how much is already available to fund pending withdrawals
     let available_balance = get_balance_available_for_pending_withdrawals(
@@ -1075,7 +1063,7 @@ pub fn query_user_payouts_history(
 }
 
 /// Calculates the value of `shares` relative to the `total_pool_value` based on `total_shares_supply`.
-/// Caps value at `total_pool_value` if `shares` exceed supply. Returns zero if supply is zero.
+/// Returns an error if the `shares` exceed supply. Returns zero if supply is zero.
 /// Formula: (user_shares * total_pool_value) / total_shares_supply
 fn calculate_shares_value(
     shares: Uint128,
@@ -1086,19 +1074,13 @@ fn calculate_shares_value(
         return Ok(Uint128::zero());
     }
 
-    if shares >= total_shares_supply {
-        return Ok(total_pool_value);
+    if shares > total_shares_supply {
+        return Err(StdError::generic_err(format!("invalid shares amount; shares sent: {shares}, total shares supply: {total_shares_supply}")));
     }
 
-    let share_ratio = Decimal::from_ratio(shares, Uint128::one());
-    let result = share_ratio
-        .checked_mul(Decimal::from_ratio(total_pool_value, Uint128::one()))
-        .map_err(|e| StdError::generic_err(format!("mul overflow: {e}")))?
-        .checked_div(Decimal::from_ratio(total_shares_supply, Uint128::one()))
-        .map_err(|e| StdError::generic_err(format!("div overflow: {e}")))?
-        .to_uint_floor();
-
-    Ok(result)
+    shares
+        .checked_multiply_ratio(total_pool_value, total_shares_supply)
+        .map_err(|e| StdError::generic_err(format!("overflow error: {e}")))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -1172,6 +1154,30 @@ fn create_set_denom_metadata_msg(
     })
 }
 
+fn get_total_pool_value(
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
+    deposit_denom: String,
+) -> StdResult<Uint128> {
+    // Get the current balance of this contract in the deposit denom
+    let balance: Coin = deps
+        .querier
+        .query_balance(env.contract.address.clone(), deposit_denom.clone())?;
+
+    // Get the total deployed amount (from snapshot storage)
+    let deployed_amount = DEPLOYED_AMOUNT.may_load(deps.storage)?;
+
+    // Get the total amount already requested for withdrawal. This amount should be
+    // subtracted from the total pool value, since we cannot count on it anymore.
+    let withdrawal_queue_amount = load_withdrawal_queue_info(deps.storage)?.total_withdrawal_amount;
+
+    Ok(balance
+        .amount
+        .checked_add(deployed_amount.unwrap_or_default())?
+        .checked_sub(withdrawal_queue_amount)
+        .unwrap_or_default())
+}
+
 /// Updates the list of user's pending withdrawal requests by adding and/or removing specified withdrawal IDs.
 fn update_user_withdrawal_requests_info(
     storage: &mut dyn Storage,
@@ -1234,7 +1240,7 @@ fn update_withdrawal_queue_info(
             })
     }
 
-    let mut withdrawal_queue_info = WITHDRAWAL_QUEUE_INFO.load(storage)?;
+    let mut withdrawal_queue_info = load_withdrawal_queue_info(storage)?;
 
     if let Some(shares_burned_update) = shares_burned_update {
         withdrawal_queue_info.total_shares_burned = get_resulting_value(
