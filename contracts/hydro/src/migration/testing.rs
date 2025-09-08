@@ -1,197 +1,241 @@
-#[cfg(test)]
-mod tests {
-    use cosmwasm_std::{testing::mock_env, Addr, Coin, Timestamp, Uint128};
-    use cw2::set_contract_version;
-    use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
-    use crate::{
-        contract::{CONTRACT_NAME, CONTRACT_VERSION},
-        migration::{
-            migrate::{migrate, MigrateMsg, CONTRACT_VERSION_V3_5_1},
-            unreleased::TOKEN_IDS_MIGRATION_PROGRESS,
-        },
-        state::{LockEntryV2, CONSTANTS, LOCKS_MAP_V2, TOKEN_IDS, TOKEN_INFO_PROVIDERS},
-        testing::{get_default_lsm_token_info_provider, IBC_DENOM_1, VALIDATOR_1_LST_DENOM_1},
-        testing_lsm_integration::get_default_constants,
-        testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies},
-        token_manager::LSM_TOKEN_INFO_PROVIDER_ID,
+use cosmwasm_std::{
+    testing::{mock_env, MockApi},
+    Decimal, MemoryStorage, OwnedDeps, Uint128,
+};
+use cw2::set_contract_version;
+use neutron_sdk::bindings::query::NeutronQuery;
+
+use crate::{
+    contract::{instantiate, CONTRACT_NAME},
+    migration::migrate::{migrate, MigrateMsg},
+    state::{Proposal, Vote, PROPOSAL_MAP, PROPOSAL_TOTAL_MAP, VOTE_MAP_V2},
+    testing::{
+        get_default_instantiate_msg, get_message_info, setup_st_atom_token_info_provider_mock,
+        IBC_DENOM_1, IBC_DENOM_2, ST_ATOM_TOKEN_GROUP, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
+        VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
+    },
+    testing_lsm_integration::set_validator_infos_for_round,
+    testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, MockQuerier},
+};
+
+#[test]
+fn update_proposals_powers_test() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+        ]),
+    );
+
+    let mut deps = mock_dependencies(grpc_query);
+    let env = mock_env();
+
+    let info = get_message_info(&deps.api, "user1", &[]);
+    let instantiate_msg = get_default_instantiate_msg(&deps.api);
+
+    instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
+
+    // Set the contract version to v3.5.3 in order to be able to run the migration
+    set_contract_version(deps.as_mut().storage, CONTRACT_NAME, "3.5.3").unwrap();
+
+    set_validator_infos_for_round(
+        &mut deps.storage,
+        9,
+        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
+    )
+    .unwrap();
+
+    let st_token_info_provider = deps.api.addr_make("sttoken_info_provider");
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        st_token_info_provider,
+        Decimal::from_str("1.7").unwrap(),
+    );
+
+    let round_id = 9;
+    let tranche_id = 1;
+
+    let proposal1_id = 82;
+    let proposal2_id = 83;
+    let proposal3_id = 84;
+    let proposal4_id = 85;
+
+    let proposal1_initial_power = Uint128::new(15000);
+    let proposal2_initial_power = Uint128::new(25000);
+    let proposal3_initial_power = Uint128::new(35000);
+    let proposal4_initial_power = Uint128::new(5000);
+
+    let proposal_power_to_decrease = Proposal {
+        round_id,
+        tranche_id,
+        proposal_id: proposal1_id,
+        title: "Proposal 1".to_string(),
+        description: "Proposal 1 Desc".to_string(),
+        power: proposal1_initial_power,
+        percentage: Uint128::zero(),
+        deployment_duration: 3,
+        minimum_atom_liquidity_request: Uint128::zero(),
     };
 
-    #[test]
-    fn test_migration_with_lsm_and_non_lsm_lockups() {
-        // Set up LSM mocking to properly identify LSM denoms
-        let grpc_query = denom_trace_grpc_query_mock(
-            "transfer/channel-0".to_string(),
-            HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
-        );
-        let mut deps = mock_dependencies(grpc_query);
-        let env = mock_env();
+    let proposal_power_to_increase = Proposal {
+        round_id,
+        tranche_id,
+        proposal_id: proposal2_id,
+        title: "Proposal 2".to_string(),
+        description: "Proposal 2 Desc".to_string(),
+        power: proposal2_initial_power,
+        percentage: Uint128::zero(),
+        deployment_duration: 3,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
 
-        // Set up the contract version to v3.5.1 (so we don't have error "already migrated to the newest version.")
-        set_contract_version(
-            deps.as_mut().storage,
-            CONTRACT_NAME,
-            CONTRACT_VERSION_V3_5_1,
-        )
-        .unwrap();
+    let proposal_power_unchanged = Proposal {
+        round_id,
+        tranche_id,
+        proposal_id: proposal3_id,
+        title: "Proposal 3".to_string(),
+        description: "Proposal 3 Desc".to_string(),
+        power: proposal3_initial_power,
+        percentage: Uint128::zero(),
+        deployment_duration: 3,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
 
-        // Set up constants (required for pause/unpause functionality)
-        let constants = get_default_constants();
-        CONSTANTS
-            .save(deps.as_mut().storage, env.block.time.nanos(), &constants)
-            .unwrap();
+    let proposal_power_goes_to_zero = Proposal {
+        round_id,
+        tranche_id,
+        proposal_id: proposal4_id,
+        title: "Proposal 4".to_string(),
+        description: "Proposal 4 Desc".to_string(),
+        power: proposal4_initial_power,
+        percentage: Uint128::zero(),
+        deployment_duration: 3,
+        minimum_atom_liquidity_request: Uint128::zero(),
+    };
 
-        // Set up LSM token info provider to identify LSM denoms
-        let lsm_provider = get_default_lsm_token_info_provider();
-        TOKEN_INFO_PROVIDERS
+    for proposal in [
+        proposal_power_to_decrease,
+        proposal_power_to_increase,
+        proposal_power_unchanged,
+        proposal_power_goes_to_zero,
+    ] {
+        PROPOSAL_MAP
             .save(
-                deps.as_mut().storage,
-                LSM_TOKEN_INFO_PROVIDER_ID.to_string(),
-                &lsm_provider,
+                &mut deps.storage,
+                (round_id, tranche_id, proposal.proposal_id),
+                &proposal,
             )
             .unwrap();
 
-        // Create two lockups:
-        // 1. Non-LSM lockup (should become a NFT/token)
-        let non_lsm_lockup = LockEntryV2 {
-            lock_id: 0,
-            owner: Addr::unchecked("user1"),
-            funds: Coin {
-                denom: "uatom".to_string(), // Regular token
-                amount: Uint128::new(1000),
-            },
-            lock_start: Timestamp::from_nanos(1000),
-            lock_end: Timestamp::from_nanos(2000),
-        };
-
-        // 2. LSM lockup (should NOT become a NFT/token)
-        // Using the mocked IBC denom that will be identified as LSM
-        let lsm_lockup = LockEntryV2 {
-            lock_id: 1,
-            owner: Addr::unchecked("user2"),
-            funds: Coin {
-                denom: IBC_DENOM_1.to_string(), // IBC/LSM token that maps to VALIDATOR_1_LST_DENOM_1
-                amount: Uint128::new(2000),
-            },
-            lock_start: Timestamp::from_nanos(1000),
-            lock_end: Timestamp::from_nanos(2000),
-        };
-
-        // Save lockups to storage
-        LOCKS_MAP_V2
-            .save(deps.as_mut().storage, 0, &non_lsm_lockup, env.block.height)
+        PROPOSAL_TOTAL_MAP
+            .save(
+                &mut deps.storage,
+                proposal.proposal_id,
+                &Decimal::from_ratio(proposal.power, Uint128::one()),
+            )
             .unwrap();
-        LOCKS_MAP_V2
-            .save(deps.as_mut().storage, 1, &lsm_lockup, env.block.height)
+    }
+
+    let proposal1_expected_power = Uint128::new(10700u128);
+    let proposal2_expected_power = Uint128::new(35500u128);
+    let proposal3_expected_power = Uint128::new(35000u128);
+    let proposal4_expected_power = Uint128::new(0u128);
+
+    let mut lockup_id = 783;
+
+    for vote in [
+        (proposal1_id, VALIDATOR_1, 3000u128),
+        (proposal1_id, VALIDATOR_1, 1000u128),
+        (proposal1_id, VALIDATOR_2, 5000u128),
+        (proposal1_id, ST_ATOM_TOKEN_GROUP, 1000u128),
+        (proposal2_id, ST_ATOM_TOKEN_GROUP, 5000u128),
+        (proposal2_id, ST_ATOM_TOKEN_GROUP, 5000u128),
+        (proposal2_id, ST_ATOM_TOKEN_GROUP, 5000u128),
+        (proposal2_id, VALIDATOR_2, 5000u128),
+        (proposal2_id, VALIDATOR_2, 5000u128),
+        (proposal3_id, ST_ATOM_TOKEN_GROUP, 10000u128),
+        (proposal3_id, ST_ATOM_TOKEN_GROUP, 1000u128),
+        (proposal3_id, VALIDATOR_2, 9000u128),
+        (proposal3_id, VALIDATOR_2, 7000u128),
+        (proposal3_id, VALIDATOR_1, 300u128),
+    ] {
+        VOTE_MAP_V2
+            .save(
+                &mut deps.storage,
+                ((round_id, tranche_id), lockup_id),
+                &Vote {
+                    prop_id: vote.0,
+                    time_weighted_shares: (
+                        vote.1.to_string(),
+                        Decimal::from_ratio(vote.2, Uint128::one()),
+                    ),
+                },
+            )
             .unwrap();
 
-        // Verify initial state: no tokens in TOKEN_IDS
+        lockup_id += 1;
+    }
+
+    // Verify proposals powers before the migration is run
+    verify_expected_proposals_powers(
+        &deps,
+        round_id,
+        tranche_id,
+        &[
+            (proposal1_id, proposal1_initial_power),
+            (proposal2_id, proposal2_initial_power),
+            (proposal3_id, proposal3_initial_power),
+            (proposal4_id, proposal4_initial_power),
+        ],
+    );
+
+    migrate(
+        deps.as_mut(),
+        env.clone(),
+        MigrateMsg {
+            round_id,
+            tranche_id,
+        },
+    )
+    .unwrap();
+
+    // Verify proposals powers after the migration is run
+    verify_expected_proposals_powers(
+        &deps,
+        round_id,
+        tranche_id,
+        &[
+            (proposal1_id, proposal1_expected_power),
+            (proposal2_id, proposal2_expected_power),
+            (proposal3_id, proposal3_expected_power),
+            (proposal4_id, proposal4_expected_power),
+        ],
+    );
+}
+
+fn verify_expected_proposals_powers(
+    deps: &OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    round_id: u64,
+    tranche_id: u64,
+    expected_proposals_powers: &[(u64, Uint128)],
+) {
+    for proposal_power in expected_proposals_powers {
         assert_eq!(
-            TOKEN_IDS
-                .range(
-                    deps.as_ref().storage,
-                    None,
-                    None,
-                    cosmwasm_std::Order::Ascending
-                )
-                .count(),
-            0
+            PROPOSAL_MAP
+                .load(&deps.storage, (round_id, tranche_id, proposal_power.0))
+                .unwrap()
+                .power,
+            proposal_power.1
         );
-        assert!(TOKEN_IDS_MIGRATION_PROGRESS
-            .may_load(deps.as_ref().storage)
-            .unwrap()
-            .is_none());
 
-        // First migration call with limit=1 (should process only the first lockup)
-        let msg = MigrateMsg::PopulateTokenIds { limit: 1 };
-        let result = migrate(deps.as_mut(), env.clone(), msg).unwrap();
-
-        // Check that migration is incomplete (contract should still be paused)
-        let migration_status = result
-            .attributes
-            .iter()
-            .find(|attr| attr.key == "migration_status")
-            .unwrap();
-        assert_eq!(migration_status.value, "incomplete");
-
-        // Check that one lockup was processed
-        let processed_count = result
-            .attributes
-            .iter()
-            .find(|attr| attr.key == "processed_count")
-            .unwrap();
-        assert_eq!(processed_count.value, "1");
-
-        // Check that one token was added (the non-LSM lockup)
-        let added_count = result
-            .attributes
-            .iter()
-            .find(|attr| attr.key == "added_count")
-            .unwrap();
-        assert_eq!(added_count.value, "1");
-
-        // Verify TOKEN_IDS contains the non-LSM lockup
-        assert!(TOKEN_IDS.has(deps.as_ref().storage, 0)); // Non-LSM lockup should be added
-        assert!(!TOKEN_IDS.has(deps.as_ref().storage, 1)); // LSM lockup should not be added yet
-
-        // Check migration progress is saved
-        let progress = TOKEN_IDS_MIGRATION_PROGRESS
-            .load(deps.as_ref().storage)
-            .unwrap();
-        assert_eq!(progress, 0); // Last processed lock_id
-
-        // Verify contract is still paused
-        let (_, constants_after_first) =
-            crate::utils::load_constants_active_at_timestamp(&deps.as_ref(), env.block.time)
-                .unwrap();
-        assert!(constants_after_first.paused);
-
-        // Second migration call with limit=1 (should process the second lockup)
-        let msg = MigrateMsg::PopulateTokenIds { limit: 1 };
-        let result = migrate(deps.as_mut(), env.clone(), msg).unwrap();
-
-        // Check that migration is now complete (contract should be unpaused)
-        let migration_status = result
-            .attributes
-            .iter()
-            .find(|attr| attr.key == "migration_status")
-            .unwrap();
-        assert_eq!(migration_status.value, "complete");
-
-        // Check that one more lockup was processed
-        let processed_count = result
-            .attributes
-            .iter()
-            .find(|attr| attr.key == "processed_count")
-            .unwrap();
-        assert_eq!(processed_count.value, "1");
-
-        // Check that no tokens were added (LSM lockup should be skipped)
-        let added_count = result
-            .attributes
-            .iter()
-            .find(|attr| attr.key == "added_count")
-            .unwrap();
-        assert_eq!(added_count.value, "0");
-
-        // Verify final TOKEN_IDS state
-        assert!(TOKEN_IDS.has(deps.as_ref().storage, 0)); // Non-LSM lockup should still be there
-        assert!(!TOKEN_IDS.has(deps.as_ref().storage, 1)); // LSM lockup should not be added
-
-        // Check migration progress is cleaned up
-        assert!(TOKEN_IDS_MIGRATION_PROGRESS
-            .may_load(deps.as_ref().storage)
-            .unwrap()
-            .is_none());
-
-        // Verify contract is now unpaused
-        let (_, constants_final) =
-            crate::utils::load_constants_active_at_timestamp(&deps.as_ref(), env.block.time)
-                .unwrap();
-        assert!(!constants_final.paused);
-
-        // Verify contract version is updated
-        let contract_version = cw2::get_contract_version(deps.as_ref().storage).unwrap();
-        assert_eq!(contract_version.version, CONTRACT_VERSION);
+        assert_eq!(
+            PROPOSAL_TOTAL_MAP
+                .load(&deps.storage, proposal_power.0)
+                .unwrap(),
+            Decimal::from_ratio(proposal_power.1, Uint128::one())
+        );
     }
 }

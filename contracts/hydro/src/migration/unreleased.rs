@@ -1,92 +1,136 @@
-use cosmwasm_std::{Deps, DepsMut, Order, Response};
-use cw_storage_plus::{Bound, Item};
+use std::collections::HashMap;
+
+use cosmwasm_std::{Decimal, DepsMut, Order, Response};
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 use crate::{
-    cw721,
     error::ContractError,
-    state::{LOCKS_MAP_V2, TOKEN_IDS},
+    state::{Proposal, PROPOSAL_MAP, PROPOSAL_TOTAL_MAP, VOTE_MAP_V2},
+    token_manager::TokenManager,
 };
 
-// Temporary migration state - tracks the last processed lock_id during TOKEN_IDS migration
-// This is removed after migration is complete
-pub const TOKEN_IDS_MIGRATION_PROGRESS: Item<u64> = Item::new("token_ids_migration_progress");
-
-/// Migrates existing lockups to populate the TOKEN_IDS store in batches
-/// This migration iterates through LOCKS_MAP_V2 and adds lock IDs to TOKEN_IDS
-/// if they are NFTs (non-LSM lockups)
-pub fn migrate_populate_token_ids(
+// Iterates over all votes in the given round and tranche and computes total voting power for each
+// of the proposals, based on the vote entries. Then iterates over all proposals in the given round
+// and tranche and, if necessary, updates their voting power in the store.
+pub fn update_proposals_powers(
     deps: &mut DepsMut<NeutronQuery>,
-    limit: u32,
+    round_id: u64,
+    tranche_id: u64,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let limit = limit as usize;
+    // proposal_id -> [(token_group_id -> scaled_proposal_shares)]
+    let mut proposals_total_shares: HashMap<u64, HashMap<String, Decimal>> = HashMap::new();
 
-    // Get the last processed lock_id from previous migration runs
-    let last_processed = TOKEN_IDS_MIGRATION_PROGRESS.may_load(deps.storage)?;
+    for vote in VOTE_MAP_V2
+        .prefix((round_id, tranche_id))
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter_map(|vote_res| match vote_res {
+            Err(_) => None,
+            Ok(vote) => Some(vote.1),
+        })
+    {
+        let proposal_entry = proposals_total_shares.entry(vote.prop_id).or_default();
 
-    // For first run: None (starts from beginning)
-    // For subsequent runs: start after last processed (exclusive)
-    let start_bound = last_processed.map(Bound::exclusive);
+        let token_group_shares_entry = proposal_entry
+            .entry(vote.time_weighted_shares.0.clone())
+            .or_default();
 
-    // Get all lockups starting from appropriate bound, up to 'limit' entries
-    let lockups: Vec<_> = LOCKS_MAP_V2
-        .range(deps.storage, start_bound, None, Order::Ascending)
-        .take(limit)
-        .collect::<Result<Vec<_>, _>>()?;
+        *token_group_shares_entry =
+            token_group_shares_entry.checked_add(vote.time_weighted_shares.1)?;
+    }
 
-    let mut processed_count = 0;
-    let mut added_count = 0;
-    let mut last_processed_id = last_processed.unwrap_or(0);
+    let mut token_manager = TokenManager::new(&deps.as_ref());
 
-    for (lock_id, lock_entry) in lockups {
-        // Check if this lockup should be a NFT (non-LSM lockup)
-        if !cw721::is_denom_lsm(&deps.as_ref(), lock_entry.funds.denom)? {
-            // Add to TOKEN_IDS if not already present
-            if !TOKEN_IDS.has(deps.storage, lock_id) {
-                TOKEN_IDS.save(deps.storage, lock_id, &())?;
-                added_count += 1;
-            }
+    // TokenManager doesn't have caching for LSM token group ratios, so caching is introduced here.
+    let mut token_group_ratios: HashMap<String, Decimal> = HashMap::new();
+
+    let mut proposal_total_powers: HashMap<u64, Decimal> = HashMap::new();
+
+    for proposal_token_group_shares in proposals_total_shares {
+        let proposal_id = proposal_token_group_shares.0;
+        let mut proposal_total_power = Decimal::zero();
+
+        for token_group_shares in proposal_token_group_shares.1 {
+            let token_group_id = token_group_shares.0;
+            let token_group_shares_num = token_group_shares.1;
+
+            let token_group_ratio = match token_group_ratios.get(&token_group_id) {
+                Some(token_group_ratio) => *token_group_ratio,
+                None => {
+                    match token_manager.get_token_group_ratio(
+                        &deps.as_ref(),
+                        round_id,
+                        token_group_id.clone(),
+                    ) {
+                        Err(_) => continue,
+                        Ok(token_group_ratio) => {
+                            token_group_ratios.insert(token_group_id, token_group_ratio);
+
+                            token_group_ratio
+                        }
+                    }
+                }
+            };
+
+            let token_group_shares_power = token_group_shares_num.checked_mul(token_group_ratio)?;
+            proposal_total_power = proposal_total_power.checked_add(token_group_shares_power)?;
         }
 
-        processed_count += 1;
-        last_processed_id = lock_id;
+        proposal_total_powers.insert(proposal_id, proposal_total_power);
     }
 
-    // Update migration progress if we processed any items
-    if processed_count > 0 {
-        TOKEN_IDS_MIGRATION_PROGRESS.save(deps.storage, &last_processed_id)?;
+    // Ierate over all proposals in the given round and tranche and update their voting powers
+    let round_tranche_proposals = PROPOSAL_MAP
+        .prefix((round_id, tranche_id))
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter_map(|prop_res| match prop_res {
+            Err(_) => None,
+            Ok(prop) => Some(prop.1),
+        })
+        .collect::<Vec<Proposal>>();
+
+    // Record both old and new proposal voting power to attach response attributes
+    let mut proposals_power_updates = vec![];
+
+    for mut proposal in round_tranche_proposals {
+        // In case there were no votes for the given proposal, we will set its power to 0
+        let new_proposal_power_dec = proposal_total_powers
+            .get(&proposal.proposal_id)
+            .cloned()
+            .unwrap_or_default();
+        let new_proposal_power_int = new_proposal_power_dec.to_uint_ceil();
+
+        if proposal.power == new_proposal_power_int {
+            continue;
+        }
+
+        proposals_power_updates.push((
+            proposal.proposal_id,
+            proposal.power,
+            new_proposal_power_int,
+        ));
+
+        proposal.power = new_proposal_power_int;
+
+        PROPOSAL_MAP.save(
+            deps.storage,
+            (round_id, tranche_id, proposal.proposal_id),
+            &proposal,
+        )?;
+
+        PROPOSAL_TOTAL_MAP.save(deps.storage, proposal.proposal_id, &new_proposal_power_dec)?;
     }
 
-    Ok(Response::new()
-        .add_attribute("action", "migrate_populate_token_ids")
-        .add_attribute(
-            "previous_last_processed",
-            last_processed
-                .map(|id| id.to_string())
-                .unwrap_or("None".to_string()),
+    let mut response = Response::new().add_attribute("action", "update_proposals_powers");
+
+    for proposal_power_update in proposals_power_updates {
+        response = response.add_attribute(
+            format!("proposal_id_{}", proposal_power_update.0),
+            format!(
+                "old_voting_power: {}, new_voting_power: {}",
+                proposal_power_update.1, proposal_power_update.2
+            ),
         )
-        .add_attribute("processed_count", processed_count.to_string())
-        .add_attribute("added_count", added_count.to_string())
-        .add_attribute("last_processed_id", last_processed_id.to_string()))
-}
+    }
 
-/// Check if the TOKEN_IDS migration is complete
-pub fn is_token_ids_migration_done(deps: Deps<NeutronQuery>) -> Result<bool, ContractError> {
-    let last_processed = TOKEN_IDS_MIGRATION_PROGRESS.may_load(deps.storage)?;
-
-    let highest_lock_id = LOCKS_MAP_V2
-        .range(deps.storage, None, None, Order::Descending)
-        .next()
-        .transpose()?
-        .map(|(lock_id, _)| lock_id);
-
-    Ok(match highest_lock_id {
-        None => true, // No lockups = migration complete
-        Some(highest_id) => last_processed.unwrap_or(0) >= highest_id,
-    })
-}
-
-/// Clean up migration progress after completion
-pub fn cleanup_migration_progress(deps: &mut DepsMut<NeutronQuery>) {
-    TOKEN_IDS_MIGRATION_PROGRESS.remove(deps.storage);
+    Ok(response)
 }
