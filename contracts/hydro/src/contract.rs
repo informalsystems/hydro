@@ -12,6 +12,9 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 use cw_utils::must_pay;
 use interface::drop_puppeteer::{DelegationsResponse, PuppeteerQueryMsg, QueryExtMsg};
+use interface::token_info_provider::{
+    ValidatorInfo as ValidatorInfoInterface, ValidatorsInfoResponse,
+};
 use neutron_sdk::bindings::msg::NeutronMsg;
 use neutron_sdk::bindings::query::NeutronQuery;
 use neutron_sdk::interchain_queries::v047::register_queries::new_register_staking_validators_query_msg;
@@ -3282,6 +3285,9 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> Result<Binary
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(deps)?),
         QueryMsg::WhitelistAdmins {} => to_json_binary(&query_whitelist_admins(deps)?),
         QueryMsg::TotalLockedTokens {} => to_json_binary(&query_total_locked_tokens(deps)?),
+        QueryMsg::ValidatorsInfo { round_id } => {
+            to_json_binary(&query_round_validators_info(deps, round_id)?)
+        }
         QueryMsg::RegisteredValidatorQueries {} => {
             to_json_binary(&query_registered_validator_queries(deps)?)
         }
@@ -4134,6 +4140,31 @@ pub fn query_validators_per_round(
         .range(deps.storage, None, None, Order::Descending)
         .map(|l| l.unwrap().0)
         .collect())
+}
+
+pub fn query_round_validators_info(
+    deps: Deps<NeutronQuery>,
+    round_id: u64,
+) -> StdResult<ValidatorsInfoResponse> {
+    Ok(ValidatorsInfoResponse {
+        round_id,
+        validators: VALIDATORS_INFO
+            .prefix(round_id)
+            .range(deps.storage, None, None, Order::Ascending)
+            .filter_map(|val_info| {
+                val_info.ok().map(|val_info| {
+                    (
+                        val_info.0,
+                        ValidatorInfoInterface {
+                            address: val_info.1.address,
+                            delegated_tokens: val_info.1.delegated_tokens,
+                            power_ratio: val_info.1.power_ratio,
+                        },
+                    )
+                })
+            })
+            .collect(),
+    })
 }
 
 // Checks whether the token with the given denom can be locked in Hydro. Denom can be locked if it belongs to

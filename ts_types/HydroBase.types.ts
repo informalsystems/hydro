@@ -387,6 +387,10 @@ export type QueryMsg = {
 } | {
   total_locked_tokens: {};
 } | {
+  validators_info: {
+    round_id: number;
+  };
+} | {
   registered_validator_queries: {};
 } | {
   can_lock_denom: {
@@ -723,6 +727,10 @@ export interface VoteWithPower {
 }
 export interface UserVotingPowerResponse {
   voting_power: number;
+}
+export interface ValidatorsInfoResponse {
+  round_id: number;
+  validators: {};
 }
 export interface VotingPowerAtHeightResponse {
   height: number;
