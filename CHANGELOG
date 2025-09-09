@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## v3.6.1
+
+Date: September 9th, 2025
+
+### BUG FIXES
+
+- Fixes the bug where proposal powers were not updated correctly in some cases when users merge their lockups.
+([\#311](https://github.com/informalsystems/hydro/pull/311))
+
+### FEATURES
+
+-Added round validators query.
+([\#312](https://github.com/informalsystems/hydro/pull/312))
+
 ## v3.6.0
 
 Date: September 3rd, 2025
@@ -258,9 +272,9 @@ Date: November 18th, 2024
 
 ### FEATURES
 
-- Adjusts tributes to only be claimable if their proposal received a non-zero fund deployment.
-  ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Add a minimum liquidity request value to proposals.
+  ([\#164](https://github.com/informalsystems/hydro/pull/164))
+- Adjusts tributes to only be claimable if their proposal received a non-zero fund deployment.
   ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Allow whitelist admins to register performed liquidity deployments in the Hydro contract.
   ([\#164](https://github.com/informalsystems/hydro/pull/164))
