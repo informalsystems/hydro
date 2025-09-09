@@ -5,6 +5,8 @@ use crate::{
 };
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
+#[allow(unused_imports)]
+use interface::token_info_provider::ValidatorsInfoResponse;
 
 #[cw_serde]
 #[derive(QueryResponses, cw_orch::QueryFns)]
@@ -132,6 +134,9 @@ pub enum QueryMsg {
 
     #[returns(TotalLockedTokensResponse)]
     TotalLockedTokens {},
+
+    #[returns(ValidatorsInfoResponse)]
+    ValidatorsInfo { round_id: u64 },
 
     #[returns(RegisteredValidatorQueriesResponse)]
     RegisteredValidatorQueries {},
