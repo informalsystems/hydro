@@ -1,12 +1,15 @@
 use crate::contract::{execute, instantiate, query, query_user_voted_locks};
 use crate::msg::{ExecuteMsg, ProposalToLockups};
 use crate::query::{QueryMsg, TokensResponse};
-use crate::state::{LOCKS_PENDING_SLASHES, PROPOSAL_MAP, VOTE_MAP_V2, VOTING_ALLOWED_ROUND};
+use crate::state::{
+    LOCKS_PENDING_SLASHES, PROPOSAL_MAP, PROPOSAL_TOTAL_MAP, VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
+};
 use crate::testing::{
     get_address_as_str, get_default_instantiate_msg, get_message_info,
     set_default_validator_for_rounds, setup_st_atom_token_info_provider_mock, IBC_DENOM_1,
     IBC_DENOM_2, ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON,
-    ST_ATOM_ON_STRIDE, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
+    ST_ATOM_ON_STRIDE, THREE_MONTHS_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
+    VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
 };
 use crate::testing_lsm_integration::set_validator_infos_for_round;
 use crate::testing_mocks::denom_trace_grpc_query_mock;
@@ -846,6 +849,267 @@ fn test_merge_locks_basic_validation() {
     assert!(merge_res.unwrap_err().to_string().contains("Unauthorized"));
 }
 
+// Verifies that proposal voting powers of those proposals that the merged lockups had voted for
+// in the current round are being correctly updated in the following cases:
+//      1. At least one of the lockups being merged isn't allowed to vote in current round,
+//         while others have voted on some proposals
+//      2. Two or more lockups being merged have already voted for the same proposal in the current round.
+//      3. Two or more lockups being merged have already voted for different proposal in the current round.
+#[test]
+fn test_merge_locks_update_proposal_powers() {
+    let user_address = "addr0000";
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, mut env) = (
+        crate::testing_mocks::mock_dependencies(grpc_query),
+        mock_env(),
+    );
+    let info = get_message_info(&deps.api, user_address, &[]);
+    let mut instantiate_msg = get_default_instantiate_msg(&deps.api);
+    instantiate_msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
+    instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address)];
+    instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
+
+    set_default_validator_for_rounds(deps.as_mut(), 0, 3);
+
+    let round_id_2 = 1;
+
+    let tranche_id = 1;
+
+    let lock_id_1 = 0;
+    let lock_id_2 = 1;
+    let lock_id_3 = 2;
+    let lock_id_4 = 3;
+    let lock_id_5 = 4;
+    let lock_id_6 = 5;
+    let merge_lock_id_7 = 6;
+    let merge_lock_id_8 = 7;
+    let merge_lock_id_9 = 8;
+
+    let proposal_id_1 = 0;
+    let proposal_id_2 = 1;
+    let proposal_id_3 = 2;
+
+    let mut lock_ids = vec![];
+    let mut lock_amounts = vec![];
+
+    // In round 0, create 6 lockups
+    env.block.time = env.block.time.plus_nanos(ONE_DAY_IN_NANO_SECONDS);
+
+    let base_amount = Uint128::from(10000u128);
+
+    for i in 0..6 {
+        let amount = base_amount + Uint128::from(i as u128 * 1000);
+        let funds = vec![Coin::new(amount.u128(), IBC_DENOM_1)];
+        let lock_info = get_message_info(&deps.api, user_address, &funds);
+        let lock_res = execute(
+            deps.as_mut(),
+            env.clone(),
+            lock_info,
+            ExecuteMsg::LockTokens {
+                lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
+                proof: None,
+            },
+        );
+        assert!(lock_res.is_ok());
+        lock_ids.push(i as u64);
+        lock_amounts.push(amount);
+    }
+
+    // Create proposal 1
+    let proposal_info = get_message_info(&deps.api, user_address, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        proposal_info.clone(),
+        ExecuteMsg::CreateProposal {
+            round_id: None,
+            tranche_id,
+            title: "Proposal 1".to_string(),
+            description: "P1".to_string(),
+            deployment_duration: 3,
+            minimum_atom_liquidity_request: Uint128::zero(),
+        },
+    )
+    .unwrap();
+
+    // Vote for proposal 1 with lockup 1
+    let vote_info = get_message_info(&deps.api, user_address, &[]);
+    let vote_res1 = execute(
+        deps.as_mut(),
+        env.clone(),
+        vote_info.clone(),
+        ExecuteMsg::Vote {
+            tranche_id,
+            proposals_votes: vec![ProposalToLockups {
+                proposal_id: proposal_id_1,
+                lock_ids: vec![lock_id_1],
+            }],
+        },
+    );
+    assert!(vote_res1.is_ok());
+
+    // Move to round 1
+    env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
+
+    // Create proposal 2 in round 1
+    let proposal_info = get_message_info(&deps.api, user_address, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        proposal_info.clone(),
+        ExecuteMsg::CreateProposal {
+            round_id: None,
+            tranche_id,
+            title: "Proposal 2".to_string(),
+            description: "P2".to_string(),
+            deployment_duration: 1,
+            minimum_atom_liquidity_request: Uint128::zero(),
+        },
+    )
+    .unwrap();
+
+    // Create proposal 3 in round 1
+    let proposal_info = get_message_info(&deps.api, user_address, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        proposal_info.clone(),
+        ExecuteMsg::CreateProposal {
+            round_id: None,
+            tranche_id,
+            title: "Proposal 3".to_string(),
+            description: "P3".to_string(),
+            deployment_duration: 1,
+            minimum_atom_liquidity_request: Uint128::zero(),
+        },
+    )
+    .unwrap();
+
+    // Refresh lockups 2, 3, 4, 5 and 6 before voting
+    let refresh_info = get_message_info(&deps.api, user_address, &[]);
+    let refresh_res1 = execute(
+        deps.as_mut(),
+        env.clone(),
+        refresh_info.clone(),
+        ExecuteMsg::RefreshLockDuration {
+            lock_ids: vec![lock_id_2, lock_id_3, lock_id_4, lock_id_5, lock_id_6],
+            lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
+        },
+    );
+    assert!(refresh_res1.is_ok());
+
+    // Vote for proposal 2 with lockups 2, 3, 4 and 5, and for proposal 3 with lockup 6
+    let vote_info = get_message_info(&deps.api, user_address, &[]);
+    let vote_res1 = execute(
+        deps.as_mut(),
+        env.clone(),
+        vote_info.clone(),
+        ExecuteMsg::Vote {
+            tranche_id,
+            proposals_votes: vec![
+                ProposalToLockups {
+                    proposal_id: proposal_id_2,
+                    lock_ids: vec![lock_id_2, lock_id_3, lock_id_4, lock_id_5],
+                },
+                ProposalToLockups {
+                    proposal_id: proposal_id_3,
+                    lock_ids: vec![lock_id_6],
+                },
+            ],
+        },
+    );
+    assert!(vote_res1.is_ok());
+
+    verify_proposal_voting_power(&deps.storage, round_id_2, tranche_id, proposal_id_2, 75000);
+    verify_proposal_voting_power(&deps.storage, round_id_2, tranche_id, proposal_id_3, 22500);
+
+    let user_info = get_message_info(&deps.api, user_address, &[]);
+
+    // Merge lockups 1 and 2
+    let merge_res = execute(
+        deps.as_mut(),
+        env.clone(),
+        user_info.clone(),
+        ExecuteMsg::MergeLocks {
+            lock_ids: vec![lock_id_1, lock_id_2],
+        },
+    );
+    assert!(merge_res.is_ok());
+
+    // Lockup 1 isn't allowed to vote in round 1, and since it has been merged with lockup 2
+    // that voted for proposal 2, then the voting power originating from the lockup 2 should
+    // also be removed from the proposal 2 power.
+    verify_proposal_voting_power(&deps.storage, round_id_2, tranche_id, proposal_id_2, 58500);
+
+    // There should be no vote for the newly created lockup 7.
+    assert!(VOTE_MAP_V2
+        .may_load(&deps.storage, ((round_id_2, tranche_id), merge_lock_id_7))
+        .unwrap()
+        .is_none());
+
+    // Merge lockups 3 and 4
+    let merge_res = execute(
+        deps.as_mut(),
+        env.clone(),
+        user_info.clone(),
+        ExecuteMsg::MergeLocks {
+            lock_ids: vec![lock_id_3, lock_id_4],
+        },
+    );
+    assert!(merge_res.is_ok());
+
+    // Lockups 3 and 4 had both previously voted for the proposal 2,
+    // so the voting power of the proposal should remain unchanged.
+    verify_proposal_voting_power(&deps.storage, round_id_2, tranche_id, proposal_id_2, 58500);
+
+    // Vote should be inserted for the newly created lockup and removed for merged lockups.
+    assert!(VOTE_MAP_V2
+        .may_load(&deps.storage, ((round_id_2, tranche_id), lock_id_3))
+        .unwrap()
+        .is_none());
+    assert!(VOTE_MAP_V2
+        .may_load(&deps.storage, ((round_id_2, tranche_id), lock_id_4))
+        .unwrap()
+        .is_none());
+    assert!(VOTE_MAP_V2
+        .may_load(&deps.storage, ((round_id_2, tranche_id), merge_lock_id_8))
+        .unwrap()
+        .is_some());
+
+    // Merge lockups 5 and 6
+    let merge_res = execute(
+        deps.as_mut(),
+        env.clone(),
+        user_info.clone(),
+        ExecuteMsg::MergeLocks {
+            lock_ids: vec![lock_id_5, lock_id_6],
+        },
+    );
+    assert!(merge_res.is_ok());
+
+    // Lockups 5 and 6 had previously voted for the proposals 2 and 3, and after they have been merged,
+    // the voting power of those proposals should be reduced, since those lockups votes were removed.
+    verify_proposal_voting_power(&deps.storage, round_id_2, tranche_id, proposal_id_2, 37500);
+    verify_proposal_voting_power(&deps.storage, round_id_2, tranche_id, proposal_id_3, 0);
+
+    // There should be no votes for either old nor newly created lockup.
+    assert!(VOTE_MAP_V2
+        .may_load(&deps.storage, ((round_id_2, tranche_id), lock_id_5))
+        .unwrap()
+        .is_none());
+    assert!(VOTE_MAP_V2
+        .may_load(&deps.storage, ((round_id_2, tranche_id), lock_id_5))
+        .unwrap()
+        .is_none());
+    assert!(VOTE_MAP_V2
+        .may_load(&deps.storage, ((round_id_2, tranche_id), merge_lock_id_9))
+        .unwrap()
+        .is_none());
+}
+
 fn verify_new_lock_expected_round_votes(
     storage: &dyn cosmwasm_std::Storage,
     tranche_id: u64,
@@ -861,6 +1125,24 @@ fn verify_new_lock_expected_round_votes(
         assert_eq!(vote.prop_id, *expected_prop_id);
         assert_eq!(vote.time_weighted_shares.1, Decimal::zero());
     }
+}
+
+fn verify_proposal_voting_power(
+    storage: &dyn cosmwasm_std::Storage,
+    round_id: u64,
+    tranche_id: u64,
+    proposal_id: u64,
+    expected_voting_power: u128,
+) {
+    let proposal_power = PROPOSAL_MAP
+        .load(storage, (round_id, tranche_id, proposal_id))
+        .unwrap()
+        .power
+        .u128();
+    assert_eq!(proposal_power, expected_voting_power);
+
+    let proposal_power = PROPOSAL_TOTAL_MAP.load(storage, proposal_id).unwrap();
+    assert_eq!(proposal_power.to_uint_floor().u128(), expected_voting_power);
 }
 
 #[test]
