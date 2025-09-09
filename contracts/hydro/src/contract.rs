@@ -1253,27 +1253,57 @@ fn merge_locks(
                     }
                 }
 
+                // Since the new lockup isn't allowed to vote in the current round, make sure to subtract
+                // proposals powers that orignate from any of the old lockups that had voted in the current
+                // round, but their votes were removed as part of the merge_locks() execution.
+                process_votes_and_apply_proposal_changes(
+                    &mut deps,
+                    &env,
+                    &mut token_manager,
+                    constants,
+                    current_round_id,
+                    tranche_id,
+                    &[],
+                    &voting_lock_entries,
+                    unvotes_result,
+                )?;
+
                 // If the resulting lock isn't allowed to vote in the current round
                 // and tranche, then move to the next tranche.
                 continue;
             }
         }
 
-        // If input lock entries didn't vote in current round, or they voted for multiple proposals,
-        // we will not add the vote for the resulting lock entry.
-        if unvotes_result.removed_votes.len() != 1 {
+        // Identify the proposals for which the lock entries being merged have voted in the current round.
+        // If input lock entries didn't vote in current round, or they voted for multiple proposals, we will
+        // not add the vote for the resulting lock entry, but we will update the voted proposals powers.
+        let voted_proposals = unvotes_result
+            .removed_votes
+            .iter()
+            .map(|removed_vote| removed_vote.1.prop_id)
+            .collect::<HashSet<u64>>();
+
+        if voted_proposals.len() != 1 {
+            process_votes_and_apply_proposal_changes(
+                &mut deps,
+                &env,
+                &mut token_manager,
+                constants,
+                current_round_id,
+                tranche_id,
+                &[],
+                &voting_lock_entries,
+                unvotes_result,
+            )?;
+
             continue;
         }
 
-        let old_vote = unvotes_result
-            .removed_votes
-            .iter()
-            .take(1)
-            .collect::<Vec<_>>()[0] // There must be exactly one removed vote
-            .1;
+        // At this point, there must be exactly one proposal
+        let voted_proposal = voted_proposals.iter().take(1).collect::<Vec<_>>()[0];
 
         let votes = ProposalToLockups {
-            proposal_id: old_vote.prop_id,
+            proposal_id: *voted_proposal,
             lock_ids: vec![resulting_lock_entry.lock_id],
         };
 
