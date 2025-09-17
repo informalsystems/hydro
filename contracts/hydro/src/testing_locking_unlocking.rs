@@ -8,11 +8,12 @@ use crate::{
     state::{LOCKS_PENDING_SLASHES, USER_LOCKS},
     testing::{
         get_address_as_str, get_default_instantiate_msg, get_message_info,
-        set_default_validator_for_rounds, setup_st_atom_token_info_provider_mock, IBC_DENOM_1,
+        get_st_atom_denom_info_mock_data, get_validator_info_mock_data,
+        setup_lsm_token_info_provider_mock, setup_multiple_token_info_provider_mocks,
+        DERIVATIVE_TOKEN_PROVIDER_ADDR, IBC_DENOM_1, LSM_TOKEN_PROVIDER_ADDR,
         ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, ST_ATOM_ON_STRIDE,
         THREE_MONTHS_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
     },
-    testing_lsm_integration::set_validator_infos_for_round,
     testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies},
 };
 
@@ -31,7 +32,13 @@ fn lock_tokens_basic_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
 
     let info1 = get_message_info(
         &deps.api,
@@ -124,14 +131,36 @@ fn lock_tokens_various_denoms_test() {
     let user_address = "addr0000";
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
-    let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
     let msg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    set_validator_infos_for_round(&mut deps.storage, 0, vec![VALIDATOR_1.to_string()]).unwrap();
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    let derivative_token_info_provider_addr = deps.api.addr_make(DERIVATIVE_TOKEN_PROVIDER_ADDR);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+
+    let derivative_providers = HashMap::from([get_st_atom_denom_info_mock_data(
+        derivative_token_info_provider_addr.to_string(),
+        vec![(0, Decimal::one())],
+    )]);
+
+    let lsm_provider = Some((
+        lsm_token_info_provider_addr.to_string(),
+        HashMap::from([(
+            0,
+            HashMap::from([get_validator_info_mock_data(
+                VALIDATOR_1.to_string(),
+                Decimal::one(),
+            )]),
+        )]),
+    ));
+
+    setup_multiple_token_info_provider_mocks(
+        &mut deps,
+        derivative_providers.clone(),
+        lsm_provider.clone(),
+        true,
+    );
 
     // Try to lock some unsupported token and verify this is not possible
     let info1 = get_message_info(
@@ -208,7 +237,16 @@ fn unlock_tokens_basic_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (0, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (1, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+        ],
+        true,
+    );
 
     // lock 1000 tokens for one month
     let msg = ExecuteMsg::LockTokens {
@@ -287,7 +325,13 @@ fn unlock_tokens_pending_slashes_test() {
     );
     assert!(res.is_ok());
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
 
     // lock 1000 tokens for one month
     let msg = ExecuteMsg::LockTokens {
@@ -370,7 +414,16 @@ fn unlock_specific_tokens_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (0, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (1, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+        ],
+        true,
+    );
 
     // Create 4 locks with specific durations
     let durations = [
@@ -531,7 +584,17 @@ fn test_too_many_locks() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (0, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (1, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (2, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+        ],
+        true,
+    );
 
     // lock tokens many times
     let lock_msg = ExecuteMsg::LockTokens {
@@ -607,7 +670,17 @@ fn max_locked_tokens_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (0, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (1, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (2, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+        ],
+        true,
+    );
 
     // total tokens locked after this action will be 1500
     info = get_message_info(

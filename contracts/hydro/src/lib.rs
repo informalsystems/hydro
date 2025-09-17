@@ -12,7 +12,6 @@ pub mod slashing;
 pub mod state;
 pub mod token_manager;
 pub mod utils;
-pub mod validators_icqs;
 pub mod vote;
 
 #[cfg(test)]
@@ -26,9 +25,6 @@ mod testing_queries;
 
 #[cfg(test)]
 mod testing_lsm_integration;
-
-#[cfg(test)]
-mod testing_validators_icqs;
 
 #[cfg(test)]
 mod testing_fractional_voting;
@@ -71,3 +67,6 @@ mod testing_slashing;
 
 #[cfg(test)]
 mod testing_buyout_pending_slash;
+
+#[cfg(test)]
+mod testing_lsm_migration;

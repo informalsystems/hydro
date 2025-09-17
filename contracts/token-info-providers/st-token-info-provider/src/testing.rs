@@ -10,6 +10,9 @@ use cosmwasm_std::{
     MessageInfo, MsgResponse, OwnedDeps, Querier, QuerierResult, Reply, SubMsgResponse,
     SubMsgResult, SystemResult, Timestamp, Uint128, WasmMsg, WasmQuery,
 };
+use interface::hydro::{
+    CurrentRoundResponse as HydroCurrentRoundResponse, ExecuteMsg as HydroExecuteMsg,
+};
 use interface::token_info_provider::DenomInfoResponse;
 use neutron_sdk::{
     bindings::{
@@ -29,8 +32,8 @@ use crate::{
         execute, instantiate, query, reply, sudo, HostZone, ReplyPayload, DENOMINATOR,
         NATIVE_TOKEN_DENOM, STRIDE_STAKEIBC_STORE_KEY,
     },
-    msg::{ExecuteMsg, HydroExecuteMsg, InstantiateMsg},
-    query::{HydroCurrentRoundResponse, QueryMsg},
+    msg::{ExecuteMsg, InstantiateMsg},
+    query::QueryMsg,
     state::{InterchainQueryInfo, INTERCHAIN_QUERY_INFO},
 };
 
@@ -454,14 +457,10 @@ fn token_ratio_update_test() {
             } => {
                 assert_eq!(contract_addr, hydro_info.sender.to_string());
                 match from_json(msg).unwrap() {
-                    HydroExecuteMsg::UpdateTokenGroupRatio {
-                        token_group_id,
-                        old_ratio,
-                        new_ratio,
-                    } => {
-                        assert_eq!(token_group_id, init_msg.token_group_id);
-                        assert_eq!(old_ratio, Decimal::zero());
-                        assert_eq!(new_ratio, token_ratio);
+                    HydroExecuteMsg::UpdateTokenGroupsRatios { changes } => {
+                        assert_eq!(changes[0].token_group_id, init_msg.token_group_id);
+                        assert_eq!(changes[0].old_ratio, Decimal::zero());
+                        assert_eq!(changes[0].new_ratio, token_ratio);
                     }
                 }
             }
@@ -542,14 +541,10 @@ fn token_ratio_update_test() {
             } => {
                 assert_eq!(contract_addr, hydro_info.sender.to_string());
                 match from_json(msg).unwrap() {
-                    HydroExecuteMsg::UpdateTokenGroupRatio {
-                        token_group_id,
-                        old_ratio,
-                        new_ratio,
-                    } => {
-                        assert_eq!(token_group_id, init_msg.token_group_id);
-                        assert_eq!(old_ratio, token_ratio);
-                        assert_eq!(new_ratio, updated_token_ratio);
+                    HydroExecuteMsg::UpdateTokenGroupsRatios { changes } => {
+                        assert_eq!(changes[0].token_group_id, init_msg.token_group_id);
+                        assert_eq!(changes[0].old_ratio, token_ratio);
+                        assert_eq!(changes[0].new_ratio, updated_token_ratio);
                     }
                 }
             }

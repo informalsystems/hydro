@@ -6,12 +6,13 @@ use crate::state::{
 };
 use crate::testing::{
     get_address_as_str, get_default_instantiate_msg, get_message_info,
-    set_default_validator_for_rounds, setup_st_atom_token_info_provider_mock, IBC_DENOM_1,
-    IBC_DENOM_2, ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON,
-    ST_ATOM_ON_STRIDE, THREE_MONTHS_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
-    VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
+    get_st_atom_denom_info_mock_data, get_validator_info_mock_data,
+    setup_lsm_token_info_provider_mock, setup_multiple_token_info_provider_mocks,
+    DERIVATIVE_TOKEN_PROVIDER_ADDR, IBC_DENOM_1, IBC_DENOM_2, LSM_TOKEN_PROVIDER_ADDR,
+    ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, ST_ATOM_ON_STRIDE,
+    THREE_MONTHS_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
+    VALIDATOR_2_LST_DENOM_1,
 };
-use crate::testing_lsm_integration::set_validator_infos_for_round;
 use crate::testing_mocks::denom_trace_grpc_query_mock;
 use cosmwasm_std::{from_json, testing::mock_env, Coin, Decimal, Uint128};
 use std::collections::{HashMap, HashSet};
@@ -38,7 +39,17 @@ fn test_lock_split_flow_multiple_rounds() {
     instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address)];
     instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 3);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (0, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (1, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (2, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+        ],
+        true,
+    );
 
     let tranche_id = 1;
     let first_lock_id = 0;
@@ -405,7 +416,17 @@ fn test_merge_locks_flow() {
     instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address)];
     instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 3);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (0, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (1, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (2, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+        ],
+        true,
+    );
 
     let tranche_id = 1;
 
@@ -769,13 +790,19 @@ fn test_merge_locks_basic_validation() {
     instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address_1)];
     instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
 
-    // Setup validator for round 0
-    set_validator_infos_for_round(
-        &mut deps.storage,
-        0,
-        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
-    )
-    .unwrap();
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(
+            0,
+            vec![
+                (VALIDATOR_1.to_string(), Decimal::one()),
+                (VALIDATOR_2.to_string(), Decimal::one()),
+            ],
+        )],
+        true,
+    );
 
     let lock_id_1 = 0;
     let lock_id_2 = 1;
@@ -872,7 +899,17 @@ fn test_merge_locks_update_proposal_powers() {
     instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address)];
     instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 3);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (0, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (1, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (2, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+        ],
+        true,
+    );
 
     let round_id_2 = 1;
 
@@ -1168,11 +1205,35 @@ fn test_split_merge_locks_query_all_tokens_behavior() {
     instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address)];
     instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
 
-    // Setup ST_ATOM token info provider (non-LSM)
-    let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    // Setup ST_ATOM and LSM token info providers
+    let st_token_info_provider_addr = deps.api.addr_make(DERIVATIVE_TOKEN_PROVIDER_ADDR);
+    let derivative_providers = HashMap::from([get_st_atom_denom_info_mock_data(
+        st_token_info_provider_addr.to_string(),
+        (0..=2)
+            .map(|round_id: u64| (round_id, Decimal::one()))
+            .collect(),
+    )]);
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 3);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    let lsm_provider = Some((
+        lsm_token_info_provider_addr.to_string(),
+        HashMap::from_iter((0..=2).map(|round_id: u64| {
+            (
+                round_id,
+                HashMap::from([get_validator_info_mock_data(
+                    VALIDATOR_1.to_string(),
+                    Decimal::one(),
+                )]),
+            )
+        })),
+    ));
+
+    setup_multiple_token_info_provider_mocks(
+        &mut deps,
+        derivative_providers.clone(),
+        lsm_provider.clone(),
+        true,
+    );
 
     // Create a non-LSM lockup (using ST_ATOM_ON_NEUTRON which is not LSM)
     let non_lsm_lock_info = get_message_info(

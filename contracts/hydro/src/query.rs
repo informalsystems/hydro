@@ -7,6 +7,9 @@ use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
 #[allow(unused_imports)]
 use interface::token_info_provider::ValidatorsInfoResponse;
+// When compiling for wasm32 platform, compiler doesn't recognize that this type is used in one of the queries.
+#[allow(unused_imports)]
+use interface::hydro::CurrentRoundResponse;
 
 #[cw_serde]
 #[derive(QueryResponses, cw_orch::QueryFns)]
@@ -128,9 +131,6 @@ pub enum QueryMsg {
 
     #[returns(WhitelistAdminsResponse)]
     WhitelistAdmins {},
-
-    #[returns(ICQManagersResponse)]
-    ICQManagers {},
 
     #[returns(TotalLockedTokensResponse)]
     TotalLockedTokens {},
@@ -461,12 +461,6 @@ pub struct AllVotesRoundTrancheResponse {
 }
 
 #[cw_serde]
-pub struct CurrentRoundResponse {
-    pub round_id: u64,
-    pub round_end: Timestamp,
-}
-
-#[cw_serde]
 pub struct RoundEndResponse {
     pub round_end: Timestamp,
 }
@@ -516,11 +510,6 @@ pub struct RegisteredValidatorQueriesResponse {
 pub struct CanLockDenomResponse {
     pub denom: String,
     pub can_be_locked: bool,
-}
-
-#[cw_serde]
-pub struct ICQManagersResponse {
-    pub managers: Vec<Addr>,
 }
 
 #[cw_serde]

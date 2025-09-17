@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "type": "object",
+  "required": [
+    "admins",
+    "hub_connection_id",
+    "hub_transfer_channel_id",
+    "icq_managers",
+    "icq_update_period",
+    "max_validator_shares_participating"
+  ],
+  "properties": {
+    "admins": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hub_connection_id": {
+      "type": "string"
+    },
+    "hub_transfer_channel_id": {
+      "type": "string"
+    },
+    "hydro_contract_address": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "icq_managers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "icq_update_period": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "max_validator_shares_participating": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    }
+  },
+  "additionalProperties": false
+}

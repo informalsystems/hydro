@@ -1,12 +1,16 @@
 use std::str::FromStr;
 
 use crate::contract::{execute, instantiate, query};
-use crate::msg::{ExecuteMsg, HydroExecuteMsg, InstantiateMsg};
-use crate::query::{DropQueryMsg, HydroCurrentRoundResponse, HydroQueryMsg, QueryMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg};
+use crate::query::{DropQueryMsg, QueryMsg};
 use cosmwasm_std::{
     testing::{mock_dependencies, mock_env, MockApi},
     to_json_binary, Coin, ContractResult, Decimal, MessageInfo, QuerierResult, SubMsg, SystemError,
     SystemResult, Timestamp, WasmMsg, WasmQuery,
+};
+use interface::hydro::{
+    CurrentRoundResponse as HydroCurrentRoundResponse, ExecuteMsg as HydroExecuteMsg,
+    QueryMsg as HydroQueryMsg, TokenGroupRatioChange,
 };
 use interface::token_info_provider::DenomInfoResponse;
 
@@ -103,10 +107,12 @@ fn denom_info_query_and_update_test() {
         response.messages,
         vec![SubMsg::new(WasmMsg::Execute {
             contract_addr: info_hydro.sender.to_string(),
-            msg: to_json_binary(&HydroExecuteMsg::UpdateTokenGroupRatio {
-                token_group_id: TOKEN_GROUP_ID.to_owned(),
-                old_ratio: Decimal::zero(),
-                new_ratio: round_0_token_ratio,
+            msg: to_json_binary(&HydroExecuteMsg::UpdateTokenGroupsRatios {
+                changes: vec![TokenGroupRatioChange {
+                    token_group_id: TOKEN_GROUP_ID.to_owned(),
+                    old_ratio: Decimal::zero(),
+                    new_ratio: round_0_token_ratio,
+                }],
             })
             .unwrap(),
             funds: vec![]
@@ -162,10 +168,12 @@ fn denom_info_query_and_update_test() {
         response.messages,
         vec![SubMsg::new(WasmMsg::Execute {
             contract_addr: info_hydro.sender.to_string(),
-            msg: to_json_binary(&HydroExecuteMsg::UpdateTokenGroupRatio {
-                token_group_id: TOKEN_GROUP_ID.to_owned(),
-                old_ratio: round_5_token_ratio_1,
-                new_ratio: round_5_token_ratio_2,
+            msg: to_json_binary(&HydroExecuteMsg::UpdateTokenGroupsRatios {
+                changes: vec![TokenGroupRatioChange {
+                    token_group_id: TOKEN_GROUP_ID.to_owned(),
+                    old_ratio: round_5_token_ratio_1,
+                    new_ratio: round_5_token_ratio_2,
+                }]
             })
             .unwrap(),
             funds: vec![]

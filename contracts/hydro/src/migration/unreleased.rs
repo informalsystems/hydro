@@ -1,136 +1,60 @@
 use std::collections::HashMap;
 
-use cosmwasm_std::{Decimal, DepsMut, Order, Response};
+use cosmwasm_std::{DepsMut, Response};
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 use crate::{
-    error::ContractError,
-    state::{Proposal, PROPOSAL_MAP, PROPOSAL_TOTAL_MAP, VOTE_MAP_V2},
-    token_manager::TokenManager,
+    error::{new_generic_error, ContractError},
+    state::TOKEN_INFO_PROVIDERS,
+    token_manager::{TokenInfoProvider, TokenInfoProviderLSM},
 };
 
-// Iterates over all votes in the given round and tranche and computes total voting power for each
-// of the proposals, based on the vote entries. Then iterates over all proposals in the given round
-// and tranche and, if necessary, updates their voting power in the store.
-pub fn update_proposals_powers(
+// Until the LSM token info provider becommes a separate smart contract, we use this string
+// as its identifier in the store, instead of the smart contract address.
+pub const LSM_TOKEN_INFO_PROVIDER_ID: &str = "lsm_token_info_provider";
+
+// Hard-coded transfer channel ID, so that we don't have to keep the old TokenInfoProvider
+// structures until the migration is completed. Only info that we need from the old struct
+// is this one, and we know it always has this value.
+const HUB_TRANSFER_CHANNEL_ID: &str = "channel-1";
+
+// Replaces old LSM token info provider with the new one implemented as a smart contract.
+pub fn migrate_lsm_token_info_provider(
     deps: &mut DepsMut<NeutronQuery>,
-    round_id: u64,
-    tranche_id: u64,
+    lsm_token_info_provider: Option<String>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    // proposal_id -> [(token_group_id -> scaled_proposal_shares)]
-    let mut proposals_total_shares: HashMap<u64, HashMap<String, Decimal>> = HashMap::new();
+    // If there is a need to migrate some other contract instance to this version
+    // except from ATOM one (e.g. NTRN instance) make sure it will be possible.
+    let Some(lsm_token_info_provider) = lsm_token_info_provider else {
+        return Ok(Response::new()
+            .add_attribute("action", "migrate_lsm_token_info_provider")
+            .add_attribute("lsm_token_info_provider_addr", "None"));
+    };
 
-    for vote in VOTE_MAP_V2
-        .prefix((round_id, tranche_id))
-        .range(deps.storage, None, None, Order::Ascending)
-        .filter_map(|vote_res| match vote_res {
-            Err(_) => None,
-            Ok(vote) => Some(vote.1),
-        })
-    {
-        let proposal_entry = proposals_total_shares.entry(vote.prop_id).or_default();
-
-        let token_group_shares_entry = proposal_entry
-            .entry(vote.time_weighted_shares.0.clone())
-            .or_default();
-
-        *token_group_shares_entry =
-            token_group_shares_entry.checked_add(vote.time_weighted_shares.1)?;
-    }
-
-    let mut token_manager = TokenManager::new(&deps.as_ref());
-
-    // TokenManager doesn't have caching for LSM token group ratios, so caching is introduced here.
-    let mut token_group_ratios: HashMap<String, Decimal> = HashMap::new();
-
-    let mut proposal_total_powers: HashMap<u64, Decimal> = HashMap::new();
-
-    for proposal_token_group_shares in proposals_total_shares {
-        let proposal_id = proposal_token_group_shares.0;
-        let mut proposal_total_power = Decimal::zero();
-
-        for token_group_shares in proposal_token_group_shares.1 {
-            let token_group_id = token_group_shares.0;
-            let token_group_shares_num = token_group_shares.1;
-
-            let token_group_ratio = match token_group_ratios.get(&token_group_id) {
-                Some(token_group_ratio) => *token_group_ratio,
-                None => {
-                    match token_manager.get_token_group_ratio(
-                        &deps.as_ref(),
-                        round_id,
-                        token_group_id.clone(),
-                    ) {
-                        Err(_) => continue,
-                        Ok(token_group_ratio) => {
-                            token_group_ratios.insert(token_group_id, token_group_ratio);
-
-                            token_group_ratio
-                        }
-                    }
-                }
-            };
-
-            let token_group_shares_power = token_group_shares_num.checked_mul(token_group_ratio)?;
-            proposal_total_power = proposal_total_power.checked_add(token_group_shares_power)?;
-        }
-
-        proposal_total_powers.insert(proposal_id, proposal_total_power);
-    }
-
-    // Ierate over all proposals in the given round and tranche and update their voting powers
-    let round_tranche_proposals = PROPOSAL_MAP
-        .prefix((round_id, tranche_id))
-        .range(deps.storage, None, None, Order::Ascending)
-        .filter_map(|prop_res| match prop_res {
-            Err(_) => None,
-            Ok(prop) => Some(prop.1),
-        })
-        .collect::<Vec<Proposal>>();
-
-    // Record both old and new proposal voting power to attach response attributes
-    let mut proposals_power_updates = vec![];
-
-    for mut proposal in round_tranche_proposals {
-        // In case there were no votes for the given proposal, we will set its power to 0
-        let new_proposal_power_dec = proposal_total_powers
-            .get(&proposal.proposal_id)
-            .cloned()
-            .unwrap_or_default();
-        let new_proposal_power_int = new_proposal_power_dec.to_uint_ceil();
-
-        if proposal.power == new_proposal_power_int {
-            continue;
-        }
-
-        proposals_power_updates.push((
-            proposal.proposal_id,
-            proposal.power,
-            new_proposal_power_int,
+    if !TOKEN_INFO_PROVIDERS.has(deps.storage, LSM_TOKEN_INFO_PROVIDER_ID.to_string()) {
+        return Err(new_generic_error(
+            "failed to migrate LSM token info provider- old provider not found in store",
         ));
-
-        proposal.power = new_proposal_power_int;
-
-        PROPOSAL_MAP.save(
-            deps.storage,
-            (round_id, tranche_id, proposal.proposal_id),
-            &proposal,
-        )?;
-
-        PROPOSAL_TOTAL_MAP.save(deps.storage, proposal.proposal_id, &new_proposal_power_dec)?;
     }
 
-    let mut response = Response::new().add_attribute("action", "update_proposals_powers");
+    TOKEN_INFO_PROVIDERS.remove(deps.storage, LSM_TOKEN_INFO_PROVIDER_ID.to_string());
 
-    for proposal_power_update in proposals_power_updates {
-        response = response.add_attribute(
-            format!("proposal_id_{}", proposal_power_update.0),
-            format!(
-                "old_voting_power: {}, new_voting_power: {}",
-                proposal_power_update.1, proposal_power_update.2
-            ),
-        )
-    }
+    let lsm_token_info_provider_addr = deps.api.addr_validate(&lsm_token_info_provider)?;
 
-    Ok(response)
+    TOKEN_INFO_PROVIDERS.save(
+        deps.storage,
+        lsm_token_info_provider_addr.to_string(),
+        &TokenInfoProvider::LSM(TokenInfoProviderLSM {
+            contract: lsm_token_info_provider_addr.to_string(),
+            cache: HashMap::new(),
+            hub_transfer_channel_id: HUB_TRANSFER_CHANNEL_ID.to_string(),
+        }),
+    )?;
+
+    Ok(Response::new()
+        .add_attribute("action", "migrate_lsm_token_info_provider")
+        .add_attribute(
+            "lsm_token_info_provider_addr",
+            lsm_token_info_provider_addr.to_string(),
+        ))
 }

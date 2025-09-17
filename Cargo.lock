@@ -2063,6 +2063,7 @@ dependencies = [
  "cw-storage-plus 2.0.0",
  "cw-utils 2.0.0",
  "cw2 2.0.0",
+ "ibc-proto",
  "interface",
  "neutron-sdk",
  "neutron-std",
@@ -2220,6 +2221,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "ibc-proto"
+version = "0.46.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cb09e0b52b8a16e98ce98845e7c15b018440f3c56defa12fa44782cd66bab65"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "flex-error",
+ "ics23",
+ "prost 0.12.6",
+ "subtle-encoding",
+ "tendermint-proto 0.37.0",
+]
+
+[[package]]
+name = "ics23"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18798160736c1e368938ba6967dbcb3c7afb3256b442a5506ba5222eebb68a5a"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "hex",
+ "prost 0.12.6",
 ]
 
 [[package]]
@@ -2555,6 +2583,27 @@ name = "log"
 version = "0.4.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04cbf5b083de1c7e0222a7a51dbfdba1cbe1c6ab0b15e29fff3f6c077fd9cd9f"
+
+[[package]]
+name = "lsm-token-info-provider"
+version = "3.6.1"
+dependencies = [
+ "bech32 0.11.0",
+ "cosmos-sdk-proto 0.20.0",
+ "cosmwasm-schema 2.2.1",
+ "cosmwasm-std 2.2.1",
+ "cw-storage-plus 2.0.0",
+ "cw-utils 2.0.0",
+ "cw2 2.0.0",
+ "interface",
+ "neutron-sdk",
+ "neutron-std",
+ "prost 0.12.6",
+ "schemars",
+ "serde",
+ "serde-json-wasm 1.0.1",
+ "thiserror",
+]
 
 [[package]]
 name = "marketplace"
@@ -4280,6 +4329,22 @@ dependencies = [
 
 [[package]]
 name = "tendermint-proto"
+version = "0.37.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc87024548c7f3da479885201e3da20ef29e85a3b13d04606b380ac4c7120d87"
+dependencies = [
+ "bytes",
+ "flex-error",
+ "prost 0.12.6",
+ "prost-types 0.12.6",
+ "serde",
+ "serde_bytes",
+ "subtle-encoding",
+ "time",
+]
+
+[[package]]
+name = "tendermint-proto"
 version = "0.39.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf3abf34ecf33125621519e9952688e7a59a98232d51538037ba21fbe526a802"
@@ -4679,6 +4744,7 @@ dependencies = [
  "cw-storage-plus 2.0.0",
  "cw2 2.0.0",
  "hydro",
+ "interface",
  "proptest",
  "schemars",
  "serde",

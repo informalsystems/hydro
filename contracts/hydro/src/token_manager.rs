@@ -5,25 +5,23 @@ use cosmwasm_std::{
     to_json_vec, Decimal, Deps, DepsMut, Env, Order, Reply, Response, StdError, StdResult, SubMsg,
     WasmMsg,
 };
-use interface::token_info_provider::{DenomInfoResponse, TokenInfoProviderQueryMsg};
+use interface::{
+    hydro::TokenGroupRatioChange,
+    lsm::ValidatorInfo,
+    token_info_provider::{DenomInfoResponse, TokenInfoProviderQueryMsg, ValidatorsInfoResponse},
+    utils::extract_response_msg_bytes_from_reply_msg,
+};
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 use crate::{
     contract::compute_current_round_id,
     error::{new_generic_error, ContractError},
-    lsm_integration::{
-        get_round_validators, get_validator_power_ratio_for_round, is_active_round_validator,
-        resolve_validator_from_denom,
-    },
+    lsm_integration::resolve_validator_from_denom,
     msg::{ReplyPayload, TokenInfoProviderInstantiateMsg},
-    score_keeper::{apply_token_groups_ratio_changes, TokenGroupRatioChange},
+    score_keeper::apply_token_groups_ratio_changes,
     state::{Constants, TOKEN_INFO_PROVIDERS},
     utils::load_current_constants,
 };
-
-// Until the LSM token info provider becommes a separate smart contract, we use this string
-// as its identifier in the store, instead of the smart contract address.
-pub const LSM_TOKEN_INFO_PROVIDER_ID: &str = "lsm_token_info_provider";
 
 pub const BASE_TOKEN_INFO_PROVIDER_ID: &str = "base_token_info_provider";
 
@@ -211,10 +209,7 @@ impl TokenInfoProviderDerivative {
         round_id: u64,
         denom: String,
     ) -> StdResult<String> {
-        let denom_info = match self.cache.get(&round_id) {
-            Some(cache) => cache.clone(),
-            None => self.query_denom_info_with_caching(deps, round_id)?,
-        };
+        let denom_info = self.get_denom_info_with_caching(deps, round_id)?;
 
         match denom_info.denom == denom {
             true => {
@@ -238,10 +233,7 @@ impl TokenInfoProviderDerivative {
         round_id: u64,
         token_group_id: String,
     ) -> StdResult<Decimal> {
-        let denom_info = match self.cache.get(&round_id) {
-            Some(cache) => cache.clone(),
-            None => self.query_denom_info_with_caching(deps, round_id)?,
-        };
+        let denom_info = self.get_denom_info_with_caching(deps, round_id)?;
 
         match denom_info.token_group_id == token_group_id {
             true => Ok(denom_info.ratio),
@@ -256,10 +248,7 @@ impl TokenInfoProviderDerivative {
         deps: &Deps<NeutronQuery>,
         round_id: u64,
     ) -> StdResult<HashMap<String, Decimal>> {
-        let denom_info = match self.cache.get(&round_id) {
-            Some(cache) => cache.clone(),
-            None => self.query_denom_info_with_caching(deps, round_id)?,
-        };
+        let denom_info = self.get_denom_info_with_caching(deps, round_id)?;
 
         Ok(HashMap::from([(
             denom_info.token_group_id,
@@ -267,31 +256,36 @@ impl TokenInfoProviderDerivative {
         )]))
     }
 
-    fn query_denom_info_with_caching(
+    fn get_denom_info_with_caching(
         &mut self,
         deps: &Deps<NeutronQuery>,
         round_id: u64,
     ) -> StdResult<DenomInfoResponse> {
-        let denom_info_resp: DenomInfoResponse = deps.querier.query_wasm_smart(
-            self.contract.clone(),
-            &TokenInfoProviderQueryMsg::DenomInfo { round_id },
-        )?;
+        Ok(match self.cache.get(&round_id) {
+            Some(cache) => cache.clone(),
+            None => {
+                let denom_info_resp: DenomInfoResponse = deps.querier.query_wasm_smart(
+                    self.contract.clone(),
+                    &TokenInfoProviderQueryMsg::DenomInfo { round_id },
+                )?;
 
-        self.cache.insert(round_id, denom_info_resp.clone());
+                self.cache.insert(round_id, denom_info_resp.clone());
 
-        Ok(denom_info_resp)
+                denom_info_resp
+            }
+        })
     }
 }
 
-// All TokenInfoProviderLSM fields will be moved into a separate smart contract. At that point, this
-// struct will only contain the address of the LSM Token Info Provider smart contract and a specific
-// caching data structure.
 #[cw_serde]
 pub struct TokenInfoProviderLSM {
-    pub max_validator_shares_participating: u64,
-    pub hub_connection_id: String,
+    pub contract: String,
+    // Validators cached per round ID
+    pub cache: HashMap<u64, HashMap<String, ValidatorInfo>>,
+    // We need to keep the channel ID in order to be able to resolve the LSM IBC denoms
+    // within the Hydro contract. Only if the denom is identified as a valid LSM denom,
+    // we will query the LSM Token Info Provider to fetch the round validators.
     pub hub_transfer_channel_id: String,
-    pub icq_update_period: u64,
 }
 
 impl TokenInfoProviderLSM {
@@ -299,13 +293,6 @@ impl TokenInfoProviderLSM {
     // tokenized share transferred directly from the Cosmos Hub
     // of a validator that is also among the top max_validators validators
     // for the given round, and returns the address of that validator.
-    //
-    // Note that there is no caching of resolved denoms, since the storages
-    // are still in the Hydro smart contract, so there will be not so large
-    // extra gas cost as if it was a separate smart contract. Once we migrate
-    // LSM token info provider to its own contract, we will query all validators
-    // for the given round at once and store the result for later use during
-    // the entire transaction scope.
     pub fn resolve_denom(
         &mut self,
         deps: &Deps<NeutronQuery>,
@@ -313,15 +300,16 @@ impl TokenInfoProviderLSM {
         denom: String,
     ) -> StdResult<String> {
         let validator = resolve_validator_from_denom(deps, &self.hub_transfer_channel_id, denom)?;
-        let max_validators = self.max_validator_shares_participating;
+        let round_validators = self.get_all_round_validators_with_caching(deps, round_id)?;
 
-        if is_active_round_validator(deps.storage, round_id, &validator) {
-            Ok(validator)
-        } else {
-            Err(StdError::generic_err(format!(
-                "Validator {validator} is not present; possibly they are not part of the top {max_validators} validators by delegated tokens"
-            )))
-        }
+        round_validators
+            .get(&validator)
+            .map(|validator_info| validator_info.address.clone())
+            .ok_or_else(|| {
+                StdError::generic_err(format!(
+                    "Validator {validator} is not present; possibly they are not part of the top N validators by delegated tokens",
+                ))
+        })
     }
 
     // Returns true if denom is a valid LSM IBC denom.
@@ -337,8 +325,17 @@ impl TokenInfoProviderLSM {
         round_id: u64,
         token_group_id: String,
     ) -> StdResult<Decimal> {
-        // No caching here either, for the same reason as with resolve_denom()
-        get_validator_power_ratio_for_round(deps.storage, round_id, token_group_id)
+        let round_validators = self.get_all_round_validators_with_caching(deps, round_id)?;
+
+        round_validators
+            .get(&token_group_id)
+            .map(|validator_info| validator_info.power_ratio)
+            .ok_or_else(|| {
+                StdError::generic_err(format!(
+                    "Input token group ID {} doesn't match any of the round validators.",
+                    token_group_id,
+                ))
+            })
     }
 
     pub fn get_all_token_group_ratios(
@@ -346,12 +343,34 @@ impl TokenInfoProviderLSM {
         deps: &Deps<NeutronQuery>,
         round_id: u64,
     ) -> StdResult<HashMap<String, Decimal>> {
-        let round_validators: Vec<(String, Decimal)> = get_round_validators(deps, round_id)
-            .iter()
+        Ok(self
+            .get_all_round_validators_with_caching(deps, round_id)?
+            .values()
             .map(|validator_info| (validator_info.address.clone(), validator_info.power_ratio))
-            .collect();
+            .collect())
+    }
 
-        Ok(HashMap::from_iter(round_validators))
+    fn get_all_round_validators_with_caching(
+        &mut self,
+        deps: &Deps<NeutronQuery>,
+        round_id: u64,
+    ) -> StdResult<HashMap<String, ValidatorInfo>> {
+        let validators_info = match self.cache.get(&round_id) {
+            Some(cache) => cache.clone(),
+            None => {
+                let validators_info: ValidatorsInfoResponse = deps.querier.query_wasm_smart(
+                    self.contract.clone(),
+                    &TokenInfoProviderQueryMsg::ValidatorsInfo { round_id },
+                )?;
+
+                self.cache
+                    .insert(round_id, validators_info.validators.clone());
+
+                validators_info.validators
+            }
+        };
+
+        Ok(validators_info)
     }
 }
 
@@ -406,39 +425,30 @@ impl TokenInfoProviderBase {
 }
 
 // This function builds token info providers from the given list of instantiation messages.
-// Token info provider of LSM type will be saved into the store immediatelly, while for the
-// Contract type this function prepares SubMsgs that will instantiate the derivative token
-// info provider smart contracts.
+// The function prepares SubMsgs that will instantiate the token info provider smart contracts.
 // The function is used during the Hydro contract instantiation, as well as during the execute
 // action that adds a new token info provider.
 #[allow(clippy::type_complexity)]
 pub fn add_token_info_providers(
     deps: &mut DepsMut<NeutronQuery>,
     token_info_provider_msgs: Vec<TokenInfoProviderInstantiateMsg>,
-) -> Result<
-    (
-        Vec<SubMsg<NeutronMsg>>,
-        Option<TokenInfoProvider>,
-        Option<TokenInfoProvider>,
-    ),
-    ContractError,
-> {
+) -> Result<(Vec<SubMsg<NeutronMsg>>, Option<TokenInfoProvider>), ContractError> {
     let token_manager = TokenManager::new(&deps.as_ref());
     let mut token_info_provider_num = token_manager.token_info_providers.len();
     let mut found_lsm_provider = token_manager.get_lsm_token_info_provider().is_some();
     let mut found_base_provider = token_manager.get_base_token_info_provider().is_some();
 
     let mut submsgs = vec![];
-    let mut lsm_provider = None;
     let mut base_provider = None;
 
     for token_info_provider_msg in token_info_provider_msgs {
         match token_info_provider_msg {
             TokenInfoProviderInstantiateMsg::LSM {
-                max_validator_shares_participating,
-                hub_connection_id,
+                code_id,
+                msg,
+                label,
+                admin,
                 hub_transfer_channel_id,
-                icq_update_period,
             } => {
                 if found_lsm_provider {
                     return Err(new_generic_error(
@@ -446,20 +456,28 @@ pub fn add_token_info_providers(
                     ));
                 }
 
-                let lsm_token_info_provider = TokenInfoProvider::LSM(TokenInfoProviderLSM {
-                    hub_connection_id,
+                let token_info_provider = TokenInfoProvider::LSM(TokenInfoProviderLSM {
+                    contract: String::new(),
+                    cache: HashMap::new(),
                     hub_transfer_channel_id,
-                    icq_update_period,
-                    max_validator_shares_participating,
                 });
 
-                TOKEN_INFO_PROVIDERS.save(
-                    deps.storage,
-                    LSM_TOKEN_INFO_PROVIDER_ID.to_string(),
-                    &lsm_token_info_provider,
-                )?;
+                let submsg: SubMsg<NeutronMsg> = SubMsg::reply_on_success(
+                    WasmMsg::Instantiate {
+                        admin,
+                        code_id,
+                        msg,
+                        funds: vec![],
+                        label,
+                    },
+                    0,
+                )
+                .with_payload(to_json_vec(
+                    &ReplyPayload::InstantiateTokenInfoProvider(token_info_provider),
+                )?);
 
-                lsm_provider = Some(lsm_token_info_provider);
+                submsgs.push(submsg);
+
                 found_lsm_provider = true;
                 token_info_provider_num += 1;
             }
@@ -530,7 +548,7 @@ pub fn add_token_info_providers(
         ));
     }
 
-    Ok((submsgs, lsm_provider, base_provider))
+    Ok((submsgs, base_provider))
 }
 
 pub fn token_manager_handle_submsg_reply(
@@ -539,60 +557,56 @@ pub fn token_manager_handle_submsg_reply(
     token_info_provider: TokenInfoProvider,
     msg: Reply,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    match token_info_provider {
-        TokenInfoProvider::LSM(_) => Err(new_generic_error(
-            "Expected smart contract derivative token info provider, found the LSM one.",
-        )),
-        TokenInfoProvider::Base(_) => Err(new_generic_error(
-            "Expected smart contract derivative token info provider, found the Base one.",
-        )),
-        TokenInfoProvider::Derivative(mut token_info_provider) => {
-            let bytes = &msg
-                .result
-                .into_result()
-                .map_err(StdError::generic_err)?
-                .msg_responses[0]
-                .clone()
-                .value
-                .to_vec();
+    let response_bytes = &extract_response_msg_bytes_from_reply_msg(&msg)?;
+    let instantiate_msg_response = cw_utils::parse_instantiate_response_data(response_bytes)
+        .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {:?}", e)))?;
 
-            let instantiate_msg_response = cw_utils::parse_instantiate_response_data(bytes)
-                .map_err(|e| {
-                    StdError::generic_err(format!("failed to parse reply message: {e:?}"))
-                })?;
-
+    let mut token_info_provider = match token_info_provider {
+        TokenInfoProvider::LSM(mut token_info_provider) => {
             token_info_provider.contract = instantiate_msg_response.contract_address.clone();
 
-            TOKEN_INFO_PROVIDERS.save(
-                deps.storage,
-                instantiate_msg_response.contract_address,
-                &TokenInfoProvider::Derivative(token_info_provider.clone()),
-            )?;
-
-            let constants = load_current_constants(&deps.as_ref(), env)?;
-
-            // This function gets executed both on contract instantiation and a new token info provider addition.
-            // If the first round hasn't started yet, which can happen during contract instantiation, there are no
-            // proposals and rounds whose powers should be updated. Also, the handle_token_info_provider_add_remove()
-            // function tries to compute current round ID, which would error out if the first round hasn't started,
-            // hence the check is introduced here.
-            if env.block.time > constants.first_round_start {
-                handle_token_info_provider_add_remove(
-                    &mut deps,
-                    env,
-                    &constants,
-                    &mut TokenInfoProvider::Derivative(token_info_provider),
-                    |token_group| TokenGroupRatioChange {
-                        token_group_id: token_group.0.clone(),
-                        old_ratio: Decimal::zero(),
-                        new_ratio: *token_group.1,
-                    },
-                )?;
-            }
-
-            Ok(Response::default())
+            TokenInfoProvider::LSM(token_info_provider)
         }
+        TokenInfoProvider::Derivative(mut token_info_provider) => {
+            token_info_provider.contract = instantiate_msg_response.contract_address.clone();
+
+            TokenInfoProvider::Derivative(token_info_provider)
+        }
+        TokenInfoProvider::Base(_) => {
+            return Err(new_generic_error(
+                "Base token info provider type not expected in reply().",
+            ))
+        }
+    };
+
+    TOKEN_INFO_PROVIDERS.save(
+        deps.storage,
+        instantiate_msg_response.contract_address,
+        &token_info_provider,
+    )?;
+
+    let constants = load_current_constants(&deps.as_ref(), env)?;
+
+    // This function gets executed both on contract instantiation and a new token info provider addition.
+    // If the first round hasn't started yet, which can happen during contract instantiation, there are no
+    // proposals and rounds whose powers should be updated. Also, the handle_token_info_provider_add_remove()
+    // function tries to compute current round ID, which would error out if the first round hasn't started,
+    // hence the check is introduced here.
+    if env.block.time > constants.first_round_start {
+        handle_token_info_provider_add_remove(
+            &mut deps,
+            env,
+            &constants,
+            &mut token_info_provider,
+            |token_group| TokenGroupRatioChange {
+                token_group_id: token_group.0.clone(),
+                old_ratio: Decimal::zero(),
+                new_ratio: *token_group.1,
+            },
+        )?;
     }
+
+    Ok(Response::default())
 }
 
 pub fn handle_token_info_provider_add_remove<T>(

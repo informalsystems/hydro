@@ -4,7 +4,7 @@ use std::{
     time::{Duration, UNIX_EPOCH},
 };
 
-use cosmwasm_std::{Decimal, Timestamp, Uint128};
+use cosmwasm_std::{Binary, Decimal, Timestamp, Uint128};
 
 use cw_orch::{anyhow, prelude::*};
 
@@ -26,16 +26,14 @@ pub fn get_default_power_schedule_vec() -> Vec<(u64, Decimal)> {
 }
 
 pub fn get_lsm_token_info_provider_init_info(
-    max_validator_shares_participating: u64,
-    hub_connection_id: String,
     hub_transfer_channel_id: String,
-    icq_update_period: u64,
 ) -> TokenInfoProviderInstantiateMsg {
     TokenInfoProviderInstantiateMsg::LSM {
-        max_validator_shares_participating,
-        hub_connection_id,
+        code_id: 0,
+        msg: Binary::default(),
+        admin: None,
+        label: "LSM Token Information Provider".to_string(),
         hub_transfer_channel_id,
-        icq_update_period,
     }
 }
 
@@ -69,7 +67,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
     // neutrond q ibc channel channels --node https://rpc-falcron.pion-1.ntrn.tech
     // find the provider-consumer channel and use its connection-id in next command
     // neutrond q ibc channel connections [CONNECTION-ID] --node https://rpc-falcron.pion-1.ntrn.tech
-    let hub_connection_id = "connection-42".to_string();
+    // let hub_connection_id = "connection-42".to_string();
     let hub_transfer_channel_id = "channel-96".to_string();
 
     hydro.upload()?;
@@ -91,14 +89,10 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             ],
             whitelist_admins: vec![whitelist_admin_address.clone()],
             initial_whitelist: vec![whitelist_admin_address.clone()],
-            icq_managers: vec![],
             max_deployment_duration: 12,
             round_lock_power_schedule: get_default_power_schedule_vec(),
             token_info_providers: vec![get_lsm_token_info_provider_init_info(
-                500,
-                hub_connection_id,
                 hub_transfer_channel_id,
-                10000,
             )],
             gatekeeper: None,
             cw721_collection_info: None,

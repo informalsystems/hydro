@@ -9,7 +9,6 @@ use neutron_sdk::bindings::query::NeutronQuery;
 use crate::{
     contract::{compute_current_round_id, compute_round_end},
     error::{new_generic_error, ContractError},
-    lsm_integration::initialize_validator_store,
     msg::LiquidityDeployment,
     query::{LockEntryWithPower, LockupWithPerTrancheInfo, PerTrancheLockupInfo, RoundWithBid},
     score_keeper::get_total_power_for_round,
@@ -272,7 +271,6 @@ pub fn run_on_each_transaction(
     env: &Env,
     round_id: u64,
 ) -> StdResult<()> {
-    initialize_validator_store(storage, round_id)?;
     update_round_height_maps(storage, env, round_id)
 }
 

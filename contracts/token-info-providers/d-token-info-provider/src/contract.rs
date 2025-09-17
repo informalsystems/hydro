@@ -6,11 +6,13 @@ use cw2::set_contract_version;
 use interface::token_info_provider::DenomInfoResponse;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, HydroExecuteMsg, InstantiateMsg};
-use crate::query::{
-    ConfigResponse, DropQueryMsg, HydroCurrentRoundResponse, HydroQueryMsg, QueryMsg,
-};
+use crate::msg::{ExecuteMsg, InstantiateMsg};
+use crate::query::{ConfigResponse, DropQueryMsg, QueryMsg};
 use crate::state::{Config, CONFIG, TOKEN_RATIO};
+use interface::hydro::{
+    CurrentRoundResponse as HydroCurrentRoundResponse, ExecuteMsg as HydroExecuteMsg,
+    QueryMsg as HydroQueryMsg, TokenGroupRatioChange,
+};
 
 /// Contract name that is used for migration.
 pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -84,10 +86,12 @@ fn execute_update_token_ratio(deps: DepsMut, info: MessageInfo) -> Result<Respon
     if old_ratio != new_ratio {
         TOKEN_RATIO.save(deps.storage, current_round, &new_ratio)?;
 
-        let update_token_ratio_msg = HydroExecuteMsg::UpdateTokenGroupRatio {
-            token_group_id: config.token_group_id.clone(),
-            old_ratio,
-            new_ratio,
+        let update_token_ratio_msg = HydroExecuteMsg::UpdateTokenGroupsRatios {
+            changes: vec![TokenGroupRatioChange {
+                token_group_id: config.token_group_id.clone(),
+                old_ratio,
+                new_ratio,
+            }],
         };
 
         let wasm_execute_msg = WasmMsg::Execute {

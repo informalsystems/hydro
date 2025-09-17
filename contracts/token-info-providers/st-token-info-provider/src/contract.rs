@@ -5,6 +5,7 @@ use cosmwasm_std::{
 };
 use cw2::set_contract_version;
 use interface::token_info_provider::DenomInfoResponse;
+use interface::utils::extract_response_msg_bytes_from_reply_msg;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use neutron_sdk::bindings::query::NeutronQuery;
 use neutron_sdk::bindings::types::{KVKey, StorageValue};
@@ -21,11 +22,13 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, HydroExecuteMsg, InstantiateMsg};
-use crate::query::{
-    ConfigResponse, HydroCurrentRoundResponse, HydroQueryMsg, InterchainQueryInfoResponse, QueryMsg,
-};
+use crate::msg::{ExecuteMsg, InstantiateMsg};
+use crate::query::{ConfigResponse, InterchainQueryInfoResponse, QueryMsg};
 use crate::state::{Config, InterchainQueryInfo, CONFIG, INTERCHAIN_QUERY_INFO, TOKEN_RATIO};
+use interface::hydro::{
+    CurrentRoundResponse as HydroCurrentRoundResponse, ExecuteMsg as HydroExecuteMsg,
+    QueryMsg as HydroQueryMsg, TokenGroupRatioChange,
+};
 
 /// Contract name that is used for migration.
 pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -219,17 +222,11 @@ pub fn reply(
 ) -> Result<Response<NeutronMsg>, ContractError> {
     match from_json::<ReplyPayload>(&msg.payload)? {
         ReplyPayload::RegisterHostZoneICQ { creator, funds } => {
-            // TODO: Replace with utility function defined in LSM PR
-            let register_query_resp: MsgRegisterInterchainQueryResponse = decode_message_response(
-                &msg.result
-                    .into_result()
-                    .map_err(StdError::generic_err)?
-                    .msg_responses[0]
-                    .clone()
-                    .value
-                    .to_vec(),
-            )
-            .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {e:?}")))?;
+            let register_query_resp: MsgRegisterInterchainQueryResponse =
+                decode_message_response(&extract_response_msg_bytes_from_reply_msg(&msg)?)
+                    .map_err(|e| {
+                        StdError::generic_err(format!("failed to parse reply message: {e:?}"))
+                    })?;
 
             INTERCHAIN_QUERY_INFO.save(
                 deps.storage,
@@ -246,15 +243,8 @@ pub fn reply(
                 .add_attribute("query_id", register_query_resp.id.to_string()))
         }
         ReplyPayload::RemoveHostZoneICQ { query_id } => {
-            // TODO: Replace with utility function defined in LSM PR
             decode_message_response::<MsgRemoveInterchainQueryResponse>(
-                &msg.result
-                    .into_result()
-                    .map_err(StdError::generic_err)?
-                    .msg_responses[0]
-                    .clone()
-                    .value
-                    .to_vec(),
+                &extract_response_msg_bytes_from_reply_msg(&msg)?,
             )
             .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {e:?}")))?;
 
@@ -316,10 +306,12 @@ pub fn handle_delivered_interchain_query_result(
     if old_ratio != new_ratio {
         TOKEN_RATIO.save(deps.storage, current_round, &new_ratio)?;
 
-        let update_token_ratio_msg = HydroExecuteMsg::UpdateTokenGroupRatio {
-            token_group_id: config.token_group_id.clone(),
-            old_ratio,
-            new_ratio,
+        let update_token_ratio_msg = HydroExecuteMsg::UpdateTokenGroupsRatios {
+            changes: vec![TokenGroupRatioChange {
+                token_group_id: config.token_group_id.clone(),
+                old_ratio,
+                new_ratio,
+            }],
         };
 
         let wasm_execute_msg = WasmMsg::Execute {

@@ -10,15 +10,11 @@ use cosmwasm_std::{
     MessageInfo, Order, Reply, Response, StdError, StdResult, Storage, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
-use cw_utils::must_pay;
 use interface::drop_puppeteer::{DelegationsResponse, PuppeteerQueryMsg, QueryExtMsg};
-use interface::token_info_provider::{
-    ValidatorInfo as ValidatorInfoInterface, ValidatorsInfoResponse,
-};
+use interface::hydro::{CurrentRoundResponse, TokenGroupRatioChange};
+use interface::token_info_provider::ValidatorsInfoResponse;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use neutron_sdk::bindings::query::NeutronQuery;
-use neutron_sdk::interchain_queries::v047::register_queries::new_register_staking_validators_query_msg;
-use neutron_sdk::sudo::msg::SudoMsg;
 
 use crate::cw721;
 use crate::error::{new_generic_error, ContractError};
@@ -26,7 +22,7 @@ use crate::gatekeeper::{
     build_gatekeeper_lock_tokens_msg, build_init_gatekeeper_msg, gatekeeper_handle_submsg_reply,
 };
 use crate::governance::{query_total_power_at_height, query_voting_power_at_height};
-use crate::lsm_integration::{query_ibc_denom_trace, COSMOS_VALIDATOR_PREFIX, TRANSFER_PORT};
+use crate::lsm_integration::{query_ibc_denom_trace, TRANSFER_PORT};
 use crate::msg::{
     CollectionInfo, ConvertLockupPayload, ExecuteMsg, InstantiateMsg, LiquidityDeployment,
     LockTokensProof, ProposalToLockups, ReplyPayload, TokenInfoProviderInstantiateMsg, TrancheInfo,
@@ -34,12 +30,11 @@ use crate::msg::{
 };
 use crate::query::{
     AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse,
-    CanLockDenomResponse, ConstantsResponse, CurrentRoundResponse, DtokenAmountResponse,
-    DtokenAmountsResponse, ExpiredUserLockupsResponse, GatekeeperResponse, ICQManagersResponse,
-    LiquidityDeploymentResponse, LockEntryWithPower, LockVotesHistoryEntry,
-    LockVotesHistoryResponse, LockupWithPerTrancheInfo, LockupsPendingSlashesResponse,
-    ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse,
-    RoundProposalsResponse, RoundTotalVotingPowerResponse,
+    CanLockDenomResponse, ConstantsResponse, DtokenAmountResponse, DtokenAmountsResponse,
+    ExpiredUserLockupsResponse, GatekeeperResponse, LiquidityDeploymentResponse,
+    LockEntryWithPower, LockVotesHistoryEntry, LockVotesHistoryResponse, LockupWithPerTrancheInfo,
+    LockupsPendingSlashesResponse, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
+    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
     RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse,
     SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, TopNProposalsResponse,
     TotalLockedTokensResponse, TranchesResponse, UserVotedLocksResponse, UserVotesResponse,
@@ -49,18 +44,18 @@ use crate::score_keeper::{
     add_token_group_shares_to_proposal, add_token_group_shares_to_round_total,
     apply_proposal_changes, apply_token_groups_ratio_changes, combine_proposal_power_updates,
     get_total_power_for_proposal, get_total_power_for_round,
-    remove_token_group_shares_from_proposal, TokenGroupRatioChange,
+    remove_token_group_shares_from_proposal,
 };
 use crate::slashing::{query_slashable_token_num_for_voting_on_proposal, slash_proposal_voters};
 use crate::state::{
-    Constants, DropTokenInfo, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche,
-    ValidatorInfo, Vote, VoteWithPower, CONSTANTS, DROP_TOKEN_INFO, GATEKEEPER, ICQ_MANAGERS,
-    LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES, LOCK_ID,
-    LOCK_ID_EXPIRY, LOCK_ID_TRACKING, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID,
-    REVERSE_LOCK_ID_TRACKING, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID,
-    TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
-    VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1, VOTE_MAP_V2,
-    VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
+    Constants, DropTokenInfo, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche, Vote,
+    VoteWithPower, CONSTANTS, DROP_TOKEN_INFO, GATEKEEPER, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP,
+    LOCKED_TOKENS, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES, LOCK_ID, LOCK_ID_EXPIRY, LOCK_ID_TRACKING,
+    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, QUERY_ID_TO_VALIDATOR, REVERSE_LOCK_ID_TRACKING,
+    SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS,
+    USER_LOCKS_FOR_CLAIM, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
+    VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1, VOTE_MAP_V2, VOTING_ALLOWED_ROUND, WHITELIST,
+    WHITELIST_ADMINS,
 };
 use crate::token_manager::{
     add_token_info_providers, handle_token_info_provider_add_remove,
@@ -74,10 +69,6 @@ use crate::utils::{
     run_on_each_transaction, scale_lockup_power, to_lockup_with_power,
     to_lockup_with_tranche_infos, update_locked_tokens_info, validate_locked_tokens_caps,
     verify_historical_data_availability,
-};
-use crate::validators_icqs::{
-    build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
-    handle_submsg_reply, query_min_interchain_query_deposit,
 };
 use crate::vote::{
     process_unvotes, process_votes, validate_proposals_and_locks_for_voting, ProcessUnvotesResult,
@@ -167,11 +158,6 @@ pub fn instantiate(
         }
     }
 
-    for manager in msg.icq_managers {
-        let manager_addr = deps.api.addr_validate(&manager)?;
-        ICQ_MANAGERS.save(deps.storage, manager_addr, &true)?;
-    }
-
     WHITELIST_ADMINS.save(deps.storage, &whitelist_admins)?;
     WHITELIST.save(deps.storage, &whitelist)?;
 
@@ -203,7 +189,7 @@ pub fn instantiate(
     let mut submsgs = vec![];
 
     // Save token info providers into the store and build SubMsgs to instantiate contracts, if there are any needed
-    let (token_info_provider_init_msgs, _, _) =
+    let (token_info_provider_init_msgs, _) =
         add_token_info_providers(&mut deps, msg.token_info_providers)?;
     submsgs.extend(token_info_provider_init_msgs);
 
@@ -297,11 +283,6 @@ pub fn execute(
             tranche_name,
             tranche_metadata,
         } => edit_tranche(deps, env, info, tranche_id, tranche_name, tranche_metadata),
-        ExecuteMsg::CreateICQsForValidators { validators } => {
-            create_icqs_for_validators(deps, env, info, &constants, validators)
-        }
-        ExecuteMsg::AddICQManager { address } => add_icq_manager(deps, env, info, address),
-        ExecuteMsg::RemoveICQManager { address } => remove_icq_manager(deps, env, info, address),
         ExecuteMsg::WithdrawICQFunds { amount } => withdraw_icq_funds(deps, env, info, amount),
         ExecuteMsg::AddLiquidityDeployment {
             round_id,
@@ -330,19 +311,9 @@ pub fn execute(
             tranche_id,
             proposal_id,
         } => remove_liquidity_deployment(deps, env, info, round_id, tranche_id, proposal_id),
-        ExecuteMsg::UpdateTokenGroupRatio {
-            token_group_id,
-            old_ratio,
-            new_ratio,
-        } => update_token_group_ratio(
-            deps,
-            env,
-            info,
-            &constants,
-            token_group_id,
-            old_ratio,
-            new_ratio,
-        ),
+        ExecuteMsg::UpdateTokenGroupsRatios { changes } => {
+            update_token_groups_ratios(deps, env, info, &constants, changes)
+        }
         ExecuteMsg::AddTokenInfoProvider {
             token_info_provider,
         } => add_token_info_provider(deps, env, info, &constants, token_info_provider),
@@ -411,6 +382,12 @@ pub fn execute(
         ),
         ExecuteMsg::BuyoutPendingSlash { lock_id } => {
             buyout_pending_slash(deps, env, info, &constants, lock_id)
+        }
+        ExecuteMsg::RemoveInterchainQueries { query_ids } => {
+            remove_interchain_queries(deps, info, query_ids)
+        }
+        ExecuteMsg::RemoveRoundValidatorsData { round_id } => {
+            remove_round_validators_data(deps, info, round_id)
         }
     }
 }
@@ -2242,156 +2219,6 @@ fn edit_tranche(
         .add_attribute("new tranche metadata", tranche.metadata))
 }
 
-// CreateICQsForValidators:
-//     Validate that the contract isn't paused
-//     Validate that the first round has started
-//     Validate received validator addresses
-//     Validate that the sender paid enough deposit for ICQs creation
-//     Create ICQ for each of the valid addresses
-fn create_icqs_for_validators(
-    deps: DepsMut<NeutronQuery>,
-    env: Env,
-    info: MessageInfo,
-    constants: &Constants,
-    validators: Vec<String>,
-) -> Result<Response<NeutronMsg>, ContractError> {
-    let lsm_token_info_provider =
-        match TokenManager::new(&deps.as_ref()).get_lsm_token_info_provider() {
-            None => {
-                return Err(new_generic_error(
-                    "Cannot create validator ICQs: contract doesn't support locking of LSM tokens.",
-                ))
-            }
-            Some(provider) => provider,
-        };
-    // This function will return error if the first round hasn't started yet. It is necessarry
-    // that it has started, since handling the results of the interchain queries relies on this.
-    compute_current_round_id(&env, constants)?;
-
-    let mut valid_addresses = HashSet::new();
-    for validator in validators
-        .iter()
-        .map(|validator| validator.trim().to_owned())
-    {
-        if !valid_addresses.contains(&validator)
-            && validator.starts_with(COSMOS_VALIDATOR_PREFIX)
-            && bech32::decode(&validator).is_ok()
-            && !VALIDATOR_TO_QUERY_ID.has(deps.storage, validator.clone())
-        {
-            valid_addresses.insert(validator);
-        }
-    }
-
-    let is_icq_manager = validate_address_is_icq_manager(&deps, info.sender.clone()).is_ok();
-
-    // icq_manager can create ICQs without paying for them; in this case, the
-    // funds are implicitly provided by the contract, and these can thus either be funds
-    // sent to the contract beforehand, or they could be escrowed funds
-    // that were returned to the contract when previous Interchain Queries were removed
-    // amd the escrowed funds were removed
-    if !is_icq_manager {
-        validate_icq_deposit_funds_sent(deps, &info, valid_addresses.len() as u64)?;
-    }
-
-    let mut register_icqs_submsgs = vec![];
-    for validator_address in valid_addresses.clone() {
-        let msg = new_register_staking_validators_query_msg(
-            lsm_token_info_provider.hub_connection_id.clone(),
-            vec![validator_address.clone()],
-            lsm_token_info_provider.icq_update_period,
-        )
-        .map_err(|err| {
-            StdError::generic_err(format!(
-                "Failed to create staking validators interchain query. Error: {err}"
-            ))
-        })?;
-
-        register_icqs_submsgs.push(build_create_interchain_query_submsg(
-            msg,
-            validator_address,
-        )?);
-    }
-
-    Ok(Response::new()
-        .add_attribute("action", "create_icqs_for_validators")
-        .add_attribute("sender", info.sender)
-        .add_attribute(
-            "validator_addresses",
-            valid_addresses
-                .into_iter()
-                .collect::<Vec<String>>()
-                .join(", "),
-        )
-        .add_submessages(register_icqs_submsgs))
-}
-
-// Validates that enough funds were sent to create ICQs for the given validator addresses.
-fn validate_icq_deposit_funds_sent(
-    deps: DepsMut<NeutronQuery>,
-    info: &MessageInfo,
-    num_created_icqs: u64,
-) -> Result<(), ContractError> {
-    let min_icq_deposit = query_min_interchain_query_deposit(&deps.as_ref())?;
-    let sent_token = must_pay(info, &min_icq_deposit.denom)?;
-    let min_icqs_deposit = min_icq_deposit.amount.u128() * (num_created_icqs as u128);
-    if min_icqs_deposit > sent_token.u128() {
-        return Err(ContractError::Std(
-            StdError::generic_err(format!("Insufficient tokens sent to pay for {} interchain queries deposits. Sent: {}, Required: {}", num_created_icqs, Coin::new(sent_token, NATIVE_TOKEN_DENOM), Coin::new(min_icqs_deposit, NATIVE_TOKEN_DENOM)))));
-    }
-
-    Ok(())
-}
-
-fn add_icq_manager(
-    deps: DepsMut<NeutronQuery>,
-    _env: Env,
-    info: MessageInfo,
-    address: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
-    validate_sender_is_whitelist_admin(&deps, &info)?;
-
-    let user_addr = deps.api.addr_validate(&address)?;
-
-    let is_icq_manager = validate_address_is_icq_manager(&deps, user_addr.clone());
-    if is_icq_manager.is_ok() {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Address is already an ICQ manager",
-        )));
-    }
-
-    ICQ_MANAGERS.save(deps.storage, user_addr.clone(), &true)?;
-
-    Ok(Response::new()
-        .add_attribute("action", "add_icq_manager")
-        .add_attribute("address", user_addr)
-        .add_attribute("sender", info.sender))
-}
-
-fn remove_icq_manager(
-    deps: DepsMut<NeutronQuery>,
-    _env: Env,
-    info: MessageInfo,
-    address: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
-    validate_sender_is_whitelist_admin(&deps, &info)?;
-
-    let user_addr = deps.api.addr_validate(&address)?;
-
-    let free_icq_creators = validate_address_is_icq_manager(&deps, user_addr.clone());
-    if free_icq_creators.is_err() {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Address is not an ICQ manager",
-        )));
-    }
-
-    ICQ_MANAGERS.remove(deps.storage, user_addr.clone());
-
-    Ok(Response::new()
-        .add_attribute("action", "remove_icq_manager")
-        .add_attribute("address", user_addr)
-        .add_attribute("sender", info.sender))
-}
-
 // Tries to withdraw the given amount of the NATIVE_TOKEN_DENOM from
 // the contract. These will in practice be funds that
 // were returned to the contract when Interchain Queries
@@ -2522,39 +2349,31 @@ pub fn remove_liquidity_deployment(
     Ok(response)
 }
 
-pub fn update_token_group_ratio(
+pub fn update_token_groups_ratios(
     deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     constants: &Constants,
-    token_group_id: String,
-    old_ratio: Decimal,
-    new_ratio: Decimal,
+    changes: Vec<TokenGroupRatioChange>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     validate_sender_is_token_info_provider(&deps, &info)?;
 
     let current_round_id = compute_current_round_id(&env, constants)?;
 
-    let tokens_ratio_changes = vec![TokenGroupRatioChange {
-        token_group_id: token_group_id.clone(),
-        old_ratio,
-        new_ratio,
-    }];
-
-    apply_token_groups_ratio_changes(
-        deps.storage,
-        env.block.height,
-        current_round_id,
-        &tokens_ratio_changes,
-    )?;
+    apply_token_groups_ratio_changes(deps.storage, env.block.height, current_round_id, &changes)?;
 
     let response = Response::new()
-        .add_attribute("action", "update_token_group_ratio")
+        .add_attribute("action", "update_token_groups_ratios")
         .add_attribute("sender", info.sender)
         .add_attribute("current_round_id", current_round_id.to_string())
-        .add_attribute("token_group_id", token_group_id.clone())
-        .add_attribute("old_ratio", old_ratio.to_string())
-        .add_attribute("new_ratio", new_ratio.to_string());
+        .add_attribute(
+            "token_groups_ratios_changes",
+            changes
+                .into_iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<String>>()
+                .join(", "),
+        );
 
     Ok(response)
 }
@@ -2568,23 +2387,8 @@ pub fn add_token_info_provider(
 ) -> Result<Response<NeutronMsg>, ContractError> {
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
-    let (token_info_provider_init_msgs, lsm_token_info_provider, base_token_info_provider) =
+    let (token_info_provider_init_msgs, base_token_info_provider) =
         add_token_info_providers(&mut deps, vec![provider_info.clone()])?;
-
-    // If LSM token info provider was added, apply proposal and round power changes immediately.
-    if let Some(mut lsm_token_info_provider) = lsm_token_info_provider {
-        handle_token_info_provider_add_remove(
-            &mut deps,
-            &env,
-            constants,
-            &mut lsm_token_info_provider,
-            |token_group| TokenGroupRatioChange {
-                token_group_id: token_group.0.clone(),
-                old_ratio: Decimal::zero(),
-                new_ratio: *token_group.1,
-            },
-        )?;
-    }
 
     if let Some(mut base_token_info_provider) = base_token_info_provider {
         handle_token_info_provider_add_remove(
@@ -3122,6 +2926,99 @@ pub fn buyout_pending_slash(
         .add_attribute("amount_left_to_repay", amount_left_to_repay.to_string())
         .add_messages(bank_msgs))
 }
+
+// RemoveInterchainQueries
+//      Intended to be run after data from all rounds has been migrated to a new LSM token
+//      info provider smart contract.
+//
+//      Verifies that the sender is ICQ manager
+//      Filters out duplicates and ICQ IDs that are not owned by the contract
+//      Removes ICQs info from the contract state
+//      Builds SubMsgs to remove the ICQs and get the deposits back to the contract balance
+pub fn remove_interchain_queries(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    query_ids: Vec<u64>,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    validate_address_is_icq_manager(&deps, info.sender.clone())?;
+
+    // Filter out duplicates and the ones not owned by the contract
+    let queries_to_remove = query_ids
+        .into_iter()
+        .collect::<HashSet<u64>>()
+        .into_iter()
+        .filter_map(|query_id| {
+            QUERY_ID_TO_VALIDATOR
+                .load(deps.storage, query_id)
+                .ok()
+                .map(|val_address| (query_id, val_address))
+        })
+        .collect::<Vec<(u64, String)>>();
+
+    let mut remove_queries_msgs = vec![];
+
+    for query_to_remove in &queries_to_remove {
+        // Remove query info from the stores immediately. If any of the SubMsgs
+        // fails to execute, then entire transaction will be reverted.
+        QUERY_ID_TO_VALIDATOR.remove(deps.storage, query_to_remove.0);
+        VALIDATOR_TO_QUERY_ID.remove(deps.storage, query_to_remove.1.clone());
+
+        remove_queries_msgs.push(NeutronMsg::remove_interchain_query(query_to_remove.0));
+    }
+
+    Ok(Response::new()
+        .add_attribute("action", "remove_interchain_queries")
+        .add_attribute("sender", info.sender)
+        .add_attribute(
+            "removed_query_ids",
+            get_slice_as_attribute(
+                queries_to_remove
+                    .into_iter()
+                    .map(|q| q.0)
+                    .collect::<Vec<u64>>()
+                    .as_slice(),
+            ),
+        )
+        .add_messages(remove_queries_msgs))
+}
+
+// RemoveRoundValidatorsData
+//      Intended to be run after data from all rounds has been migrated to a new LSM token
+//      info provider smart contract.
+//
+//      Verifies that the sender is ICQ manager
+//      Removes data for the given round from the following contract stores:
+//      VALIDATORS_PER_ROUND, VALIDATORS_INFO and VALIDATORS_STORE_INITIALIZED
+pub fn remove_round_validators_data(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    round_id: u64,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    validate_address_is_icq_manager(&deps, info.sender.clone())?;
+
+    let val_per_round_keys: Vec<(u128, String)> = VALIDATORS_PER_ROUND
+        .sub_prefix(round_id)
+        .keys(deps.storage, None, None, Order::Ascending)
+        .filter_map(|res| res.ok())
+        .collect();
+
+    for val_per_round_key in val_per_round_keys {
+        VALIDATORS_PER_ROUND.remove(
+            deps.storage,
+            (round_id, val_per_round_key.0, val_per_round_key.1.clone()),
+        );
+
+        VALIDATORS_INFO.remove(deps.storage, (round_id, val_per_round_key.1.clone()));
+    }
+
+    VALIDATORS_STORE_INITIALIZED.remove(deps.storage, round_id);
+
+    Ok(Response::new()
+        .add_attribute("action", "remove_round_validators_data")
+        .add_attribute("sender", info.sender)
+        .add_attribute("round_id", round_id.to_string()))
+}
+
 pub fn validate_sender_is_whitelist_admin(
     deps: &DepsMut<NeutronQuery>,
     info: &MessageInfo,
@@ -3294,7 +3191,6 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> Result<Binary
         QueryMsg::CanLockDenom { token_denom } => {
             to_json_binary(&query_can_lock_denom(&deps, &env, token_denom)?)
         }
-        QueryMsg::ICQManagers {} => to_json_binary(&query_icq_managers(deps)?),
         QueryMsg::LiquidityDeployment {
             round_id,
             tranche_id,
@@ -4120,28 +4016,6 @@ pub fn query_registered_validator_queries(
     Ok(RegisteredValidatorQueriesResponse { query_ids })
 }
 
-pub fn query_validators_info(
-    deps: Deps<NeutronQuery>,
-    round_id: u64,
-) -> StdResult<Vec<ValidatorInfo>> {
-    Ok(VALIDATORS_INFO
-        .prefix(round_id)
-        .range(deps.storage, None, None, Order::Ascending)
-        .map(|l| l.unwrap().1)
-        .collect())
-}
-
-pub fn query_validators_per_round(
-    deps: Deps<NeutronQuery>,
-    round_id: u64,
-) -> StdResult<Vec<(u128, String)>> {
-    Ok(VALIDATORS_PER_ROUND
-        .sub_prefix(round_id)
-        .range(deps.storage, None, None, Order::Descending)
-        .map(|l| l.unwrap().0)
-        .collect())
-}
-
 pub fn query_round_validators_info(
     deps: Deps<NeutronQuery>,
     round_id: u64,
@@ -4151,18 +4025,7 @@ pub fn query_round_validators_info(
         validators: VALIDATORS_INFO
             .prefix(round_id)
             .range(deps.storage, None, None, Order::Ascending)
-            .filter_map(|val_info| {
-                val_info.ok().map(|val_info| {
-                    (
-                        val_info.0,
-                        ValidatorInfoInterface {
-                            address: val_info.1.address,
-                            delegated_tokens: val_info.1.delegated_tokens,
-                            power_ratio: val_info.1.power_ratio,
-                        },
-                    )
-                })
-            })
+            .filter_map(|val_info| val_info.ok())
             .collect(),
     })
 }
@@ -4201,22 +4064,6 @@ pub fn query_can_lock_denom(
     }
 }
 
-pub fn query_icq_managers(deps: Deps<NeutronQuery>) -> StdResult<ICQManagersResponse> {
-    Ok(ICQManagersResponse {
-        managers: ICQ_MANAGERS
-            .range(deps.storage, None, None, Order::Ascending)
-            .filter_map(|l| match l {
-                Ok((k, _)) => Some(k),
-                Err(_) => {
-                    deps.api
-                        .debug("Error parsing store when iterating ICQ managers!");
-                    None
-                }
-            })
-            .collect(),
-    })
-}
-
 pub fn query_simulate_dtoken_amounts(
     deps: &Deps<NeutronQuery>,
     lock_ids: Vec<u64>,
@@ -4245,6 +4092,15 @@ pub fn query_simulate_dtoken_amounts(
         },
     )?;
 
+    let hub_transfer_channel_id = match TokenManager::new(deps).get_lsm_token_info_provider() {
+        None => {
+            return Err(StdError::generic_err(
+                "failed to obtain hub_transfer_channel_id",
+            ))
+        }
+        Some(lsm_token_info_provider) => lsm_token_info_provider.hub_transfer_channel_id,
+    };
+
     let mut result: Vec<DtokenAmountResponse> = Vec::new();
 
     for lockup in lockups {
@@ -4253,7 +4109,7 @@ pub fn query_simulate_dtoken_amounts(
             let path_parts: Vec<&str> = denom_trace.path.split("/").collect();
             if path_parts.len() != 2
                 || path_parts[0] != TRANSFER_PORT
-                || path_parts[1] != "channel-1"
+                || path_parts[1] != hub_transfer_channel_id
             {
                 return Err(StdError::generic_err("Invalid IBC denom path".to_string()));
             }
@@ -4710,34 +4566,14 @@ pub fn reply(
     env: Env,
     msg: Reply,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let reply_paylod = from_json::<ReplyPayload>(&msg.payload);
-    match reply_paylod {
-        Ok(reply_payload) => match reply_payload {
-            ReplyPayload::InstantiateTokenInfoProvider(token_info_provider) => {
-                token_manager_handle_submsg_reply(deps, &env, token_info_provider, msg)
-            }
-            ReplyPayload::InstantiateGatekeeper => gatekeeper_handle_submsg_reply(deps, msg),
-            ReplyPayload::ConvertLockup(convert_lockup_payload) => {
-                convert_lockup_to_dtoken_reply(deps, env, convert_lockup_payload, msg)
-            }
-        },
-        Err(_) => handle_submsg_reply(deps, msg),
-    }
-}
-
-#[cfg_attr(not(feature = "library"), entry_point)]
-pub fn sudo(
-    deps: DepsMut<NeutronQuery>,
-    env: Env,
-    msg: SudoMsg,
-) -> Result<Response<NeutronMsg>, ContractError> {
-    match msg {
-        SudoMsg::KVQueryResult { query_id } => {
-            handle_delivered_interchain_query_result(deps, env, query_id)
+    match from_json::<ReplyPayload>(&msg.payload)? {
+        ReplyPayload::InstantiateTokenInfoProvider(token_info_provider) => {
+            token_manager_handle_submsg_reply(deps, &env, token_info_provider, msg)
         }
-        _ => Err(ContractError::Std(StdError::generic_err(
-            "Unexpected sudo message received",
-        ))),
+        ReplyPayload::InstantiateGatekeeper => gatekeeper_handle_submsg_reply(deps, msg),
+        ReplyPayload::ConvertLockup(convert_lockup_payload) => {
+            convert_lockup_to_dtoken_reply(deps, env, convert_lockup_payload, msg)
+        }
     }
 }
 

@@ -1,61 +1,38 @@
 use std::{collections::HashMap, str::FromStr};
 
 use cosmwasm_std::{
-    from_json,
-    testing::{mock_env, MockApi, MockStorage},
-    to_json_binary, Addr, Coin, Decimal, Event, OwnedDeps, Reply, SubMsgResponse, SubMsgResult,
-    Uint128,
+    from_json, testing::mock_env, to_json_binary, Coin, Decimal, Event, Reply, SubMsgResponse,
+    SubMsgResult, Uint128,
 };
-use interface::token_info_provider::DenomInfoResponse;
-use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
     contract::{
         compute_current_round_id, convert_lockup_to_dtoken, execute, instantiate, query, reply,
     },
-    msg::{
-        ConvertLockupPayload, ExecuteMsg, ProposalToLockups, ReplyPayload,
-        TokenInfoProviderInstantiateMsg,
-    },
+    msg::{ConvertLockupPayload, ExecuteMsg, ProposalToLockups, ReplyPayload},
     query::{QueryMsg, TokensResponse},
     score_keeper::get_total_power_for_proposal,
-    state::{
-        DropTokenInfo, DROP_TOKEN_INFO, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES, TOKEN_INFO_PROVIDERS,
-    },
+    state::{DropTokenInfo, DROP_TOKEN_INFO, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES},
     testing::{
-        get_default_instantiate_msg, get_message_info, set_default_validator_for_rounds,
-        IBC_DENOM_1, ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
+        get_d_atom_denom_info_mock_data, get_default_instantiate_msg, get_message_info,
+        get_validator_info_mock_data, setup_multiple_token_info_provider_mocks, IBC_DENOM_1,
+        LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
     },
-    testing_lsm_integration::set_validator_infos_for_round,
-    testing_mocks::{
-        denom_trace_grpc_query_mock, grpc_query_diff_paths_mock, mock_dependencies,
-        token_info_provider_derivative_mock, MockQuerier, MockWasmQuerier,
-    },
-    token_manager::{TokenInfoProvider, TokenInfoProviderDerivative},
+    testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies},
     utils::load_current_constants,
 };
-pub const DROP_D_TOKEN_DENOM: &str =
-    "factory/neutron1k6hr0f83e7un2wjf29cspk7j69jrnskk65k3ek2nj9dztrlzpj6q00rtsa/udatom";
-
-pub const D_ATOM_TOKEN_GROUP: &str = "datom";
 
 #[test]
 fn convert_lockup_to_dtoken_test() {
     let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-1".to_string(),
+        "transfer/channel-0".to_string(),
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let user_address = deps.api.addr_make("addr0000");
     let info = get_message_info(&deps.api, "addr0000", &[]);
 
-    let mut instantiate_msg: crate::msg::InstantiateMsg = get_default_instantiate_msg(&deps.api);
-    instantiate_msg.token_info_providers[0] = TokenInfoProviderInstantiateMsg::LSM {
-        max_validator_shares_participating: 100,
-        hub_connection_id: "connection-0".to_string(),
-        hub_transfer_channel_id: "channel-1".to_string(),
-        icq_update_period: 100,
-    };
+    let instantiate_msg: crate::msg::InstantiateMsg = get_default_instantiate_msg(&deps.api);
     let lock_epoch_length = instantiate_msg.lock_epoch_length;
 
     let res = instantiate(deps.as_mut(), env.clone(), info, instantiate_msg.clone());
@@ -64,7 +41,36 @@ fn convert_lockup_to_dtoken_test() {
     // simulate user locking 1000 tokens for 1 month, one day after the round started
     env.block.time = env.block.time.plus_days(1);
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let d_token_info_provider_addr = deps.api.addr_make("dtoken_info_provider");
+    let d_atom_ratio = Decimal::from_str("1.15").unwrap();
+
+    let derivative_providers = HashMap::from([get_d_atom_denom_info_mock_data(
+        d_token_info_provider_addr.to_string(),
+        (0..=1)
+            .map(|round_id: u64| (round_id, d_atom_ratio))
+            .collect(),
+    )]);
+
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    let lsm_provider = Some((
+        lsm_token_info_provider_addr.to_string(),
+        HashMap::from_iter((0..=1).map(|round_id: u64| {
+            (
+                round_id,
+                HashMap::from([get_validator_info_mock_data(
+                    VALIDATOR_1.to_string(),
+                    Decimal::one(),
+                )]),
+            )
+        })),
+    ));
+
+    setup_multiple_token_info_provider_mocks(
+        &mut deps,
+        derivative_providers.clone(),
+        lsm_provider.clone(),
+        true,
+    );
 
     let first_lockup_amount: u128 = 1000;
     let info = get_message_info(
@@ -82,13 +88,6 @@ fn convert_lockup_to_dtoken_test() {
 
     // simulate user locking 2000 tokens for 3 months, two days after the round started
     env.block.time = env.block.time.plus_days(1);
-
-    let result = set_validator_infos_for_round(
-        &mut deps.storage,
-        0,
-        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
-    );
-    assert!(result.is_ok());
 
     let first_lockup_amount: u128 = 1000;
     let info = get_message_info(
@@ -196,10 +195,6 @@ fn convert_lockup_to_dtoken_test() {
     let res = convert_lockup_to_dtoken(deps.as_mut(), env, info, vec![1, 2]).unwrap();
     assert_eq!(res.messages.len(), 2);
     assert_eq!(res.attributes[0].value, "convert_lockup_to_dtoken");
-
-    let contract_address = deps.api.addr_make("dtoken_info_provider");
-    let current_ratio = Decimal::from_str("1.15").unwrap();
-    setup_d_atom_token_info_provider_mock(&mut deps, contract_address.clone(), current_ratio);
 
     let payload = ConvertLockupPayload {
         lock_id: 1,
@@ -310,28 +305,16 @@ fn convert_lockup_to_dtoken_test() {
 
 #[test]
 fn convert_lockup_to_dtoken_with_pending_slash_conversion_test() {
-    let grpc_map = HashMap::from([
-        (
-            "transfer/channel-1".to_string(),
-            HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
-        ),
-        (
-            "transfer/channel-8".to_string(),
-            HashMap::from([(DROP_D_TOKEN_DENOM.to_string(), "dATOM".to_string())]),
-        ),
-    ]);
-    let grpc_query = grpc_query_diff_paths_mock(grpc_map);
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let user_address = deps.api.addr_make("addr0000");
     let info = get_message_info(&deps.api, "addr0000", &[]);
 
-    let mut instantiate_msg: crate::msg::InstantiateMsg = get_default_instantiate_msg(&deps.api);
-    instantiate_msg.token_info_providers[0] = TokenInfoProviderInstantiateMsg::LSM {
-        max_validator_shares_participating: 100,
-        hub_connection_id: "connection-0".to_string(),
-        hub_transfer_channel_id: "channel-1".to_string(),
-        icq_update_period: 100,
-    };
+    let instantiate_msg = get_default_instantiate_msg(&deps.api);
+
     let lock_epoch_length = instantiate_msg.lock_epoch_length;
 
     let res = instantiate(deps.as_mut(), env.clone(), info, instantiate_msg.clone());
@@ -340,7 +323,34 @@ fn convert_lockup_to_dtoken_with_pending_slash_conversion_test() {
     // simulate user locking 1000 tokens for 1 month, one day after the round started
     env.block.time = env.block.time.plus_days(1);
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let d_token_info_provider_addr = deps.api.addr_make("dtoken_info_provider");
+    let d_atom_ratio = Decimal::from_str("1.15").unwrap();
+
+    let derivative_providers = HashMap::from([get_d_atom_denom_info_mock_data(
+        d_token_info_provider_addr.to_string(),
+        vec![(0, d_atom_ratio)],
+    )]);
+
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    let lsm_provider = Some((
+        lsm_token_info_provider_addr.to_string(),
+        HashMap::from_iter((0..1).map(|round_id: u64| {
+            (
+                round_id,
+                HashMap::from([get_validator_info_mock_data(
+                    VALIDATOR_1.to_string(),
+                    Decimal::one(),
+                )]),
+            )
+        })),
+    ));
+
+    setup_multiple_token_info_provider_mocks(
+        &mut deps,
+        derivative_providers.clone(),
+        lsm_provider.clone(),
+        true,
+    );
 
     let first_lockup_amount: u128 = 1000;
     let info = get_message_info(
@@ -358,13 +368,6 @@ fn convert_lockup_to_dtoken_with_pending_slash_conversion_test() {
 
     // simulate user locking 2000 tokens for 3 months, two days after the round started
     env.block.time = env.block.time.plus_days(1);
-
-    let result = set_validator_infos_for_round(
-        &mut deps.storage,
-        0,
-        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
-    );
-    assert!(result.is_ok());
 
     let first_lockup_amount: u128 = 1000;
     let info = get_message_info(
@@ -456,10 +459,6 @@ fn convert_lockup_to_dtoken_with_pending_slash_conversion_test() {
     assert_eq!(res.messages.len(), 1);
     assert_eq!(res.attributes[0].value, "convert_lockup_to_dtoken");
 
-    let contract_address = deps.api.addr_make("dtoken_info_provider");
-    let current_ratio = Decimal::from_str("1.15").unwrap();
-    setup_d_atom_token_info_provider_mock(&mut deps, contract_address.clone(), current_ratio);
-
     let _ = LOCKS_PENDING_SLASHES.save(&mut deps.storage, 1, &Uint128::new(500));
 
     let payload = ConvertLockupPayload {
@@ -498,32 +497,4 @@ fn convert_lockup_to_dtoken_with_pending_slash_conversion_test() {
 
     let result = LOCKS_PENDING_SLASHES.may_load(&deps.storage, 1);
     assert_eq!(result.unwrap(), Some(Uint128::new(500)));
-}
-
-pub fn setup_d_atom_token_info_provider_mock(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
-    token_info_provider_addr: Addr,
-    token_group_ratio: Decimal,
-) {
-    TOKEN_INFO_PROVIDERS
-        .save(
-            &mut deps.storage,
-            token_info_provider_addr.to_string(),
-            &TokenInfoProvider::Derivative(TokenInfoProviderDerivative {
-                contract: token_info_provider_addr.to_string(),
-                cache: HashMap::new(),
-            }),
-        )
-        .unwrap();
-
-    let wasm_querier = MockWasmQuerier::new(token_info_provider_derivative_mock(
-        token_info_provider_addr.to_string(),
-        DenomInfoResponse {
-            denom: DROP_D_TOKEN_DENOM.to_string(),
-            token_group_id: D_ATOM_TOKEN_GROUP.to_string(),
-            ratio: token_group_ratio,
-        },
-    ));
-
-    deps.querier.update_wasm(move |q| wasm_querier.handler(q));
 }

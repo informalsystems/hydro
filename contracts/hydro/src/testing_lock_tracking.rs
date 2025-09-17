@@ -7,8 +7,8 @@ use crate::{
     state::{LOCK_ID_EXPIRY, LOCK_ID_TRACKING, REVERSE_LOCK_ID_TRACKING},
     testing::{
         get_address_as_str, get_default_instantiate_msg, get_message_info,
-        set_default_validator_for_rounds, IBC_DENOM_1, ONE_MONTH_IN_NANO_SECONDS,
-        VALIDATOR_1_LST_DENOM_1,
+        setup_lsm_token_info_provider_mock, IBC_DENOM_1, LSM_TOKEN_PROVIDER_ADDR,
+        ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
     },
     testing_mocks::denom_trace_grpc_query_mock,
 };
@@ -180,7 +180,18 @@ fn test_split_merge_composition_and_depth() {
     instantiate_msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
     instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address)];
     instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
-    set_default_validator_for_rounds(deps.as_mut(), 0, 3);
+
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (0, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (1, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (2, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+        ],
+        true,
+    );
 
     let lock_expiry_duration_seconds = 60 * 60 * 24 * 30 * 6; // 6 months
 

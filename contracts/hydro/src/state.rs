@@ -2,6 +2,7 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
 use cw_storage_plus::{Item, Map, SnapshotMap, Strategy};
 use cw_utils::Expiration;
+use interface::lsm::ValidatorInfo;
 
 use crate::{msg::CollectionInfo, msg::LiquidityDeployment, token_manager::TokenInfoProvider};
 
@@ -90,9 +91,8 @@ pub struct Constants {
 }
 
 // Used to store a set of token info providers that are able to validate various denoms allowed to be locked
-// in the contract. The key in this map is the address of the token info provider smart contract, except
-// (temporarily) for the LSM one, which will have a hardcoded string key until we migrate LSM handling
-// into a separate smart contract.
+// in the contract. The key in this map is the address of the token info provider smart contract, except for
+// the Base token info provider type, which will have a hardcoded string key and will not have its own contract.
 pub const TOKEN_INFO_PROVIDERS: Map<String, TokenInfoProvider> = Map::new("token_info_providers");
 
 // Keeps the address of the associated Gatekeeper contract, if Hydro uses one. The Gatekeeper contract
@@ -341,24 +341,6 @@ pub const PROPOSAL_TOTAL_MAP: Map<u64, Decimal> = Map::new("proposal_power_total
 // These accounts can also withdraw native tokens (but not voting tokens locked by users)
 // from the contract.
 pub const ICQ_MANAGERS: Map<Addr, bool> = Map::new("icq_managers");
-
-#[cw_serde]
-#[derive(Default)]
-pub struct ValidatorInfo {
-    pub address: String,
-    pub delegated_tokens: Uint128,
-    pub power_ratio: Decimal,
-}
-
-impl ValidatorInfo {
-    pub fn new(address: String, delegated_tokens: Uint128, power_ratio: Decimal) -> Self {
-        Self {
-            address,
-            delegated_tokens,
-            power_ratio,
-        }
-    }
-}
 
 // This map stores the liquidity deployments that were performed.
 // These can be set by whitelist admins via the SetLiquidityDeployments message.

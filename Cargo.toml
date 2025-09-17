@@ -6,6 +6,7 @@ members = [
     "contracts/liquid-collateral",
     "contracts/token-info-providers/st-token-info-provider",
     "contracts/token-info-providers/d-token-info-provider",
+    "contracts/token-info-providers/lsm-token-info-provider",
     "contracts/marketplace",
     "contracts/gatekeeper",
     "contracts/inflow",
@@ -42,6 +43,7 @@ cosmwasm-schema = "2.1.2"
 proptest = "1.0.0"
 cw-utils = "2.0.0"
 cosmos-sdk-proto = { version = "0.20.0", default-features = false }
+ibc-proto = { version = "0.46.0", default-features = false }
 prost = "0.12.6"
 prost-types = "0.12.6"
 cw-orch = "0.25.0"
