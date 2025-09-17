@@ -19,10 +19,11 @@ use crate::state::{
     TRIBUTE_MAP,
 };
 use hydro::query::{
-    CurrentRoundResponse, LiquidityDeploymentResponse, LockVotesHistoryResponse, ProposalResponse,
+    LiquidityDeploymentResponse, LockVotesHistoryResponse, ProposalResponse,
     QueryMsg as HydroQueryMsg, UserVotedLocksResponse,
 };
 use hydro::state::Proposal;
+use interface::hydro::CurrentRoundResponse;
 
 /// Contract name that is used for migration.
 pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");

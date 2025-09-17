@@ -2,7 +2,10 @@ use cosmwasm_std::{
     to_json_binary, to_json_vec, Addr, DepsMut, Reply, Response, StdError, StdResult, SubMsg,
     Uint128, WasmMsg,
 };
-use interface::gatekeeper::{ExecuteLockTokensMsg, ExecuteMsg as GatekeeperExecuteMsg};
+use interface::{
+    gatekeeper::{ExecuteLockTokensMsg, ExecuteMsg as GatekeeperExecuteMsg},
+    utils::extract_response_msg_bytes_from_reply_msg,
+};
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 use crate::{
@@ -43,15 +46,7 @@ pub fn gatekeeper_handle_submsg_reply(
     deps: DepsMut<NeutronQuery>,
     msg: Reply,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let bytes = &msg
-        .result
-        .into_result()
-        .map_err(StdError::generic_err)?
-        .msg_responses[0]
-        .clone()
-        .value
-        .to_vec();
-
+    let bytes = &extract_response_msg_bytes_from_reply_msg(&msg)?;
     let instantiate_msg_response = cw_utils::parse_instantiate_response_data(bytes)
         .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {e:?}")))?;
 

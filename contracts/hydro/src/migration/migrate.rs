@@ -1,6 +1,6 @@
 use crate::contract::{CONTRACT_NAME, CONTRACT_VERSION};
 use crate::error::{new_generic_error, ContractError};
-use crate::migration::unreleased::update_proposals_powers;
+use crate::migration::unreleased::migrate_lsm_token_info_provider;
 use crate::state::CONSTANTS;
 use crate::utils::load_constants_active_at_timestamp;
 use cosmwasm_schema::cw_serde;
@@ -14,8 +14,7 @@ use neutron_sdk::bindings::query::NeutronQuery;
 
 #[cw_serde]
 pub struct MigrateMsg {
-    pub round_id: u64,
-    pub tranche_id: u64,
+    lsm_token_info_provider: Option<String>,
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -26,7 +25,7 @@ pub fn migrate(
 ) -> Result<Response<NeutronMsg>, ContractError> {
     check_contract_version(deps.storage)?;
 
-    let result = update_proposals_powers(&mut deps, msg.round_id, msg.tranche_id)?;
+    let result = migrate_lsm_token_info_provider(&mut deps, msg.lsm_token_info_provider)?;
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
