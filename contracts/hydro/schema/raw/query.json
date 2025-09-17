@@ -1198,6 +1198,30 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Returns the list of parent lock IDs (ancestors) for a given child lock.",
+      "type": "object",
+      "required": [
+        "parent_lock_ids"
+      ],
+      "properties": {
+        "parent_lock_ids": {
+          "type": "object",
+          "required": [
+            "child_id"
+          ],
+          "properties": {
+            "child_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ]
 }
