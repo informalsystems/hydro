@@ -163,6 +163,7 @@ fn deposit(
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let deposit_amount = cw_utils::must_pay(&info, &config.deposit_denom)?;
 
+    // Total value also includes the deposit amount, since the tokens are previously sent to the contract
     let total_pool_value =
         get_total_pool_value(&deps.as_ref(), &env, config.deposit_denom.clone())?;
     if total_pool_value > config.deposit_cap {
@@ -301,7 +302,7 @@ fn cancel_withdrawal(
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let total_pool_value =
         get_total_pool_value(&deps.as_ref(), &env, config.deposit_denom.clone())?;
-    if total_pool_value == config.deposit_cap {
+    if total_pool_value >= config.deposit_cap {
         return Err(new_generic_error(
             "cannot cancel withdrawals- deposit cap has been reached",
         ));
@@ -396,6 +397,7 @@ fn cancel_withdrawal(
         Some(Int128::try_from(amount_to_withdraw)?.strict_neg()),
     )?;
 
+    // We need to recalculate the total pool value, since the withdrawal queue info has changed.
     let total_pool_value =
         get_total_pool_value(&deps.as_ref(), &env, config.deposit_denom.clone())?;
 
