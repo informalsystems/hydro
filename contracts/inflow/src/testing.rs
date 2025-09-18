@@ -9,7 +9,7 @@ use crate::{
     error::ContractError,
     msg::{DenomMetadata, ExecuteMsg, InstantiateMsg, UpdateConfigData},
     query::QueryMsg,
-    state::{CONFIG, DEPLOYED_AMOUNT, LAST_FUNDED_WITHDRAWAL_ID},
+    state::{CONFIG, DEPLOYED_AMOUNT, LAST_FUNDED_WITHDRAWAL_ID, WITHDRAWAL_QUEUE_INFO},
 };
 use cosmwasm_std::{
     from_json,
@@ -1656,6 +1656,8 @@ fn withdrawal_with_config_update_test() {
         Uint128::new(1000),
     );
 
+    let old_withdrawal_queue_info = WITHDRAWAL_QUEUE_INFO.load(&deps.storage).unwrap();
+
     // Try to create one more withdrawal request and verify the error returned
     let user_info = get_message_info(
         &deps.api,
@@ -1677,6 +1679,26 @@ fn withdrawal_with_config_update_test() {
         "user {user1_addr} has reached the maximum number of pending withdrawals: {}",
         instantiate_msg.max_withdrawals_per_user
     )));
+
+    // Even though the withdrawal execute() failed, for some reason WITHDRAWAL_QUEUE_INFO changes
+    // weren't reverted. Verify that this is the case, and revert to expected values, since the
+    // next steps in test depend on this information being accurate.
+    let info = WITHDRAWAL_QUEUE_INFO.load(&deps.storage).unwrap();
+    assert_eq!(
+        info.total_shares_burned,
+        user1_withdrawal_shares1 * Uint128::new(11)
+    );
+    assert_eq!(
+        info.total_withdrawal_amount,
+        Uint128::new(100) * Uint128::new(11)
+    );
+    assert_eq!(
+        info.non_funded_withdrawal_amount,
+        Uint128::new(100) * Uint128::new(11)
+    );
+    WITHDRAWAL_QUEUE_INFO
+        .save(&mut deps.storage, &old_withdrawal_queue_info)
+        .unwrap();
 
     // Update config so that only 5 withdrawal requests per user are allowed
     let new_max_withdrawals_per_user = 5;

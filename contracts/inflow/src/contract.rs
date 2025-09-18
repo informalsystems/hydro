@@ -132,7 +132,7 @@ pub fn execute(
         ExecuteMsg::Deposit {} => deposit(deps, env, info, &config),
         ExecuteMsg::Withdraw {} => withdraw(deps, env, info, &config),
         ExecuteMsg::CancelWithdrawal { withdrawal_ids } => {
-            cancel_withdrawal(deps, info, &config, withdrawal_ids)
+            cancel_withdrawal(deps, env, info, &config, withdrawal_ids)
         }
         ExecuteMsg::FulfillPendingWithdrawals { limit } => {
             fulfill_pending_withdrawals(deps, env, info, &config, limit)
@@ -170,7 +170,7 @@ fn deposit(
     }
 
     let vault_shares_to_mint =
-        calculate_number_of_shares_to_mint(&deps.as_ref(), &env, config, deposit_amount)?;
+        calculate_number_of_shares_to_mint(&deps.as_ref(), deposit_amount, total_pool_value)?;
 
     let mint_vault_shares_msg = NeutronMsg::submit_mint_tokens(
         &config.vault_shares_denom,
@@ -288,14 +288,25 @@ fn withdraw(
 }
 
 // Users can cancel any of their pending withdrawal requests until the funds for those withdrawals
-// have been provided to the smart contract. Users will receive back the vault shares tokens they
-// had previously sent to the contract when creating the withdrawal requests that are now being canceled.
+// have been provided to the smart contract. Users will receive back certain number of vault shares.
+// The number of vault shares to be minted back is calculated based on the sum of the amounts to be
+// received from all withdrawal requests that are being canceled. Withdrawals are not allowed if the
+// vault deposit cap has been reached.
 fn cancel_withdrawal(
     deps: DepsMut<NeutronQuery>,
+    env: Env,
     info: MessageInfo,
     config: &Config,
     withdrawal_ids: Vec<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
+    let total_pool_value =
+        get_total_pool_value(&deps.as_ref(), &env, config.deposit_denom.clone())?;
+    if total_pool_value == config.deposit_cap {
+        return Err(new_generic_error(
+            "cannot cancel withdrawals- deposit cap has been reached",
+        ));
+    }
+
     // Users can only cancel withdrawals for which the funds have not been provided yet.
     let lowest_id_allowed_to_cancel = LAST_FUNDED_WITHDRAWAL_ID
         .may_load(deps.storage)?
@@ -385,14 +396,22 @@ fn cancel_withdrawal(
         Some(Int128::try_from(amount_to_withdraw)?.strict_neg()),
     )?;
 
-    // Mint back the vault shares tokens that were burned when the withdrawal requests were created
+    let total_pool_value =
+        get_total_pool_value(&deps.as_ref(), &env, config.deposit_denom.clone())?;
+
+    // Calculate how many vault shares should be minted back to the user
+    let shares_to_mint =
+        calculate_number_of_shares_to_mint(&deps.as_ref(), amount_to_withdraw, total_pool_value)?;
+
+    // Mint the vault shares tokens
     let mint_vault_shares_msg =
-        NeutronMsg::submit_mint_tokens(&config.vault_shares_denom, shares_burned, &info.sender);
+        NeutronMsg::submit_mint_tokens(&config.vault_shares_denom, shares_to_mint, &info.sender);
 
     Ok(response
         .add_message(mint_vault_shares_msg)
         .add_attribute("canceled_withdrawal_amount", amount_to_withdraw)
-        .add_attribute("shares_minted_back", shares_burned))
+        .add_attribute("shares_initially_burned", shares_burned)
+        .add_attribute("shares_minted_back", shares_to_mint))
 }
 
 // Permissionless action that iterates over the withdrawal requests queue and marks as funded all
@@ -448,12 +467,6 @@ fn fulfill_pending_withdrawals(
     let response = Response::new()
         .add_attribute("action", "fulfill_pending_withdrawals")
         .add_attribute("sender", info.sender);
-
-    if available_balance.is_zero() {
-        return Ok(response
-            .add_attribute("funded_withdrawal_ids", "")
-            .add_attribute("total_amount_funded", Uint128::zero()));
-    }
 
     let mut total_amount_funded = Uint128::zero();
     let mut funded_withdrawal_ids = vec![];
@@ -749,28 +762,14 @@ fn validate_address_is_whitelisted(
 /// Given the `deposit_amount`, this function will calculate how many vault shares tokens should be minted in return.
 pub fn calculate_number_of_shares_to_mint(
     deps: &Deps<NeutronQuery>,
-    env: &Env,
-    config: &Config,
     deposit_amount: Uint128,
+    total_pool_value: Uint128,
 ) -> Result<Uint128, ContractError> {
-    let contract_deposit_token_balance = deps
-        .querier
-        .query_balance(
-            env.contract.address.to_string(),
-            config.deposit_denom.clone(),
-        )?
-        .amount;
-
-    let deployed_amount = DEPLOYED_AMOUNT.load(deps.storage)?;
-    let withdrawal_queue_amount = load_withdrawal_queue_info(deps.storage)?.total_withdrawal_amount;
-
     // `deposit_amount` has already been added to the smart contract balance even before `execute()` is called,
     // so we need to subtract it here in order to accurately calculate number of vault shares to mint.
     // We also need to add the amount already deployed and subtract the amount requested for withdrawal.
-    let deposit_token_current_balance = contract_deposit_token_balance
-        .checked_sub(deposit_amount)?
-        .checked_add(deployed_amount)?
-        .checked_sub(withdrawal_queue_amount)
+    let deposit_token_current_balance = total_pool_value
+        .checked_sub(deposit_amount)
         .unwrap_or_default();
 
     let total_shares_issued = query_total_shares_issued(deps)?;
@@ -1165,7 +1164,7 @@ fn get_total_pool_value(
         .query_balance(env.contract.address.clone(), deposit_denom.clone())?;
 
     // Get the total deployed amount (from snapshot storage)
-    let deployed_amount = DEPLOYED_AMOUNT.may_load(deps.storage)?;
+    let deployed_amount = DEPLOYED_AMOUNT.load(deps.storage)?;
 
     // Get the total amount already requested for withdrawal. This amount should be
     // subtracted from the total pool value, since we cannot count on it anymore.
@@ -1173,7 +1172,7 @@ fn get_total_pool_value(
 
     Ok(balance
         .amount
-        .checked_add(deployed_amount.unwrap_or_default())?
+        .checked_add(deployed_amount)?
         .checked_sub(withdrawal_queue_amount)
         .unwrap_or_default())
 }
@@ -1310,11 +1309,10 @@ fn get_balance_available_for_pending_withdrawals(
         .total_withdrawal_amount
         .checked_sub(withdrawal_queue_info.non_funded_withdrawal_amount)?;
 
-    if contract_balance <= earlier_funded_withdrawal_amount {
-        return Ok(Uint128::zero());
-    }
-
-    Ok(contract_balance.checked_sub(earlier_funded_withdrawal_amount)?)
+    // Return the difference, or zero if the earlier funded amount exceeds the contract balance.
+    Ok(contract_balance
+        .checked_sub(earlier_funded_withdrawal_amount)
+        .unwrap_or_default())
 }
 
 /// Converts a slice of items into a comma-separated string of their string representations.
