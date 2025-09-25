@@ -6,16 +6,16 @@ use crate::calculations::{
 use crate::mock::{store_contracts_code, PoolMockup};
 use crate::msg::{
     BidsResponse, CreatePositionMsg, ExecuteMsg, InstantiateMsg, PlaceBidMsg, QueryMsg,
-    SortedBidsResponse, StateResponse,
+    SimulateLiquidationResponse, SortedBidsResponse, StateResponse,
 };
 use crate::state::{Bid, BidStatus, SortedBid, State, BIDS, SORTED_BIDS, STATE};
 use crate::ContractError;
 use bigdecimal::BigDecimal;
+use cosmwasm_std::{coin, BankMsg, Binary, CosmosMsg, Reply, SubMsgResponse, SubMsgResult};
 use cosmwasm_std::{
     testing::{mock_dependencies, mock_env, mock_info},
     Addr, Coin, Decimal, Uint128,
 };
-use cosmwasm_std::{Binary, Reply, SubMsgResponse, SubMsgResult};
 use osmosis_std::types::cosmos::base::v1beta1::Coin as OsmosisCoin;
 use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::MsgWithdrawPositionResponse;
 use osmosis_std::types::osmosis::poolmanager::v1beta1::SpotPriceRequest;
@@ -325,6 +325,19 @@ fn test_create_and_withdraw_position_in_pool() {
         println!("Failed to get position response\n");
         String::from("0") // Default value
     };
+
+    // call the simulate liquidation query
+    let principal_input = Uint128::new(100000);
+    let query_simulate = QueryMsg::SimulateLiquidation {
+        principal_amount: principal_input,
+    };
+    let simulate_response: SimulateLiquidationResponse =
+        wasm.query(&contract_addr, &query_simulate).unwrap();
+
+    assert_eq!(
+        simulate_response.counterparty_to_receive,
+        "92195444573".to_string()
+    );
 
     let pm = PoolManager::new(&pool_mockup.app);
     let request = SpotPriceRequest {
@@ -1114,6 +1127,202 @@ fn test_resolve_auction() {
     // Step 5: Assert the results
     assert!(result.is_ok());
 }
+#[test]
+fn test_resolve_auction_1() {
+    // Step 1: Set up the mock environment and dependencies
+    let mut deps = mock_dependencies();
+    let mut env = mock_env();
+    let info = mock_info("deployer", &[]);
+    // Step 2: Initialize the state
+    let state = State {
+        auction_end_time: Some(env.block.time.plus_seconds(0)), // Set the auction end time
+        principal_to_replenish: Uint128::new(348870852),        // Target principal to replenish
+        counterparty_to_give: Some(Uint128::new(897800992115000178512282)), // Total counterparty available
+        counterparty_owner: Some(Addr::unchecked("deployer")),
+        principal_funds_owner: Addr::unchecked("principal_funds_owner"),
+        pool_id: 1,
+        counterparty_denom: "ibc/23AB778D694C1ECFC59B91D8C399C115CC53B0BD1C61020D8E19519F002BDD85"
+            .to_string(),
+        principal_denom: "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2"
+            .to_string(),
+        position_id: Some(1),
+        initial_principal_amount: Uint128::new(749043851),
+        initial_counterparty_amount: Uint128::new(609302780000000000000000),
+        liquidity_shares: None,
+        auction_principal_deposited: Uint128::new(348870852),
+        auction_duration: 100,
+        position_admin: None,
+        liquidator_address: None,
+        round_end_time: env.block.time.plus_seconds(100),
+        position_rewards: None,
+        principal_first: true,
+    };
+    STATE.save(deps.as_mut().storage, &state).unwrap();
+    env.block.time = env.block.time.plus_seconds(1);
+    // Step 3: Add bids to the storage
+    let bid1 = Bid {
+        bidder: Addr::unchecked("bidder1"),
+        principal_deposited: Uint128::new(348870852),
+        tokens_requested: Uint128::new(288498212115000178512282),
+        tokens_fulfilled: Uint128::zero(),
+        tokens_refunded: Uint128::zero(),
+        status: BidStatus::Submitted,
+    };
+    BIDS.save(deps.as_mut().storage, 1, &bid1).unwrap();
+    let price = Decimal::from_ratio(bid1.tokens_requested, bid1.principal_deposited);
+    println!("Calculated price for bid1: {}", price);
+    // Step 4: Sort the bids by price ratio (tokens_requested / principal_amount)
+    let mut all_bids: Vec<SortedBid> = vec![SortedBid {
+        bid_id: 1,
+        price: Decimal::from_ratio(bid1.tokens_requested, bid1.principal_deposited),
+        principal_deposited: bid1.principal_deposited,
+        requested_counterparty: bid1.tokens_requested,
+    }];
+    // Sort the bids in descending order of price ratio (highest price first)
+    all_bids.sort_by(|a, b| b.price.partial_cmp(&a.price).unwrap());
+    // Save the sorted bids to SORTED_BIDS storage
+    SORTED_BIDS.save(deps.as_mut().storage, &all_bids).unwrap();
+    // Step 4: Call the resolve_auction method
+    let result = resolve_auction(deps.as_mut(), env.clone(), info.clone());
+    // Step 5: Assert the results
+    assert!(result.is_ok());
+
+    let res = result.unwrap();
+
+    assert_eq!(res.messages.len(), 3);
+
+    let msg0 = &res.messages[0];
+    let msg1 = &res.messages[1];
+    let msg2 = &res.messages[2];
+
+    // Assert the exact BankMsg::Send contents
+    assert_eq!(
+        msg0.msg,
+        CosmosMsg::Bank(BankMsg::Send {
+            to_address: "bidder1".to_string(),
+            amount: vec![coin(
+                288_498_212_115_000_178_512_281u128,
+                "ibc/23AB778D694C1ECFC59B91D8C399C115CC53B0BD1C61020D8E19519F002BDD85"
+            )],
+        })
+    );
+
+    assert_eq!(
+        msg1.msg,
+        CosmosMsg::Bank(BankMsg::Send {
+            to_address: "principal_funds_owner".to_string(),
+            amount: vec![coin(
+                348_870_852u128,
+                "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2"
+            )],
+        })
+    );
+
+    assert_eq!(
+        msg2.msg,
+        CosmosMsg::Bank(BankMsg::Send {
+            to_address: "deployer".to_string(),
+            amount: vec![coin(
+                609_302_780_000_000_000_000_001u128,
+                "ibc/23AB778D694C1ECFC59B91D8C399C115CC53B0BD1C61020D8E19519F002BDD85"
+            )],
+        })
+    );
+}
+#[test]
+fn test_resolve_auction_2() {
+    // Step 1: Set up the mock environment and dependencies
+    let mut deps = mock_dependencies();
+    let mut env = mock_env();
+    let info = mock_info("deployer", &[]);
+    // Step 2: Initialize the state
+    let state = State {
+        auction_end_time: Some(env.block.time.plus_seconds(0)), // Set the auction end time
+        principal_to_replenish: Uint128::new(356546799),        // Target principal to replenish
+        counterparty_to_give: Some(Uint128::new(170692820000000000000000)), // Total counterparty available
+        counterparty_owner: Some(Addr::unchecked("deployer")),
+        principal_funds_owner: Addr::unchecked("principal_funds_owner"),
+        pool_id: 1,
+        counterparty_denom: "counterparty_token".to_string(),
+        principal_denom: "atom".to_string(),
+        position_id: Some(1),
+        initial_principal_amount: Uint128::new(356546799),
+        initial_counterparty_amount: Uint128::new(371102811000000),
+        liquidity_shares: Some("4122058004704901408928311733870".to_string()),
+        auction_principal_deposited: Uint128::new(356546799),
+        auction_duration: 100,
+        position_admin: None,
+        liquidator_address: None,
+        round_end_time: env.block.time.plus_seconds(100),
+        position_rewards: None,
+        principal_first: false,
+    };
+    STATE.save(deps.as_mut().storage, &state).unwrap();
+    env.block.time = env.block.time.plus_seconds(1);
+    // Step 3: Add bids to the storage
+    let bid1 = Bid {
+        bidder: Addr::unchecked("bidder1"),
+        principal_deposited: Uint128::new(356546799),
+        tokens_requested: Uint128::new(170692820000000000000000),
+        tokens_fulfilled: Uint128::zero(),
+        tokens_refunded: Uint128::zero(),
+        status: BidStatus::Submitted,
+    };
+    BIDS.save(deps.as_mut().storage, 1, &bid1).unwrap();
+    let price = Decimal::from_ratio(bid1.tokens_requested, bid1.principal_deposited);
+    println!("Calculated price for bid1: {}", price);
+    // Step 4: Sort the bids by price ratio (tokens_requested / principal_amount)
+    let mut all_bids: Vec<SortedBid> = vec![SortedBid {
+        bid_id: 1,
+        price: Decimal::from_ratio(bid1.tokens_requested, bid1.principal_deposited),
+        principal_deposited: bid1.principal_deposited,
+        requested_counterparty: bid1.tokens_requested,
+    }];
+    // Sort the bids in descending order of price ratio (highest price first)
+    all_bids.sort_by(|a, b| b.price.partial_cmp(&a.price).unwrap());
+    // Save the sorted bids to SORTED_BIDS storage
+    SORTED_BIDS.save(deps.as_mut().storage, &all_bids).unwrap();
+    // Step 4: Call the resolve_auction method
+    let result = resolve_auction(deps.as_mut(), env.clone(), info.clone());
+    // Step 5: Assert the results
+    assert!(result.is_ok());
+
+    let res = result.unwrap();
+
+    // Assert the number of messages
+    assert_eq!(res.messages.len(), 3);
+
+    // Message 0: bidder1 receives tokens
+    assert_eq!(
+        res.messages[0].msg,
+        CosmosMsg::Bank(BankMsg::Send {
+            to_address: "bidder1".to_string(),
+            amount: vec![coin(
+                170_692_819_999_999_999_999_999u128,
+                "counterparty_token"
+            )],
+        })
+    );
+
+    // Message 1: principal funds owner receives deposited principal
+    assert_eq!(
+        res.messages[1].msg,
+        CosmosMsg::Bank(BankMsg::Send {
+            to_address: "principal_funds_owner".to_string(),
+            amount: vec![coin(356_546_799u128, "atom")],
+        })
+    );
+
+    // Message 2: deployer receives remaining 1 counterparty token
+    assert_eq!(
+        res.messages[2].msg,
+        CosmosMsg::Bank(BankMsg::Send {
+            to_address: "deployer".to_string(),
+            amount: vec![coin(1u128, "counterparty_token")],
+        })
+    );
+}
+
 #[test]
 fn test_tick_to_price() {
     let tick = 11046100; // Example tick value

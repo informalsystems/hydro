@@ -7,8 +7,8 @@ use crate::msg::{
 };
 use crate::state::{Bid, BidStatus, SortedBid, State, BIDS, BID_COUNTER, SORTED_BIDS, STATE};
 use cosmwasm_std::{
-    entry_point, to_json_binary, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, Event,
-    MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Uint128,
+    entry_point, to_json_binary, BankMsg, Binary, Coin, Decimal, Decimal256, Deps, DepsMut, Env,
+    Event, MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Uint128, Uint256,
 };
 use osmosis_std::types::cosmos::base::v1beta1::Coin as OsmosisCoin;
 use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::{
@@ -939,14 +939,16 @@ pub fn resolve_auction(
 
         // Calculate how much principal we can take based on available counterparty
         let max_principal_based_on_counterparty = if bid_price.is_zero() {
-            Decimal::from_ratio(max_principal_from_bid, Uint128::one())
+            Decimal256::from_ratio(Uint256::from(max_principal_from_bid), Uint256::one())
         } else {
-            Decimal::from_ratio(counterparty_total - counterparty_spent, Uint128::one()) / bid_price
+            let counterparty_left = Uint256::from(counterparty_total - counterparty_spent);
+            let price_256 = Decimal256::from(bid_price);
+            Decimal256::from_ratio(counterparty_left, Uint256::one()) / price_256
         };
 
         // Round the result to the nearest integer
         let max_principal_based_on_counterparty =
-            round_decimal_to_uint128(max_principal_based_on_counterparty);
+            round_decimal256_to_uint128(max_principal_based_on_counterparty);
 
         // Determine the actual principal to take
         let principal_to_take = std::cmp::min(
@@ -959,11 +961,11 @@ pub fn resolve_auction(
         }
 
         // Calculate the corresponding counterparty tokens
-        let counterparty_to_give =
-            bid_price * Decimal::from_ratio(principal_to_take, Uint128::one());
+        let counterparty_to_give = Decimal256::from(bid_price)
+            * Decimal256::from_ratio(Uint256::from(principal_to_take), Uint256::one());
 
         // Round the result to the nearest integer
-        let truncated_counterparty_to_give = truncate_decimal_to_uint128(counterparty_to_give);
+        let truncated_counterparty_to_give = truncate_decimal256_to_uint128(counterparty_to_give);
 
         // we only allow check to pass if bid price is zero (meaning no counterparty requested)
         if (truncated_counterparty_to_give.is_zero() && !bid_price.is_zero())
@@ -1053,24 +1055,26 @@ pub fn resolve_auction(
         .add_attribute("principal_replenished", principal_accumulated))
 }
 
-/// Rounds a Decimal to the nearest Uint128 (half up)
-pub fn round_decimal_to_uint128(decimal: Decimal) -> Uint128 {
-    let atomics = decimal.atomics().u128();
-    let base = 10u128.pow(18);
+/// Rounds a Decimal256 to the nearest Uint128 (half up)
+pub fn round_decimal256_to_uint128(decimal: Decimal256) -> Uint128 {
+    let atomics: Uint256 = decimal.atomics();
+    let base = Uint256::from(10u128.pow(18));
 
-    let rounded = (atomics + base / 2) / base;
-    Uint128::new(rounded)
+    let rounded = (atomics + base / Uint256::from(2u8)) / base;
+
+    // Safely convert to Uint128, error if it won't fit
+    Uint128::try_from(rounded).expect("Rounded value exceeds Uint128::MAX")
 }
 
-/// Truncates a Decimal to the nearest lower Uint128
-pub fn truncate_decimal_to_uint128(decimal: Decimal) -> Uint128 {
-    let atomics = decimal.atomics().u128();
-    let base = 10u128.pow(18);
+/// Truncates a Decimal256 to the nearest lower Uint128
+pub fn truncate_decimal256_to_uint128(decimal: Decimal256) -> Uint128 {
+    let atomics: Uint256 = decimal.atomics();
+    let base = Uint256::from(10u128.pow(18));
 
     let truncated = atomics / base;
-    Uint128::new(truncated)
-}
 
+    Uint128::try_from(truncated).expect("Truncated value exceeds Uint128::MAX")
+}
 pub fn query_get_state(deps: Deps) -> StdResult<StateResponse> {
     // Load the current state from storage
     let state = STATE.load(deps.storage)?;
@@ -1191,15 +1195,10 @@ pub fn query_simulate_liquidation(
         });
     }
     // Convert base_amount and initial_base_amount to Decimal for precise division
-    let principal_input = Decimal::from_atomics(principal_input, 0)
-        .map_err(|_| ContractError::InvalidConversion {})
-        .unwrap();
-    let principal_amount_to_replenish = Decimal::from_atomics(state.principal_to_replenish, 0)
-        .map_err(|_| ContractError::InvalidConversion {})
-        .unwrap();
-    let counterparty_available = Decimal::from_atomics(counterparty_amount, 0)
-        .map_err(|_| ContractError::InvalidConversion {})
-        .unwrap();
+    let principal_input = Decimal256::from_ratio(principal_input, Uint128::one());
+    let principal_amount_to_replenish =
+        Decimal256::from_ratio(state.principal_to_replenish, Uint128::one());
+    let counterparty_available = Decimal256::from_ratio(counterparty_amount, Uint128::one());
 
     // Ensure the supplied amount is not greater than the initial amount
     if principal_input > principal_amount_to_replenish {
@@ -1213,9 +1212,8 @@ pub fn query_simulate_liquidation(
 
     let counterparty_to_liquidate = counterparty_available * perc_to_liquidate;
 
-    let counterparty_to_liquidate = round_decimal_to_uint128(counterparty_to_liquidate);
+    let counterparty_to_liquidate = truncate_decimal256_to_uint128(counterparty_to_liquidate);
 
-    // Return as string
     let counterparty_str = counterparty_to_liquidate.to_string();
 
     Ok(SimulateLiquidationResponse {
