@@ -1,19 +1,18 @@
 use std::{collections::HashMap, marker::PhantomData};
 
-use cosmwasm_std::ContractResult;
 use cosmwasm_std::{
     from_json,
     testing::{MockApi, MockQuerier as BaseMockQuerier, MockStorage},
     to_json_binary, Binary, GrpcQuery, OwnedDeps, Querier, QuerierResult, QueryRequest,
     SystemError, SystemResult, WasmQuery,
 };
+use cosmwasm_std::{ContractResult, Empty};
+use ibc_proto::ibc::apps::transfer::v1::{
+    DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
+};
 use interface::{
     lsm::ValidatorInfo,
     token_info_provider::{DenomInfoResponse, TokenInfoProviderQueryMsg, ValidatorsInfoResponse},
-};
-use neutron_sdk::bindings::query::NeutronQuery;
-use neutron_std::types::ibc::applications::transfer::v1::{
-    DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
 };
 use prost::Message;
 
@@ -24,7 +23,7 @@ pub type WasmQueryFunc = Box<dyn Fn(&WasmQuery) -> QuerierResult>;
 
 pub fn mock_dependencies(
     grpc_query_mock: Box<GrpcQueryFunc>,
-) -> OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery> {
+) -> OwnedDeps<MockStorage, MockApi, MockQuerier, Empty> {
     OwnedDeps {
         storage: MockStorage::default(),
         api: MockApi::default(),
@@ -34,15 +33,12 @@ pub fn mock_dependencies(
 }
 
 pub struct MockQuerier {
-    base_querier: BaseMockQuerier<NeutronQuery>,
+    base_querier: BaseMockQuerier,
     grpc_query_mock: Box<GrpcQueryFunc>,
 }
 
 impl MockQuerier {
-    pub fn new(
-        base_querier: BaseMockQuerier<NeutronQuery>,
-        grpc_query_mock: Box<GrpcQueryFunc>,
-    ) -> Self {
+    pub fn new(base_querier: BaseMockQuerier, grpc_query_mock: Box<GrpcQueryFunc>) -> Self {
         Self {
             base_querier,
             grpc_query_mock,

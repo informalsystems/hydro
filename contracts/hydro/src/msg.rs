@@ -179,9 +179,6 @@ pub enum ExecuteMsg {
         tranche_name: Option<String>,
         tranche_metadata: Option<String>,
     },
-    WithdrawICQFunds {
-        amount: Uint128,
-    },
     AddLiquidityDeployment {
         round_id: u64,
         tranche_id: u64,
@@ -268,15 +265,6 @@ pub enum ExecuteMsg {
     /// Allows users to remove/reduce pending slash fully or partially by inserting funds
     BuyoutPendingSlash {
         lock_id: u64,
-    },
-
-    /// Temporary for the purpose of LSM migration
-    RemoveInterchainQueries {
-        query_ids: Vec<u64>,
-    },
-    /// Temporary for the purpose of LSM migration
-    RemoveRoundValidatorsData {
-        round_id: u64,
     },
 }
 

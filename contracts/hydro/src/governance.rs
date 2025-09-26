@@ -1,5 +1,4 @@
 use cosmwasm_std::{Deps, Env, StdResult};
-use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
     contract::compute_current_round_id,
@@ -13,7 +12,7 @@ use crate::{
 };
 
 pub fn query_total_power_at_height(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     env: &Env,
     height: Option<u64>,
 ) -> StdResult<TotalPowerAtHeightResponse> {
@@ -44,7 +43,7 @@ pub fn query_total_power_at_height(
 }
 
 pub fn query_voting_power_at_height(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     env: &Env,
     address: String,
     height: Option<u64>,

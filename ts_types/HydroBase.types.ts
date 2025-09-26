@@ -133,10 +133,6 @@ export type ExecuteMsg = {
     tranche_name?: string | null;
   };
 } | {
-  withdraw_i_c_q_funds: {
-    amount: Uint128;
-  };
-} | {
   add_liquidity_deployment: {
     deployed_funds: Coin[];
     destinations: string[];
@@ -383,12 +379,6 @@ export type QueryMsg = {
   whitelist_admins: {};
 } | {
   total_locked_tokens: {};
-} | {
-  validators_info: {
-    round_id: number;
-  };
-} | {
-  registered_validator_queries: {};
 } | {
   can_lock_denom: {
     token_denom: string;
@@ -641,9 +631,6 @@ export interface Proposal {
   title: string;
   tranche_id: number;
 }
-export interface RegisteredValidatorQueriesResponse {
-  query_ids: [string, number][];
-}
 export interface RoundEndResponse {
   round_end: Timestamp;
 }
@@ -727,10 +714,6 @@ export interface VoteWithPower {
 }
 export interface UserVotingPowerResponse {
   voting_power: number;
-}
-export interface ValidatorsInfoResponse {
-  round_id: number;
-  validators: {};
 }
 export interface VotingPowerAtHeightResponse {
   height: number;

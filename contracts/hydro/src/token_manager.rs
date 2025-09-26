@@ -11,7 +11,6 @@ use interface::{
     token_info_provider::{DenomInfoResponse, TokenInfoProviderQueryMsg, ValidatorsInfoResponse},
     utils::extract_response_msg_bytes_from_reply_msg,
 };
-use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 use crate::{
     contract::compute_current_round_id,
@@ -42,7 +41,7 @@ pub struct TokenManager {
 }
 
 impl TokenManager {
-    pub fn new(deps: &Deps<NeutronQuery>) -> Self {
+    pub fn new(deps: &Deps) -> Self {
         Self {
             token_info_providers: get_all_token_info_providers(deps),
         }
@@ -52,7 +51,7 @@ impl TokenManager {
 impl TokenManager {
     pub fn validate_denom(
         &mut self,
-        deps: &Deps<NeutronQuery>,
+        deps: &Deps,
         round_id: u64,
         denom: String,
     ) -> StdResult<String> {
@@ -77,7 +76,7 @@ impl TokenManager {
 
     pub fn get_token_group_ratio(
         &mut self,
-        deps: &Deps<NeutronQuery>,
+        deps: &Deps,
         round_id: u64,
         token_group_id: String,
     ) -> StdResult<Decimal> {
@@ -92,12 +91,7 @@ impl TokenManager {
         Ok(Decimal::zero())
     }
 
-    pub fn get_token_denom_ratio(
-        &mut self,
-        deps: &Deps<NeutronQuery>,
-        round_id: u64,
-        denom: String,
-    ) -> Decimal {
+    pub fn get_token_denom_ratio(&mut self, deps: &Deps, round_id: u64, denom: String) -> Decimal {
         let token_group_id = match self.validate_denom(deps, round_id, denom) {
             Err(_) => return Decimal::zero(),
             Ok(token_group_id) => token_group_id,
@@ -147,7 +141,7 @@ pub enum TokenInfoProvider {
 impl TokenInfoProvider {
     pub fn resolve_denom(
         &mut self,
-        deps: &Deps<NeutronQuery>,
+        deps: &Deps,
         round_id: u64,
         denom: String,
     ) -> StdResult<String> {
@@ -162,7 +156,7 @@ impl TokenInfoProvider {
 
     pub fn get_token_group_ratio(
         &mut self,
-        deps: &Deps<NeutronQuery>,
+        deps: &Deps,
         round_id: u64,
         token_group_id: String,
     ) -> StdResult<Decimal> {
@@ -181,7 +175,7 @@ impl TokenInfoProvider {
 
     pub fn get_all_token_group_ratios(
         &mut self,
-        deps: &Deps<NeutronQuery>,
+        deps: &Deps,
         round_id: u64,
     ) -> StdResult<HashMap<String, Decimal>> {
         match self {
@@ -205,7 +199,7 @@ pub struct TokenInfoProviderDerivative {
 impl TokenInfoProviderDerivative {
     pub fn resolve_denom(
         &mut self,
-        deps: &Deps<NeutronQuery>,
+        deps: &Deps,
         round_id: u64,
         denom: String,
     ) -> StdResult<String> {
@@ -229,7 +223,7 @@ impl TokenInfoProviderDerivative {
 
     pub fn get_token_group_ratio(
         &mut self,
-        deps: &Deps<NeutronQuery>,
+        deps: &Deps,
         round_id: u64,
         token_group_id: String,
     ) -> StdResult<Decimal> {
@@ -245,7 +239,7 @@ impl TokenInfoProviderDerivative {
 
     pub fn get_all_token_group_ratios(
         &mut self,
-        deps: &Deps<NeutronQuery>,
+        deps: &Deps,
         round_id: u64,
     ) -> StdResult<HashMap<String, Decimal>> {
         let denom_info = self.get_denom_info_with_caching(deps, round_id)?;
@@ -258,7 +252,7 @@ impl TokenInfoProviderDerivative {
 
     fn get_denom_info_with_caching(
         &mut self,
-        deps: &Deps<NeutronQuery>,
+        deps: &Deps,
         round_id: u64,
     ) -> StdResult<DenomInfoResponse> {
         Ok(match self.cache.get(&round_id) {
@@ -295,7 +289,7 @@ impl TokenInfoProviderLSM {
     // for the given round, and returns the address of that validator.
     pub fn resolve_denom(
         &mut self,
-        deps: &Deps<NeutronQuery>,
+        deps: &Deps,
         round_id: u64,
         denom: String,
     ) -> StdResult<String> {
@@ -314,14 +308,14 @@ impl TokenInfoProviderLSM {
 
     // Returns true if denom is a valid LSM IBC denom.
     // Note: it is purely checking the denom, and does not check whether the validator exists/is active
-    pub fn is_lsm_denom(&self, deps: &Deps<NeutronQuery>, denom: String) -> bool {
+    pub fn is_lsm_denom(&self, deps: &Deps, denom: String) -> bool {
         let result = resolve_validator_from_denom(deps, &self.hub_transfer_channel_id, denom);
         result.is_ok()
     }
 
     pub fn get_token_group_ratio(
         &mut self,
-        deps: &Deps<NeutronQuery>,
+        deps: &Deps,
         round_id: u64,
         token_group_id: String,
     ) -> StdResult<Decimal> {
@@ -340,7 +334,7 @@ impl TokenInfoProviderLSM {
 
     pub fn get_all_token_group_ratios(
         &mut self,
-        deps: &Deps<NeutronQuery>,
+        deps: &Deps,
         round_id: u64,
     ) -> StdResult<HashMap<String, Decimal>> {
         Ok(self
@@ -352,7 +346,7 @@ impl TokenInfoProviderLSM {
 
     fn get_all_round_validators_with_caching(
         &mut self,
-        deps: &Deps<NeutronQuery>,
+        deps: &Deps,
         round_id: u64,
     ) -> StdResult<HashMap<String, ValidatorInfo>> {
         let validators_info = match self.cache.get(&round_id) {
@@ -385,7 +379,7 @@ impl TokenInfoProviderBase {
     // Returns OK if the denom is same as the denom of the base Hydro token (e.g. ATOM, OSMO, etc.).
     pub fn resolve_denom(
         &mut self,
-        _deps: &Deps<NeutronQuery>,
+        _deps: &Deps,
         _round_id: u64,
         denom: String,
     ) -> StdResult<String> {
@@ -400,7 +394,7 @@ impl TokenInfoProviderBase {
 
     pub fn get_token_group_ratio(
         &mut self,
-        _deps: &Deps<NeutronQuery>,
+        _deps: &Deps,
         _round_id: u64,
         token_group_id: String,
     ) -> StdResult<Decimal> {
@@ -414,7 +408,7 @@ impl TokenInfoProviderBase {
 
     pub fn get_all_token_group_ratios(
         &mut self,
-        _deps: &Deps<NeutronQuery>,
+        _deps: &Deps,
         _round_id: u64,
     ) -> StdResult<HashMap<String, Decimal>> {
         Ok(HashMap::from_iter([(
@@ -430,9 +424,9 @@ impl TokenInfoProviderBase {
 // action that adds a new token info provider.
 #[allow(clippy::type_complexity)]
 pub fn add_token_info_providers(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     token_info_provider_msgs: Vec<TokenInfoProviderInstantiateMsg>,
-) -> Result<(Vec<SubMsg<NeutronMsg>>, Option<TokenInfoProvider>), ContractError> {
+) -> Result<(Vec<SubMsg>, Option<TokenInfoProvider>), ContractError> {
     let token_manager = TokenManager::new(&deps.as_ref());
     let mut token_info_provider_num = token_manager.token_info_providers.len();
     let mut found_lsm_provider = token_manager.get_lsm_token_info_provider().is_some();
@@ -462,7 +456,7 @@ pub fn add_token_info_providers(
                     hub_transfer_channel_id,
                 });
 
-                let submsg: SubMsg<NeutronMsg> = SubMsg::reply_on_success(
+                let submsg: SubMsg = SubMsg::reply_on_success(
                     WasmMsg::Instantiate {
                         admin,
                         code_id,
@@ -522,7 +516,7 @@ pub fn add_token_info_providers(
                         cache: HashMap::new(),
                     });
 
-                let submsg: SubMsg<NeutronMsg> = SubMsg::reply_on_success(
+                let submsg: SubMsg = SubMsg::reply_on_success(
                     WasmMsg::Instantiate {
                         admin,
                         code_id,
@@ -552,11 +546,11 @@ pub fn add_token_info_providers(
 }
 
 pub fn token_manager_handle_submsg_reply(
-    mut deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut,
     env: &Env,
     token_info_provider: TokenInfoProvider,
     msg: Reply,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let response_bytes = &extract_response_msg_bytes_from_reply_msg(&msg)?;
     let instantiate_msg_response = cw_utils::parse_instantiate_response_data(response_bytes)
         .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {:?}", e)))?;
@@ -610,7 +604,7 @@ pub fn token_manager_handle_submsg_reply(
 }
 
 pub fn handle_token_info_provider_add_remove<T>(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     env: &Env,
     constants: &Constants,
     token_info_provider: &mut TokenInfoProvider,
@@ -637,7 +631,7 @@ where
     Ok(())
 }
 
-fn get_all_token_info_providers(deps: &Deps<NeutronQuery>) -> Vec<TokenInfoProvider> {
+fn get_all_token_info_providers(deps: &Deps) -> Vec<TokenInfoProvider> {
     TOKEN_INFO_PROVIDERS
         .range(deps.storage, None, None, Order::Ascending)
         .filter_map(|provider| match provider {

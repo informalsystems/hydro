@@ -43,11 +43,6 @@ pub enum ExecuteMsg {
     WithdrawICQFunds {
         amount: Uint128,
     },
-
-    /// Temporary for the purpose of LSM migration
-    CopyRoundValidatorsData {
-        round_id: u64,
-    },
 }
 
 pub struct ExecuteContext {

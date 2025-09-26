@@ -416,27 +416,6 @@
     {
       "type": "object",
       "required": [
-        "withdraw_i_c_q_funds"
-      ],
-      "properties": {
-        "withdraw_i_c_q_funds": {
-          "type": "object",
-          "required": [
-            "amount"
-          ],
-          "properties": {
-            "amount": {
-              "$ref": "#/definitions/Uint128"
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
         "add_liquidity_deployment"
       ],
       "properties": {
