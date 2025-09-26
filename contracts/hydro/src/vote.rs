@@ -9,7 +9,6 @@ use crate::utils::{
     get_owned_lock_entry, get_proposal,
 };
 use cosmwasm_std::{Addr, Decimal, DepsMut, Env, SignedDecimal, StdError, Storage, Uint128};
-use neutron_sdk::bindings::query::NeutronQuery;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 
@@ -165,7 +164,7 @@ pub struct VoteProcessingContext<'a> {
 // It also receives a list of locks_to_skip, which is a list of lock_ids that should be skipped
 //  (as it was determined during process_unvotes that ).
 pub fn process_votes(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     token_manager: &mut TokenManager,
     context: VoteProcessingContext,
     proposals_votes: &[ProposalToLockups],

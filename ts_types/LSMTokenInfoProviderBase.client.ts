@@ -12,7 +12,7 @@ export interface LSMTokenInfoProviderBaseReadOnlyInterface {
   config: () => Promise<ConfigResponse>;
   registeredValidatorQueries: () => Promise<RegisteredValidatorQueriesResponse>;
   admins: () => Promise<AdminsResponse>;
-  iCQManagers: () => Promise<ICQManagersResponse>;
+  icqManagers: () => Promise<IcqManagersResponse>;
   validatorsInfo: ({
     roundId
   }: {
@@ -28,7 +28,7 @@ export class LSMTokenInfoProviderBaseQueryClient implements LSMTokenInfoProvider
     this.config = this.config.bind(this);
     this.registeredValidatorQueries = this.registeredValidatorQueries.bind(this);
     this.admins = this.admins.bind(this);
-    this.iCQManagers = this.iCQManagers.bind(this);
+    this.icqManagers = this.icqManagers.bind(this);
     this.validatorsInfo = this.validatorsInfo.bind(this);
   }
   config = async (): Promise<ConfigResponse> => {
@@ -46,9 +46,9 @@ export class LSMTokenInfoProviderBaseQueryClient implements LSMTokenInfoProvider
       admins: {}
     });
   };
-  iCQManagers = async (): Promise<ICQManagersResponse> => {
+  icqManagers = async (): Promise<IcqManagersResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      i_c_q_managers: {}
+      icq_managers: {}
     });
   };
   validatorsInfo = async ({
@@ -86,11 +86,6 @@ export interface LSMTokenInfoProviderBaseInterface extends LSMTokenInfoProviderB
   }: {
     amount: Uint128;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
-  copyRoundValidatorsData: ({
-    roundId
-  }: {
-    roundId: number;
-  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<ExecuteResult>;
 }
 export class LSMTokenInfoProviderBaseClient extends LSMTokenInfoProviderBaseQueryClient implements LSMTokenInfoProviderBaseInterface {
   client: SigningCosmWasmClient;
@@ -105,7 +100,6 @@ export class LSMTokenInfoProviderBaseClient extends LSMTokenInfoProviderBaseQuer
     this.addICQManager = this.addICQManager.bind(this);
     this.removeICQManager = this.removeICQManager.bind(this);
     this.withdrawICQFunds = this.withdrawICQFunds.bind(this);
-    this.copyRoundValidatorsData = this.copyRoundValidatorsData.bind(this);
   }
   createIcqsForValidators = async ({
     validators
@@ -148,17 +142,6 @@ export class LSMTokenInfoProviderBaseClient extends LSMTokenInfoProviderBaseQuer
     return await this.client.execute(this.sender, this.contractAddress, {
       withdraw_i_c_q_funds: {
         amount
-      }
-    }, fee_, memo_, funds_);
-  };
-  copyRoundValidatorsData = async ({
-    roundId
-  }: {
-    roundId: number;
-  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<ExecuteResult> => {
-    return await this.client.execute(this.sender, this.contractAddress, {
-      copy_round_validators_data: {
-        round_id: roundId
       }
     }, fee_, memo_, funds_);
   };

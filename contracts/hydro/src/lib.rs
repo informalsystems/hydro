@@ -67,6 +67,3 @@ mod testing_slashing;
 
 #[cfg(test)]
 mod testing_buyout_pending_slash;
-
-#[cfg(test)]
-mod testing_lsm_migration;

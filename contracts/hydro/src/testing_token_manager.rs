@@ -7,7 +7,6 @@ use cosmwasm_std::{
     SubMsgResponse, SubMsgResult, Uint128, WasmMsg,
 };
 use interface::hydro::TokenGroupRatioChange;
-use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
     contract::{
@@ -830,7 +829,7 @@ fn verify_proposals_and_rounds_powers(
 }
 
 fn verify_current_user_voting_power(
-    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: Env,
     user_address: &str,
     expected_power: u128,

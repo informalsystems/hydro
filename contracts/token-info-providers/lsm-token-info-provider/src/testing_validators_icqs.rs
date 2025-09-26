@@ -84,7 +84,6 @@ fn icq_managers_create_interchain_queries_test() {
     assert_eq!(messages.len(), 2);
 }
 
-#[ignore = "Bring this test back once we migrate to final version. Currently, only ICQ managers are allowed to create ICQs."]
 #[test]
 fn create_interchain_queries_test() {
     let min_deposit = Coin::new(1000000u64, NATIVE_TOKEN_DENOM);
@@ -135,7 +134,11 @@ fn create_interchain_queries_test() {
         .to_string()
         .to_lowercase().contains(format!("insufficient tokens sent to pay for {} interchain queries deposits. sent: {}, required: {}", 2, user_token, min_deposit_required).as_str()));
 
-    let info = get_message_info(&deps.api, "addr0000", std::slice::from_ref(&user_token));
+    let info = get_message_info(
+        &deps.api,
+        "addr0000",
+        std::slice::from_ref(&min_deposit_required),
+    );
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
     let messages = res.unwrap().messages;

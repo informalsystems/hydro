@@ -2065,8 +2065,6 @@ dependencies = [
  "cw2 2.0.0",
  "ibc-proto",
  "interface",
- "neutron-sdk",
- "neutron-std",
  "proptest",
  "prost 0.12.6",
  "prost-types 0.12.6",

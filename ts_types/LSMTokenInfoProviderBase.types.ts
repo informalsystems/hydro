@@ -29,10 +29,6 @@ export type ExecuteMsg = {
   withdraw_i_c_q_funds: {
     amount: Uint128;
   };
-} | {
-  copy_round_validators_data: {
-    round_id: number;
-  };
 };
 export type Uint128 = string;
 export type QueryMsg = {
@@ -42,7 +38,7 @@ export type QueryMsg = {
 } | {
   admins: {};
 } | {
-  i_c_q_managers: {};
+  icq_managers: {};
 } | {
   validators_info: {
     round_id: number;

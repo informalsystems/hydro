@@ -4,7 +4,6 @@ use cosmwasm_std::{
     Addr, BankMsg, Coin, Decimal, Deps, DepsMut, Env, MessageInfo, Order, Response, StdError,
     StdResult, Uint128,
 };
-use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 use crate::{
     contract::{
@@ -42,7 +41,7 @@ use crate::{
 //     - Send the slashed tokens to the configured address.
 #[allow(clippy::too_many_arguments)]
 pub fn slash_proposal_voters(
-    mut deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     constants: &Constants,
@@ -52,7 +51,7 @@ pub fn slash_proposal_voters(
     slash_percent: Decimal,
     start_from: u64,
     limit: u64,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
     // Extract lock ids that voted on the given proposal. Note that some of those lockups
@@ -309,7 +308,7 @@ pub fn slash_proposal_voters(
 // towards the base token (e.g. ATOM).
 #[allow(clippy::too_many_arguments)]
 pub fn into_amount_to_slash(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     token_manager: &mut TokenManager,
     voted_lockup: &LockEntryV2,
     lockup_to_slash: &LockEntryV2,
@@ -382,7 +381,7 @@ pub fn into_amount_to_slash(
 // Remove potential current round votes for all lockups that were affected by slashing.
 // Then re-add previously removed votes, but only for those lockups that were partially slashed.
 fn update_current_round_votes(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     env: &Env,
     constants: &Constants,
     token_manager: &mut TokenManager,
@@ -466,7 +465,7 @@ fn update_current_round_votes(
 }
 
 fn update_rounds_powers_and_scaled_shares(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     env: &Env,
     constants: &Constants,
     token_manager: &mut TokenManager,
@@ -634,7 +633,7 @@ fn update_rounds_powers_and_scaled_shares(
 /// Returns the maximum number of tokens held by the lockups that can be slashed for voting
 /// on the given proposal. The amount returned is denominated in the base token (e.g. ATOM).
 pub fn query_slashable_token_num_for_voting_on_proposal(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     env: Env,
     round_id: u64,
     tranche_id: u64,

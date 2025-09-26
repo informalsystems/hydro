@@ -3,7 +3,6 @@ use cosmwasm_std::{Binary, Deps, StdError, StdResult};
 use ibc_proto::ibc::apps::transfer::v1::{
     DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
 };
-use neutron_sdk::bindings::query::NeutronQuery;
 
 use prost::Message;
 
@@ -14,7 +13,7 @@ pub const COSMOS_VALIDATOR_PREFIX: &str = "cosmosvaloper";
 pub const COSMOS_VALIDATOR_ADDR_LENGTH: usize = 52; // e.g. cosmosvaloper15w6ra6m68c63t0sv2hzmkngwr9t88e23r8vtg5
 
 pub fn resolve_validator_from_denom(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     hub_transfer_channel_id: &str,
     denom: String,
 ) -> StdResult<String> {
@@ -50,7 +49,7 @@ pub fn resolve_validator_from_denom(
     Ok(base_denom_parts[0].to_string())
 }
 
-pub fn query_ibc_denom_trace(deps: &Deps<NeutronQuery>, denom: String) -> StdResult<DenomTrace> {
+pub fn query_ibc_denom_trace(deps: &Deps, denom: String) -> StdResult<DenomTrace> {
     let denom_trace_query_result = deps
         .querier
         .query_grpc(
