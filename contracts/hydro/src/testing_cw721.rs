@@ -1,6 +1,5 @@
 use cosmwasm_std::{attr, from_json, Binary, Response, Uint128};
 use cw_utils::Expiration;
-use neutron_sdk::bindings::msg::NeutronMsg;
 use std::collections::HashMap;
 
 use crate::{
@@ -890,7 +889,7 @@ fn test_handle_execute_send_nft_st_atom_with_vote_success() {
 }
 
 fn check_send_nft_result(
-    send_res: Response<NeutronMsg>,
+    send_res: Response,
     sender: &str,
     receiving_contract: &str,
     token_id: &str,

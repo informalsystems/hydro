@@ -1,14 +1,8 @@
-use std::collections::HashMap;
-
 use cosmwasm_std::{
     from_json, testing::MockApi, to_json_binary, Coin, ContractResult, MessageInfo, SystemResult,
     Timestamp, WasmQuery,
 };
-use interface::{
-    hydro::{CurrentRoundResponse, QueryMsg},
-    lsm::ValidatorInfo,
-    token_info_provider::ValidatorsInfoResponse,
-};
+use interface::hydro::{CurrentRoundResponse, QueryMsg};
 
 use crate::{
     msg::InstantiateMsg,
@@ -55,45 +49,6 @@ pub fn hydro_current_round_mock(current_round: u64) -> WasmQueryFunc {
                     round_id: current_round,
                     round_end: Timestamp::from_seconds(0),
                 }),
-                _ => {
-                    return system_result_err_from("unsupported query type".to_string());
-                }
-            };
-
-            SystemResult::Ok(ContractResult::Ok(response.unwrap()))
-        }
-        _ => system_result_err_from("unsupported query type".to_string()),
-    })
-}
-
-pub fn hydro_round_validators_info_mock(
-    current_round: u64,
-    validators_infos: HashMap<u64, Vec<ValidatorInfo>>,
-) -> WasmQueryFunc {
-    Box::new(move |query| match query {
-        WasmQuery::Smart {
-            contract_addr: _,
-            msg,
-        } => {
-            let response = match from_json(msg).unwrap() {
-                QueryMsg::CurrentRound {} => to_json_binary(&CurrentRoundResponse {
-                    round_id: current_round,
-                    round_end: Timestamp::from_seconds(0),
-                }),
-                QueryMsg::ValidatorsInfo { round_id } => {
-                    let Some(round_validator_infos) = validators_infos.get(&round_id) else {
-                        return system_result_err_from("no data for requested round".to_string());
-                    };
-
-                    to_json_binary(&ValidatorsInfoResponse {
-                        round_id,
-                        validators: round_validator_infos
-                            .clone()
-                            .into_iter()
-                            .map(|val_info| (val_info.address.clone(), val_info))
-                            .collect(),
-                    })
-                }
             };
 
             SystemResult::Ok(ContractResult::Ok(response.unwrap()))

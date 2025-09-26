@@ -4,7 +4,6 @@ use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
     Addr, Coin, Decimal, Env, OwnedDeps, Uint128,
 };
-use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
     contract::{execute, instantiate, query_proposal, query_user_votes},
@@ -58,7 +57,7 @@ struct FractionalVotingTestCase {
 impl FractionalVotingTestCase {
     fn create_lockups(
         &self,
-        deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+        deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
         env: &Env,
         lockups: Iter<TestLockup>,
         lock_epoch_length: u64,
@@ -81,7 +80,7 @@ impl FractionalVotingTestCase {
 
     fn verify_proposals_and_votes(
         &self,
-        deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+        deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
         round_id: u64,
         tranche_id: u64,
         voter: &Addr,
