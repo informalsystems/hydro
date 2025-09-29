@@ -6,9 +6,10 @@ use crate::msg::{
     StateResponse, WithdrawBidMsg,
 };
 use crate::state::{Bid, BidStatus, SortedBid, State, BIDS, BID_COUNTER, SORTED_BIDS, STATE};
+use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{
-    entry_point, to_json_binary, BankMsg, Binary, Coin, Decimal, Decimal256, Deps, DepsMut, Env,
-    Event, MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Uint128, Uint256,
+    entry_point, to_json_binary, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, Event,
+    MessageInfo, Order, Reply, Response, StdError, StdResult, SubMsg, Uint128,
 };
 use osmosis_std::types::cosmos::base::v1beta1::Coin as OsmosisCoin;
 use osmosis_std::types::osmosis::concentratedliquidity::v1beta1::{
@@ -93,6 +94,14 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             to_json_binary(&query_simulate_liquidation(deps, principal_amount)?)
         }
     }
+}
+
+#[cw_serde]
+pub struct MigrateMsg {}
+
+#[entry_point]
+pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+    Ok(Response::default())
 }
 
 /// Create position with reply
@@ -938,17 +947,23 @@ pub fn resolve_auction(
         let max_principal_from_bid = principal_deposited;
 
         // Calculate how much principal we can take based on available counterparty
-        let max_principal_based_on_counterparty = if bid_price.is_zero() {
-            Decimal256::from_ratio(Uint256::from(max_principal_from_bid), Uint256::one())
+        let max_principal_based_on_counterparty: Uint128 = if bid_price.is_zero() {
+            max_principal_from_bid
         } else {
-            let counterparty_left = Uint256::from(counterparty_total - counterparty_spent);
-            let price_256 = Decimal256::from(bid_price);
-            Decimal256::from_ratio(counterparty_left, Uint256::one()) / price_256
+            counterparty_total
+                .checked_sub(counterparty_spent)
+                .map_err(|err| ContractError::Std(StdError::overflow(err)))?
+                .checked_multiply_ratio(
+                    Uint128::new(1_000_000_000_000_000_000u128), // numerator
+                    bid_price.atomics(),                         // denominator
+                )
+                .map_err(|err| {
+                    ContractError::Std(StdError::generic_err(format!(
+                        "Failed to calculate max_principal_based_on_counterparty: {}",
+                        err
+                    )))
+                })?
         };
-
-        // Round the result to the nearest integer
-        let max_principal_based_on_counterparty =
-            round_decimal256_to_uint128(max_principal_based_on_counterparty);
 
         // Determine the actual principal to take
         let principal_to_take = std::cmp::min(
@@ -960,27 +975,30 @@ pub fn resolve_auction(
             continue;
         }
 
-        // Calculate the corresponding counterparty tokens
-        let counterparty_to_give = Decimal256::from(bid_price)
-            * Decimal256::from_ratio(Uint256::from(principal_to_take), Uint256::one());
-
-        // Round the result to the nearest integer
-        let truncated_counterparty_to_give = truncate_decimal256_to_uint128(counterparty_to_give);
+        let price_atomics = bid_price.atomics();
+        let counterparty_to_give = principal_to_take
+            .checked_multiply_ratio(price_atomics, Uint128::new(1_000_000_000_000_000_000u128))
+            .map_err(|err| {
+                ContractError::Std(StdError::generic_err(format!(
+                    "Failed to calculate counterparty_to_give: {}",
+                    err
+                )))
+            })?;
 
         // we only allow check to pass if bid price is zero (meaning no counterparty requested)
-        if (truncated_counterparty_to_give.is_zero() && !bid_price.is_zero())
-            || truncated_counterparty_to_give > (counterparty_total - counterparty_spent)
+        if (counterparty_to_give.is_zero() && !bid_price.is_zero())
+            || counterparty_to_give > (counterparty_total - counterparty_spent)
         {
             continue;
         }
 
-        if !truncated_counterparty_to_give.is_zero() {
+        if !counterparty_to_give.is_zero() {
             // Create message to send counterparty tokens
             let counterparty_msg = BankMsg::Send {
                 to_address: bid.bidder.clone().into_string(),
                 amount: vec![Coin {
                     denom: state.counterparty_denom.to_string(),
-                    amount: truncated_counterparty_to_give,
+                    amount: counterparty_to_give,
                 }],
             };
             messages.push(counterparty_msg);
@@ -998,7 +1016,7 @@ pub fn resolve_auction(
 
         // Update accumulated amounts
         principal_accumulated += principal_to_take;
-        counterparty_spent += truncated_counterparty_to_give;
+        counterparty_spent += counterparty_to_give;
 
         let remaining_principal_in_bid = bid.principal_deposited - principal_to_take;
 
@@ -1020,7 +1038,7 @@ pub fn resolve_auction(
             &Bid {
                 status: BidStatus::Processed,
                 tokens_refunded: remaining_principal_in_bid,
-                tokens_fulfilled: truncated_counterparty_to_give,
+                tokens_fulfilled: counterparty_to_give,
                 ..bid
             },
         )?;
@@ -1055,26 +1073,6 @@ pub fn resolve_auction(
         .add_attribute("principal_replenished", principal_accumulated))
 }
 
-/// Rounds a Decimal256 to the nearest Uint128 (half up)
-pub fn round_decimal256_to_uint128(decimal: Decimal256) -> Uint128 {
-    let atomics: Uint256 = decimal.atomics();
-    let base = Uint256::from(10u128.pow(18));
-
-    let rounded = (atomics + base / Uint256::from(2u8)) / base;
-
-    // Safely convert to Uint128, error if it won't fit
-    Uint128::try_from(rounded).expect("Rounded value exceeds Uint128::MAX")
-}
-
-/// Truncates a Decimal256 to the nearest lower Uint128
-pub fn truncate_decimal256_to_uint128(decimal: Decimal256) -> Uint128 {
-    let atomics: Uint256 = decimal.atomics();
-    let base = Uint256::from(10u128.pow(18));
-
-    let truncated = atomics / base;
-
-    Uint128::try_from(truncated).expect("Truncated value exceeds Uint128::MAX")
-}
 pub fn query_get_state(deps: Deps) -> StdResult<StateResponse> {
     // Load the current state from storage
     let state = STATE.load(deps.storage)?;
@@ -1194,29 +1192,20 @@ pub fn query_simulate_liquidation(
             counterparty_to_receive: "Position is not liquidatable".to_string(),
         });
     }
-    // Convert base_amount and initial_base_amount to Decimal for precise division
-    let principal_input = Decimal256::from_ratio(principal_input, Uint128::one());
-    let principal_amount_to_replenish =
-        Decimal256::from_ratio(state.principal_to_replenish, Uint128::one());
-    let counterparty_available = Decimal256::from_ratio(counterparty_amount, Uint128::one());
-
-    // Ensure the supplied amount is not greater than the initial amount
-    if principal_input > principal_amount_to_replenish {
+    // Ensure the supplied amount is not greater than the amount to replenish
+    if principal_input > state.principal_to_replenish {
         return Ok(SimulateLiquidationResponse {
             counterparty_to_receive: "Excessive liquidation amount".to_string(),
         });
     }
 
-    // Calculate percentage to liquidate
-    let perc_to_liquidate = principal_input / principal_amount_to_replenish;
-
-    let counterparty_to_liquidate = counterparty_available * perc_to_liquidate;
-
-    let counterparty_to_liquidate = truncate_decimal256_to_uint128(counterparty_to_liquidate);
-
-    let counterparty_str = counterparty_to_liquidate.to_string();
+    // Calculate counterparty to liquidate using integer math:
+    // counterparty_to_liquidate = principal_input * counterparty_amount / principal_to_replenish
+    let counterparty_to_liquidate = principal_input
+        .checked_multiply_ratio(counterparty_amount, state.principal_to_replenish)
+        .map_err(|err| StdError::generic_err(format!("Failed to calculate counterparty: {err}")))?;
 
     Ok(SimulateLiquidationResponse {
-        counterparty_to_receive: counterparty_str,
+        counterparty_to_receive: counterparty_to_liquidate.to_string(),
     })
 }

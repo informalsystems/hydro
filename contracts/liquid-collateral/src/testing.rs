@@ -339,6 +339,19 @@ fn test_create_and_withdraw_position_in_pool() {
         "92195444573".to_string()
     );
 
+    // call the simulate liquidation query - half the principal
+    let principal_input = Uint128::new(50000);
+    let query_simulate = QueryMsg::SimulateLiquidation {
+        principal_amount: principal_input,
+    };
+    let simulate_response: SimulateLiquidationResponse =
+        wasm.query(&contract_addr, &query_simulate).unwrap();
+
+    assert_eq!(
+        simulate_response.counterparty_to_receive,
+        "46097722286".to_string()
+    );
+
     let pm = PoolManager::new(&pool_mockup.app);
     let request = SpotPriceRequest {
         pool_id: 1,
