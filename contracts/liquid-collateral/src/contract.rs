@@ -959,8 +959,7 @@ pub fn resolve_auction(
                 )
                 .map_err(|err| {
                     ContractError::Std(StdError::generic_err(format!(
-                        "Failed to calculate max_principal_based_on_counterparty: {}",
-                        err
+                        "Failed to calculate max_principal_based_on_counterparty: {err}",
                     )))
                 })?
         };
@@ -980,8 +979,7 @@ pub fn resolve_auction(
             .checked_multiply_ratio(price_atomics, Uint128::new(1_000_000_000_000_000_000u128))
             .map_err(|err| {
                 ContractError::Std(StdError::generic_err(format!(
-                    "Failed to calculate counterparty_to_give: {}",
-                    err
+                    "Failed to calculate counterparty_to_give: {err}",
                 )))
             })?;
 

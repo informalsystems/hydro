@@ -1755,8 +1755,7 @@ fn withdrawal_with_config_update_test() {
     .unwrap_err();
 
     assert!(withdraw_res.to_string().contains(&format!(
-        "user {user1_addr} has reached the maximum number of pending withdrawals: {}",
-        new_max_withdrawals_per_user,
+        "user {user1_addr} has reached the maximum number of pending withdrawals: {new_max_withdrawals_per_user}",
     )));
 }
 
