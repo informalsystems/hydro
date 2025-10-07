@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## v3.6.2
+
+Date: October 6th, 2025
+
+### BUG FIXES
+
+- Use integer arithmetic with `checked_multiply_ratio` to prevent overflows in Vortex resolve auction method.
+  ([\#319](https://github.com/informalsystems/hydro/pull/319))
+
+### FEATURES
+
+- Allow users to withdraw tokens they previously deposited into Inflow, plus any yield that was made by deploying their tokens.
+  ([\#307](https://github.com/informalsystems/hydro/pull/307))
+-Added parent lock ids query which returns the list of parent lock ids for a given child lock id.
+([\#316](https://github.com/informalsystems/hydro/pull/316))
+
 ## v3.6.1
 
 Date: September 9th, 2025
@@ -172,9 +188,9 @@ Date: February 11th, 2025
 
 - Allow users / aggregators to unvote without having to switch votes.
   ([\#218](https://github.com/informalsystems/hydro/pull/218))
-- Introduced the compounder cap- a reserved portion of the maximum token lock limit that is allocated exclusively for known users from the previous round.
-  ([\#220](https://github.com/informalsystems/hydro/pull/220))
 - Introduced SnapshotMaps for tracking the historical voting power for each user as well as the round total voting power.
+  ([\#220](https://github.com/informalsystems/hydro/pull/220))
+- Introduced the compounder cap- a reserved portion of the maximum token lock limit that is allocated exclusively for known users from the previous round.
   ([\#220](https://github.com/informalsystems/hydro/pull/220))
 - Added support for integrating Hydro as a voting module in DAO DAO governance smart contracts.
   ([\#226](https://github.com/informalsystems/hydro/pull/226))
@@ -272,9 +288,9 @@ Date: November 18th, 2024
 
 ### FEATURES
 
-- Add a minimum liquidity request value to proposals.
-  ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Adjusts tributes to only be claimable if their proposal received a non-zero fund deployment.
+  ([\#164](https://github.com/informalsystems/hydro/pull/164))
+- Add a minimum liquidity request value to proposals.
   ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Allow whitelist admins to register performed liquidity deployments in the Hydro contract.
   ([\#164](https://github.com/informalsystems/hydro/pull/164))

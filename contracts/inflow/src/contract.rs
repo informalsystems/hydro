@@ -1234,10 +1234,10 @@ fn update_withdrawal_queue_info(
 
         current_value
             .checked_add(update)
-            .map_err(|e| new_generic_error(format!("overflow error: {}", e)))?
+            .map_err(|e| new_generic_error(format!("overflow error: {e}")))?
             .try_into()
             .map_err(|e: ConversionOverflowError| {
-                new_generic_error(format!("conversion into Uint128 type failed; error: {}", e))
+                new_generic_error(format!("conversion into Uint128 type failed; error: {e}"))
             })
     }
 

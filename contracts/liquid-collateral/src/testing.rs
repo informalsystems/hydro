@@ -1183,7 +1183,7 @@ fn test_resolve_auction_1() {
     };
     BIDS.save(deps.as_mut().storage, 1, &bid1).unwrap();
     let price = Decimal::from_ratio(bid1.tokens_requested, bid1.principal_deposited);
-    println!("Calculated price for bid1: {}", price);
+    println!("Calculated price for bid1: {price}");
     // Step 4: Sort the bids by price ratio (tokens_requested / principal_amount)
     let mut all_bids: Vec<SortedBid> = vec![SortedBid {
         bid_id: 1,
@@ -1283,7 +1283,7 @@ fn test_resolve_auction_2() {
     };
     BIDS.save(deps.as_mut().storage, 1, &bid1).unwrap();
     let price = Decimal::from_ratio(bid1.tokens_requested, bid1.principal_deposited);
-    println!("Calculated price for bid1: {}", price);
+    println!("Calculated price for bid1: {price}");
     // Step 4: Sort the bids by price ratio (tokens_requested / principal_amount)
     let mut all_bids: Vec<SortedBid> = vec![SortedBid {
         bid_id: 1,
