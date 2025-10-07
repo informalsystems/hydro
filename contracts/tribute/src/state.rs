@@ -11,6 +11,7 @@ pub struct Config {
 
 // Need to have old version of Config in order to migrate data that is already stored on the chain.
 #[cw_serde]
+#[allow(dead_code)]
 pub struct ConfigV1 {
     pub hydro_contract: Addr,
     pub top_n_props_count: u64,
