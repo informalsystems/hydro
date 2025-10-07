@@ -1,6 +1,5 @@
 use crate::contract::{CONTRACT_NAME, CONTRACT_VERSION};
 use crate::error::{new_generic_error, ContractError};
-use crate::migration::unreleased::update_proposals_powers;
 use crate::state::CONSTANTS;
 use crate::utils::load_constants_active_at_timestamp;
 use cosmwasm_schema::cw_serde;
@@ -13,24 +12,21 @@ use neutron_sdk::bindings::msg::NeutronMsg;
 use neutron_sdk::bindings::query::NeutronQuery;
 
 #[cw_serde]
-pub struct MigrateMsg {
-    pub round_id: u64,
-    pub tranche_id: u64,
-}
+pub struct MigrateMsg {}
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(
-    mut deps: DepsMut<NeutronQuery>,
+    deps: DepsMut<NeutronQuery>,
     _env: Env,
-    msg: MigrateMsg,
+    _: MigrateMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     check_contract_version(deps.storage)?;
 
-    let result = update_proposals_powers(&mut deps, msg.round_id, msg.tranche_id)?;
+    // No migration needed for v3.6.1 -> v3.6.2
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    Ok(result)
+    Ok(Response::new())
 }
 
 fn check_contract_version(storage: &dyn cosmwasm_std::Storage) -> Result<(), ContractError> {

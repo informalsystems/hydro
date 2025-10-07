@@ -195,10 +195,7 @@ fn update_proposals_powers_test() {
     migrate(
         deps.as_mut(),
         env.clone(),
-        MigrateMsg {
-            round_id,
-            tranche_id,
-        },
+        MigrateMsg {},
     )
     .unwrap();
 
