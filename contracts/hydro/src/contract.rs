@@ -38,8 +38,8 @@ use crate::query::{
     DtokenAmountsResponse, ExpiredUserLockupsResponse, GatekeeperResponse, ICQManagersResponse,
     LiquidityDeploymentResponse, LockEntryWithPower, LockVotesHistoryEntry,
     LockVotesHistoryResponse, LockupWithPerTrancheInfo, LockupsPendingSlashesResponse,
-    ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse, RoundEndResponse,
-    RoundProposalsResponse, RoundTotalVotingPowerResponse,
+    ParentLockIdsResponse, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
+    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
     RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse,
     SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, TopNProposalsResponse,
     TotalLockedTokensResponse, TranchesResponse, UserVotedLocksResponse, UserVotesResponse,
@@ -3399,6 +3399,9 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> Result<Binary
         QueryMsg::SimulateDtokenAmounts { lock_ids, address } => {
             to_json_binary(&query_simulate_dtoken_amounts(&deps, lock_ids, address)?)
         }
+        QueryMsg::ParentLockIds { child_id } => {
+            to_json_binary(&query_parent_lock_ids(deps, child_id)?)
+        }
     }?;
 
     Ok(binary)
@@ -4317,6 +4320,17 @@ pub fn query_gatekeeper(deps: Deps<NeutronQuery>) -> StdResult<GatekeeperRespons
     Ok(GatekeeperResponse {
         gatekeeper: GATEKEEPER.may_load(deps.storage)?.unwrap_or_default(),
     })
+}
+
+pub fn query_parent_lock_ids(
+    deps: Deps<NeutronQuery>,
+    child_id: u64,
+) -> StdResult<ParentLockIdsResponse> {
+    let parent_ids = REVERSE_LOCK_ID_TRACKING
+        .may_load(deps.storage, child_id)?
+        .unwrap_or_default();
+
+    Ok(ParentLockIdsResponse { parent_ids })
 }
 
 // Computes the current round_id by taking contract_start_time and dividing the time since

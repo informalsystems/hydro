@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ParentLockIdsResponse",
+  "type": "object",
+  "required": [
+    "parent_ids"
+  ],
+  "properties": {
+    "parent_ids": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    }
+  },
+  "additionalProperties": false
+}

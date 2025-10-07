@@ -14,6 +14,10 @@ pub struct InstantiateMsg {
     pub token_metadata: DenomMetadata,
     /// List of addresses allowed to execute permissioned actions.
     pub whitelist: Vec<String>,
+    /// Maximum number of pending withdrawals per single user.
+    pub max_withdrawals_per_user: u64,
+    /// Maximum number of tokens that can be deposited into the vault.
+    pub deposit_cap: Uint128,
 }
 
 #[cw_serde]
@@ -39,10 +43,21 @@ pub struct DenomMetadata {
 #[cw_serde]
 pub enum ExecuteMsg {
     Deposit {},
+    Withdraw {},
+    CancelWithdrawal { withdrawal_ids: Vec<u64> },
+    FulfillPendingWithdrawals { limit: u64 },
+    ClaimUnbondedWithdrawals { withdrawal_ids: Vec<u64> },
     SubmitDeployedAmount { amount: Uint128 },
     WithdrawForDeployment { amount: Uint128 },
     AddToWhitelist { address: String },
     RemoveFromWhitelist { address: String },
+    UpdateConfig { config: UpdateConfigData },
+}
+
+#[cw_serde]
+pub struct UpdateConfigData {
+    pub max_withdrawals_per_user: Option<u64>,
+    pub deposit_cap: Option<Uint128>,
 }
 
 #[derive(Serialize, Deserialize)]

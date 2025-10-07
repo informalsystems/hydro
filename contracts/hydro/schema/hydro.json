@@ -1,6 +1,6 @@
 {
   "contract_name": "hydro",
-  "contract_version": "3.6.1",
+  "contract_version": "3.6.2",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -2896,6 +2896,30 @@
           }
         },
         "additionalProperties": false
+      },
+      {
+        "description": "Returns the list of parent lock IDs (ancestors) for a given child lock.",
+        "type": "object",
+        "required": [
+          "parent_lock_ids"
+        ],
+        "properties": {
+          "parent_lock_ids": {
+            "type": "object",
+            "required": [
+              "child_id"
+            ],
+            "properties": {
+              "child_id": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
       }
     ]
   },
@@ -4822,6 +4846,25 @@
           "type": "string"
         }
       }
+    },
+    "parent_lock_ids": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ParentLockIdsResponse",
+      "type": "object",
+      "required": [
+        "parent_ids"
+      ],
+      "properties": {
+        "parent_ids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "proposal": {
       "$schema": "http://json-schema.org/draft-07/schema#",
