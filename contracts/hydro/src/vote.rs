@@ -5,7 +5,7 @@ use crate::score_keeper::ProposalPowerUpdate;
 use crate::state::{Constants, LockEntryV2, Vote, VOTE_MAP_V2, VOTING_ALLOWED_ROUND};
 use crate::token_manager::TokenManager;
 use crate::utils::{
-    find_deployment_for_voted_lock, get_lock_time_weighted_shares, get_lock_vote,
+    find_deployment_for_voted_lock, get_lock_vote, get_locked_rounds_and_lock_time_weighted_shares,
     get_owned_lock_entry, get_proposal,
 };
 use cosmwasm_std::{Addr, Decimal, DepsMut, Env, SignedDecimal, StdError, Storage, Uint128};
@@ -236,12 +236,13 @@ pub fn process_votes(
             };
 
             let scaled_shares = Decimal::from_ratio(
-                get_lock_time_weighted_shares(
+                get_locked_rounds_and_lock_time_weighted_shares(
                     &context.constants.round_lock_power_schedule,
                     round_end,
                     lock_entry,
                     lock_epoch_length,
-                ),
+                )
+                .1,
                 Uint128::one(),
             );
 

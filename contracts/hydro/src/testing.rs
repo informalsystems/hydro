@@ -32,9 +32,10 @@ use crate::{
     msg::{ExecuteMsg, InstantiateMsg},
 };
 use cosmwasm_std::testing::{mock_env, MockApi, MockStorage};
-use cosmwasm_std::{Addr, Coin, StdError, StdResult};
+use cosmwasm_std::{from_json, to_json_binary, Binary, ContractResult, SystemError, SystemResult};
+use cosmwasm_std::{Addr, Coin, StdError, StdResult, WasmQuery};
 use cosmwasm_std::{Decimal, Deps, DepsMut, MessageInfo, OwnedDeps, Timestamp, Uint128};
-use interface::token_info_provider::DenomInfoResponse;
+use interface::token_info_provider::{DenomInfoResponse, TokenInfoProviderQueryMsg};
 use neutron_sdk::bindings::query::NeutronQuery;
 use proptest::prelude::*;
 
@@ -194,6 +195,78 @@ pub fn setup_contract_info_mock(
     existing_contract_addr: Addr,
 ) {
     let wasm_querier = MockWasmQuerier::new(contract_info_mock(existing_contract_addr.to_string()));
+
+    deps.querier.update_wasm(move |q| wasm_querier.handler(q));
+}
+
+/// Combined mock that handles both token info provider queries and contract info queries
+pub fn setup_combined_contract_and_token_info_mock(
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    token_info_provider_addr: Addr,
+    token_group_ratio: Decimal,
+    existing_contract_addr: Addr,
+) {
+    // Save the token info provider to storage (same as token info mock)
+    TOKEN_INFO_PROVIDERS
+        .save(
+            &mut deps.storage,
+            token_info_provider_addr.to_string(),
+            &TokenInfoProvider::Derivative(TokenInfoProviderDerivative {
+                contract: token_info_provider_addr.to_string(),
+                cache: HashMap::new(),
+            }),
+        )
+        .unwrap();
+
+    // Create combined wasm querier that handles both query types
+    let token_provider_addr_clone = token_info_provider_addr.to_string();
+    let contract_info_addr_clone = existing_contract_addr.to_string();
+    let denom_response = DenomInfoResponse {
+        denom: ST_ATOM_ON_NEUTRON.to_string(),
+        token_group_id: ST_ATOM_TOKEN_GROUP.to_string(),
+        ratio: token_group_ratio,
+    };
+
+    let wasm_querier = MockWasmQuerier::new(Box::new(move |query| match query {
+        // Handle TokenInfoProvider smart contract queries
+        WasmQuery::Smart { contract_addr, msg } => {
+            if *contract_addr != token_provider_addr_clone {
+                return SystemResult::Err(SystemError::NoSuchContract {
+                    addr: contract_addr.to_string(),
+                });
+            }
+
+            let response = match from_json(msg).unwrap() {
+                TokenInfoProviderQueryMsg::DenomInfo { round_id: _ } => {
+                    to_json_binary(&denom_response)
+                }
+            };
+
+            SystemResult::Ok(ContractResult::Ok(response.unwrap()))
+        }
+        // Handle ContractInfo queries
+        WasmQuery::ContractInfo { contract_addr } => {
+            if *contract_addr != contract_info_addr_clone {
+                return SystemResult::Err(SystemError::NoSuchContract {
+                    addr: contract_addr.to_string(),
+                });
+            }
+
+            let binary = Binary::from(
+                br#"{
+                    "code_id": 1,
+                    "creator": "creator", 
+                    "admin": null,
+                    "pinned": false,
+                    "ibc_port": null
+                }"#,
+            );
+            SystemResult::Ok(ContractResult::Ok(binary))
+        }
+        _ => SystemResult::Err(SystemError::UnsupportedRequest {
+            kind: "unsupported query type".to_string(),
+        }),
+    }));
 
     deps.querier.update_wasm(move |q| wasm_querier.handler(q));
 }

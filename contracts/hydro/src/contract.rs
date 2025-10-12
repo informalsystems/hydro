@@ -38,12 +38,13 @@ use crate::query::{
     DtokenAmountsResponse, ExpiredUserLockupsResponse, GatekeeperResponse, ICQManagersResponse,
     LiquidityDeploymentResponse, LockEntryWithPower, LockVotesHistoryEntry,
     LockVotesHistoryResponse, LockupWithPerTrancheInfo, LockupsPendingSlashesResponse,
-    ParentLockIdsResponse, ProposalResponse, QueryMsg, RegisteredValidatorQueriesResponse,
-    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
-    RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse,
-    SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, TopNProposalsResponse,
-    TotalLockedTokensResponse, TranchesResponse, UserVotedLocksResponse, UserVotesResponse,
-    UserVotingPowerResponse, VoteEntry, VotedLockInfo, WhitelistAdminsResponse, WhitelistResponse,
+    LockupsSharesInfo, LockupsSharesResponse, ParentLockIdsResponse, ProposalResponse, QueryMsg,
+    RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
+    RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse,
+    SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse,
+    TokenInfoProvidersResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse,
+    UserVotedLocksResponse, UserVotesResponse, UserVotingPowerResponse, VoteEntry, VotedLockInfo,
+    WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_token_group_shares_to_proposal, add_token_group_shares_to_round_total,
@@ -68,12 +69,12 @@ use crate::token_manager::{
 };
 use crate::utils::{
     calculate_vote_power, get_current_user_voting_power, get_higest_voting_allowed_round,
-    get_highest_known_height_for_round_id, get_lock_time_weighted_shares, get_lock_vote,
-    get_next_lock_id, get_owned_lock_entry, get_proposal, get_slice_as_attribute,
-    get_user_claimable_locks, load_constants_active_at_timestamp, load_current_constants,
-    run_on_each_transaction, scale_lockup_power, to_lockup_with_power,
-    to_lockup_with_tranche_infos, update_locked_tokens_info, validate_locked_tokens_caps,
-    verify_historical_data_availability,
+    get_highest_known_height_for_round_id, get_lock_vote,
+    get_locked_rounds_and_lock_time_weighted_shares, get_next_lock_id, get_owned_lock_entry,
+    get_proposal, get_slice_as_attribute, get_user_claimable_locks,
+    load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
+    scale_lockup_power, to_lockup_with_power, to_lockup_with_tranche_infos,
+    update_locked_tokens_info, validate_locked_tokens_caps, verify_historical_data_availability,
 };
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
@@ -361,6 +362,21 @@ pub fn execute(
             token_id,
             msg,
         } => cw721::handle_execute_send_nft(deps, env, info, contract, token_id, msg),
+        ExecuteMsg::LockTokensThenSendNft {
+            lock_duration,
+            proof,
+            contract,
+            msg,
+        } => cw721::lock_tokens_then_send_nft(
+            deps,
+            env,
+            info,
+            &constants,
+            lock_duration,
+            proof,
+            contract,
+            msg,
+        ),
         ExecuteMsg::Approve {
             spender,
             expires,
@@ -460,7 +476,7 @@ fn set_gatekeeper(
 //     Update voting power on proposals if user already voted for any
 //     Update total round power
 //     Create entry in LocksMap
-fn lock_tokens(
+pub fn lock_tokens(
     mut deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
@@ -741,6 +757,7 @@ fn refresh_single_lock(
                 old_lockup_length,
                 locked_amount,
             )
+            .1
         },
     )?;
     Ok((new_lock_end, old_lock_end))
@@ -3402,6 +3419,9 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> Result<Binary
         QueryMsg::ParentLockIds { child_id } => {
             to_json_binary(&query_parent_lock_ids(deps, child_id)?)
         }
+        QueryMsg::LockupsShares { lock_ids } => {
+            to_json_binary(&query_lockups_shares(deps, env, lock_ids)?)
+        }
     }?;
 
     Ok(binary)
@@ -4333,6 +4353,49 @@ pub fn query_parent_lock_ids(
     Ok(ParentLockIdsResponse { parent_ids })
 }
 
+pub fn query_lockups_shares(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    lock_ids: Vec<u64>,
+) -> StdResult<LockupsSharesResponse> {
+    let constants = load_current_constants(&deps, &env)?;
+    let current_round = compute_current_round_id(&env, &constants)?;
+    let round_end = compute_round_end(&constants, current_round)?;
+
+    let mut token_manager = TokenManager::new(&deps);
+
+    let lock_ids_set: HashSet<u64> = lock_ids.into_iter().collect();
+
+    let lockups_shares_info: StdResult<Vec<LockupsSharesInfo>> = lock_ids_set
+        .into_iter()
+        .map(|lock_id| {
+            let lockup = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
+
+            let (locked_rounds, time_weighted_shares) =
+                get_locked_rounds_and_lock_time_weighted_shares(
+                    &constants.round_lock_power_schedule,
+                    round_end,
+                    &lockup,
+                    constants.lock_epoch_length,
+                );
+
+            let token_group_id =
+                token_manager.validate_denom(&deps, current_round, lockup.funds.denom.clone())?;
+
+            Ok(LockupsSharesInfo {
+                lock_id,
+                time_weighted_shares,
+                token_group_id,
+                locked_rounds,
+            })
+        })
+        .collect();
+
+    Ok(LockupsSharesResponse {
+        lockups_shares_info: lockups_shares_info?,
+    })
+}
+
 // Computes the current round_id by taking contract_start_time and dividing the time since
 // by the round_length.
 pub fn compute_current_round_id(env: &Env, constants: &Constants) -> StdResult<u64> {
@@ -4378,14 +4441,17 @@ fn update_voting_power_on_proposals(
 
     let old_scaled_shares = match old_lock_entry.as_ref() {
         None => Uint128::zero(),
-        Some(lock_entry) => get_lock_time_weighted_shares(
-            &constants.round_lock_power_schedule,
-            round_end,
-            lock_entry,
-            lock_epoch_length,
-        ),
+        Some(lock_entry) => {
+            get_locked_rounds_and_lock_time_weighted_shares(
+                &constants.round_lock_power_schedule,
+                round_end,
+                lock_entry,
+                lock_epoch_length,
+            )
+            .1
+        }
     };
-    let new_scaled_shares = get_lock_time_weighted_shares(
+    let (_, new_scaled_shares) = get_locked_rounds_and_lock_time_weighted_shares(
         &constants.round_lock_power_schedule,
         round_end,
         &new_lock_entry,
@@ -4681,7 +4747,7 @@ where
     for round in start_round_id..=end_round_id {
         let round_end = compute_round_end(constants, round)?;
         let lockup_length = lock_end - round_end.nanos();
-        let scaled_amount = scale_lockup_power(
+        let (_, scaled_amount) = scale_lockup_power(
             &constants.round_lock_power_schedule,
             constants.lock_epoch_length,
             lockup_length,

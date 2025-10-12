@@ -508,14 +508,14 @@ fn update_rounds_powers_and_scaled_shares(
 
             let lockup_length = lockup_end - round_end;
 
-            let old_lockup_power = scale_lockup_power(
+            let (_, old_lockup_power) = scale_lockup_power(
                 &constants.round_lock_power_schedule,
                 constants.lock_epoch_length,
                 lockup_length,
                 old_lockup_amount,
             );
 
-            let new_lockup_power = scale_lockup_power(
+            let (_, new_lockup_power) = scale_lockup_power(
                 &constants.round_lock_power_schedule,
                 constants.lock_epoch_length,
                 lockup_length,

@@ -477,7 +477,7 @@ pub fn to_lockup_with_power(
         };
     };
 
-    let time_weighted_shares = get_lock_time_weighted_shares(
+    let (_, time_weighted_shares) = get_locked_rounds_and_lock_time_weighted_shares(
         &constants.round_lock_power_schedule,
         round_end,
         &lock_entry,
@@ -604,16 +604,18 @@ pub fn to_lockup_with_tranche_infos(
     })
 }
 
-// Returns the time-weighted amount of shares locked in the given lock entry in a round with the given end time,
-// and using the given lock epoch length.
-pub fn get_lock_time_weighted_shares(
+// Returns both:
+// - the number of rounds the lock entry is locked (including current round). Zero = expires before current round ends.
+// - the time-weighted amount of shares locked in the given lock entry
+// The above is computed in a round with the given end time, and using the given lock epoch length.
+pub fn get_locked_rounds_and_lock_time_weighted_shares(
     round_lock_power_schedule: &RoundLockPowerSchedule,
     round_end: Timestamp,
     lock_entry: &LockEntryV2,
     lock_epoch_length: u64,
-) -> Uint128 {
+) -> (u64, Uint128) {
     if round_end.nanos() > lock_entry.lock_end.nanos() {
-        return Uint128::zero();
+        return (0, Uint128::zero());
     }
     let lockup_length = lock_entry.lock_end.nanos() - round_end.nanos();
     scale_lockup_power(
@@ -629,14 +631,14 @@ pub fn scale_lockup_power(
     lock_epoch_length: u64,
     lockup_time: u64,
     raw_power: Uint128,
-) -> Uint128 {
+) -> (u64, Uint128) {
     for entry in round_lock_power_schedule.round_lock_power_schedule.iter() {
         let needed_lock_time = entry.locked_rounds * lock_epoch_length;
         if lockup_time <= needed_lock_time {
             let power = entry
                 .power_scaling_factor
                 .saturating_mul(Decimal::from_ratio(raw_power, Uint128::one()));
-            return power.to_uint_floor();
+            return (entry.locked_rounds, power.to_uint_floor());
         }
     }
 
@@ -644,11 +646,14 @@ pub fn scale_lockup_power(
     let largest_multiplier = round_lock_power_schedule
         .round_lock_power_schedule
         .last()
-        .unwrap()
-        .power_scaling_factor;
-    largest_multiplier
-        .saturating_mul(Decimal::new(raw_power))
-        .to_uint_floor()
+        .unwrap();
+    (
+        largest_multiplier.locked_rounds,
+        largest_multiplier
+            .power_scaling_factor
+            .saturating_mul(Decimal::from_ratio(raw_power, Uint128::one()))
+            .to_uint_floor(),
+    )
 }
 
 pub struct LockingInfo {

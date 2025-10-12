@@ -245,6 +245,8 @@ pub enum QueryMsg {
     /// Returns the list of parent lock IDs (ancestors) for a given child lock.
     #[returns(ParentLockIdsResponse)]
     ParentLockIds { child_id: u64 },
+    #[returns(LockupsSharesResponse)]
+    LockupsShares { lock_ids: Vec<u64> },
 }
 
 #[cw_serde]
@@ -562,4 +564,17 @@ pub struct TotalPowerAtHeightResponse {
 pub struct VotingPowerAtHeightResponse {
     pub power: Uint128,
     pub height: u64,
+}
+
+#[cw_serde]
+pub struct LockupsSharesInfo {
+    pub lock_id: u64,
+    pub time_weighted_shares: Uint128,
+    pub token_group_id: String,
+    pub locked_rounds: u64,
+}
+
+#[cw_serde]
+pub struct LockupsSharesResponse {
+    pub lockups_shares_info: Vec<LockupsSharesInfo>,
 }

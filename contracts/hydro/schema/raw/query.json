@@ -1222,6 +1222,32 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "lockups_shares"
+      ],
+      "properties": {
+        "lockups_shares": {
+          "type": "object",
+          "required": [
+            "lock_ids"
+          ],
+          "properties": {
+            "lock_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ]
 }

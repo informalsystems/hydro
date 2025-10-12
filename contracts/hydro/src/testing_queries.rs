@@ -3,8 +3,9 @@ use std::str::FromStr;
 
 use crate::contract::{
     compute_current_round_id, query_all_user_lockups, query_all_user_lockups_with_tranche_infos,
-    query_all_votes, query_all_votes_round_tranche, query_simulate_dtoken_amounts,
-    query_specific_user_lockups, query_specific_user_lockups_with_tranche_infos, query_user_votes,
+    query_all_votes, query_all_votes_round_tranche, query_lockups_shares,
+    query_simulate_dtoken_amounts, query_specific_user_lockups,
+    query_specific_user_lockups_with_tranche_infos, query_user_votes,
 };
 use crate::msg::{ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo};
 use crate::query::VoteEntry;
@@ -225,6 +226,7 @@ fn query_user_lockups_test() {
             3 * ONE_MONTH_IN_NANO_SECONDS,
             Uint128::new(second_lockup_amount),
         )
+        .1
         .u128(),
         res.lockups_with_per_tranche_infos[1]
             .lock_with_power
@@ -341,6 +343,7 @@ fn query_user_lockups_test() {
             2 * ONE_MONTH_IN_NANO_SECONDS,
             Uint128::new(second_lockup_amount),
         )
+        .1
         .u128()
             / 2, // adjusted for the 50% power ratio,
         all_lockups.lockups_with_per_tranche_infos[1]
@@ -1771,4 +1774,190 @@ pub fn drop_mock(
         }
         _ => SystemResult::Err(SystemError::Unknown {}),
     })
+}
+
+#[test]
+fn test_query_lockups_shares_success() {
+    let user_address = "addr0000";
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[]);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(&deps.api);
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg);
+    assert!(res.is_ok());
+
+    // Set up validators for rounds
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+
+    // Lock some tokens to create lockups
+    let first_lockup_amount = 1000u128;
+    let lock_info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(first_lockup_amount, IBC_DENOM_1.to_string())],
+    );
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
+    assert!(res.is_ok());
+
+    // Lock more tokens to create a second lockup
+    let second_lockup_amount = 2000u128;
+    let lock_info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(second_lockup_amount, IBC_DENOM_1.to_string())],
+    );
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: 2 * ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
+    assert!(res.is_ok());
+
+    // Query lockups shares for both lockups
+    let lock_ids = vec![0u64, 1u64];
+    let res = query_lockups_shares(deps.as_ref(), env, lock_ids);
+    assert!(res.is_ok(), "Query lockups shares should succeed: {res:?}");
+
+    let response = res.unwrap();
+    assert_eq!(response.lockups_shares_info.len(), 2);
+
+    // Find lockups by their lock_id (order-agnostic)
+    let lockup_0 = response
+        .lockups_shares_info
+        .iter()
+        .find(|info| info.lock_id == 0)
+        .expect("Should find lockup 0");
+    let lockup_1 = response
+        .lockups_shares_info
+        .iter()
+        .find(|info| info.lock_id == 1)
+        .expect("Should find lockup 1");
+
+    // Verify lockup 0: 1000 tokens x 1.0 multiplier = 1000 time-weighted shares
+    assert_eq!(lockup_0.time_weighted_shares, Uint128::new(1000));
+    assert_eq!(lockup_0.token_group_id, VALIDATOR_1);
+
+    // Verify lockup 1: 2000 tokens x 1.25 multiplier = 2500 time-weighted shares
+    assert_eq!(lockup_1.time_weighted_shares, Uint128::new(2500));
+    assert_eq!(lockup_1.token_group_id, VALIDATOR_1);
+}
+
+#[test]
+fn test_query_lockups_shares_nonexistent_lockup_fail() {
+    let user_address = "addr0000";
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[]);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(&deps.api);
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg);
+    assert!(res.is_ok());
+
+    // Set up validators for rounds
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+
+    // Lock one token to create a single lockup with ID 0
+    let lockup_amount = 1000u128;
+    let lock_info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(lockup_amount, IBC_DENOM_1.to_string())],
+    );
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
+    assert!(res.is_ok());
+
+    // Query lockups shares with non-existent lock ID
+    let lock_ids = vec![0u64, 999u64]; // 999 doesn't exist
+    let res = query_lockups_shares(deps.as_ref(), env, lock_ids);
+
+    // Should fail because lockup 999 doesn't exist
+    assert!(res.is_err(), "Query should fail for non-existent lockup");
+
+    let error_msg = res.unwrap_err().to_string();
+
+    assert!(
+        error_msg.contains("not found"),
+        "Error should mention that lockup was not found: {error_msg}"
+    );
+}
+
+#[test]
+fn test_query_lockups_shares_validate_denom_fail() {
+    let user_address = "addr0000";
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[]);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(&deps.api);
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg);
+    assert!(res.is_ok());
+
+    // Set up validators for rounds
+    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+
+    // Lock tokens to create a lockup
+    let lockup_amount = 1000u128;
+    let lock_info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(lockup_amount, IBC_DENOM_1.to_string())],
+    );
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
+    assert!(res.is_ok());
+
+    // Manually corrupt the lockup's denom to an invalid one by directly modifying storage
+    let corrupted_lockup = LockEntryV2 {
+        lock_id: 0,
+        owner: deps.api.addr_make(user_address),
+        funds: Coin::new(lockup_amount, "invalid_denom"), // Invalid denom not in token manager
+        lock_start: env.block.time,
+        lock_end: env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS),
+    };
+    LOCKS_MAP_V2
+        .save(
+            deps.as_mut().storage,
+            0,
+            &corrupted_lockup,
+            env.block.height,
+        )
+        .unwrap();
+
+    // Query lockups shares with the corrupted lockup
+    let lock_ids = vec![0u64];
+    let res = query_lockups_shares(deps.as_ref(), env, lock_ids);
+
+    // Should fail because validate_denom will fail for the invalid denom
+    assert!(res.is_err(), "Query should fail for invalid denom");
+
+    let error_msg = res.unwrap_err().to_string();
+
+    assert!(
+        error_msg.contains("IBC token expected"),
+        "Error should mention denom validation failure: {error_msg}"
+    );
 }
