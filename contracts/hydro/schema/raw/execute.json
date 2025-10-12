@@ -752,7 +752,7 @@
       "additionalProperties": false
     },
     {
-      "description": "This locks the token first (same as `LockTokens`) then transfers ownership to the contract account (same as `SendNft`)",
+      "description": "This locks the tokens first (same as `LockTokens`) then transfers ownership to the contract account (same as `SendNft`)",
       "type": "object",
       "required": [
         "lock_tokens_then_send_nft"
