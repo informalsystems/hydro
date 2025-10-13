@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 
 use cosmwasm_std::{DepsMut, Response};
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};

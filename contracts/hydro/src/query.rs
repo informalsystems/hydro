@@ -241,6 +241,10 @@ pub enum QueryMsg {
     /// Lists token_ids controlled by the contract.
     #[returns(DtokenAmountsResponse)]
     SimulateDtokenAmounts { lock_ids: Vec<u64>, address: String },
+
+    /// Returns the list of parent lock IDs (ancestors) for a given child lock.
+    #[returns(ParentLockIdsResponse)]
+    ParentLockIds { child_id: u64 },
 }
 
 #[cw_serde]
@@ -327,6 +331,11 @@ pub struct DtokenAmountsResponse {
 pub struct DtokenAmountResponse {
     pub lock_id: u64,
     pub dtoken_amount: String,
+}
+
+#[cw_serde]
+pub struct ParentLockIdsResponse {
+    pub parent_ids: Vec<u64>,
 }
 
 // LockEntryWithPower is a LockEntry with the current voting power of the sender

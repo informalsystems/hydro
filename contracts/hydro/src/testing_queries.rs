@@ -1692,6 +1692,83 @@ fn simulate_dtoken_amounts() {
     assert!(res.dtokens_response[2].dtoken_amount.contains("error"));
 }
 
+#[test]
+fn query_parent_lock_ids_test() {
+    let user_address = "addr0000";
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[]);
+
+    let mut instantiate_msg = get_default_instantiate_msg(&deps.api);
+    instantiate_msg.round_length = ONE_MONTH_IN_NANO_SECONDS;
+    instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address)];
+    instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
+
+    set_default_validator_for_rounds(deps.as_mut(), 0, 2);
+
+    // Create a lockup
+    let lsm_lock_info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(50000u64, IBC_DENOM_1.to_string())],
+    );
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let lock_res = execute(deps.as_mut(), env.clone(), lsm_lock_info, lock_msg.clone());
+    assert!(lock_res.is_ok(), "Failed to create lock");
+
+    // Create second lockup
+    let lsm_lock_info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(60000u64, IBC_DENOM_1.to_string())],
+    );
+    let lock_res = execute(deps.as_mut(), env.clone(), lsm_lock_info, lock_msg);
+    assert!(lock_res.is_ok(), "Failed to create lock");
+
+    // Split the lockup (ID 0) into two parts
+    let split_amount = Uint128::from(20000u128);
+    let split_msg = ExecuteMsg::SplitLock {
+        lock_id: 0,
+        amount: split_amount,
+    };
+    let split_res = execute(deps.as_mut(), env.clone(), info.clone(), split_msg);
+    assert!(split_res.is_ok(), "Failed to split lock");
+
+    // Split the lockup (ID 1) into two parts
+    let lsm_split_amount = Uint128::from(25000u128);
+    let split_msg = ExecuteMsg::SplitLock {
+        lock_id: 1,
+        amount: lsm_split_amount,
+    };
+    let split_res = execute(deps.as_mut(), env.clone(), info, split_msg);
+    assert!(split_res.is_ok(), "Failed to split lock");
+
+    // Merge the two split parts (IDs 2 and 3) back together
+    let info = get_message_info(&deps.api, user_address, &[]);
+    let merge_msg = ExecuteMsg::MergeLocks {
+        lock_ids: vec![2, 3],
+    };
+    let merge_res = execute(deps.as_mut(), env.clone(), info.clone(), merge_msg);
+    assert!(merge_res.is_ok(), "Failed to merge locks");
+
+    // Query parents
+    let query_for_child_5: crate::query::ParentLockIdsResponse =
+        crate::contract::query_parent_lock_ids(deps.as_ref(), 5).unwrap();
+    assert_eq!(query_for_child_5.parent_ids, vec![1]);
+
+    let query_for_child_6: crate::query::ParentLockIdsResponse =
+        crate::contract::query_parent_lock_ids(deps.as_ref(), 6).unwrap();
+    assert_eq!(query_for_child_6.parent_ids.len(), 2);
+    assert!(query_for_child_6.parent_ids.contains(&2));
+    assert!(query_for_child_6.parent_ids.contains(&3));
+}
+
 pub fn drop_mock(
     current_ratio: Decimal,
     puppeteer_response: DelegationsResponse,

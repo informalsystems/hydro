@@ -476,6 +476,10 @@ export type QueryMsg = {
     address: string;
     lock_ids: number[];
   };
+} | {
+  parent_lock_ids: {
+    child_id: number;
+  };
 };
 export type Addr = string;
 export interface AllNftInfoResponse {
@@ -625,6 +629,9 @@ export interface LockupsPendingSlashesResponse {
 }
 export interface NumTokensResponse {
   count: number;
+}
+export interface ParentLockIdsResponse {
+  parent_ids: number[];
 }
 export interface ProposalResponse {
   proposal: Proposal;

@@ -40,6 +40,10 @@ jobs:
           echo "HYDRO_OSMO_CONTRACT_ADDRESS=neutron1xkvzdzfzacuzlwlxf5hhlrqgv9sz4rgd2gkhvgm8lmudn8lmw0fq2296nu" >> $GITHUB_ENV
           echo "TRIBUTE_OSMO_CONTRACT_ADDRESS=neutron1l6sq43kzhw77t7f5n9e6vxente0agcj3wyedkxtc08pm7c9uu2jsssq9wj" >> $GITHUB_ENV
           echo "HYDRO_OSMO_TRANCHES_NUM=1" >> $GITHUB_ENV
+
+          echo "HYDRO_NTRN_CONTRACT_ADDRESS=neutron1kwdzg8rhamvy55rz6xnchdy9hfysgp84uz6uxqud6az56nn4t7gsc4zzm0" >> $GITHUB_ENV
+          echo "TRIBUTE_NTRN_CONTRACT_ADDRESS=neutron1s40ldcahqrjqylzw5vcnsd0ca7eym9dzhfxw5k00exvlng4c76hq0p4ftp" >> $GITHUB_ENV
+          echo "HYDRO_NTRN_TRANCHES_NUM=1" >> $GITHUB_ENV
       
       # Enter liquidity deployments info for all proposals from the previous round.
       # If the proposal power was > 0, liquidity deployment info will be entered with deployed_funds > 0.
@@ -53,6 +57,8 @@ jobs:
           source ./tools/deployment/enter_staging_liquidity_deployments.sh $CONFIG_FILE $HYDRO_ATOM_CONTRACT_ADDRESS $HYDRO_ATOM_TRANCHES_NUM
 
           source ./tools/deployment/enter_staging_liquidity_deployments.sh $CONFIG_FILE $HYDRO_OSMO_CONTRACT_ADDRESS $HYDRO_OSMO_TRANCHES_NUM
+
+          source ./tools/deployment/enter_staging_liquidity_deployments.sh $CONFIG_FILE $HYDRO_NTRN_CONTRACT_ADDRESS $HYDRO_NTRN_TRANCHES_NUM
       
       # Run the script to create proposals with tributes in current round
       - name: Populate round with proposals and tributes
@@ -63,6 +69,8 @@ jobs:
           source ./tools/deployment/populate_contracts.sh $CONFIG_FILE $HYDRO_ATOM_CONTRACT_ADDRESS $TRIBUTE_ATOM_CONTRACT_ADDRESS $HYDRO_ATOM_TRANCHES_NUM
 
           source ./tools/deployment/populate_contracts.sh $CONFIG_FILE $HYDRO_OSMO_CONTRACT_ADDRESS $TRIBUTE_OSMO_CONTRACT_ADDRESS $HYDRO_OSMO_TRANCHES_NUM
+
+          source ./tools/deployment/populate_contracts.sh $CONFIG_FILE $HYDRO_NTRN_CONTRACT_ADDRESS $TRIBUTE_NTRN_CONTRACT_ADDRESS $HYDRO_NTRN_TRANCHES_NUM
       
       # Refresh some expired lockup or create a new one, and then vote with it in all tranches of the current round
       - name: Lock tokens and vote
@@ -76,3 +84,6 @@ jobs:
 
           TOKEN_TO_LOCK="ibc/75249A18DEFBEFE55F83B1C70CAD234DF164F174C6BC51682EE92C2C81C18C93"
           source ./tools/deployment/lock_and_vote.sh $CONFIG_FILE $HYDRO_OSMO_CONTRACT_ADDRESS $HYDRO_OSMO_TRANCHES_NUM $TOKEN_TO_LOCK
+
+          TOKEN_TO_LOCK="factory/neutron1frc0p5czd9uaaymdkug2njz7dc7j65jxukp9apmt9260a8egujkspms2t2/udntrn"
+          source ./tools/deployment/lock_and_vote.sh $CONFIG_FILE $HYDRO_NTRN_CONTRACT_ADDRESS $HYDRO_NTRN_TRANCHES_NUM $TOKEN_TO_LOCK

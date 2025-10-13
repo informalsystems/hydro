@@ -13,8 +13,8 @@ export NUM_VALIDATORS_TO_ADD=$NUM_OF_VALIDATORS
 
 # populate the config for the ICQ relayer and the ICQ query creation
 export NEUTRON_CHAIN_ID="neutron-1"
-export RELAYER_NEUTRON_CHAIN_RPC_ADDR=https://neutron-rpc.publicnode.com:443
-export RELAYER_NEUTRON_CHAIN_REST_ADDR=https://neutron-rest.publicnode.com
+export RELAYER_NEUTRON_CHAIN_RPC_ADDR=https://rpc-lb.neutron.org:443    # alternative: https://neutron-rpc.publicnode.com:443
+export RELAYER_NEUTRON_CHAIN_REST_ADDR=https://rest-lb.neutron.org      # alternative: https://neutron-rest.publicnode.com
 export RELAYER_NEUTRON_CHAIN_HOME_DIR=$HOME/.neutrond
 export RELAYER_NEUTRON_CHAIN_SIGN_KEY_NAME=submitter
 export RELAYER_NEUTRON_CHAIN_KEYRING_BACKEND=test
