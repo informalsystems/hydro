@@ -12,7 +12,7 @@ export interface LSMTokenInfoProviderBaseReadOnlyInterface {
   config: () => Promise<ConfigResponse>;
   registeredValidatorQueries: () => Promise<RegisteredValidatorQueriesResponse>;
   admins: () => Promise<AdminsResponse>;
-  iCQManagers: () => Promise<ICQManagersResponse>;
+  icqManagers: () => Promise<IcqManagersResponse>;
   validatorsInfo: ({
     roundId
   }: {
@@ -28,7 +28,7 @@ export class LSMTokenInfoProviderBaseQueryClient implements LSMTokenInfoProvider
     this.config = this.config.bind(this);
     this.registeredValidatorQueries = this.registeredValidatorQueries.bind(this);
     this.admins = this.admins.bind(this);
-    this.iCQManagers = this.iCQManagers.bind(this);
+    this.icqManagers = this.icqManagers.bind(this);
     this.validatorsInfo = this.validatorsInfo.bind(this);
   }
   config = async (): Promise<ConfigResponse> => {
@@ -46,9 +46,9 @@ export class LSMTokenInfoProviderBaseQueryClient implements LSMTokenInfoProvider
       admins: {}
     });
   };
-  iCQManagers = async (): Promise<ICQManagersResponse> => {
+  icqManagers = async (): Promise<IcqManagersResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      i_c_q_managers: {}
+      icq_managers: {}
     });
   };
   validatorsInfo = async ({

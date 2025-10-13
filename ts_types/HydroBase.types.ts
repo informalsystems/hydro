@@ -11,10 +11,11 @@ export type Uint128 = string;
 export type Decimal = string;
 export type TokenInfoProviderInstantiateMsg = {
   lsm: {
-    hub_connection_id: string;
+    admin?: string | null;
+    code_id: number;
     hub_transfer_channel_id: string;
-    icq_update_period: number;
-    max_validator_shares_participating: number;
+    label: string;
+    msg: Binary;
   };
 } | {
   base: {
@@ -33,7 +34,6 @@ export interface InstantiateMsg {
   cw721_collection_info?: CollectionInfo | null;
   first_round_start: Timestamp;
   gatekeeper?: InstantiateContractMsg | null;
-  icq_managers: string[];
   initial_whitelist: string[];
   lock_depth_limit: number;
   lock_epoch_length: number;
@@ -133,18 +133,6 @@ export type ExecuteMsg = {
     tranche_name?: string | null;
   };
 } | {
-  create_icqs_for_validators: {
-    validators: string[];
-  };
-} | {
-  add_i_c_q_manager: {
-    address: string;
-  };
-} | {
-  remove_i_c_q_manager: {
-    address: string;
-  };
-} | {
   withdraw_i_c_q_funds: {
     amount: Uint128;
   };
@@ -166,10 +154,8 @@ export type ExecuteMsg = {
     tranche_id: number;
   };
 } | {
-  update_token_group_ratio: {
-    new_ratio: Decimal;
-    old_ratio: Decimal;
-    token_group_id: string;
+  update_token_groups_ratios: {
+    changes: TokenGroupRatioChange[];
   };
 } | {
   add_token_info_provider: {
@@ -237,6 +223,14 @@ export type ExecuteMsg = {
   buyout_pending_slash: {
     lock_id: number;
   };
+} | {
+  remove_interchain_queries: {
+    query_ids: number[];
+  };
+} | {
+  remove_round_validators_data: {
+    round_id: number;
+  };
 };
 export type Expiration = {
   at_height: number;
@@ -272,6 +266,11 @@ export interface UpdateConfigData {
 export interface Coin {
   amount: Uint128;
   denom: string;
+}
+export interface TokenGroupRatioChange {
+  new_ratio: Decimal;
+  old_ratio: Decimal;
+  token_group_id: string;
 }
 export type QueryMsg = {
   constants: {};
@@ -382,8 +381,6 @@ export type QueryMsg = {
   whitelist: {};
 } | {
   whitelist_admins: {};
-} | {
-  i_c_q_managers: {};
 } | {
   total_locked_tokens: {};
 } | {
@@ -599,9 +596,6 @@ export interface ExpiredUserLockupsResponse {
 export interface GatekeeperResponse {
   gatekeeper: string;
 }
-export interface ICQManagersResponse {
-  managers: Addr[];
-}
 export interface LiquidityDeploymentResponse {
   liquidity_deployment: LiquidityDeployment;
 }
@@ -686,10 +680,9 @@ export interface TokenInfoProvidersResponse {
   providers: TokenInfoProvider[];
 }
 export interface TokenInfoProviderLSM {
-  hub_connection_id: string;
+  cache: {};
+  contract: string;
   hub_transfer_channel_id: string;
-  icq_update_period: number;
-  max_validator_shares_participating: number;
 }
 export interface TokenInfoProviderBase {
   denom: string;

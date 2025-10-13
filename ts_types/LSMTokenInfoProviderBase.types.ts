@@ -42,7 +42,7 @@ export type QueryMsg = {
 } | {
   admins: {};
 } | {
-  i_c_q_managers: {};
+  icq_managers: {};
 } | {
   validators_info: {
     round_id: number;
