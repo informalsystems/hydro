@@ -219,14 +219,6 @@ export type ExecuteMsg = {
   buyout_pending_slash: {
     lock_id: number;
   };
-} | {
-  remove_interchain_queries: {
-    query_ids: number[];
-  };
-} | {
-  remove_round_validators_data: {
-    round_id: number;
-  };
 };
 export type Expiration = {
   at_height: number;

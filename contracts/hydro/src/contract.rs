@@ -30,8 +30,8 @@ use crate::query::{
     CanLockDenomResponse, ConstantsResponse, DtokenAmountResponse, DtokenAmountsResponse,
     ExpiredUserLockupsResponse, GatekeeperResponse, LiquidityDeploymentResponse,
     LockEntryWithPower, LockVotesHistoryEntry, LockVotesHistoryResponse, LockupWithPerTrancheInfo,
-    LockupsPendingSlashesResponse, ParentLockIdsResponse, ProposalResponse, QueryMsg, RoundEndResponse,
-    RoundProposalsResponse, RoundTotalVotingPowerResponse,
+    LockupsPendingSlashesResponse, ParentLockIdsResponse, ProposalResponse, QueryMsg,
+    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
     RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse,
     SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, TopNProposalsResponse,
     TotalLockedTokensResponse, TranchesResponse, UserVotedLocksResponse, UserVotesResponse,
@@ -3971,10 +3971,7 @@ pub fn query_gatekeeper(deps: Deps) -> StdResult<GatekeeperResponse> {
     })
 }
 
-pub fn query_parent_lock_ids(
-    deps: Deps,
-    child_id: u64,
-) -> StdResult<ParentLockIdsResponse> {
+pub fn query_parent_lock_ids(deps: Deps, child_id: u64) -> StdResult<ParentLockIdsResponse> {
     let parent_ids = REVERSE_LOCK_ID_TRACKING
         .may_load(deps.storage, child_id)?
         .unwrap_or_default();
