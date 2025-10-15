@@ -4,7 +4,7 @@ use cosmwasm_std::Order;
 #[allow(unused_imports)]
 use cosmwasm_std::Uint128;
 
-use crate::state::{Config, PayoutEntry, WithdrawalEntry, WithdrawalQueueInfo};
+use crate::state::{AdapterInfo, Config, PayoutEntry, WithdrawalEntry, WithdrawalQueueInfo};
 
 #[cw_serde]
 #[derive(QueryResponses)]
@@ -61,6 +61,14 @@ pub enum QueryMsg {
         limit: u32,
         order: Order,
     },
+
+    /// Returns a list of all registered adapters
+    #[returns(AdaptersListResponse)]
+    ListAdapters {},
+
+    /// Returns information about a specific adapter
+    #[returns(AdapterInfoResponse)]
+    AdapterInfo { name: String },
 }
 
 #[cw_serde]
@@ -86,4 +94,14 @@ pub struct UserWithdrawalRequestsResponse {
 #[cw_serde]
 pub struct UserPayoutsHistoryResponse {
     pub payouts: Vec<PayoutEntry>,
+}
+
+#[cw_serde]
+pub struct AdaptersListResponse {
+    pub adapters: Vec<(String, AdapterInfo)>,
+}
+
+#[cw_serde]
+pub struct AdapterInfoResponse {
+    pub info: AdapterInfo,
 }

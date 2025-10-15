@@ -44,14 +44,50 @@ pub struct DenomMetadata {
 pub enum ExecuteMsg {
     Deposit {},
     Withdraw {},
-    CancelWithdrawal { withdrawal_ids: Vec<u64> },
-    FulfillPendingWithdrawals { limit: u64 },
-    ClaimUnbondedWithdrawals { withdrawal_ids: Vec<u64> },
-    SubmitDeployedAmount { amount: Uint128 },
-    WithdrawForDeployment { amount: Uint128 },
-    AddToWhitelist { address: String },
-    RemoveFromWhitelist { address: String },
-    UpdateConfig { config: UpdateConfigData },
+    CancelWithdrawal {
+        withdrawal_ids: Vec<u64>,
+    },
+    FulfillPendingWithdrawals {
+        limit: u64,
+    },
+    ClaimUnbondedWithdrawals {
+        withdrawal_ids: Vec<u64>,
+    },
+    SubmitDeployedAmount {
+        amount: Uint128,
+    },
+    WithdrawForDeployment {
+        amount: Uint128,
+    },
+    AddToWhitelist {
+        address: String,
+    },
+    RemoveFromWhitelist {
+        address: String,
+    },
+    UpdateConfig {
+        config: UpdateConfigData,
+    },
+    /// Register a new adapter for protocol integrations
+    RegisterAdapter {
+        name: String,
+        address: String,
+        description: Option<String>,
+    },
+    /// Unregister an existing adapter
+    UnregisterAdapter {
+        name: String,
+    },
+    /// Toggle adapter active status
+    ToggleAdapter {
+        name: String,
+    },
+    /// Withdraw funds from an adapter to the inflow contract (whitelisted only)
+    /// Funds stay in contract until withdraw_for_deployment is called
+    WithdrawFromAdapter {
+        adapter_name: String,
+        amount: Uint128,
+    },
 }
 
 #[cw_serde]

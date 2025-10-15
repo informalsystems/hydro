@@ -1,0 +1,594 @@
+use cosmwasm_std::{
+    entry_point, to_json_binary, Addr, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Order, Reply,
+    Response, StdError, StdResult, SubMsg, Uint128,
+};
+use cw2::set_contract_version;
+
+use crate::error::ContractError;
+use crate::mars;
+use crate::msg::{
+    AdapterConfigResponse, AdapterExecuteMsg, AdapterQueryMsg, AvailableAmountResponse,
+    InflowDepositResponse, InflowDepositsResponse, InstantiateMsg, RegisteredInflowInfo,
+    RegisteredInflowsResponse, TimeEstimateResponse, TotalDepositedResponse,
+};
+use crate::state::{
+    Config, Depositor, ADMINS, CONFIG, PENDING_ACCOUNT_SETUP, WHITELISTED_DEPOSITORS,
+};
+
+/// Contract name that is used for migration
+const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
+/// Contract version that is used for migration
+const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Reply ID for CreateCreditAccount submessage during instantiation
+const REPLY_CREATE_ACCOUNT_INSTANTIATE: u64 = 1;
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn instantiate(
+    deps: DepsMut,
+    _env: Env,
+    _info: MessageInfo,
+    msg: InstantiateMsg,
+) -> Result<Response, ContractError> {
+    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
+
+    let mut admins: Vec<Addr> = vec![];
+
+    for admin in msg.admins {
+        let admin_addr = deps.api.addr_validate(&admin)?;
+        if !admins.contains(&admin_addr) {
+            admins.push(admin_addr.clone());
+        }
+    }
+
+    // Ensure at least one admin is provided
+    if admins.is_empty() {
+        return Err(ContractError::AtLeastOneAdmin {});
+    }
+
+    ADMINS.save(deps.storage, &admins)?;
+
+    // Ensure at least one supported denom is provided
+    if msg.supported_denoms.is_empty() {
+        return Err(ContractError::AtLeastOneDenom {});
+    }
+
+    // Validate Mars contract address
+    let mars_contract = deps.api.addr_validate(&msg.mars_contract)?;
+
+    // Save configuration
+    let config = Config {
+        mars_contract: mars_contract.clone(),
+        supported_denoms: msg.supported_denoms.clone(),
+    };
+    CONFIG.save(deps.storage, &config)?;
+
+    let mut response = Response::new()
+        .add_attribute("action", "instantiate")
+        .add_attribute("mars_contract", mars_contract.to_string())
+        .add_attribute("supported_denoms", msg.supported_denoms.join(", "));
+
+    // If an inflow address is provided, create a Mars account for it
+    if let Some(inflow_address) = msg.inflow_address {
+        let sub_msg = create_inflow_account(deps, inflow_address.clone())?;
+
+        response = response
+            .add_submessage(sub_msg)
+            .add_attribute("inflow_address", inflow_address);
+    }
+
+    Ok(response)
+}
+
+/// Creates a Mars account for an inflow address and returns the SubMsg for account creation
+fn create_inflow_account(deps: DepsMut, inflow_address: String) -> Result<SubMsg, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+
+    let inflow_addr = deps.api.addr_validate(&inflow_address)?;
+
+    // Check if already registered
+    if WHITELISTED_DEPOSITORS.has(deps.storage, inflow_addr.clone()) {
+        return Err(ContractError::InflowAlreadyRegistered {
+            inflow_address: inflow_addr.to_string(),
+        });
+    }
+
+    // Store pending setup info
+    PENDING_ACCOUNT_SETUP.save(deps.storage, &inflow_addr)?;
+
+    // Initialize with empty account ID (will be set in reply handler) and enabled=true
+    let depositor = Depositor {
+        mars_account_id: String::new(),
+        enabled: true,
+    };
+    WHITELISTED_DEPOSITORS.save(deps.storage, inflow_addr.clone(), &depositor)?;
+
+    // Create Mars account. We use "default" as the account_kind
+    let create_account_msg =
+        mars::create_mars_account_msg(config.mars_contract, Some("default".to_string()))?;
+
+    let sub_msg = SubMsg::reply_on_success(create_account_msg, REPLY_CREATE_ACCOUNT_INSTANTIATE);
+
+    Ok(sub_msg)
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn execute(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    msg: AdapterExecuteMsg,
+) -> Result<Response, ContractError> {
+    match msg {
+        AdapterExecuteMsg::Deposit {} => execute_deposit(deps, env, info),
+        AdapterExecuteMsg::Withdraw { coin } => execute_withdraw(deps, env, info, coin),
+        AdapterExecuteMsg::UpdateConfig {
+            protocol_address,
+            supported_denoms,
+        } => execute_update_config(deps, info, protocol_address, supported_denoms),
+        AdapterExecuteMsg::RegisterInflow { inflow_address } => {
+            execute_register_inflow(deps, env, info, inflow_address)
+        }
+        AdapterExecuteMsg::UnregisterInflow { inflow_address } => {
+            execute_unregister_inflow(deps, env, info, inflow_address)
+        }
+        AdapterExecuteMsg::ToggleInflowEnabled {
+            inflow_address,
+            enabled,
+        } => execute_toggle_inflow_enabled(deps, env, info, inflow_address, enabled),
+    }
+}
+
+/// Retrieves the account ID of the Inflow contract or return InflowNotRegistered error
+fn get_inflow_account_id(deps: Deps, inflow_addr: Addr) -> Result<Depositor, ContractError> {
+    WHITELISTED_DEPOSITORS
+        .load(deps.storage, inflow_addr.clone())
+        .map_err(|_| ContractError::InflowNotRegistered {
+            inflow_address: inflow_addr.to_string(),
+        })
+}
+
+/// Validates that the caller is a registered Inflow contract
+fn validate_inflow_caller(deps: &DepsMut, info: &MessageInfo) -> Result<Depositor, ContractError> {
+    get_inflow_account_id(deps.as_ref(), info.sender.clone())
+        .map_err(|_| ContractError::Unauthorized {})
+}
+
+fn validate_admin_caller(deps: &DepsMut, info: &MessageInfo) -> Result<(), ContractError> {
+    let admins = ADMINS.load(deps.storage)?;
+
+    if !admins.contains(&info.sender) {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    Ok(())
+}
+
+fn execute_deposit(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Response, ContractError> {
+    let depositor = validate_inflow_caller(&deps, &info)?;
+
+    // Must send exactly one coin
+    if info.funds.len() != 1 {
+        return Err(ContractError::InvalidFunds {
+            count: info.funds.len(),
+        });
+    }
+
+    let coin = &info.funds[0];
+
+    // Check for zero amount
+    if coin.amount.is_zero() {
+        return Err(ContractError::ZeroAmount {});
+    }
+
+    // Load config to validate denom and get Mars contract + shared account_id
+    let config = CONFIG.load(deps.storage)?;
+
+    // Validate denom is supported
+    if !config.supported_denoms.contains(&coin.denom) {
+        return Err(ContractError::UnsupportedDenom {
+            denom: coin.denom.clone(),
+        });
+    }
+
+    // Use the Mars account for this Inflow address
+    let account_id = depositor.mars_account_id;
+
+    // Create Mars UpdateCreditAccount message with Deposit + Lend actions
+    let mars_msg =
+        mars::create_mars_deposit_lend_msg(config.mars_contract, account_id, coin.clone())?;
+
+    Ok(Response::new()
+        .add_message(mars_msg)
+        .add_attribute("action", "deposit")
+        .add_attribute("amount", coin.amount)
+        .add_attribute("denom", &coin.denom))
+}
+
+fn execute_withdraw(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    coin: Coin,
+) -> Result<Response, ContractError> {
+    let depositor = validate_inflow_caller(&deps, &info)?;
+
+    // Check for zero amount
+    if coin.amount.is_zero() {
+        return Err(ContractError::ZeroAmount {});
+    }
+
+    // Load config to validate denom and get Mars contract + shared account_id
+    let config = CONFIG.load(deps.storage)?;
+
+    // Validate denom is supported
+    if !config.supported_denoms.contains(&coin.denom) {
+        return Err(ContractError::UnsupportedDenom {
+            denom: coin.denom.clone(),
+        });
+    }
+
+    // Use the Mars account for this Inflow address
+    let account_id = depositor.mars_account_id.clone();
+
+    // Query Mars to get the total lent position in the shared account
+    // Note: The Inflow contract is responsible for ensuring users can only
+    // withdraw amounts they're entitled to based on their share tokens.
+    // This adapter just checks that the account has sufficient funds.
+    let lent_amount = mars::get_lent_amount_for_denom(
+        &deps.querier,
+        &config.mars_contract,
+        account_id.clone(),
+        &coin.denom,
+    )?;
+
+    // Check the shared account has sufficient lent amount to withdraw
+    if lent_amount < coin.amount {
+        return Err(ContractError::InsufficientBalance {});
+    }
+
+    // Create Mars UpdateCreditAccount message with Reclaim + WithdrawToWallet actions
+    // Funds are sent back to the Inflow contract
+    let mars_msg = mars::create_mars_reclaim_withdraw_msg(
+        config.mars_contract,
+        account_id,
+        coin.clone(),
+        info.sender.clone(),
+    )?;
+
+    Ok(Response::new()
+        .add_message(mars_msg)
+        .add_attribute("action", "withdraw")
+        .add_attribute("recipient", info.sender)
+        .add_attribute("amount", coin.amount)
+        .add_attribute("denom", coin.denom))
+}
+
+/// If changing the protocol_address, one needs to be very careful,
+/// as it could prevent access to funds.
+fn execute_update_config(
+    deps: DepsMut,
+    info: MessageInfo,
+    protocol_address: Option<String>,
+    supported_denoms: Option<Vec<String>>,
+) -> Result<Response, ContractError> {
+    validate_inflow_caller(&deps, &info)?;
+
+    let mut config = CONFIG.load(deps.storage)?;
+    let mut response = Response::new().add_attribute("action", "update_config");
+
+    if let Some(protocol_address) = protocol_address {
+        config.mars_contract = deps.api.addr_validate(&protocol_address)?;
+        response = response.add_attribute("new_mars_contract", protocol_address);
+    }
+
+    if let Some(supported_denoms) = supported_denoms {
+        config.supported_denoms = supported_denoms.clone();
+        response = response.add_attribute("new_supported_denoms", supported_denoms.join(","));
+    }
+
+    CONFIG.save(deps.storage, &config)?;
+
+    Ok(response)
+}
+
+/// Registers a new inflow contract with its Mars account ID
+fn execute_register_inflow(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    inflow_address: String,
+) -> Result<Response, ContractError> {
+    // Only an admin can register inflows
+    validate_admin_caller(&deps, &info)?;
+
+    let sub_msg = create_inflow_account(deps, inflow_address.clone())?;
+
+    Ok(Response::new()
+        .add_submessage(sub_msg)
+        .add_attribute("action", "register_inflow")
+        .add_attribute("inflow_address", inflow_address))
+}
+
+/// Unregisters an Inflow contract
+/// This function should only be executed on empty accounts or it could lead to loss of funds
+fn execute_unregister_inflow(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    inflow_address: String,
+) -> Result<Response, ContractError> {
+    // Only an admin can unregister inflows
+    validate_admin_caller(&deps, &info)?;
+
+    let inflow_addr = deps.api.addr_validate(&inflow_address)?;
+
+    // Load to ensure it exists (will error if not found)
+    let depositor = WHITELISTED_DEPOSITORS
+        .load(deps.storage, inflow_addr.clone())
+        .map_err(|_| ContractError::InflowNotRegistered {
+            inflow_address: inflow_addr.to_string(),
+        })?;
+
+    WHITELISTED_DEPOSITORS.remove(deps.storage, inflow_addr.clone());
+
+    Ok(Response::new()
+        .add_attribute("action", "unregister_inflow")
+        .add_attribute("inflow_address", inflow_addr.to_string())
+        .add_attribute("mars_account_id", depositor.mars_account_id))
+}
+
+/// Toggles whether an inflow contract is enabled or disabled
+fn execute_toggle_inflow_enabled(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    inflow_address: String,
+    enabled: bool,
+) -> Result<Response, ContractError> {
+    // Only an admin can toggle inflows enabled status
+    validate_admin_caller(&deps, &info)?;
+
+    let inflow_addr = deps.api.addr_validate(&inflow_address)?;
+
+    // Load existing depositor
+    let mut depositor = WHITELISTED_DEPOSITORS
+        .load(deps.storage, inflow_addr.clone())
+        .map_err(|_| ContractError::InflowNotRegistered {
+            inflow_address: inflow_addr.to_string(),
+        })?;
+
+    // Update enabled status
+    depositor.enabled = enabled;
+    WHITELISTED_DEPOSITORS.save(deps.storage, inflow_addr.clone(), &depositor)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "toggle_inflow_enabled")
+        .add_attribute("inflow_address", inflow_addr.to_string())
+        .add_attribute("enabled", enabled.to_string()))
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn query(deps: Deps, _env: Env, msg: AdapterQueryMsg) -> StdResult<Binary> {
+    match msg {
+        AdapterQueryMsg::Config {} => to_json_binary(&query_config(deps)?),
+        AdapterQueryMsg::AvailableForDeposit {
+            inflow_address,
+            denom,
+        } => to_json_binary(&query_available_for_deposit(deps, inflow_address, denom)?),
+        AdapterQueryMsg::AvailableForWithdraw {
+            inflow_address,
+            denom,
+        } => to_json_binary(&query_available_for_withdraw(deps, inflow_address, denom)?),
+        AdapterQueryMsg::TimeToWithdraw {
+            inflow_address,
+            coin,
+        } => to_json_binary(&query_time_to_withdraw(deps, inflow_address, coin)?),
+        AdapterQueryMsg::RegisteredInflows { enabled } => {
+            to_json_binary(&query_registered_inflows(deps, enabled)?)
+        }
+        AdapterQueryMsg::TotalDeposited {} => to_json_binary(&query_total_deposited(deps)?),
+        AdapterQueryMsg::InflowDeposit {
+            inflow_address,
+            denom,
+        } => to_json_binary(&query_inflow_deposit(deps, inflow_address, denom)?),
+        AdapterQueryMsg::InflowDeposits { inflow_address } => {
+            to_json_binary(&query_inflow_deposits(deps, inflow_address)?)
+        }
+    }
+}
+
+fn query_config(deps: Deps) -> StdResult<AdapterConfigResponse> {
+    let config = CONFIG.load(deps.storage)?;
+    Ok(AdapterConfigResponse {
+        protocol_address: config.mars_contract.to_string(),
+        supported_denoms: config.supported_denoms,
+    })
+}
+
+fn query_available_for_deposit(
+    _deps: Deps,
+    _inflow_address: String,
+    _denom: String,
+) -> StdResult<AvailableAmountResponse> {
+    // For Mars lending, there's typically no hard cap
+    // Return a very large number to indicate no practical limit
+    // This can be refined later to query actual Mars deposit caps
+    Ok(AvailableAmountResponse {
+        amount: Uint128::MAX,
+    })
+}
+
+/// As Mars lending allows immediate withdrawal, we can actually return
+/// the same amount as what's deposited by the Inflow contract
+fn query_available_for_withdraw(
+    deps: Deps,
+    inflow_address: String,
+    denom: String,
+) -> StdResult<AvailableAmountResponse> {
+    let inflow_deposit = query_inflow_deposit(deps, inflow_address, denom)?;
+
+    Ok(AvailableAmountResponse {
+        amount: inflow_deposit.amount,
+    })
+}
+
+fn query_time_to_withdraw(
+    _deps: Deps,
+    _inflow_address: String,
+    _coin: Coin,
+) -> StdResult<TimeEstimateResponse> {
+    // Mars lending allows instant withdrawals
+    Ok(TimeEstimateResponse {
+        blocks: 0,
+        seconds: 0,
+    })
+}
+
+/// Returns list of registered Inflow contracts with their enabled status
+/// Optionally filtered by enabled status
+fn query_registered_inflows(
+    deps: Deps,
+    enabled_filter: Option<bool>,
+) -> StdResult<RegisteredInflowsResponse> {
+    let inflows: Vec<RegisteredInflowInfo> = WHITELISTED_DEPOSITORS
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter_map(|entry| {
+            let (addr, depositor) = entry.ok()?;
+
+            // Skip if filter doesn't match
+            if enabled_filter.is_some_and(|filter| depositor.enabled != filter) {
+                return None;
+            }
+
+            Some(RegisteredInflowInfo {
+                inflow_address: addr.to_string(),
+                enabled: depositor.enabled,
+            })
+        })
+        .collect();
+
+    Ok(RegisteredInflowsResponse { inflows })
+}
+
+/// This query will go through all Inflow contracts registered and compute the sum of funds in each account
+fn query_total_deposited(deps: Deps) -> StdResult<TotalDepositedResponse> {
+    // NOTE: This query is deprecated and returns empty data.
+    // Total deposited doesn't account for yield earned in Mars.
+    // To get accurate totals, you must query Mars positions for each user.
+    let _ = deps; // Suppress unused warning
+    Ok(TotalDepositedResponse { deposits: vec![] })
+}
+
+fn query_inflow_deposit(
+    deps: Deps,
+    inflow_address: String,
+    denom: String,
+) -> StdResult<InflowDepositResponse> {
+    let config = CONFIG.load(deps.storage)?;
+
+    let inflow_addr = deps.api.addr_validate(&inflow_address)?;
+
+    // Retrieve the inflow_depositor account
+    let inflow_depositor = get_inflow_account_id(deps, inflow_addr)
+        .map_err(|e| StdError::generic_err(e.to_string()))?;
+
+    // Query Mars to get the total lent position in the account for the Inflow address (includes yield)
+    let amount = mars::get_lent_amount_for_denom(
+        &deps.querier,
+        &config.mars_contract,
+        inflow_depositor.mars_account_id,
+        &denom,
+    )?;
+
+    Ok(InflowDepositResponse { amount })
+}
+
+/// This query will return all the deposits for an Inflow contracts across all denoms
+fn query_inflow_deposits(deps: Deps, inflow_address: String) -> StdResult<InflowDepositsResponse> {
+    let config = CONFIG.load(deps.storage)?;
+
+    let inflow_addr = deps.api.addr_validate(&inflow_address)?;
+
+    // Retrieve the inflow_depositor account
+    let inflow_depositor = get_inflow_account_id(deps, inflow_addr)
+        .map_err(|e| StdError::generic_err(e.to_string()))?;
+
+    // Query Mars to get all lent positions in the inflow account (includes yield)
+    let positions = mars::query_mars_positions(
+        &deps.querier,
+        &config.mars_contract,
+        inflow_depositor.mars_account_id,
+    )?;
+
+    Ok(InflowDepositsResponse {
+        deposits: positions.lends,
+    })
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractError> {
+    match msg.id {
+        REPLY_CREATE_ACCOUNT_INSTANTIATE => handle_create_account_instantiate_reply(deps, msg),
+        _ => Err(ContractError::Std(cosmwasm_std::StdError::generic_err(
+            format!("Unknown reply ID: {}", msg.id),
+        ))),
+    }
+}
+
+/// Handler for account creation during instantiation (stores account_id in config)
+fn handle_create_account_instantiate_reply(
+    deps: DepsMut,
+    msg: Reply,
+) -> Result<Response, ContractError> {
+    // Extract the account_id from Mars's response
+    let account_id = parse_account_id_from_reply(&msg)?;
+
+    // Get which depositor this account is for
+    let depositor_addr = PENDING_ACCOUNT_SETUP.load(deps.storage)?;
+
+    // Update the depositor's account ID
+    let depositor = Depositor {
+        mars_account_id: account_id.clone(),
+        enabled: true,
+    };
+    WHITELISTED_DEPOSITORS.save(deps.storage, depositor_addr.clone(), &depositor)?;
+
+    // Clean up temporary storage
+    PENDING_ACCOUNT_SETUP.remove(deps.storage);
+
+    Ok(Response::new()
+        .add_attribute("action", "account_created")
+        .add_attribute("depositor", depositor_addr)
+        .add_attribute("mars_account_id", account_id))
+}
+
+/// Parse account_id from Mars CreateCreditAccount reply
+fn parse_account_id_from_reply(reply: &Reply) -> Result<String, ContractError> {
+    // Mars returns the account_id in the events
+    // Look for a "wasm" event with "account_id" attribute
+    use cosmwasm_std::SubMsgResult;
+
+    let response = match &reply.result {
+        SubMsgResult::Ok(response) => response,
+        SubMsgResult::Err(err) => {
+            return Err(ContractError::MarsProtocolError {
+                msg: format!("CreateCreditAccount failed: {}", err),
+            });
+        }
+    };
+
+    for event in &response.events {
+        if event.ty == "wasm" {
+            for attr in &event.attributes {
+                if attr.key == "account_id" {
+                    return Ok(attr.value.clone());
+                }
+            }
+        }
+    }
+
+    Err(ContractError::MarsProtocolError {
+        msg: "account_id not found in Mars response".to_string(),
+    })
+}

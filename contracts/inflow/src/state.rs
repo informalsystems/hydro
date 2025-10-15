@@ -45,6 +45,10 @@ pub const USER_WITHDRAWAL_REQUESTS: Map<Addr, Vec<u64>> = Map::new("user_withdra
 /// PAYOUTS_HISTORY: key(user_address, payout_id) -> PayoutEntry
 pub const PAYOUTS_HISTORY: Map<(Addr, u64), PayoutEntry> = Map::new("payouts_history");
 
+/// Registered adapters for deploying funds to external protocols.
+/// ADAPTERS: key(adapter_name) -> AdapterInfo
+pub const ADAPTERS: Map<String, AdapterInfo> = Map::new("adapters");
+
 #[cw_serde]
 pub struct Config {
     /// Token denom that users can deposit into the vault.
@@ -85,6 +89,19 @@ pub struct PayoutEntry {
     pub recipient: Addr,
     pub vault_shares_burned: Uint128,
     pub amount_received: Uint128,
+}
+
+/// Information about a registered adapter
+#[cw_serde]
+pub struct AdapterInfo {
+    /// Contract address of the adapter
+    pub address: Addr,
+    /// Whether the adapter is currently active and can be used for deployments
+    pub is_active: bool,
+    /// Human-readable name for display purposes
+    pub name: String,
+    /// Optional description of the adapter and what protocol it integrates with
+    pub description: Option<String>,
 }
 
 pub fn load_config(storage: &dyn Storage) -> StdResult<Config> {

@@ -44,6 +44,7 @@ schema:
 	cd contracts/gatekeeper && cargo run --bin gatekeeper_schema
 	cd contracts/marketplace && cargo run --bin marketplace_schema
 	cd contracts/inflow && cargo run --bin inflow_schema
+	cd contracts/inflow-mars-adapter && cargo run --bin inflow_mars_adapter_schema
 
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/hydro/schema NAME=HydroBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/tribute/schema NAME=TributeBase
@@ -53,6 +54,7 @@ schema:
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/gatekeeper/schema NAME=GatekeeperBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/marketplace/schema NAME=MarketplaceBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/schema NAME=InflowBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow-mars-adapter/schema NAME=InflowMarsAdapterBase
 
 ts-codegen-inner:
 	cosmwasm-ts-codegen generate \

@@ -9,6 +9,8 @@ members = [
     "contracts/marketplace",
     "contracts/gatekeeper",
     "contracts/inflow",
+    "contracts/inflow-mars-adapter",
+    "packages/adapter-interface",
     "packages/cw-orch-interface",
     "packages/interface",
     "test/e2e",

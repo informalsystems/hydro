@@ -207,6 +207,108 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Register a new adapter for protocol integrations",
+      "type": "object",
+      "required": [
+        "register_adapter"
+      ],
+      "properties": {
+        "register_adapter": {
+          "type": "object",
+          "required": [
+            "address",
+            "name"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Unregister an existing adapter",
+      "type": "object",
+      "required": [
+        "unregister_adapter"
+      ],
+      "properties": {
+        "unregister_adapter": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Toggle adapter active status",
+      "type": "object",
+      "required": [
+        "toggle_adapter"
+      ],
+      "properties": {
+        "toggle_adapter": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Withdraw funds from an adapter to the inflow contract (whitelisted only) Funds stay in contract until withdraw_for_deployment is called",
+      "type": "object",
+      "required": [
+        "withdraw_from_adapter"
+      ],
+      "properties": {
+        "withdraw_from_adapter": {
+          "type": "object",
+          "required": [
+            "adapter_name",
+            "amount"
+          ],
+          "properties": {
+            "adapter_name": {
+              "type": "string"
+            },
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {

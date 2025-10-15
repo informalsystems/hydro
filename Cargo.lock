@@ -24,7 +24,18 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.8",
- "thiserror",
+ "thiserror 1.0.63",
+]
+
+[[package]]
+name = "adapter-interface"
+version = "3.6.2"
+dependencies = [
+ "cosmwasm-schema 2.2.1",
+ "cosmwasm-std 2.2.1",
+ "schemars",
+ "serde",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -704,7 +715,7 @@ dependencies = [
  "subtle-encoding",
  "tendermint 0.34.1",
  "tendermint-rpc 0.34.1",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -725,7 +736,7 @@ dependencies = [
  "subtle-encoding",
  "tendermint 0.39.1",
  "tendermint-rpc 0.39.1",
- "thiserror",
+ "thiserror 1.0.63",
  "tokio",
 ]
 
@@ -745,7 +756,7 @@ dependencies = [
  "ed25519-zebra 3.1.0",
  "k256",
  "rand_core 0.6.4",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -769,7 +780,7 @@ dependencies = [
  "rand_core 0.6.4",
  "rayon",
  "sha2 0.10.8",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -802,7 +813,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -815,7 +826,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -859,7 +870,7 @@ dependencies = [
  "serde-json-wasm 0.5.2",
  "sha2 0.10.8",
  "static_assertions",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -883,7 +894,7 @@ dependencies = [
  "serde-json-wasm 1.0.1",
  "sha2 0.10.8",
  "static_assertions",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -1016,7 +1027,27 @@ dependencies = [
  "cw-utils 2.0.0",
  "schemars",
  "serde",
- "thiserror",
+ "thiserror 1.0.63",
+]
+
+[[package]]
+name = "cw-multi-test"
+version = "2.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b00c3a218ed6abc6f1dd9be8146d4f23d8f41cf4e6d53cdfa71bab4514e1fc3"
+dependencies = [
+ "anyhow",
+ "bech32 0.11.0",
+ "cosmwasm-schema 2.2.1",
+ "cosmwasm-std 2.2.1",
+ "cw-storage-plus 2.0.0",
+ "cw-utils 2.0.0",
+ "itertools 0.14.0",
+ "prost 0.13.4",
+ "schemars",
+ "serde",
+ "sha2 0.10.8",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -1040,7 +1071,7 @@ dependencies = [
  "log",
  "schemars",
  "serde",
- "thiserror",
+ "thiserror 1.0.63",
  "tokio",
 ]
 
@@ -1072,7 +1103,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.8",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -1114,7 +1145,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.8",
- "thiserror",
+ "thiserror 1.0.63",
  "tokio",
  "toml 0.8.20",
  "tonic",
@@ -1213,7 +1244,7 @@ dependencies = [
  "schemars",
  "semver",
  "serde",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -1226,7 +1257,7 @@ dependencies = [
  "cosmwasm-std 2.2.1",
  "schemars",
  "serde",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -1241,7 +1272,7 @@ dependencies = [
  "schemars",
  "semver",
  "serde",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -1256,7 +1287,7 @@ dependencies = [
  "schemars",
  "semver",
  "serde",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -1301,7 +1332,7 @@ dependencies = [
  "schemars",
  "semver",
  "serde",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -1328,7 +1359,7 @@ dependencies = [
  "interface",
  "schemars",
  "serde",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -1372,7 +1403,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde-json-wasm 1.0.1",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -1783,7 +1814,7 @@ dependencies = [
  "schemars",
  "serde",
  "sha2 0.10.8",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -2072,7 +2103,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde-json-wasm 1.0.1",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -2391,6 +2422,7 @@ dependencies = [
 name = "inflow"
 version = "3.6.2"
 dependencies = [
+ "adapter-interface",
  "cosmos-sdk-proto 0.20.0",
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",
@@ -2402,7 +2434,22 @@ dependencies = [
  "schemars",
  "serde",
  "serde-json-wasm 1.0.1",
- "thiserror",
+ "thiserror 1.0.63",
+]
+
+[[package]]
+name = "inflow-mars-adapter"
+version = "3.6.2"
+dependencies = [
+ "adapter-interface",
+ "cosmwasm-schema 2.2.1",
+ "cosmwasm-std 2.2.1",
+ "cw-multi-test",
+ "cw-storage-plus 2.0.0",
+ "cw2 2.0.0",
+ "schemars",
+ "serde",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -2433,6 +2480,15 @@ name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
 dependencies = [
  "either",
 ]
@@ -2531,7 +2587,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -2569,7 +2625,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -2653,7 +2709,7 @@ dependencies = [
  "serde_json",
  "speedate",
  "tendermint-proto 0.34.1",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -2678,7 +2734,7 @@ dependencies = [
  "serde_json",
  "speedate",
  "tendermint-proto 0.34.1",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -2883,7 +2939,7 @@ dependencies = [
  "serde",
  "serde_json",
  "test-tube",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -3191,7 +3247,7 @@ checksum = "b65f4a8ec18723a734e5dc09c173e0abf9690432da5340285d536edcb4dac190"
 dependencies = [
  "once_cell",
  "protobuf-support",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -3200,7 +3256,7 @@ version = "3.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6872f4d4f4b98303239a2b5838f5bbbb77b01ffc892d627957f37a22d7cfe69c"
 dependencies = [
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -3330,7 +3386,7 @@ checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
 dependencies = [
  "getrandom 0.2.15",
  "libredox",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -4010,7 +4066,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde-json-wasm 1.0.1",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -4317,7 +4373,7 @@ dependencies = [
  "tendermint 0.34.1",
  "tendermint-config 0.34.1",
  "tendermint-proto 0.34.1",
- "thiserror",
+ "thiserror 1.0.63",
  "time",
  "tokio",
  "tracing",
@@ -4350,7 +4406,7 @@ dependencies = [
  "tendermint 0.39.1",
  "tendermint-config 0.39.1",
  "tendermint-proto 0.39.1",
- "thiserror",
+ "thiserror 1.0.63",
  "time",
  "tokio",
  "tracing",
@@ -4383,7 +4439,7 @@ dependencies = [
  "prost 0.12.6",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -4392,7 +4448,16 @@ version = "1.0.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0342370b38b6a11b6cc11d6a805569958d54cfa061a29969c3b5ce2ea405724"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 1.0.63",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f63587ca0f12b72a0600bcba1d40081f830876000bb46dd2337a3051618f4fc8"
+dependencies = [
+ "thiserror-impl 2.0.17",
 ]
 
 [[package]]
@@ -4400,6 +4465,17 @@ name = "thiserror-impl"
 version = "1.0.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4558b58466b9ad7ca0f102865eccc95938dca1a74a856f2b57b6629050da261"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.87",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ff15c8ecd7de3849db632e14d18d2571fa09dfc5ed93479bc4485c7a517c913"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4682,7 +4758,7 @@ dependencies = [
  "proptest",
  "schemars",
  "serde",
- "thiserror",
+ "thiserror 1.0.63",
 ]
 
 [[package]]

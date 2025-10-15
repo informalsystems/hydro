@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RegisteredInflowsResponse",
+  "type": "object",
+  "required": [
+    "inflows"
+  ],
+  "properties": {
+    "inflows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/RegisteredInflowInfo"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "RegisteredInflowInfo": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "inflow_address"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "inflow_address": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
