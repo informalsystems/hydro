@@ -47,26 +47,6 @@ pub struct MsgSetDenomMetadata {
 }
 
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Metadata {
-    #[prost(message, repeated, tag = "1")]
-    pub denom_units: ::prost::alloc::vec::Vec<DenomUnit>,
-    #[prost(string, tag = "2")]
-    pub base: String,
-    #[prost(string, tag = "3")]
-    pub display: String,
-    #[prost(string, tag = "4")]
-    pub name: String,
-    #[prost(string, tag = "5")]
-    pub description: String,
-    #[prost(string, tag = "6")]
-    pub symbol: String,
-    #[prost(string, tag = "7")]
-    pub uri: String,
-    #[prost(string, tag = "8")]
-    pub uri_hash: String,
-}
-
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DenomUnit {
     #[prost(string, tag = "1")]
     pub denom: String,
@@ -74,6 +54,26 @@ pub struct DenomUnit {
     pub exponent: u32,
     #[prost(string, repeated, tag = "3")]
     pub aliases: ::prost::alloc::vec::Vec<String>,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Metadata {
+    #[prost(string, tag = "1")]
+    pub description: String,
+    #[prost(message, repeated, tag = "2")]
+    pub denom_units: ::prost::alloc::vec::Vec<DenomUnit>,
+    #[prost(string, tag = "3")]
+    pub base: String,
+    #[prost(string, tag = "4")]
+    pub display: String,
+    #[prost(string, tag = "5")]
+    pub name: String,
+    #[prost(string, tag = "6")]
+    pub symbol: String,
+    #[prost(string, tag = "7")]
+    pub uri: String,
+    #[prost(string, tag = "8")]
+    pub uri_hash: String,
 }
 
 pub fn msg_create_denom(sender: String, subdenom: String) -> CosmosMsg {
@@ -126,6 +126,7 @@ pub fn msg_set_denom_metadata(
     uri_hash: String,
 ) -> CosmosMsg {
     let metadata = Metadata {
+        description,
         denom_units: vec![
             DenomUnit {
                 denom: base.clone(),
@@ -141,7 +142,6 @@ pub fn msg_set_denom_metadata(
         base,
         display,
         name,
-        description,
         symbol,
         uri,
         uri_hash,
