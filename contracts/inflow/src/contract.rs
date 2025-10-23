@@ -3,21 +3,13 @@ use std::{
     env, vec,
 };
 
-use cosmos_sdk_proto::cosmos::bank::v1beta1::{DenomUnit, Metadata};
 use cosmwasm_std::{
-    entry_point, from_json, to_json_binary, to_json_vec, Addr, AnyMsg, BankMsg, Binary, Coin,
+    entry_point, from_json, to_json_binary, to_json_vec, Addr, BankMsg, Binary, Coin,
     ConversionOverflowError, CosmosMsg, Deps, DepsMut, Env, Int128, MessageInfo, Order, Reply,
     Response, StdError, StdResult, Storage, SubMsg, Uint128,
 };
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
-use neutron_sdk::{
-    bindings::{msg::NeutronMsg, query::NeutronQuery},
-    proto_types::osmosis::tokenfactory::v1beta1::MsgSetDenomMetadata,
-    query::token_factory::query_full_denom,
-};
-
-use prost::Message;
 
 use crate::{
     error::{new_generic_error, ContractError},
@@ -32,6 +24,7 @@ use crate::{
         LAST_FUNDED_WITHDRAWAL_ID, NEXT_PAYOUT_ID, NEXT_WITHDRAWAL_ID, PAYOUTS_HISTORY,
         USER_WITHDRAWAL_REQUESTS, WHITELIST, WITHDRAWAL_QUEUE_INFO, WITHDRAWAL_REQUESTS,
     },
+    tokenfactory::{full_denom, msg_burn, msg_create_denom, msg_mint, msg_set_denom_metadata},
 };
 
 /// Contract name that is used for migration.
@@ -43,11 +36,11 @@ pub const UNUSED_MSG_ID: u64 = 0;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     CONFIG.save(
@@ -91,7 +84,7 @@ pub fn instantiate(
 
     // Send SubMsg to the TokenFactory module to create a new denom
     let create_denom_msg = SubMsg::reply_on_success(
-        NeutronMsg::submit_create_denom(msg.subdenom.clone()),
+        msg_create_denom(env.contract.address.to_string(), msg.subdenom.clone()),
         UNUSED_MSG_ID,
     )
     .with_payload(to_json_vec(&ReplyPayload::CreateDenom {
@@ -121,11 +114,11 @@ pub fn instantiate(
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let config = load_config(deps.storage)?;
 
     match msg {
@@ -156,11 +149,11 @@ pub fn execute(
 
 // Deposits tokens accepted by the vault and issues certain amount of vault shares tokens in return.
 fn deposit(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     config: &Config,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let deposit_amount = cw_utils::must_pay(&info, &config.deposit_denom)?;
 
     // Total value also includes the deposit amount, since the tokens are previously sent to the contract
@@ -173,14 +166,22 @@ fn deposit(
     let vault_shares_to_mint =
         calculate_number_of_shares_to_mint(&deps.as_ref(), deposit_amount, total_pool_value)?;
 
-    let mint_vault_shares_msg = NeutronMsg::submit_mint_tokens(
-        &config.vault_shares_denom,
+    let mint_msg = msg_mint(
+        env.contract.address.to_string(),
+        config.vault_shares_denom.clone(),
         vault_shares_to_mint,
-        &info.sender,
     );
+    let send_msg = BankMsg::Send {
+        to_address: info.sender.to_string(),
+        amount: vec![Coin::new(
+            vault_shares_to_mint,
+            config.vault_shares_denom.clone(),
+        )],
+    };
 
     Ok(Response::new()
-        .add_message(mint_vault_shares_msg)
+        .add_message(mint_msg)
+        .add_message(send_msg)
         .add_attribute("action", "deposit")
         .add_attribute("sender", info.sender)
         .add_attribute("deposit_amount", deposit_amount)
@@ -193,11 +194,11 @@ fn deposit(
 // receive deposit tokens immediately. Otherwise, the request will be added to the withdrawal queue.
 // In both cases, the vault shares tokens sent by the user will be burned immediately.
 fn withdraw(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     config: &Config,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let vault_shares_denom = config.vault_shares_denom.clone();
     let vault_shares_sent = cw_utils::must_pay(&info, &vault_shares_denom)?;
 
@@ -283,7 +284,11 @@ fn withdraw(
     }
 
     // Burn the vault shares tokens sent by the user
-    let burn_shares_msg = NeutronMsg::submit_burn_tokens(&vault_shares_denom, vault_shares_sent);
+    let burn_shares_msg = msg_burn(
+        env.contract.address.to_string(),
+        vault_shares_denom,
+        vault_shares_sent,
+    );
 
     Ok(response.add_message(burn_shares_msg))
 }
@@ -294,12 +299,12 @@ fn withdraw(
 // received from all withdrawal requests that are being canceled. Withdrawals are not allowed if the
 // vault deposit cap has been reached.
 fn cancel_withdrawal(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     config: &Config,
     withdrawal_ids: Vec<u64>,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let total_pool_value =
         get_total_pool_value(&deps.as_ref(), &env, config.deposit_denom.clone())?;
     if total_pool_value >= config.deposit_cap {
@@ -406,11 +411,19 @@ fn cancel_withdrawal(
         calculate_number_of_shares_to_mint(&deps.as_ref(), amount_to_withdraw, total_pool_value)?;
 
     // Mint the vault shares tokens
-    let mint_vault_shares_msg =
-        NeutronMsg::submit_mint_tokens(&config.vault_shares_denom, shares_to_mint, &info.sender);
+    let mint_msg = msg_mint(
+        env.contract.address.to_string(),
+        config.vault_shares_denom.clone(),
+        shares_to_mint,
+    );
+    let send_msg = BankMsg::Send {
+        to_address: info.sender.to_string(),
+        amount: vec![Coin::new(shares_to_mint, config.vault_shares_denom.clone())],
+    };
 
     Ok(response
-        .add_message(mint_vault_shares_msg)
+        .add_message(mint_msg)
+        .add_message(send_msg)
         .add_attribute("canceled_withdrawal_amount", amount_to_withdraw)
         .add_attribute("shares_initially_burned", shares_burned)
         .add_attribute("shares_minted_back", shares_to_mint))
@@ -420,12 +433,12 @@ fn cancel_withdrawal(
 // those withdrawal requests that can be paid out with the funds held by the contract, but also
 // considering the funds already allocated for earlier requests that have not been paid out yet.
 fn fulfill_pending_withdrawals(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     config: &Config,
     limit: u64,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     // If this action is being executed for the first time, start from withdrawal ID 0.
     // Otherwise, start from the last funded withdrawal ID increased by 1.
     let start = LAST_FUNDED_WITHDRAWAL_ID
@@ -513,12 +526,12 @@ fn fulfill_pending_withdrawals(
 // Withdrawal entries must first be marked as ready for payout, which is achieved by executing
 // the `fulfill_pending_withdrawals()` action.
 fn claim_unbonded_withdrawals(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     config: &Config,
     withdrawal_ids: Vec<u64>,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let Some(last_funded_withdrawal_id) = LAST_FUNDED_WITHDRAWAL_ID.may_load(deps.storage)? else {
         return Err(new_generic_error(
             "no withdrawal requests have been funded yet",
@@ -641,12 +654,12 @@ fn claim_unbonded_withdrawals(
 
 // Withdraws the specified amount for deployment.
 fn withdraw_for_deployment(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     config: &Config,
     amount: Uint128,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
 
     let available_for_deployment = query_available_for_deployment(&deps.as_ref(), &env)?;
@@ -683,11 +696,11 @@ fn withdraw_for_deployment(
 
 // Adds a new account address to the whitelist.
 fn add_to_whitelist(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     address: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
     let whitelist_address = deps.api.addr_validate(&address)?;
 
@@ -712,11 +725,11 @@ fn add_to_whitelist(
 
 // Removes an account address from the whitelist.
 fn remove_from_whitelist(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     address: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
     let whitelist_address = deps.api.addr_validate(&address)?;
 
@@ -749,10 +762,7 @@ fn remove_from_whitelist(
         .add_attribute("removed_whitelist_address", whitelist_address))
 }
 
-fn validate_address_is_whitelisted(
-    deps: &DepsMut<NeutronQuery>,
-    address: Addr,
-) -> Result<(), ContractError> {
+fn validate_address_is_whitelisted(deps: &DepsMut, address: Addr) -> Result<(), ContractError> {
     let is_whitelisted = WHITELIST.may_load(deps.storage, address)?;
     if is_whitelisted.is_none() {
         return Err(ContractError::Unauthorized);
@@ -763,7 +773,7 @@ fn validate_address_is_whitelisted(
 
 /// Given the `deposit_amount`, this function will calculate how many vault shares tokens should be minted in return.
 pub fn calculate_number_of_shares_to_mint(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     deposit_amount: Uint128,
     total_pool_value: Uint128,
 ) -> Result<Uint128, ContractError> {
@@ -787,11 +797,11 @@ pub fn calculate_number_of_shares_to_mint(
 }
 
 fn submit_deployed_amount(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     amount: Uint128,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     // Check if the sender is in the whitelist
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
 
@@ -805,10 +815,10 @@ fn submit_deployed_amount(
 }
 
 fn update_config(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     info: MessageInfo,
     config_update: UpdateConfigData,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     // Check if the sender is in the whitelist
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
 
@@ -839,7 +849,7 @@ fn update_config(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_json_binary(&query_config(&deps)?),
         QueryMsg::TotalSharesIssued {} => to_json_binary(&query_total_shares_issued(&deps)?),
@@ -879,29 +889,25 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
     }
 }
 
-fn query_config(deps: &Deps<NeutronQuery>) -> StdResult<ConfigResponse> {
+fn query_config(deps: &Deps) -> StdResult<ConfigResponse> {
     Ok(ConfigResponse {
         config: load_config(deps.storage)?,
     })
 }
 
-fn query_total_shares_issued(deps: &Deps<NeutronQuery>) -> StdResult<Uint128> {
+fn query_total_shares_issued(deps: &Deps) -> StdResult<Uint128> {
     Ok(deps
         .querier
         .query_supply(load_config(deps.storage)?.vault_shares_denom)?
         .amount)
 }
 
-fn query_total_pool_value(deps: &Deps<NeutronQuery>, env: &Env) -> StdResult<Uint128> {
+fn query_total_pool_value(deps: &Deps, env: &Env) -> StdResult<Uint128> {
     get_total_pool_value(deps, env, load_config(deps.storage)?.deposit_denom)
 }
 
 /// Returns the value equivalent of a given amount of shares based on the current total shares and pool value.
-fn query_shares_equivalent_value(
-    deps: &Deps<NeutronQuery>,
-    env: &Env,
-    shares: Uint128,
-) -> StdResult<Uint128> {
+fn query_shares_equivalent_value(deps: &Deps, env: &Env, shares: Uint128) -> StdResult<Uint128> {
     let total_shares_supply = query_total_shares_issued(deps)?;
     let total_pool_value = query_total_pool_value(deps, env)?;
 
@@ -910,7 +916,7 @@ fn query_shares_equivalent_value(
 
 /// Returns the value equivalent of a user's shares by querying their balance and calculating its worth based on total shares and pool value.
 fn query_user_shares_equivalent_value(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     env: &Env,
     address: String,
 ) -> StdResult<Uint128> {
@@ -922,13 +928,13 @@ fn query_user_shares_equivalent_value(
     query_shares_equivalent_value(deps, env, shares_balance)
 }
 
-fn query_deployed_amount(deps: &Deps<NeutronQuery>) -> StdResult<Uint128> {
+fn query_deployed_amount(deps: &Deps) -> StdResult<Uint128> {
     Ok(DEPLOYED_AMOUNT
         .may_load(deps.storage)?
         .unwrap_or_else(Uint128::zero))
 }
 
-pub fn query_available_for_deployment(deps: &Deps<NeutronQuery>, env: &Env) -> StdResult<Uint128> {
+pub fn query_available_for_deployment(deps: &Deps, env: &Env) -> StdResult<Uint128> {
     let config = load_config(deps.storage)?;
     let withdrawal_queue_info = load_withdrawal_queue_info(deps.storage)?;
 
@@ -946,18 +952,13 @@ pub fn query_available_for_deployment(deps: &Deps<NeutronQuery>, env: &Env) -> S
     )
 }
 
-pub fn query_withdrawal_queue_info(
-    deps: &Deps<NeutronQuery>,
-) -> StdResult<WithdrawalQueueInfoResponse> {
+pub fn query_withdrawal_queue_info(deps: &Deps) -> StdResult<WithdrawalQueueInfoResponse> {
     Ok(WithdrawalQueueInfoResponse {
         info: load_withdrawal_queue_info(deps.storage)?,
     })
 }
 
-pub fn query_amount_to_fund_pending_withdrawals(
-    deps: &Deps<NeutronQuery>,
-    env: &Env,
-) -> StdResult<Uint128> {
+pub fn query_amount_to_fund_pending_withdrawals(deps: &Deps, env: &Env) -> StdResult<Uint128> {
     let config = load_config(deps.storage)?;
     let withdrawal_queue_info = load_withdrawal_queue_info(deps.storage)?;
 
@@ -981,7 +982,7 @@ pub fn query_amount_to_fund_pending_withdrawals(
 }
 
 fn query_funded_withdrawal_requests(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     limit: u64,
 ) -> StdResult<FundedWithdrawalRequestsResponse> {
     // If no withdrawals have been funded yet, return an empty list. Otherwise, use last_funded_withdrawal_id
@@ -1016,7 +1017,7 @@ fn query_funded_withdrawal_requests(
 }
 
 pub fn query_user_withdrawal_requests(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     address: String,
     start_from: u32,
     limit: u32,
@@ -1041,7 +1042,7 @@ pub fn query_user_withdrawal_requests(
 }
 
 pub fn query_user_payouts_history(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     address: String,
     start_from: u32,
     limit: u32,
@@ -1085,81 +1086,51 @@ fn calculate_shares_value(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn reply(
-    deps: DepsMut<NeutronQuery>,
-    env: Env,
-    msg: Reply,
-) -> Result<Response<NeutronMsg>, ContractError> {
+pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
     let reply_paylod = from_json::<ReplyPayload>(&msg.payload)?;
 
     match reply_paylod {
         ReplyPayload::CreateDenom { subdenom, metadata } => {
             // Full denom name, e.g. "factory/{inflow_contract_address}/hydro_inflow_atom"
-            let full_denom = query_full_denom(deps.as_ref(), &env.contract.address, subdenom)?;
+            let full_denom_str = full_denom(env.contract.address.as_str(), &subdenom);
 
             CONFIG.update(deps.storage, |mut config| -> Result<_, ContractError> {
-                config.vault_shares_denom = full_denom.denom.clone();
+                config.vault_shares_denom = full_denom_str.clone();
 
                 Ok(config)
             })?;
 
-            let msg = create_set_denom_metadata_msg(
+            let DenomMetadata {
+                exponent,
+                display,
+                name,
+                description,
+                symbol,
+                uri,
+                uri_hash,
+            } = metadata;
+
+            let msg = msg_set_denom_metadata(
                 env.contract.address.into_string(),
-                full_denom.denom.clone(),
-                metadata,
+                full_denom_str.clone(),
+                display,
+                exponent,
+                name,
+                description,
+                symbol,
+                uri.unwrap_or_default(),
+                uri_hash.unwrap_or_default(),
             );
 
             Ok(Response::new()
                 .add_message(msg)
                 .add_attribute("action", "reply_create_denom")
-                .add_attribute("full_denom", full_denom.denom))
+                .add_attribute("full_denom", full_denom_str))
         }
     }
 }
 
-/// Creates MsgSetDenomMetadata that will set the metadata for the previously created `full_denom` token.
-fn create_set_denom_metadata_msg(
-    contract_address: String,
-    full_denom: String,
-    token_metadata: DenomMetadata,
-) -> CosmosMsg<NeutronMsg> {
-    CosmosMsg::Any(AnyMsg {
-        type_url: "/osmosis.tokenfactory.v1beta1.MsgSetDenomMetadata".to_owned(),
-        value: Binary::from(
-            MsgSetDenomMetadata {
-                sender: contract_address,
-                metadata: Some(Metadata {
-                    denom_units: vec![
-                        DenomUnit {
-                            denom: full_denom.clone(),
-                            exponent: 0,
-                            aliases: vec![],
-                        },
-                        DenomUnit {
-                            denom: token_metadata.display.clone(),
-                            exponent: token_metadata.exponent,
-                            aliases: vec![],
-                        },
-                    ],
-                    base: full_denom,
-                    display: token_metadata.display,
-                    name: token_metadata.name,
-                    description: token_metadata.description,
-                    symbol: token_metadata.symbol,
-                    uri: token_metadata.uri.unwrap_or_default(),
-                    uri_hash: token_metadata.uri_hash.unwrap_or_default(),
-                }),
-            }
-            .encode_to_vec(),
-        ),
-    })
-}
-
-fn get_total_pool_value(
-    deps: &Deps<NeutronQuery>,
-    env: &Env,
-    deposit_denom: String,
-) -> StdResult<Uint128> {
+fn get_total_pool_value(deps: &Deps, env: &Env, deposit_denom: String) -> StdResult<Uint128> {
     // Get the current balance of this contract in the deposit denom
     let balance: Coin = deps
         .querier
@@ -1295,7 +1266,7 @@ fn add_payout_history_entry(
 /// Calculates the balance available for funding pending withdrawals by subtracting the amount
 /// already allocated for earlier funded withdrawal requests from the current contract balance.
 fn get_balance_available_for_pending_withdrawals(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     contract_address: &str,
     deposit_denom: &str,
     withdrawal_queue_info: &WithdrawalQueueInfo,

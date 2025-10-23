@@ -1,6 +1,5 @@
 use cosmwasm_std::{CheckedFromRatioError, ConversionOverflowError, OverflowError, StdError};
 use cw_utils::PaymentError;
-use neutron_sdk::NeutronError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -19,9 +18,6 @@ pub enum ContractError {
 
     #[error("{0}")]
     ConversionOverflowError(#[from] ConversionOverflowError),
-
-    #[error(transparent)]
-    NeutronError(#[from] NeutronError),
 
     #[error("Unauthorized")]
     Unauthorized,

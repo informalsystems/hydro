@@ -21,5 +21,3 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 schemars = { workspace = true }
 prost = { workspace = true }
-neutron-sdk = { workspace = true }
-cosmos-sdk-proto = { workspace = true }

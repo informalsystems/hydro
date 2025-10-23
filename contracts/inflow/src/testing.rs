@@ -10,14 +10,15 @@ use crate::{
     msg::{DenomMetadata, ExecuteMsg, InstantiateMsg, UpdateConfigData},
     query::QueryMsg,
     state::{CONFIG, DEPLOYED_AMOUNT, LAST_FUNDED_WITHDRAWAL_ID, WITHDRAWAL_QUEUE_INFO},
+    tokenfactory::{MsgBurn, MsgMint, BURN_URL, MINT_URL},
 };
 use cosmwasm_std::{
     from_json,
     testing::{mock_env, MockApi, MockQuerier, MockStorage},
-    Addr, BalanceResponse, BankMsg, BankQuery, Coin, CosmosMsg, Env, MemoryStorage, MessageInfo,
-    Order, OwnedDeps, Uint128,
+    Addr, AnyMsg, BalanceResponse, BankMsg, BankQuery, Coin, CosmosMsg, Empty, Env, MemoryStorage,
+    MessageInfo, Order, OwnedDeps, Uint128,
 };
-use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
+use prost::Message;
 
 const DEPOSIT_DENOM: &str = "ibc/C4CFF46FD6DE35CA4CF4CE031E643C8FDC9BA4B99AE598E9B0ED98FE3A2319F9";
 const WHITELIST_ADDR: &str = "whitelist1";
@@ -26,7 +27,7 @@ const USER1: &str = "user1";
 const USER2: &str = "user2";
 const USER3: &str = "user3";
 
-pub fn mock_dependencies() -> OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery> {
+pub fn mock_dependencies() -> OwnedDeps<MockStorage, MockApi, MockQuerier, Empty> {
     OwnedDeps {
         storage: MockStorage::default(),
         api: MockApi::default(),
@@ -42,9 +43,48 @@ pub fn get_message_info(api: &MockApi, sender: &str, funds: &[Coin]) -> MessageI
     }
 }
 
+// Helper assertions for TokenFactory messages
+fn assert_mint_msg(
+    msg: &CosmosMsg,
+    expected_sender: &Addr,
+    expected_denom: &str,
+    expected_amount: Uint128,
+) {
+    match msg {
+        CosmosMsg::Any(AnyMsg { type_url, value }) => {
+            assert_eq!(type_url, MINT_URL);
+            let mint = MsgMint::decode(value.as_slice()).expect("failed to decode MsgMint");
+            assert_eq!(mint.sender, expected_sender.as_str());
+            let amount = mint.amount.expect("mint message missing amount");
+            assert_eq!(amount.denom, expected_denom);
+            assert_eq!(amount.amount, expected_amount.to_string());
+        }
+        _ => panic!("Expected MsgMint wrapped in CosmosMsg::Any"),
+    }
+}
+
+fn assert_burn_msg(
+    msg: &CosmosMsg,
+    expected_sender: &Addr,
+    expected_denom: &str,
+    expected_amount: Uint128,
+) {
+    match msg {
+        CosmosMsg::Any(AnyMsg { type_url, value }) => {
+            assert_eq!(type_url, BURN_URL);
+            let burn = MsgBurn::decode(value.as_slice()).expect("failed to decode MsgBurn");
+            assert_eq!(burn.sender, expected_sender.as_str());
+            let amount = burn.amount.expect("burn message missing amount");
+            assert_eq!(amount.denom, expected_denom);
+            assert_eq!(amount.amount, expected_amount.to_string());
+        }
+        _ => panic!("Expected MsgBurn wrapped in CosmosMsg::Any"),
+    }
+}
+
 // Helper to set up the querier to return a specific balance for the given address
 fn mock_address_balance(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, Empty>,
     address: &str,
     denom: &str,
     amount: Uint128,
@@ -78,7 +118,7 @@ fn get_default_instantiate_msg(deposit_denom: &str, whitelist_addr: Addr) -> Ins
 }
 
 fn set_vault_shares_denom(
-    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, Empty>,
     vault_shares_denom_str: String,
 ) {
     CONFIG
@@ -1761,7 +1801,7 @@ fn withdrawal_with_config_update_test() {
 
 #[allow(clippy::too_many_arguments)]
 fn execute_deposit(
-    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, Empty>,
     env: &Env,
     inflow_contract_addr: &Addr,
     user_str: &str,
@@ -1798,19 +1838,26 @@ fn execute_deposit(
     )
     .unwrap();
 
-    // Verify mint message for vault shares tokens
-    let mint_msg = &deposit_res.messages[0].msg;
-    match mint_msg {
-        CosmosMsg::Custom(NeutronMsg::MintTokens {
-            denom,
-            amount,
-            mint_to_address,
-        }) => {
-            assert_eq!(denom, vault_shares_denom_str);
-            assert_eq!(amount, expected_user_shares_minted);
-            assert_eq!(mint_to_address, user_address.as_ref());
+    assert_eq!(deposit_res.messages.len(), 2);
+    assert_mint_msg(
+        &deposit_res.messages[0].msg,
+        inflow_contract_addr,
+        vault_shares_denom_str,
+        expected_user_shares_minted,
+    );
+
+    match &deposit_res.messages[1].msg {
+        CosmosMsg::Bank(BankMsg::Send { to_address, amount }) => {
+            assert_eq!(to_address, user_address.as_str());
+            assert_eq!(
+                amount,
+                &vec![Coin {
+                    denom: vault_shares_denom_str.clone(),
+                    amount: expected_user_shares_minted,
+                }]
+            );
         }
-        _ => panic!("Expected MintTokens message"),
+        _ => panic!("Expected BankMsg::Send for minted vault shares distribution"),
     }
 
     // Mock that the user received vault shares tokens on its bank balance
@@ -1823,7 +1870,7 @@ fn execute_deposit(
 }
 
 fn execute_withdraw_for_deployment(
-    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, Empty>,
     env: &Env,
     inflow_contract_addr: &str,
     whitelisted_user_str: &str,
@@ -1851,7 +1898,7 @@ fn execute_withdraw_for_deployment(
 }
 
 fn execute_return_from_deployment(
-    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, Empty>,
     env: &Env,
     inflow_contract_addr: &str,
     whitelisted_user_str: &str,
@@ -1897,7 +1944,7 @@ fn execute_return_from_deployment(
 
 #[allow(clippy::too_many_arguments)]
 fn execute_withdraw(
-    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, Empty>,
     env: &Env,
     inflow_contract_addr: &str,
     user_str: &str,
@@ -1926,33 +1973,19 @@ fn execute_withdraw(
     )
     .unwrap();
 
+    let expected_message_count = if should_receive_deposit_tokens { 2 } else { 1 };
+    assert_eq!(withdraw_res.messages.len(), expected_message_count);
+
     if should_receive_deposit_tokens {
-        // Verify bank send message to receive deposit tokens
-        let bank_send_msg = &withdraw_res.messages[0].msg;
-        match bank_send_msg {
-            CosmosMsg::Bank(BankMsg::Send { to_address, amount }) => {
-                assert_eq!(to_address, user_address.as_ref());
-                assert_eq!(amount[0].denom, DEPOSIT_DENOM);
-                assert_eq!(amount[0].amount, expected_tokens_received);
-            }
-            _ => panic!("Expected BankSend message"),
+        if let CosmosMsg::Bank(BankMsg::Send { to_address, amount }) = &withdraw_res.messages[0].msg
+        {
+            assert_eq!(to_address, user_address.as_ref());
+            assert_eq!(amount[0].denom, DEPOSIT_DENOM);
+            assert_eq!(amount[0].amount, expected_tokens_received);
+        } else {
+            panic!("Expected BankSend message");
         }
 
-        // Verify burn message for vault shares tokens
-        let burn_msg = &withdraw_res.messages[1].msg;
-        match burn_msg {
-            CosmosMsg::Custom(NeutronMsg::BurnTokens {
-                denom,
-                amount,
-                burn_from_address: _,
-            }) => {
-                assert_eq!(denom, vault_shares_denom_str);
-                assert_eq!(amount, withdraw_shares_amount);
-            }
-            _ => panic!("Expected MintTokens message"),
-        }
-
-        // Update Inflow contract deposit tokens balance
         mock_address_balance(
             deps,
             inflow_contract_addr,
@@ -1960,6 +1993,14 @@ fn execute_withdraw(
             contract_deposit_tokens_after,
         );
     }
+
+    let burn_msg_index = if should_receive_deposit_tokens { 1 } else { 0 };
+    assert_burn_msg(
+        &withdraw_res.messages[burn_msg_index].msg,
+        &env.contract.address,
+        vault_shares_denom_str,
+        withdraw_shares_amount,
+    );
 
     // Update user's vault shares tokens balance
     mock_address_balance(
@@ -1976,7 +2017,7 @@ type CancelWithdrawalExpectedResult = (
 );
 
 fn execute_cancel_withdrawal(
-    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, Empty>,
     env: &Env,
     user_str: &str,
     withdrawal_ids: Vec<u64>,
@@ -1995,22 +2036,29 @@ fn execute_cancel_withdrawal(
     .unwrap();
 
     if let Some(expected_result) = expected_result {
-        // Verify mint message for vault shares tokens
-        let mint_msg = &cancel_withdrawal_res.messages[0].msg;
-        match mint_msg {
-            CosmosMsg::Custom(NeutronMsg::MintTokens {
-                denom,
+        assert_eq!(cancel_withdrawal_res.messages.len(), 2);
+        assert_mint_msg(
+            &cancel_withdrawal_res.messages[0].msg,
+            &env.contract.address,
+            vault_shares_denom_str,
+            expected_result.0,
+        );
+
+        if let CosmosMsg::Bank(BankMsg::Send { to_address, amount }) =
+            &cancel_withdrawal_res.messages[1].msg
+        {
+            assert_eq!(to_address, user_address.as_ref());
+            assert_eq!(
                 amount,
-                mint_to_address,
-            }) => {
-                assert_eq!(denom, vault_shares_denom_str);
-                assert_eq!(amount, expected_result.0);
-                assert_eq!(mint_to_address, user_address.as_ref());
-            }
-            _ => panic!("Expected MintTokens message"),
+                &vec![Coin {
+                    denom: vault_shares_denom_str.clone(),
+                    amount: expected_result.0,
+                }]
+            );
+        } else {
+            panic!("Expected BankSend message");
         }
 
-        // Update user's vault shares tokens balance
         mock_address_balance(
             deps,
             user_address.as_ref(),
@@ -2027,7 +2075,7 @@ type ClaimUnbondedWithdrawalExpectedResult = (
 
 #[allow(clippy::too_many_arguments)]
 fn execute_claim_unbodned_withdrawals(
-    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, Empty>,
     env: &Env,
     inflow_contract_addr: &str,
     sender_str: &str,
@@ -2086,7 +2134,7 @@ fn execute_claim_unbodned_withdrawals(
 }
 
 fn execute_fulfill_pending_withdrawals(
-    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, Empty>,
     env: &Env,
     user_str: &str,
 ) {
@@ -2102,7 +2150,7 @@ fn execute_fulfill_pending_withdrawals(
 }
 
 fn verify_withdrawal_queue_info(
-    deps: &OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &OwnedDeps<MemoryStorage, MockApi, MockQuerier, Empty>,
     expected_total_shares_burned: Uint128,
     expected_total_withdrawal_amount: Uint128,
     expected_non_funded_withdrawal_amount: Uint128,
@@ -2130,7 +2178,7 @@ type ExpectedWithdrawalRequest = (
 );
 
 fn verify_user_withdrawal_requests(
-    deps: &OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &OwnedDeps<MemoryStorage, MockApi, MockQuerier, Empty>,
     user_address: &Addr,
     expected_withdrawal_requests: Vec<ExpectedWithdrawalRequest>,
 ) {
@@ -2158,7 +2206,7 @@ type ExpectedPayoutHistory = (
 );
 
 fn verify_users_payouts_history(
-    deps: &OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &OwnedDeps<MemoryStorage, MockApi, MockQuerier, Empty>,
     expected_payouts_history: Vec<ExpectedPayoutHistory>,
 ) {
     for expected_user_payouts in expected_payouts_history {
