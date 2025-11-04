@@ -1,0 +1,1 @@
+- Allow Inflow deposit callers to optionally specify an `on_behalf_of` recipient so minted shares are issued to the intended account. ([\#329](https://github.com/informalsystems/hydro/pull/329))
