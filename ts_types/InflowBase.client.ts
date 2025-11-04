@@ -180,7 +180,11 @@ export class InflowBaseQueryClient implements InflowBaseReadOnlyInterface {
 export interface InflowBaseInterface extends InflowBaseReadOnlyInterface {
   contractAddress: string;
   sender: string;
-  deposit: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  deposit: ({
+    onBehalfOf
+  }: {
+    onBehalfOf?: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   withdraw: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   cancelWithdrawal: ({
     withdrawalIds
@@ -243,9 +247,15 @@ export class InflowBaseClient extends InflowBaseQueryClient implements InflowBas
     this.removeFromWhitelist = this.removeFromWhitelist.bind(this);
     this.updateConfig = this.updateConfig.bind(this);
   }
-  deposit = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+  deposit = async ({
+    onBehalfOf
+  }: {
+    onBehalfOf?: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      deposit: {}
+      deposit: {
+        on_behalf_of: onBehalfOf
+      }
     }, fee, memo, _funds);
   };
   withdraw = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {

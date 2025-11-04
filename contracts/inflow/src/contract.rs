@@ -122,7 +122,7 @@ pub fn execute(
     let config = load_config(deps.storage)?;
 
     match msg {
-        ExecuteMsg::Deposit {} => deposit(deps, env, info, &config),
+        ExecuteMsg::Deposit { on_behalf_of } => deposit(deps, env, info, &config, on_behalf_of),
         ExecuteMsg::Withdraw {} => withdraw(deps, env, info, &config),
         ExecuteMsg::CancelWithdrawal { withdrawal_ids } => {
             cancel_withdrawal(deps, env, info, &config, withdrawal_ids)
@@ -153,8 +153,15 @@ fn deposit(
     env: Env,
     info: MessageInfo,
     config: &Config,
+    on_behalf_of: Option<String>,
 ) -> Result<Response, ContractError> {
     let deposit_amount = cw_utils::must_pay(&info, &config.deposit_denom)?;
+
+    let recipient = match on_behalf_of {
+        Some(addr) => deps.api.addr_validate(&addr)?,
+        None => info.sender.clone(),
+    };
+    let recipient_str = recipient.to_string();
 
     // Total value also includes the deposit amount, since the tokens are previously sent to the contract
     let total_pool_value =
@@ -172,7 +179,7 @@ fn deposit(
         vault_shares_to_mint,
     );
     let send_msg = BankMsg::Send {
-        to_address: info.sender.to_string(),
+        to_address: recipient_str.clone(),
         amount: vec![Coin::new(
             vault_shares_to_mint,
             config.vault_shares_denom.clone(),
@@ -184,6 +191,7 @@ fn deposit(
         .add_message(send_msg)
         .add_attribute("action", "deposit")
         .add_attribute("sender", info.sender)
+        .add_attribute("recipient", recipient_str)
         .add_attribute("deposit_amount", deposit_amount)
         .add_attribute("vault_shares_minted", vault_shares_to_mint))
 }

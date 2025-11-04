@@ -23,7 +23,9 @@ export interface DenomMetadata {
   uri_hash?: string | null;
 }
 export type ExecuteMsg = {
-  deposit: {};
+  deposit: {
+    on_behalf_of?: string | null;
+  };
 } | {
   withdraw: {};
 } | {
