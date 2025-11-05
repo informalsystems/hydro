@@ -3,7 +3,8 @@ use cosmwasm_std::{Addr, Order};
 // When compiling for wasm32 platform, compiler doesn't recognize that this type is used in one of the queries.
 #[allow(unused_imports)]
 use cosmwasm_std::Uint128;
-
+// When compiling for wasm32 platform, compiler doesn't recognize that this type is used in one of the queries.
+#[allow(unused_imports)]
 use interface::inflow::PoolInfoResponse;
 
 use crate::state::{Config, PayoutEntry, WithdrawalEntry, WithdrawalQueueInfo};

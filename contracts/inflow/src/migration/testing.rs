@@ -9,7 +9,7 @@ use crate::{
         v_3_6_1::ConfigV3_6_1,
     },
     state::{Config, CONFIG},
-    testing::{get_message_info, mock_dependencies},
+    testing::mock_dependencies,
 };
 
 const ATOM_ON_NEUTRON: &str =
@@ -53,12 +53,9 @@ fn migrate_config_test() {
     // Set old contract version to be able to perform the migration
     set_contract_version(&mut deps.storage, CONTRACT_NAME, "3.6.1").unwrap();
 
-    let info = get_message_info(&deps.api, "admin", &[]);
-
     migrate(
         deps.as_mut(),
         env,
-        info,
         MigrateMsg {
             control_center_addr: control_center_addr.to_string(),
             token_info_provider_addr: token_info_provider_addr.map(|addr| addr.to_string()),

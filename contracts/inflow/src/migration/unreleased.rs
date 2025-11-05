@@ -1,4 +1,4 @@
-use cosmwasm_std::{DepsMut, MessageInfo, Response};
+use cosmwasm_std::{DepsMut, Response};
 use cw_storage_plus::Item;
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
@@ -10,7 +10,6 @@ use crate::{
 
 pub fn migrate_config(
     deps: &mut DepsMut<NeutronQuery>,
-    info: MessageInfo,
     msg: MigrateMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     const OLD_CONFIG: Item<ConfigV3_6_1> = Item::new("config");
@@ -40,7 +39,6 @@ pub fn migrate_config(
 
     Ok(Response::new()
         .add_attribute("action", "migrate_config")
-        .add_attribute("sender", info.sender)
         .add_attribute(
             "control_center_contract",
             new_config.control_center_contract.to_string(),

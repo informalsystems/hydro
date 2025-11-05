@@ -1,5 +1,5 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{DepsMut, Env, MessageInfo, Response};
+use cosmwasm_std::{DepsMut, Env, Response};
 use cw2::{get_contract_version, set_contract_version};
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 #[allow(unused_imports)]
@@ -21,12 +21,11 @@ pub struct MigrateMsg {
 pub fn migrate(
     mut deps: DepsMut<NeutronQuery>,
     _env: Env,
-    info: MessageInfo,
     msg: MigrateMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     check_contract_version(deps.storage)?;
 
-    let response = migrate_config(&mut deps, info, msg)?;
+    let response = migrate_config(&mut deps, msg)?;
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
