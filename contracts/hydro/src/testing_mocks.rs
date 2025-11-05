@@ -108,7 +108,15 @@ pub fn denom_trace_grpc_query_mock(
         let request = QueryDenomTraceRequest::decode(query.data.as_slice()).unwrap();
         let resolved_denom = match in_out_denom_map.get(request.hash.as_str()) {
             Some(denom) => denom.clone(),
-            _ => return system_result_err_from("unexpected input token".to_owned()),
+            _ => {
+                let expected_tokens: Vec<&String> = in_out_denom_map.keys().collect();
+                let err_msg = format!(
+                    "unexpected input token: '{}'. Expected one of: {:?}",
+                    request.hash, expected_tokens
+                );
+
+                return system_result_err_from(err_msg);
+            }
         };
 
         system_result_ok_from(

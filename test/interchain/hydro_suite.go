@@ -319,7 +319,6 @@ func (s *HydroSuite) InstantiateHydroContract(
 		"max_locked_tokens":            "1000000000",
 		"whitelist_admins":             []string{adminAddr},
 		"initial_whitelist":            []string{adminAddr},
-		"icq_managers":                 []string{adminAddr},
 		"max_deployment_duration":      12,
 		"round_lock_power_schedule":    [][]any{{1, "1"}, {2, "1.25"}, {3, "1.5"}, {6, "2"}, {12, "4"}},
 		"token_info_providers":         tokenInfoProvidersInitMsgs,
