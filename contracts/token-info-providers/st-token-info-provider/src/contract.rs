@@ -189,6 +189,9 @@ pub fn query(deps: Deps<NeutronQuery>, _env: Env, msg: QueryMsg) -> StdResult<Bi
         QueryMsg::Config {} => to_json_binary(&query_config(deps)?),
         QueryMsg::InterchainQueryInfo {} => to_json_binary(&query_interchain_query_info(deps)?),
         QueryMsg::DenomInfo { round_id } => to_json_binary(&query_denom_info(deps, round_id)?),
+        QueryMsg::RatioToBaseToken { denom } => {
+            to_json_binary(&query_ratio_to_base_denom(deps, denom)?)
+        }
     }
 }
 
@@ -212,6 +215,21 @@ fn query_denom_info(deps: Deps<NeutronQuery>, round_id: u64) -> StdResult<DenomI
         token_group_id: config.token_group_id,
         ratio: find_latest_known_token_ratio(deps.storage, round_id)?,
     })
+}
+
+fn query_ratio_to_base_denom(deps: Deps<NeutronQuery>, denom: String) -> StdResult<Decimal> {
+    let config = CONFIG.load(deps.storage)?;
+
+    if denom != config.st_token_denom {
+        return Err(StdError::generic_err(format!(
+            "denom {denom} not known to this provider"
+        )));
+    }
+
+    let round_id = query_current_round_id(&deps, &config.hydro_contract_address)
+        .map_err(|_e| StdError::generic_err("failed to obtain ratio to base denom"))?;
+
+    find_latest_known_token_ratio(deps.storage, round_id)
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]

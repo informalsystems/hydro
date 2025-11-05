@@ -6,11 +6,19 @@ use std::{
 use cosmos_sdk_proto::cosmos::bank::v1beta1::{DenomUnit, Metadata};
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, to_json_vec, Addr, AnyMsg, BankMsg, Binary, Coin,
-    ConversionOverflowError, CosmosMsg, Deps, DepsMut, Env, Int128, MessageInfo, Order, Reply,
-    Response, StdError, StdResult, Storage, SubMsg, Uint128,
+    ConversionOverflowError, CosmosMsg, Decimal, Deps, DepsMut, Env, Int128, MessageInfo, Order,
+    Reply, Response, StdError, StdResult, Storage, SubMsg, Uint128, WasmMsg,
 };
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
+use interface::{
+    inflow::PoolInfoResponse,
+    inflow_control_center::{
+        ConfigResponse as ControlCenterConfigResponse, ExecuteMsg as ControlCenterExecuteMsg,
+        PoolInfoResponse as ControlCenterPoolInfoResponse, QueryMsg as ControlCenterQueryMsg,
+    },
+    token_info_provider::TokenInfoProviderQueryMsg,
+};
 use neutron_sdk::{
     bindings::{msg::NeutronMsg, query::NeutronQuery},
     proto_types::osmosis::tokenfactory::v1beta1::MsgSetDenomMetadata,
@@ -24,11 +32,11 @@ use crate::{
     msg::{DenomMetadata, ExecuteMsg, InstantiateMsg, ReplyPayload, UpdateConfigData},
     query::{
         ConfigResponse, FundedWithdrawalRequestsResponse, QueryMsg, UserPayoutsHistoryResponse,
-        UserWithdrawalRequestsResponse, WithdrawalQueueInfoResponse,
+        UserWithdrawalRequestsResponse, WhitelistResponse, WithdrawalQueueInfoResponse,
     },
     state::{
         get_next_payout_id, get_next_withdrawal_id, load_config, load_withdrawal_queue_info,
-        Config, PayoutEntry, WithdrawalEntry, WithdrawalQueueInfo, CONFIG, DEPLOYED_AMOUNT,
+        Config, PayoutEntry, WithdrawalEntry, WithdrawalQueueInfo, CONFIG,
         LAST_FUNDED_WITHDRAWAL_ID, NEXT_PAYOUT_ID, NEXT_WITHDRAWAL_ID, PAYOUTS_HISTORY,
         USER_WITHDRAWAL_REQUESTS, WHITELIST, WITHDRAWAL_QUEUE_INFO, WITHDRAWAL_REQUESTS,
     },
@@ -44,23 +52,29 @@ pub const UNUSED_MSG_ID: u64 = 0;
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut<NeutronQuery>,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
+
+    let control_center_contract = deps.api.addr_validate(&msg.control_center_contract)?;
+    let token_info_provider_contract = match msg.token_info_provider_contract {
+        None => None,
+        Some(address) => Some(deps.api.addr_validate(&address)?),
+    };
 
     CONFIG.save(
         deps.storage,
         &Config {
             deposit_denom: msg.deposit_denom.clone(),
             vault_shares_denom: String::new(),
+            control_center_contract: control_center_contract.clone(),
+            token_info_provider_contract: token_info_provider_contract.clone(),
             max_withdrawals_per_user: msg.max_withdrawals_per_user,
-            deposit_cap: msg.deposit_cap,
         },
     )?;
 
-    DEPLOYED_AMOUNT.save(deps.storage, &Uint128::zero(), env.block.height)?;
     NEXT_WITHDRAWAL_ID.save(deps.storage, &0u64)?;
     NEXT_PAYOUT_ID.save(deps.storage, &0u64)?;
 
@@ -105,6 +119,13 @@ pub fn instantiate(
         .add_attribute("sender", info.sender)
         .add_attribute("deposit_token_denom", msg.deposit_denom)
         .add_attribute("subdenom", msg.subdenom)
+        .add_attribute("control_center_contract", control_center_contract)
+        .add_attribute(
+            "token_info_provider_contract",
+            token_info_provider_contract
+                .map(|addr| addr.to_string())
+                .unwrap_or_default(),
+        )
         .add_attribute(
             "whitelist",
             whitelist_addresses
@@ -132,52 +153,62 @@ pub fn execute(
         ExecuteMsg::Deposit { on_behalf_of } => deposit(deps, env, info, &config, on_behalf_of),
         ExecuteMsg::Withdraw {} => withdraw(deps, env, info, &config),
         ExecuteMsg::CancelWithdrawal { withdrawal_ids } => {
-            cancel_withdrawal(deps, env, info, &config, withdrawal_ids)
+            cancel_withdrawal(deps, env, info, config, withdrawal_ids)
         }
         ExecuteMsg::FulfillPendingWithdrawals { limit } => {
-            fulfill_pending_withdrawals(deps, env, info, &config, limit)
+            fulfill_pending_withdrawals(deps, env, info, config, limit)
         }
         ExecuteMsg::ClaimUnbondedWithdrawals { withdrawal_ids } => {
-            claim_unbonded_withdrawals(deps, env, info, &config, withdrawal_ids)
+            claim_unbonded_withdrawals(deps, env, info, config, withdrawal_ids)
         }
         ExecuteMsg::WithdrawForDeployment { amount } => {
-            withdraw_for_deployment(deps, env, info, &config, amount)
+            withdraw_for_deployment(deps, env, info, config, amount)
+        }
+        ExecuteMsg::SetTokenInfoProviderContract { address } => {
+            set_token_info_provider_contract(deps, info, config, address)
         }
         ExecuteMsg::AddToWhitelist { address } => add_to_whitelist(deps, env, info, address),
         ExecuteMsg::RemoveFromWhitelist { address } => {
             remove_from_whitelist(deps, env, info, address)
         }
-        ExecuteMsg::SubmitDeployedAmount { amount } => {
-            submit_deployed_amount(deps, env, info, amount)
-        }
-        ExecuteMsg::UpdateConfig { config } => update_config(deps, info, config),
+        ExecuteMsg::UpdateConfig {
+            config: config_update,
+        } => update_config(deps, info, config, config_update),
     }
 }
 
 // Deposits tokens accepted by the vault and issues certain amount of vault shares tokens in return.
 fn deposit(
     deps: DepsMut<NeutronQuery>,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     config: &Config,
     on_behalf_of: Option<String>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let deposit_amount = cw_utils::must_pay(&info, &config.deposit_denom)?;
-
     let recipient = match on_behalf_of {
         Some(addr) => deps.api.addr_validate(&addr)?,
         None => info.sender.clone(),
     };
 
+    let deposit_cap = get_deposit_cap(&deps.as_ref(), &config.control_center_contract)?;
+    let pool_info = get_control_center_pool_info(&deps.as_ref(), &config.control_center_contract)?;
+    let total_pool_value = pool_info.total_pool_value;
+    let total_shares_issued = pool_info.total_shares_issued;
+
     // Total value also includes the deposit amount, since the tokens are previously sent to the contract
-    let total_pool_value =
-        get_total_pool_value(&deps.as_ref(), &env, config.deposit_denom.clone())?;
-    if total_pool_value > config.deposit_cap {
+    if total_pool_value > deposit_cap {
         return Err(new_generic_error("deposit cap has been reached"));
     }
 
-    let vault_shares_to_mint =
-        calculate_number_of_shares_to_mint(&deps.as_ref(), deposit_amount, total_pool_value)?;
+    let deposit_amount_base_tokens =
+        convert_deposit_token_into_base_token(&deps.as_ref(), &config, deposit_amount)?;
+
+    let vault_shares_to_mint = calculate_number_of_shares_to_mint(
+        deposit_amount_base_tokens,
+        total_pool_value,
+        total_shares_issued,
+    )?;
 
     let mint_vault_shares_msg = NeutronMsg::submit_mint_tokens(
         &config.vault_shares_denom,
@@ -203,14 +234,14 @@ fn withdraw(
     deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
-    config: &Config,
+    config: Config,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let vault_shares_denom = config.vault_shares_denom.clone();
     let vault_shares_sent = cw_utils::must_pay(&info, &vault_shares_denom)?;
 
     // Calculate how many deposit tokens the sent vault shares are worth
     let amount_to_withdraw =
-        query_shares_equivalent_value(&deps.as_ref(), &env, vault_shares_sent)?;
+        query_shares_equivalent_value(&deps.as_ref(), &config, vault_shares_sent)?;
 
     if amount_to_withdraw.is_zero() {
         return Err(new_generic_error("cannot withdraw zero amount"));
@@ -278,7 +309,7 @@ fn withdraw(
         update_user_withdrawal_requests_info(
             deps.storage,
             info.sender.clone(),
-            config,
+            &config,
             Some(vec![withdrawal_id]),
             None,
             true,
@@ -302,14 +333,17 @@ fn withdraw(
 // vault deposit cap has been reached.
 fn cancel_withdrawal(
     deps: DepsMut<NeutronQuery>,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
-    config: &Config,
+    config: Config,
     withdrawal_ids: Vec<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    let total_pool_value =
-        get_total_pool_value(&deps.as_ref(), &env, config.deposit_denom.clone())?;
-    if total_pool_value >= config.deposit_cap {
+    let deposit_cap = get_deposit_cap(&deps.as_ref(), &config.control_center_contract)?;
+    let pool_info = get_control_center_pool_info(&deps.as_ref(), &config.control_center_contract)?;
+    let total_pool_value = pool_info.total_pool_value;
+    let total_shares_issued = pool_info.total_shares_issued;
+
+    if total_pool_value >= deposit_cap {
         return Err(new_generic_error(
             "cannot cancel withdrawals- deposit cap has been reached",
         ));
@@ -390,7 +424,7 @@ fn cancel_withdrawal(
     update_user_withdrawal_requests_info(
         deps.storage,
         info.sender.clone(),
-        config,
+        &config,
         None,
         Some(withdrawals_to_process.into_iter().collect()),
         false,
@@ -404,13 +438,19 @@ fn cancel_withdrawal(
         Some(Int128::try_from(amount_to_withdraw)?.strict_neg()),
     )?;
 
+    // Convert the amount to withdraw into the base tokens in order to calculate how many shares to mint back
+    let amount_to_withdraw_base_tokens =
+        convert_deposit_token_into_base_token(&deps.as_ref(), &config, amount_to_withdraw)?;
+
     // We need to recalculate the total pool value, since the withdrawal queue info has changed.
-    let total_pool_value =
-        get_total_pool_value(&deps.as_ref(), &env, config.deposit_denom.clone())?;
+    let total_pool_value = total_pool_value.checked_add(amount_to_withdraw_base_tokens)?;
 
     // Calculate how many vault shares should be minted back to the user
-    let shares_to_mint =
-        calculate_number_of_shares_to_mint(&deps.as_ref(), amount_to_withdraw, total_pool_value)?;
+    let shares_to_mint = calculate_number_of_shares_to_mint(
+        amount_to_withdraw_base_tokens,
+        total_pool_value,
+        total_shares_issued,
+    )?;
 
     // Mint the vault shares tokens
     let mint_vault_shares_msg =
@@ -430,7 +470,7 @@ fn fulfill_pending_withdrawals(
     deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
-    config: &Config,
+    config: Config,
     limit: u64,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     // If this action is being executed for the first time, start from withdrawal ID 0.
@@ -523,7 +563,7 @@ fn claim_unbonded_withdrawals(
     deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
-    config: &Config,
+    config: Config,
     withdrawal_ids: Vec<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let Some(last_funded_withdrawal_id) = LAST_FUNDED_WITHDRAWAL_ID.may_load(deps.storage)? else {
@@ -600,7 +640,7 @@ fn claim_unbonded_withdrawals(
         update_user_withdrawal_requests_info(
             deps.storage,
             recipient.clone(),
-            config,
+            &config,
             None,
             Some(withdrawal_ids_to_remove),
             false,
@@ -651,7 +691,7 @@ fn withdraw_for_deployment(
     deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
-    config: &Config,
+    config: Config,
     amount: Uint128,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
@@ -664,28 +704,61 @@ fn withdraw_for_deployment(
     // If the requested amount exceeds the available amount, withdraw only what is available.
     let amount_to_withdraw = available_for_deployment.min(amount);
 
-    // We can update the deployed amount immediately, since we know it is now transferred to the multisig.
-    DEPLOYED_AMOUNT.update(deps.storage, env.block.height, |current_value| {
-        current_value
-            .unwrap_or_default()
-            .checked_add(amount_to_withdraw)
-            .map_err(|e| new_generic_error(format!("overflow error: {e}")))
-    })?;
+    let mut submsgs = vec![];
 
-    let send_tokens_msg = BankMsg::Send {
+    // We can update the deployed amount immediately, since we know it is
+    // now transferred to the whitelisted address for further deployments.
+    // Since the deployed amount is denominated in base tokens (e.g. ATOM),
+    // we need to convert amount_to_withdraw into the base denom as well.
+    let amount_to_withdraw_in_base_tokens =
+        convert_deposit_token_into_base_token(&deps.as_ref(), &config, amount_to_withdraw)?;
+
+    let update_deployed_amount_msg =
+        build_update_deployed_amount_msg(amount_to_withdraw_in_base_tokens, &config)?;
+
+    let send_tokens_msg = CosmosMsg::Bank(BankMsg::Send {
         to_address: info.sender.to_string(),
         amount: vec![Coin {
             amount: amount_to_withdraw,
             denom: config.deposit_denom.clone(),
         }],
-    };
+    });
+
+    submsgs.extend_from_slice(&[send_tokens_msg, update_deployed_amount_msg]);
 
     Ok(Response::new()
-        .add_message(send_tokens_msg)
+        .add_messages(submsgs)
         .add_attribute("action", "withdraw_for_deployment")
         .add_attribute("sender", info.sender)
         .add_attribute("amount_requested", amount)
         .add_attribute("amount_withdrawn", amount_to_withdraw))
+}
+
+fn set_token_info_provider_contract(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    mut config: Config,
+    token_info_provider_contract: Option<String>,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    let token_info_provider_contract = match token_info_provider_contract {
+        None => None,
+        Some(address) => Some(deps.api.addr_validate(&address)?),
+    };
+
+    config.token_info_provider_contract = token_info_provider_contract.clone();
+    CONFIG.save(deps.storage, &config)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "set_token_info_provider_contract")
+        .add_attribute("sender", info.sender)
+        .add_attribute(
+            "token_info_provider_contract",
+            token_info_provider_contract
+                .map(|addr| addr.to_string())
+                .unwrap_or_default(),
+        ))
 }
 
 // Adds a new account address to the whitelist.
@@ -768,65 +841,43 @@ fn validate_address_is_whitelisted(
     Ok(())
 }
 
-/// Given the `deposit_amount`, this function will calculate how many vault shares tokens should be minted in return.
+/// Given the `deposit_amount_base_tokens`, this function will calculate how many vault shares tokens should be minted in return.
 pub fn calculate_number_of_shares_to_mint(
-    deps: &Deps<NeutronQuery>,
-    deposit_amount: Uint128,
-    total_pool_value: Uint128,
+    deposit_amount_base_tokens: Uint128,
+    total_pool_value_base_tokens: Uint128,
+    total_shares_issued: Uint128,
 ) -> Result<Uint128, ContractError> {
     // `deposit_amount` has already been added to the smart contract balance even before `execute()` is called,
     // so we need to subtract it here in order to accurately calculate number of vault shares to mint.
-    // We also need to add the amount already deployed and subtract the amount requested for withdrawal.
-    let deposit_token_current_balance = total_pool_value
-        .checked_sub(deposit_amount)
+    let deposit_token_current_balance = total_pool_value_base_tokens
+        .checked_sub(deposit_amount_base_tokens)
         .unwrap_or_default();
-
-    let total_shares_issued = query_total_shares_issued(deps)?;
 
     // If there are currently no vault shares minted, then vault shares have 1:1 ratio with the deposit token.
     if deposit_token_current_balance.is_zero() || total_shares_issued.is_zero() {
-        return Ok(deposit_amount);
+        return Ok(deposit_amount_base_tokens);
     }
 
-    deposit_amount
+    deposit_amount_base_tokens
         .checked_multiply_ratio(total_shares_issued, deposit_token_current_balance)
         .map_err(|e| new_generic_error(format!("overflow error: {e}")))
-}
-
-fn submit_deployed_amount(
-    deps: DepsMut<NeutronQuery>,
-    env: Env,
-    info: MessageInfo,
-    amount: Uint128,
-) -> Result<Response<NeutronMsg>, ContractError> {
-    // Check if the sender is in the whitelist
-    validate_address_is_whitelisted(&deps, info.sender.clone())?;
-
-    // Save the deployed amount snapshot at current height
-    DEPLOYED_AMOUNT.save(deps.storage, &amount, env.block.height)?;
-
-    Ok(Response::new()
-        .add_attribute("action", "submit_deployed_amount")
-        .add_attribute("sender", info.sender)
-        .add_attribute("amount", amount))
 }
 
 fn update_config(
     deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
+    mut current_config: Config,
     config_update: UpdateConfigData,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     // Check if the sender is in the whitelist
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
-
-    let mut config = load_config(deps.storage)?;
 
     let mut response = Response::new()
         .add_attribute("action", "update_config")
         .add_attribute("sender", info.sender);
 
     if let Some(max_withdrawals_per_user) = config_update.max_withdrawals_per_user {
-        config.max_withdrawals_per_user = max_withdrawals_per_user;
+        current_config.max_withdrawals_per_user = max_withdrawals_per_user;
 
         response = response.add_attribute(
             "max_withdrawals_per_user",
@@ -834,30 +885,87 @@ fn update_config(
         );
     }
 
-    if let Some(deposit_cap) = config_update.deposit_cap {
-        config.deposit_cap = deposit_cap;
-
-        response = response.add_attribute("deposit_cap", deposit_cap.to_string());
-    }
-
-    CONFIG.save(deps.storage, &config)?;
+    CONFIG.save(deps.storage, &current_config)?;
 
     Ok(response)
+}
+
+/// Converts the given amount of deposit token denomination into the amount denominated in base tokens.
+fn convert_deposit_token_into_base_token(
+    deps: &Deps<NeutronQuery>,
+    config: &Config,
+    amount: Uint128,
+) -> StdResult<Uint128> {
+    let ratio_to_base_token = get_token_ratio_to_base_token(deps, config)?.atomics();
+    let denominator = Decimal::one().atomics();
+
+    amount
+        .checked_multiply_ratio(ratio_to_base_token, denominator)
+        .map_err(|e| {
+            StdError::generic_err(format!(
+                "failed to convert deposit token into base token denomination: {e}"
+            ))
+        })
+}
+
+/// Converts the given amount of base token denomination into the amount denominated in deposit tokens.
+fn convert_base_token_into_deposit_token(
+    deps: &Deps<NeutronQuery>,
+    config: &Config,
+    amount_base_tokens: Uint128,
+) -> StdResult<Uint128> {
+    let ratio_to_base_token = get_token_ratio_to_base_token(deps, config)?.atomics();
+    let numerator = Decimal::one().atomics();
+
+    amount_base_tokens
+        .checked_multiply_ratio(numerator, ratio_to_base_token)
+        .map_err(|e| {
+            StdError::generic_err(format!(
+                "failed to convert base token into deposit token denomination: {e}"
+            ))
+        })
+}
+
+fn get_token_ratio_to_base_token(deps: &Deps<NeutronQuery>, config: &Config) -> StdResult<Decimal> {
+    Ok(match &config.token_info_provider_contract {
+        None => Decimal::one(),
+        Some(token_info_provider_contract) => deps.querier.query_wasm_smart(
+            token_info_provider_contract.to_string(),
+            &TokenInfoProviderQueryMsg::RatioToBaseToken {
+                denom: config.deposit_denom.clone(),
+            },
+        )?,
+    })
+}
+
+fn build_update_deployed_amount_msg(
+    deployed_amount_in_base_tokens: Uint128,
+    config: &Config,
+) -> StdResult<CosmosMsg<NeutronMsg>> {
+    let update_deployed_amount_msg = ControlCenterExecuteMsg::UpdateDeployedAmount {
+        amount: deployed_amount_in_base_tokens,
+    };
+
+    Ok(CosmosMsg::Wasm(WasmMsg::Execute {
+        contract_addr: config.control_center_contract.to_string(),
+        msg: to_json_binary(&update_deployed_amount_msg)?,
+        funds: vec![],
+    }))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_json_binary(&query_config(&deps)?),
-        QueryMsg::TotalSharesIssued {} => to_json_binary(&query_total_shares_issued(&deps)?),
-        QueryMsg::TotalPoolValue {} => to_json_binary(&query_total_pool_value(&deps, &env)?),
-        QueryMsg::SharesEquivalentValue { shares } => {
-            to_json_binary(&query_shares_equivalent_value(&deps, &env, shares)?)
+        QueryMsg::PoolInfo {} => {
+            to_json_binary(&get_pool_info(&deps, &env, load_config(deps.storage)?)?)
         }
+        QueryMsg::SharesEquivalentValue { shares } => to_json_binary(
+            &query_shares_equivalent_value(&deps, &load_config(deps.storage)?, shares)?,
+        ),
         QueryMsg::UserSharesEquivalentValue { address } => {
-            to_json_binary(&query_user_shares_equivalent_value(&deps, &env, address)?)
+            to_json_binary(&query_user_shares_equivalent_value(&deps, address)?)
         }
-        QueryMsg::DeployedAmount {} => to_json_binary(&query_deployed_amount(&deps)?),
         QueryMsg::AvailableForDeployment {} => {
             to_json_binary(&query_available_for_deployment(&deps, &env)?)
         }
@@ -883,6 +991,7 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         } => to_json_binary(&query_user_payouts_history(
             &deps, address, start_from, limit, order,
         )?),
+        QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(&deps)?),
     }
 }
 
@@ -892,47 +1001,42 @@ fn query_config(deps: &Deps<NeutronQuery>) -> StdResult<ConfigResponse> {
     })
 }
 
-fn query_total_shares_issued(deps: &Deps<NeutronQuery>) -> StdResult<Uint128> {
+/// Returns the number of shares issued by this sub-vault.
+fn query_shares_issued(deps: &Deps<NeutronQuery>) -> StdResult<Uint128> {
     Ok(deps
         .querier
         .query_supply(load_config(deps.storage)?.vault_shares_denom)?
         .amount)
 }
 
-fn query_total_pool_value(deps: &Deps<NeutronQuery>, env: &Env) -> StdResult<Uint128> {
-    get_total_pool_value(deps, env, load_config(deps.storage)?.deposit_denom)
-}
-
 /// Returns the value equivalent of a given amount of shares based on the current total shares and pool value.
+/// Retuned value is denominated in the deposit token.
 fn query_shares_equivalent_value(
     deps: &Deps<NeutronQuery>,
-    env: &Env,
+    config: &Config,
     shares: Uint128,
 ) -> StdResult<Uint128> {
-    let total_shares_supply = query_total_shares_issued(deps)?;
-    let total_pool_value = query_total_pool_value(deps, env)?;
+    let pool_info = get_control_center_pool_info(deps, &config.control_center_contract)?;
+    let total_pool_value = pool_info.total_pool_value;
+    let total_shares_issued = pool_info.total_shares_issued;
 
-    calculate_shares_value(shares, total_shares_supply, total_pool_value)
+    calculate_shares_value(deps, config, shares, total_shares_issued, total_pool_value)
 }
 
 /// Returns the value equivalent of a user's shares by querying their balance and calculating its worth based on total shares and pool value.
 fn query_user_shares_equivalent_value(
     deps: &Deps<NeutronQuery>,
-    env: &Env,
     address: String,
 ) -> StdResult<Uint128> {
-    let shares_denom = load_config(deps.storage)?.vault_shares_denom.clone();
+    let config = load_config(deps.storage)?;
 
     // Get the current balance of this address in the shares denom
-    let shares_balance: Uint128 = deps.querier.query_balance(address, shares_denom)?.amount;
+    let shares_balance: Uint128 = deps
+        .querier
+        .query_balance(address, &config.vault_shares_denom)?
+        .amount;
 
-    query_shares_equivalent_value(deps, env, shares_balance)
-}
-
-fn query_deployed_amount(deps: &Deps<NeutronQuery>) -> StdResult<Uint128> {
-    Ok(DEPLOYED_AMOUNT
-        .may_load(deps.storage)?
-        .unwrap_or_else(Uint128::zero))
+    query_shares_equivalent_value(deps, &config, shares_balance)
 }
 
 pub fn query_available_for_deployment(deps: &Deps<NeutronQuery>, env: &Env) -> StdResult<Uint128> {
@@ -944,13 +1048,10 @@ pub fn query_available_for_deployment(deps: &Deps<NeutronQuery>, env: &Env) -> S
         .query_balance(env.contract.address.as_str(), config.deposit_denom)?
         .amount;
 
-    Ok(
-        if contract_balance <= withdrawal_queue_info.total_withdrawal_amount {
-            Uint128::zero()
-        } else {
-            contract_balance.checked_sub(withdrawal_queue_info.total_withdrawal_amount)?
-        },
-    )
+    // If the total withdrawal amount exceeds the contract balance, then return zero
+    Ok(contract_balance
+        .checked_sub(withdrawal_queue_info.total_withdrawal_amount)
+        .unwrap_or_default())
 }
 
 pub fn query_withdrawal_queue_info(
@@ -1070,13 +1171,25 @@ pub fn query_user_payouts_history(
     Ok(UserPayoutsHistoryResponse { payouts })
 }
 
+fn query_whitelist(deps: &Deps<NeutronQuery>) -> StdResult<WhitelistResponse> {
+    Ok(WhitelistResponse {
+        whitelist: WHITELIST
+            .keys(deps.storage, None, None, Order::Ascending)
+            .filter_map(|w| w.ok())
+            .collect(),
+    })
+}
+
 /// Calculates the value of `shares` relative to the `total_pool_value` based on `total_shares_supply`.
+/// Retuned value is denominated in the deposit tokens.
 /// Returns an error if the `shares` exceed supply. Returns zero if supply is zero.
 /// Formula: (user_shares * total_pool_value) / total_shares_supply
 fn calculate_shares_value(
+    deps: &Deps<NeutronQuery>,
+    config: &Config,
     shares: Uint128,
     total_shares_supply: Uint128,
-    total_pool_value: Uint128,
+    total_pool_value_base_tokens: Uint128,
 ) -> StdResult<Uint128> {
     if total_shares_supply.is_zero() {
         return Ok(Uint128::zero());
@@ -1086,9 +1199,11 @@ fn calculate_shares_value(
         return Err(StdError::generic_err(format!("invalid shares amount; shares sent: {shares}, total shares supply: {total_shares_supply}")));
     }
 
-    shares
-        .checked_multiply_ratio(total_pool_value, total_shares_supply)
-        .map_err(|e| StdError::generic_err(format!("overflow error: {e}")))
+    let shares_value_base_tokens = shares
+        .checked_multiply_ratio(total_pool_value_base_tokens, total_shares_supply)
+        .map_err(|e| StdError::generic_err(format!("overflow error: {e}")))?;
+
+    convert_base_token_into_deposit_token(deps, config, shares_value_base_tokens)
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -1162,28 +1277,77 @@ fn create_set_denom_metadata_msg(
     })
 }
 
-fn get_total_pool_value(
+/// Returns the total value of the vault as well as the total number of shares issued by querying
+/// the Control Center contract. The total pool value is denominated in base tokens (e.g. ATOM).
+fn get_control_center_pool_info(
+    deps: &Deps<NeutronQuery>,
+    control_center_contract: &Addr,
+) -> StdResult<ControlCenterPoolInfoResponse> {
+    deps.querier.query_wasm_smart(
+        control_center_contract.to_string(),
+        &ControlCenterQueryMsg::PoolInfo {},
+    )
+}
+
+/// Returns the deposit cap of the vault by querying the Control Center contract.
+fn get_deposit_cap(
+    deps: &Deps<NeutronQuery>,
+    control_center_contract: &Addr,
+) -> StdResult<Uint128> {
+    Ok(deps
+        .querier
+        .query_wasm_smart::<ControlCenterConfigResponse>(
+            control_center_contract.to_string(),
+            &ControlCenterQueryMsg::Config {},
+        )?
+        .config
+        .deposit_cap)
+}
+
+/// Returns information about this contract's pool including:
+///     1. balance
+///     2. withdrawal queue amount and
+///     3. total shares issued.
+/// Balance and withdrawal queue amount values returned are denominated in base tokens (e.g. ATOM).
+/// Intended to be used by the Control Center contract to query the pool values of all its sub-vaults.
+fn get_pool_info(
     deps: &Deps<NeutronQuery>,
     env: &Env,
-    deposit_denom: String,
-) -> StdResult<Uint128> {
-    // Get the current balance of this contract in the deposit denom
-    let balance: Coin = deps
+    config: Config,
+) -> StdResult<PoolInfoResponse> {
+    let deposit_token_balance = deps
         .querier
-        .query_balance(env.contract.address.clone(), deposit_denom.clone())?;
+        .query_balance(env.contract.address.clone(), config.deposit_denom.clone())?
+        .amount;
 
-    // Get the total deployed amount (from snapshot storage)
-    let deployed_amount = DEPLOYED_AMOUNT.load(deps.storage)?;
-
-    // Get the total amount already requested for withdrawal. This amount should be
-    // subtracted from the total pool value, since we cannot count on it anymore.
     let withdrawal_queue_amount = load_withdrawal_queue_info(deps.storage)?.total_withdrawal_amount;
+    let shares_issued = query_shares_issued(deps)?;
 
-    Ok(balance
-        .amount
-        .checked_add(deployed_amount)?
-        .checked_sub(withdrawal_queue_amount)
-        .unwrap_or_default())
+    // Convert the values from deposit tokens into base tokens
+    let ratio_to_base_token = get_token_ratio_to_base_token(deps, &config)?.atomics();
+    let denominator = Decimal::one().atomics();
+
+    let balance_base_tokens = deposit_token_balance
+        .checked_multiply_ratio(ratio_to_base_token, denominator)
+        .map_err(|e| {
+            StdError::generic_err(format!(
+                "failed to convert deposit token into base token representation: {e}"
+            ))
+        })?;
+
+    let withdrawal_queue_base_tokens = withdrawal_queue_amount
+        .checked_multiply_ratio(ratio_to_base_token, denominator)
+        .map_err(|e| {
+            StdError::generic_err(format!(
+                "failed to convert deposit token into base token representation: {e}"
+            ))
+        })?;
+
+    Ok(PoolInfoResponse {
+        balance_base_tokens,
+        withdrawal_queue_base_tokens,
+        shares_issued,
+    })
 }
 
 /// Updates the list of user's pending withdrawal requests by adding and/or removing specified withdrawal IDs.

@@ -1,8 +1,10 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::Order;
+use cosmwasm_std::{Addr, Order};
 // When compiling for wasm32 platform, compiler doesn't recognize that this type is used in one of the queries.
 #[allow(unused_imports)]
 use cosmwasm_std::Uint128;
+
+use interface::inflow::PoolInfoResponse;
 
 use crate::state::{Config, PayoutEntry, WithdrawalEntry, WithdrawalQueueInfo};
 
@@ -12,20 +14,14 @@ pub enum QueryMsg {
     #[returns(ConfigResponse)]
     Config {},
 
-    #[returns(Uint128)]
-    TotalSharesIssued {},
-
-    #[returns(Uint128)]
-    TotalPoolValue {},
+    #[returns(PoolInfoResponse)]
+    PoolInfo {},
 
     #[returns(Uint128)]
     SharesEquivalentValue { shares: Uint128 },
 
     #[returns(Uint128)]
     UserSharesEquivalentValue { address: String },
-
-    #[returns(Uint128)]
-    DeployedAmount {},
 
     /// Returns the number of tokens that are available for deployment,
     /// considering the amount required for any pending withdrawals.
@@ -61,6 +57,9 @@ pub enum QueryMsg {
         limit: u32,
         order: Order,
     },
+
+    #[returns(WhitelistResponse)]
+    Whitelist {},
 }
 
 #[cw_serde]
@@ -86,4 +85,9 @@ pub struct UserWithdrawalRequestsResponse {
 #[cw_serde]
 pub struct UserPayoutsHistoryResponse {
     pub payouts: Vec<PayoutEntry>,
+}
+
+#[cw_serde]
+pub struct WhitelistResponse {
+    pub whitelist: Vec<Addr>,
 }

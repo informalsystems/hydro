@@ -1,8 +1,8 @@
 [package]
-name = "inflow"
+name = "inflow-control-center"
 version = { workspace = true }
 edition = { workspace = true }
-authors = ["Dusan Maksimovic", "Marko Juric", "Philip Offtermatt"]
+authors = ["Dusan Maksimovic", "Philip Offtermatt"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]

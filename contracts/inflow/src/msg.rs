@@ -12,12 +12,15 @@ pub struct InstantiateMsg {
     pub subdenom: String,
     /// Additional metadata to be set for the newly created vault shares token.
     pub token_metadata: DenomMetadata,
+    /// Address of the Inflow Control Center contract that will manage this sub-vault.
+    pub control_center_contract: String,
+    /// Address of the token info provider contract used to obtain the ratio of the
+    /// deposit token to the base token. If None, then the deposit token is the base token.
+    pub token_info_provider_contract: Option<String>,
     /// List of addresses allowed to execute permissioned actions.
     pub whitelist: Vec<String>,
     /// Maximum number of pending withdrawals per single user.
     pub max_withdrawals_per_user: u64,
-    /// Maximum number of tokens that can be deposited into the vault.
-    pub deposit_cap: Uint128,
 }
 
 #[cw_serde]
@@ -47,8 +50,8 @@ pub enum ExecuteMsg {
     CancelWithdrawal { withdrawal_ids: Vec<u64> },
     FulfillPendingWithdrawals { limit: u64 },
     ClaimUnbondedWithdrawals { withdrawal_ids: Vec<u64> },
-    SubmitDeployedAmount { amount: Uint128 },
     WithdrawForDeployment { amount: Uint128 },
+    SetTokenInfoProviderContract { address: Option<String> },
     AddToWhitelist { address: String },
     RemoveFromWhitelist { address: String },
     UpdateConfig { config: UpdateConfigData },
@@ -57,7 +60,6 @@ pub enum ExecuteMsg {
 #[cw_serde]
 pub struct UpdateConfigData {
     pub max_withdrawals_per_user: Option<u64>,
-    pub deposit_cap: Option<Uint128>,
 }
 
 #[derive(Serialize, Deserialize)]

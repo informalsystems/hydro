@@ -1,22 +1,12 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, StdResult, Storage, Timestamp, Uint128};
-use cw_storage_plus::{Item, Map, SnapshotItem, Strategy};
+use cw_storage_plus::{Item, Map};
 
 /// Configuration of the Inflow smart contract
 pub const CONFIG: Item<Config> = Item::new("config");
 
 /// Addresses that are allowed to execute permissioned actions on the smart contract.
 pub const WHITELIST: Map<Addr, ()> = Map::new("whitelist");
-
-/// Number of tokens (in terms of the deposit asset) currently deployed by the whitelisted addresses.
-/// The value corresponds to the sum of principal user deposits and any yield earned through ongoing deployments.
-/// It gets periodically updated by the whitelisted addresses.
-pub const DEPLOYED_AMOUNT: SnapshotItem<Uint128> = SnapshotItem::new(
-    "deployed_amount",
-    "deployed_amount__checkpoints",
-    "deployed_amount__changelog",
-    Strategy::EveryBlock,
-);
 
 /// Next withdrawal ID to be used when a user makes a withdrawal request that ends up in the queue.
 pub const NEXT_WITHDRAWAL_ID: Item<u64> = Item::new("next_withdrawal_id");
@@ -51,11 +41,15 @@ pub struct Config {
     pub deposit_denom: String,
     /// Denom of the vault shares token that is issued to users when they deposit tokens into the vault.
     pub vault_shares_denom: String,
+    /// Address of the Control Center contract.
+    pub control_center_contract: Addr,
+    /// Address of the token info provider contract used to obtain the ratio of the
+    /// deposit token to the base token. If None, then the deposit token is the base token.
+    pub token_info_provider_contract: Option<Addr>,
     /// Maximum number of pending withdrawal requests allowed per user.
     pub max_withdrawals_per_user: u64,
-    /// Maximum number of tokens that can be deposited into the vault.
-    pub deposit_cap: Uint128,
 }
+
 #[cw_serde]
 pub struct WithdrawalQueueInfo {
     // Total shares burned for all withdrawals currently in the withdrawal queue.

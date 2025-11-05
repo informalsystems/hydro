@@ -17,6 +17,10 @@ pub enum TokenInfoProviderQueryMsg {
     // Implemented by the LSM token info provider
     #[returns(ValidatorsInfoResponse)]
     ValidatorsInfo { round_id: u64 },
+    
+    // Implemented by the token info providers that are compatible with Inflow smart contracts.
+    #[returns(Decimal)]
+    RatioToBaseToken { denom: String },
 }
 
 #[cw_serde]
