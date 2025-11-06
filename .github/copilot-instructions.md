@@ -46,7 +46,7 @@ tools/                # Deployment and tooling scripts
 ### Building
 - `cargo build` - Build all contracts
 - `make compile` - Compile contracts to WASM using Docker optimizer
-- `npm run build` or `make schema` - Generate TypeScript types from schemas
+- `make schema` - Generate schemas and TypeScript types
 
 ### Testing
 - `make test-unit` - Run Rust unit tests
@@ -137,7 +137,7 @@ tools/                # Deployment and tooling scripts
 1. Create contract directory under `contracts/`
 2. Add to workspace members in root `Cargo.toml`
 3. Implement standard CosmWasm entry points (instantiate, execute, query, migrate)
-4. Create schema generation binary
+4. Create schema generation binary in `src/bin/` directory (e.g., `contract_name_schema.rs`)
 5. Add to Makefile schema generation targets
 6. Write comprehensive unit tests
 7. Create cw-orchestrator interface in `packages/interface/`
