@@ -168,7 +168,6 @@ fn deposit(
         Some(addr) => deps.api.addr_validate(&addr)?,
         None => info.sender.clone(),
     };
-    let recipient_str = recipient.to_string();
 
     // Total value also includes the deposit amount, since the tokens are previously sent to the contract
     let total_pool_value =
@@ -183,14 +182,14 @@ fn deposit(
     let mint_vault_shares_msg = NeutronMsg::submit_mint_tokens(
         &config.vault_shares_denom,
         vault_shares_to_mint,
-        &recipient_str,
+        recipient.to_string(),
     );
 
     Ok(Response::new()
         .add_message(mint_vault_shares_msg)
         .add_attribute("action", "deposit")
         .add_attribute("sender", info.sender)
-        .add_attribute("recipient", recipient_str)
+        .add_attribute("recipient", recipient.to_string())
         .add_attribute("deposit_amount", deposit_amount)
         .add_attribute("vault_shares_minted", vault_shares_to_mint))
 }
