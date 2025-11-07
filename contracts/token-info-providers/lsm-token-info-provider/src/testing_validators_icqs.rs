@@ -1,9 +1,14 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 use cosmos_sdk_proto::cosmos::staking::v1beta1::Validator as CosmosValidator;
 use cosmos_sdk_proto::prost::Message;
 use cosmwasm_std::{
-    attr, coins, testing::mock_env, Addr, BankMsg, Binary, Coin, Decimal, SubMsg, Uint128,
+    attr, coins, from_json, testing::mock_env, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal,
+    SubMsg, Uint128, WasmMsg,
+};
+use interface::{
+    hydro::{ExecuteMsg as HydroExecuteMsg, TokenGroupRatioChange},
+    lsm::{ValidatorInfo, TOKENS_TO_SHARES_MULTIPLIER},
 };
 use neutron_sdk::{
     bindings::types::StorageValue,
@@ -17,20 +22,16 @@ use crate::{
         query_validators_per_round, sudo, NATIVE_TOKEN_DENOM,
     },
     error::ContractError,
-    msg::{ExecuteMsg, TokenInfoProviderInstantiateMsg},
-    state::{
-        ValidatorInfo, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
-        VALIDATOR_TO_QUERY_ID,
-    },
+    msg::ExecuteMsg,
+    state::{QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATOR_TO_QUERY_ID},
     testing::{
-        get_address_as_str, get_default_instantiate_msg, get_message_info, VALIDATOR_1,
-        VALIDATOR_2, VALIDATOR_3,
+        get_address_as_str, get_default_instantiate_msg, get_message_info,
+        hydro_current_round_mock, VALIDATOR_1, VALIDATOR_2, VALIDATOR_3,
     },
     testing_mocks::{
         custom_interchain_query_mock, min_query_deposit_grpc_query_mock, mock_dependencies,
-        no_op_grpc_query_mock, ICQMockData,
+        no_op_grpc_query_mock, ICQMockData, MockWasmQuerier,
     },
-    validators_icqs::TOKENS_TO_SHARES_MULTIPLIER,
 };
 
 struct ICQResultsParseTestCase {
@@ -41,12 +42,61 @@ struct ICQResultsParseTestCase {
 }
 
 #[test]
-fn create_interchain_queries_test() {
+fn icq_managers_create_interchain_queries_test() {
     let min_deposit = Coin::new(1000000u64, NATIVE_TOKEN_DENOM);
+    let current_round_id = 0;
+
     let (mut deps, env) = (
         mock_dependencies(min_query_deposit_grpc_query_mock(min_deposit.clone())),
         mock_env(),
     );
+    deps.querier.update_wasm(move |q| {
+        MockWasmQuerier::new(hydro_current_round_mock(current_round_id)).handler(q)
+    });
+    let info = get_message_info(&deps.api, "addr0000", &[]);
+
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    msg.icq_managers = vec![info.sender.to_string()];
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    let msg = ExecuteMsg::CreateICQsForValidators {
+        validators: vec![
+            VALIDATOR_1.to_string(),
+            VALIDATOR_2.to_string(),
+            // duplicate
+            VALIDATOR_1.to_string(),
+            // invalid cosmosvaloper address (last 3 chars edited)
+            "cosmosvaloper157v7tczs40axfgejp2m43kwuzqe0wsy0rv8fff".to_string(),
+            // valoper addresses with different prefixes are also invalid
+            "injvaloper1agu7gu9ay39jkaccsfnt0ykjce6daycjuzyg2a".to_string(),
+            // account addresses are also invalid
+            "cosmos18gt0fzdd0ay8zceprumcalux3vv348hpqflrtr".to_string(),
+            "invalid_address".to_string(),
+        ],
+    };
+
+    // ICQ managers are allowed to create ICQs without sending any funds
+    let messages = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone())
+        .unwrap()
+        .messages;
+    // assert that 2 ICQs were created
+    assert_eq!(messages.len(), 2);
+}
+
+#[ignore = "Bring this test back once we migrate to final version. Currently, only ICQ managers are allowed to create ICQs."]
+#[test]
+fn create_interchain_queries_test() {
+    let min_deposit = Coin::new(1000000u64, NATIVE_TOKEN_DENOM);
+    let current_round_id = 0;
+
+    let (mut deps, env) = (
+        mock_dependencies(min_query_deposit_grpc_query_mock(min_deposit.clone())),
+        mock_env(),
+    );
+    deps.querier.update_wasm(move |q| {
+        MockWasmQuerier::new(hydro_current_round_mock(current_round_id)).handler(q)
+    });
     let info = get_message_info(&deps.api, "addr0000", &[]);
 
     let mut msg = get_default_instantiate_msg(&deps.api);
@@ -85,11 +135,7 @@ fn create_interchain_queries_test() {
         .to_string()
         .to_lowercase().contains(format!("insufficient tokens sent to pay for {} interchain queries deposits. sent: {}, required: {}", 2, user_token, min_deposit_required).as_str()));
 
-    let info = get_message_info(
-        &deps.api,
-        "addr0000",
-        std::slice::from_ref(&min_deposit_required),
-    );
+    let info = get_message_info(&deps.api, "addr0000", std::slice::from_ref(&user_token));
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
     let messages = res.unwrap().messages;
@@ -205,11 +251,16 @@ fn icq_results_parse_test() {
 
     for test_case in test_cases {
         println!("running test case: {}", test_case.description);
+        let current_round_id = 0;
 
         let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
         deps.querier = deps
             .querier
             .with_custom_handler(custom_interchain_query_mock(test_case.mock_data));
+        deps.querier.update_wasm(move |q| {
+            MockWasmQuerier::new(hydro_current_round_mock(current_round_id)).handler(q)
+        });
+
         let info = get_message_info(&deps.api, "addr0000", &[]);
 
         let msg = get_default_instantiate_msg(&deps.api);
@@ -225,21 +276,28 @@ fn icq_results_parse_test() {
         let res = query_validators_info(deps.as_ref(), 0);
         assert!(res.is_ok());
 
-        let validators_info = res.unwrap();
+        let validators_info = res.unwrap().validators;
         match test_case.expected_validator_added {
             None => {
                 assert!(validators_info.is_empty());
             }
             Some(expected_validator_info) => {
                 assert_eq!(validators_info.len(), 1);
-                assert_eq!(expected_validator_info.address, validators_info[0].address);
+                let actual_validator_info = validators_info
+                    .get(&expected_validator_info.address)
+                    .unwrap();
+
+                assert_eq!(
+                    expected_validator_info.address,
+                    actual_validator_info.address
+                );
                 assert_eq!(
                     expected_validator_info.delegated_tokens,
-                    validators_info[0].delegated_tokens
+                    actual_validator_info.delegated_tokens
                 );
                 assert_eq!(
                     expected_validator_info.power_ratio,
-                    validators_info[0].power_ratio
+                    actual_validator_info.power_ratio
                 );
             }
         }
@@ -254,6 +312,8 @@ struct ICQResultsStoreUpdateTestCase {
     mock_data: HashMap<u64, ICQMockData>,
     // order is important- highest delegated tokens first
     expected_validators: Vec<ValidatorInfo>,
+    // expected SubMsg added to response that will update token group ratios in the Hydro contract
+    expected_token_group_ratios_changes: HashMap<String, TokenGroupRatioChange>,
 }
 
 #[test]
@@ -276,6 +336,13 @@ fn icq_results_state_update_test() {
                 delegated_tokens: mock_tokens1,
                 power_ratio: mock_power_ratio1,
             }],
+            expected_token_group_ratios_changes: HashMap::from_iter([
+                (mock_validator1.operator_address.clone(), TokenGroupRatioChange {
+                    token_group_id: mock_validator1.operator_address.clone(),
+                    old_ratio: Decimal::zero(),
+                    new_ratio: Decimal::from_str("0.9").unwrap(),
+                }),
+            ]),
             mock_data: HashMap::from([(1, ICQMockData {
                 query_type: QueryType::KV,
                 should_query_return_error: false,
@@ -311,6 +378,13 @@ fn icq_results_state_update_test() {
                 delegated_tokens: Uint128::new(250000000),
                 power_ratio: Decimal::one(),
             }],
+            expected_token_group_ratios_changes: HashMap::from_iter([
+                (mock_validator1.operator_address.clone(), TokenGroupRatioChange {
+                    token_group_id: mock_validator1.operator_address.clone(),
+                    old_ratio: Decimal::one(),
+                    new_ratio: Decimal::from_str("0.9").unwrap(),
+                }),
+            ]),
             mock_data: HashMap::from([(1, ICQMockData {
                 query_type: QueryType::KV,
                 should_query_return_error: false,
@@ -346,6 +420,7 @@ fn icq_results_state_update_test() {
                 delegated_tokens: Uint128::new(400000000),
                 power_ratio: Decimal::one(),
             }],
+            expected_token_group_ratios_changes: HashMap::new(),
             mock_data: HashMap::from([(1, ICQMockData {
                 query_type: QueryType::KV,
                 should_query_return_error: false,
@@ -381,6 +456,18 @@ fn icq_results_state_update_test() {
                 delegated_tokens: Uint128::new(250000000),
                 power_ratio: Decimal::one(),
             }],
+            expected_token_group_ratios_changes: HashMap::from_iter([
+                (VALIDATOR_3.to_string(), TokenGroupRatioChange {
+                    token_group_id: VALIDATOR_3.to_string(),
+                    old_ratio: Decimal::one(),
+                    new_ratio: Decimal::zero(),
+                }),
+                (VALIDATOR_1.to_string(), TokenGroupRatioChange {
+                    token_group_id: VALIDATOR_1.to_string(),
+                    old_ratio: Decimal::zero(),
+                    new_ratio: Decimal::from_str("0.9").unwrap(),
+                }),
+            ]),
             mock_data: HashMap::from([(1, ICQMockData {
                 query_type: QueryType::KV,
                 should_query_return_error: false,
@@ -397,38 +484,40 @@ fn icq_results_state_update_test() {
     for test_case in test_cases {
         println!("running test case: {}", test_case.description);
 
+        let current_round_id = 0;
         let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
         deps.querier = deps
             .querier
             .with_custom_handler(custom_interchain_query_mock(test_case.mock_data));
-        let info = get_message_info(&deps.api, "addr0000", &[]);
+        deps.querier.update_wasm(move |q| {
+            MockWasmQuerier::new(hydro_current_round_mock(current_round_id)).handler(q)
+        });
+        let instantiate_info = get_message_info(&deps.api, "addr0000", &[]);
 
         let mut msg = get_default_instantiate_msg(&deps.api);
-        msg.token_info_providers[0] = TokenInfoProviderInstantiateMsg::LSM {
-            max_validator_shares_participating: test_case.top_n_validators,
-            hub_connection_id: "connection-0".to_string(),
-            hub_transfer_channel_id: "channel-0".to_string(),
-            icq_update_period: 100,
-        };
+        msg.max_validator_shares_participating = test_case.top_n_validators;
 
-        let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
+        let res = instantiate(
+            deps.as_mut(),
+            env.clone(),
+            instantiate_info.clone(),
+            msg.clone(),
+        );
         assert!(res.is_ok());
-
-        let current_round = 0u64;
 
         // setup initial validators
         let mut mock_query_id = 1;
         for validator in test_case.initial_validators {
             let res = VALIDATORS_INFO.save(
                 deps.as_mut().storage,
-                (current_round, validator.address.clone()),
+                (current_round_id, validator.address.clone()),
                 &validator,
             );
             assert!(res.is_ok());
             let res = VALIDATORS_PER_ROUND.save(
                 deps.as_mut().storage,
                 (
-                    current_round,
+                    current_round_id,
                     validator.delegated_tokens.u128(),
                     validator.address.clone(),
                 ),
@@ -461,7 +550,7 @@ fn icq_results_state_update_test() {
 
         // returns validators for the current round ordered by the number of delegated tokens- descending
         let validators_per_round =
-            query_validators_per_round(deps.as_ref(), current_round).unwrap();
+            query_validators_per_round(deps.as_ref(), current_round_id).unwrap();
         assert_eq!(
             test_case.expected_validators.len(),
             validators_per_round.len()
@@ -486,7 +575,7 @@ fn icq_results_state_update_test() {
             let validator_info = VALIDATORS_INFO
                 .load(
                     deps.as_ref().storage,
-                    (current_round, actual_validator.1.clone()),
+                    (current_round_id, actual_validator.1.clone()),
                 )
                 .unwrap();
 
@@ -497,31 +586,45 @@ fn icq_results_state_update_test() {
             );
             assert_eq!(expected_validator.power_ratio, validator_info.power_ratio);
         }
+
+        // assert sudo() result SubMsg to update the ratios in main Hydro contract
+        for message in res.unwrap().messages {
+            if let CosmosMsg::Wasm(WasmMsg::Execute {
+                contract_addr,
+                msg,
+                funds: _,
+            }) = message.msg.clone()
+            {
+                {
+                    assert_eq!(contract_addr, instantiate_info.sender.to_string());
+
+                    match from_json(msg).unwrap() {
+                        HydroExecuteMsg::UpdateTokenGroupsRatios { changes } => {
+                            assert_eq!(
+                                changes.len(),
+                                test_case.expected_token_group_ratios_changes.len()
+                            );
+
+                            for token_group_ratio_change in changes {
+                                let expected_change = test_case
+                                    .expected_token_group_ratios_changes
+                                    .get(&token_group_ratio_change.token_group_id)
+                                    .unwrap();
+                                assert_eq!(
+                                    token_group_ratio_change.old_ratio,
+                                    expected_change.old_ratio
+                                );
+                                assert_eq!(
+                                    token_group_ratio_change.new_ratio,
+                                    expected_change.new_ratio
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
-}
-
-pub fn mock_get_icq_result_for_validator(
-    validator: &str,
-    mock_tokens: u128,
-    mock_shares_tokens: u128,
-) -> HashMap<u64, ICQMockData> {
-    let mock_tokens = Uint128::new(mock_tokens);
-    let mock_shares = Uint128::new(mock_shares_tokens) * TOKENS_TO_SHARES_MULTIPLIER;
-    let mock_validator = get_mock_validator(validator, mock_tokens, mock_shares);
-
-    HashMap::from([(
-        1,
-        ICQMockData {
-            query_type: QueryType::KV,
-            should_query_return_error: false,
-            should_query_result_return_error: false,
-            kv_results: vec![StorageValue {
-                storage_prefix: STAKING_STORE_KEY.to_string(),
-                key: Binary::default(),
-                value: Binary::from(mock_validator.encode_to_vec()),
-            }],
-        },
-    )])
 }
 
 pub fn get_mock_validator(address: &str, tokens: Uint128, shares: Uint128) -> CosmosValidator {
@@ -536,6 +639,8 @@ pub fn get_mock_validator(address: &str, tokens: Uint128, shares: Uint128) -> Co
 #[test]
 fn test_icq_managers_feature() {
     let mut deps = mock_dependencies(no_op_grpc_query_mock());
+    deps.querier
+        .update_wasm(move |q| MockWasmQuerier::new(hydro_current_round_mock(0)).handler(q));
     let env = mock_env();
     let admin = "admin";
     let non_manager = "non_manager";
@@ -546,16 +651,17 @@ fn test_icq_managers_feature() {
 
     // Instantiate the contract
     let mut instantiate_msg = get_default_instantiate_msg(&deps.api);
-    instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, admin)];
+    instantiate_msg.admins = vec![get_address_as_str(&deps.api, admin)];
     instantiate_msg.icq_managers = vec![initial_icq_manager_addr.clone()];
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg);
-    assert!(res.is_ok(), "Error: {res:?}");
+    assert!(res.is_ok(), "Error: {:?}", res);
 
     // query the initial icq managers to make sure that the manager was added correctly
     let managers = query_icq_managers(deps.as_ref()).unwrap().managers;
     assert!(
         managers.contains(&deps.api.addr_make(initial_icq_manager)),
-        "Managers: {managers:?}"
+        "Managers: {:?}",
+        managers
     );
 
     // Scenario 1: An address that is not an ICQ manager cannot withdraw funds
@@ -579,12 +685,13 @@ fn test_icq_managers_feature() {
         address: non_manager_addr.clone(),
     };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), add_manager_msg);
-    assert!(res.is_ok(), "Error: {res:?}");
+    assert!(res.is_ok(), "Error: {:?}", res);
 
     let managers = query_icq_managers(deps.as_ref()).unwrap().managers;
     assert!(
         managers.contains(&deps.api.addr_make(non_manager)),
-        "Managers: {managers:?}"
+        "Managers: {:?}",
+        managers
     );
 
     // Scenario 3: Check that the manager address can withdraw funds

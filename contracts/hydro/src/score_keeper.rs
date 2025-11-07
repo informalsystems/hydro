@@ -2,6 +2,7 @@ use cosmwasm_std::{
     Decimal, Deps, DepsMut, Order, SignedDecimal, StdError, StdResult, Storage, Uint128,
 };
 use cw_storage_plus::Map;
+use interface::hydro::TokenGroupRatioChange;
 use neutron_sdk::bindings::query::NeutronQuery;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -149,61 +150,8 @@ pub fn remove_token_group_shares_from_proposal(
     )
 }
 
-// A more gas efficient version of remove_token_group_shares_from_proposal
-// when removing shares from multiple tokens
-pub fn remove_many_token_group_shares_from_proposal(
-    deps: &mut DepsMut<NeutronQuery>,
-    token_manager: &mut TokenManager,
-    round_id: u64,
-    prop_id: u64,
-    token_groups_and_shares: Vec<(String, Decimal)>,
-) -> StdResult<()> {
-    let mut total_power = get_total_power_for_proposal(deps.storage, prop_id)?;
-
-    // do not reuse remove_token_group_shares_from_proposal
-    // instead, we will directly update the shares and power
-    // to be more gas efficient
-    for (token_group_id, num_shares) in token_groups_and_shares {
-        let power_ratio = token_manager.get_token_group_ratio(
-            &deps.as_ref(),
-            round_id,
-            token_group_id.clone(),
-        )?;
-        let current_shares = SCALED_PROPOSAL_SHARES_MAP
-            .may_load(deps.storage, (prop_id, token_group_id.clone()))?
-            .unwrap_or_else(Decimal::zero);
-
-        // Ensure the token group has enough shares
-        if current_shares < num_shares {
-            return Err(StdError::generic_err(
-                "Insufficient shares for the token group",
-            ));
-        }
-
-        // Update the shares map
-        let updated_shares = current_shares - num_shares;
-        SCALED_PROPOSAL_SHARES_MAP.save(
-            deps.storage,
-            (prop_id, token_group_id),
-            &updated_shares,
-        )?;
-
-        // Update the total power
-        let removed_power = num_shares * power_ratio;
-
-        if total_power < removed_power {
-            return Err(StdError::generic_err("Insufficient total power"));
-        }
-
-        total_power -= removed_power;
-    }
-
-    PROPOSAL_TOTAL_MAP.save(deps.storage, prop_id, &total_power)
-}
-
 // Helper function to batch add token group shares to proposals
 // This function takes a SignedDecimal in shares so it is possible to use it to "remove" shares
-// The function remove_many_token_group_shares_from_proposal should not be needed anymore.
 // Note: The below allow is necesary to avoid clippy warning about redundant closure
 // Otherwise, it throws another error: expected an `FnOnce()` closure, found `cosmwasm_std::Decimal`
 // and suggests to wrap the Decimal in a closure with no arguments: `|| { /* code */ }`
@@ -610,22 +558,10 @@ pub fn update_power_ratio_for_proposal(
     Ok(())
 }
 
-#[derive(Clone)]
-pub struct TokenGroupRatioChange {
-    pub token_group_id: String,
-    pub old_ratio: Decimal,
-    pub new_ratio: Decimal,
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::state::TOKEN_INFO_PROVIDERS;
-    use crate::testing::get_default_lsm_token_info_provider;
-    use crate::testing_lsm_integration::set_validator_power_ratio;
     use crate::testing_mocks::mock_dependencies;
     use crate::testing_mocks::no_op_grpc_query_mock;
-    use crate::token_manager::TokenManager;
-    use crate::token_manager::LSM_TOKEN_INFO_PROVIDER_ID;
 
     use super::*;
     use cosmwasm_std::{Decimal, StdError, Storage};
@@ -924,158 +860,6 @@ mod tests {
 
             // Check if total power is updated correctly
             assert_eq!(total_power, num_shares * new_power_ratio);
-        }
-    }
-
-    #[test]
-    fn test_remove_many_token_group_shares_from_proposal() {
-        let mut deps = mock_dependencies(no_op_grpc_query_mock());
-        let round_id = 1;
-        let prop_id = 1;
-
-        // Setup initial state
-        let token_group1 = "validator1".to_string();
-        let token_group2 = "validator2".to_string();
-        let initial_shares1 = Decimal::percent(50);
-        let initial_shares2 = Decimal::percent(30);
-        let power_ratio1 = Decimal::percent(10);
-        let power_ratio2 = Decimal::percent(20);
-
-        // Mock the initial shares and power ratios
-        SCALED_PROPOSAL_SHARES_MAP
-            .save(
-                &mut deps.storage,
-                (prop_id, token_group1.clone()),
-                &initial_shares1,
-            )
-            .unwrap();
-        SCALED_PROPOSAL_SHARES_MAP
-            .save(
-                &mut deps.storage,
-                (prop_id, token_group2.clone()),
-                &initial_shares2,
-            )
-            .unwrap();
-        set_validator_power_ratio(
-            &mut deps.storage,
-            round_id,
-            token_group1.as_str(),
-            power_ratio1,
-        );
-        set_validator_power_ratio(
-            &mut deps.storage,
-            round_id,
-            token_group2.as_str(),
-            power_ratio2,
-        );
-
-        TOKEN_INFO_PROVIDERS
-            .save(
-                &mut deps.storage,
-                LSM_TOKEN_INFO_PROVIDER_ID.to_string(),
-                &get_default_lsm_token_info_provider(),
-            )
-            .unwrap();
-        let mut token_manager = TokenManager::new(&deps.as_ref());
-
-        // Mock the total power
-        let total_power = Decimal::percent(100);
-        PROPOSAL_TOTAL_MAP
-            .save(&mut deps.storage, prop_id, &total_power)
-            .unwrap();
-
-        // Remove shares
-        let vals_and_shares = vec![
-            (token_group1.clone(), Decimal::percent(10)),
-            (token_group2.clone(), Decimal::percent(10)),
-        ];
-
-        remove_many_token_group_shares_from_proposal(
-            &mut deps.as_mut(),
-            &mut token_manager,
-            round_id,
-            prop_id,
-            vals_and_shares,
-        )
-        .unwrap();
-
-        // Check the updated shares
-        let updated_shares1 = SCALED_PROPOSAL_SHARES_MAP
-            .load(deps.as_ref().storage, (prop_id, token_group1))
-            .unwrap();
-        let updated_shares2 = SCALED_PROPOSAL_SHARES_MAP
-            .load(deps.as_ref().storage, (prop_id, token_group2))
-            .unwrap();
-        assert_eq!(updated_shares1, Decimal::percent(40));
-        assert_eq!(updated_shares2, Decimal::percent(20));
-
-        // Check the updated total power
-        let updated_total_power = PROPOSAL_TOTAL_MAP
-            .load(deps.as_ref().storage, prop_id)
-            .unwrap();
-        let expected_total_power: Decimal = total_power
-            - (Decimal::percent(10) * power_ratio1)
-            - (Decimal::percent(10) * power_ratio2);
-        assert_eq!(updated_total_power, expected_total_power);
-    }
-
-    #[test]
-    fn test_remove_many_token_group_shares_from_proposal_insufficient_shares() {
-        let mut deps = mock_dependencies(no_op_grpc_query_mock());
-        let round_id = 1;
-        let prop_id = 1;
-
-        // Setup initial state
-        let token_group1 = "validator1".to_string();
-        let initial_shares1 = Decimal::percent(5);
-        let power_ratio1 = Decimal::percent(10);
-
-        // Mock the initial shares and power ratios
-        SCALED_PROPOSAL_SHARES_MAP
-            .save(
-                &mut deps.storage,
-                (prop_id, token_group1.clone()),
-                &initial_shares1,
-            )
-            .unwrap();
-        set_validator_power_ratio(
-            &mut deps.storage,
-            round_id,
-            token_group1.as_str(),
-            power_ratio1,
-        );
-
-        // Mock the total power
-        let total_power = Decimal::percent(100);
-        PROPOSAL_TOTAL_MAP
-            .save(&mut deps.storage, prop_id, &total_power)
-            .unwrap();
-
-        TOKEN_INFO_PROVIDERS
-            .save(
-                &mut deps.storage,
-                LSM_TOKEN_INFO_PROVIDER_ID.to_string(),
-                &get_default_lsm_token_info_provider(),
-            )
-            .unwrap();
-        let mut token_manager = TokenManager::new(&deps.as_ref());
-
-        // Attempt to remove more shares than available
-        let vals_and_shares = vec![(token_group1.clone(), Decimal::percent(10))];
-        let result = remove_many_token_group_shares_from_proposal(
-            &mut deps.as_mut(),
-            &mut token_manager,
-            round_id,
-            prop_id,
-            vals_and_shares,
-        );
-
-        // Check for error
-        match result {
-            Err(StdError::GenericErr { msg, .. }) => {
-                assert_eq!(msg, "Insufficient shares for the token group")
-            }
-            _ => panic!("Expected error, but got {result:?}"),
         }
     }
 }

@@ -1,33 +1,24 @@
-use cosmos_sdk_proto::prost::Message;
+use interface::hydro::TokenGroupRatioChange;
 use std::collections::HashMap;
 
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
-    Addr, Binary, Coin, Env, OwnedDeps, Storage, Timestamp, Uint128,
+    Addr, Coin, Decimal, Env, OwnedDeps, Storage, Timestamp, Uint128,
 };
-use neutron_sdk::{
-    bindings::{query::NeutronQuery, types::StorageValue},
-    interchain_queries::{types::QueryType, v047::types::STAKING_STORE_KEY},
-    sudo::msg::SudoMsg,
-};
+use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
-    contract::{execute, instantiate, sudo},
+    contract::{execute, instantiate},
     msg::{ExecuteMsg, UpdateConfigData},
     score_keeper::get_total_power_for_round,
     state::{EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, LOCKED_TOKENS},
     testing::{
-        get_address_as_str, get_default_instantiate_msg, get_message_info, IBC_DENOM_1,
-        IBC_DENOM_2, IBC_DENOM_3, ONE_DAY_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
+        get_address_as_str, get_default_instantiate_msg, get_message_info,
+        setup_lsm_token_info_provider_mock, IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3,
+        LSM_TOKEN_PROVIDER_ADDR, ONE_DAY_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
         VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3, VALIDATOR_3_LST_DENOM_1,
     },
-    testing_lsm_integration::set_validator_infos_for_round,
-    testing_mocks::{
-        custom_interchain_query_mock, denom_trace_grpc_query_mock, mock_dependencies, ICQMockData,
-        MockQuerier,
-    },
-    testing_validators_icqs::get_mock_validator,
-    validators_icqs::TOKENS_TO_SHARES_MULTIPLIER,
+    testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, MockQuerier},
 };
 
 const ROUND_LENGTH: u64 = 30 * ONE_DAY_IN_NANO_SECONDS;
@@ -83,6 +74,8 @@ fn test_compounder_cap() {
     let user4_addr = deps.api.addr_make(user4);
     let user5_addr = deps.api.addr_make(user5);
 
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+
     let mut msg = get_default_instantiate_msg(&deps.api);
 
     msg.lock_epoch_length = LOCK_EPOCH_LENGTH;
@@ -92,6 +85,8 @@ fn test_compounder_cap() {
     msg.whitelist_admins = vec![get_address_as_str(&deps.api, whitelist_admin)];
 
     let admin_msg_info = get_message_info(&deps.api, whitelist_admin, &[]);
+    let lsm_token_provider_msg_info = get_message_info(&deps.api, LSM_TOKEN_PROVIDER_ADDR, &[]);
+
     let res = instantiate(
         deps.as_mut(),
         env.clone(),
@@ -101,16 +96,23 @@ fn test_compounder_cap() {
     assert!(res.is_ok());
 
     // Set all 3 validators power ratio in round 0 to 1
-    let res = set_validator_infos_for_round(
-        &mut deps.storage,
-        0,
-        vec![
-            VALIDATOR_1.to_string(),
-            VALIDATOR_2.to_string(),
-            VALIDATOR_3.to_string(),
-        ],
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        (0..=2)
+            .map(|round_id| {
+                (
+                    round_id,
+                    vec![
+                        (VALIDATOR_1.to_string(), Decimal::one()),
+                        (VALIDATOR_2.to_string(), Decimal::one()),
+                        (VALIDATOR_3.to_string(), Decimal::one()),
+                    ],
+                )
+            })
+            .collect(),
+        true,
     );
-    assert!(res.is_ok());
 
     // Advance the chain 1 day into round 0
     env.block.time = env.block.time.plus_days(1);
@@ -215,65 +217,53 @@ fn test_compounder_cap() {
     env.block.time = env.block.time.plus_days(1);
     env.block.height += BLOCKS_PER_DAY;
 
-    let mock_shares = Uint128::new(1000) * TOKENS_TO_SHARES_MULTIPLIER;
-    let mock_validator1 = get_mock_validator(VALIDATOR_1, Uint128::new(900), mock_shares);
-    let mock_validator2 = get_mock_validator(VALIDATOR_2, Uint128::new(900), mock_shares);
-    let mock_validator3 = get_mock_validator(VALIDATOR_3, Uint128::new(900), mock_shares);
+    let new_power_ratio = Decimal::percent(90);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        (0..=2)
+            .map(|round_id| {
+                (
+                    round_id,
+                    vec![
+                        (VALIDATOR_1.to_string(), new_power_ratio),
+                        (VALIDATOR_2.to_string(), new_power_ratio),
+                        (VALIDATOR_3.to_string(), new_power_ratio),
+                    ],
+                )
+            })
+            .collect(),
+        true,
+    );
 
-    let mock_data = HashMap::from([
-        (
-            1,
-            ICQMockData {
-                query_type: QueryType::KV,
-                should_query_return_error: false,
-                should_query_result_return_error: false,
-                kv_results: vec![StorageValue {
-                    storage_prefix: STAKING_STORE_KEY.to_string(),
-                    key: Binary::default(),
-                    value: Binary::from(mock_validator1.encode_to_vec()),
-                }],
+    // Set all 3 validators power ratio in round 0 to 0.9
+    let msg = ExecuteMsg::UpdateTokenGroupsRatios {
+        changes: vec![
+            TokenGroupRatioChange {
+                token_group_id: VALIDATOR_1.to_string(),
+                old_ratio: Decimal::one(),
+                new_ratio: new_power_ratio,
             },
-        ),
-        (
-            2,
-            ICQMockData {
-                query_type: QueryType::KV,
-                should_query_return_error: false,
-                should_query_result_return_error: false,
-                kv_results: vec![StorageValue {
-                    storage_prefix: STAKING_STORE_KEY.to_string(),
-                    key: Binary::default(),
-                    value: Binary::from(mock_validator2.encode_to_vec()),
-                }],
+            TokenGroupRatioChange {
+                token_group_id: VALIDATOR_2.to_string(),
+                old_ratio: Decimal::one(),
+                new_ratio: new_power_ratio,
             },
-        ),
-        (
-            3,
-            ICQMockData {
-                query_type: QueryType::KV,
-                should_query_return_error: false,
-                should_query_result_return_error: false,
-                kv_results: vec![StorageValue {
-                    storage_prefix: STAKING_STORE_KEY.to_string(),
-                    key: Binary::default(),
-                    value: Binary::from(mock_validator3.encode_to_vec()),
-                }],
+            TokenGroupRatioChange {
+                token_group_id: VALIDATOR_3.to_string(),
+                old_ratio: Decimal::one(),
+                new_ratio: new_power_ratio,
             },
-        ),
-    ]);
+        ],
+    };
 
-    deps.querier = deps
-        .querier
-        .with_custom_handler(custom_interchain_query_mock(mock_data));
-
-    for query_id in 1..=3 {
-        let res = sudo(
-            deps.as_mut(),
-            env.clone(),
-            SudoMsg::KVQueryResult { query_id },
-        );
-        assert!(res.is_ok());
-    }
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        lsm_token_provider_msg_info.clone(),
+        msg,
+    );
+    assert!(res.is_ok());
 
     // Verify total voting power is updated as expected
     let expected_round_powers: Vec<(u64, u128)> = vec![

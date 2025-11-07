@@ -8,9 +8,9 @@ use crate::{
     },
     state::{
         Approval, LockEntryV2, LOCKS_MAP_V2, LOCK_ID, NFT_APPROVALS, NFT_OPERATORS, TOKEN_IDS,
-        TOKEN_INFO_PROVIDERS, TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM,
+        TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM,
     },
-    token_manager::{TokenInfoProvider, TokenManager, LSM_TOKEN_INFO_PROVIDER_ID},
+    token_manager::TokenManager,
     utils::{load_current_constants, to_lockup_with_power, to_lockup_with_tranche_infos},
 };
 
@@ -704,18 +704,10 @@ pub fn maybe_remove_token_id(storage: &mut dyn Storage, lock_id: u64) {
 
 /// Returns true if the denom is LSM, false otherwise.
 pub fn is_denom_lsm(deps: &Deps<NeutronQuery>, denom: String) -> Result<bool, ContractError> {
-    let lsm_info_provider =
-        TOKEN_INFO_PROVIDERS.may_load(deps.storage, LSM_TOKEN_INFO_PROVIDER_ID.to_string())?;
+    let lsm_info_provider = TokenManager::new(deps).get_lsm_token_info_provider();
 
     // If the contract has an LSM token info provider, check if the token is LSM
-    if let Some(provider) = lsm_info_provider {
-        let lsm_info_provider = match provider {
-            TokenInfoProvider::LSM(lsm) => lsm,
-            _ => {
-                return Err(Error::LSMTokenInfoProviderNotLSM.into()); // Should never happen
-            }
-        };
-
+    if let Some(lsm_info_provider) = lsm_info_provider {
         if lsm_info_provider.is_lsm_denom(deps, denom) {
             return Ok(true);
         }
