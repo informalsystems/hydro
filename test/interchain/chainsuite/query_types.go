@@ -101,6 +101,28 @@ type VotingPowerAtHeight struct {
 	} `json:"data"`
 }
 
+type TokenInfoProvidersData struct {
+	Data struct {
+		Providers []TokenInfoProvider `json:"providers"`
+	} `json:"data"`
+}
+
+type TokenInfoProvider struct {
+	Derivative *DerivativeTokenInfoProvider `json:"derivative,omitempty"`
+	LSM        *LSMTokenInfoProvider        `json:"lsm,omitempty"`
+}
+
+type DerivativeTokenInfoProvider struct {
+	Contract string         `json:"contract"`
+	Cache    map[string]any `json:"cache"`
+}
+
+type LSMTokenInfoProvider struct {
+	Contract             string         `json:"contract"`
+	Cache                map[string]any `json:"cache"`
+	HubTransferChannelID string         `json:"hub_transfer_channel_id"`
+}
+
 type Gatekeeper struct {
 	Data struct {
 		Gatekeeper string `json:"gatekeeper"`

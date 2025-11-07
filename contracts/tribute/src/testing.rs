@@ -23,11 +23,12 @@ use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
 use hydro::{
     msg::LiquidityDeployment,
     query::{
-        ConstantsResponse, CurrentRoundResponse, LiquidityDeploymentResponse, ProposalResponse,
+        ConstantsResponse, LiquidityDeploymentResponse, ProposalResponse,
         QueryMsg as HydroQueryMsg, UserVotedLocksResponse, UserVotesResponse, VotedLockInfo,
     },
     state::{Constants, Proposal, VoteWithPower},
 };
+use interface::hydro::CurrentRoundResponse;
 
 pub fn get_instantiate_msg(hydro_contract: String) -> InstantiateMsg {
     InstantiateMsg { hydro_contract }

@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 
-use cosmwasm_std::{testing::mock_env, Coin, Storage, Timestamp};
+use cosmwasm_std::{testing::mock_env, Coin, Decimal, Storage, Timestamp};
 
 use crate::{
     contract::{execute, instantiate},
     msg::{ExecuteMsg, InstantiateMsg},
     state::{HEIGHT_TO_ROUND, ROUND_TO_HEIGHT_RANGE, USER_LOCKS},
     testing::{
-        get_default_instantiate_msg, get_message_info, IBC_DENOM_1, ONE_DAY_IN_NANO_SECONDS,
-        VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
+        get_default_instantiate_msg, get_message_info, setup_lsm_token_info_provider_mock,
+        IBC_DENOM_1, LSM_TOKEN_PROVIDER_ADDR, ONE_DAY_IN_NANO_SECONDS, VALIDATOR_1,
+        VALIDATOR_1_LST_DENOM_1,
     },
-    testing_lsm_integration::set_validator_infos_for_round,
     testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies},
 };
 
@@ -46,8 +46,13 @@ fn test_user_locks_snapshoting() {
     );
     assert!(res.is_ok());
 
-    let res = set_validator_infos_for_round(&mut deps.storage, 0, vec![VALIDATOR_1.to_string()]);
-    assert!(res.is_ok());
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
 
     env.block.time = env.block.time.plus_days(1);
     env.block.height += 35000;

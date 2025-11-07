@@ -31,17 +31,19 @@ const (
 	TributeWasm               = "tribute.wasm"
 	DAOVotingAdapterWasm      = "dao_voting_adapter.wasm"
 	STTokenInfoProviderWasm   = "st_token_info_provider.wasm"
+	LSMTokenInfoProviderWasm  = "lsm_token_info_provider.wasm"
 	GatekeeperWasm            = "gatekeeper.wasm"
 	DefaultLockExpiryDuration = 2592000 // 30 days in seconds
 	DefaultLockDepthLimit     = 50
 )
 
 var (
-	hydroCodeId               string
-	tributeCodeId             string
-	daoVotingAdapterCodeId    string
-	stTokenInfoProviderCodeId string
-	gatekeeperCodeId          string
+	hydroCodeId                string
+	tributeCodeId              string
+	daoVotingAdapterCodeId     string
+	stTokenInfoProviderCodeId  string
+	lsmTokenInfoProviderCodeId string
+	gatekeeperCodeId           string
 )
 
 type HydroSuite struct {
@@ -74,7 +76,7 @@ func (s *HydroSuite) SetupSuite() {
 	s.Require().NoError(s.HubChain.UpdateAndVerifyStakeChange(s.GetContext(), s.NeutronChain, relayer, 1_000_000, 0))
 
 	// copy contract codes to neutron validator
-	s.CopyWasmFiles(HydroWasm, TributeWasm, DAOVotingAdapterWasm, STTokenInfoProviderWasm, GatekeeperWasm)
+	s.CopyWasmFiles(HydroWasm, TributeWasm, DAOVotingAdapterWasm, STTokenInfoProviderWasm, LSMTokenInfoProviderWasm, GatekeeperWasm)
 
 	// store hydro contract code
 	hydroCodeId = s.StoreCode(s.GetContractCodePath(HydroWasm))
@@ -84,6 +86,8 @@ func (s *HydroSuite) SetupSuite() {
 	daoVotingAdapterCodeId = s.StoreCode(s.GetContractCodePath(DAOVotingAdapterWasm))
 	// store st_token_info_provider contract code
 	stTokenInfoProviderCodeId = s.StoreCode(s.GetContractCodePath(STTokenInfoProviderWasm))
+	// store lsm_token_info_provider contract code
+	lsmTokenInfoProviderCodeId = s.StoreCode(s.GetContractCodePath(LSMTokenInfoProviderWasm))
 	// store gatekeeper contract code
 	gatekeeperCodeId = s.StoreCode(s.GetContractCodePath(GatekeeperWasm))
 
@@ -220,15 +224,33 @@ func (s *HydroSuite) StoreCode(contractPath string) string {
 	return codeId
 }
 
-func (s *HydroSuite) GetLSMTokenInfoProviderInitMsg(maxValParticipating int) map[string]interface{} {
+func (s *HydroSuite) GetLSMTokenInfoProviderInitMsg(codeId string, maxValParticipating int, admin string) map[string]any {
 	neutronTransferChannel, err := s.Relayer.GetTransferChannel(s.GetContext(), s.NeutronChain, s.HubChain)
 	s.Require().NoError(err)
 
-	return map[string]interface{}{
+	initMsg := map[string]any{
+		"admins":                             []string{admin},
+		"icq_managers":                       []string{admin},
 		"max_validator_shares_participating": maxValParticipating,
 		"hub_connection_id":                  neutronTransferChannel.ConnectionHops[0],
 		"hub_transfer_channel_id":            neutronTransferChannel.ChannelID,
 		"icq_update_period":                  10,
+	}
+
+	codeIdInt, err := strconv.Atoi(codeId)
+	s.Require().NoError(err)
+
+	initMsgJson, err := json.Marshal(initMsg)
+	s.Require().NoError(err)
+
+	initMsgBase64 := base64.StdEncoding.EncodeToString(initMsgJson)
+
+	return map[string]any{
+		"code_id":                 codeIdInt,
+		"msg":                     initMsgBase64,
+		"label":                   "LSM Token Info Provider",
+		"admin":                   admin,
+		"hub_transfer_channel_id": neutronTransferChannel.ChannelID,
 	}
 }
 
@@ -239,11 +261,11 @@ func (s *HydroSuite) GetInstantiateContractMsg(codeId string, initMsg map[string
 	initMsgJson, err := json.Marshal(initMsg)
 	s.Require().NoError(err)
 
-	intMsgBase64 := base64.StdEncoding.EncodeToString(initMsgJson)
+	initMsgBase64 := base64.StdEncoding.EncodeToString(initMsgJson)
 
 	return map[string]any{
 		"code_id": codeIdInt,
-		"msg":     intMsgBase64,
+		"msg":     initMsgBase64,
 		"label":   label,
 		"admin":   admin,
 	}
@@ -297,7 +319,6 @@ func (s *HydroSuite) InstantiateHydroContract(
 		"max_locked_tokens":            "1000000000",
 		"whitelist_admins":             []string{adminAddr},
 		"initial_whitelist":            []string{adminAddr},
-		"icq_managers":                 []string{adminAddr},
 		"max_deployment_duration":      12,
 		"round_lock_power_schedule":    [][]any{{1, "1"}, {2, "1.25"}, {3, "1.5"}, {6, "2"}, {12, "4"}},
 		"token_info_providers":         tokenInfoProvidersInitMsgs,
@@ -352,9 +373,12 @@ func (s *HydroSuite) InstantiateContract(
 
 func (s *HydroSuite) RegisterInterchainQueries(
 	validators []string,
-	contractAddr string,
+	hydroContractAddr string,
 	keyMoniker string,
 ) {
+	lsmTokenInfoProviderAddr, err := s.GetLSMTokenInfoProviderAddress(hydroContractAddr)
+	s.Require().NoError(err)
+
 	icqs := map[string]interface{}{
 		"create_icqs_for_validators": map[string]interface{}{
 			"validators": validators,
@@ -362,7 +386,7 @@ func (s *HydroSuite) RegisterInterchainQueries(
 	}
 
 	queryDeposit := len(validators) * chainsuite.NeutronMinQueryDeposit
-	_, err := s.WasmExecuteTx(0, keyMoniker, icqs, contractAddr, []string{"--amount", strconv.Itoa(queryDeposit) + "untrn"})
+	_, err = s.WasmExecuteTx(0, keyMoniker, icqs, lsmTokenInfoProviderAddr, []string{"--amount", strconv.Itoa(queryDeposit) + "untrn"})
 	s.Require().NoError(err)
 	// Wait for the relayer to retrieve the initial query data before proceeding with locking
 	tCtx, cancelFn := context.WithTimeout(s.GetContext(), 30*chainsuite.CommitTimeout)
@@ -373,7 +397,7 @@ func (s *HydroSuite) RegisterInterchainQueries(
 		time.Sleep(chainsuite.CommitTimeout)
 		queryRes, _, err := s.NeutronChain.Validators[0].ExecQuery(
 			s.GetContext(),
-			"interchainqueries", "registered-queries", "--owners", contractAddr,
+			"interchainqueries", "registered-queries", "--owners", lsmTokenInfoProviderAddr,
 		)
 		if err != nil {
 			continue
@@ -626,6 +650,27 @@ func (s *HydroSuite) GetGatekeeper(hydroContractAddr string) string {
 	s.Require().NoError(err)
 
 	return gatekeeperResponse.Data.Gatekeeper
+}
+
+func (s *HydroSuite) GetLSMTokenInfoProviderAddress(hydroContractAddr string) (string, error) {
+	queryData := map[string]any{
+		"token_info_providers": map[string]any{},
+	}
+
+	response, err := s.QueryContractState(queryData, hydroContractAddr)
+	s.Require().NoError(err)
+
+	var providers chainsuite.TokenInfoProvidersData
+	err = json.Unmarshal([]byte(response), &providers)
+	s.Require().NoError(err)
+
+	for _, provider := range providers.Data.Providers {
+		if provider.LSM != nil {
+			return provider.LSM.Contract, nil
+		}
+	}
+
+	return "", fmt.Errorf("LSM token info provider not found")
 }
 
 func (s *HydroSuite) PauseTheHydroContract(keyMoniker string, contractAddr string) {
