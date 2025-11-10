@@ -364,7 +364,10 @@ func (s *HydroSuite) TestValidatorSlashing() {
 	// wait for icq to get the updated data
 	height, err := s.HubChain.Height(s.GetContext())
 	s.Require().NoError(err)
-	s.WaitForQueryUpdate(contractAddr, height)
+
+	lsmTokenInfoProviderAddr, err := s.GetLSMTokenInfoProviderAddress(contractAddr)
+	s.Require().NoError(err)
+	s.WaitForQueryUpdate(lsmTokenInfoProviderAddr, height)
 
 	// restart the node - not mandatory for this test
 	s.Require().NoError(s.HubChain.Validators[3].StartContainer(s.GetContext()))
