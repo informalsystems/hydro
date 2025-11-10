@@ -4,7 +4,6 @@ use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
     Coin, Decimal, Env, OwnedDeps, Timestamp, Uint128,
 };
-use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
     contract::{execute, instantiate},
@@ -268,7 +267,7 @@ fn test_voting_power_queries() {
 }
 
 fn advance_chain_and_lock_tokens(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: &mut Env,
     days_num: u64,
     user: &str,
@@ -288,7 +287,7 @@ fn advance_chain_and_lock_tokens(
 }
 
 fn verify_voting_powers(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: &Env,
     expected_powers_at_heights: &HashMap<u64, VotingPowersAtHeight>,
     expected_current_total_power: Uint128,

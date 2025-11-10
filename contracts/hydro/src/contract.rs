@@ -12,9 +12,6 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 use interface::drop_puppeteer::{DelegationsResponse, PuppeteerQueryMsg, QueryExtMsg};
 use interface::hydro::{CurrentRoundResponse, TokenGroupRatioChange};
-use interface::token_info_provider::ValidatorsInfoResponse;
-use neutron_sdk::bindings::msg::NeutronMsg;
-use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::cw721;
 use crate::error::{new_generic_error, ContractError};
@@ -34,12 +31,11 @@ use crate::query::{
     ExpiredUserLockupsResponse, GatekeeperResponse, LiquidityDeploymentResponse,
     LockEntryWithPower, LockVotesHistoryEntry, LockVotesHistoryResponse, LockupWithPerTrancheInfo,
     LockupsPendingSlashesResponse, ParentLockIdsResponse, ProposalResponse, QueryMsg,
-    RegisteredValidatorQueriesResponse, RoundEndResponse, RoundProposalsResponse,
-    RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse,
-    SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse,
-    TokenInfoProvidersResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse,
-    UserVotedLocksResponse, UserVotesResponse, UserVotingPowerResponse, VoteEntry, VotedLockInfo,
-    WhitelistAdminsResponse, WhitelistResponse,
+    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
+    RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse,
+    SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, TopNProposalsResponse,
+    TotalLockedTokensResponse, TranchesResponse, UserVotedLocksResponse, UserVotesResponse,
+    UserVotingPowerResponse, VoteEntry, VotedLockInfo, WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_token_group_shares_to_proposal, add_token_group_shares_to_round_total,
@@ -50,13 +46,11 @@ use crate::score_keeper::{
 use crate::slashing::{query_slashable_token_num_for_voting_on_proposal, slash_proposal_voters};
 use crate::state::{
     Constants, DropTokenInfo, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche, Vote,
-    VoteWithPower, CONSTANTS, DROP_TOKEN_INFO, GATEKEEPER, ICQ_MANAGERS, LIQUIDITY_DEPLOYMENTS_MAP,
+    VoteWithPower, CONSTANTS, DROP_TOKEN_INFO, GATEKEEPER, LIQUIDITY_DEPLOYMENTS_MAP,
     LOCKED_TOKENS, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES, LOCK_ID, LOCK_ID_EXPIRY, LOCK_ID_TRACKING,
-    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, QUERY_ID_TO_VALIDATOR, REVERSE_LOCK_ID_TRACKING,
-    SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS,
-    USER_LOCKS_FOR_CLAIM, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATORS_STORE_INITIALIZED,
-    VALIDATOR_TO_QUERY_ID, VOTE_MAP_V1, VOTE_MAP_V2, VOTING_ALLOWED_ROUND, WHITELIST,
-    WHITELIST_ADMINS,
+    PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID, REVERSE_LOCK_ID_TRACKING, SNAPSHOTS_ACTIVATION_HEIGHT,
+    TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VOTE_MAP_V1,
+    VOTE_MAP_V2, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::token_manager::{
     add_token_info_providers, handle_token_info_provider_add_remove,
@@ -95,11 +89,11 @@ const UNUSED_MSG_ID: u64 = 0;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
-    mut deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     // validate that the lock epoch length is not shorter than the round length
@@ -199,9 +193,6 @@ pub fn instantiate(
         submsgs.push(init_gatekeeper_msg);
     }
 
-    // the store for the first round is already initialized, since there is no previous round to copy information over from.
-    VALIDATORS_STORE_INITIALIZED.save(deps.storage, 0, &true)?;
-
     SNAPSHOTS_ACTIVATION_HEIGHT.save(deps.storage, &env.block.height)?;
 
     Ok(Response::new()
@@ -212,11 +203,11 @@ pub fn instantiate(
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let constants = load_current_constants(&deps.as_ref(), &env)?;
 
     // Since un-pausing can only be done through contract migration,
@@ -284,7 +275,6 @@ pub fn execute(
             tranche_name,
             tranche_metadata,
         } => edit_tranche(deps, env, info, tranche_id, tranche_name, tranche_metadata),
-        ExecuteMsg::WithdrawICQFunds { amount } => withdraw_icq_funds(deps, env, info, amount),
         ExecuteMsg::AddLiquidityDeployment {
             round_id,
             tranche_id,
@@ -384,12 +374,6 @@ pub fn execute(
         ExecuteMsg::BuyoutPendingSlash { lock_id } => {
             buyout_pending_slash(deps, env, info, &constants, lock_id)
         }
-        ExecuteMsg::RemoveInterchainQueries { query_ids } => {
-            remove_interchain_queries(deps, info, query_ids)
-        }
-        ExecuteMsg::RemoveRoundValidatorsData { round_id } => {
-            remove_round_validators_data(deps, info, round_id)
-        }
     }
 }
 
@@ -398,11 +382,11 @@ pub fn execute(
 // Changes the address of the Gatekeeper contract to the provided one
 // If the provided address is None, the reference to the Gatekeeper contract is removed from this contract
 fn set_gatekeeper(
-    deps: DepsMut<'_, NeutronQuery>,
+    deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     gatekeeper_addr: Option<String>,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
 
     if !whitelist_admins.contains(&info.sender) {
@@ -439,13 +423,13 @@ fn set_gatekeeper(
 //     Update total round power
 //     Create entry in LocksMap
 fn lock_tokens(
-    mut deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     constants: &Constants,
     lock_duration: u64,
     proof: Option<LockTokensProof>,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_lock_duration(
         &constants.round_lock_power_schedule,
         constants.lock_epoch_length,
@@ -597,13 +581,13 @@ fn lock_tokens(
 // This should essentially have the same effect as removing the old locks and immediately re-locking all
 // the same funds for the new lock duration.
 fn refresh_lock_duration(
-    mut deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     constants: &Constants,
     lock_ids: Vec<u64>,
     lock_duration: u64,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_lock_duration(
         &constants.round_lock_power_schedule,
         constants.lock_epoch_length,
@@ -652,7 +636,7 @@ fn refresh_lock_duration(
 
 #[allow(clippy::too_many_arguments)]
 fn refresh_single_lock(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     info: &MessageInfo,
     env: &Env,
     constants: &Constants,
@@ -733,13 +717,13 @@ fn refresh_single_lock(
 //     Check if the splitted lock voted in previous rounds and insert 0-power votes for the same proposals for the new lock entries
 //     If the splitted lock was used for voting in current round, remove the existing vote and add two new votes
 fn split_lock(
-    mut deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     constants: &Constants,
     lock_id_to_split: u64,
     amount: Uint128,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let starting_lock_entry = get_owned_lock_entry(deps.storage, &info.sender, lock_id_to_split)?;
 
     let resulting_lock_amount = starting_lock_entry
@@ -1004,12 +988,12 @@ fn split_lock(
 //     Sum up the amounts of all input locks, and save a new lock entry into the store; Remove the input locks from the store
 //     Remove any votes in the current round that were cast by the input locks and, if the conditions are met, insert a new vote for the new lock entry
 fn merge_locks(
-    mut deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     constants: &Constants,
     lock_ids: Vec<u64>,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     // Eliminate duplicates from the lock_ids
     let lock_ids: HashSet<u64> = HashSet::from_iter(lock_ids);
     let mut input_locks = vec![];
@@ -1356,11 +1340,8 @@ fn merge_locks(
 ///   - Lock 5: 0.5 * 0.3 = 0.15
 ///   - Lock 6: 0.5 * (from lock 3) 1.0 + 0.5 * (from lock 4) 0.7 = 0.5 + 0.35 = 0.85
 ///
-pub fn get_current_lock_composition(
-    deps: &Deps<NeutronQuery>,
-    lock_id: u64,
-) -> StdResult<Vec<(u64, Decimal)>> {
-    fn resolve(deps: &Deps<NeutronQuery>, lock_id: u64) -> StdResult<HashMap<u64, Decimal>> {
+pub fn get_current_lock_composition(deps: &Deps, lock_id: u64) -> StdResult<Vec<(u64, Decimal)>> {
+    fn resolve(deps: &Deps, lock_id: u64) -> StdResult<HashMap<u64, Decimal>> {
         let maybe_children = LOCK_ID_TRACKING.may_load(deps.storage, lock_id)?;
 
         // If not in tracking, it's a leaf
@@ -1441,7 +1422,7 @@ pub fn get_current_lock_composition(
 /// get_lock_ancestor_depth(..., 5) == Ok(0)  // root is expired
 ///
 pub fn get_lock_ancestor_depth(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     env: Env,
     lock_id: u64,
     lock_expiry_duration_seconds: u64,
@@ -1457,7 +1438,7 @@ pub fn get_lock_ancestor_depth(
     }
 
     fn recurse(
-        deps: &Deps<NeutronQuery>,
+        deps: &Deps,
         env: Env,
         current_id: u64,
         lock_expiry_duration_seconds: u64,
@@ -1535,12 +1516,12 @@ fn validate_lock_duration(
 //     If there are pending slashes, send those amounts to predefined address
 //     Delete entry from LocksMap
 fn unlock_tokens(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     constants: &Constants,
     lock_ids: Option<Vec<u64>>,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let locks: Vec<_> = USER_LOCKS
         .may_load(deps.storage, info.sender.clone())?
         .into_iter()
@@ -1677,7 +1658,7 @@ fn unlock_tokens(
 }
 
 fn get_lockups_allowed_to_unlock(
-    deps: &DepsMut<NeutronQuery>,
+    deps: &DepsMut,
     env: &Env,
     current_round_id: u64,
     locks: &[(u64, LockEntryV2)],
@@ -1717,7 +1698,7 @@ fn get_lockups_allowed_to_unlock(
 // If no round_id is specified, the function will use the current round id.
 #[allow(clippy::too_many_arguments)]
 fn create_proposal(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     constants: &Constants,
@@ -1727,7 +1708,7 @@ fn create_proposal(
     description: String,
     deployment_duration: u64,
     minimum_atom_liquidity_request: Uint128,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let current_round_id = compute_current_round_id(&env, constants)?;
 
     // if no round_id is provided, use the current round
@@ -1795,13 +1776,13 @@ fn create_proposal(
 }
 
 fn vote(
-    mut deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     constants: &Constants,
     tranche_id: u64,
     proposals_votes: Vec<ProposalToLockups>,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     // This voting system is designed to allow for an unlimited number of proposals and an unlimited number of votes
     // to be created, without being vulnerable to DOS. A naive implementation, where all votes or all proposals were iterated
     // at the end of the round could be DOSed by creating a large number of votes or proposals. This is not a problem
@@ -1870,13 +1851,13 @@ fn vote(
 
 // Function to unvote specific locks
 pub fn unvote(
-    mut deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     constants: &Constants,
     tranche_id: u64,
     lock_ids: Vec<u64>,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let round_id = compute_current_round_id(&env, constants)?;
 
     // Check that the tranche exists
@@ -1940,11 +1921,11 @@ pub fn unvote(
 
 // Adds a new account address to the whitelist.
 fn add_to_whitelist(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     address: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
     // Add address to whitelist
@@ -1969,11 +1950,11 @@ fn add_to_whitelist(
 
 // Removes an account address from the whitelist.
 fn remove_from_whitelist(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     address: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
     // Remove the account address from the whitelist
@@ -1991,11 +1972,11 @@ fn remove_from_whitelist(
 }
 
 fn update_config(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     config: UpdateConfigData,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     if env.block.time > config.activate_at {
         return Err(ContractError::Std(StdError::generic_err(
             "Can not update config in the past.",
@@ -2085,11 +2066,11 @@ fn update_config(
 }
 
 fn delete_configs(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     _env: &Env,
     info: MessageInfo,
     timestamps: Vec<Timestamp>,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
     let timestamps_to_delete: Vec<u64> = timestamps
@@ -2124,11 +2105,7 @@ fn delete_configs(
 //     Validate that the contract isn't already paused
 //     Validate sender is whitelist admin
 //     Set paused to true and save the changes
-fn pause_contract(
-    deps: DepsMut<NeutronQuery>,
-    env: &Env,
-    info: MessageInfo,
-) -> Result<Response<NeutronMsg>, ContractError> {
+fn pause_contract(deps: DepsMut, env: &Env, info: MessageInfo) -> Result<Response, ContractError> {
     let (timestamp, mut constants) =
         load_constants_active_at_timestamp(&deps.as_ref(), env.block.time)?;
 
@@ -2149,11 +2126,11 @@ fn pause_contract(
 //     Validate that the tranche with the same name doesn't already exist
 //     Add new tranche to the store
 fn add_tranche(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     tranche: TrancheInfo,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let tranche_name = tranche.name.trim().to_string();
 
     validate_sender_is_whitelist_admin(&deps, &info)?;
@@ -2184,13 +2161,13 @@ fn add_tranche(
 //     Validate that the tranche with the same name doesn't already exist
 //     Update the tranche in the store
 fn edit_tranche(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     tranche_id: u64,
     tranche_name: Option<String>,
     tranche_metadata: Option<String>,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
     let mut tranche = TRANCHE_MAP.load(deps.storage, tranche_id)?;
@@ -2220,34 +2197,6 @@ fn edit_tranche(
         .add_attribute("new tranche metadata", tranche.metadata))
 }
 
-// Tries to withdraw the given amount of the NATIVE_TOKEN_DENOM from
-// the contract. These will in practice be funds that
-// were returned to the contract when Interchain Queries
-// were removed because a validator fell out of the
-// top validators.
-fn withdraw_icq_funds(
-    deps: DepsMut<NeutronQuery>,
-    _env: Env,
-    info: MessageInfo,
-    amount: Uint128,
-) -> Result<Response<NeutronMsg>, ContractError> {
-    validate_address_is_icq_manager(&deps, info.sender.clone())?;
-
-    // send the amount of native tokens to the sender
-    let send = Coin {
-        denom: NATIVE_TOKEN_DENOM.to_string(),
-        amount,
-    };
-
-    Ok(Response::new()
-        .add_attribute("action", "withdraw_icq_escrows")
-        .add_attribute("sender", info.sender.clone())
-        .add_message(BankMsg::Send {
-            to_address: info.sender.to_string(),
-            amount: vec![send],
-        }))
-}
-
 // This function will add a given liquidity deployment to the deployments that were performed.
 // This will not actually perform any movement of funds; it is assumed to be called when
 // a trusted party, e.g. a multisig, has performed some deployment,
@@ -2258,12 +2207,12 @@ fn withdraw_icq_funds(
 // * the given proposal does not exist
 // * there already is a deployment for the given round, tranche, and proposal
 pub fn add_liquidity_deployment(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     constants: &Constants,
     deployment: LiquidityDeployment,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
     let round_id = deployment.round_id;
@@ -2326,13 +2275,13 @@ pub fn add_liquidity_deployment(
 // The main purpose is to correct a faulty entry added via add_liquidity_deployment.
 // This will return an error if the deployment does not exist.
 pub fn remove_liquidity_deployment(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
     // check that the deployment exists
@@ -2351,12 +2300,12 @@ pub fn remove_liquidity_deployment(
 }
 
 pub fn update_token_groups_ratios(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     constants: &Constants,
     changes: Vec<TokenGroupRatioChange>,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_sender_is_token_info_provider(&deps, &info)?;
 
     let current_round_id = compute_current_round_id(&env, constants)?;
@@ -2380,12 +2329,12 @@ pub fn update_token_groups_ratios(
 }
 
 pub fn add_token_info_provider(
-    mut deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     constants: &Constants,
     provider_info: TokenInfoProviderInstantiateMsg,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
     let (token_info_provider_init_msgs, base_token_info_provider) =
@@ -2415,12 +2364,12 @@ pub fn add_token_info_provider(
 }
 
 pub fn remove_token_info_provider(
-    mut deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     constants: &Constants,
     provider_id: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
     let mut token_info_provider =
@@ -2459,13 +2408,13 @@ pub fn remove_token_info_provider(
 // Validate that the sender is a whitelist admin
 // Sets the address of the drop core contract, the dToken denom, and the puppeteer address.
 fn set_drop_token_info(
-    deps: DepsMut<'_, NeutronQuery>,
+    deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     core_address: String,
     d_token_denom: String,
     puppeteer_address: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
 
     if !whitelist_admins.contains(&info.sender) {
@@ -2491,11 +2440,11 @@ fn set_drop_token_info(
 // https://github.com/hadronlabs-org/drop-contracts/blob/bdbb1a7986b4448aff10db3baaa150d71527e815/contracts/core/src/contract.rs#L1002-L1002
 // Drop core contract mints appropriate amount of dtoken given lsm shares sent
 pub fn convert_lockup_to_dtoken(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     lock_ids: Vec<u64>,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let lock_ids_set: HashSet<u64> = lock_ids.into_iter().collect();
 
     let lockups = query_user_lockups(
@@ -2559,11 +2508,11 @@ pub fn convert_lockup_to_dtoken(
 // 5. Re-vote with the new lock entry if there were previous votes
 // 6. Apply proposal power changes
 pub fn convert_lockup_to_dtoken_reply(
-    mut deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut,
     env: Env,
     convert_lockup_payload: ConvertLockupPayload,
     msg: Reply,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let lock_id = convert_lockup_payload.lock_id;
 
     let sender: Addr = convert_lockup_payload.sender;
@@ -2776,12 +2725,12 @@ pub fn convert_lockup_to_dtoken_reply(
 /// - Tracks how much of each token was used and refunds any excess back to the user.
 /// - Forwards the used portion of funds to the `slash_token_receiver` address specified in constants
 pub fn buyout_pending_slash(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     constants: &Constants,
     lock_id: u64,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     // Step 1: Get the lockup
     let lockup = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
 
@@ -2928,100 +2877,8 @@ pub fn buyout_pending_slash(
         .add_messages(bank_msgs))
 }
 
-// RemoveInterchainQueries
-//      Intended to be run after data from all rounds has been migrated to a new LSM token
-//      info provider smart contract.
-//
-//      Verifies that the sender is ICQ manager
-//      Filters out duplicates and ICQ IDs that are not owned by the contract
-//      Removes ICQs info from the contract state
-//      Builds SubMsgs to remove the ICQs and get the deposits back to the contract balance
-pub fn remove_interchain_queries(
-    deps: DepsMut<NeutronQuery>,
-    info: MessageInfo,
-    query_ids: Vec<u64>,
-) -> Result<Response<NeutronMsg>, ContractError> {
-    validate_address_is_icq_manager(&deps, info.sender.clone())?;
-
-    // Filter out duplicates and the ones not owned by the contract
-    let queries_to_remove = query_ids
-        .into_iter()
-        .collect::<HashSet<u64>>()
-        .into_iter()
-        .filter_map(|query_id| {
-            QUERY_ID_TO_VALIDATOR
-                .load(deps.storage, query_id)
-                .ok()
-                .map(|val_address| (query_id, val_address))
-        })
-        .collect::<Vec<(u64, String)>>();
-
-    let mut remove_queries_msgs = vec![];
-
-    for query_to_remove in &queries_to_remove {
-        // Remove query info from the stores immediately. If any of the SubMsgs
-        // fails to execute, then entire transaction will be reverted.
-        QUERY_ID_TO_VALIDATOR.remove(deps.storage, query_to_remove.0);
-        VALIDATOR_TO_QUERY_ID.remove(deps.storage, query_to_remove.1.clone());
-
-        remove_queries_msgs.push(NeutronMsg::remove_interchain_query(query_to_remove.0));
-    }
-
-    Ok(Response::new()
-        .add_attribute("action", "remove_interchain_queries")
-        .add_attribute("sender", info.sender)
-        .add_attribute(
-            "removed_query_ids",
-            get_slice_as_attribute(
-                queries_to_remove
-                    .into_iter()
-                    .map(|q| q.0)
-                    .collect::<Vec<u64>>()
-                    .as_slice(),
-            ),
-        )
-        .add_messages(remove_queries_msgs))
-}
-
-// RemoveRoundValidatorsData
-//      Intended to be run after data from all rounds has been migrated to a new LSM token
-//      info provider smart contract.
-//
-//      Verifies that the sender is ICQ manager
-//      Removes data for the given round from the following contract stores:
-//      VALIDATORS_PER_ROUND, VALIDATORS_INFO and VALIDATORS_STORE_INITIALIZED
-pub fn remove_round_validators_data(
-    deps: DepsMut<NeutronQuery>,
-    info: MessageInfo,
-    round_id: u64,
-) -> Result<Response<NeutronMsg>, ContractError> {
-    validate_address_is_icq_manager(&deps, info.sender.clone())?;
-
-    let val_per_round_keys: Vec<(u128, String)> = VALIDATORS_PER_ROUND
-        .sub_prefix(round_id)
-        .keys(deps.storage, None, None, Order::Ascending)
-        .filter_map(|res| res.ok())
-        .collect();
-
-    for val_per_round_key in val_per_round_keys {
-        VALIDATORS_PER_ROUND.remove(
-            deps.storage,
-            (round_id, val_per_round_key.0, val_per_round_key.1.clone()),
-        );
-
-        VALIDATORS_INFO.remove(deps.storage, (round_id, val_per_round_key.1.clone()));
-    }
-
-    VALIDATORS_STORE_INITIALIZED.remove(deps.storage, round_id);
-
-    Ok(Response::new()
-        .add_attribute("action", "remove_round_validators_data")
-        .add_attribute("sender", info.sender)
-        .add_attribute("round_id", round_id.to_string()))
-}
-
 pub fn validate_sender_is_whitelist_admin(
-    deps: &DepsMut<NeutronQuery>,
+    deps: &DepsMut,
     info: &MessageInfo,
 ) -> Result<(), ContractError> {
     let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
@@ -3032,20 +2889,8 @@ pub fn validate_sender_is_whitelist_admin(
     Ok(())
 }
 
-fn validate_address_is_icq_manager(
-    deps: &DepsMut<NeutronQuery>,
-    address: Addr,
-) -> Result<(), ContractError> {
-    let is_manager = ICQ_MANAGERS.may_load(deps.storage, address)?;
-    if is_manager.is_none() {
-        return Err(ContractError::Unauthorized);
-    }
-
-    Ok(())
-}
-
 fn validate_sender_is_token_info_provider(
-    deps: &DepsMut<NeutronQuery>,
+    deps: &DepsMut,
     info: &MessageInfo,
 ) -> Result<(), ContractError> {
     let token_info_provider =
@@ -3058,7 +2903,7 @@ fn validate_sender_is_token_info_provider(
 }
 
 fn validate_tranche_name_uniqueness(
-    deps: &DepsMut<NeutronQuery>,
+    deps: &DepsMut,
     tranche_name: &String,
 ) -> Result<(), ContractError> {
     for tranche_entry in TRANCHE_MAP.range(deps.storage, None, None, Order::Ascending) {
@@ -3074,7 +2919,7 @@ fn validate_tranche_name_uniqueness(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> Result<Binary, ContractError> {
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, ContractError> {
     let binary = match msg {
         QueryMsg::Constants {} => to_json_binary(&query_constants(deps, env)?),
         QueryMsg::Tranches {} => to_json_binary(&query_tranches(deps)?),
@@ -3183,12 +3028,6 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> Result<Binary
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(deps)?),
         QueryMsg::WhitelistAdmins {} => to_json_binary(&query_whitelist_admins(deps)?),
         QueryMsg::TotalLockedTokens {} => to_json_binary(&query_total_locked_tokens(deps)?),
-        QueryMsg::ValidatorsInfo { round_id } => {
-            to_json_binary(&query_round_validators_info(deps, round_id)?)
-        }
-        QueryMsg::RegisteredValidatorQueries {} => {
-            to_json_binary(&query_registered_validator_queries(deps)?)
-        }
         QueryMsg::CanLockDenom { token_denom } => {
             to_json_binary(&query_can_lock_denom(&deps, &env, token_denom)?)
         }
@@ -3305,7 +3144,7 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> Result<Binary
 }
 
 fn query_liquidity_deployment(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
@@ -3318,7 +3157,7 @@ fn query_liquidity_deployment(
 }
 
 pub fn query_round_tranche_liquidity_deployments(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     round_id: u64,
     tranche_id: u64,
     start_from: u64,
@@ -3341,7 +3180,7 @@ pub fn query_round_tranche_liquidity_deployments(
 }
 
 pub fn query_round_total_power(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     round_id: u64,
 ) -> StdResult<RoundTotalVotingPowerResponse> {
     let total_round_power = get_total_power_for_round(&deps, round_id)?;
@@ -3350,14 +3189,14 @@ pub fn query_round_total_power(
     })
 }
 
-pub fn query_constants(deps: Deps<NeutronQuery>, env: Env) -> StdResult<ConstantsResponse> {
+pub fn query_constants(deps: Deps, env: Env) -> StdResult<ConstantsResponse> {
     Ok(ConstantsResponse {
         constants: load_current_constants(&deps, &env)?,
     })
 }
 
 fn get_user_lockups_with_predicate(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     env: &Env,
     address: String,
     predicate: impl FnMut(&LockEntryV2) -> bool,
@@ -3370,7 +3209,7 @@ fn get_user_lockups_with_predicate(
 }
 
 pub fn enrich_lockups_with_power(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     env: &Env,
     lockups: Vec<LockEntryV2>,
 ) -> StdResult<Vec<LockEntryWithPower>> {
@@ -3398,7 +3237,7 @@ pub fn enrich_lockups_with_power(
 }
 
 pub fn query_all_user_lockups(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     env: &Env,
     address: String,
     start_from: u32,
@@ -3409,7 +3248,7 @@ pub fn query_all_user_lockups(
 }
 
 pub fn query_specific_user_lockups(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     env: &Env,
     address: String,
     lock_ids: Vec<u64>,
@@ -3429,7 +3268,7 @@ pub fn query_specific_user_lockups(
 
 // Helper function to handle the common logic for both query functions
 pub fn enrich_lockups_with_tranche_infos(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     env: &Env,
     locks: Vec<LockEntryWithPower>,
 ) -> Result<Vec<LockupWithPerTrancheInfo>, ContractError> {
@@ -3458,7 +3297,7 @@ pub fn enrich_lockups_with_tranche_infos(
 }
 
 pub fn query_all_user_lockups_with_tranche_infos(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     env: &Env,
     address: String,
     start_from: u32,
@@ -3472,7 +3311,7 @@ pub fn query_all_user_lockups_with_tranche_infos(
 }
 
 pub fn query_specific_user_lockups_with_tranche_infos(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     env: &Env,
     address: String,
     lock_ids: Vec<u64>,
@@ -3486,7 +3325,7 @@ pub fn query_specific_user_lockups_with_tranche_infos(
 }
 
 pub fn query_expired_user_lockups(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     env: &Env,
     address: String,
     start_from: u32,
@@ -3507,7 +3346,7 @@ pub fn query_expired_user_lockups(
 }
 
 pub fn query_lockups_pending_slashes(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     lockup_ids: Vec<u64>,
 ) -> StdResult<LockupsPendingSlashesResponse> {
     let mut pending_slashes = vec![];
@@ -3521,7 +3360,7 @@ pub fn query_lockups_pending_slashes(
 }
 
 pub fn query_proposal(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
@@ -3532,7 +3371,7 @@ pub fn query_proposal(
 }
 
 pub fn query_user_voting_power(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     env: Env,
     address: String,
 ) -> StdResult<UserVotingPowerResponse> {
@@ -3553,7 +3392,7 @@ pub fn query_user_voting_power(
 // containing denoms whose ratio towards the base denom later dropped
 // to zero will be filtered out.
 pub fn query_user_votes(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     round_id: u64,
     tranche_id: u64,
     user_address: String,
@@ -3634,7 +3473,7 @@ pub fn query_user_votes(
 /// Helper function that collects all voted locks for a user in a specific round/tranche,
 /// optionally filtered by a specific proposal ID.
 fn collect_user_voted_locks(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     user_addr: Addr,
     round_id: u64,
     tranche_id: u64,
@@ -3689,7 +3528,7 @@ fn collect_user_voted_locks(
 ///
 /// Note: It is called by tribute contract's query_outstanding_tribute_claims
 pub fn query_user_voted_locks(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     user_address: String,
     round_id: u64,
     tranche_id: u64,
@@ -3719,7 +3558,7 @@ pub fn query_user_voted_locks(
 ///
 /// Note: It is called by tribute contract's query_outstanding_lockup_claimable_coins and claim_tribute
 pub fn query_lock_votes_history(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     env: Env,
     lock_id: u64,
     start_from_round_id: Option<u64>,
@@ -3787,11 +3626,7 @@ pub fn query_lock_votes_history(
     Ok(LockVotesHistoryResponse { vote_history })
 }
 
-pub fn query_all_votes(
-    deps: Deps<NeutronQuery>,
-    start_from: u32,
-    limit: u32,
-) -> StdResult<AllVotesResponse> {
+pub fn query_all_votes(deps: Deps, start_from: u32, limit: u32) -> StdResult<AllVotesResponse> {
     let vote_entries = VOTE_MAP_V2
         .range(deps.storage, None, None, Order::Ascending)
         .skip(start_from as usize)
@@ -3818,7 +3653,7 @@ pub fn query_all_votes(
 }
 
 pub fn query_all_votes_round_tranche(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     round_id: u64,
     tranche_id: u64,
     start_from: u32,
@@ -3851,7 +3686,7 @@ pub fn query_all_votes_round_tranche(
 }
 
 pub fn query_round_tranche_proposals(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     round_id: u64,
     tranche_id: u64,
     start_from: u32,
@@ -3876,10 +3711,7 @@ pub fn query_round_tranche_proposals(
     Ok(RoundProposalsResponse { proposals })
 }
 
-pub fn query_current_round_id(
-    deps: Deps<NeutronQuery>,
-    env: Env,
-) -> StdResult<CurrentRoundResponse> {
+pub fn query_current_round_id(deps: Deps, env: Env) -> StdResult<CurrentRoundResponse> {
     let constants = &load_current_constants(&deps, &env)?;
     let round_id = compute_round_id_for_timestamp(constants, env.block.time.nanos())?;
 
@@ -3891,11 +3723,7 @@ pub fn query_current_round_id(
     })
 }
 
-pub fn query_round_end(
-    deps: Deps<NeutronQuery>,
-    env: Env,
-    round_id: u64,
-) -> StdResult<RoundEndResponse> {
+pub fn query_round_end(deps: Deps, env: Env, round_id: u64) -> StdResult<RoundEndResponse> {
     let constants = &load_current_constants(&deps, &env)?;
     let round_end = compute_round_end(constants, round_id)?;
 
@@ -3903,7 +3731,7 @@ pub fn query_round_end(
 }
 
 pub fn query_top_n_proposals(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     round_id: u64,
     tranche_id: u64,
     num: usize,
@@ -3953,7 +3781,7 @@ pub fn query_top_n_proposals(
     })
 }
 
-pub fn query_tranches(deps: Deps<NeutronQuery>) -> StdResult<TranchesResponse> {
+pub fn query_tranches(deps: Deps) -> StdResult<TranchesResponse> {
     let tranches = TRANCHE_MAP
         .range(deps.storage, None, None, Order::Ascending)
         .map(|t| t.unwrap().1)
@@ -3963,7 +3791,7 @@ pub fn query_tranches(deps: Deps<NeutronQuery>) -> StdResult<TranchesResponse> {
 }
 
 fn query_user_lockups(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     user_address: Addr,
     mut predicate: impl FnMut(&LockEntryV2) -> bool,
     start_from: u32,
@@ -3982,62 +3810,28 @@ fn query_user_lockups(
         .collect()
 }
 
-pub fn query_whitelist(deps: Deps<NeutronQuery>) -> StdResult<WhitelistResponse> {
+pub fn query_whitelist(deps: Deps) -> StdResult<WhitelistResponse> {
     Ok(WhitelistResponse {
         whitelist: WHITELIST.load(deps.storage)?,
     })
 }
 
-pub fn query_whitelist_admins(deps: Deps<NeutronQuery>) -> StdResult<WhitelistAdminsResponse> {
+pub fn query_whitelist_admins(deps: Deps) -> StdResult<WhitelistAdminsResponse> {
     Ok(WhitelistAdminsResponse {
         admins: WHITELIST_ADMINS.load(deps.storage)?,
     })
 }
 
-pub fn query_total_locked_tokens(deps: Deps<NeutronQuery>) -> StdResult<TotalLockedTokensResponse> {
+pub fn query_total_locked_tokens(deps: Deps) -> StdResult<TotalLockedTokensResponse> {
     Ok(TotalLockedTokensResponse {
         total_locked_tokens: LOCKED_TOKENS.load(deps.storage)?,
-    })
-}
-
-// Returns all the validator queries that are registered
-// by the contract right now, for each query returning the address of the validator it is
-// associated with, plus its query id.
-pub fn query_registered_validator_queries(
-    deps: Deps<NeutronQuery>,
-) -> StdResult<RegisteredValidatorQueriesResponse> {
-    let query_ids = VALIDATOR_TO_QUERY_ID
-        .range(deps.storage, None, None, Order::Ascending)
-        .filter_map(|l| {
-            if l.is_err() {
-                deps.api
-                    .debug(&format!("Error when querying validator query id: {l:?}"));
-            }
-            l.ok()
-        })
-        .collect();
-
-    Ok(RegisteredValidatorQueriesResponse { query_ids })
-}
-
-pub fn query_round_validators_info(
-    deps: Deps<NeutronQuery>,
-    round_id: u64,
-) -> StdResult<ValidatorsInfoResponse> {
-    Ok(ValidatorsInfoResponse {
-        round_id,
-        validators: VALIDATORS_INFO
-            .prefix(round_id)
-            .range(deps.storage, None, None, Order::Ascending)
-            .filter_map(|val_info| val_info.ok())
-            .collect(),
     })
 }
 
 // Checks whether the token with the given denom can be locked in Hydro. Denom can be locked if it belongs to
 // a known token group that has power ratio to base denom greater than zero.
 pub fn query_can_lock_denom(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     env: &Env,
     token_denom: String,
 ) -> StdResult<CanLockDenomResponse> {
@@ -4069,7 +3863,7 @@ pub fn query_can_lock_denom(
 }
 
 pub fn query_simulate_dtoken_amounts(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     lock_ids: Vec<u64>,
     address: String,
 ) -> StdResult<DtokenAmountsResponse> {
@@ -4165,24 +3959,19 @@ pub fn query_simulate_dtoken_amounts(
     })
 }
 
-pub fn query_token_info_providers(
-    deps: Deps<NeutronQuery>,
-) -> StdResult<TokenInfoProvidersResponse> {
+pub fn query_token_info_providers(deps: Deps) -> StdResult<TokenInfoProvidersResponse> {
     Ok(TokenInfoProvidersResponse {
         providers: TokenManager::new(&deps).token_info_providers,
     })
 }
 
-pub fn query_gatekeeper(deps: Deps<NeutronQuery>) -> StdResult<GatekeeperResponse> {
+pub fn query_gatekeeper(deps: Deps) -> StdResult<GatekeeperResponse> {
     Ok(GatekeeperResponse {
         gatekeeper: GATEKEEPER.may_load(deps.storage)?.unwrap_or_default(),
     })
 }
 
-pub fn query_parent_lock_ids(
-    deps: Deps<NeutronQuery>,
-    child_id: u64,
-) -> StdResult<ParentLockIdsResponse> {
+pub fn query_parent_lock_ids(deps: Deps, child_id: u64) -> StdResult<ParentLockIdsResponse> {
     let parent_ids = REVERSE_LOCK_ID_TRACKING
         .may_load(deps.storage, child_id)?
         .unwrap_or_default();
@@ -4222,7 +4011,7 @@ pub fn compute_round_end(constants: &Constants, round_id: u64) -> StdResult<Time
 //      PROPOSAL_MAP, PROPS_BY_SCORE, VOTE_MAP, SCALED_PROPOSAL_SHARES_MAP, PROPOSAL_TOTAL_MAP
 #[allow(clippy::too_many_arguments)]
 fn update_voting_power_on_proposals(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     constants: &Constants,
     token_manager: &mut TokenManager,
     current_round: u64,
@@ -4367,7 +4156,7 @@ fn update_voting_power_on_proposals(
 // If user voted for only one proposal, then the new lock power will be added to it.
 // If user voted for multiple proposals, then we do not add a vote for new lock entry.
 pub fn get_vote_for_update(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     sender: &Addr,
     current_round: u64,
     tranche_id: u64,
@@ -4427,7 +4216,7 @@ pub fn can_lock_vote_for_proposal(
 
 #[allow(clippy::too_many_arguments)]
 pub fn process_votes_and_apply_proposal_changes(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     env: &Env,
     token_manager: &mut TokenManager,
     constants: &Constants,
@@ -4511,7 +4300,7 @@ fn update_proposal_and_props_by_score_maps(
 
 #[allow(clippy::too_many_arguments)] // complex function that needs a lot of arguments
 fn update_total_time_weighted_shares<T>(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     current_height: u64,
     constants: &Constants,
     token_manager: &mut TokenManager,
@@ -4568,7 +4357,7 @@ where
 }
 
 // Returns the number of locks for a given user
-fn get_lock_count(deps: &Deps<NeutronQuery>, user_address: Addr) -> usize {
+fn get_lock_count(deps: &Deps, user_address: Addr) -> usize {
     match USER_LOCKS.may_load(deps.storage, user_address) {
         Ok(Some(lock_ids)) => lock_ids.len(),
         _ => 0,
@@ -4576,11 +4365,7 @@ fn get_lock_count(deps: &Deps<NeutronQuery>, user_address: Addr) -> usize {
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn reply(
-    deps: DepsMut<NeutronQuery>,
-    env: Env,
-    msg: Reply,
-) -> Result<Response<NeutronMsg>, ContractError> {
+pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
     match from_json::<ReplyPayload>(&msg.payload)? {
         ReplyPayload::InstantiateTokenInfoProvider(token_info_provider) => {
             token_manager_handle_submsg_reply(deps, &env, token_info_provider, msg)

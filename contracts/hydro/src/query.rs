@@ -5,8 +5,6 @@ use crate::{
 };
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
-#[allow(unused_imports)]
-use interface::token_info_provider::ValidatorsInfoResponse;
 // When compiling for wasm32 platform, compiler doesn't recognize that this type is used in one of the queries.
 #[allow(unused_imports)]
 use interface::hydro::CurrentRoundResponse;
@@ -134,12 +132,6 @@ pub enum QueryMsg {
 
     #[returns(TotalLockedTokensResponse)]
     TotalLockedTokens {},
-
-    #[returns(ValidatorsInfoResponse)]
-    ValidatorsInfo { round_id: u64 },
-
-    #[returns(RegisteredValidatorQueriesResponse)]
-    RegisteredValidatorQueries {},
 
     #[returns(CanLockDenomResponse)]
     CanLockDenom { token_denom: String },
@@ -506,13 +498,6 @@ pub struct TotalLockedTokensResponse {
 #[cw_serde]
 pub struct RoundProposalsResponse {
     pub proposals: Vec<Proposal>,
-}
-
-// A vector containing tuples, where each tuple contains a validator address
-// and the id of the interchain query associated with that validator.
-#[cw_serde]
-pub struct RegisteredValidatorQueriesResponse {
-    pub query_ids: Vec<(String, u64)>,
 }
 
 #[cw_serde]

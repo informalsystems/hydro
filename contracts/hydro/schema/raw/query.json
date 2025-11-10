@@ -663,42 +663,6 @@
     {
       "type": "object",
       "required": [
-        "validators_info"
-      ],
-      "properties": {
-        "validators_info": {
-          "type": "object",
-          "required": [
-            "round_id"
-          ],
-          "properties": {
-            "round_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "registered_validator_queries"
-      ],
-      "properties": {
-        "registered_validator_queries": {
-          "type": "object",
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
         "can_lock_denom"
       ],
       "properties": {

@@ -21,10 +21,6 @@ use crate::token_info_provider::ValidatorsInfoResponse;
 pub enum QueryMsg {
     #[returns(CurrentRoundResponse)]
     CurrentRound {},
-
-    // TODO: remove after LSM migration is done
-    #[returns(ValidatorsInfoResponse)]
-    ValidatorsInfo { round_id: u64 },
 }
 
 #[cw_serde]

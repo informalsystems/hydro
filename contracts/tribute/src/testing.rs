@@ -1204,7 +1204,7 @@ fn test_query_historical_tribute_claims() {
         let (mut deps, _env) = (mock_dependencies(), mock_env());
 
         // Mock the database
-        let tributes = vec![
+        let tributes = [
             Tribute {
                 tribute_id: 0,
                 round_id: 1,
@@ -1273,7 +1273,7 @@ struct RoundTributesTestCase {
 #[test]
 fn test_query_round_tributes() {
     // Mock the database
-    let tributes = vec![
+    let tributes = [
         Tribute {
             tribute_id: 1,
             round_id: 1,
@@ -1448,7 +1448,7 @@ fn test_query_outstanding_tribute_claims() {
         let (mut deps, _env) = (mock_dependencies(), mock_env());
 
         // Mock the database
-        let tributes = vec![
+        let tributes = [
             Tribute {
                 // this tribute will be marked as already claimed by user1
                 tribute_id: 1,

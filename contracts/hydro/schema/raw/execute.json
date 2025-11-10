@@ -416,27 +416,6 @@
     {
       "type": "object",
       "required": [
-        "withdraw_i_c_q_funds"
-      ],
-      "properties": {
-        "withdraw_i_c_q_funds": {
-          "type": "object",
-          "required": [
-            "amount"
-          ],
-          "properties": {
-            "amount": {
-              "$ref": "#/definitions/Uint128"
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
         "add_liquidity_deployment"
       ],
       "properties": {
@@ -919,57 +898,6 @@
           ],
           "properties": {
             "lock_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "description": "Temporary for the purpose of LSM migration",
-      "type": "object",
-      "required": [
-        "remove_interchain_queries"
-      ],
-      "properties": {
-        "remove_interchain_queries": {
-          "type": "object",
-          "required": [
-            "query_ids"
-          ],
-          "properties": {
-            "query_ids": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
-              }
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "description": "Temporary for the purpose of LSM migration",
-      "type": "object",
-      "required": [
-        "remove_round_validators_data"
-      ],
-      "properties": {
-        "remove_round_validators_data": {
-          "type": "object",
-          "required": [
-            "round_id"
-          ],
-          "properties": {
-            "round_id": {
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0

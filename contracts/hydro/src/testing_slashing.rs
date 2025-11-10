@@ -17,7 +17,6 @@ use crate::testing_mocks::{denom_trace_grpc_query_mock, MockQuerier};
 use cosmwasm_std::testing::{MockApi, MockStorage};
 use cosmwasm_std::{testing::mock_env, Coin, Decimal, Uint128};
 use cosmwasm_std::{Env, OwnedDeps, StdResult, Storage};
-use neutron_sdk::bindings::query::NeutronQuery;
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -1706,7 +1705,7 @@ fn slash_after_dtoken_conversion_test() {
 }
 
 fn vote_for_proposal(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: &Env,
     user1: &str,
     tranche_id: u64,
@@ -1758,7 +1757,7 @@ fn verify_locks_and_pending_slashes(
 
 // expected_slashable_amounts: &[(tranche_id, proposal_id, expected_max_slashable_token_num)]
 fn verify_expected_slashable_token_num(
-    deps: &OwnedDeps<cosmwasm_std::MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &OwnedDeps<cosmwasm_std::MemoryStorage, MockApi, MockQuerier>,
     env: &Env,
     round_id: u64,
     expected_slashable_amounts: &[(u64, u64, u128)],
