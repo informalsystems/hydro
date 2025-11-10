@@ -3,7 +3,6 @@ use cosmwasm_std::{
 };
 use cw_storage_plus::Map;
 use interface::hydro::TokenGroupRatioChange;
-use neutron_sdk::bindings::query::NeutronQuery;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
@@ -21,7 +20,7 @@ pub fn get_total_power_for_proposal(storage: &dyn Storage, prop_id: u64) -> StdR
         .unwrap_or(Decimal::zero()))
 }
 
-pub fn get_total_power_for_round(deps: &Deps<NeutronQuery>, round_id: u64) -> StdResult<Decimal> {
+pub fn get_total_power_for_round(deps: &Deps, round_id: u64) -> StdResult<Decimal> {
     Ok(
         match TOTAL_VOTING_POWER_PER_ROUND.may_load(deps.storage, round_id)? {
             None => Decimal::zero(),
@@ -72,7 +71,7 @@ pub fn add_token_group_shares(
 }
 
 pub fn add_token_group_shares_to_proposal(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     token_manager: &mut TokenManager,
     round_id: u64,
     prop_id: u64,
@@ -130,7 +129,7 @@ pub fn remove_token_group_shares(
 }
 
 pub fn remove_token_group_shares_from_proposal(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     token_manager: &mut TokenManager,
     round_id: u64,
     prop_id: u64,
@@ -157,7 +156,7 @@ pub fn remove_token_group_shares_from_proposal(
 // and suggests to wrap the Decimal in a closure with no arguments: `|| { /* code */ }`
 #[allow(clippy::redundant_closure)]
 pub fn add_many_token_group_shares_to_proposal(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     token_manager: &mut TokenManager,
     round_id: u64,
     proposal_id: u64,
@@ -288,7 +287,7 @@ pub fn combine_proposal_power_updates(
 // As it is basically a wrapper around add_many_token_group_shares_to_proposal function,
 //  it will update SCALED_PROPOSAL_SHARES_MAP and TOTAL_PROPOSAL_MAP.
 pub fn apply_proposal_changes(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     token_manager: &mut TokenManager,
     round_id: u64,
     changes: HashMap<u64, ProposalPowerUpdate>,

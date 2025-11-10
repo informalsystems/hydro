@@ -5,7 +5,6 @@ use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
     Addr, Coin, Decimal, Env, OwnedDeps, Storage, Timestamp, Uint128,
 };
-use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
     contract::{execute, instantiate},
@@ -524,7 +523,7 @@ fn test_compounder_cap() {
 }
 
 fn execute_locking_and_verify(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: &Env,
     locking_infos: Vec<(&str, u64, Coin, Option<&str>)>,
 ) {

@@ -42,7 +42,6 @@ use interface::drop_puppeteer::{
 };
 use interface::hydro::TokenGroupRatioChange;
 use interface::lsm::ValidatorInfo;
-use neutron_sdk::bindings::query::NeutronQuery;
 
 pub type WasmQueryFunc = dyn Fn(&WasmQuery) -> QuerierResult;
 
@@ -1178,7 +1177,7 @@ fn query_all_votes_round_tranche_test() {
 }
 
 fn get_expired_user_lockups(
-    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: Env,
     user_address: String,
 ) -> Vec<LockEntryV2> {
@@ -1190,7 +1189,7 @@ fn get_expired_user_lockups(
 }
 
 fn get_user_voting_power(
-    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: Env,
     user_address: String,
 ) -> u128 {

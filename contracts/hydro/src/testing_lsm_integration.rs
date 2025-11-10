@@ -6,9 +6,8 @@ use cosmwasm_std::{
     BankMsg, Coin, CosmosMsg, Decimal, Env, OwnedDeps, StdError, SystemError, SystemResult,
     Timestamp, Uint128,
 };
+use ibc_proto::ibc::apps::transfer::v1::QueryDenomTraceResponse;
 use interface::hydro::TokenGroupRatioChange;
-use neutron_sdk::bindings::query::NeutronQuery;
-use neutron_std::types::ibc::applications::transfer::v1::QueryDenomTraceResponse;
 
 use crate::{
     contract::{
@@ -51,8 +50,7 @@ pub fn get_default_constants() -> crate::state::Constants {
 
 #[test]
 fn test_validate_denom() {
-    type SetupFunc =
-        dyn Fn(&mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>, &mut Env);
+    type SetupFunc = dyn Fn(&mut OwnedDeps<MockStorage, MockApi, MockQuerier>, &mut Env);
 
     struct TestCase {
         description: String,

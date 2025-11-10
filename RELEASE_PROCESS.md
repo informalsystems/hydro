@@ -28,6 +28,7 @@ Modify the versions in the `Cargo.toml` files for all contracts that the release
 
 Make sure that the migration entrypoint in `contract/src/migration/migrate.rs` has the correct behaviour for the upgrade.
 That means it uses the right Migration message, and calls the right migration function.
+If the contract has to be migrated due to the API or other code changes, but it doesn't require any state migrations, make sure that the given contract has `migrate()` entry point defined. Otherwise, migration will not be possible.
 
 ### Building/Releasing
 
@@ -36,7 +37,7 @@ Run `make compile` to regenerate the contracts with the new version number.
 ### Cutting the release
 
 Create a PR with these changes, in the usual cases targetting main.
-After the changes are merged into main, push the changes from main to the release branch, e.g. `release/v3.x`.
+After the changes are merged into main, push the changes from main to the release branch, e.g. `release/v3.x` (Note: when merging a PR from main into release branch, make sure to use "merge" option instead of "squash and merge". This allows us to keep the history clean and reuse the same release branch for future releases).
 Then, on Github, create a new tag from the branch, and release that tag.
 As summary, use the CHANGELOG entry for that release, e.g.
 ```

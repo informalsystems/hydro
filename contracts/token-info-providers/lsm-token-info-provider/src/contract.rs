@@ -5,13 +5,12 @@ use cosmwasm_std::{
     Order, Reply, Response, StdResult, Uint128,
 };
 use cw2::set_contract_version;
-use interface::token_info_provider::{TokenInfoProviderQueryMsg, ValidatorsInfoResponse};
+use interface::token_info_provider::ValidatorsInfoResponse;
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 use neutron_sdk::interchain_queries::v047::register_queries::new_register_staking_validators_query_msg;
 use neutron_sdk::sudo::msg::SudoMsg;
 
 use crate::error::{new_generic_error, ContractError};
-use crate::lsm_integration::{get_nearest_store_initialized_round, COSMOS_VALIDATOR_PREFIX};
 use crate::msg::{ExecuteContext, ExecuteMsg, InstantiateMsg};
 use crate::query::{
     AdminsResponse, ConfigResponse, ICQManagersResponse, QueryMsg,
@@ -21,7 +20,10 @@ use crate::state::{
     Config, ADMINS, CONFIG, ICQ_MANAGERS, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
     VALIDATORS_STORE_INITIALIZED, VALIDATOR_TO_QUERY_ID,
 };
-use crate::utils::{query_current_round_id, run_on_each_transaction};
+use crate::utils::{
+    get_nearest_store_initialized_round, query_current_round_id, run_on_each_transaction,
+    COSMOS_VALIDATOR_PREFIX,
+};
 use crate::validators_icqs::{
     build_create_interchain_query_submsg, handle_delivered_interchain_query_result,
     handle_submsg_reply, query_min_interchain_query_deposit,
@@ -58,6 +60,9 @@ pub fn instantiate(
     };
 
     CONFIG.save(deps.storage, &config)?;
+
+    // the store for the first round is already initialized, since there is no previous round to copy information over from.
+    VALIDATORS_STORE_INITIALIZED.save(deps.storage, 0, &true)?;
 
     for admin in msg.admins {
         let admin_addr = deps.api.addr_validate(&admin)?;
@@ -106,9 +111,6 @@ pub fn execute(
         ExecuteMsg::AddICQManager { address } => add_icq_manager(deps, info, address),
         ExecuteMsg::RemoveICQManager { address } => remove_icq_manager(deps, info, address),
         ExecuteMsg::WithdrawICQFunds { amount } => withdraw_icq_funds(deps, info, amount),
-        ExecuteMsg::CopyRoundValidatorsData { round_id } => {
-            copy_round_validators_data(deps, info, context, round_id)
-        }
     }
 }
 
@@ -123,11 +125,6 @@ fn create_icqs_for_validators(
     validators: Vec<String>,
     context: ExecuteContext,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    // In the first version of the contract, only ICQ managers can create ICQs for validators.
-    // This is a safety measure to make sure that the migration process is done correctly.
-    // The restriction will be lifted in the next version.
-    validate_address_is_icq_manager(&deps, info.sender.clone())?;
-
     let mut valid_addresses = HashSet::new();
     for validator in validators
         .iter()
@@ -153,10 +150,10 @@ fn create_icqs_for_validators(
     // sent to the contract beforehand, or they could be escrowed funds
     // that were returned to the contract when previous Interchain Queries were removed
     // amd the escrowed funds were removed
-    // TODO: bring this validation back in the next version of the contract
-    // if !is_icq_manager {
-    //     validate_icq_deposit_funds_sent(deps, &info, valid_addresses.len() as u64)?;
-    // }
+    let is_icq_manager = validate_address_is_icq_manager(&deps, info.sender.clone()).is_ok();
+    if !is_icq_manager {
+        validate_icq_deposit_funds_sent(deps, &info, valid_addresses.len() as u64)?;
+    }
 
     let mut register_icqs_submsgs = vec![];
     for validator_address in valid_addresses.clone() {
@@ -260,65 +257,6 @@ fn withdraw_icq_funds(
         }))
 }
 
-// CopyRoundValidatorsData:
-//     Intended to be run to copy the existing validators data from the main Hydro contract
-//
-//     Validate that the sender is ICQ manager
-//     Checks if the given round has been populated already
-//     Queries the Hydro contract to obtain the validators data for the given round and populates the stores
-fn copy_round_validators_data(
-    deps: DepsMut<NeutronQuery>,
-    info: MessageInfo,
-    context: ExecuteContext,
-    round_id: u64,
-) -> Result<Response<NeutronMsg>, ContractError> {
-    validate_address_is_icq_manager(&deps, info.sender.clone())?;
-
-    if VALIDATORS_STORE_INITIALIZED.has(deps.storage, round_id) {
-        return Err(new_generic_error(format!(
-            "round {round_id} data has already been copied"
-        )));
-    }
-
-    let round_validators = deps
-        .querier
-        .query_wasm_smart::<ValidatorsInfoResponse>(
-            context.config.hydro_contract_address,
-            &TokenInfoProviderQueryMsg::ValidatorsInfo { round_id },
-        )?
-        .validators;
-
-    if round_validators.is_empty() {
-        return Err(new_generic_error(format!(
-            "no data to copy for round: {round_id}"
-        )));
-    }
-
-    for validator_info in round_validators.values() {
-        VALIDATORS_INFO.save(
-            deps.storage,
-            (round_id, validator_info.address.clone()),
-            validator_info,
-        )?;
-        VALIDATORS_PER_ROUND.save(
-            deps.storage,
-            (
-                round_id,
-                validator_info.delegated_tokens.u128(),
-                validator_info.address.clone(),
-            ),
-            &validator_info.address,
-        )?;
-    }
-
-    VALIDATORS_STORE_INITIALIZED.save(deps.storage, round_id, &true)?;
-
-    Ok(Response::new()
-        .add_attribute("action", "copy_round_validators_data")
-        .add_attribute("sender", info.sender.clone())
-        .add_attribute("round_id", round_id.to_string()))
-}
-
 fn validate_sender_is_admin(
     deps: &DepsMut<NeutronQuery>,
     info: &MessageInfo,
@@ -345,7 +283,6 @@ fn validate_address_is_icq_manager(
 
 // Validates that enough funds were sent to create ICQs for the given validator addresses.
 // This function will be used again once we lift the restriction that only ICQ managers can create ICQs.
-#[allow(dead_code)]
 fn validate_icq_deposit_funds_sent(
     deps: DepsMut<NeutronQuery>,
     info: &MessageInfo,

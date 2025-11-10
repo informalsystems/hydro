@@ -1,6 +1,5 @@
 use cosmwasm_std::{CheckedFromRatioError, OverflowError, StdError};
 use cw_utils::PaymentError;
-use neutron_sdk::NeutronError;
 use thiserror::Error;
 
 use crate::cw721::Error as Cw721Error;
@@ -21,9 +20,6 @@ pub enum ContractError {
 
     #[error(transparent)]
     PaymentError(#[from] PaymentError),
-
-    #[error(transparent)]
-    NeutronError(#[from] NeutronError),
 
     #[error(transparent)]
     Cw721Error(#[from] Cw721Error),

@@ -1,6 +1,6 @@
 {
   "contract_name": "lsm-token-info-provider",
-  "contract_version": "3.6.3",
+  "contract_version": "3.6.4",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -136,30 +136,6 @@
             "properties": {
               "amount": {
                 "$ref": "#/definitions/Uint128"
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
-      },
-      {
-        "description": "Temporary for the purpose of LSM migration",
-        "type": "object",
-        "required": [
-          "copy_round_validators_data"
-        ],
-        "properties": {
-          "copy_round_validators_data": {
-            "type": "object",
-            "required": [
-              "round_id"
-            ],
-            "properties": {
-              "round_id": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
               }
             },
             "additionalProperties": false

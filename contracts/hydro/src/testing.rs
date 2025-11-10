@@ -35,7 +35,6 @@ use cosmwasm_std::{Decimal, Deps, MessageInfo, OwnedDeps, Timestamp, Uint128};
 use interface::hydro::TokenGroupRatioChange;
 use interface::lsm::ValidatorInfo;
 use interface::token_info_provider::DenomInfoResponse;
-use neutron_sdk::bindings::query::NeutronQuery;
 use proptest::prelude::*;
 
 pub const VALIDATOR_1: &str = "cosmosvaloper157v7tczs40axfgejp2m43kwuzqe0wsy0rv8puv";
@@ -171,7 +170,7 @@ pub fn get_address_as_str(mock_api: &MockApi, addr: &str) -> String {
 // sequentially will not work, since all of them override WasmQuerier mock, hence overriding what was set
 // by the previous mock setup call.
 pub fn setup_multiple_token_info_provider_mocks(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     derivative_providers: HashMap<String, HashMap<u64, DenomInfoResponse>>,
     lsm_provider: Option<(String, RoundsValidators)>,
     should_save_in_storage: bool,
@@ -188,7 +187,7 @@ pub fn setup_multiple_token_info_provider_mocks(
 // Use this function if you need to mock multiple token info providers together with some other
 // smart contracts mocking (e.g. )
 pub fn setup_token_info_providers_with_extra_mocks(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     derivative_providers: HashMap<String, HashMap<u64, DenomInfoResponse>>,
     lsm_provider: Option<(String, RoundsValidators)>,
     should_save_in_storage: bool,
@@ -247,7 +246,7 @@ pub fn setup_token_info_providers_with_extra_mocks(
 }
 
 pub fn setup_contract_info_mock(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     existing_contract_addr: Addr,
 ) {
     let wasm_querier = MockWasmQuerier::new(contract_info_mock(existing_contract_addr.to_string()));
@@ -256,7 +255,7 @@ pub fn setup_contract_info_mock(
 }
 
 pub fn setup_st_atom_token_info_provider_mock(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     token_info_provider_addr: Addr,
     round_token_group_ratios: Vec<(u64, Decimal)>,
     should_save_in_storage: bool,
@@ -300,7 +299,7 @@ pub fn get_st_atom_denom_info_mock_data(
 
 #[allow(dead_code)]
 pub fn setup_d_atom_token_info_provider_mock(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     token_info_provider_addr: Addr,
     round_token_group_ratios: Vec<(u64, Decimal)>,
     should_save_in_storage: bool,
@@ -364,7 +363,7 @@ pub fn get_denom_info_mock_data(
 }
 
 pub fn setup_lsm_token_info_provider_mock(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     token_info_provider_addr: Addr,
     round_validator_power_ratios: Vec<(u64, Vec<(String, Decimal)>)>,
     should_save_in_storage: bool,
@@ -2773,7 +2772,7 @@ fn total_voting_power_tracking_test() {
     verify_expected_voting_power(deps.as_ref(), &expected_total_voting_powers);
 }
 
-fn verify_expected_voting_power(deps: Deps<NeutronQuery>, expected_powers: &[(u64, u128)]) {
+fn verify_expected_voting_power(deps: Deps, expected_powers: &[(u64, u128)]) {
     for expected_power in expected_powers {
         let res = query_round_total_power(deps, expected_power.0);
 
@@ -3131,7 +3130,7 @@ pub fn whitelist_proposal_submission_test() {
 }
 
 fn assert_proposal_voting_power(
-    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier>,
     round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
