@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## v3.6.4
+
+Date: November 10th, 2025
+
+### FEATURES
+
+-Removal of Neutron dependencies from the main Hydro contract.
+([\#321](https://github.com/informalsystems/hydro/pull/321))
+
 ## v3.6.3
 
 Date: November 7th, 2025
