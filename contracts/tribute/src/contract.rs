@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::vec;
 
 use cosmwasm_std::{
@@ -12,7 +13,7 @@ use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::{
     ConfigResponse, HistoricalTributeClaimsResponse, OutstandingLockupClaimableCoinsResponse,
     OutstandingTributeClaimsResponse, ProposalTributesResponse, QueryMsg, RoundTributesResponse,
-    TributeClaim,
+    SpecificTributesResponse, TributeClaim, TributeRecord,
 };
 use crate::state::{
     Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMED_LOCKS, TRIBUTE_CLAIMS, TRIBUTE_ID,
@@ -480,6 +481,9 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::OutstandingLockupClaimableCoins { lock_id } => {
             to_json_binary(&query_outstanding_lockup_claimable_coins(&deps, lock_id)?)
         }
+        QueryMsg::SpecificTributes { tribute_ids } => {
+            to_json_binary(&query_specific_tributes(&deps, tribute_ids)?)
+        }
     }
 }
 
@@ -867,4 +871,32 @@ pub fn query_outstanding_lockup_claimable_coins(
     let coins = claimable_coins.into_vec();
 
     Ok(OutstandingLockupClaimableCoinsResponse { coins })
+}
+
+pub fn query_specific_tributes(
+    deps: &Deps,
+    tribute_ids: Vec<u64>,
+) -> StdResult<SpecificTributesResponse> {
+    let tribute_ids_set: HashSet<u64> = tribute_ids.into_iter().collect();
+    let tributes = get_specific_tributes(deps, tribute_ids_set)?;
+    Ok(SpecificTributesResponse { tributes })
+}
+
+fn get_specific_tributes(
+    deps: &Deps,
+    tribute_ids_set: HashSet<u64>,
+) -> StdResult<Vec<TributeRecord>> {
+    let mut tributes = Vec::new();
+    for tribute_id in tribute_ids_set {
+        let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
+        tributes.push(TributeRecord {
+            round_id: tribute.round_id,
+            tranche_id: tribute.tranche_id,
+            proposal_id: tribute.proposal_id,
+            amount: tribute.funds.clone(),
+            tribute_id,
+        });
+    }
+
+    Ok(tributes)
 }

@@ -4,7 +4,7 @@ use crate::{
     contract::{
         calculate_voter_claim_amount, execute, instantiate, query_historical_tribute_claims,
         query_outstanding_lockup_claimable_coins, query_outstanding_tribute_claims,
-        query_proposal_tributes, query_round_tributes,
+        query_proposal_tributes, query_round_tributes, query_specific_tributes,
     },
     msg::{ExecuteMsg, InstantiateMsg},
     query::TributeClaim,
@@ -2020,4 +2020,114 @@ fn test_calculate_voter_claim_amount_precision() {
     )
     .unwrap();
     assert_eq!(result.amount, Uint128::new(333_333)); // Should get roughly 1/3
+}
+
+#[test]
+fn test_query_specific_tributes_success() {
+    let (mut deps, _env) = (mock_dependencies(), mock_env());
+
+    // Create test tributes
+    let tributes = vec![
+        Tribute {
+            tribute_id: 1,
+            round_id: 1,
+            tranche_id: 1,
+            proposal_id: 1,
+            depositor: Addr::unchecked("user1"),
+            funds: Coin::new(Uint128::new(100), "token"),
+            refunded: false,
+            creation_round: 1,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
+        },
+        Tribute {
+            tribute_id: 2,
+            round_id: 1,
+            tranche_id: 1,
+            proposal_id: 2,
+            depositor: Addr::unchecked("user2"),
+            funds: Coin::new(Uint128::new(200), "token"),
+            refunded: false,
+            creation_round: 1,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
+        },
+        Tribute {
+            tribute_id: 3,
+            round_id: 2,
+            tranche_id: 1,
+            proposal_id: 3,
+            depositor: Addr::unchecked("user3"),
+            funds: Coin::new(Uint128::new(300), "token"),
+            refunded: false,
+            creation_round: 2,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(2),
+        },
+    ];
+
+    // Store tributes in the map
+    for tribute in &tributes {
+        ID_TO_TRIBUTE_MAP
+            .save(&mut deps.storage, tribute.tribute_id, tribute)
+            .unwrap();
+    }
+
+    // Query specific tributes with valid IDs
+    let result = query_specific_tributes(&deps.as_ref(), vec![1, 2, 3]).unwrap();
+
+    // Verify the results
+    assert_eq!(result.tributes.len(), 3);
+
+    // Check that all requested tributes are returned
+    let returned_ids: Vec<u64> = result.tributes.iter().map(|t| t.tribute_id).collect();
+    assert!(returned_ids.contains(&1));
+    assert!(returned_ids.contains(&2));
+    assert!(returned_ids.contains(&3));
+
+    // Verify the details of one tribute
+    let tribute_1 = result.tributes.iter().find(|t| t.tribute_id == 1).unwrap();
+    assert_eq!(tribute_1.round_id, 1);
+    assert_eq!(tribute_1.tranche_id, 1);
+    assert_eq!(tribute_1.proposal_id, 1);
+    assert_eq!(tribute_1.amount, Coin::new(Uint128::new(100), "token"));
+
+    // Test with duplicate IDs (should be deduplicated by HashSet)
+    let result_duplicates = query_specific_tributes(&deps.as_ref(), vec![1, 1, 2, 2]).unwrap();
+    assert_eq!(result_duplicates.tributes.len(), 2);
+}
+
+#[test]
+fn test_query_specific_tributes_fail() {
+    let (mut deps, _env) = (mock_dependencies(), mock_env());
+
+    // Create and store only one tribute
+    let tribute = Tribute {
+        tribute_id: 1,
+        round_id: 1,
+        tranche_id: 1,
+        proposal_id: 1,
+        depositor: Addr::unchecked("user1"),
+        funds: Coin::new(Uint128::new(100), "token"),
+        refunded: false,
+        creation_round: 1,
+        creation_time: cosmwasm_std::Timestamp::from_seconds(1),
+    };
+
+    ID_TO_TRIBUTE_MAP
+        .save(&mut deps.storage, tribute.tribute_id, &tribute)
+        .unwrap();
+
+    // Try to query a non-existent tribute_id
+    let result = query_specific_tributes(&deps.as_ref(), vec![1, 999]);
+
+    // Should fail because tribute_id 999 doesn't exist
+    assert!(result.is_err());
+    let error_msg = result.unwrap_err().to_string();
+    // Verify that the error message indicates the tribute was not found
+    assert!(
+        error_msg.contains("not found"),
+        "Error message should contain 'not found'\nGot: {error_msg}"
+    );
+
+    // Test with empty list (should succeed but return empty)
+    let result_empty = query_specific_tributes(&deps.as_ref(), vec![]).unwrap();
+    assert_eq!(result_empty.tributes.len(), 0);
 }
