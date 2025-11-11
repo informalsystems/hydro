@@ -6,6 +6,7 @@ use crate::{
         query_outstanding_lockup_claimable_coins, query_outstanding_tribute_claims,
         query_proposal_tributes, query_round_tributes,
     },
+    error::ContractError,
     msg::{ExecuteMsg, InstantiateMsg},
     query::TributeClaim,
     state::{
@@ -20,6 +21,7 @@ use cosmwasm_std::{
     StdError, StdResult, SystemError, SystemResult, Timestamp, Uint128, WasmQuery,
 };
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
+use cw_orch::core::serde_json;
 use hydro::{
     msg::LiquidityDeployment,
     query::{
@@ -2020,4 +2022,76 @@ fn test_calculate_voter_claim_amount_precision() {
     )
     .unwrap();
     assert_eq!(result.amount, Uint128::new(333_333)); // Should get roughly 1/3
+}
+
+#[test]
+fn test_claim_tribute_prevents_proxy_claims_for_smart_contracts() {
+    let mut deps = mock_dependencies();
+    let hydro_contract_address = get_address_as_str(&deps.api, HYDRO_CONTRACT_ADDRESS);
+
+    // Setup: Instantiate the tribute contract
+    let instantiate_msg = get_instantiate_msg(hydro_contract_address);
+    let info = get_message_info(&deps.api, "admin", &[]);
+    let env = mock_env();
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    const SMART_CONTRACT: &str = "smart_contract";
+    let smart_contract_address = get_address_as_str(&deps.api, SMART_CONTRACT);
+
+    // Setup: Configure querier to identify smart_contract_address as a contract
+    let smart_contract_address_clone = smart_contract_address.clone();
+    deps.querier.update_wasm(move |query| match query {
+        cosmwasm_std::WasmQuery::ContractInfo { contract_addr }
+            if contract_addr == &smart_contract_address_clone =>
+        {
+            SystemResult::Ok(ContractResult::Ok(
+                cosmwasm_std::to_json_binary(&serde_json::json!({
+                    "code_id": 1,
+                    "creator": "creator",
+                    "admin": null,
+                    "pinned": false,
+                    "ibc_port": null,
+                }))
+                .unwrap(),
+            ))
+        }
+        _ => SystemResult::Err(SystemError::Unknown {}),
+    });
+
+    let claim_msg = ExecuteMsg::ClaimTribute {
+        round_id: 1,
+        tranche_id: 1,
+        tribute_id: 1,
+        voter_address: smart_contract_address,
+    };
+
+    // Test: Regular user cannot claim on behalf of a smart contract
+    let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
+    let err = execute(deps.as_mut(), env.clone(), info, claim_msg.clone()).unwrap_err();
+
+    match err {
+        ContractError::Std(StdError::GenericErr { msg, backtrace: _ }) => {
+            assert_eq!(
+                msg,
+                "Smart contracts must claim tributes directly; proxy claims are not allowed"
+            );
+        }
+        _ => panic!("Expected GenericErr with security message, got: {err}"),
+    }
+
+    // Test: Smart contract can claim for itself (security check passes)
+    let info = get_message_info(&deps.api, SMART_CONTRACT, &[]);
+    let result = execute(deps.as_mut(), env.clone(), info, claim_msg);
+
+    // Should fail with a different error (e.g., tribute not found), not the security error
+    match result {
+        Err(err) => {
+            let err_msg = err.to_string();
+            assert!(
+                !err_msg.contains("Smart contracts must claim tributes directly"),
+                "Expected a different error, but got security check error: {err_msg}"
+            );
+        }
+        Ok(_) => panic!("Expected an error due to missing tribute setup"),
+    }
 }

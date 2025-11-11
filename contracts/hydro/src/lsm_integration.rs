@@ -56,9 +56,7 @@ pub fn query_ibc_denom_trace(deps: &Deps, denom: String) -> StdResult<DenomTrace
             DENOM_TRACE_GRPC.to_owned(),
             Binary::new(QueryDenomTraceRequest { hash: denom }.encode_to_vec()),
         )
-        .map_err(|err| {
-            StdError::generic_err(format!("Failed to obtain IBC denom trace: {}", err))
-        })?;
+        .map_err(|err| StdError::generic_err(format!("Failed to obtain IBC denom trace: {err}")))?;
 
     let denom_trace = QueryDenomTraceResponse::decode(denom_trace_query_result.as_slice())
         .map_err(|_| StdError::generic_err("Failed to obtain IBC denom trace"))?

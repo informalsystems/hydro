@@ -164,8 +164,7 @@ fn create_icqs_for_validators(
         )
         .map_err(|err| {
             new_generic_error(format!(
-                "Failed to create staking validators interchain query. Error: {}",
-                err
+                "Failed to create staking validators interchain query. Error: {err}"
             ))
         })?;
 
@@ -354,7 +353,7 @@ pub fn query_registered_validator_queries(
         .filter_map(|l| {
             if l.is_err() {
                 deps.api
-                    .debug(&format!("Error when querying validator query id: {:?}", l));
+                    .debug(&format!("Error when querying validator query id: {l:?}"));
             }
             l.ok()
         })
