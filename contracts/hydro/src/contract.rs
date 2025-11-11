@@ -323,6 +323,21 @@ pub fn execute(
             token_id,
             msg,
         } => cw721::handle_execute_send_nft(deps, env, info, contract, token_id, msg),
+        ExecuteMsg::LockTokensThenSendNft {
+            lock_duration,
+            proof,
+            contract,
+            msg,
+        } => cw721::lock_tokens_then_send_nft(
+            deps,
+            env,
+            info,
+            &constants,
+            lock_duration,
+            proof,
+            contract,
+            msg,
+        ),
         ExecuteMsg::Approve {
             spender,
             expires,
@@ -422,7 +437,7 @@ fn set_gatekeeper(
 //     Update voting power on proposals if user already voted for any
 //     Update total round power
 //     Create entry in LocksMap
-fn lock_tokens(
+pub fn lock_tokens(
     mut deps: DepsMut,
     env: Env,
     info: MessageInfo,

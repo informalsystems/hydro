@@ -980,6 +980,48 @@
         "additionalProperties": false
       },
       {
+        "description": "This locks the tokens first (same as `LockTokens`) then transfers ownership to the contract account (same as `SendNft`)",
+        "type": "object",
+        "required": [
+          "lock_tokens_then_send_nft"
+        ],
+        "properties": {
+          "lock_tokens_then_send_nft": {
+            "type": "object",
+            "required": [
+              "contract",
+              "lock_duration",
+              "msg"
+            ],
+            "properties": {
+              "contract": {
+                "type": "string"
+              },
+              "lock_duration": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "msg": {
+                "$ref": "#/definitions/Binary"
+              },
+              "proof": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/LockTokensProof"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
         "description": "Allows spender to transfer / send the lockup from the owner's account. If expiration is set, then this allowance has a time/height limit",
         "type": "object",
         "required": [

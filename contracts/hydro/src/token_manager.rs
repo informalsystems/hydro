@@ -326,8 +326,7 @@ impl TokenInfoProviderLSM {
             .map(|validator_info| validator_info.power_ratio)
             .ok_or_else(|| {
                 StdError::generic_err(format!(
-                    "Input token group ID {} doesn't match any of the round validators.",
-                    token_group_id,
+                    "Input token group ID {token_group_id} doesn't match any of the round validators."
                 ))
             })
     }
@@ -553,7 +552,7 @@ pub fn token_manager_handle_submsg_reply(
 ) -> Result<Response, ContractError> {
     let response_bytes = &extract_response_msg_bytes_from_reply_msg(&msg)?;
     let instantiate_msg_response = cw_utils::parse_instantiate_response_data(response_bytes)
-        .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {:?}", e)))?;
+        .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {e:?}")))?;
 
     let mut token_info_provider = match token_info_provider {
         TokenInfoProvider::LSM(mut token_info_provider) => {
