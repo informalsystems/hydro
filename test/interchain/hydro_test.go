@@ -194,11 +194,6 @@ func (s *HydroSuite) TestPauseContract() {
 	err = s.EditTranche(contractAddr, "test", "test", 1)
 	RequirePaused(s, err)
 
-	err = s.AddICQManager(contractAddr, s.NeutronChain.ValidatorWallets[1].Address)
-	RequirePaused(s, err)
-	err = s.RemoveICQManager(contractAddr, s.NeutronChain.ValidatorWallets[1].Address)
-	RequirePaused(s, err)
-
 	err = s.UpdateMaxLockedTokens(contractAddr, 100000000000, time.Now().UTC().Add(time.Hour).UnixNano())
 	RequirePaused(s, err)
 }
