@@ -43,7 +43,7 @@ fn load_current_constants_test() {
             constants
         };
 
-    let test_cases = vec![
+    let test_cases = [
         TestCase {
             activate_at_timestamp: 1730840400000000000, // Tuesday, November 05, 2024 09:00:00 PM GMT
             constants_to_insert: clone_with_locked_tokens(&constants_template, 1u128),

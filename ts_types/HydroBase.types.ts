@@ -11,10 +11,11 @@ export type Uint128 = string;
 export type Decimal = string;
 export type TokenInfoProviderInstantiateMsg = {
   lsm: {
-    hub_connection_id: string;
+    admin?: string | null;
+    code_id: number;
     hub_transfer_channel_id: string;
-    icq_update_period: number;
-    max_validator_shares_participating: number;
+    label: string;
+    msg: Binary;
   };
 } | {
   base: {
@@ -33,7 +34,6 @@ export interface InstantiateMsg {
   cw721_collection_info?: CollectionInfo | null;
   first_round_start: Timestamp;
   gatekeeper?: InstantiateContractMsg | null;
-  icq_managers: string[];
   initial_whitelist: string[];
   lock_depth_limit: number;
   lock_epoch_length: number;
@@ -133,22 +133,6 @@ export type ExecuteMsg = {
     tranche_name?: string | null;
   };
 } | {
-  create_icqs_for_validators: {
-    validators: string[];
-  };
-} | {
-  add_i_c_q_manager: {
-    address: string;
-  };
-} | {
-  remove_i_c_q_manager: {
-    address: string;
-  };
-} | {
-  withdraw_i_c_q_funds: {
-    amount: Uint128;
-  };
-} | {
   add_liquidity_deployment: {
     deployed_funds: Coin[];
     destinations: string[];
@@ -166,10 +150,8 @@ export type ExecuteMsg = {
     tranche_id: number;
   };
 } | {
-  update_token_group_ratio: {
-    new_ratio: Decimal;
-    old_ratio: Decimal;
-    token_group_id: string;
+  update_token_groups_ratios: {
+    changes: TokenGroupRatioChange[];
   };
 } | {
   add_token_info_provider: {
@@ -272,6 +254,11 @@ export interface UpdateConfigData {
 export interface Coin {
   amount: Uint128;
   denom: string;
+}
+export interface TokenGroupRatioChange {
+  new_ratio: Decimal;
+  old_ratio: Decimal;
+  token_group_id: string;
 }
 export type QueryMsg = {
   constants: {};
@@ -383,15 +370,7 @@ export type QueryMsg = {
 } | {
   whitelist_admins: {};
 } | {
-  i_c_q_managers: {};
-} | {
   total_locked_tokens: {};
-} | {
-  validators_info: {
-    round_id: number;
-  };
-} | {
-  registered_validator_queries: {};
 } | {
   can_lock_denom: {
     token_denom: string;
@@ -599,9 +578,6 @@ export interface ExpiredUserLockupsResponse {
 export interface GatekeeperResponse {
   gatekeeper: string;
 }
-export interface ICQManagersResponse {
-  managers: Addr[];
-}
 export interface LiquidityDeploymentResponse {
   liquidity_deployment: LiquidityDeployment;
 }
@@ -647,9 +623,6 @@ export interface Proposal {
   title: string;
   tranche_id: number;
 }
-export interface RegisteredValidatorQueriesResponse {
-  query_ids: [string, number][];
-}
 export interface RoundEndResponse {
   round_end: Timestamp;
 }
@@ -686,10 +659,9 @@ export interface TokenInfoProvidersResponse {
   providers: TokenInfoProvider[];
 }
 export interface TokenInfoProviderLSM {
-  hub_connection_id: string;
+  cache: {};
+  contract: string;
   hub_transfer_channel_id: string;
-  icq_update_period: number;
-  max_validator_shares_participating: number;
 }
 export interface TokenInfoProviderBase {
   denom: string;
@@ -734,10 +706,6 @@ export interface VoteWithPower {
 }
 export interface UserVotingPowerResponse {
   voting_power: number;
-}
-export interface ValidatorsInfoResponse {
-  round_id: number;
-  validators: {};
 }
 export interface VotingPowerAtHeightResponse {
   height: number;

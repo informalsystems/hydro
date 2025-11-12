@@ -2,20 +2,18 @@ use std::collections::HashMap;
 
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
-    Coin, Env, OwnedDeps, Timestamp, Uint128,
+    Coin, Decimal, Env, OwnedDeps, Timestamp, Uint128,
 };
-use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
     contract::{execute, instantiate},
     governance::{query_total_power_at_height, query_voting_power_at_height},
     msg::ExecuteMsg,
     testing::{
-        get_default_instantiate_msg, get_message_info, IBC_DENOM_1, IBC_DENOM_2,
-        ONE_DAY_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
-        VALIDATOR_2_LST_DENOM_1,
+        get_default_instantiate_msg, get_message_info, setup_lsm_token_info_provider_mock,
+        IBC_DENOM_1, IBC_DENOM_2, LSM_TOKEN_PROVIDER_ADDR, ONE_DAY_IN_NANO_SECONDS, VALIDATOR_1,
+        VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
     },
-    testing_lsm_integration::set_validator_infos_for_round,
     testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, MockQuerier},
 };
 
@@ -61,12 +59,28 @@ fn test_voting_power_queries() {
     assert!(res.is_ok());
 
     // Set all validators power ratio in round 0 to 1
-    let res = set_validator_infos_for_round(
-        &mut deps.storage,
-        0,
-        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (
+                0,
+                vec![
+                    (VALIDATOR_1.to_string(), Decimal::one()),
+                    (VALIDATOR_2.to_string(), Decimal::one()),
+                ],
+            ),
+            (
+                1,
+                vec![
+                    (VALIDATOR_1.to_string(), Decimal::one()),
+                    (VALIDATOR_2.to_string(), Decimal::one()),
+                ],
+            ),
+        ],
+        true,
     );
-    assert!(res.is_ok());
 
     let mut expected_voting_powers: HashMap<u64, VotingPowersAtHeight> = HashMap::new();
 
@@ -253,7 +267,7 @@ fn test_voting_power_queries() {
 }
 
 fn advance_chain_and_lock_tokens(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: &mut Env,
     days_num: u64,
     user: &str,
@@ -273,7 +287,7 @@ fn advance_chain_and_lock_tokens(
 }
 
 fn verify_voting_powers(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: &Env,
     expected_powers_at_heights: &HashMap<u64, VotingPowersAtHeight>,
     expected_current_total_power: Uint128,

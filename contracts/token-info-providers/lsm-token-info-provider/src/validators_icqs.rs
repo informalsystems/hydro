@@ -1,10 +1,14 @@
 use std::str::FromStr;
 
 use cosmwasm_std::{
-    from_json, to_json_vec, Coin, Decimal, Deps, DepsMut, Env, Order, Reply, Response, StdError,
-    StdResult, SubMsg, Uint128,
+    from_json, to_json_binary, to_json_vec, Addr, Coin, Decimal, Deps, DepsMut, Env, Order, Reply,
+    Response, StdError, StdResult, SubMsg, Uint128, WasmMsg,
 };
-
+use interface::{
+    hydro::{ExecuteMsg as HydroExecuteMsg, TokenGroupRatioChange},
+    lsm::{ValidatorInfo, TOKENS_TO_SHARES_MULTIPLIER},
+    utils::extract_response_msg_bytes_from_reply_msg,
+};
 use neutron_sdk::{
     bindings::{msg::NeutronMsg, query::NeutronQuery},
     interchain_queries::v047::{queries::query_staking_validators, types::Validator},
@@ -18,20 +22,13 @@ use neutron_std::types::neutron::interchainqueries::InterchainqueriesQuerier;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    contract::{compute_current_round_id, NATIVE_TOKEN_DENOM},
-    error::{new_generic_error, ContractError},
-    score_keeper::{apply_token_groups_ratio_changes, TokenGroupRatioChange},
+    contract::NATIVE_TOKEN_DENOM,
+    error::ContractError,
     state::{
-        ValidatorInfo, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO, VALIDATORS_PER_ROUND,
-        VALIDATOR_TO_QUERY_ID,
+        CONFIG, QUERY_ID_TO_VALIDATOR, VALIDATORS_INFO, VALIDATORS_PER_ROUND, VALIDATOR_TO_QUERY_ID,
     },
-    token_manager::TokenManager,
-    utils::{load_current_constants, run_on_each_transaction},
+    utils::{query_current_round_id, run_on_each_transaction},
 };
-
-// A multiplier to normalize shares, such that when a validator has just been created
-// and was never slashed, 1 Token = Shares / TOKEN_TO_SHARES_MULTIPLIER.
-pub const TOKENS_TO_SHARES_MULTIPLIER: Uint128 = Uint128::new(1_000_000_000_000_000_000);
 
 // SubMsg ID is used so that we can differentiate submessages sent by the smart contract when the Wasm SDK module
 // calls back the reply() function on the smart contract. Since we are using the payload to populate all the data
@@ -70,16 +67,11 @@ pub fn handle_submsg_reply(
     let reply_paylod = from_json(&msg.payload)?;
     match reply_paylod {
         ReplyPayload::CreateValidatorICQ(validator_address) => {
-            let register_query_resp: MsgRegisterInterchainQueryResponse = decode_message_response(
-                &msg.result
-                    .into_result()
-                    .map_err(StdError::generic_err)?
-                    .msg_responses[0]
-                    .clone()
-                    .value
-                    .to_vec(),
-            )
-            .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {e:?}")))?;
+            let register_query_resp: MsgRegisterInterchainQueryResponse =
+                decode_message_response(&extract_response_msg_bytes_from_reply_msg(&msg)?)
+                    .map_err(|e| {
+                        StdError::generic_err(format!("failed to parse reply message: {e:?}"))
+                    })?;
 
             QUERY_ID_TO_VALIDATOR.save(deps.storage, register_query_resp.id, &validator_address)?;
             VALIDATOR_TO_QUERY_ID.save(deps.storage, validator_address, &register_query_resp.id)?;
@@ -87,13 +79,7 @@ pub fn handle_submsg_reply(
         ReplyPayload::RemoveValidatorICQ(query_id) => {
             // just validate that we received the response type that we expected
             decode_message_response::<MsgRemoveInterchainQueryResponse>(
-                &msg.result
-                    .into_result()
-                    .map_err(StdError::generic_err)?
-                    .msg_responses[0]
-                    .clone()
-                    .value
-                    .to_vec(),
+                &extract_response_msg_bytes_from_reply_msg(&msg)?,
             )
             .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {e:?}")))?;
 
@@ -119,19 +105,11 @@ pub fn handle_delivered_interchain_query_result(
             );
         }
     };
-    let constants = load_current_constants(&deps.as_ref(), &env)?;
-    let current_round = compute_current_round_id(&env, &constants)?;
 
-    let lsm_token_info_provider = match TokenManager::new(&deps.as_ref())
-        .get_lsm_token_info_provider()
-    {
-        None => return Err(new_generic_error(
-            "Cannot handle validator ICQ results: contract doesn't support locking of LSM tokens.",
-        )),
-        Some(provider) => provider,
-    };
+    let config = CONFIG.load(deps.storage)?;
+    let current_round = query_current_round_id(&deps.as_ref(), &config.hydro_contract_address)?;
 
-    run_on_each_transaction(deps.storage, &env, current_round)?;
+    run_on_each_transaction(&mut deps, current_round)?;
 
     let validator_address = validator.operator_address.clone();
     let new_tokens = Uint128::from_str(&validator.tokens)?;
@@ -139,6 +117,7 @@ pub fn handle_delivered_interchain_query_result(
     let new_power_ratio = Decimal::from_ratio(new_tokens * TOKENS_TO_SHARES_MULTIPLIER, new_shares);
 
     let mut submsgs = vec![];
+    let mut token_groups_ratios_changes = vec![];
 
     let current_validator_info =
         VALIDATORS_INFO.may_load(deps.storage, (current_round, validator_address.clone()))?;
@@ -146,48 +125,60 @@ pub fn handle_delivered_interchain_query_result(
         // If the validator_info is found, it means that it is among the top N for this round.
         // We just need to update its rank and power ratio, if they changed in the meantime.
         Some(validator_info) => {
-            top_n_validator_update(
+            if let Some(token_group_ratio_change) = top_n_validator_update(
                 &mut deps,
-                &env,
                 current_round,
                 validator_info,
                 new_tokens,
                 new_power_ratio,
-            )?;
+            )? {
+                token_groups_ratios_changes.push(token_group_ratio_change);
+            }
         }
         // Use-cases:
         // 1) ICQ results were submitted for a brand new validator that wasn't earlier in the top N
         // 2) At the begining of a new round, we start receiving ICQ results for validators from previous round
         None => {
             let validator_info = ValidatorInfo::new(validator_address, new_tokens, new_power_ratio);
+
             match get_last_validator(
                 &mut deps,
                 current_round,
-                lsm_token_info_provider.max_validator_shares_participating,
+                config.max_validator_shares_participating,
             ) {
                 None => {
                     // if there are currently less than top N validators, add this one to the top N
-                    top_n_validator_add(&mut deps, &env, current_round, validator_info)?;
+                    token_groups_ratios_changes.push(top_n_validator_add(
+                        &mut deps,
+                        current_round,
+                        validator_info,
+                    )?);
                 }
                 Some(last_validator) => {
                     // there are top N validators already, so check if the new one has more
                     // delegated tokens than the one with the least tokens among the top N
                     let other_validator_tokens = Uint128::new(last_validator.0);
+
                     if validator_info.delegated_tokens > other_validator_tokens {
                         let other_validator_info = VALIDATORS_INFO
                             .load(deps.storage, (current_round, last_validator.1.clone()))?;
 
-                        top_n_validator_remove(
+                        token_groups_ratios_changes.push(top_n_validator_remove(
                             &mut deps,
-                            &env,
                             current_round,
                             other_validator_info,
-                        )?;
-                        top_n_validator_add(&mut deps, &env, current_round, validator_info)?;
+                        )?);
+
+                        token_groups_ratios_changes.push(top_n_validator_add(
+                            &mut deps,
+                            current_round,
+                            validator_info,
+                        )?);
 
                         // remove ICQ of the validator that was dropped from the top N
                         let last_validator_query_id =
                             VALIDATOR_TO_QUERY_ID.load(deps.storage, last_validator.1.clone())?;
+
                         submsgs.push(build_remove_interchain_query_submsg(
                             last_validator_query_id,
                         )?);
@@ -200,33 +191,27 @@ pub fn handle_delivered_interchain_query_result(
         }
     };
 
+    if !token_groups_ratios_changes.is_empty() {
+        submsgs.push(build_token_groups_ratios_update_msg(
+            &config.hydro_contract_address,
+            token_groups_ratios_changes,
+        )?);
+    }
+
     Ok(Response::default().add_submessages(submsgs))
 }
 
 fn top_n_validator_add(
     deps: &mut DepsMut<NeutronQuery>,
-    env: &Env,
     current_round: u64,
     validator_info: ValidatorInfo,
-) -> Result<(), NeutronError> {
-    let tokens_ratio_changes = vec![TokenGroupRatioChange {
-        token_group_id: validator_info.address.clone(),
-        old_ratio: Decimal::zero(),
-        new_ratio: validator_info.power_ratio,
-    }];
-    // this call only makes difference if some validator was in the top N,
-    // then was droped out, and then got back in the top N again
-    apply_token_groups_ratio_changes(
-        deps.storage,
-        env.block.height,
-        current_round,
-        &tokens_ratio_changes,
-    )?;
+) -> Result<TokenGroupRatioChange, ContractError> {
     VALIDATORS_INFO.save(
         deps.storage,
         (current_round, validator_info.address.clone()),
         &validator_info,
     )?;
+
     VALIDATORS_PER_ROUND.save(
         deps.storage,
         (
@@ -236,18 +221,25 @@ fn top_n_validator_add(
         ),
         &validator_info.address,
     )?;
-    Ok(())
+
+    // this only makes difference if some validator was in the top N,
+    // then was droped out, and then got back in the top N again
+    Ok(TokenGroupRatioChange {
+        token_group_id: validator_info.address,
+        old_ratio: Decimal::zero(),
+        new_ratio: validator_info.power_ratio,
+    })
 }
 
 fn top_n_validator_update(
     deps: &mut DepsMut<NeutronQuery>,
-    env: &Env,
     current_round: u64,
     mut validator_info: ValidatorInfo,
     new_tokens: Uint128,
     new_power_ratio: Decimal,
-) -> Result<(), NeutronError> {
+) -> Result<Option<TokenGroupRatioChange>, ContractError> {
     let mut should_update_info = false;
+
     if validator_info.delegated_tokens != new_tokens {
         VALIDATORS_PER_ROUND.remove(
             deps.storage,
@@ -271,19 +263,14 @@ fn top_n_validator_update(
         should_update_info = true;
     }
 
+    let mut token_group_ratio_change = None;
+
     if validator_info.power_ratio != new_power_ratio {
-        let tokens_ratio_changes = vec![TokenGroupRatioChange {
+        token_group_ratio_change = Some(TokenGroupRatioChange {
             token_group_id: validator_info.address.clone(),
             old_ratio: validator_info.power_ratio,
             new_ratio: new_power_ratio,
-        }];
-
-        apply_token_groups_ratio_changes(
-            deps.storage,
-            env.block.height,
-            current_round,
-            &tokens_ratio_changes,
-        )?;
+        });
 
         validator_info.power_ratio = new_power_ratio;
         should_update_info = true;
@@ -297,28 +284,14 @@ fn top_n_validator_update(
         )?;
     }
 
-    Ok(())
+    Ok(token_group_ratio_change)
 }
 
 fn top_n_validator_remove(
     deps: &mut DepsMut<NeutronQuery>,
-    env: &Env,
     current_round: u64,
     validator_info: ValidatorInfo,
-) -> Result<(), NeutronError> {
-    let tokens_ratio_changes = vec![TokenGroupRatioChange {
-        token_group_id: validator_info.address.clone(),
-        old_ratio: validator_info.power_ratio,
-        new_ratio: Decimal::zero(),
-    }];
-
-    apply_token_groups_ratio_changes(
-        deps.storage,
-        env.block.height,
-        current_round,
-        &tokens_ratio_changes,
-    )?;
-
+) -> Result<TokenGroupRatioChange, ContractError> {
     VALIDATORS_INFO.remove(
         deps.storage,
         (current_round, validator_info.address.clone()),
@@ -332,7 +305,11 @@ fn top_n_validator_remove(
         ),
     );
 
-    Ok(())
+    Ok(TokenGroupRatioChange {
+        token_group_id: validator_info.address.clone(),
+        old_ratio: validator_info.power_ratio,
+        new_ratio: Decimal::zero(),
+    })
 }
 
 fn get_last_validator(
@@ -374,8 +351,8 @@ fn get_interchain_query_result(
 
     // Our interchain queries will always have exactly one validator. Everything else is invalid.
     // If the validator with the given address wasn't found, query_staking_validators() will return
-    // a Validator instance with all fields initialized with default values. We should error in this
-    // case and not try to parse tokens and delegator shares from uninitialized values.
+    // a Validator instance with all fields initialized with default values. We should error out
+    // in this case and not try to parse tokens and delegator shares from uninitialized values.
     if staking_validator.validators.len() != 1
         || staking_validator.validators[0].operator_address.is_empty()
     {
@@ -411,4 +388,18 @@ pub fn query_min_interchain_query_deposit(deps: &Deps<NeutronQuery>) -> StdResul
             "Failed to obtain interchain query creation deposit.",
         )),
     }
+}
+
+fn build_token_groups_ratios_update_msg(
+    hydro_contract: &Addr,
+    changes: Vec<TokenGroupRatioChange>,
+) -> Result<SubMsg<NeutronMsg>, ContractError> {
+    let msg = HydroExecuteMsg::UpdateTokenGroupsRatios { changes };
+    let wasm_execute_msg = WasmMsg::Execute {
+        contract_addr: hydro_contract.to_string(),
+        msg: to_json_binary(&msg)?,
+        funds: vec![],
+    };
+
+    Ok(SubMsg::reply_never(wasm_execute_msg))
 }

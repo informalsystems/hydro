@@ -1,5 +1,6 @@
 use crate::contract::{CONTRACT_NAME, CONTRACT_VERSION};
 use crate::error::{new_generic_error, ContractError};
+use crate::migration::unreleased::prune_icq_managers_store;
 use crate::state::CONSTANTS;
 use crate::utils::load_constants_active_at_timestamp;
 use cosmwasm_schema::cw_serde;
@@ -8,25 +9,19 @@ use cw2::{get_contract_version, set_contract_version};
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 #[allow(unused_imports)]
 use cosmwasm_std::entry_point;
-use neutron_sdk::bindings::msg::NeutronMsg;
-use neutron_sdk::bindings::query::NeutronQuery;
 
 #[cw_serde]
 pub struct MigrateMsg {}
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(
-    deps: DepsMut<NeutronQuery>,
-    _env: Env,
-    _: MigrateMsg,
-) -> Result<Response<NeutronMsg>, ContractError> {
+pub fn migrate(mut deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
     check_contract_version(deps.storage)?;
 
-    // No migration needed for v3.6.1 -> v3.6.2
+    let result = prune_icq_managers_store(&mut deps)?;
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    Ok(Response::new())
+    Ok(result)
 }
 
 fn check_contract_version(storage: &dyn cosmwasm_std::Storage) -> Result<(), ContractError> {
@@ -45,10 +40,7 @@ fn check_contract_version(storage: &dyn cosmwasm_std::Storage) -> Result<(), Con
 // If there were some changes to the Constants structure, make sure to first migrate the constants,
 // and then do the migration that requires pausing/unpausing the contract. Otherwise, the contract
 // store will be broken.
-fn _pause_contract_before_migration(
-    deps: &mut DepsMut<NeutronQuery>,
-    env: &Env,
-) -> Result<(), ContractError> {
+fn _pause_contract_before_migration(deps: &mut DepsMut, env: &Env) -> Result<(), ContractError> {
     let (timestamp, mut constants) =
         load_constants_active_at_timestamp(&deps.as_ref(), env.block.time)?;
 
@@ -60,10 +52,7 @@ fn _pause_contract_before_migration(
     Ok(())
 }
 
-fn _unpause_contract_after_migration(
-    deps: &mut DepsMut<NeutronQuery>,
-    env: Env,
-) -> Result<(), ContractError> {
+fn _unpause_contract_after_migration(deps: &mut DepsMut, env: Env) -> Result<(), ContractError> {
     let (timestamp, mut constants) =
         load_constants_active_at_timestamp(&deps.as_ref(), env.block.time)?;
 

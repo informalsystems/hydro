@@ -5,7 +5,7 @@ use cosmwasm_std::{
     to_json_binary, Addr, Binary, Coin, CosmosMsg, Decimal, StdResult, Timestamp, Uint128, WasmMsg,
 };
 use cw_utils::Expiration;
-use interface::gatekeeper::SignatureInfo;
+use interface::{gatekeeper::SignatureInfo, hydro::TokenGroupRatioChange};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -20,11 +20,6 @@ pub struct InstantiateMsg {
     pub max_locked_tokens: Uint128,
     pub whitelist_admins: Vec<String>,
     pub initial_whitelist: Vec<String>,
-    // Anyone can permissionlessly create ICQs, but addresses in this list can attempt
-    // to create ICQs without paying, which will then implicitly be paid for by the contract;
-    // and they can also withdraw funds in the *native token denom* from the contract;
-    // they can however not withdraw user funds that were locked for voting.
-    pub icq_managers: Vec<String>,
     pub max_deployment_duration: u64,
     // A schedule of how the lock power changes over time.
     // The first element is the round number, the second element is the lock power.
@@ -63,13 +58,14 @@ pub struct CollectionInfo {
 
 #[cw_serde]
 pub enum TokenInfoProviderInstantiateMsg {
-    // After we extract LSM token info provider into separate contract, all token info providers will be instantiated as SCs.
     #[serde(rename = "lsm")]
     LSM {
-        max_validator_shares_participating: u64,
-        hub_connection_id: String,
+        code_id: u64,
+        msg: Binary,
+        label: String,
+        admin: Option<String>,
+        // Needed for the Hydro contract to be able to validate LSM IBC token denoms on its own
         hub_transfer_channel_id: String,
-        icq_update_period: u64,
     },
     Base {
         token_group_id: String,
@@ -95,13 +91,14 @@ impl Display for TokenInfoProviderInstantiateMsg {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
             TokenInfoProviderInstantiateMsg::LSM {
-                max_validator_shares_participating,
-                hub_connection_id,
+                code_id,
+                msg,
+                label,
+                admin,
                 hub_transfer_channel_id,
-                icq_update_period,
             } => write!(
                 f,
-                "LSM(max_validator_shares_participating: {max_validator_shares_participating}, hub_connection_id: {hub_connection_id}, hub_transfer_channel_id: {hub_transfer_channel_id}, icq_update_period: {icq_update_period})"
+                "LSM(code_id: {code_id}, msg: {msg}, label: {label}, admin: {admin:?}, hub_transfer_channel_id: {hub_transfer_channel_id:?})"
             ),
             TokenInfoProviderInstantiateMsg::Base {
                 token_group_id,
@@ -182,20 +179,6 @@ pub enum ExecuteMsg {
         tranche_name: Option<String>,
         tranche_metadata: Option<String>,
     },
-    #[serde(rename = "create_icqs_for_validators")]
-    #[cw_orch(payable)]
-    CreateICQsForValidators {
-        validators: Vec<String>,
-    },
-    AddICQManager {
-        address: String,
-    },
-    RemoveICQManager {
-        address: String,
-    },
-    WithdrawICQFunds {
-        amount: Uint128,
-    },
     AddLiquidityDeployment {
         round_id: u64,
         tranche_id: u64,
@@ -211,10 +194,8 @@ pub enum ExecuteMsg {
         tranche_id: u64,
         proposal_id: u64,
     },
-    UpdateTokenGroupRatio {
-        token_group_id: String,
-        old_ratio: Decimal,
-        new_ratio: Decimal,
+    UpdateTokenGroupsRatios {
+        changes: Vec<TokenGroupRatioChange>,
     },
     AddTokenInfoProvider {
         token_info_provider: TokenInfoProviderInstantiateMsg,

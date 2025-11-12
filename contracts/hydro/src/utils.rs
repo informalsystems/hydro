@@ -4,12 +4,10 @@ use cosmwasm_std::{
     Addr, Decimal, Deps, DepsMut, Env, Order, StdError, StdResult, Storage, Timestamp, Uint128,
 };
 use cw_storage_plus::Bound;
-use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
     contract::{compute_current_round_id, compute_round_end},
     error::{new_generic_error, ContractError},
-    lsm_integration::initialize_validator_store,
     msg::LiquidityDeployment,
     query::{LockEntryWithPower, LockupWithPerTrancheInfo, PerTrancheLockupInfo, RoundWithBid},
     score_keeper::get_total_power_for_round,
@@ -24,14 +22,14 @@ use crate::{
 };
 
 /// Loads the constants that are active for the current block according to the block timestamp.
-pub fn load_current_constants(deps: &Deps<NeutronQuery>, env: &Env) -> StdResult<Constants> {
+pub fn load_current_constants(deps: &Deps, env: &Env) -> StdResult<Constants> {
     Ok(load_constants_active_at_timestamp(deps, env.block.time)?.1)
 }
 
 /// Loads the constants that were active at the given timestamp. Returns both the Constants and
 /// their activation timestamp.
 pub fn load_constants_active_at_timestamp(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     timestamp: Timestamp,
 ) -> StdResult<(u64, Constants)> {
     let current_constants: Vec<(u64, Constants)> = CONSTANTS
@@ -68,7 +66,7 @@ pub fn load_constants_active_at_timestamp(
 //         in public cap, where public_cap = total_cap - known_users_cap.
 //         After the known users cap duration expires, public cap becomes equal to the total cap.
 pub fn validate_locked_tokens_caps(
-    deps: &DepsMut<NeutronQuery>,
+    deps: &DepsMut,
     constants: &Constants,
     current_round: u64,
     sender: &Addr,
@@ -147,7 +145,7 @@ pub fn validate_locked_tokens_caps(
 }
 
 fn can_user_lock_in_known_users_cap(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     constants: &Constants,
     current_round: u64,
     sender: &Addr,
@@ -223,7 +221,7 @@ fn can_user_lock_in_known_users_cap(
 // Stores that will (potentially) be updated:
 //      LOCKED_TOKENS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, EXTRA_LOCKED_TOKENS_CURRENT_USERS
 pub fn update_locked_tokens_info(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     current_round: u64,
     sender: &Addr,
     mut total_locked_tokens: u128,
@@ -272,7 +270,6 @@ pub fn run_on_each_transaction(
     env: &Env,
     round_id: u64,
 ) -> StdResult<()> {
-    initialize_validator_store(storage, round_id)?;
     update_round_height_maps(storage, env, round_id)
 }
 
@@ -353,11 +350,7 @@ pub fn verify_historical_data_availability(storage: &dyn Storage, height: u64) -
     Ok(())
 }
 
-pub fn get_current_user_voting_power(
-    deps: &Deps<NeutronQuery>,
-    env: &Env,
-    address: Addr,
-) -> StdResult<u128> {
+pub fn get_current_user_voting_power(deps: &Deps, env: &Env, address: Addr) -> StdResult<u128> {
     let constants = load_current_constants(deps, env)?;
     let current_round_id = compute_current_round_id(env, &constants)?;
     let round_end = compute_round_end(&constants, current_round_id)?;
@@ -395,7 +388,7 @@ pub fn get_current_user_voting_power(
 /// Both of these functions will ensure that the provided height indeed matches the given round, and vice versa.
 /// If the function is used in different context, the caller is responsible for ensuring this condition is satisifed.
 fn get_past_user_voting_power(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     constants: &Constants,
     address: Addr,
     height: u64,
@@ -437,7 +430,7 @@ fn get_past_user_voting_power(
 }
 
 pub fn get_user_voting_power_for_past_round(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     constants: &Constants,
     address: Addr,
     round_id: u64,
@@ -448,7 +441,7 @@ pub fn get_user_voting_power_for_past_round(
 }
 
 pub fn get_user_voting_power_for_past_height(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     constants: &Constants,
     address: Addr,
     height: u64,
@@ -458,7 +451,7 @@ pub fn get_user_voting_power_for_past_height(
 }
 
 pub fn to_lockup_with_power(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     constants: &Constants,
     token_manager: &mut TokenManager,
     round_id: u64,
@@ -522,7 +515,7 @@ fn historic_voted_on_proposals(
 }
 
 fn per_round_tranche_info(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     constants: &Constants,
     tranche_id: u64,
     lock_id: u64,
@@ -578,7 +571,7 @@ fn per_round_tranche_info(
 }
 
 pub fn to_lockup_with_tranche_infos(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     constants: &Constants,
     tranche_ids: &[u64],
     lock_with_power: LockEntryWithPower,
@@ -667,7 +660,7 @@ pub fn is_lock_owner(storage: &dyn Storage, sender: &Addr, lock_id: u64) -> bool
 // Finds the last proposal the given lock has voted for.
 // It will return an error if the lock has not voted for any proposal.
 pub fn find_voted_proposal_for_lock(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     current_round_id: u64,
     tranche_id: u64,
     lock_id: u64,
@@ -699,7 +692,7 @@ pub fn find_voted_proposal_for_lock(
 
 // Gets the deployment for a given proposal if it exists
 pub fn get_deployment_for_proposal(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     proposal: &Proposal,
 ) -> Result<Option<LiquidityDeployment>, ContractError> {
     LIQUIDITY_DEPLOYMENTS_MAP
@@ -717,7 +710,7 @@ pub fn get_deployment_for_proposal(
 
 // Finds the deployment for the last proposal the given lock has voted for.
 pub fn find_deployment_for_voted_lock(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     current_round_id: u64,
     tranche_id: u64,
     lock_id: u64,
@@ -771,7 +764,7 @@ pub fn get_user_claimable_locks(storage: &dyn Storage, user_addr: Addr) -> StdRe
 /// Helper function to calculate vote power for a vote
 pub fn calculate_vote_power(
     token_manager: &mut TokenManager,
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     round_id: u64,
     vote: &Vote,
 ) -> StdResult<Decimal> {
@@ -809,7 +802,7 @@ pub struct LockVotingAllowedRound {
 }
 
 pub fn get_higest_voting_allowed_round(
-    deps: &Deps<NeutronQuery>,
+    deps: &Deps,
     tranche_id: u64,
     lock_ids: &HashSet<u64>,
 ) -> Result<Option<LockVotingAllowedRound>, ContractError> {

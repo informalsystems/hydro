@@ -6,20 +6,17 @@ use crate::state::{
     VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
 };
 use crate::testing::{
-    get_address_as_str, get_default_instantiate_msg, get_message_info,
-    set_default_validator_for_rounds, IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3,
-    ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
-    VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3, VALIDATOR_3_LST_DENOM_1,
+    get_address_as_str, get_d_atom_denom_info_mock_data, get_default_instantiate_msg,
+    get_message_info, get_validator_info_mock_data, setup_lsm_token_info_provider_mock,
+    setup_multiple_token_info_provider_mocks, D_ATOM_ON_NEUTRON, IBC_DENOM_1, IBC_DENOM_2,
+    IBC_DENOM_3, LSM_TOKEN_PROVIDER_ADDR, ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS,
+    VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3,
+    VALIDATOR_3_LST_DENOM_1,
 };
-use crate::testing_lockup_conversion_dtoken::{
-    setup_d_atom_token_info_provider_mock, DROP_D_TOKEN_DENOM,
-};
-use crate::testing_lsm_integration::{set_validator_infos_for_round, set_validator_power_ratio};
 use crate::testing_mocks::{denom_trace_grpc_query_mock, MockQuerier};
 use cosmwasm_std::testing::{MockApi, MockStorage};
 use cosmwasm_std::{testing::mock_env, Coin, Decimal, Uint128};
 use cosmwasm_std::{Env, OwnedDeps, StdResult, Storage};
-use neutron_sdk::bindings::query::NeutronQuery;
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -65,18 +62,30 @@ fn pending_slashes_accumulation_test() {
     )
     .unwrap();
 
-    for round_id in 0..=1 {
-        let res = set_validator_infos_for_round(
-            &mut deps.storage,
-            round_id,
-            vec![
-                VALIDATOR_1.to_string(),
-                VALIDATOR_2.to_string(),
-                VALIDATOR_3.to_string(),
-            ],
-        );
-        assert!(res.is_ok());
-    }
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (
+                0,
+                vec![
+                    (VALIDATOR_1.to_string(), Decimal::one()),
+                    (VALIDATOR_2.to_string(), Decimal::one()),
+                    (VALIDATOR_3.to_string(), Decimal::one()),
+                ],
+            ),
+            (
+                1,
+                vec![
+                    (VALIDATOR_1.to_string(), Decimal::one()),
+                    (VALIDATOR_2.to_string(), Decimal::one()),
+                    (VALIDATOR_3.to_string(), Decimal::one()),
+                ],
+            ),
+        ],
+        true,
+    );
 
     // Start round 0
     env.block.time = env.block.time.plus_nanos(1000);
@@ -364,18 +373,30 @@ fn slash_when_threshold_is_reached_test() {
     )
     .unwrap();
 
-    for round_id in 0..=1 {
-        let res = set_validator_infos_for_round(
-            &mut deps.storage,
-            round_id,
-            vec![
-                VALIDATOR_1.to_string(),
-                VALIDATOR_2.to_string(),
-                VALIDATOR_3.to_string(),
-            ],
-        );
-        assert!(res.is_ok());
-    }
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (
+                0,
+                vec![
+                    (VALIDATOR_1.to_string(), Decimal::one()),
+                    (VALIDATOR_2.to_string(), Decimal::one()),
+                    (VALIDATOR_3.to_string(), Decimal::one()),
+                ],
+            ),
+            (
+                1,
+                vec![
+                    (VALIDATOR_1.to_string(), Decimal::one()),
+                    (VALIDATOR_2.to_string(), Decimal::one()),
+                    (VALIDATOR_3.to_string(), Decimal::one()),
+                ],
+            ),
+        ],
+        true,
+    );
 
     // Start round 0
     env.block.time = env.block.time.plus_nanos(1000);
@@ -520,7 +541,28 @@ fn slash_when_threshold_is_reached_test() {
     // After user3 had voted, set its validator power ratio to 0, effectively bringing user3 votes to 0 power.
     // When it comes to slashing the proposal, such lockups will not be slashed since they did not contribute
     // to the proposal voting power, and also didn't receive any tributes for their votes.
-    set_validator_power_ratio(&mut deps.storage, 0, VALIDATOR_3, Decimal::zero());
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (
+                0,
+                vec![
+                    (VALIDATOR_1.to_string(), Decimal::one()),
+                    (VALIDATOR_2.to_string(), Decimal::one()),
+                ],
+            ),
+            (
+                1,
+                vec![
+                    (VALIDATOR_1.to_string(), Decimal::one()),
+                    (VALIDATOR_2.to_string(), Decimal::one()),
+                    (VALIDATOR_3.to_string(), Decimal::one()),
+                ],
+            ),
+        ],
+        true,
+    );
 
     // Move to round 1
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
@@ -796,12 +838,28 @@ fn slashing_removes_lockups_test() {
     let user1_lock_1 = 0;
     let user2_lock_1 = 1;
 
-    let res = set_validator_infos_for_round(
-        &mut deps.storage,
-        round_1,
-        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (
+                round_1,
+                vec![
+                    (VALIDATOR_1.to_string(), Decimal::one()),
+                    (VALIDATOR_2.to_string(), Decimal::one()),
+                ],
+            ),
+            (
+                round_2,
+                vec![
+                    (VALIDATOR_1.to_string(), Decimal::one()),
+                    (VALIDATOR_2.to_string(), Decimal::one()),
+                ],
+            ),
+        ],
+        true,
     );
-    assert!(res.is_ok());
 
     // user1 and user2 create one lockup each
     let lock_amount_initial = 1000u128;
@@ -1031,12 +1089,28 @@ fn proposals_and_rounds_power_updates_on_slashing_test() {
     )
     .unwrap();
 
-    let res = set_validator_infos_for_round(
-        &mut deps.storage,
-        0,
-        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (
+                0,
+                vec![
+                    (VALIDATOR_1.to_string(), Decimal::one()),
+                    (VALIDATOR_2.to_string(), Decimal::one()),
+                ],
+            ),
+            (
+                1,
+                vec![
+                    (VALIDATOR_1.to_string(), Decimal::one()),
+                    (VALIDATOR_2.to_string(), Decimal::one()),
+                ],
+            ),
+        ],
+        true,
     );
-    assert!(res.is_ok());
 
     let round_1 = 0;
     let round_2 = 1;
@@ -1285,7 +1359,16 @@ fn slashing_after_lock_split_merge_test() {
     )
     .unwrap();
 
-    set_default_validator_for_rounds(deps.as_mut(), round_1, round_2);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (round_1, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (round_2, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+        ],
+        true,
+    );
 
     // Advance block time and height by one day
     env.block.time = env.block.time.plus_nanos(ONE_DAY_IN_NANO_SECONDS);
@@ -1459,11 +1542,36 @@ fn slash_after_dtoken_conversion_test() {
     )
     .unwrap();
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 1);
-
-    let token_info_provider_addr = deps.api.addr_make("dtoken_info_provider");
+    let d_token_info_provider_addr = deps.api.addr_make("dtoken_info_provider");
     let d_atom_ratio = Decimal::from_str("1.17").unwrap();
-    setup_d_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, d_atom_ratio);
+
+    let derivative_providers = HashMap::from([get_d_atom_denom_info_mock_data(
+        d_token_info_provider_addr.to_string(),
+        (0..=1)
+            .map(|round_id: u64| (round_id, d_atom_ratio))
+            .collect(),
+    )]);
+
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    let lsm_provider = Some((
+        lsm_token_info_provider_addr.to_string(),
+        HashMap::from_iter((0..=1).map(|round_id: u64| {
+            (
+                round_id,
+                HashMap::from([get_validator_info_mock_data(
+                    VALIDATOR_1.to_string(),
+                    Decimal::one(),
+                )]),
+            )
+        })),
+    ));
+
+    setup_multiple_token_info_provider_mocks(
+        &mut deps,
+        derivative_providers.clone(),
+        lsm_provider.clone(),
+        true,
+    );
 
     // Start round 0
     env.block.time = env.block.time.plus_nanos(1000);
@@ -1532,7 +1640,7 @@ fn slash_after_dtoken_conversion_test() {
                     .to_uint_floor();
 
                 lock.funds = Coin {
-                    denom: DROP_D_TOKEN_DENOM.to_string(),
+                    denom: D_ATOM_ON_NEUTRON.to_string(),
                     amount: datom_amount,
                 };
 
@@ -1578,7 +1686,7 @@ fn slash_after_dtoken_conversion_test() {
                 assert_eq!(amount.len(), 1);
                 let slashed_token = amount[0].clone();
 
-                if slashed_token.denom != DROP_D_TOKEN_DENOM {
+                if slashed_token.denom != D_ATOM_ON_NEUTRON {
                     panic!(
                         "slashed unexpected tokens with denom: {}",
                         slashed_token.denom
@@ -1597,7 +1705,7 @@ fn slash_after_dtoken_conversion_test() {
 }
 
 fn vote_for_proposal(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: &Env,
     user1: &str,
     tranche_id: u64,
@@ -1649,7 +1757,7 @@ fn verify_locks_and_pending_slashes(
 
 // expected_slashable_amounts: &[(tranche_id, proposal_id, expected_max_slashable_token_num)]
 fn verify_expected_slashable_token_num(
-    deps: &OwnedDeps<cosmwasm_std::MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &OwnedDeps<cosmwasm_std::MemoryStorage, MockApi, MockQuerier>,
     env: &Env,
     round_id: u64,
     expected_slashable_amounts: &[(u64, u64, u128)],

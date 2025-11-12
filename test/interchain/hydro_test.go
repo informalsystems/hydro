@@ -56,7 +56,8 @@ func (s *HydroSuite) TestHappyPath() {
 	dstIbcDenom2 := s.HubToNeutronShareTokenTransfer(0, math.NewInt(400), sourceIbcDenom2, s.NeutronChain.ValidatorWallets[0].Address)
 
 	// deploy hydro contract - instantiate code
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(3), nil, nil)
+	lsmInitMsg := s.GetLSMTokenInfoProviderInitMsg(lsmTokenInfoProviderCodeId, 3, s.NeutronChain.ValidatorWallets[0].Address)
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, lsmInitMsg, nil, nil)
 
 	// register interchain query
 	log.Println("==== Registering interchain queries")
@@ -162,7 +163,8 @@ func (s *HydroSuite) TestPauseContract() {
 	dstIbcDenom := s.HubToNeutronShareTokenTransfer(0, math.NewInt(400), sourceIbcDenom, s.NeutronChain.ValidatorWallets[0].Address)
 
 	// instantiate hydro contract
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(2), nil, nil)
+	lsmInitMsg := s.GetLSMTokenInfoProviderInitMsg(lsmTokenInfoProviderCodeId, 2, s.NeutronChain.ValidatorWallets[0].Address)
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, lsmInitMsg, nil, nil)
 
 	// pause the contract
 	log.Println("==== Pausing contract")
@@ -237,7 +239,8 @@ func (s *HydroSuite) TestActiveValidatorChange() {
 
 	// deploy hydro contract - instantiate code
 	// active valset consists of 2 validators, currently val1 and val2
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(2), nil, nil)
+	lsmInitMsg := s.GetLSMTokenInfoProviderInitMsg(lsmTokenInfoProviderCodeId, 2, s.NeutronChain.ValidatorWallets[0].Address)
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, lsmInitMsg, nil, nil)
 
 	// register interchain query for val1 and val2
 	log.Println("==== Registering interchain queries for val1 and val2")
@@ -323,7 +326,8 @@ func (s *HydroSuite) TestValidatorSlashing() {
 	dstIbcDenom1 := s.HubToNeutronShareTokenTransfer(0, math.NewInt(400), sourceIbcDenom1, s.NeutronChain.ValidatorWallets[0].Address)
 
 	// deploy hydro contract - instantiate code
-	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(4), nil, nil)
+	lsmInitMsg := s.GetLSMTokenInfoProviderInitMsg(lsmTokenInfoProviderCodeId, 4, s.NeutronChain.ValidatorWallets[0].Address)
+	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, lsmInitMsg, nil, nil)
 
 	// register interchain query
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[3].ValoperAddress},
@@ -360,7 +364,10 @@ func (s *HydroSuite) TestValidatorSlashing() {
 	// wait for icq to get the updated data
 	height, err := s.HubChain.Height(s.GetContext())
 	s.Require().NoError(err)
-	s.WaitForQueryUpdate(contractAddr, height)
+
+	lsmTokenInfoProviderAddr, err := s.GetLSMTokenInfoProviderAddress(contractAddr)
+	s.Require().NoError(err)
+	s.WaitForQueryUpdate(lsmTokenInfoProviderAddr, height)
 
 	// restart the node - not mandatory for this test
 	s.Require().NoError(s.HubChain.Validators[3].StartContainer(s.GetContext()))
@@ -420,9 +427,10 @@ func (s *HydroSuite) TestGatekeeperLockConditions() {
 
 	// Instantiate Hydro contract
 	lockEpochLength := 86400000000000
+	lsmInitMsg := s.GetLSMTokenInfoProviderInitMsg(lsmTokenInfoProviderCodeId, 4, s.NeutronChain.ValidatorWallets[0].Address)
 	contractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker,
 		hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, lockEpochLength,
-		s.GetLSMTokenInfoProviderInitMsg(4), nil, gatekeeperInitMsg)
+		lsmInitMsg, nil, gatekeeperInitMsg)
 
 	log.Println("==== Registering interchain queries")
 	s.RegisterInterchainQueries([]string{s.HubChain.ValidatorWallets[0].ValoperAddress}, contractAddr, s.NeutronChain.ValidatorWallets[0].Moniker)
@@ -540,7 +548,8 @@ func (s *HydroSuite) TestTributeContract() {
 
 	// deploy hydro contract - instantiate code
 	roundLength := 300000000000
-	hydroContractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, roundLength, s.GetLSMTokenInfoProviderInitMsg(4), nil, nil)
+	lsmInitMsg := s.GetLSMTokenInfoProviderInitMsg(lsmTokenInfoProviderCodeId, 4, s.NeutronChain.ValidatorWallets[0].Address)
+	hydroContractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, roundLength, lsmInitMsg, nil, nil)
 
 	// deploy tribute contract - instantiate code
 	tributeContractAddr := s.InstantiateTributeContract(tributeCodeId, hydroContractAddr, s.NeutronChain.ValidatorWallets[0].Address)
@@ -816,7 +825,8 @@ func (s *HydroSuite) TestDaoVotingAdapter() {
 
 	// instantiate hydro contract
 	log.Println("==== Instantiating Hydro contract")
-	hydroContractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, s.GetLSMTokenInfoProviderInitMsg(3), nil, nil)
+	lsmInitMsg := s.GetLSMTokenInfoProviderInitMsg(lsmTokenInfoProviderCodeId, 3, s.NeutronChain.ValidatorWallets[0].Address)
+	hydroContractAddr := s.InstantiateHydroContract(s.NeutronChain.ValidatorWallets[0].Moniker, hydroCodeId, s.NeutronChain.ValidatorWallets[0].Address, 86400000000000, lsmInitMsg, nil, nil)
 
 	// instantiate DAO voting power adapter contract
 	log.Println("==== Instantiating DAO Voting Power Adapter contract")

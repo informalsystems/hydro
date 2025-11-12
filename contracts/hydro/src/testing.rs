@@ -13,16 +13,12 @@ use crate::state::{
     LockEntryV2, RoundLockPowerSchedule, Vote, CONSTANTS, TOKEN_INFO_PROVIDERS, USER_LOCKS,
     VOTE_MAP_V2,
 };
-use crate::testing_lsm_integration::set_validator_infos_for_round;
 
 use crate::testing_mocks::{
     contract_info_mock, denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock,
-    token_info_provider_derivative_mock, MockQuerier, MockWasmQuerier,
+    token_info_providers_mock, MockQuerier, MockWasmQuerier, RoundsValidators, WasmQueryFunc,
 };
-use crate::token_manager::{
-    TokenInfoProvider, TokenInfoProviderDerivative, TokenInfoProviderLSM,
-    LSM_TOKEN_INFO_PROVIDER_ID,
-};
+use crate::token_manager::{TokenInfoProvider, TokenInfoProviderDerivative, TokenInfoProviderLSM};
 use crate::{
     contract::{
         compute_current_round_id, execute, instantiate, query_all_user_lockups, query_constants,
@@ -32,10 +28,13 @@ use crate::{
     msg::{ExecuteMsg, InstantiateMsg},
 };
 use cosmwasm_std::testing::{mock_env, MockApi, MockStorage};
-use cosmwasm_std::{Addr, Coin, StdError, StdResult};
-use cosmwasm_std::{Decimal, Deps, DepsMut, MessageInfo, OwnedDeps, Timestamp, Uint128};
+use cosmwasm_std::{
+    Addr, Binary, Coin, MsgResponse, Reply, StdError, StdResult, SubMsgResponse, SubMsgResult,
+};
+use cosmwasm_std::{Decimal, Deps, MessageInfo, OwnedDeps, Timestamp, Uint128};
+use interface::hydro::TokenGroupRatioChange;
+use interface::lsm::ValidatorInfo;
 use interface::token_info_provider::DenomInfoResponse;
-use neutron_sdk::bindings::query::NeutronQuery;
 use proptest::prelude::*;
 
 pub const VALIDATOR_1: &str = "cosmosvaloper157v7tczs40axfgejp2m43kwuzqe0wsy0rv8puv";
@@ -66,22 +65,18 @@ pub const ST_ATOM_ON_NEUTRON: &str =
 pub const ST_ATOM_ON_STRIDE: &str = "stATOM";
 pub const ST_ATOM_TOKEN_GROUP: &str = "stATOM";
 
+pub const D_ATOM_ON_NEUTRON: &str =
+    "factory/neutron1k6hr0f83e7un2wjf29cspk7j69jrnskk65k3ek2nj9dztrlzpj6q00rtsa/udatom";
+
+pub const D_ATOM_TOKEN_GROUP: &str = "datom";
+
 pub const ONE_DAY_IN_NANO_SECONDS: u64 = 24 * 60 * 60 * 1000000000;
 pub const TWO_WEEKS_IN_NANO_SECONDS: u64 = 14 * 24 * 60 * 60 * 1000000000;
 pub const ONE_MONTH_IN_NANO_SECONDS: u64 = 2629746000000000; // 365 days / 12
 pub const THREE_MONTHS_IN_NANO_SECONDS: u64 = 3 * ONE_MONTH_IN_NANO_SECONDS;
 
-pub fn set_default_validator_for_rounds(
-    deps: DepsMut<NeutronQuery>,
-    start_round: u64,
-    end_round: u64,
-) {
-    for round_id in start_round..end_round {
-        let res =
-            set_validator_infos_for_round(deps.storage, round_id, vec![VALIDATOR_1.to_string()]);
-        assert!(res.is_ok());
-    }
-}
+pub const DERIVATIVE_TOKEN_PROVIDER_ADDR: &str = "derivative_token_info_provider";
+pub const LSM_TOKEN_PROVIDER_ADDR: &str = "lsm_token_info_provider";
 
 pub fn get_default_power_schedule_vec() -> Vec<(u64, Decimal)> {
     vec![
@@ -106,20 +101,30 @@ pub fn get_default_cw721_collection_info() -> CollectionInfo {
 
 pub fn get_default_lsm_token_info_provider_init_msg() -> TokenInfoProviderInstantiateMsg {
     TokenInfoProviderInstantiateMsg::LSM {
-        max_validator_shares_participating: 100,
-        hub_connection_id: "connection-0".to_string(),
+        code_id: 0,
+        msg: Binary::default(),
+        label: "lsm token info provider".to_string(),
+        admin: None,
         hub_transfer_channel_id: "channel-0".to_string(),
-        icq_update_period: 100,
     }
 }
 
-pub fn get_default_lsm_token_info_provider() -> TokenInfoProvider {
-    TokenInfoProvider::LSM(TokenInfoProviderLSM {
-        max_validator_shares_participating: 100,
-        hub_connection_id: "connection-0".to_string(),
-        hub_transfer_channel_id: "channel-0".to_string(),
-        icq_update_period: 100,
-    })
+pub fn build_reply_msg(payload: Binary, encoded_msg_data: Vec<u8>) -> Reply {
+    Reply {
+        id: 0,
+        gas_used: 0,
+        payload,
+        // `data` field is deprecated, but it must be set because otherwise the compiler gives an error
+        #[allow(deprecated)]
+        result: SubMsgResult::Ok(SubMsgResponse {
+            events: vec![],
+            msg_responses: vec![MsgResponse {
+                type_url: String::new(), // not used in the test
+                value: Binary::from(encoded_msg_data),
+            }],
+            data: None,
+        }),
+    }
 }
 
 pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
@@ -137,7 +142,6 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         max_locked_tokens: Uint128::new(1000000),
         initial_whitelist: vec![user_address.clone()],
         whitelist_admins: vec![],
-        icq_managers: vec![user_address],
         max_deployment_duration: 12,
         round_lock_power_schedule: get_default_power_schedule_vec(),
         token_info_providers: vec![get_default_lsm_token_info_provider_init_msg()],
@@ -161,41 +165,252 @@ pub fn get_address_as_str(mock_api: &MockApi, addr: &str) -> String {
     mock_api.addr_make(addr).to_string()
 }
 
-pub fn setup_st_atom_token_info_provider_mock(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
-    token_info_provider_addr: Addr,
-    token_group_ratio: Decimal,
+// Use this function if you need to setup multiple token info providers in the same test.
+// Using specific functions (e.g. setup_st_atom_token_info_provider_mock(), setup_lsm_token_info_provider_mock())
+// sequentially will not work, since all of them override WasmQuerier mock, hence overriding what was set
+// by the previous mock setup call.
+pub fn setup_multiple_token_info_provider_mocks(
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
+    derivative_providers: HashMap<String, HashMap<u64, DenomInfoResponse>>,
+    lsm_provider: Option<(String, RoundsValidators)>,
+    should_save_in_storage: bool,
 ) {
-    TOKEN_INFO_PROVIDERS
-        .save(
-            &mut deps.storage,
-            token_info_provider_addr.to_string(),
-            &TokenInfoProvider::Derivative(TokenInfoProviderDerivative {
-                contract: token_info_provider_addr.to_string(),
-                cache: HashMap::new(),
-            }),
-        )
-        .unwrap();
+    setup_token_info_providers_with_extra_mocks(
+        deps,
+        derivative_providers,
+        lsm_provider,
+        should_save_in_storage,
+        vec![],
+    )
+}
 
-    let wasm_querier = MockWasmQuerier::new(token_info_provider_derivative_mock(
-        token_info_provider_addr.to_string(),
-        DenomInfoResponse {
-            denom: ST_ATOM_ON_NEUTRON.to_string(),
-            token_group_id: ST_ATOM_TOKEN_GROUP.to_string(),
-            ratio: token_group_ratio,
-        },
-    ));
+// Use this function if you need to mock multiple token info providers together with some other
+// smart contracts mocking (e.g. )
+pub fn setup_token_info_providers_with_extra_mocks(
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
+    derivative_providers: HashMap<String, HashMap<u64, DenomInfoResponse>>,
+    lsm_provider: Option<(String, RoundsValidators)>,
+    should_save_in_storage: bool,
+    extra_mocks: Vec<WasmQueryFunc>,
+) {
+    if should_save_in_storage {
+        for (contract_address, _) in derivative_providers.iter() {
+            TOKEN_INFO_PROVIDERS
+                .save(
+                    &mut deps.storage,
+                    contract_address.to_string(),
+                    &TokenInfoProvider::Derivative(TokenInfoProviderDerivative {
+                        contract: contract_address.to_string(),
+                        cache: HashMap::new(),
+                    }),
+                )
+                .unwrap();
+        }
+
+        if let Some((contract_address, _)) = lsm_provider.clone() {
+            TOKEN_INFO_PROVIDERS
+                .save(
+                    &mut deps.storage,
+                    contract_address.to_string(),
+                    &TokenInfoProvider::LSM(TokenInfoProviderLSM {
+                        contract: contract_address.to_string(),
+                        cache: HashMap::new(),
+                        hub_transfer_channel_id: "channel-0".to_string(),
+                    }),
+                )
+                .unwrap();
+        }
+    }
+
+    let wasm_querier = MockWasmQuerier::new(Box::new(move |query| {
+        let token_info_providers_mock =
+            token_info_providers_mock(derivative_providers.clone(), lsm_provider.clone());
+
+        let token_providers_res = token_info_providers_mock(query);
+        if let cosmwasm_std::SystemResult::Err(_) = token_providers_res {
+            for extra_mock in extra_mocks.iter() {
+                let extra_mock_res = extra_mock(query);
+                match extra_mock_res {
+                    cosmwasm_std::SystemResult::Err(_) => continue,
+                    cosmwasm_std::SystemResult::Ok(res) => {
+                        return cosmwasm_std::SystemResult::Ok(res)
+                    }
+                }
+            }
+        }
+
+        token_providers_res
+    }));
 
     deps.querier.update_wasm(move |q| wasm_querier.handler(q));
 }
 
 pub fn setup_contract_info_mock(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     existing_contract_addr: Addr,
 ) {
     let wasm_querier = MockWasmQuerier::new(contract_info_mock(existing_contract_addr.to_string()));
 
     deps.querier.update_wasm(move |q| wasm_querier.handler(q));
+}
+
+pub fn setup_st_atom_token_info_provider_mock(
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
+    token_info_provider_addr: Addr,
+    round_token_group_ratios: Vec<(u64, Decimal)>,
+    should_save_in_storage: bool,
+) {
+    let derivative_providers = HashMap::from([(
+        token_info_provider_addr.to_string(),
+        round_token_group_ratios
+            .into_iter()
+            .map(|(round_id, ratio)| {
+                (
+                    round_id,
+                    DenomInfoResponse {
+                        denom: ST_ATOM_ON_NEUTRON.to_string(),
+                        token_group_id: ST_ATOM_TOKEN_GROUP.to_string(),
+                        ratio,
+                    },
+                )
+            })
+            .collect(),
+    )]);
+
+    setup_multiple_token_info_provider_mocks(
+        deps,
+        derivative_providers,
+        None,
+        should_save_in_storage,
+    );
+}
+
+pub fn get_st_atom_denom_info_mock_data(
+    contract_address: String,
+    ratios: Vec<(u64, Decimal)>,
+) -> (String, HashMap<u64, DenomInfoResponse>) {
+    get_denom_info_mock_data(
+        contract_address,
+        ST_ATOM_ON_NEUTRON.to_owned(),
+        ST_ATOM_TOKEN_GROUP.to_owned(),
+        ratios,
+    )
+}
+
+#[allow(dead_code)]
+pub fn setup_d_atom_token_info_provider_mock(
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
+    token_info_provider_addr: Addr,
+    round_token_group_ratios: Vec<(u64, Decimal)>,
+    should_save_in_storage: bool,
+) {
+    let derivative_providers = HashMap::from([(
+        token_info_provider_addr.to_string(),
+        round_token_group_ratios
+            .into_iter()
+            .map(|(round_id, ratio)| {
+                (
+                    round_id,
+                    DenomInfoResponse {
+                        denom: D_ATOM_ON_NEUTRON.to_string(),
+                        token_group_id: D_ATOM_TOKEN_GROUP.to_string(),
+                        ratio,
+                    },
+                )
+            })
+            .collect(),
+    )]);
+
+    setup_multiple_token_info_provider_mocks(
+        deps,
+        derivative_providers,
+        None,
+        should_save_in_storage,
+    );
+}
+
+pub fn get_d_atom_denom_info_mock_data(
+    contract_address: String,
+    ratios: Vec<(u64, Decimal)>,
+) -> (String, HashMap<u64, DenomInfoResponse>) {
+    get_denom_info_mock_data(
+        contract_address,
+        D_ATOM_ON_NEUTRON.to_owned(),
+        D_ATOM_TOKEN_GROUP.to_owned(),
+        ratios,
+    )
+}
+
+pub fn get_denom_info_mock_data(
+    contract_address: String,
+    denom: String,
+    token_group_id: String,
+    ratios: Vec<(u64, Decimal)>,
+) -> (String, HashMap<u64, DenomInfoResponse>) {
+    (
+        contract_address,
+        HashMap::from_iter(ratios.into_iter().map(|(round_id, ratio)| {
+            (
+                round_id,
+                DenomInfoResponse {
+                    denom: denom.clone(),
+                    token_group_id: token_group_id.clone(),
+                    ratio,
+                },
+            )
+        })),
+    )
+}
+
+pub fn setup_lsm_token_info_provider_mock(
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
+    token_info_provider_addr: Addr,
+    round_validator_power_ratios: Vec<(u64, Vec<(String, Decimal)>)>,
+    should_save_in_storage: bool,
+) {
+    let lsm_provider = Some((
+        token_info_provider_addr.to_string(),
+        HashMap::from_iter(round_validator_power_ratios.into_iter().map(
+            |(round_id, round_validators)| {
+                (
+                    round_id,
+                    HashMap::from_iter(round_validators.into_iter().map(
+                        |(validator_address, ratio)| {
+                            (
+                                validator_address.clone(),
+                                ValidatorInfo {
+                                    address: validator_address.clone(),
+                                    delegated_tokens: Uint128::zero(),
+                                    power_ratio: ratio,
+                                },
+                            )
+                        },
+                    )),
+                )
+            },
+        )),
+    ));
+
+    setup_multiple_token_info_provider_mocks(
+        deps,
+        HashMap::new(),
+        lsm_provider,
+        should_save_in_storage,
+    );
+}
+
+pub fn get_validator_info_mock_data(
+    validator_address: String,
+    ratio: Decimal,
+) -> (String, ValidatorInfo) {
+    (
+        validator_address.clone(),
+        ValidatorInfo {
+            address: validator_address,
+            delegated_tokens: Uint128::zero(),
+            power_ratio: ratio,
+        },
+    )
 }
 
 #[test]
@@ -391,12 +606,28 @@ fn proposal_power_change_on_lock_and_refresh_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    let res = set_validator_infos_for_round(
-        deps.as_mut().storage,
-        0,
-        vec![VALIDATOR_1.to_string(), VALIDATOR_2.to_string()],
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (
+                0,
+                vec![
+                    (VALIDATOR_1.to_string(), Decimal::one()),
+                    (VALIDATOR_2.to_string(), Decimal::one()),
+                ],
+            ),
+            (
+                1,
+                vec![
+                    (VALIDATOR_1.to_string(), Decimal::one()),
+                    (VALIDATOR_2.to_string(), Decimal::one()),
+                ],
+            ),
+        ],
+        true,
     );
-    assert!(res.is_ok());
 
     // advance the chain by 1000 nano seconds to simulate locking during the round
     env.block.time = env.block.time.plus_nanos(1000);
@@ -870,13 +1101,38 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
 
     let info1 = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token1));
     let info2 = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token2));
-    let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
+    let derivative_token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
+    let lsm_token_info_provider_addr = deps.api.addr_make("token_info_provider_2");
 
     let res = instantiate(deps.as_mut(), env.clone(), info1.clone(), msg.clone());
     assert!(res.is_ok());
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    let derivative_providers = HashMap::from([get_st_atom_denom_info_mock_data(
+        derivative_token_info_provider_addr.to_string(),
+        (0..=100)
+            .map(|round_id: u64| (round_id, Decimal::one()))
+            .collect(),
+    )]);
+
+    let lsm_provider = Some((
+        lsm_token_info_provider_addr.to_string(),
+        HashMap::from_iter((0..=100).map(|round_id: u64| {
+            (
+                round_id,
+                HashMap::from([get_validator_info_mock_data(
+                    VALIDATOR_1.to_string(),
+                    Decimal::one(),
+                )]),
+            )
+        })),
+    ));
+
+    setup_multiple_token_info_provider_mocks(
+        &mut deps,
+        derivative_providers.clone(),
+        lsm_provider.clone(),
+        true,
+    );
 
     // lock some tokens to get voting power
     let msg = ExecuteMsg::LockTokens {
@@ -1042,7 +1298,20 @@ fn vote_extended_proposals_test() {
     );
     assert!(res.is_ok());
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 5);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (0, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (1, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (2, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (3, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (4, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (5, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+        ],
+        true,
+    );
 
     // advance the env time to simulate ongoing round
     env.block.time = env.block.time.plus_hours(1);
@@ -1305,12 +1574,16 @@ fn switch_vote_between_short_and_long_props_test() {
 
     let first_lock_id = 0;
 
-    let res = set_validator_infos_for_round(
-        &mut deps.storage,
-        current_round_id,
-        vec![VALIDATOR_1.to_string()],
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr,
+        vec![(
+            current_round_id,
+            vec![(VALIDATOR_1.to_string(), Decimal::one())],
+        )],
+        true,
     );
-    assert!(res.is_ok());
 
     env.block.time = env.block.time.plus_hours(12);
 
@@ -1463,13 +1736,16 @@ fn unvote_and_revote_test() {
     let lock_id = 0;
     let deployment_duration = 1;
 
-    // Setup validator for the round
-    let res = set_validator_infos_for_round(
-        &mut deps.storage,
-        current_round_id,
-        vec![VALIDATOR_1.to_string()],
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr,
+        vec![(
+            current_round_id,
+            vec![(VALIDATOR_1.to_string(), Decimal::one())],
+        )],
+        true,
     );
-    assert!(res.is_ok());
 
     env.block.time = env.block.time.plus_hours(12);
 
@@ -1648,12 +1924,16 @@ fn unvote_forbidden_locks() {
     let deployment_duration = 1;
 
     // Setup validator for the round
-    let res = set_validator_infos_for_round(
-        &mut deps.storage,
-        current_round_id,
-        vec![VALIDATOR_1.to_string()],
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr,
+        vec![(
+            current_round_id,
+            vec![(VALIDATOR_1.to_string(), Decimal::one())],
+        )],
+        true,
     );
-    assert!(res.is_ok());
 
     env.block.time = env.block.time.plus_hours(12);
 
@@ -1782,12 +2062,16 @@ fn disable_voting_in_next_round_with_auto_voted_lock_test() {
     let first_lock_id = 0;
     let second_lock_id = 1;
 
-    let res = set_validator_infos_for_round(
-        &mut deps.storage,
-        current_round_id,
-        vec![VALIDATOR_1.to_string()],
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr,
+        vec![(
+            current_round_id,
+            vec![(VALIDATOR_1.to_string(), Decimal::one())],
+        )],
+        true,
     );
-    assert!(res.is_ok());
 
     // lock some tokens to get voting power
     let msg = ExecuteMsg::LockTokens {
@@ -1925,7 +2209,13 @@ fn multi_tranches_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
     assert!(res.is_ok());
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
 
     // create two proposals for tranche 1
     let msg1 = ExecuteMsg::CreateProposal {
@@ -2377,7 +2667,16 @@ fn total_voting_power_tracking_test() {
     let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
     assert!(res.is_ok());
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (0, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (1, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+        ],
+        true,
+    );
 
     let info1 = get_message_info(
         &deps.api,
@@ -2473,7 +2772,7 @@ fn total_voting_power_tracking_test() {
     verify_expected_voting_power(deps.as_ref(), &expected_total_voting_powers);
 }
 
-fn verify_expected_voting_power(deps: Deps<NeutronQuery>, expected_powers: &[(u64, u128)]) {
+fn verify_expected_voting_power(deps: Deps, expected_powers: &[(u64, u128)]) {
     for expected_power in expected_powers {
         let res = query_round_total_power(deps, expected_power.0);
 
@@ -2502,7 +2801,13 @@ proptest! {
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 
-        set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+        let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+        setup_lsm_token_info_provider_mock(
+            &mut deps,
+            lsm_token_info_provider_addr.clone(),
+                (0..=100).map(|round_id| {
+            (round_id, vec![(VALIDATOR_1.to_string(), Decimal::one())])
+        }).collect::<Vec<_>>(), true);
 
         // get the new lock duration
         // list of plausible values, plus a value that should give an error every time (0)
@@ -2703,16 +3008,6 @@ fn contract_pausing_test() {
             tranche_name: Some(String::new()),
             tranche_metadata: Some(String::new()),
         },
-        ExecuteMsg::CreateICQsForValidators { validators: vec![] },
-        ExecuteMsg::AddICQManager {
-            address: whitelist_admin.to_string(),
-        },
-        ExecuteMsg::RemoveICQManager {
-            address: whitelist_admin.to_string(),
-        },
-        ExecuteMsg::WithdrawICQFunds {
-            amount: Uint128::new(50),
-        },
         ExecuteMsg::AddLiquidityDeployment {
             round_id: 0,
             tranche_id: 0,
@@ -2730,19 +3025,25 @@ fn contract_pausing_test() {
         },
         ExecuteMsg::AddTokenInfoProvider {
             token_info_provider: TokenInfoProviderInstantiateMsg::LSM {
-                max_validator_shares_participating: 1,
-                hub_connection_id: "connection-0".to_string(),
+                code_id: 0,
+                msg: Binary::default(),
+                label: String::new(),
+                admin: None,
                 hub_transfer_channel_id: "channel-1".to_string(),
-                icq_update_period: 100,
             },
         },
         ExecuteMsg::RemoveTokenInfoProvider {
-            provider_id: LSM_TOKEN_INFO_PROVIDER_ID.to_string(),
+            provider_id: deps
+                .api
+                .addr_make("token info provider contract")
+                .to_string(),
         },
-        ExecuteMsg::UpdateTokenGroupRatio {
-            token_group_id: "token_group_id".to_string(),
-            old_ratio: Decimal::one(),
-            new_ratio: Decimal::zero(),
+        ExecuteMsg::UpdateTokenGroupsRatios {
+            changes: vec![TokenGroupRatioChange {
+                token_group_id: "token_group_id".to_string(),
+                old_ratio: Decimal::one(),
+                new_ratio: Decimal::zero(),
+            }],
         },
     ];
 
@@ -2829,7 +3130,7 @@ pub fn whitelist_proposal_submission_test() {
 }
 
 fn assert_proposal_voting_power(
-    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier>,
     round_id: u64,
     tranche_id: u64,
     proposal_id: u64,
@@ -2895,7 +3196,13 @@ pub fn pilot_round_lock_duration_test() {
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 
-        set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+        let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+        setup_lsm_token_info_provider_mock(
+            &mut deps,
+            lsm_token_info_provider_addr.clone(),
+            vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+            true,
+        );
 
         // try to lock tokens for the specified duration
         info = get_message_info(
@@ -3026,7 +3333,15 @@ fn test_refresh_multiple_locks() {
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
 
-        set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+        let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+        setup_lsm_token_info_provider_mock(
+            &mut deps,
+            lsm_token_info_provider_addr.clone(),
+            (0..=100)
+                .map(|round_id| (round_id, vec![(VALIDATOR_1.to_string(), Decimal::one())]))
+                .collect::<Vec<_>>(),
+            true,
+        );
 
         // Create multiple locks with different durations, starting times, and senders
         let lock_durations = [
@@ -3289,7 +3604,13 @@ fn test_cannot_vote_while_long_deployment_ongoing() {
     assert!(res.is_ok());
 
     // Setup validator for round 0
-    set_validator_infos_for_round(&mut deps.storage, 0, vec![VALIDATOR_1.to_string()]).unwrap();
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr,
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
 
     // Lock tokens for 3 months to be able to vote on long proposals
     let msg = ExecuteMsg::LockTokens {
@@ -3324,9 +3645,6 @@ fn test_cannot_vote_while_long_deployment_ongoing() {
 
     // Advance to next round
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS + 1);
-
-    // Setup validator for round 1
-    set_validator_infos_for_round(&mut deps.storage, 1, vec![VALIDATOR_1.to_string()]).unwrap();
 
     // Create new proposal in round 1
     let new_proposal_msg = ExecuteMsg::CreateProposal {

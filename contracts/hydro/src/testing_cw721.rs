@@ -1,6 +1,5 @@
 use cosmwasm_std::{attr, from_json, Binary, Response, Uint128};
 use cw_utils::Expiration;
-use neutron_sdk::bindings::msg::NeutronMsg;
 use std::collections::HashMap;
 
 use crate::{
@@ -14,11 +13,15 @@ use crate::{
     state::NFT_APPROVALS,
     testing::{
         get_address_as_str, get_default_instantiate_msg, get_message_info,
-        set_default_validator_for_rounds, setup_contract_info_mock,
-        setup_st_atom_token_info_provider_mock, IBC_DENOM_1, ONE_MONTH_IN_NANO_SECONDS,
-        ST_ATOM_ON_NEUTRON, ST_ATOM_ON_STRIDE, VALIDATOR_1_LST_DENOM_1,
+        get_st_atom_denom_info_mock_data, get_validator_info_mock_data, setup_contract_info_mock,
+        setup_lsm_token_info_provider_mock, setup_multiple_token_info_provider_mocks,
+        setup_st_atom_token_info_provider_mock, setup_token_info_providers_with_extra_mocks,
+        IBC_DENOM_1, LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON,
+        ST_ATOM_ON_STRIDE, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
     },
-    testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock},
+    testing_mocks::{
+        contract_info_mock, denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock,
+    },
 };
 
 use cosmwasm_std::testing::mock_env;
@@ -49,7 +52,13 @@ fn test_handle_execute_transfer_lsm_fail() {
     assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
 
     // Lock tokens first to create a lock entry
     let lock_info = get_message_info(
@@ -112,7 +121,12 @@ fn test_handle_execute_transfer_st_atom_success() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Lock tokens first to create a lock entry
     let lock_info = get_message_info(
@@ -207,7 +221,12 @@ fn test_handle_execute_transfer_oneself_fail() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Lock tokens first to create a lock entry
     let lock_info = get_message_info(
@@ -269,7 +288,12 @@ fn test_handle_execute_transfer_st_atom_with_vote_success() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Lock tokens first to create a lock entry
     let lock_info = get_message_info(
@@ -419,7 +443,12 @@ fn test_handle_execute_transfer_unlock_queries_for_tributes() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Lock tokens first to create a lock entry
     let lock_info = get_message_info(
@@ -600,12 +629,31 @@ fn test_handle_execute_send_nft_lsm_fail() {
     let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
+    // Set up validators for LSM rounds
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    let lsm_provider = Some((
+        lsm_token_info_provider_addr.to_string(),
+        HashMap::from_iter((0..1).map(|round_id: u64| {
+            (
+                round_id,
+                HashMap::from([get_validator_info_mock_data(
+                    VALIDATOR_1.to_string(),
+                    Decimal::one(),
+                )]),
+            )
+        })),
+    ));
+
     // Setup dependencies with custom wasm querier that recognizes "contract-address" as a contract
     let contract_addr = deps.api.addr_make(contract_address);
-    setup_contract_info_mock(&mut deps, contract_addr.clone());
 
-    // Set up validators for rounds
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    setup_token_info_providers_with_extra_mocks(
+        &mut deps,
+        HashMap::new(),
+        lsm_provider.clone(),
+        true,
+        vec![contract_info_mock(contract_addr.to_string())],
+    );
 
     // Lock tokens first to create a lock entry
     let lock_info = get_message_info(
@@ -671,7 +719,12 @@ fn test_handle_execute_send_nft_st_atom_success() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Lock tokens first to create a lock entry with ST_ATOM_ON_NEUTRON
     let lock_info = get_message_info(
@@ -740,7 +793,12 @@ fn test_handle_execute_send_nft_st_atom_with_vote_success() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Create a proposal to vote on
     let create_proposal_msg = ExecuteMsg::CreateProposal {
@@ -831,7 +889,7 @@ fn test_handle_execute_send_nft_st_atom_with_vote_success() {
 }
 
 fn check_send_nft_result(
-    send_res: Response<NeutronMsg>,
+    send_res: Response,
     sender: &str,
     receiving_contract: &str,
     token_id: &str,
@@ -912,11 +970,22 @@ fn test_handle_execute_approve() {
     assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Lock tokens first to create a lock entry
     let lock_info = get_message_info(
@@ -1008,7 +1077,13 @@ fn test_handle_execute_approve_fail_for_lsm() {
     assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
 
     // Lock tokens first to create a lock entry
     let lock_info = get_message_info(
@@ -1070,11 +1145,22 @@ fn test_handle_execute_revoke() {
     assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Lock tokens first to create a lock entry
     let lock_info = get_message_info(
@@ -1164,7 +1250,13 @@ fn test_handle_execute_revoke_fail_for_lsm() {
     assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
 
     // Lock tokens first to create a lock entry
     let lock_info = get_message_info(
@@ -1216,7 +1308,13 @@ fn test_query_owner_of() {
     assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
 
     // Lock tokens first to create a lock entry
     let lock_info = get_message_info(
@@ -1262,7 +1360,13 @@ fn test_query_nft_info() {
     assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
 
     // Lock tokens first to create a lock entry
     let lock_info = get_message_info(
@@ -1315,11 +1419,22 @@ fn test_query_approval() {
     assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Lock tokens first to create a lock entry
     let lock_info = get_message_info(
@@ -1383,11 +1498,22 @@ fn test_query_approval_for_owner() {
     assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Set up validators for rounds
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Lock tokens first to create a lock entry
     let lock_info = get_message_info(
@@ -1440,7 +1566,12 @@ fn test_handle_execute_approve_all() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Approve operator for all tokens (existing and future)
     let approve_all_msg = ExecuteMsg::ApproveAll {
@@ -1526,7 +1657,12 @@ fn test_handle_execute_approve_all_fail_expired() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Lock tokens to create a lock entry
     let lock_msg = ExecuteMsg::LockTokens {
@@ -1592,7 +1728,12 @@ fn test_handle_execute_revoke_all() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Lock tokens to create a lock entry
     let lock_msg = ExecuteMsg::LockTokens {
@@ -1696,7 +1837,12 @@ fn test_handle_execute_revoke_all_no_approval() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Lock tokens to create a lock entry
     let lock_msg = ExecuteMsg::LockTokens {
@@ -1768,7 +1914,12 @@ fn test_query_num_tokens() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Query num_tokens before any lock is created
     let query_msg = QueryMsg::NumTokens {};
@@ -1822,7 +1973,12 @@ fn test_query_tokens() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Query tokens before any lock is created
     let query_msg = QueryMsg::Tokens {
@@ -1887,7 +2043,12 @@ fn test_query_all_tokens() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Query all tokens before any lock is created
     let query_msg = QueryMsg::AllTokens {
@@ -1965,11 +2126,37 @@ fn test_query_all_tokens_filters_lsm() {
     assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
 
     // Setup ST_ATOM token info provider (non-LSM)
-    let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    let st_token_info_provider_addr = deps.api.addr_make("dtoken_info_provider");
+    let st_atom_ratio = Decimal::one();
+
+    let derivative_providers = HashMap::from([get_st_atom_denom_info_mock_data(
+        st_token_info_provider_addr.to_string(),
+        (0..1)
+            .map(|round_id: u64| (round_id, st_atom_ratio))
+            .collect(),
+    )]);
 
     // Set up validators for LSM rounds
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    let lsm_provider = Some((
+        lsm_token_info_provider_addr.to_string(),
+        HashMap::from_iter((0..1).map(|round_id: u64| {
+            (
+                round_id,
+                HashMap::from([get_validator_info_mock_data(
+                    VALIDATOR_1.to_string(),
+                    Decimal::one(),
+                )]),
+            )
+        })),
+    ));
+
+    setup_multiple_token_info_provider_mocks(
+        &mut deps,
+        derivative_providers.clone(),
+        lsm_provider.clone(),
+        true,
+    );
 
     // Create first non-LSM lock (owner1, ST_ATOM) - should appear in results
     let lock_msg = ExecuteMsg::LockTokens {
@@ -2114,7 +2301,12 @@ fn test_query_all_operators() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Query all operators before any approval
     let query_msg = QueryMsg::AllOperators {
@@ -2213,7 +2405,12 @@ fn test_query_tokens_with_transfer() {
     assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
     // Create lockup for owner1
     let lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -2309,7 +2506,12 @@ fn test_operator_approve_for_token() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Lock tokens to create a lock entry
     let lock_info = get_message_info(
@@ -2403,7 +2605,12 @@ fn test_operator_revoke_for_token() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Lock tokens to create a lock entry
     let lock_info = get_message_info(
@@ -2509,7 +2716,12 @@ fn test_handle_execute_approve_then_unlock() {
 
     // Setup ST_ATOM token info provider
     let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
-    setup_st_atom_token_info_provider_mock(&mut deps, token_info_provider_addr, Decimal::one());
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
 
     // Lock tokens first to create a lock entry
     let lock_info = get_message_info(

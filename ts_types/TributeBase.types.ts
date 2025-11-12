@@ -59,6 +59,10 @@ export type QueryMsg = {
   outstanding_lockup_claimable_coins: {
     lock_id: number;
   };
+} | {
+  specific_tributes: {
+    tribute_ids: number[];
+  };
 };
 export type Addr = string;
 export interface ConfigResponse {
@@ -69,9 +73,9 @@ export interface Config {
 }
 export type Uint128 = string;
 export interface HistoricalTributeClaimsResponse {
-  claims: TributeClaim[];
+  claims: TributeData[];
 }
-export interface TributeClaim {
+export interface TributeData {
   amount: Coin;
   proposal_id: number;
   round_id: number;
@@ -86,7 +90,7 @@ export interface OutstandingLockupClaimableCoinsResponse {
   coins: Coin[];
 }
 export interface OutstandingTributeClaimsResponse {
-  claims: TributeClaim[];
+  claims: TributeData[];
 }
 export type Timestamp = Uint64;
 export type Uint64 = string;
@@ -106,4 +110,7 @@ export interface Tribute {
 }
 export interface RoundTributesResponse {
   tributes: Tribute[];
+}
+export interface SpecificTributesResponse {
+  tributes: TributeData[];
 }
