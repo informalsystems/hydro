@@ -70,7 +70,7 @@ pub fn handle_submsg_reply(
             let register_query_resp: MsgRegisterInterchainQueryResponse =
                 decode_message_response(&extract_response_msg_bytes_from_reply_msg(&msg)?)
                     .map_err(|e| {
-                        StdError::generic_err(format!("failed to parse reply message: {:?}", e))
+                        StdError::generic_err(format!("failed to parse reply message: {e:?}"))
                     })?;
 
             QUERY_ID_TO_VALIDATOR.save(deps.storage, register_query_resp.id, &validator_address)?;
@@ -81,9 +81,7 @@ pub fn handle_submsg_reply(
             decode_message_response::<MsgRemoveInterchainQueryResponse>(
                 &extract_response_msg_bytes_from_reply_msg(&msg)?,
             )
-            .map_err(|e| {
-                StdError::generic_err(format!("failed to parse reply message: {:?}", e))
-            })?;
+            .map_err(|e| StdError::generic_err(format!("failed to parse reply message: {e:?}")))?;
 
             let validator_address = QUERY_ID_TO_VALIDATOR.load(deps.storage, query_id)?;
             QUERY_ID_TO_VALIDATOR.remove(deps.storage, query_id);
