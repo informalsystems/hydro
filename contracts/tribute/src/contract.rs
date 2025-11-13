@@ -158,6 +158,20 @@ fn claim_tribute(
 ) -> Result<Response, ContractError> {
     let voter = deps.api.addr_validate(&voter_address)?;
 
+    // Smart contracts built on top of Hydro may require specific workflows when claiming
+    // tributes. Allowing third parties to claim on behalf of a smart contract could interfere
+    // with the contract's internal logic for handling claimed funds. Therefore, we prevent
+    // proxy claims for smart contracts - they must always claim tributes directly via their
+    // own execution context.
+    if deps.querier.query_wasm_contract_info(&voter).is_ok() {
+        // voter is a smart contract address
+        if info.sender != voter {
+            return Err(ContractError::Std(StdError::generic_err(
+                "Smart contracts must claim tributes directly; proxy claims are not allowed",
+            )));
+        }
+    }
+
     // Check that the round is ended
     let config = CONFIG.load(deps.storage)?;
     let current_round_id = query_current_round_id(&deps, &config.hydro_contract)?;
