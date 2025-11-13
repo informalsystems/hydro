@@ -276,6 +276,40 @@ fn deposit_withdrawal_for_deployment_test() {
 }
 
 #[test]
+fn deposit_mints_shares_for_on_behalf_recipient() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+
+    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+
+    env.contract.address = inflow_contract_addr.clone();
+
+    let instantiate_msg = get_default_instantiate_msg(DEPOSIT_DENOM, whitelist_addr);
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let vault_shares_denom_str = format!("factory/{inflow_contract_addr}/hydro_inflow_uatom");
+    set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
+
+    let deposit_amount = Uint128::new(1_000);
+    let expected_shares = Uint128::new(1_000);
+    let beneficiary_addr = deps.api.addr_make(USER2);
+
+    execute_deposit_with_recipient(
+        &mut deps,
+        &env,
+        &inflow_contract_addr,
+        USER1,
+        Some(beneficiary_addr.as_str()),
+        &vault_shares_denom_str,
+        deposit_amount,
+        expected_shares,
+        expected_shares,
+        deposit_amount,
+    );
+}
+
+#[test]
 fn withdrawal_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 
@@ -1771,6 +1805,33 @@ fn execute_deposit(
     mock_user_shares_total: Uint128,
     mock_inflow_deposit_tokens_total: Uint128,
 ) {
+    execute_deposit_with_recipient(
+        deps,
+        env,
+        inflow_contract_addr,
+        user_str,
+        None,
+        vault_shares_denom_str,
+        deposit_amount,
+        expected_user_shares_minted,
+        mock_user_shares_total,
+        mock_inflow_deposit_tokens_total,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_deposit_with_recipient(
+    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    env: &Env,
+    inflow_contract_addr: &Addr,
+    sender_str: &str,
+    on_behalf_of: Option<&str>,
+    vault_shares_denom_str: &String,
+    deposit_amount: Uint128,
+    expected_shares_minted: Uint128,
+    mock_recipient_shares_total: Uint128,
+    mock_inflow_deposit_tokens_total: Uint128,
+) {
     // Mock that the Inflow contract has deposit tokens on its bank balance,
     // since in reallity this happens before execute() is called.
     mock_address_balance(
@@ -1782,19 +1843,21 @@ fn execute_deposit(
 
     let info = get_message_info(
         &deps.api,
-        user_str,
+        sender_str,
         &[Coin {
             denom: DEPOSIT_DENOM.to_string(),
             amount: deposit_amount,
         }],
     );
 
-    let user_address = info.sender.clone();
+    let default_recipient = info.sender.to_string();
     let deposit_res = execute(
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::Deposit {},
+        ExecuteMsg::Deposit {
+            on_behalf_of: on_behalf_of.map(ToString::to_string),
+        },
     )
     .unwrap();
 
@@ -1807,18 +1870,23 @@ fn execute_deposit(
             mint_to_address,
         }) => {
             assert_eq!(denom, vault_shares_denom_str);
-            assert_eq!(amount, expected_user_shares_minted);
-            assert_eq!(mint_to_address, user_address.as_ref());
+            assert_eq!(amount, expected_shares_minted);
+            assert_eq!(
+                mint_to_address,
+                &on_behalf_of
+                    .map(ToString::to_string)
+                    .unwrap_or(default_recipient.clone())
+            );
         }
         _ => panic!("Expected MintTokens message"),
     }
 
-    // Mock that the user received vault shares tokens on its bank balance
+    // Mock that the recipient received vault shares tokens on its bank balance
     mock_address_balance(
         deps,
-        user_address.as_ref(),
+        on_behalf_of.unwrap_or(&(default_recipient.clone())),
         vault_shares_denom_str,
-        mock_user_shares_total,
+        mock_recipient_shares_total,
     );
 }
 
