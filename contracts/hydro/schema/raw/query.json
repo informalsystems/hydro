@@ -1173,6 +1173,33 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Returns voting-related metrics for the specified lockups, including time-weighted shares, token group classification, and remaining locked rounds.",
+      "type": "object",
+      "required": [
+        "lockup_voting_metrics"
+      ],
+      "properties": {
+        "lockup_voting_metrics": {
+          "type": "object",
+          "required": [
+            "lock_ids"
+          ],
+          "properties": {
+            "lock_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ]
 }

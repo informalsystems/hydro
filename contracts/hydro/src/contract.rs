@@ -29,13 +29,14 @@ use crate::query::{
     AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse,
     CanLockDenomResponse, ConstantsResponse, DtokenAmountResponse, DtokenAmountsResponse,
     ExpiredUserLockupsResponse, GatekeeperResponse, LiquidityDeploymentResponse,
-    LockEntryWithPower, LockVotesHistoryEntry, LockVotesHistoryResponse, LockupWithPerTrancheInfo,
-    LockupsPendingSlashesResponse, ParentLockIdsResponse, ProposalResponse, QueryMsg,
-    RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse,
-    RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse,
-    SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, TopNProposalsResponse,
-    TotalLockedTokensResponse, TranchesResponse, UserVotedLocksResponse, UserVotesResponse,
-    UserVotingPowerResponse, VoteEntry, VotedLockInfo, WhitelistAdminsResponse, WhitelistResponse,
+    LockEntryWithPower, LockVotesHistoryEntry, LockVotesHistoryResponse, LockupVotingMetrics,
+    LockupVotingMetricsResponse, LockupWithPerTrancheInfo, LockupsPendingSlashesResponse,
+    ParentLockIdsResponse, ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
+    RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse,
+    SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse,
+    TokenInfoProvidersResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse,
+    UserVotedLocksResponse, UserVotesResponse, UserVotingPowerResponse, VoteEntry, VotedLockInfo,
+    WhitelistAdminsResponse, WhitelistResponse,
 };
 use crate::score_keeper::{
     add_token_group_shares_to_proposal, add_token_group_shares_to_round_total,
@@ -57,13 +58,13 @@ use crate::token_manager::{
     token_manager_handle_submsg_reply, TokenManager,
 };
 use crate::utils::{
-    calculate_vote_power, get_current_user_voting_power, get_higest_voting_allowed_round,
-    get_highest_known_height_for_round_id, get_lock_time_weighted_shares, get_lock_vote,
-    get_next_lock_id, get_owned_lock_entry, get_proposal, get_slice_as_attribute,
-    get_user_claimable_locks, load_constants_active_at_timestamp, load_current_constants,
-    run_on_each_transaction, scale_lockup_power, to_lockup_with_power,
-    to_lockup_with_tranche_infos, update_locked_tokens_info, validate_locked_tokens_caps,
-    verify_historical_data_availability,
+    calculate_vote_power, compute_lock_rounds_remaining, get_current_user_voting_power,
+    get_higest_voting_allowed_round, get_highest_known_height_for_round_id,
+    get_lock_time_weighted_shares, get_lock_vote, get_next_lock_id, get_owned_lock_entry,
+    get_proposal, get_slice_as_attribute, get_user_claimable_locks,
+    load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
+    scale_lockup_power, to_lockup_with_power, to_lockup_with_tranche_infos,
+    update_locked_tokens_info, validate_locked_tokens_caps, verify_historical_data_availability,
 };
 use crate::vote::{
     process_unvotes, process_votes, validate_proposals_and_locks_for_voting, ProcessUnvotesResult,
@@ -3153,6 +3154,9 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, ContractErro
         QueryMsg::ParentLockIds { child_id } => {
             to_json_binary(&query_parent_lock_ids(deps, child_id)?)
         }
+        QueryMsg::LockupVotingMetrics { lock_ids } => {
+            to_json_binary(&query_lockup_voting_metrics(deps, env, lock_ids)?)
+        }
     }?;
 
     Ok(binary)
@@ -3994,6 +3998,61 @@ pub fn query_parent_lock_ids(deps: Deps, child_id: u64) -> StdResult<ParentLockI
     Ok(ParentLockIdsResponse { parent_ids })
 }
 
+/// Returns voting-related metrics for the specified lockups.
+/// This query computes the time-weighted shares (which determine voting power when multiplied
+/// by token group ratios), identifies the token group each lockup belongs to, and calculates
+/// the number of rounds remaining until each lockup expires.
+pub fn query_lockup_voting_metrics(
+    deps: Deps,
+    env: Env,
+    lock_ids: Vec<u64>,
+) -> StdResult<LockupVotingMetricsResponse> {
+    let constants = load_current_constants(&deps, &env)?;
+    let current_round = compute_current_round_id(&env, &constants)?;
+    let current_round_start = compute_round_start(&constants, current_round)?;
+    let round_end = compute_round_end(&constants, current_round)?;
+
+    let mut token_manager = TokenManager::new(&deps);
+
+    let lock_ids_set: HashSet<u64> = lock_ids.into_iter().collect();
+
+    let lockups: StdResult<Vec<LockupVotingMetrics>> = lock_ids_set
+        .into_iter()
+        .map(|lock_id| {
+            let lockup = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
+
+            let time_weighted_shares = get_lock_time_weighted_shares(
+                &constants.round_lock_power_schedule,
+                round_end,
+                &lockup,
+                constants.lock_epoch_length,
+            );
+
+            // We use `round_length` (not `lock_epoch_length`) because we want to calculate
+            // the number of complete rounds remaining until unlock, which is based on the voting
+            // round duration. This ensures correct calculation even if round_length != lock_epoch_length.
+            let remaining_rounds = compute_lock_rounds_remaining(
+                current_round_start.nanos(),
+                lockup.lock_end.nanos(),
+                constants.round_length,
+            )
+            .map_err(|e| StdError::generic_err(e.to_string()))?;
+
+            let token_group_id =
+                token_manager.validate_denom(&deps, current_round, lockup.funds.denom.clone())?;
+
+            Ok(LockupVotingMetrics {
+                lock_id,
+                time_weighted_shares,
+                token_group_id,
+                locked_rounds_remaining: remaining_rounds,
+            })
+        })
+        .collect();
+
+    Ok(LockupVotingMetricsResponse { lockups: lockups? })
+}
+
 // Computes the current round_id by taking contract_start_time and dividing the time since
 // by the round_length.
 pub fn compute_current_round_id(env: &Env, constants: &Constants) -> StdResult<u64> {
@@ -4012,11 +4071,15 @@ fn compute_round_id_for_timestamp(constants: &Constants, timestamp: u64) -> StdR
 }
 
 pub fn compute_round_end(constants: &Constants, round_id: u64) -> StdResult<Timestamp> {
-    let round_end = constants
-        .first_round_start
-        .plus_nanos(constants.round_length * (round_id + 1));
+    compute_round_start(constants, round_id + 1)
+}
 
-    Ok(round_end)
+pub fn compute_round_start(constants: &Constants, round_id: u64) -> StdResult<Timestamp> {
+    let round_start = constants
+        .first_round_start
+        .plus_nanos(constants.round_length * round_id);
+
+    Ok(round_start)
 }
 
 // When a user locks new tokens or extends an existing lock duration, this function checks if that user already

@@ -617,6 +617,19 @@ pub fn get_lock_time_weighted_shares(
     )
 }
 
+// Returns the remaining rounds the lock entry is locked starting from the current round start
+pub fn compute_lock_rounds_remaining(
+    current_round_start: u64,
+    lock_end: u64,
+    round_length: u64,
+) -> Result<u64, ContractError> {
+    let remaining_time = lock_end.saturating_sub(current_round_start);
+
+    remaining_time
+        .checked_div(round_length)
+        .ok_or_else(|| ContractError::Std(StdError::generic_err("round_length must be > 0")))
+}
+
 pub fn scale_lockup_power(
     round_lock_power_schedule: &RoundLockPowerSchedule,
     lock_epoch_length: u64,

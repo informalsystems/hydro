@@ -466,6 +466,10 @@ export type QueryMsg = {
   parent_lock_ids: {
     child_id: number;
   };
+} | {
+  lockup_voting_metrics: {
+    lock_ids: number[];
+  };
 };
 export type Addr = string;
 export interface AllNftInfoResponse {
@@ -606,6 +610,15 @@ export interface LockVotesHistoryEntry {
   round_id: number;
   tranche_id: number;
   vote_power: Decimal;
+}
+export interface LockupVotingMetricsResponse {
+  lockups: LockupVotingMetrics[];
+}
+export interface LockupVotingMetrics {
+  lock_id: number;
+  locked_rounds_remaining: number;
+  time_weighted_shares: Uint128;
+  token_group_id: string;
 }
 export interface LockupsPendingSlashesResponse {
   pending_slashes: [number, Uint128 | null][];
