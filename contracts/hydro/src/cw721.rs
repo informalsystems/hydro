@@ -1,14 +1,14 @@
 use crate::{
-    contract::{compute_current_round_id, compute_round_end},
-    error::ContractError,
-    msg::Cw721ReceiveMsg,
+    contract::{compute_current_round_id, compute_round_end, lock_tokens},
+    error::{new_generic_error, ContractError},
+    msg::{Cw721ReceiveMsg, LockTokensProof},
     query::{
         AllNftInfoResponse, ApprovalResponse, ApprovalsResponse, CollectionInfoResponse,
         NftInfoResponse, NumTokensResponse, OperatorsResponse, OwnerOfResponse, TokensResponse,
     },
     state::{
-        Approval, LockEntryV2, LOCKS_MAP_V2, LOCK_ID, NFT_APPROVALS, NFT_OPERATORS, TOKEN_IDS,
-        TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM,
+        Approval, Constants, LockEntryV2, LOCKS_MAP_V2, LOCK_ID, NFT_APPROVALS, NFT_OPERATORS,
+        TOKEN_IDS, TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM,
     },
     token_manager::TokenManager,
     utils::{load_current_constants, to_lockup_with_power, to_lockup_with_tranche_infos},
@@ -114,6 +114,58 @@ pub fn handle_execute_send_nft(
         .add_attribute("from", info.sender)
         .add_attribute("to", contract)
         .add_attribute("token_id", token_id))
+}
+
+/// This locks the token first (same as `LockTokens`) then transfers ownership to the contract account (same as `SendNft`)
+#[allow(clippy::too_many_arguments)]
+pub fn lock_tokens_then_send_nft(
+    mut deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    constants: &Constants,
+    lock_duration: u64,
+    proof: Option<LockTokensProof>,
+    contract: String,
+    msg: Binary,
+) -> Result<Response, ContractError> {
+    // First, call lock_tokens to create the lock
+    let lock_response = lock_tokens(
+        deps.branch(),
+        env.clone(),
+        info.clone(),
+        constants,
+        lock_duration,
+        proof,
+    )?;
+
+    // Extract lock_id from the response attributes
+    let lock_id = lock_response
+        .attributes
+        .iter()
+        .find(|attr| attr.key == "lock_id")
+        .ok_or_else(|| new_generic_error("lock_id not found in response"))?
+        .value
+        .clone();
+
+    // Now call handle_execute_send_nft with the lock_id as token_id
+    let send_response = handle_execute_send_nft(
+        deps,
+        env,
+        info.clone(),
+        contract.clone(),
+        lock_id.clone(),
+        msg,
+    )?;
+
+    // Create our own response with a unique action and selected attributes from both operations
+    Ok(Response::new()
+        .add_submessages(lock_response.messages) // Gatekeeper validation (SubMsgs)
+        .add_submessages(send_response.messages) // CW721 receive message (SubMsgs)
+        .add_attribute("action", "lock_tokens_then_send_nft")
+        .add_attribute("sender", info.sender)
+        .add_attribute("lock_id", lock_id)
+        .add_attribute("to", contract)
+        .add_attribute("locked_tokens", info.funds[0].clone().to_string()))
 }
 
 /// Transfer a lockup to a new owner

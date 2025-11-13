@@ -219,6 +219,13 @@ pub enum ExecuteMsg {
         token_id: String,
         msg: Binary,
     },
+    /// This locks the tokens first (same as `LockTokens`) then transfers ownership to the contract account (same as `SendNft`)
+    LockTokensThenSendNft {
+        lock_duration: u64,
+        proof: Option<LockTokensProof>,
+        contract: String,
+        msg: Binary,
+    },
     /// Allows spender to transfer / send the lockup from the owner's account.
     /// If expiration is set, then this allowance has a time/height limit
     Approve {
