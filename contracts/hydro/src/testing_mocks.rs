@@ -227,6 +227,9 @@ pub fn token_info_providers_mock(
                         validators,
                     })
                 }
+                _ => {
+                    return system_result_err_from("Unexpected mock contract call".to_owned());
+                }
             };
 
             SystemResult::Ok(ContractResult::Ok(response.unwrap()))

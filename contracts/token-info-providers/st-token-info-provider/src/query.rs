@@ -1,6 +1,8 @@
 use crate::state::{Config, InterchainQueryInfo};
 use cosmwasm_schema::{cw_serde, QueryResponses};
 
+#[allow(unused_imports)]
+use cosmwasm_std::Decimal;
 // When compiling for wasm32 platform, compiler doesn't recognize that this type is used in one of the queries.
 #[allow(unused_imports)]
 use interface::token_info_provider::DenomInfoResponse;
@@ -16,6 +18,9 @@ pub enum QueryMsg {
 
     #[returns(DenomInfoResponse)]
     DenomInfo { round_id: u64 },
+
+    #[returns(Decimal)]
+    RatioToBaseToken { denom: String },
 }
 
 #[cw_serde]
