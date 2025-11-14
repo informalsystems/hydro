@@ -18,23 +18,10 @@
     {
       "type": "object",
       "required": [
-        "total_shares_issued"
+        "pool_info"
       ],
       "properties": {
-        "total_shares_issued": {
-          "type": "object",
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "total_pool_value"
-      ],
-      "properties": {
-        "total_pool_value": {
+        "pool_info": {
           "type": "object",
           "additionalProperties": false
         }
@@ -78,19 +65,6 @@
               "type": "string"
             }
           },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "deployed_amount"
-      ],
-      "properties": {
-        "deployed_amount": {
-          "type": "object",
           "additionalProperties": false
         }
       },
@@ -228,6 +202,19 @@
               "minimum": 0.0
             }
           },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "whitelist"
+      ],
+      "properties": {
+        "whitelist": {
+          "type": "object",
           "additionalProperties": false
         }
       },

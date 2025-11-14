@@ -1,5 +1,5 @@
 [package]
-name = "inflow-control-center"
+name = "control-center"
 version = { workspace = true }
 edition = { workspace = true }
 authors = ["Dusan Maksimovic", "Philip Offtermatt"]
@@ -23,4 +23,4 @@ schemars = { workspace = true }
 prost = { workspace = true }
 neutron-sdk = { workspace = true }
 cosmos-sdk-proto = { workspace = true }
-interface = { path = "../../packages/interface" }
+interface = { path = "../../../packages/interface" }

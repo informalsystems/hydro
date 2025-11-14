@@ -1,8 +1,6 @@
+use control_center::msg::InstantiateMsg;
 use cosmwasm_schema::write_api;
-use inflow::{
-    msg::{ExecuteMsg, InstantiateMsg},
-    query::QueryMsg,
-};
+use interface::inflow_control_center::{ExecuteMsg, QueryMsg};
 
 fn main() {
     write_api! {

@@ -640,6 +640,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 
 [[package]]
+name = "control-center"
+version = "3.6.4"
+dependencies = [
+ "cosmos-sdk-proto 0.20.0",
+ "cosmwasm-schema 2.2.1",
+ "cosmwasm-std 2.2.1",
+ "cw-storage-plus 2.0.0",
+ "cw-utils 2.0.0",
+ "cw2 2.0.0",
+ "interface",
+ "neutron-sdk",
+ "prost 0.12.6",
+ "schemars",
+ "serde",
+ "serde-json-wasm 1.0.1",
+ "thiserror",
+]
+
+[[package]]
 name = "convert_case"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2411,44 +2430,6 @@ checksum = "8c9c992b02b5b4c94ea26e32fe5bccb7aa7d9f390ab5c1221ff895bc7ea8b652"
 dependencies = [
  "equivalent",
  "hashbrown 0.15.2",
-]
-
-[[package]]
-name = "inflow"
-version = "3.6.4"
-dependencies = [
- "cosmos-sdk-proto 0.20.0",
- "cosmwasm-schema 2.2.1",
- "cosmwasm-std 2.2.1",
- "cw-storage-plus 2.0.0",
- "cw-utils 2.0.0",
- "cw2 2.0.0",
- "interface",
- "neutron-sdk",
- "prost 0.12.6",
- "schemars",
- "serde",
- "serde-json-wasm 1.0.1",
- "thiserror",
-]
-
-[[package]]
-name = "inflow-control-center"
-version = "3.6.4"
-dependencies = [
- "cosmos-sdk-proto 0.20.0",
- "cosmwasm-schema 2.2.1",
- "cosmwasm-std 2.2.1",
- "cw-storage-plus 2.0.0",
- "cw-utils 2.0.0",
- "cw2 2.0.0",
- "interface",
- "neutron-sdk",
- "prost 0.12.6",
- "schemars",
- "serde",
- "serde-json-wasm 1.0.1",
- "thiserror",
 ]
 
 [[package]]
@@ -4842,6 +4823,25 @@ checksum = "ced87ca4be083373936a67f8de945faa23b6b42384bd5b64434850802c6dccd0"
 dependencies = [
  "getrandom 0.3.1",
  "rand 0.9.0",
+]
+
+[[package]]
+name = "vault"
+version = "3.6.4"
+dependencies = [
+ "cosmos-sdk-proto 0.20.0",
+ "cosmwasm-schema 2.2.1",
+ "cosmwasm-std 2.2.1",
+ "cw-storage-plus 2.0.0",
+ "cw-utils 2.0.0",
+ "cw2 2.0.0",
+ "interface",
+ "neutron-sdk",
+ "prost 0.12.6",
+ "schemars",
+ "serde",
+ "serde-json-wasm 1.0.1",
+ "thiserror",
 ]
 
 [[package]]

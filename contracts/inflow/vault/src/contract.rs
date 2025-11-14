@@ -202,7 +202,7 @@ fn deposit(
     }
 
     let deposit_amount_base_tokens =
-        convert_deposit_token_into_base_token(&deps.as_ref(), &config, deposit_amount)?;
+        convert_deposit_token_into_base_token(&deps.as_ref(), config, deposit_amount)?;
 
     let vault_shares_to_mint = calculate_number_of_shares_to_mint(
         deposit_amount_base_tokens,
@@ -234,14 +234,14 @@ fn withdraw(
     deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
-    config: Config,
+    config: &Config,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let vault_shares_denom = config.vault_shares_denom.clone();
     let vault_shares_sent = cw_utils::must_pay(&info, &vault_shares_denom)?;
 
     // Calculate how many deposit tokens the sent vault shares are worth
     let amount_to_withdraw =
-        query_shares_equivalent_value(&deps.as_ref(), &config, vault_shares_sent)?;
+        query_shares_equivalent_value(&deps.as_ref(), config, vault_shares_sent)?;
 
     if amount_to_withdraw.is_zero() {
         return Err(new_generic_error("cannot withdraw zero amount"));
@@ -309,7 +309,7 @@ fn withdraw(
         update_user_withdrawal_requests_info(
             deps.storage,
             info.sender.clone(),
-            &config,
+            config,
             Some(vec![withdrawal_id]),
             None,
             true,
@@ -1010,7 +1010,7 @@ fn query_shares_issued(deps: &Deps<NeutronQuery>) -> StdResult<Uint128> {
 }
 
 /// Returns the value equivalent of a given amount of shares based on the current total shares and pool value.
-/// Retuned value is denominated in the deposit token.
+/// Returned value is denominated in the deposit token.
 fn query_shares_equivalent_value(
     deps: &Deps<NeutronQuery>,
     config: &Config,
@@ -1181,7 +1181,7 @@ fn query_whitelist(deps: &Deps<NeutronQuery>) -> StdResult<WhitelistResponse> {
 }
 
 /// Calculates the value of `shares` relative to the `total_pool_value` based on `total_shares_supply`.
-/// Retuned value is denominated in the deposit tokens.
+/// Returned value is denominated in the deposit tokens.
 /// Returns an error if the `shares` exceed supply. Returns zero if supply is zero.
 /// Formula: (user_shares * total_pool_value) / total_shares_supply
 fn calculate_shares_value(

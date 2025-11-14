@@ -70,7 +70,7 @@ fn mock_address_balance(
     );
 }
 
-// Assumig dATOM as a deposit token
+// Assuming dATOM as a deposit token
 fn get_default_instantiate_msg(
     deposit_denom: &str,
     whitelist_addr: Addr,
@@ -350,23 +350,54 @@ fn deposit_mints_shares_for_on_behalf_recipient() {
 
     let inflow_contract_addr = deps.api.addr_make(INFLOW);
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
 
     env.contract.address = inflow_contract_addr.clone();
 
-    let instantiate_msg = get_default_instantiate_msg(DEPOSIT_DENOM, whitelist_addr);
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr,
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
     let info = get_message_info(&deps.api, "creator", &[]);
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     let vault_shares_denom_str = format!("factory/{inflow_contract_addr}/hydro_inflow_uatom");
     set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
 
+    // Setup initial mocks: total pool value and shares issued are 0
+    let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_control_center_mock(
+            control_center_contract_addr.clone(),
+            DEFAULT_DEPOSIT_CAP,
+            Uint128::zero(),
+            Uint128::zero(),
+        ),
+        setup_token_info_provider_mock(
+            token_info_provider_contract_addr.clone(),
+            DEPOSIT_DENOM.to_string(),
+            Decimal::one(),
+        ),
+    ]));
+
+    let querier_for_deps = wasm_querier.clone();
+    deps.querier
+        .update_wasm(move |q| querier_for_deps.handler(q));
+
     let deposit_amount = Uint128::new(1_000);
     let expected_shares = Uint128::new(1_000);
     let beneficiary_addr = deps.api.addr_make(USER2);
 
+    let total_pool_value = 1000;
+    let total_shares_issued_before = 0;
+    let total_shares_issued_after = 1000;
+
     execute_deposit_with_recipient(
         &mut deps,
         &env,
+        &wasm_querier,
         &inflow_contract_addr,
         USER1,
         Some(beneficiary_addr.as_str()),
@@ -375,6 +406,9 @@ fn deposit_mints_shares_for_on_behalf_recipient() {
         expected_shares,
         expected_shares,
         deposit_amount,
+        total_pool_value,
+        total_shares_issued_before,
+        total_shares_issued_after,
     );
 }
 
@@ -1326,7 +1360,7 @@ fn fulfill_pending_withdrawals_test() {
     execute_return_from_deployment(&mut deps, inflow_contract_addr.as_str(), Uint128::new(7000));
 
     // User1 executes claim_unbonded_withdrawals() for withdrawal request ID 1
-    execute_claim_unbodned_withdrawals(
+    execute_claim_unbonded_withdrawals(
         &mut deps,
         &env,
         inflow_contract_addr.as_ref(),
@@ -1618,7 +1652,7 @@ fn claim_unbonded_withdrawals_test() {
 
     // Try to claim invalid withdrawals (e.g. non-existing IDs, or the ones that weren't funded, duplicates)
     // and verify that the correct error is returned.
-    execute_claim_unbodned_withdrawals(
+    execute_claim_unbonded_withdrawals(
         &mut deps,
         &env,
         inflow_contract_addr.as_ref(),
@@ -1631,7 +1665,7 @@ fn claim_unbonded_withdrawals_test() {
 
     // Execute claim for withdrawal requests 0, 1 and 2, but also provide duplicate IDs and non-funded IDs
     // and verify that those are filtered out properly
-    execute_claim_unbodned_withdrawals(
+    execute_claim_unbonded_withdrawals(
         &mut deps,
         &env,
         inflow_contract_addr.as_ref(),
@@ -2167,6 +2201,7 @@ fn execute_deposit(
     execute_deposit_with_recipient(
         deps,
         env,
+        wasm_querier,
         inflow_contract_addr,
         user_str,
         None,
@@ -2175,6 +2210,9 @@ fn execute_deposit(
         expected_user_shares_minted,
         mock_user_shares_total,
         mock_inflow_deposit_tokens_total,
+        mock_control_center_total_value,
+        mock_control_center_total_shares_before,
+        mock_control_center_total_shares_after,
     );
 }
 
@@ -2182,6 +2220,7 @@ fn execute_deposit(
 fn execute_deposit_with_recipient(
     deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
     env: &Env,
+    wasm_querier: &MockWasmQuerier,
     inflow_contract_addr: &Addr,
     sender_str: &str,
     on_behalf_of: Option<&str>,
@@ -2190,6 +2229,9 @@ fn execute_deposit_with_recipient(
     expected_shares_minted: Uint128,
     mock_recipient_shares_total: Uint128,
     mock_inflow_deposit_tokens_total: Uint128,
+    mock_control_center_total_value: u128,
+    mock_control_center_total_shares_before: u128,
+    mock_control_center_total_shares_after: u128,
 ) {
     // Mock that the Inflow contract has deposit tokens on its bank balance,
     // since in reallity this happens before execute() is called.
@@ -2482,7 +2524,7 @@ type ClaimUnbondedWithdrawalExpectedResult = (
 );
 
 #[allow(clippy::too_many_arguments)]
-fn execute_claim_unbodned_withdrawals(
+fn execute_claim_unbonded_withdrawals(
     deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
     env: &Env,
     inflow_contract_addr: &str,

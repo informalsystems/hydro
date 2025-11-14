@@ -15,33 +15,16 @@
     "Config": {
       "type": "object",
       "required": [
-        "deposit_cap",
-        "deposit_denom",
-        "max_withdrawals_per_user",
-        "vault_shares_denom"
+        "deposit_cap"
       ],
       "properties": {
         "deposit_cap": {
-          "description": "Maximum number of tokens that can be deposited into the vault.",
+          "description": "Maximum number of tokens that can be deposited into the vault, denominated in base tokens (e.g. ATOM).",
           "allOf": [
             {
               "$ref": "#/definitions/Uint128"
             }
           ]
-        },
-        "deposit_denom": {
-          "description": "Token denom that users can deposit into the vault.",
-          "type": "string"
-        },
-        "max_withdrawals_per_user": {
-          "description": "Maximum number of pending withdrawal requests allowed per user.",
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
-        },
-        "vault_shares_denom": {
-          "description": "Denom of the vault shares token that is issued to users when they deposit tokens into the vault.",
-          "type": "string"
         }
       },
       "additionalProperties": false
