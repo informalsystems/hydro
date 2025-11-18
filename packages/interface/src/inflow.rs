@@ -9,6 +9,11 @@ pub enum QueryMsg {
 }
 
 #[cw_serde]
+pub enum ExecuteMsg {
+    Deposit { on_behalf_of: Option<String> },
+}
+
+#[cw_serde]
 pub struct PoolInfoResponse {
     pub shares_issued: Uint128,
     pub balance_base_tokens: Uint128,
