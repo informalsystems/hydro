@@ -1,0 +1,25 @@
+[package]
+name = "forwarder"
+version = { workspace = true }
+edition = { workspace = true }
+authors = ["Philip Offtermatt", "Dusan Maksimovic"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+library = []
+
+[dependencies]
+cosmwasm-std = { workspace = true }
+cosmwasm-schema = { workspace = true }
+cw-storage-plus = { workspace = true }
+cw2 = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde-json-wasm = { workspace = true }
+thiserror = { workspace = true }
+interface = { path = "../../../packages/interface" }
+
+[dev-dependencies]
+cosmwasm-schema = { workspace = true }
