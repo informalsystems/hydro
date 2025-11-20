@@ -18,7 +18,7 @@ use crate::{
 use cosmwasm_std::{
     from_json,
     testing::{mock_env, MockApi, MockQuerier, MockStorage},
-    Api, Addr, BalanceResponse, BankMsg, BankQuery, Coin, CosmosMsg, Decimal, Env, MemoryStorage,
+    Addr, Api, BalanceResponse, BankMsg, BankQuery, Coin, CosmosMsg, Decimal, Env, MemoryStorage,
     MessageInfo, Order, OwnedDeps, Uint128,
 };
 use interface::inflow::PoolInfoResponse;
