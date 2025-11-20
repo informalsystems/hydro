@@ -11,6 +11,7 @@ members = [
     "contracts/gatekeeper",
     "contracts/inflow/vault",
     "contracts/inflow/control-center",
+    "contracts/inflow/proxy",
     "packages/cw-orch-interface",
     "packages/interface",
     "test/e2e",
