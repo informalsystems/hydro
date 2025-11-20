@@ -1,0 +1,1 @@
+- Allow Inflow withdrawals to specify an `on_behalf_of` recipient so withdrawal payouts and queue entries are attributed to that address instead of the caller. ([\#346](https://github.com/informalsystems/hydro/pull/346))
