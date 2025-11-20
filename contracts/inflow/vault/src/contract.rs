@@ -151,7 +151,7 @@ pub fn execute(
 
     match msg {
         ExecuteMsg::Deposit { on_behalf_of } => deposit(deps, env, info, &config, on_behalf_of),
-        ExecuteMsg::Withdraw {} => withdraw(deps, env, info, &config),
+        ExecuteMsg::Withdraw { on_behalf_of } => withdraw(deps, env, info, &config, on_behalf_of),
         ExecuteMsg::CancelWithdrawal { withdrawal_ids } => {
             cancel_withdrawal(deps, env, info, config, withdrawal_ids)
         }
@@ -235,9 +235,14 @@ fn withdraw(
     env: Env,
     info: MessageInfo,
     config: &Config,
+    on_behalf_of: Option<String>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let vault_shares_denom = config.vault_shares_denom.clone();
     let vault_shares_sent = cw_utils::must_pay(&info, &vault_shares_denom)?;
+    let withdrawer = match on_behalf_of {
+        Some(address) => deps.api.addr_validate(&address)?,
+        None => info.sender.clone(),
+    };
 
     // Calculate how many deposit tokens the sent vault shares are worth
     let amount_to_withdraw =
@@ -262,6 +267,7 @@ fn withdraw(
     let mut response = Response::new()
         .add_attribute("action", "withdraw")
         .add_attribute("sender", info.sender.clone())
+        .add_attribute("withdrawer", withdrawer.to_string())
         .add_attribute("vault_shares_sent", vault_shares_sent);
 
     // If the contract has enough balance to cover the entire withdrawal queue amount
@@ -269,7 +275,7 @@ fn withdraw(
     if withdrawal_queue_amount.checked_add(amount_to_withdraw)? <= contract_balance {
         response = response
             .add_message(BankMsg::Send {
-                to_address: info.sender.to_string(),
+                to_address: withdrawer.to_string(),
                 amount: vec![Coin::new(amount_to_withdraw, config.deposit_denom.clone())],
             })
             .add_attribute("paid_out_amount", amount_to_withdraw);
@@ -278,7 +284,7 @@ fn withdraw(
         add_payout_history_entry(
             deps.storage,
             &env,
-            &info.sender,
+            &withdrawer,
             vault_shares_sent,
             amount_to_withdraw,
         )?;
@@ -288,7 +294,7 @@ fn withdraw(
         let withdrawal_entry = WithdrawalEntry {
             id: withdrawal_id,
             initiated_at: env.block.time,
-            withdrawer: info.sender.clone(),
+            withdrawer: withdrawer.clone(),
             shares_burned: vault_shares_sent,
             amount_to_receive: amount_to_withdraw,
             is_funded: false,
@@ -308,7 +314,7 @@ fn withdraw(
         // Add the new withdrawal id to the list of user's withdrawal requests
         update_user_withdrawal_requests_info(
             deps.storage,
-            info.sender.clone(),
+            withdrawer.clone(),
             config,
             Some(vec![withdrawal_id]),
             None,

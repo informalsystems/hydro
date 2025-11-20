@@ -18,7 +18,7 @@ use crate::{
 use cosmwasm_std::{
     from_json,
     testing::{mock_env, MockApi, MockQuerier, MockStorage},
-    Addr, BalanceResponse, BankMsg, BankQuery, Coin, CosmosMsg, Decimal, Env, MemoryStorage,
+    Api, Addr, BalanceResponse, BankMsg, BankQuery, Coin, CosmosMsg, Decimal, Env, MemoryStorage,
     MessageInfo, Order, OwnedDeps, Uint128,
 };
 use interface::inflow::PoolInfoResponse;
@@ -413,6 +413,199 @@ fn deposit_mints_shares_for_on_behalf_recipient() {
 }
 
 #[test]
+fn withdraw_pays_on_behalf_recipient() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+
+    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    env.contract.address = inflow_contract_addr.clone();
+
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr,
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let vault_shares_denom_str = format!("factory/{inflow_contract_addr}/hydro_inflow_uatom");
+    set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
+
+    let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_control_center_mock(
+            control_center_contract_addr.clone(),
+            DEFAULT_DEPOSIT_CAP,
+            Uint128::zero(),
+            Uint128::zero(),
+        ),
+        setup_token_info_provider_mock(
+            token_info_provider_contract_addr.clone(),
+            DEPOSIT_DENOM.to_string(),
+            Decimal::one(),
+        ),
+    ]));
+
+    let querier_for_deps = wasm_querier.clone();
+    deps.querier
+        .update_wasm(move |q| querier_for_deps.handler(q));
+
+    let deposit_amount = Uint128::new(1_000);
+    let expected_shares = deposit_amount;
+    let mut total_pool_value = deposit_amount.u128();
+    let total_shares_issued_before = 0;
+    let mut total_shares_issued_after = deposit_amount.u128();
+
+    execute_deposit(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        &inflow_contract_addr,
+        USER1,
+        &vault_shares_denom_str,
+        deposit_amount,
+        expected_shares,
+        expected_shares,
+        deposit_amount,
+        total_pool_value,
+        total_shares_issued_before,
+        total_shares_issued_after,
+    );
+
+    let beneficiary_addr = deps.api.addr_make(USER2);
+
+    total_pool_value = 0;
+    total_shares_issued_after = 0;
+
+    execute_withdraw(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        inflow_contract_addr.as_ref(),
+        USER1,
+        Some(beneficiary_addr.as_str()),
+        &vault_shares_denom_str,
+        expected_shares,
+        true,
+        deposit_amount,
+        Uint128::zero(),
+        Uint128::zero(),
+        total_pool_value,
+        total_shares_issued_after,
+    );
+
+    verify_users_payouts_history(
+        &deps,
+        vec![(beneficiary_addr, vec![(expected_shares, deposit_amount)])],
+    );
+}
+
+#[test]
+fn withdraw_queue_uses_on_behalf_withdrawer() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+
+    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    env.contract.address = inflow_contract_addr.clone();
+
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr,
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let vault_shares_denom_str = format!("factory/{inflow_contract_addr}/hydro_inflow_uatom");
+    set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
+
+    let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_control_center_mock(
+            control_center_contract_addr.clone(),
+            DEFAULT_DEPOSIT_CAP,
+            Uint128::zero(),
+            Uint128::zero(),
+        ),
+        setup_token_info_provider_mock(
+            token_info_provider_contract_addr.clone(),
+            DEPOSIT_DENOM.to_string(),
+            Decimal::one(),
+        ),
+    ]));
+
+    let querier_for_deps = wasm_querier.clone();
+    deps.querier
+        .update_wasm(move |q| querier_for_deps.handler(q));
+
+    let deposit_amount = Uint128::new(500);
+    let expected_shares = deposit_amount;
+    let mut total_pool_value = deposit_amount.u128();
+    let total_shares_issued_before = 0;
+    let mut total_shares_issued_after = deposit_amount.u128();
+
+    execute_deposit(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        &inflow_contract_addr,
+        USER1,
+        &vault_shares_denom_str,
+        deposit_amount,
+        expected_shares,
+        expected_shares,
+        deposit_amount,
+        total_pool_value,
+        total_shares_issued_before,
+        total_shares_issued_after,
+    );
+
+    // Simulate that all funds have been deployed so withdrawals must queue.
+    mock_address_balance(
+        &mut deps,
+        inflow_contract_addr.as_ref(),
+        DEPOSIT_DENOM,
+        Uint128::zero(),
+    );
+
+    let beneficiary_addr = deps.api.addr_make(USER2);
+    let sender_addr = deps.api.addr_make(USER1);
+
+    total_pool_value = 0;
+    total_shares_issued_after = 0;
+
+    execute_withdraw(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        inflow_contract_addr.as_ref(),
+        USER1,
+        Some(beneficiary_addr.as_str()),
+        &vault_shares_denom_str,
+        expected_shares,
+        false,
+        Uint128::zero(),
+        Uint128::zero(),
+        Uint128::zero(),
+        total_pool_value,
+        total_shares_issued_after,
+    );
+
+    verify_user_withdrawal_requests(
+        &deps,
+        &beneficiary_addr,
+        vec![(expected_shares, deposit_amount, false)],
+    );
+    verify_user_withdrawal_requests(&deps, &sender_addr, vec![]);
+}
+
+#[test]
 fn withdrawal_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 
@@ -525,6 +718,7 @@ fn withdrawal_test() {
         &wasm_querier,
         inflow_contract_addr.as_ref(),
         USER1,
+        None,
         &vault_shares_denom_str,
         user1_withdraw_shares_1,
         true,
@@ -546,6 +740,7 @@ fn withdrawal_test() {
         &wasm_querier,
         inflow_contract_addr.as_ref(),
         USER1,
+        None,
         &vault_shares_denom_str,
         user1_withdraw_shares_1,
         true,
@@ -567,6 +762,7 @@ fn withdrawal_test() {
         &wasm_querier,
         inflow_contract_addr.as_ref(),
         USER2,
+        None,
         &vault_shares_denom_str,
         user2_expected_shares1,
         true,
@@ -628,6 +824,7 @@ fn withdrawal_test() {
         &wasm_querier,
         inflow_contract_addr.as_ref(),
         USER1,
+        None,
         &vault_shares_denom_str,
         user1_withdraw_shares_2,
         false,
@@ -732,6 +929,7 @@ fn withdrawal_test() {
         &wasm_querier,
         inflow_contract_addr.as_ref(),
         USER1,
+        None,
         &vault_shares_denom_str,
         user1_withdraw_shares_3,
         true,
@@ -850,6 +1048,7 @@ fn cancel_withdrawal_test() {
         &wasm_querier,
         inflow_contract_addr.as_ref(),
         USER1,
+        None,
         &vault_shares_denom_str,
         user1_deposit_shares1,
         false,
@@ -938,6 +1137,7 @@ fn cancel_withdrawal_test() {
             &wasm_querier,
             inflow_contract_addr.as_ref(),
             USER1,
+            None,
             &vault_shares_denom_str,
             user1_withdraw_shares,
             false,
@@ -978,6 +1178,7 @@ fn cancel_withdrawal_test() {
             &wasm_querier,
             inflow_contract_addr.as_ref(),
             USER2,
+            None,
             &vault_shares_denom_str,
             user2_withdraw_shares,
             false,
@@ -1194,6 +1395,7 @@ fn fulfill_pending_withdrawals_test() {
             &wasm_querier,
             inflow_contract_addr.as_ref(),
             user_withdrawal.0,
+            None,
             &vault_shares_denom_str,
             user_withdrawal.1,
             false,
@@ -1307,6 +1509,7 @@ fn fulfill_pending_withdrawals_test() {
             &wasm_querier,
             inflow_contract_addr.as_ref(),
             user_withdrawal.0,
+            None,
             &vault_shares_denom_str,
             user_withdrawal.1,
             false,
@@ -1569,6 +1772,7 @@ fn claim_unbonded_withdrawals_test() {
             &wasm_querier,
             inflow_contract_addr.as_ref(),
             user_withdrawal.0,
+            None,
             &vault_shares_denom_str,
             user_withdrawal.1,
             false,
@@ -2036,6 +2240,7 @@ fn withdrawal_with_config_update_test() {
             &wasm_querier,
             inflow_contract_addr.as_ref(),
             USER1,
+            None,
             &vault_shares_denom_str,
             user1_withdrawal_shares1,
             false,
@@ -2087,7 +2292,7 @@ fn withdrawal_with_config_update_test() {
         deps.as_mut(),
         env.clone(),
         user_info.clone(),
-        ExecuteMsg::Withdraw {},
+        ExecuteMsg::Withdraw { on_behalf_of: None },
     )
     .unwrap_err();
 
@@ -2171,7 +2376,7 @@ fn withdrawal_with_config_update_test() {
         deps.as_mut(),
         env.clone(),
         user_info.clone(),
-        ExecuteMsg::Withdraw {},
+        ExecuteMsg::Withdraw { on_behalf_of: None },
     )
     .unwrap_err();
 
@@ -2373,6 +2578,7 @@ fn execute_withdraw(
     wasm_querier: &MockWasmQuerier,
     inflow_contract_addr: &str,
     user_str: &str,
+    on_behalf_of: Option<&str>,
     vault_shares_denom_str: &String,
     withdraw_shares_amount: Uint128,
     should_receive_deposit_tokens: bool,
@@ -2396,16 +2602,22 @@ fn execute_withdraw(
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::Withdraw {},
+        ExecuteMsg::Withdraw {
+            on_behalf_of: on_behalf_of.map(ToString::to_string),
+        },
     )
     .unwrap();
+
+    let withdrawer = on_behalf_of
+        .map(|recipient| deps.api.addr_validate(recipient).unwrap())
+        .unwrap_or_else(|| info.sender.clone());
 
     if should_receive_deposit_tokens {
         // Verify bank send message to receive deposit tokens
         let bank_send_msg = &withdraw_res.messages[0].msg;
         match bank_send_msg {
             CosmosMsg::Bank(BankMsg::Send { to_address, amount }) => {
-                assert_eq!(to_address, user_address.as_ref());
+                assert_eq!(to_address, withdrawer.as_ref());
                 assert_eq!(amount[0].denom, DEPOSIT_DENOM);
                 assert_eq!(amount[0].amount, expected_tokens_received);
             }
