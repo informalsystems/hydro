@@ -31,6 +31,14 @@
       "properties": {
         "withdraw": {
           "type": "object",
+          "properties": {
+            "on_behalf_of": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
           "additionalProperties": false
         }
       },

@@ -27,7 +27,9 @@ export type ExecuteMsg = {
     on_behalf_of?: string | null;
   };
 } | {
-  withdraw: {};
+  withdraw: {
+    on_behalf_of?: string | null;
+  };
 } | {
   cancel_withdrawal: {
     withdrawal_ids: number[];

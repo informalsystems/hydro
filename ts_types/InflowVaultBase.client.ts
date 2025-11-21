@@ -178,7 +178,11 @@ export interface InflowVaultBaseInterface extends InflowVaultBaseReadOnlyInterfa
   }: {
     onBehalfOf?: string;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
-  withdraw: (fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  withdraw: ({
+    onBehalfOf
+  }: {
+    onBehalfOf?: string;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
   cancelWithdrawal: ({
     withdrawalIds
   }: {
@@ -251,9 +255,15 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
       }
     }, fee_, memo_, funds_);
   };
-  withdraw = async (fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+  withdraw = async ({
+    onBehalfOf
+  }: {
+    onBehalfOf?: string;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      withdraw: {}
+      withdraw: {
+        on_behalf_of: onBehalfOf
+      }
     }, fee_, memo_, funds_);
   };
   cancelWithdrawal = async ({

@@ -46,7 +46,7 @@ pub struct DenomMetadata {
 #[cw_serde]
 pub enum ExecuteMsg {
     Deposit { on_behalf_of: Option<String> },
-    Withdraw {},
+    Withdraw { on_behalf_of: Option<String> },
     CancelWithdrawal { withdrawal_ids: Vec<u64> },
     FulfillPendingWithdrawals { limit: u64 },
     ClaimUnbondedWithdrawals { withdrawal_ids: Vec<u64> },
