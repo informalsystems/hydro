@@ -200,8 +200,9 @@ fn execute_lock_tokens(
     };
 
     let user_input = format!("{}{}", proof_addr, lock_tokens_msg.maximum_amount);
-    let hash = sha2::Sha256::digest(user_input.as_bytes())
-        .as_slice()
+    let digest = sha2::Sha256::digest(user_input.as_bytes());
+    let slice: &[u8] = digest.as_ref();
+    let hash: [u8; 32] = slice
         .try_into()
         .map_err(|_| ContractError::WrongLength {})?;
 
@@ -213,10 +214,9 @@ fn execute_lock_tokens(
             hex::decode_to_slice(p, &mut proof_buf)?;
             let mut hashes = [hash, proof_buf];
             hashes.sort_unstable();
-            sha2::Sha256::digest(hashes.concat())
-                .as_slice()
-                .try_into()
-                .map_err(|_| ContractError::WrongLength {})
+            let digest = sha2::Sha256::digest(hashes.concat());
+            let slice: &[u8] = digest.as_ref();
+            slice.try_into().map_err(|_| ContractError::WrongLength {})
         })?;
 
     let mut root_buf: [u8; 32] = [0; 32];
