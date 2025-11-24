@@ -6,11 +6,12 @@ members = [
     "contracts/liquid-collateral",
     "contracts/token-info-providers/st-token-info-provider",
     "contracts/token-info-providers/d-token-info-provider",
+    "contracts/token-info-providers/lsm-token-info-provider",
     "contracts/marketplace",
     "contracts/gatekeeper",
-    "contracts/inflow",
-    "contracts/inflow-mars-adapter",
-    "packages/adapter-interface",
+    "contracts/inflow/vault",
+    "contracts/inflow/control-center",
+    "contracts/inflow/mars-adapter",
     "packages/cw-orch-interface",
     "packages/interface",
     "test/e2e",
@@ -18,7 +19,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "3.6.2"
+version = "3.6.4"
 edition = "2021"
 
 [profile.release]
@@ -44,6 +45,7 @@ cosmwasm-schema = "2.1.2"
 proptest = "1.0.0"
 cw-utils = "2.0.0"
 cosmos-sdk-proto = { version = "0.20.0", default-features = false }
+ibc-proto = { version = "0.46.0", default-features = false }
 prost = "0.12.6"
 prost-types = "0.12.6"
 cw-orch = "0.25.0"

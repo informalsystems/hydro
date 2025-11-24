@@ -4,8 +4,9 @@ use crate::{
     contract::{
         calculate_voter_claim_amount, execute, instantiate, query_historical_tribute_claims,
         query_outstanding_lockup_claimable_coins, query_outstanding_tribute_claims,
-        query_proposal_tributes, query_round_tributes,
+        query_proposal_tributes, query_round_tributes, query_specific_tributes,
     },
+    error::ContractError,
     msg::{ExecuteMsg, InstantiateMsg},
     query::TributeClaim,
     state::{
@@ -20,14 +21,16 @@ use cosmwasm_std::{
     StdError, StdResult, SystemError, SystemResult, Timestamp, Uint128, WasmQuery,
 };
 use cosmwasm_std::{BankMsg, Coin, CosmosMsg};
+use cw_orch::core::serde_json;
 use hydro::{
     msg::LiquidityDeployment,
     query::{
-        ConstantsResponse, CurrentRoundResponse, LiquidityDeploymentResponse, ProposalResponse,
+        ConstantsResponse, LiquidityDeploymentResponse, ProposalResponse,
         QueryMsg as HydroQueryMsg, UserVotedLocksResponse, UserVotesResponse, VotedLockInfo,
     },
     state::{Constants, Proposal, VoteWithPower},
 };
+use interface::hydro::CurrentRoundResponse;
 
 pub fn get_instantiate_msg(hydro_contract: String) -> InstantiateMsg {
     InstantiateMsg { hydro_contract }
@@ -1203,7 +1206,7 @@ fn test_query_historical_tribute_claims() {
         let (mut deps, _env) = (mock_dependencies(), mock_env());
 
         // Mock the database
-        let tributes = vec![
+        let tributes = [
             Tribute {
                 tribute_id: 0,
                 round_id: 1,
@@ -1272,7 +1275,7 @@ struct RoundTributesTestCase {
 #[test]
 fn test_query_round_tributes() {
     // Mock the database
-    let tributes = vec![
+    let tributes = [
         Tribute {
             tribute_id: 1,
             round_id: 1,
@@ -1447,7 +1450,7 @@ fn test_query_outstanding_tribute_claims() {
         let (mut deps, _env) = (mock_dependencies(), mock_env());
 
         // Mock the database
-        let tributes = vec![
+        let tributes = [
             Tribute {
                 // this tribute will be marked as already claimed by user1
                 tribute_id: 1,
@@ -2019,4 +2022,186 @@ fn test_calculate_voter_claim_amount_precision() {
     )
     .unwrap();
     assert_eq!(result.amount, Uint128::new(333_333)); // Should get roughly 1/3
+}
+
+#[test]
+fn test_query_specific_tributes_success() {
+    let (mut deps, _env) = (mock_dependencies(), mock_env());
+
+    // Create test tributes
+    let tributes = vec![
+        Tribute {
+            tribute_id: 1,
+            round_id: 1,
+            tranche_id: 1,
+            proposal_id: 1,
+            depositor: Addr::unchecked("user1"),
+            funds: Coin::new(Uint128::new(100), "token"),
+            refunded: false,
+            creation_round: 1,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
+        },
+        Tribute {
+            tribute_id: 2,
+            round_id: 1,
+            tranche_id: 1,
+            proposal_id: 2,
+            depositor: Addr::unchecked("user2"),
+            funds: Coin::new(Uint128::new(200), "token"),
+            refunded: false,
+            creation_round: 1,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(1),
+        },
+        Tribute {
+            tribute_id: 3,
+            round_id: 2,
+            tranche_id: 1,
+            proposal_id: 3,
+            depositor: Addr::unchecked("user3"),
+            funds: Coin::new(Uint128::new(300), "token"),
+            refunded: false,
+            creation_round: 2,
+            creation_time: cosmwasm_std::Timestamp::from_seconds(2),
+        },
+    ];
+
+    // Store tributes in the map
+    for tribute in &tributes {
+        ID_TO_TRIBUTE_MAP
+            .save(&mut deps.storage, tribute.tribute_id, tribute)
+            .unwrap();
+    }
+
+    // Query specific tributes with valid IDs
+    let result = query_specific_tributes(&deps.as_ref(), vec![1, 2, 3]).unwrap();
+
+    // Verify the results
+    assert_eq!(result.tributes.len(), 3);
+
+    // Check that all requested tributes are returned
+    let returned_ids: Vec<u64> = result.tributes.iter().map(|t| t.tribute_id).collect();
+    assert!(returned_ids.contains(&1));
+    assert!(returned_ids.contains(&2));
+    assert!(returned_ids.contains(&3));
+
+    // Verify the details of one tribute
+    let tribute_1 = result.tributes.iter().find(|t| t.tribute_id == 1).unwrap();
+    assert_eq!(tribute_1.round_id, 1);
+    assert_eq!(tribute_1.tranche_id, 1);
+    assert_eq!(tribute_1.proposal_id, 1);
+    assert_eq!(tribute_1.amount, Coin::new(Uint128::new(100), "token"));
+
+    // Test with duplicate IDs (should be deduplicated by HashSet)
+    let result_duplicates = query_specific_tributes(&deps.as_ref(), vec![1, 1, 2, 2]).unwrap();
+    assert_eq!(result_duplicates.tributes.len(), 2);
+}
+
+#[test]
+fn test_query_specific_tributes_fail() {
+    let (mut deps, _env) = (mock_dependencies(), mock_env());
+
+    // Create and store only one tribute
+    let tribute = Tribute {
+        tribute_id: 1,
+        round_id: 1,
+        tranche_id: 1,
+        proposal_id: 1,
+        depositor: Addr::unchecked("user1"),
+        funds: Coin::new(Uint128::new(100), "token"),
+        refunded: false,
+        creation_round: 1,
+        creation_time: cosmwasm_std::Timestamp::from_seconds(1),
+    };
+
+    ID_TO_TRIBUTE_MAP
+        .save(&mut deps.storage, tribute.tribute_id, &tribute)
+        .unwrap();
+
+    // Try to query a non-existent tribute_id
+    let result = query_specific_tributes(&deps.as_ref(), vec![1, 999]);
+
+    // Should fail because tribute_id 999 doesn't exist
+    assert!(result.is_err());
+    let error_msg = result.unwrap_err().to_string();
+    // Verify that the error message indicates the tribute was not found
+    assert!(
+        error_msg.contains("not found"),
+        "Error message should contain 'not found'\nGot: {error_msg}"
+    );
+
+    // Test with empty list (should succeed but return empty)
+    let result_empty = query_specific_tributes(&deps.as_ref(), vec![]).unwrap();
+    assert_eq!(result_empty.tributes.len(), 0);
+}
+
+#[test]
+fn test_claim_tribute_prevents_proxy_claims_for_smart_contracts() {
+    let mut deps = mock_dependencies();
+    let hydro_contract_address = get_address_as_str(&deps.api, HYDRO_CONTRACT_ADDRESS);
+
+    // Setup: Instantiate the tribute contract
+    let instantiate_msg = get_instantiate_msg(hydro_contract_address);
+    let info = get_message_info(&deps.api, "admin", &[]);
+    let env = mock_env();
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    const SMART_CONTRACT: &str = "smart_contract";
+    let smart_contract_address = get_address_as_str(&deps.api, SMART_CONTRACT);
+
+    // Setup: Configure querier to identify smart_contract_address as a contract
+    let smart_contract_address_clone = smart_contract_address.clone();
+    deps.querier.update_wasm(move |query| match query {
+        cosmwasm_std::WasmQuery::ContractInfo { contract_addr }
+            if contract_addr == &smart_contract_address_clone =>
+        {
+            SystemResult::Ok(ContractResult::Ok(
+                cosmwasm_std::to_json_binary(&serde_json::json!({
+                    "code_id": 1,
+                    "creator": "creator",
+                    "admin": null,
+                    "pinned": false,
+                    "ibc_port": null,
+                }))
+                .unwrap(),
+            ))
+        }
+        _ => SystemResult::Err(SystemError::Unknown {}),
+    });
+
+    let claim_msg = ExecuteMsg::ClaimTribute {
+        round_id: 1,
+        tranche_id: 1,
+        tribute_id: 1,
+        voter_address: smart_contract_address,
+    };
+
+    // Test: Regular user cannot claim on behalf of a smart contract
+    let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
+    let err = execute(deps.as_mut(), env.clone(), info, claim_msg.clone()).unwrap_err();
+
+    match err {
+        ContractError::Std(StdError::GenericErr { msg, backtrace: _ }) => {
+            assert_eq!(
+                msg,
+                "Smart contracts must claim tributes directly; proxy claims are not allowed"
+            );
+        }
+        _ => panic!("Expected GenericErr with security message, got: {err}"),
+    }
+
+    // Test: Smart contract can claim for itself (security check passes)
+    let info = get_message_info(&deps.api, SMART_CONTRACT, &[]);
+    let result = execute(deps.as_mut(), env.clone(), info, claim_msg);
+
+    // Should fail with a different error (e.g., tribute not found), not the security error
+    match result {
+        Err(err) => {
+            let err_msg = err.to_string();
+            assert!(
+                !err_msg.contains("Smart contracts must claim tributes directly"),
+                "Expected a different error, but got security check error: {err_msg}"
+            );
+        }
+        Ok(_) => panic!("Expected an error due to missing tribute setup"),
+    }
 }

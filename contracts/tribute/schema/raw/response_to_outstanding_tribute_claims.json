@@ -9,7 +9,7 @@
     "claims": {
       "type": "array",
       "items": {
-        "$ref": "#/definitions/TributeClaim"
+        "$ref": "#/definitions/TributeData"
       }
     }
   },
@@ -31,7 +31,7 @@
       },
       "additionalProperties": false
     },
-    "TributeClaim": {
+    "TributeData": {
       "type": "object",
       "required": [
         "amount",

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::vec;
 
 use cosmwasm_std::{
@@ -12,17 +13,18 @@ use crate::msg::{ExecuteMsg, InstantiateMsg};
 use crate::query::{
     ConfigResponse, HistoricalTributeClaimsResponse, OutstandingLockupClaimableCoinsResponse,
     OutstandingTributeClaimsResponse, ProposalTributesResponse, QueryMsg, RoundTributesResponse,
-    TributeClaim,
+    SpecificTributesResponse, TributeClaim, TributeRecord,
 };
 use crate::state::{
     Config, Tribute, CONFIG, ID_TO_TRIBUTE_MAP, TRIBUTE_CLAIMED_LOCKS, TRIBUTE_CLAIMS, TRIBUTE_ID,
     TRIBUTE_MAP,
 };
 use hydro::query::{
-    CurrentRoundResponse, LiquidityDeploymentResponse, LockVotesHistoryResponse, ProposalResponse,
+    LiquidityDeploymentResponse, LockVotesHistoryResponse, ProposalResponse,
     QueryMsg as HydroQueryMsg, UserVotedLocksResponse,
 };
 use hydro::state::Proposal;
+use interface::hydro::CurrentRoundResponse;
 
 /// Contract name that is used for migration.
 pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -155,6 +157,20 @@ fn claim_tribute(
     voter_address: String,
 ) -> Result<Response, ContractError> {
     let voter = deps.api.addr_validate(&voter_address)?;
+
+    // Smart contracts built on top of Hydro may require specific workflows when claiming
+    // tributes. Allowing third parties to claim on behalf of a smart contract could interfere
+    // with the contract's internal logic for handling claimed funds. Therefore, we prevent
+    // proxy claims for smart contracts - they must always claim tributes directly via their
+    // own execution context.
+    if deps.querier.query_wasm_contract_info(&voter).is_ok() {
+        // voter is a smart contract address
+        if info.sender != voter {
+            return Err(ContractError::Std(StdError::generic_err(
+                "Smart contracts must claim tributes directly; proxy claims are not allowed",
+            )));
+        }
+    }
 
     // Check that the round is ended
     let config = CONFIG.load(deps.storage)?;
@@ -478,6 +494,9 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         )?),
         QueryMsg::OutstandingLockupClaimableCoins { lock_id } => {
             to_json_binary(&query_outstanding_lockup_claimable_coins(&deps, lock_id)?)
+        }
+        QueryMsg::SpecificTributes { tribute_ids } => {
+            to_json_binary(&query_specific_tributes(&deps, tribute_ids)?)
         }
     }
 }
@@ -866,4 +885,32 @@ pub fn query_outstanding_lockup_claimable_coins(
     let coins = claimable_coins.into_vec();
 
     Ok(OutstandingLockupClaimableCoinsResponse { coins })
+}
+
+pub fn query_specific_tributes(
+    deps: &Deps,
+    tribute_ids: Vec<u64>,
+) -> StdResult<SpecificTributesResponse> {
+    let tribute_ids_set: HashSet<u64> = tribute_ids.into_iter().collect();
+    let tributes = get_specific_tributes(deps, tribute_ids_set)?;
+    Ok(SpecificTributesResponse { tributes })
+}
+
+fn get_specific_tributes(
+    deps: &Deps,
+    tribute_ids_set: HashSet<u64>,
+) -> StdResult<Vec<TributeRecord>> {
+    let mut tributes = Vec::new();
+    for tribute_id in tribute_ids_set {
+        let tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
+        tributes.push(TributeRecord {
+            round_id: tribute.round_id,
+            tranche_id: tribute.tranche_id,
+            proposal_id: tribute.proposal_id,
+            amount: tribute.funds.clone(),
+            tribute_id,
+        });
+    }
+
+    Ok(tributes)
 }

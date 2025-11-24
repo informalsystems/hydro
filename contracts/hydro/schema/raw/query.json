@@ -650,59 +650,10 @@
     {
       "type": "object",
       "required": [
-        "i_c_q_managers"
-      ],
-      "properties": {
-        "i_c_q_managers": {
-          "type": "object",
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
         "total_locked_tokens"
       ],
       "properties": {
         "total_locked_tokens": {
-          "type": "object",
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "validators_info"
-      ],
-      "properties": {
-        "validators_info": {
-          "type": "object",
-          "required": [
-            "round_id"
-          ],
-          "properties": {
-            "round_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "registered_validator_queries"
-      ],
-      "properties": {
-        "registered_validator_queries": {
           "type": "object",
           "additionalProperties": false
         }
@@ -1216,6 +1167,33 @@
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Returns voting-related metrics for the specified lockups, including time-weighted shares, token group classification, and remaining locked rounds.",
+      "type": "object",
+      "required": [
+        "lockup_voting_metrics"
+      ],
+      "properties": {
+        "lockup_voting_metrics": {
+          "type": "object",
+          "required": [
+            "lock_ids"
+          ],
+          "properties": {
+            "lock_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
             }
           },
           "additionalProperties": false

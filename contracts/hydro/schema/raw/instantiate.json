@@ -4,7 +4,6 @@
   "type": "object",
   "required": [
     "first_round_start",
-    "icq_managers",
     "initial_whitelist",
     "lock_depth_limit",
     "lock_epoch_length",
@@ -42,12 +41,6 @@
           "type": "null"
         }
       ]
-    },
-    "icq_managers": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
     },
     "initial_whitelist": {
       "type": "array",
@@ -199,27 +192,31 @@
             "lsm": {
               "type": "object",
               "required": [
-                "hub_connection_id",
+                "code_id",
                 "hub_transfer_channel_id",
-                "icq_update_period",
-                "max_validator_shares_participating"
+                "label",
+                "msg"
               ],
               "properties": {
-                "hub_connection_id": {
-                  "type": "string"
+                "admin": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "code_id": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
                 },
                 "hub_transfer_channel_id": {
                   "type": "string"
                 },
-                "icq_update_period": {
-                  "type": "integer",
-                  "format": "uint64",
-                  "minimum": 0.0
+                "label": {
+                  "type": "string"
                 },
-                "max_validator_shares_participating": {
-                  "type": "integer",
-                  "format": "uint64",
-                  "minimum": 0.0
+                "msg": {
+                  "$ref": "#/definitions/Binary"
                 }
               },
               "additionalProperties": false

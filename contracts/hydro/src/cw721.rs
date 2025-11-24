@@ -1,16 +1,16 @@
 use crate::{
-    contract::{compute_current_round_id, compute_round_end},
-    error::ContractError,
-    msg::Cw721ReceiveMsg,
+    contract::{compute_current_round_id, compute_round_end, lock_tokens},
+    error::{new_generic_error, ContractError},
+    msg::{Cw721ReceiveMsg, LockTokensProof},
     query::{
         AllNftInfoResponse, ApprovalResponse, ApprovalsResponse, CollectionInfoResponse,
         NftInfoResponse, NumTokensResponse, OperatorsResponse, OwnerOfResponse, TokensResponse,
     },
     state::{
-        Approval, LockEntryV2, LOCKS_MAP_V2, LOCK_ID, NFT_APPROVALS, NFT_OPERATORS, TOKEN_IDS,
-        TOKEN_INFO_PROVIDERS, TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM,
+        Approval, Constants, LockEntryV2, LOCKS_MAP_V2, LOCK_ID, NFT_APPROVALS, NFT_OPERATORS,
+        TOKEN_IDS, TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM,
     },
-    token_manager::{TokenInfoProvider, TokenManager, LSM_TOKEN_INFO_PROVIDER_ID},
+    token_manager::TokenManager,
     utils::{load_current_constants, to_lockup_with_power, to_lockup_with_tranche_infos},
 };
 
@@ -18,7 +18,6 @@ use cosmwasm_std::{
     Addr, Binary, BlockInfo, Deps, DepsMut, Env, MessageInfo, Order, Response, StdResult, Storage,
 };
 use cw_utils::Expiration;
-use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 use cw_storage_plus::Bound;
 
@@ -59,12 +58,12 @@ pub enum Error {
 /// This is designed to send to an address controlled by a private key and does not trigger any actions on the recipient if it is a contract.
 /// Requires token_id to point to a valid token, and env.sender to be the owner of it, or have an allowance to transfer it.
 pub fn handle_execute_transfer(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     recipient: String,
     token_id: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let recipient_addr = deps.api.addr_validate(&recipient)?;
     let lock_id = token_id.parse().map_err(|_| Error::InvalidTokenId)?;
     let lock_entry = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
@@ -83,13 +82,13 @@ pub fn handle_execute_transfer(
 /// The contract field must be an address controlled by a smart contract, which implements the CW721Receiver interface.
 /// The msg will be passed to the recipient contract, along with the token_id.
 pub fn handle_execute_send_nft(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     contract: String,
     token_id: String,
     msg: Binary,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let recipient_addr = deps.api.addr_validate(&contract)?;
     let lock_id = token_id.parse().map_err(|_| Error::InvalidTokenId)?;
     let lock_entry = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
@@ -117,12 +116,64 @@ pub fn handle_execute_send_nft(
         .add_attribute("token_id", token_id))
 }
 
+/// This locks the token first (same as `LockTokens`) then transfers ownership to the contract account (same as `SendNft`)
+#[allow(clippy::too_many_arguments)]
+pub fn lock_tokens_then_send_nft(
+    mut deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    constants: &Constants,
+    lock_duration: u64,
+    proof: Option<LockTokensProof>,
+    contract: String,
+    msg: Binary,
+) -> Result<Response, ContractError> {
+    // First, call lock_tokens to create the lock
+    let lock_response = lock_tokens(
+        deps.branch(),
+        env.clone(),
+        info.clone(),
+        constants,
+        lock_duration,
+        proof,
+    )?;
+
+    // Extract lock_id from the response attributes
+    let lock_id = lock_response
+        .attributes
+        .iter()
+        .find(|attr| attr.key == "lock_id")
+        .ok_or_else(|| new_generic_error("lock_id not found in response"))?
+        .value
+        .clone();
+
+    // Now call handle_execute_send_nft with the lock_id as token_id
+    let send_response = handle_execute_send_nft(
+        deps,
+        env,
+        info.clone(),
+        contract.clone(),
+        lock_id.clone(),
+        msg,
+    )?;
+
+    // Create our own response with a unique action and selected attributes from both operations
+    Ok(Response::new()
+        .add_submessages(lock_response.messages) // Gatekeeper validation (SubMsgs)
+        .add_submessages(send_response.messages) // CW721 receive message (SubMsgs)
+        .add_attribute("action", "lock_tokens_then_send_nft")
+        .add_attribute("sender", info.sender)
+        .add_attribute("lock_id", lock_id)
+        .add_attribute("to", contract)
+        .add_attribute("locked_tokens", info.funds[0].clone().to_string()))
+}
+
 /// Transfer a lockup to a new owner
 /// This function is used when the lockup is transferred to a new owner by the current owner or by an approved address.
 /// It updates the owner of the lockup and the list of locks for the old and new owners.
 /// It also clears existing approvals for the lockup.
 fn transfer(
-    deps: DepsMut<'_, NeutronQuery>,
+    deps: DepsMut,
     env: &Env,
     info: &MessageInfo,
     recipient: Addr,
@@ -216,13 +267,13 @@ pub fn clear_nft_approvals(storage: &mut dyn Storage, lock_id: u64) -> Result<()
 /// This can only be performed when env.sender is the owner of the given token_id or an operator.
 /// There can be multiple spender accounts per token, and they are cleared once the token is transferred or sent.
 pub fn handle_execute_approve(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     spender: String,
     expires: Option<Expiration>,
     token_id: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     // Checks the spender address is valid
     let spender_addr = deps
         .api
@@ -265,12 +316,12 @@ pub fn handle_execute_approve(
 /// This revokes a previously granted permission to transfer the given token_id.
 /// This can only be granted when env.sender is the owner of the given token_id or an operator.
 pub fn handle_execute_revoke(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     spender: String,
     token_id: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     // Checks the spender address is valid
     let spender_addr = deps
         .api
@@ -303,12 +354,12 @@ pub fn handle_execute_revoke(
 /// Grant operator permission to transfer, send or create/revoke Approvals on all tokens owned by env.sender.
 /// This approval is tied to the owner, not the tokens and applies to any future token that the owner receives as well.
 pub fn handle_execute_approve_all(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     operator: String,
     expires: Option<Expiration>,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let operator_addr = deps
         .api
         .addr_validate(&operator)
@@ -332,11 +383,11 @@ pub fn handle_execute_approve_all(
 
 // Revoke a previous ApproveAll permission granted to the given operator.
 pub fn handle_execute_revoke_all(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     operator: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let operator_addr = deps
         .api
         .addr_validate(&operator)
@@ -354,7 +405,7 @@ pub fn handle_execute_revoke_all(
 /// If the token is unknown, returns an error.
 /// If include_expired is set (to true), show expired approvals in the results, otherwise, ignore them.
 pub fn query_owner_of(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     env: Env,
     token_id: String,
     include_expired: Option<bool>,
@@ -387,7 +438,7 @@ pub fn query_owner_of(
 ///
 /// It returns an error if there is no Approval for the token / spender
 pub fn query_approval(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     env: Env,
     token_id: String,
     spender: String,
@@ -422,7 +473,7 @@ pub fn query_approval(
 /// Return all approvals that apply on the given token_id.
 /// If include_expired is set (to true), show expired approvals in the results, otherwise, ignore them.
 pub fn query_approvals(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     env: Env,
     token_id: String,
     include_expired: Option<bool>,
@@ -453,7 +504,7 @@ pub fn query_approvals(
 /// If include_expired is set (to true), show expired operators in the results, otherwise, ignore them.
 /// If start_after is set, then it returns the first limit operators after the given one.
 pub fn query_all_operators(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     env: Env,
     owner: String,
     include_expired: Option<bool>,
@@ -493,14 +544,14 @@ pub fn query_all_operators(
 /// Returns the number of tokens issued so far.
 /// Note: This is not the same as the total number of tokens in existence,
 /// as some tokens (lockups) may have been burned (unlocked by users).
-pub fn query_num_tokens(deps: Deps<NeutronQuery>) -> Result<NumTokensResponse, ContractError> {
+pub fn query_num_tokens(deps: Deps) -> Result<NumTokensResponse, ContractError> {
     let count = LOCK_ID.load(deps.storage)?;
     Ok(NumTokensResponse { count })
 }
 
 /// Returns top-level cw721 metadata about the contract. Namely, name and symbol.
 pub fn query_collection_info(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     env: Env,
 ) -> Result<CollectionInfoResponse, ContractError> {
     let constants = load_current_constants(&deps, &env)?;
@@ -511,7 +562,7 @@ pub fn query_collection_info(
 /// Returns metadata about one particular token.
 /// The metadata extension is of type LockupWithPerTrancheInfo
 pub fn query_nft_info(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     env: Env,
     token_id: String,
 ) -> Result<NftInfoResponse, ContractError> {
@@ -553,7 +604,7 @@ pub fn query_nft_info(
 /// Returns the result of both `NftInfo` and `OwnerOf` as one query as an optimization for clients.
 /// If include_expired is set (to true), shows expired approvals in the results, otherwise, ignore them.
 pub fn query_all_nft_info(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     env: Env,
     token_id: String,
     include_expired: Option<bool>,
@@ -572,7 +623,7 @@ pub fn query_all_nft_info(
 // If start_after is set, then it returns the first limit tokens after the given one.
 // If start_after is set and is invalid (i.e. not parsable to a number), the query returns an error.
 pub fn query_tokens(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     owner: String,
     start_after: Option<String>,
     limit: Option<u32>,
@@ -606,7 +657,7 @@ pub fn query_tokens(
 
 /// Lists token_ids controlled by the contract, ordered lexicographically by token_id.
 pub fn query_all_tokens(
-    deps: Deps<NeutronQuery>,
+    deps: Deps,
     _env: Env,
     start_after: Option<String>,
     limit: Option<u32>,
@@ -688,7 +739,7 @@ fn can_user_create_approval(
 
 /// Add a lock ID to TOKEN_IDS if it's a NFT (non-LSM lockup)
 pub fn maybe_add_token_id(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     lock_entry: &LockEntryV2,
 ) -> Result<(), ContractError> {
     if !is_denom_lsm(&deps.as_ref(), lock_entry.funds.denom.clone())? {
@@ -703,19 +754,11 @@ pub fn maybe_remove_token_id(storage: &mut dyn Storage, lock_id: u64) {
 }
 
 /// Returns true if the denom is LSM, false otherwise.
-pub fn is_denom_lsm(deps: &Deps<NeutronQuery>, denom: String) -> Result<bool, ContractError> {
-    let lsm_info_provider =
-        TOKEN_INFO_PROVIDERS.may_load(deps.storage, LSM_TOKEN_INFO_PROVIDER_ID.to_string())?;
+pub fn is_denom_lsm(deps: &Deps, denom: String) -> Result<bool, ContractError> {
+    let lsm_info_provider = TokenManager::new(deps).get_lsm_token_info_provider();
 
     // If the contract has an LSM token info provider, check if the token is LSM
-    if let Some(provider) = lsm_info_provider {
-        let lsm_info_provider = match provider {
-            TokenInfoProvider::LSM(lsm) => lsm,
-            _ => {
-                return Err(Error::LSMTokenInfoProviderNotLSM.into()); // Should never happen
-            }
-        };
-
+    if let Some(lsm_info_provider) = lsm_info_provider {
         if lsm_info_provider.is_lsm_denom(deps, denom) {
             return Ok(true);
         }

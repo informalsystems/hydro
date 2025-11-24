@@ -29,6 +29,7 @@ cw2 = { workspace = true }
 cosmwasm-schema = { workspace = true }
 cw-orch = { workspace = true }
 hydro = { path = "../hydro", features = ["library"] }
+interface = { path = "../../packages/interface" }
 
 [dev-dependencies]
 cosmwasm-schema = { workspace = true }

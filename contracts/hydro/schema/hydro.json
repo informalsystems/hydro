@@ -1,6 +1,6 @@
 {
   "contract_name": "hydro",
-  "contract_version": "3.6.2",
+  "contract_version": "3.6.4",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -8,7 +8,6 @@
     "type": "object",
     "required": [
       "first_round_start",
-      "icq_managers",
       "initial_whitelist",
       "lock_depth_limit",
       "lock_epoch_length",
@@ -46,12 +45,6 @@
             "type": "null"
           }
         ]
-      },
-      "icq_managers": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
       },
       "initial_whitelist": {
         "type": "array",
@@ -203,27 +196,31 @@
               "lsm": {
                 "type": "object",
                 "required": [
-                  "hub_connection_id",
+                  "code_id",
                   "hub_transfer_channel_id",
-                  "icq_update_period",
-                  "max_validator_shares_participating"
+                  "label",
+                  "msg"
                 ],
                 "properties": {
-                  "hub_connection_id": {
-                    "type": "string"
+                  "admin": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "code_id": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0.0
                   },
                   "hub_transfer_channel_id": {
                     "type": "string"
                   },
-                  "icq_update_period": {
-                    "type": "integer",
-                    "format": "uint64",
-                    "minimum": 0.0
+                  "label": {
+                    "type": "string"
                   },
-                  "max_validator_shares_participating": {
-                    "type": "integer",
-                    "format": "uint64",
-                    "minimum": 0.0
+                  "msg": {
+                    "$ref": "#/definitions/Binary"
                   }
                 },
                 "additionalProperties": false
@@ -739,93 +736,6 @@
       {
         "type": "object",
         "required": [
-          "create_icqs_for_validators"
-        ],
-        "properties": {
-          "create_icqs_for_validators": {
-            "type": "object",
-            "required": [
-              "validators"
-            ],
-            "properties": {
-              "validators": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
-      },
-      {
-        "type": "object",
-        "required": [
-          "add_i_c_q_manager"
-        ],
-        "properties": {
-          "add_i_c_q_manager": {
-            "type": "object",
-            "required": [
-              "address"
-            ],
-            "properties": {
-              "address": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
-      },
-      {
-        "type": "object",
-        "required": [
-          "remove_i_c_q_manager"
-        ],
-        "properties": {
-          "remove_i_c_q_manager": {
-            "type": "object",
-            "required": [
-              "address"
-            ],
-            "properties": {
-              "address": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
-      },
-      {
-        "type": "object",
-        "required": [
-          "withdraw_i_c_q_funds"
-        ],
-        "properties": {
-          "withdraw_i_c_q_funds": {
-            "type": "object",
-            "required": [
-              "amount"
-            ],
-            "properties": {
-              "amount": {
-                "$ref": "#/definitions/Uint128"
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
-      },
-      {
-        "type": "object",
-        "required": [
           "add_liquidity_deployment"
         ],
         "properties": {
@@ -929,25 +839,20 @@
       {
         "type": "object",
         "required": [
-          "update_token_group_ratio"
+          "update_token_groups_ratios"
         ],
         "properties": {
-          "update_token_group_ratio": {
+          "update_token_groups_ratios": {
             "type": "object",
             "required": [
-              "new_ratio",
-              "old_ratio",
-              "token_group_id"
+              "changes"
             ],
             "properties": {
-              "new_ratio": {
-                "$ref": "#/definitions/Decimal"
-              },
-              "old_ratio": {
-                "$ref": "#/definitions/Decimal"
-              },
-              "token_group_id": {
-                "type": "string"
+              "changes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/TokenGroupRatioChange"
+                }
               }
             },
             "additionalProperties": false
@@ -1067,6 +972,48 @@
               },
               "token_id": {
                 "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "This locks the tokens first (same as `LockTokens`) then transfers ownership to the contract account (same as `SendNft`)",
+        "type": "object",
+        "required": [
+          "lock_tokens_then_send_nft"
+        ],
+        "properties": {
+          "lock_tokens_then_send_nft": {
+            "type": "object",
+            "required": [
+              "contract",
+              "lock_duration",
+              "msg"
+            ],
+            "properties": {
+              "contract": {
+                "type": "string"
+              },
+              "lock_duration": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "msg": {
+                "$ref": "#/definitions/Binary"
+              },
+              "proof": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/LockTokensProof"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "additionalProperties": false
@@ -1489,6 +1436,26 @@
           }
         ]
       },
+      "TokenGroupRatioChange": {
+        "type": "object",
+        "required": [
+          "new_ratio",
+          "old_ratio",
+          "token_group_id"
+        ],
+        "properties": {
+          "new_ratio": {
+            "$ref": "#/definitions/Decimal"
+          },
+          "old_ratio": {
+            "$ref": "#/definitions/Decimal"
+          },
+          "token_group_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "TokenInfoProviderInstantiateMsg": {
         "oneOf": [
           {
@@ -1500,27 +1467,31 @@
               "lsm": {
                 "type": "object",
                 "required": [
-                  "hub_connection_id",
+                  "code_id",
                   "hub_transfer_channel_id",
-                  "icq_update_period",
-                  "max_validator_shares_participating"
+                  "label",
+                  "msg"
                 ],
                 "properties": {
-                  "hub_connection_id": {
-                    "type": "string"
+                  "admin": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "code_id": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0.0
                   },
                   "hub_transfer_channel_id": {
                     "type": "string"
                   },
-                  "icq_update_period": {
-                    "type": "integer",
-                    "format": "uint64",
-                    "minimum": 0.0
+                  "label": {
+                    "type": "string"
                   },
-                  "max_validator_shares_participating": {
-                    "type": "integer",
-                    "format": "uint64",
-                    "minimum": 0.0
+                  "msg": {
+                    "$ref": "#/definitions/Binary"
                   }
                 },
                 "additionalProperties": false
@@ -2348,59 +2319,10 @@
       {
         "type": "object",
         "required": [
-          "i_c_q_managers"
-        ],
-        "properties": {
-          "i_c_q_managers": {
-            "type": "object",
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
-      },
-      {
-        "type": "object",
-        "required": [
           "total_locked_tokens"
         ],
         "properties": {
           "total_locked_tokens": {
-            "type": "object",
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
-      },
-      {
-        "type": "object",
-        "required": [
-          "validators_info"
-        ],
-        "properties": {
-          "validators_info": {
-            "type": "object",
-            "required": [
-              "round_id"
-            ],
-            "properties": {
-              "round_id": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
-      },
-      {
-        "type": "object",
-        "required": [
-          "registered_validator_queries"
-        ],
-        "properties": {
-          "registered_validator_queries": {
             "type": "object",
             "additionalProperties": false
           }
@@ -2914,6 +2836,33 @@
                 "type": "integer",
                 "format": "uint64",
                 "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Returns voting-related metrics for the specified lockups, including time-weighted shares, token group classification, and remaining locked rounds.",
+        "type": "object",
+        "required": [
+          "lockup_voting_metrics"
+        ],
+        "properties": {
+          "lockup_voting_metrics": {
+            "type": "object",
+            "required": [
+              "lock_ids"
+            ],
+            "properties": {
+              "lock_ids": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                }
               }
             },
             "additionalProperties": false
@@ -4321,29 +4270,6 @@
       },
       "additionalProperties": false
     },
-    "i_c_q_managers": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "ICQManagersResponse",
-      "type": "object",
-      "required": [
-        "managers"
-      ],
-      "properties": {
-        "managers": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/Addr"
-          }
-        }
-      },
-      "additionalProperties": false,
-      "definitions": {
-        "Addr": {
-          "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
-          "type": "string"
-        }
-      }
-    },
     "liquidity_deployment": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "LiquidityDeploymentResponse",
@@ -4489,6 +4415,57 @@
             }
           },
           "additionalProperties": false
+        }
+      }
+    },
+    "lockup_voting_metrics": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "LockupVotingMetricsResponse",
+      "type": "object",
+      "required": [
+        "lockups"
+      ],
+      "properties": {
+        "lockups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LockupVotingMetrics"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "LockupVotingMetrics": {
+          "type": "object",
+          "required": [
+            "lock_id",
+            "locked_rounds_remaining",
+            "time_weighted_shares",
+            "token_group_id"
+          ],
+          "properties": {
+            "lock_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "locked_rounds_remaining": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "time_weighted_shares": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "token_group_id": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
         }
       }
     },
@@ -4937,35 +4914,6 @@
           "type": "string"
         }
       }
-    },
-    "registered_validator_queries": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "RegisteredValidatorQueriesResponse",
-      "type": "object",
-      "required": [
-        "query_ids"
-      ],
-      "properties": {
-        "query_ids": {
-          "type": "array",
-          "items": {
-            "type": "array",
-            "items": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
-              }
-            ],
-            "maxItems": 2,
-            "minItems": 2
-          }
-        }
-      },
-      "additionalProperties": false
     },
     "round_end": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -5641,27 +5589,44 @@
         "TokenInfoProviderLSM": {
           "type": "object",
           "required": [
-            "hub_connection_id",
-            "hub_transfer_channel_id",
-            "icq_update_period",
-            "max_validator_shares_participating"
+            "cache",
+            "contract",
+            "hub_transfer_channel_id"
           ],
           "properties": {
-            "hub_connection_id": {
+            "cache": {
+              "type": "object",
+              "additionalProperties": false
+            },
+            "contract": {
               "type": "string"
             },
             "hub_transfer_channel_id": {
               "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        },
+        "ValidatorInfo": {
+          "type": "object",
+          "required": [
+            "address",
+            "delegated_tokens",
+            "power_ratio"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
             },
-            "icq_update_period": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+            "delegated_tokens": {
+              "$ref": "#/definitions/Uint128"
             },
-            "max_validator_shares_participating": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+            "power_ratio": {
+              "$ref": "#/definitions/Decimal"
             }
           },
           "additionalProperties": false
@@ -5956,57 +5921,6 @@
         }
       },
       "additionalProperties": false
-    },
-    "validators_info": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "ValidatorsInfoResponse",
-      "type": "object",
-      "required": [
-        "round_id",
-        "validators"
-      ],
-      "properties": {
-        "round_id": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
-        },
-        "validators": {
-          "type": "object",
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false,
-      "definitions": {
-        "Decimal": {
-          "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
-          "type": "string"
-        },
-        "Uint128": {
-          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
-          "type": "string"
-        },
-        "ValidatorInfo": {
-          "type": "object",
-          "required": [
-            "address",
-            "delegated_tokens",
-            "power_ratio"
-          ],
-          "properties": {
-            "address": {
-              "type": "string"
-            },
-            "delegated_tokens": {
-              "$ref": "#/definitions/Uint128"
-            },
-            "power_ratio": {
-              "$ref": "#/definitions/Decimal"
-            }
-          },
-          "additionalProperties": false
-        }
-      }
     },
     "voting_power_at_height": {
       "$schema": "http://json-schema.org/draft-07/schema#",

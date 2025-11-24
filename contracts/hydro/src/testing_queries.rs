@@ -3,27 +3,25 @@ use std::str::FromStr;
 
 use crate::contract::{
     compute_current_round_id, query_all_user_lockups, query_all_user_lockups_with_tranche_infos,
-    query_all_votes, query_all_votes_round_tranche, query_simulate_dtoken_amounts,
-    query_specific_user_lockups, query_specific_user_lockups_with_tranche_infos, query_user_votes,
+    query_all_votes, query_all_votes_round_tranche, query_lockup_voting_metrics,
+    query_simulate_dtoken_amounts, query_specific_user_lockups,
+    query_specific_user_lockups_with_tranche_infos, query_user_votes,
 };
-use crate::msg::{ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo};
+use crate::msg::{ProposalToLockups, TrancheInfo};
 use crate::query::VoteEntry;
 use crate::state::{
-    DropTokenInfo, HeightRange, RoundLockPowerSchedule, ValidatorInfo, Vote, DROP_TOKEN_INFO,
-    LOCKS_MAP_V2, ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS,
-    USER_LOCKS, VALIDATORS_INFO, VOTE_MAP_V2,
+    DropTokenInfo, HeightRange, RoundLockPowerSchedule, Vote, DROP_TOKEN_INFO, LOCKS_MAP_V2,
+    ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, VOTE_MAP_V2,
 };
 use crate::testing::{
-    get_address_as_str, get_default_instantiate_msg, get_default_lsm_token_info_provider,
-    get_message_info, set_default_validator_for_rounds, IBC_DENOM_1, IBC_DENOM_2,
+    get_address_as_str, get_default_instantiate_msg, get_message_info,
+    setup_lsm_token_info_provider_mock, IBC_DENOM_1, IBC_DENOM_2, LSM_TOKEN_PROVIDER_ADDR,
     ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
     VALIDATOR_2_LST_DENOM_1, VALIDATOR_3,
 };
-use crate::testing_lsm_integration::set_validator_power_ratio;
 use crate::testing_mocks::{
     denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
 };
-use crate::token_manager::LSM_TOKEN_INFO_PROVIDER_ID;
 use crate::utils::{load_current_constants, scale_lockup_power};
 use crate::{
     contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
@@ -43,7 +41,8 @@ use interface::drop_core::QueryMsg as DropQueryMsg;
 use interface::drop_puppeteer::{
     Delegations, DelegationsResponse, DropDelegation, PuppeteerQueryMsg, QueryExtMsg,
 };
-use neutron_sdk::bindings::query::NeutronQuery;
+use interface::hydro::TokenGroupRatioChange;
+use interface::lsm::ValidatorInfo;
 
 pub type WasmQueryFunc = dyn Fn(&WasmQuery) -> QuerierResult;
 
@@ -67,7 +66,17 @@ fn query_user_lockups_test() {
     // simulate user locking 1000 tokens for 1 month, one day after the round started
     env.block.time = env.block.time.plus_days(1);
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (0, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (1, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (2, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+        ],
+        true,
+    );
 
     let first_lockup_amount = 1000;
     let info = get_message_info(
@@ -85,9 +94,6 @@ fn query_user_lockups_test() {
 
     // simulate user locking 2000 tokens for 3 months, two days after the round started
     env.block.time = env.block.time.plus_days(1);
-
-    // set validators for new round
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     let second_lockup_amount: u128 = 2000;
     let info = get_message_info(
@@ -284,14 +290,34 @@ fn query_user_lockups_test() {
     assert_eq!(first_lockup_amount, expired_lockups[0].funds.amount.u128());
 
     // adjust the validator power ratios to check that they are reflected properly in the result
-    let constants = load_current_constants(&deps.as_ref(), &env).unwrap();
-    let current_round_id = compute_current_round_id(&env, &constants).unwrap();
-    set_validator_power_ratio(
-        deps.as_mut().storage,
-        current_round_id,
-        VALIDATOR_1,
-        Decimal::percent(50),
+    let new_power_ratio = Decimal::percent(50);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (0, vec![(VALIDATOR_1.to_string(), new_power_ratio)]),
+            (1, vec![(VALIDATOR_1.to_string(), new_power_ratio)]),
+            (2, vec![(VALIDATOR_1.to_string(), new_power_ratio)]),
+        ],
+        false,
     );
+
+    let msg = ExecuteMsg::UpdateTokenGroupsRatios {
+        changes: vec![TokenGroupRatioChange {
+            token_group_id: VALIDATOR_1.to_string(),
+            old_ratio: Decimal::one(),
+            new_ratio: new_power_ratio,
+        }],
+    };
+
+    let lsm_token_provider_msg_info = get_message_info(&deps.api, LSM_TOKEN_PROVIDER_ADDR, &[]);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        lsm_token_provider_msg_info.clone(),
+        msg,
+    );
+    assert!(res.is_ok());
 
     let all_lockups = query_all_user_lockups_with_tranche_infos(
         &deps.as_ref(),
@@ -486,7 +512,17 @@ fn query_user_voting_power_test() {
     let mut env_new = env.clone();
     env_new.block.time = env_new.block.time.plus_days(1);
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (0, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (1, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (2, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+        ],
+        true,
+    );
 
     let first_lockup_amount = 1000;
     let info = get_message_info(
@@ -504,9 +540,6 @@ fn query_user_voting_power_test() {
 
     // simulate user locking 2000 tokens for 3 months, two days after the round started
     env_new.block.time = env.block.time.plus_days(2);
-
-    // set the validators for the new round
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     let second_lockup_amount = 2000;
     let info = get_message_info(
@@ -533,9 +566,6 @@ fn query_user_voting_power_test() {
     // advance the chain for 1 month to start a new round
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
 
-    // set the validators for the new round, again
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
-
     // first lockup expires 29 days before the round 1 ends, and the second
     // lockup expires 1 month and 2 days after the round 1 ends, so the
     // expected voting power multipler is 0 for first lockup and 1.25 for second lockup
@@ -555,7 +585,6 @@ fn query_user_votes_test() {
     }
 
     struct ValidatorInfoToCreate {
-        round_id: u64,
         validator_info: ValidatorInfo,
     }
 
@@ -621,7 +650,6 @@ fn query_user_votes_test() {
             ],
             validator_infos_to_create: vec![
                 ValidatorInfoToCreate {
-                    round_id,
                     validator_info: ValidatorInfo {
                         address: VALIDATOR_1.to_string(),
                         delegated_tokens: Uint128::zero(),
@@ -629,7 +657,6 @@ fn query_user_votes_test() {
                     },
                 },
                 ValidatorInfoToCreate {
-                    round_id,
                     validator_info: ValidatorInfo {
                         address: VALIDATOR_2.to_string(),
                         delegated_tokens: Uint128::zero(),
@@ -693,7 +720,6 @@ fn query_user_votes_test() {
             ],
             validator_infos_to_create: vec![
                 ValidatorInfoToCreate {
-                    round_id,
                     validator_info: ValidatorInfo {
                         address: VALIDATOR_1.to_string(),
                         delegated_tokens: Uint128::zero(),
@@ -701,7 +727,6 @@ fn query_user_votes_test() {
                     },
                 },
                 ValidatorInfoToCreate {
-                    round_id,
                     validator_info: ValidatorInfo {
                         address: VALIDATOR_2.to_string(),
                         delegated_tokens: Uint128::zero(),
@@ -750,7 +775,6 @@ fn query_user_votes_test() {
                 },
             ],
             validator_infos_to_create: vec![ValidatorInfoToCreate {
-                round_id,
                 validator_info: ValidatorInfo {
                     address: VALIDATOR_3.to_string(),
                     delegated_tokens: Uint128::zero(),
@@ -806,7 +830,6 @@ fn query_user_votes_test() {
             ],
             validator_infos_to_create: vec![
                 ValidatorInfoToCreate {
-                    round_id,
                     validator_info: ValidatorInfo {
                         address: VALIDATOR_1.to_string(),
                         delegated_tokens: Uint128::zero(),
@@ -814,7 +837,6 @@ fn query_user_votes_test() {
                     },
                 },
                 ValidatorInfoToCreate {
-                    round_id,
                     validator_info: ValidatorInfo {
                         address: VALIDATOR_3.to_string(),
                         delegated_tokens: Uint128::zero(),
@@ -873,24 +895,25 @@ fn query_user_votes_test() {
             assert!(res.is_ok(), "failed to save vote");
         }
 
-        for validator_info_to_create in &test_case.validator_infos_to_create {
-            let res = VALIDATORS_INFO.save(
-                &mut deps.storage,
-                (
-                    validator_info_to_create.round_id,
-                    validator_info_to_create.validator_info.address.clone(),
-                ),
-                &validator_info_to_create.validator_info,
-            );
-            assert!(res.is_ok(), "failed to save validator info");
-        }
-
-        let res = TOKEN_INFO_PROVIDERS.save(
-            &mut deps.storage,
-            LSM_TOKEN_INFO_PROVIDER_ID.to_string(),
-            &get_default_lsm_token_info_provider(),
+        let lsm_token_info_provider_addr = deps.api.addr_make("lsm_token_info_provider");
+        setup_lsm_token_info_provider_mock(
+            &mut deps,
+            lsm_token_info_provider_addr.clone(),
+            vec![(
+                round_id,
+                test_case
+                    .validator_infos_to_create
+                    .iter()
+                    .map(|validator| {
+                        (
+                            validator.validator_info.address.clone(),
+                            validator.validator_info.power_ratio,
+                        )
+                    })
+                    .collect(),
+            )],
+            true,
         );
-        assert!(res.is_ok(), "failed to save token info provider");
 
         let res = query_user_votes(
             deps.as_ref(),
@@ -1155,7 +1178,7 @@ fn query_all_votes_round_tranche_test() {
 }
 
 fn get_expired_user_lockups(
-    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: Env,
     user_address: String,
 ) -> Vec<LockEntryV2> {
@@ -1167,7 +1190,7 @@ fn get_expired_user_lockups(
 }
 
 fn get_user_voting_power(
-    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: Env,
     user_address: String,
 ) -> u128 {
@@ -1191,7 +1214,17 @@ fn query_lock_votes_history_test() {
     instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address)];
     instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 2);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (0, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (1, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (2, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+        ],
+        true,
+    );
 
     // Create some test locks
     let lock_funds = vec![Coin {
@@ -1311,8 +1344,6 @@ fn query_lock_votes_history_test() {
     env.block.time = env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS);
     let current_round_id = compute_current_round_id(&env, &constants).unwrap();
     assert_eq!(current_round_id, 1);
-
-    set_default_validator_for_rounds(deps.as_mut(), 1, 2);
 
     // Create another proposal in current round (ID 1)
     execute(
@@ -1490,7 +1521,7 @@ fn query_lock_votes_history_test() {
 #[test]
 fn simulate_dtoken_amounts() {
     let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-1".to_string(),
+        "transfer/channel-0".to_string(),
         HashMap::from([
             (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
             (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
@@ -1500,21 +1531,21 @@ fn simulate_dtoken_amounts() {
     let user_address = deps.api.addr_make("addr0000");
     let info = get_message_info(&deps.api, user_address.as_ref(), &[]);
 
-    let mut instantiate_msg: crate::msg::InstantiateMsg = get_default_instantiate_msg(&deps.api);
-    instantiate_msg.token_info_providers[0] = TokenInfoProviderInstantiateMsg::LSM {
-        max_validator_shares_participating: 100,
-        hub_connection_id: "connection-0".to_string(),
-        hub_transfer_channel_id: "channel-1".to_string(),
-        icq_update_period: 100,
-    };
+    let instantiate_msg: crate::msg::InstantiateMsg = get_default_instantiate_msg(&deps.api);
 
     let res = instantiate(deps.as_mut(), env.clone(), info, instantiate_msg.clone());
     assert!(res.is_ok());
 
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
+
     // simulate user locking 1000 tokens for 1 month, one day after the round started
     env.block.time = env.block.time.plus_days(1);
-
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     let first_lockup_amount: u128 = 1000;
     let info = get_message_info(
@@ -1543,9 +1574,6 @@ fn simulate_dtoken_amounts() {
 
     // simulate user locking 2000 tokens for 3 months, two days after the round started
     env.block.time = env.block.time.plus_days(1);
-
-    // set validators for new round
-    set_default_validator_for_rounds(deps.as_mut(), 0, 100);
 
     let second_lockup_amount: u128 = 2000;
     let info = get_message_info(
@@ -1679,7 +1707,17 @@ fn query_parent_lock_ids_test() {
     instantiate_msg.whitelist_admins = vec![get_address_as_str(&deps.api, user_address)];
     instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg).unwrap();
 
-    set_default_validator_for_rounds(deps.as_mut(), 0, 2);
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![
+            (0, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (1, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+            (2, vec![(VALIDATOR_1.to_string(), Decimal::one())]),
+        ],
+        true,
+    );
 
     // Create a lockup
     let lsm_lock_info = get_message_info(
@@ -1771,4 +1809,208 @@ pub fn drop_mock(
         }
         _ => SystemResult::Err(SystemError::Unknown {}),
     })
+}
+
+#[test]
+fn test_query_lockup_voting_metrics_success() {
+    let user_address = "addr0000";
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[]);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(&deps.api);
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg);
+    assert!(res.is_ok());
+
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
+
+    // Lock some tokens to create lockups
+    let first_lockup_amount = 1000u128;
+    let lock_info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(first_lockup_amount, IBC_DENOM_1.to_string())],
+    );
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
+    assert!(res.is_ok());
+
+    // Lock more tokens to create a second lockup
+    let second_lockup_amount = 2000u128;
+    let lock_info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(second_lockup_amount, IBC_DENOM_1.to_string())],
+    );
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: 2 * ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
+    assert!(res.is_ok());
+
+    // Query lockups voting metrics for both lockups
+    let lock_ids = vec![0u64, 1u64];
+    let res = query_lockup_voting_metrics(deps.as_ref(), env, lock_ids);
+    assert!(
+        res.is_ok(),
+        "Query lockup voting metrics should succeed: {res:?}"
+    );
+
+    let response = res.unwrap();
+    assert_eq!(response.lockups.len(), 2);
+
+    // Find lockups by their lock_id (order-agnostic)
+    let lockup_0 = response
+        .lockups
+        .iter()
+        .find(|info| info.lock_id == 0)
+        .expect("Should find lockup 0");
+    let lockup_1 = response
+        .lockups
+        .iter()
+        .find(|info| info.lock_id == 1)
+        .expect("Should find lockup 1");
+
+    // Verify lockup 0: 1000 tokens x 1.0 multiplier = 1000 time-weighted shares
+    assert_eq!(lockup_0.time_weighted_shares, Uint128::new(1000));
+    assert_eq!(lockup_0.token_group_id, VALIDATOR_1);
+
+    // Verify lockup 1: 2000 tokens x 1.25 multiplier = 2500 time-weighted shares
+    assert_eq!(lockup_1.time_weighted_shares, Uint128::new(2500));
+    assert_eq!(lockup_1.token_group_id, VALIDATOR_1);
+}
+
+#[test]
+fn test_query_lockup_voting_metrics_nonexistent_lockup_fail() {
+    let user_address = "addr0000";
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[]);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(&deps.api);
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg);
+    assert!(res.is_ok());
+
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
+
+    // Lock one token to create a single lockup with ID 0
+    let lockup_amount = 1000u128;
+    let lock_info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(lockup_amount, IBC_DENOM_1.to_string())],
+    );
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
+    assert!(res.is_ok());
+
+    // Query lockup voting metrics with non-existent lock ID
+    let lock_ids = vec![0u64, 999u64]; // 999 doesn't exist
+    let res = query_lockup_voting_metrics(deps.as_ref(), env, lock_ids);
+
+    // Should fail because lockup 999 doesn't exist
+    assert!(res.is_err(), "Query should fail for non-existent lockup");
+
+    let error_msg = res.unwrap_err().to_string();
+
+    assert!(
+        error_msg.contains("not found"),
+        "Error should mention that lockup was not found: {error_msg}"
+    );
+}
+
+#[test]
+fn test_query_lockup_voting_metrics_validate_denom_fail() {
+    let user_address = "addr0000";
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+    let info = get_message_info(&deps.api, user_address, &[]);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(&deps.api);
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), instantiate_msg);
+    assert!(res.is_ok());
+
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    setup_lsm_token_info_provider_mock(
+        &mut deps,
+        lsm_token_info_provider_addr.clone(),
+        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
+        true,
+    );
+
+    // Lock tokens to create a lockup
+    let lockup_amount = 1000u128;
+    let lock_info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(lockup_amount, IBC_DENOM_1.to_string())],
+    );
+    let lock_msg = ExecuteMsg::LockTokens {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+    };
+    let res = execute(deps.as_mut(), env.clone(), lock_info, lock_msg);
+    assert!(res.is_ok());
+
+    // Manually corrupt the lockup's denom to an invalid one by directly modifying storage
+    let corrupted_lockup = LockEntryV2 {
+        lock_id: 0,
+        owner: deps.api.addr_make(user_address),
+        funds: Coin::new(lockup_amount, "invalid_denom"), // Invalid denom not in token manager
+        lock_start: env.block.time,
+        lock_end: env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS),
+    };
+    LOCKS_MAP_V2
+        .save(
+            deps.as_mut().storage,
+            0,
+            &corrupted_lockup,
+            env.block.height,
+        )
+        .unwrap();
+
+    // Query lockup voting metrics with the corrupted lockup
+    let lock_ids = vec![0u64];
+    let res = query_lockup_voting_metrics(deps.as_ref(), env, lock_ids);
+
+    // Should fail because validate_denom will fail for the invalid denom
+    assert!(res.is_err(), "Query should fail for invalid denom");
+
+    let error_msg = res.unwrap_err().to_string();
+
+    assert!(
+        error_msg.contains("IBC token expected"),
+        "Error should mention denom validation failure: {error_msg}"
+    );
 }

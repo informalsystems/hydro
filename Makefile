@@ -41,20 +41,24 @@ schema:
 	cd contracts/dao-voting-adapter && cargo run --bin dao_voting_adapter_schema
 	cd contracts/token-info-providers/st-token-info-provider && cargo run --bin st_token_info_provider_schema
 	cd contracts/token-info-providers/d-token-info-provider && cargo run --bin d_token_info_provider_schema
+	cd contracts/token-info-providers/lsm-token-info-provider && cargo run --bin lsm_token_info_provider_schema
 	cd contracts/gatekeeper && cargo run --bin gatekeeper_schema
 	cd contracts/marketplace && cargo run --bin marketplace_schema
-	cd contracts/inflow && cargo run --bin inflow_schema
-	cd contracts/inflow-mars-adapter && cargo run --bin inflow_mars_adapter_schema
+	cd contracts/inflow/vault && cargo run --bin inflow_vault_schema
+	cd contracts/inflow/control-center && cargo run --bin inflow_control_center_schema
+	cd contracts/inflow/mars-adapter && cargo run --bin inflow_mars_adapter_schema
 
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/hydro/schema NAME=HydroBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/tribute/schema NAME=TributeBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/dao-voting-adapter/schema NAME=DAOVotingAdapterBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/st-token-info-provider/schema NAME=STTokenInfoProviderBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/d-token-info-provider/schema NAME=DTokenInfoProviderBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/lsm-token-info-provider/schema NAME=LSMTokenInfoProviderBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/gatekeeper/schema NAME=GatekeeperBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/marketplace/schema NAME=MarketplaceBase
-	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/schema NAME=InflowBase
-	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow-mars-adapter/schema NAME=InflowMarsAdapterBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/vault/schema NAME=InflowVaultBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/control-center/schema NAME=InflowControlCenterBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/mars-adapter/schema NAME=InflowMarsAdapterBase
 
 ts-codegen-inner:
 	cosmwasm-ts-codegen generate \

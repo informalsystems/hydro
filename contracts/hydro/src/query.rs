@@ -5,8 +5,9 @@ use crate::{
 };
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
+// When compiling for wasm32 platform, compiler doesn't recognize that this type is used in one of the queries.
 #[allow(unused_imports)]
-use interface::token_info_provider::ValidatorsInfoResponse;
+use interface::hydro::CurrentRoundResponse;
 
 #[cw_serde]
 #[derive(QueryResponses, cw_orch::QueryFns)]
@@ -129,17 +130,8 @@ pub enum QueryMsg {
     #[returns(WhitelistAdminsResponse)]
     WhitelistAdmins {},
 
-    #[returns(ICQManagersResponse)]
-    ICQManagers {},
-
     #[returns(TotalLockedTokensResponse)]
     TotalLockedTokens {},
-
-    #[returns(ValidatorsInfoResponse)]
-    ValidatorsInfo { round_id: u64 },
-
-    #[returns(RegisteredValidatorQueriesResponse)]
-    RegisteredValidatorQueries {},
 
     #[returns(CanLockDenomResponse)]
     CanLockDenom { token_denom: String },
@@ -245,6 +237,11 @@ pub enum QueryMsg {
     /// Returns the list of parent lock IDs (ancestors) for a given child lock.
     #[returns(ParentLockIdsResponse)]
     ParentLockIds { child_id: u64 },
+
+    /// Returns voting-related metrics for the specified lockups, including time-weighted shares,
+    /// token group classification, and remaining locked rounds.
+    #[returns(LockupVotingMetricsResponse)]
+    LockupVotingMetrics { lock_ids: Vec<u64> },
 }
 
 #[cw_serde]
@@ -470,12 +467,6 @@ pub struct AllVotesRoundTrancheResponse {
 }
 
 #[cw_serde]
-pub struct CurrentRoundResponse {
-    pub round_id: u64,
-    pub round_end: Timestamp,
-}
-
-#[cw_serde]
 pub struct RoundEndResponse {
     pub round_end: Timestamp,
 }
@@ -514,22 +505,10 @@ pub struct RoundProposalsResponse {
     pub proposals: Vec<Proposal>,
 }
 
-// A vector containing tuples, where each tuple contains a validator address
-// and the id of the interchain query associated with that validator.
-#[cw_serde]
-pub struct RegisteredValidatorQueriesResponse {
-    pub query_ids: Vec<(String, u64)>,
-}
-
 #[cw_serde]
 pub struct CanLockDenomResponse {
     pub denom: String,
     pub can_be_locked: bool,
-}
-
-#[cw_serde]
-pub struct ICQManagersResponse {
-    pub managers: Vec<Addr>,
 }
 
 #[cw_serde]
@@ -562,4 +541,20 @@ pub struct TotalPowerAtHeightResponse {
 pub struct VotingPowerAtHeightResponse {
     pub power: Uint128,
     pub height: u64,
+}
+
+// LockupVotingMetrics contains voting-related metrics for a single lockup.
+// This includes the time-weighted shares (used to calculate voting power),
+// the token group the lockup belongs to, and the number of rounds remaining until unlock.
+#[cw_serde]
+pub struct LockupVotingMetrics {
+    pub lock_id: u64,
+    pub time_weighted_shares: Uint128,
+    pub token_group_id: String,
+    pub locked_rounds_remaining: u64,
+}
+
+#[cw_serde]
+pub struct LockupVotingMetricsResponse {
+    pub lockups: Vec<LockupVotingMetrics>,
 }

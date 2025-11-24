@@ -416,93 +416,6 @@
     {
       "type": "object",
       "required": [
-        "create_icqs_for_validators"
-      ],
-      "properties": {
-        "create_icqs_for_validators": {
-          "type": "object",
-          "required": [
-            "validators"
-          ],
-          "properties": {
-            "validators": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "add_i_c_q_manager"
-      ],
-      "properties": {
-        "add_i_c_q_manager": {
-          "type": "object",
-          "required": [
-            "address"
-          ],
-          "properties": {
-            "address": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "remove_i_c_q_manager"
-      ],
-      "properties": {
-        "remove_i_c_q_manager": {
-          "type": "object",
-          "required": [
-            "address"
-          ],
-          "properties": {
-            "address": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "withdraw_i_c_q_funds"
-      ],
-      "properties": {
-        "withdraw_i_c_q_funds": {
-          "type": "object",
-          "required": [
-            "amount"
-          ],
-          "properties": {
-            "amount": {
-              "$ref": "#/definitions/Uint128"
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
         "add_liquidity_deployment"
       ],
       "properties": {
@@ -606,25 +519,20 @@
     {
       "type": "object",
       "required": [
-        "update_token_group_ratio"
+        "update_token_groups_ratios"
       ],
       "properties": {
-        "update_token_group_ratio": {
+        "update_token_groups_ratios": {
           "type": "object",
           "required": [
-            "new_ratio",
-            "old_ratio",
-            "token_group_id"
+            "changes"
           ],
           "properties": {
-            "new_ratio": {
-              "$ref": "#/definitions/Decimal"
-            },
-            "old_ratio": {
-              "$ref": "#/definitions/Decimal"
-            },
-            "token_group_id": {
-              "type": "string"
+            "changes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/TokenGroupRatioChange"
+              }
             }
           },
           "additionalProperties": false
@@ -744,6 +652,48 @@
             },
             "token_id": {
               "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "This locks the tokens first (same as `LockTokens`) then transfers ownership to the contract account (same as `SendNft`)",
+      "type": "object",
+      "required": [
+        "lock_tokens_then_send_nft"
+      ],
+      "properties": {
+        "lock_tokens_then_send_nft": {
+          "type": "object",
+          "required": [
+            "contract",
+            "lock_duration",
+            "msg"
+          ],
+          "properties": {
+            "contract": {
+              "type": "string"
+            },
+            "lock_duration": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "msg": {
+              "$ref": "#/definitions/Binary"
+            },
+            "proof": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/LockTokensProof"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "additionalProperties": false
@@ -1166,6 +1116,26 @@
         }
       ]
     },
+    "TokenGroupRatioChange": {
+      "type": "object",
+      "required": [
+        "new_ratio",
+        "old_ratio",
+        "token_group_id"
+      ],
+      "properties": {
+        "new_ratio": {
+          "$ref": "#/definitions/Decimal"
+        },
+        "old_ratio": {
+          "$ref": "#/definitions/Decimal"
+        },
+        "token_group_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "TokenInfoProviderInstantiateMsg": {
       "oneOf": [
         {
@@ -1177,27 +1147,31 @@
             "lsm": {
               "type": "object",
               "required": [
-                "hub_connection_id",
+                "code_id",
                 "hub_transfer_channel_id",
-                "icq_update_period",
-                "max_validator_shares_participating"
+                "label",
+                "msg"
               ],
               "properties": {
-                "hub_connection_id": {
-                  "type": "string"
+                "admin": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "code_id": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
                 },
                 "hub_transfer_channel_id": {
                   "type": "string"
                 },
-                "icq_update_period": {
-                  "type": "integer",
-                  "format": "uint64",
-                  "minimum": 0.0
+                "label": {
+                  "type": "string"
                 },
-                "max_validator_shares_participating": {
-                  "type": "integer",
-                  "format": "uint64",
-                  "minimum": 0.0
+                "msg": {
+                  "$ref": "#/definitions/Binary"
                 }
               },
               "additionalProperties": false
