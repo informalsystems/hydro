@@ -180,6 +180,7 @@ fn test_compounder_cap() {
             lock_expiry_duration_seconds: None,
             slash_percentage_threshold: None,
             slash_tokens_receiver_addr: None,
+            lockup_conversion_fee_percent: None,
         },
     };
 
@@ -203,6 +204,7 @@ fn test_compounder_cap() {
             lock_expiry_duration_seconds: None,
             slash_percentage_threshold: None,
             slash_tokens_receiver_addr: None,
+            lockup_conversion_fee_percent: None,
         },
     };
 
@@ -428,6 +430,7 @@ fn test_compounder_cap() {
             lock_expiry_duration_seconds: None,
             slash_percentage_threshold: None,
             slash_tokens_receiver_addr: None,
+            lockup_conversion_fee_percent: None,
         },
     };
 
@@ -446,6 +449,7 @@ fn test_compounder_cap() {
             lock_expiry_duration_seconds: None,
             slash_percentage_threshold: None,
             slash_tokens_receiver_addr: None,
+            lockup_conversion_fee_percent: None,
         },
     };
 

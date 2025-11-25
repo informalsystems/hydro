@@ -100,6 +100,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             lock_expiry_duration_seconds: 60 * 60 * 24 * 30 * 6, // 6 months,
             slash_percentage_threshold: Decimal::percent(50),
             slash_tokens_receiver_addr: String::new(),
+            lockup_conversion_fee_percent: Decimal::percent(2),
         },
         Some(&Addr::unchecked(whitelist_admin_address.clone())),
         &[],
