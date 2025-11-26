@@ -18,20 +18,20 @@ pub enum AdapterExecuteMsg {
 
     /// Register new depositor address (admin only)
     RegisterDepositor {
-        /// New depositor contract address to register
+        /// New depositor address to register
         depositor_address: String,
     },
 
     /// Unregister depositor address (admin only)
     UnregisterDepositor {
-        /// Depositor contract address to unregister.
+        /// Depositor address to unregister.
         /// The account should not have any funds deployed.
         depositor_address: String,
     },
 
     /// Toggle depositor address as enabled/disabled (admin only)
     ToggleDepositorEnabled {
-        /// Depositor contract address to enable or disable
+        /// Depositor address to enable or disable
         depositor_address: String,
         enabled: bool,
     },
@@ -76,23 +76,23 @@ pub enum AdapterQueryMsg {
     #[returns(AdapterConfigResponse)]
     Config {},
 
-    /// Returns total positions across all depositor contracts for all denoms
-    #[returns(TotalDepositedResponse)]
-    TotalDeposited {},
+    /// Returns total positions across all depositors for all denoms
+    #[returns(AllPositionsResponse)]
+    AllPositions {},
 
-    /// Returns list of registered depositor contracts with their enabled status
+    /// Returns list of registered depositors with their enabled status
     /// Optionally filter by enabled status (Some(true), Some(false), or None for all)
     #[returns(RegisteredDepositorsResponse)]
     RegisteredDepositors { enabled: Option<bool> },
 
-    /// Returns the current position for a specific depositor contract and denom
+    /// Returns the current position for a specific depositor and denom
     #[returns(DepositorPositionResponse)]
     DepositorPosition {
         depositor_address: String,
         denom: String,
     },
 
-    /// Returns all positions for a specific depositor contract across all denoms
+    /// Returns all positions for a specific depositor across all denoms
     #[returns(DepositorPositionsResponse)]
     DepositorPositions { depositor_address: String },
 }
@@ -115,7 +115,7 @@ pub struct DepositorPositionsResponse {
 }
 
 #[cw_serde]
-pub struct TotalDepositedResponse {
+pub struct AllPositionsResponse {
     pub positions: Vec<Coin>,
 }
 

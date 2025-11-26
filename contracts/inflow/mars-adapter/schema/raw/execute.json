@@ -58,7 +58,7 @@
           ],
           "properties": {
             "depositor_address": {
-              "description": "New depositor contract address to register",
+              "description": "New depositor address to register",
               "type": "string"
             }
           },
@@ -81,7 +81,7 @@
           ],
           "properties": {
             "depositor_address": {
-              "description": "Depositor contract address to unregister. The account should not have any funds deployed.",
+              "description": "Depositor address to unregister. The account should not have any funds deployed.",
               "type": "string"
             }
           },
@@ -105,7 +105,7 @@
           ],
           "properties": {
             "depositor_address": {
-              "description": "Depositor contract address to enable or disable",
+              "description": "Depositor address to enable or disable",
               "type": "string"
             },
             "enabled": {

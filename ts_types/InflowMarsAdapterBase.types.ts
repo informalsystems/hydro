@@ -58,7 +58,7 @@ export type QueryMsg = {
 } | {
   config: {};
 } | {
-  total_deposited: {};
+  all_positions: {};
 } | {
   registered_depositors: {
     enabled?: boolean | null;
@@ -73,6 +73,9 @@ export type QueryMsg = {
     depositor_address: string;
   };
 };
+export interface AllPositionsResponse {
+  positions: Coin[];
+}
 export interface AvailableAmountResponse {
   amount: Uint128;
 }
@@ -96,7 +99,4 @@ export interface RegisteredDepositorInfo {
 export interface TimeEstimateResponse {
   blocks: number;
   seconds: number;
-}
-export interface TotalDepositedResponse {
-  positions: Coin[];
 }

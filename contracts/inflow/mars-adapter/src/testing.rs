@@ -10,9 +10,9 @@ use crate::contract::{execute, instantiate, query, reply};
 use crate::error::ContractError;
 use crate::mars::PositionsResponse;
 use crate::msg::{
-    AdapterConfigResponse, AdapterExecuteMsg, AdapterQueryMsg, AvailableAmountResponse,
-    DepositorPositionResponse, DepositorPositionsResponse, InstantiateMsg,
-    RegisteredDepositorsResponse, TimeEstimateResponse, TotalDepositedResponse,
+    AdapterConfigResponse, AdapterExecuteMsg, AdapterQueryMsg, AllPositionsResponse,
+    AvailableAmountResponse, DepositorPositionResponse, DepositorPositionsResponse, InstantiateMsg,
+    RegisteredDepositorsResponse, TimeEstimateResponse,
 };
 use crate::state::{Depositor, ADMINS, CONFIG, WHITELISTED_DEPOSITORS};
 
@@ -858,17 +858,91 @@ fn query_time_to_withdraw_is_instant() {
 }
 
 #[test]
-fn query_total_deposited_returns_empty() {
-    let mut deps = mock_dependencies();
+fn query_all_positions_aggregates_from_all_depositors() {
+    const ATOM_DENOM: &str = "ibc/atom";
+
+    // Mock Mars positions for three different depositors
+    let positions = vec![
+        // Depositor 1 (account_id: "123") has 1000 USDC
+        (
+            "123".to_string(),
+            PositionsResponse {
+                account_id: "123".to_string(),
+                deposits: vec![],
+                debts: vec![],
+                lends: vec![Coin {
+                    denom: USDC_DENOM.to_string(),
+                    amount: Uint128::new(1000),
+                }],
+            },
+        ),
+        // Depositor 2 (account_id: "456") has 500 USDC and 250 ATOM
+        (
+            "456".to_string(),
+            PositionsResponse {
+                account_id: "456".to_string(),
+                deposits: vec![],
+                debts: vec![],
+                lends: vec![
+                    Coin {
+                        denom: USDC_DENOM.to_string(),
+                        amount: Uint128::new(500),
+                    },
+                    Coin {
+                        denom: ATOM_DENOM.to_string(),
+                        amount: Uint128::new(250),
+                    },
+                ],
+            },
+        ),
+        // Depositor 3 (account_id: "789") has 300 ATOM
+        (
+            "789".to_string(),
+            PositionsResponse {
+                account_id: "789".to_string(),
+                deposits: vec![],
+                debts: vec![],
+                lends: vec![Coin {
+                    denom: ATOM_DENOM.to_string(),
+                    amount: Uint128::new(300),
+                }],
+            },
+        ),
+    ];
+
+    let mut deps = mock_dependencies_with_mars_positions(positions);
     let env = mock_env();
-    let (_mars, _depositor) = setup_contract(&mut deps, "123");
+    let (_mars, _depositor1) = setup_contract(&mut deps, "123");
 
-    // Query total deposited - now deprecated and returns empty
-    let res = query(deps.as_ref(), env, AdapterQueryMsg::TotalDeposited {}).unwrap();
-    let response: TotalDepositedResponse = cosmwasm_std::from_json(&res).unwrap();
+    // Register two additional depositors
+    let depositor2 = deps.api.addr_make("depositor2");
+    register_depositor_with_account(&mut deps, depositor2.clone(), "456".to_string());
 
-    // Returns empty because we query Mars directly for positions
-    assert_eq!(response.positions.len(), 0);
+    let depositor3 = deps.api.addr_make("depositor3");
+    register_depositor_with_account(&mut deps, depositor3.clone(), "789".to_string());
+
+    // Query all positions - should aggregate across all depositors
+    let res = query(deps.as_ref(), env, AdapterQueryMsg::AllPositions {}).unwrap();
+    let response: AllPositionsResponse = cosmwasm_std::from_json(&res).unwrap();
+
+    // Should have positions for both USDC and ATOM
+    assert_eq!(response.positions.len(), 2);
+
+    // Find USDC position (1000 + 500 = 1500)
+    let usdc_position = response
+        .positions
+        .iter()
+        .find(|c| c.denom == USDC_DENOM)
+        .unwrap();
+    assert_eq!(usdc_position.amount, Uint128::new(1500));
+
+    // Find ATOM position (250 + 300 = 550)
+    let atom_position = response
+        .positions
+        .iter()
+        .find(|c| c.denom == ATOM_DENOM)
+        .unwrap();
+    assert_eq!(atom_position.amount, Uint128::new(550));
 }
 
 #[test]

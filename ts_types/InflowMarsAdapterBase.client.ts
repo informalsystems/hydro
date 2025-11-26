@@ -6,7 +6,7 @@
 
 import { ICosmWasmClient, ISigningCosmWasmClient } from "./baseClient";
 import { StdFee } from "@interchainjs/types";
-import { InstantiateMsg, ExecuteMsg, Uint128, Coin, QueryMsg, AvailableAmountResponse, AdapterConfigResponse, DepositorPositionResponse, DepositorPositionsResponse, RegisteredDepositorsResponse, RegisteredDepositorInfo, TimeEstimateResponse, TotalDepositedResponse } from "./InflowMarsAdapterBase.types";
+import { InstantiateMsg, ExecuteMsg, Uint128, Coin, QueryMsg, AllPositionsResponse, AvailableAmountResponse, AdapterConfigResponse, DepositorPositionResponse, DepositorPositionsResponse, RegisteredDepositorsResponse, RegisteredDepositorInfo, TimeEstimateResponse } from "./InflowMarsAdapterBase.types";
 export interface InflowMarsAdapterBaseReadOnlyInterface {
   contractAddress: string;
   availableForDeposit: ({
@@ -31,7 +31,7 @@ export interface InflowMarsAdapterBaseReadOnlyInterface {
     depositorAddress: string;
   }) => Promise<TimeEstimateResponse>;
   config: () => Promise<AdapterConfigResponse>;
-  totalDeposited: () => Promise<TotalDepositedResponse>;
+  allPositions: () => Promise<AllPositionsResponse>;
   registeredDepositors: ({
     enabled
   }: {
@@ -60,7 +60,7 @@ export class InflowMarsAdapterBaseQueryClient implements InflowMarsAdapterBaseRe
     this.availableForWithdraw = this.availableForWithdraw.bind(this);
     this.timeToWithdraw = this.timeToWithdraw.bind(this);
     this.config = this.config.bind(this);
-    this.totalDeposited = this.totalDeposited.bind(this);
+    this.allPositions = this.allPositions.bind(this);
     this.registeredDepositors = this.registeredDepositors.bind(this);
     this.depositorPosition = this.depositorPosition.bind(this);
     this.depositorPositions = this.depositorPositions.bind(this);
@@ -112,9 +112,9 @@ export class InflowMarsAdapterBaseQueryClient implements InflowMarsAdapterBaseRe
       config: {}
     });
   };
-  totalDeposited = async (): Promise<TotalDepositedResponse> => {
+  allPositions = async (): Promise<AllPositionsResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      total_deposited: {}
+      all_positions: {}
     });
   };
   registeredDepositors = async ({

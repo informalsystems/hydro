@@ -96,13 +96,13 @@
       "additionalProperties": false
     },
     {
-      "description": "Returns total positions across all depositor contracts for all denoms",
+      "description": "Returns total positions across all depositors for all denoms",
       "type": "object",
       "required": [
-        "total_deposited"
+        "all_positions"
       ],
       "properties": {
-        "total_deposited": {
+        "all_positions": {
           "type": "object",
           "additionalProperties": false
         }
@@ -110,7 +110,7 @@
       "additionalProperties": false
     },
     {
-      "description": "Returns list of registered depositor contracts with their enabled status Optionally filter by enabled status (Some(true), Some(false), or None for all)",
+      "description": "Returns list of registered depositors with their enabled status Optionally filter by enabled status (Some(true), Some(false), or None for all)",
       "type": "object",
       "required": [
         "registered_depositors"
@@ -132,7 +132,7 @@
       "additionalProperties": false
     },
     {
-      "description": "Returns the current position for a specific depositor contract and denom",
+      "description": "Returns the current position for a specific depositor and denom",
       "type": "object",
       "required": [
         "depositor_position"
@@ -158,7 +158,7 @@
       "additionalProperties": false
     },
     {
-      "description": "Returns all positions for a specific depositor contract across all denoms",
+      "description": "Returns all positions for a specific depositor across all denoms",
       "type": "object",
       "required": [
         "depositor_positions"

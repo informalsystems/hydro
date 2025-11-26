@@ -7,9 +7,9 @@ use cw2::set_contract_version;
 use crate::error::ContractError;
 use crate::mars;
 use crate::msg::{
-    AdapterConfigResponse, AdapterExecuteMsg, AdapterQueryMsg, AvailableAmountResponse,
-    DepositorPositionResponse, DepositorPositionsResponse, InstantiateMsg, RegisteredDepositorInfo,
-    RegisteredDepositorsResponse, TimeEstimateResponse, TotalDepositedResponse,
+    AdapterConfigResponse, AdapterExecuteMsg, AdapterQueryMsg, AllPositionsResponse,
+    AvailableAmountResponse, DepositorPositionResponse, DepositorPositionsResponse, InstantiateMsg,
+    RegisteredDepositorInfo, RegisteredDepositorsResponse, TimeEstimateResponse,
 };
 use crate::state::{
     Config, Depositor, ADMINS, CONFIG, PENDING_DEPOSITOR_SETUP, WHITELISTED_DEPOSITORS,
@@ -142,8 +142,8 @@ pub fn execute(
     }
 }
 
-/// Retrieves the Depositor of the depositor address or return DepositorNotRegistered error
-fn get_depositor_account_id(deps: Deps, depositor_addr: Addr) -> Result<Depositor, ContractError> {
+/// Retrieves the depositor info for a given address or return DepositorNotRegistered error
+fn get_depositor(deps: Deps, depositor_addr: Addr) -> Result<Depositor, ContractError> {
     WHITELISTED_DEPOSITORS
         .load(deps.storage, depositor_addr.clone())
         .map_err(|_| ContractError::DepositorNotRegistered {
@@ -151,13 +151,20 @@ fn get_depositor_account_id(deps: Deps, depositor_addr: Addr) -> Result<Deposito
         })
 }
 
-/// Validates that the caller is a registered depositor
+/// Validates that the caller is a registered and enabled depositor
 fn validate_depositor_caller(
     deps: &DepsMut,
     info: &MessageInfo,
 ) -> Result<Depositor, ContractError> {
-    get_depositor_account_id(deps.as_ref(), info.sender.clone())
-        .map_err(|_| ContractError::Unauthorized {})
+    let depositor = get_depositor(deps.as_ref(), info.sender.clone())
+        .map_err(|_| ContractError::Unauthorized {})?;
+
+    // Check if depositor is enabled
+    if !depositor.enabled {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    Ok(depositor)
 }
 
 fn validate_admin_caller(deps: &DepsMut, info: &MessageInfo) -> Result<(), ContractError> {
@@ -401,7 +408,7 @@ pub fn query(deps: Deps, _env: Env, msg: AdapterQueryMsg) -> StdResult<Binary> {
         AdapterQueryMsg::RegisteredDepositors { enabled } => {
             to_json_binary(&query_registered_depositors(deps, enabled)?)
         }
-        AdapterQueryMsg::TotalDeposited {} => to_json_binary(&query_total_deposited(deps)?),
+        AdapterQueryMsg::AllPositions {} => to_json_binary(&query_all_positions(deps)?),
         AdapterQueryMsg::DepositorPosition {
             depositor_address,
             denom,
@@ -486,12 +493,40 @@ fn query_registered_depositors(
 }
 
 /// This query will go through all depositors registered and compute the sum of funds in each account
-fn query_total_deposited(deps: Deps) -> StdResult<TotalDepositedResponse> {
-    // NOTE: This query is deprecated and returns empty data.
-    // Total deposited doesn't account for yield earned in Mars.
-    // To get accurate totals, you must query Mars positions for each user.
-    let _ = deps; // Suppress unused warning
-    Ok(TotalDepositedResponse { positions: vec![] })
+fn query_all_positions(deps: Deps) -> StdResult<AllPositionsResponse> {
+    use std::collections::HashMap;
+
+    let config = CONFIG.load(deps.storage)?;
+
+    // HashMap to aggregate positions by denom
+    let mut aggregated_positions: HashMap<String, Uint128> = HashMap::new();
+
+    // Iterate through all whitelisted depositors
+    for entry in WHITELISTED_DEPOSITORS.range(deps.storage, None, None, Order::Ascending) {
+        let (_addr, depositor) = entry?;
+
+        // Query Mars positions for this depositor
+        let positions = mars::query_mars_positions(
+            &deps.querier,
+            &config.mars_contract,
+            depositor.mars_account_id,
+        )?;
+
+        // Aggregate the lent positions by denom
+        for coin in positions.lends {
+            *aggregated_positions
+                .entry(coin.denom)
+                .or_insert(Uint128::zero()) += coin.amount;
+        }
+    }
+
+    // Convert HashMap to Vec<Coin>
+    let positions: Vec<Coin> = aggregated_positions
+        .into_iter()
+        .map(|(denom, amount)| Coin { denom, amount })
+        .collect();
+
+    Ok(AllPositionsResponse { positions })
 }
 
 fn query_depositor_position(
@@ -504,8 +539,8 @@ fn query_depositor_position(
     let depositor_addr = deps.api.addr_validate(&depositor_address)?;
 
     // Retrieve the depositor account
-    let depositor = get_depositor_account_id(deps, depositor_addr)
-        .map_err(|e| StdError::generic_err(e.to_string()))?;
+    let depositor =
+        get_depositor(deps, depositor_addr).map_err(|e| StdError::generic_err(e.to_string()))?;
 
     // Query Mars to get the total lent position in the account for the depositor address (includes yield)
     let amount = mars::get_lent_amount_for_denom(
@@ -527,9 +562,9 @@ fn query_depositor_positions(
 
     let depositor_addr = deps.api.addr_validate(&depositor_address)?;
 
-    // Retrieve the depositor account
-    let depositor = get_depositor_account_id(deps, depositor_addr)
-        .map_err(|e| StdError::generic_err(e.to_string()))?;
+    // Retrieve the depositor info
+    let depositor =
+        get_depositor(deps, depositor_addr).map_err(|e| StdError::generic_err(e.to_string()))?;
 
     // Query Mars to get all lent positions in the depositor account (includes yield)
     let positions = mars::query_mars_positions(
