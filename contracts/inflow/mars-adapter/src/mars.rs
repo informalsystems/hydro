@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 #[cw_serde]
 pub enum MarsExecuteMsg {
     /// Create a new credit account
-    CreateCreditAccount { account_kind: Option<String> },
+    CreateCreditAccount(Option<String>),
     /// Update an existing credit account with actions
     UpdateCreditAccount {
         account_id: String,
@@ -41,18 +41,38 @@ pub struct PositionsResponse {
     // Other fields omitted for simplicity (vaults, staked_astro_lps, perps, etc.)
 }
 
+/// Amount type for Mars actions (Lend, Reclaim, Withdraw)
+/// Can be either "account_balance" or { exact: Uint128 }
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionAmount {
+    /// Exact amount
+    Exact(String),
+    /// Use entire account balance
+    AccountBalance,
+}
+
+/// ActionCoin used for Lend, Reclaim, and Withdraw actions
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct ActionCoin {
+    pub denom: String,
+    pub amount: ActionAmount,
+}
+
 /// Actions that can be performed on a Mars credit account
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
-    /// Deposit coins into the credit account
+    /// Deposit coins into the credit account (uses regular Coin)
     Deposit(Coin),
-    /// Lend coins from the credit account
-    Lend(Coin),
-    /// Reclaim coins from lending
-    Reclaim(Coin),
-    /// Withdraw coins to a wallet
-    WithdrawToWallet { coin: Coin, recipient: Addr },
+    /// Lend coins from the credit account (uses ActionCoin)
+    Lend(ActionCoin),
+    /// Reclaim coins from lending (uses ActionCoin)
+    Reclaim(ActionCoin),
+    /// Withdraw coins from the credit account (uses ActionCoin)
+    Withdraw(ActionCoin),
+    /// Withdraw coins to a wallet (uses ActionCoin)
+    WithdrawToWallet { coin: ActionCoin, recipient: String },
 }
 
 /// Helper function to create a Mars CreateCreditAccount message
@@ -60,7 +80,7 @@ pub fn create_mars_account_msg(
     mars_contract: Addr,
     account_kind: Option<String>,
 ) -> StdResult<WasmMsg> {
-    let msg = MarsExecuteMsg::CreateCreditAccount { account_kind };
+    let msg = MarsExecuteMsg::CreateCreditAccount(account_kind);
     Ok(WasmMsg::Execute {
         contract_addr: mars_contract.to_string(),
         msg: to_json_binary(&msg)?,
@@ -74,9 +94,14 @@ pub fn create_mars_deposit_lend_msg(
     account_id: String,
     coin: Coin,
 ) -> StdResult<WasmMsg> {
+    let action_coin = ActionCoin {
+        denom: coin.denom.clone(),
+        amount: ActionAmount::Exact(coin.amount.to_string()),
+    };
+
     let msg = MarsExecuteMsg::UpdateCreditAccount {
         account_id,
-        actions: vec![Action::Deposit(coin.clone()), Action::Lend(coin.clone())],
+        actions: vec![Action::Deposit(coin.clone()), Action::Lend(action_coin)],
     };
     Ok(WasmMsg::Execute {
         contract_addr: mars_contract.to_string(),
@@ -92,11 +117,19 @@ pub fn create_mars_reclaim_withdraw_msg(
     coin: Coin,
     recipient: Addr,
 ) -> StdResult<WasmMsg> {
+    let action_coin = ActionCoin {
+        denom: coin.denom.clone(),
+        amount: ActionAmount::Exact(coin.amount.to_string()),
+    };
+
     let msg = MarsExecuteMsg::UpdateCreditAccount {
         account_id,
         actions: vec![
-            Action::Reclaim(coin.clone()),
-            Action::WithdrawToWallet { coin, recipient },
+            Action::Reclaim(action_coin.clone()),
+            Action::WithdrawToWallet {
+                coin: action_coin,
+                recipient: recipient.to_string(),
+            },
         ],
     };
     Ok(WasmMsg::Execute {

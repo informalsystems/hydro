@@ -108,7 +108,9 @@ fn create_mock_mars_account_reply(account_id: &str) -> Reply {
         id: REPLY_CREATE_ACCOUNT,
         #[allow(deprecated)]
         result: SubMsgResult::Ok(SubMsgResponse {
-            events: vec![Event::new("wasm").add_attribute("account_id", account_id)],
+            events: vec![Event::new("wasm")
+                .add_attribute("action", "mint")
+                .add_attribute("token_id", account_id)],
             msg_responses: vec![],
             data: None,
         }),
@@ -1582,7 +1584,7 @@ fn reply_handler_with_error_result_fails() {
 }
 
 #[test]
-fn reply_handler_without_account_id_fails() {
+fn reply_handler_without_token_id_fails() {
     let mut deps = mock_dependencies();
     let env = mock_env();
     let (_, _, _, msg) = default_instantiate_msg(&mut deps);
@@ -1594,7 +1596,7 @@ fn reply_handler_without_account_id_fails() {
     };
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
-    // Create a reply without account_id attribute
+    // Create a reply without token_id attribute (or without mint action)
     #[allow(deprecated)]
     let invalid_reply = Reply {
         id: REPLY_CREATE_ACCOUNT,

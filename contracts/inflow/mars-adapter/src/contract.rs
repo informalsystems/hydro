@@ -565,8 +565,8 @@ fn handle_create_account_instantiate_reply(
 
 /// Parse account_id from Mars CreateCreditAccount reply
 fn parse_account_id_from_reply(reply: &Reply) -> Result<String, ContractError> {
-    // Mars returns the account_id in the events
-    // Look for a "wasm" event with "account_id" attribute
+    // Mars returns the token_id in the events (credit accounts are NFTs)
+    // Look for a "wasm" event with "action" = "mint" and extract "token_id"
     use cosmwasm_std::SubMsgResult;
 
     let response = match &reply.result {
@@ -580,15 +580,24 @@ fn parse_account_id_from_reply(reply: &Reply) -> Result<String, ContractError> {
 
     for event in &response.events {
         if event.ty == "wasm" {
-            for attr in &event.attributes {
-                if attr.key == "account_id" {
-                    return Ok(attr.value.clone());
+            // Check if this is a mint action
+            let is_mint = event
+                .attributes
+                .iter()
+                .any(|attr| attr.key == "action" && attr.value == "mint");
+
+            if is_mint {
+                // Extract token_id from this event
+                for attr in &event.attributes {
+                    if attr.key == "token_id" {
+                        return Ok(attr.value.clone());
+                    }
                 }
             }
         }
     }
 
     Err(ContractError::MarsProtocolError {
-        msg: "account_id not found in Mars response".to_string(),
+        msg: "token_id not found in Mars mint event".to_string(),
     })
 }
