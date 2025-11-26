@@ -14,13 +14,13 @@
           "type": "object",
           "required": [
             "denom",
-            "inflow_address"
+            "depositor_address"
           ],
           "properties": {
             "denom": {
               "type": "string"
             },
-            "inflow_address": {
+            "depositor_address": {
               "type": "string"
             }
           },
@@ -40,13 +40,13 @@
           "type": "object",
           "required": [
             "denom",
-            "inflow_address"
+            "depositor_address"
           ],
           "properties": {
             "denom": {
               "type": "string"
             },
-            "inflow_address": {
+            "depositor_address": {
               "type": "string"
             }
           },
@@ -66,13 +66,13 @@
           "type": "object",
           "required": [
             "coin",
-            "inflow_address"
+            "depositor_address"
           ],
           "properties": {
             "coin": {
               "$ref": "#/definitions/Coin"
             },
-            "inflow_address": {
+            "depositor_address": {
               "type": "string"
             }
           },
@@ -96,7 +96,7 @@
       "additionalProperties": false
     },
     {
-      "description": "Returns total amounts deposited across all Inflow contracts for all denoms",
+      "description": "Returns total positions across all depositor contracts for all denoms",
       "type": "object",
       "required": [
         "total_deposited"
@@ -110,13 +110,13 @@
       "additionalProperties": false
     },
     {
-      "description": "Returns list of registered Inflow contracts with their enabled status Optionally filter by enabled status (Some(true), Some(false), or None for all)",
+      "description": "Returns list of registered depositor contracts with their enabled status Optionally filter by enabled status (Some(true), Some(false), or None for all)",
       "type": "object",
       "required": [
-        "registered_inflows"
+        "registered_depositors"
       ],
       "properties": {
-        "registered_inflows": {
+        "registered_depositors": {
           "type": "object",
           "properties": {
             "enabled": {
@@ -132,23 +132,23 @@
       "additionalProperties": false
     },
     {
-      "description": "Returns the total amount deposited by a specific Inflow contract for a specific denom",
+      "description": "Returns the current position for a specific depositor contract and denom",
       "type": "object",
       "required": [
-        "inflow_deposit"
+        "depositor_position"
       ],
       "properties": {
-        "inflow_deposit": {
+        "depositor_position": {
           "type": "object",
           "required": [
             "denom",
-            "inflow_address"
+            "depositor_address"
           ],
           "properties": {
             "denom": {
               "type": "string"
             },
-            "inflow_address": {
+            "depositor_address": {
               "type": "string"
             }
           },
@@ -158,19 +158,19 @@
       "additionalProperties": false
     },
     {
-      "description": "Returns all deposits by a specific Inflow contract across all denoms",
+      "description": "Returns all positions for a specific depositor contract across all denoms",
       "type": "object",
       "required": [
-        "inflow_deposits"
+        "depositor_positions"
       ],
       "properties": {
-        "inflow_deposits": {
+        "depositor_positions": {
           "type": "object",
           "required": [
-            "inflow_address"
+            "depositor_address"
           ],
           "properties": {
-            "inflow_address": {
+            "depositor_address": {
               "type": "string"
             }
           },

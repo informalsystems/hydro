@@ -43,7 +43,7 @@ use crate::{
 };
 
 use interface::adapter::{
-    AdapterExecuteMsg, AdapterQueryMsg, AvailableAmountResponse, InflowDepositResponse,
+    AdapterExecuteMsg, AdapterQueryMsg, AvailableAmountResponse, DepositorPositionResponse,
 };
 
 /// Contract name that is used for migration.
@@ -1187,12 +1187,12 @@ fn calculate_venues_allocation(
         // Query adapter for available capacity/balance
         let query_msg = if is_deposit {
             AdapterQueryMsg::AvailableForDeposit {
-                inflow_address: inflow_address.clone(),
+                depositor_address: inflow_address.clone(),
                 denom: denom.clone(),
             }
         } else {
             AdapterQueryMsg::AvailableForWithdraw {
-                inflow_address: inflow_address.clone(),
+                depositor_address: inflow_address.clone(),
                 denom: denom.clone(),
             }
         };
@@ -1674,13 +1674,13 @@ fn query_total_adapter_deposits(
 
     for (_name, adapter_info) in adapters {
         // Query each adapter for deposits by this inflow contract
-        let query_msg = AdapterQueryMsg::InflowDeposit {
-            inflow_address: inflow_address.clone(),
+        let query_msg = AdapterQueryMsg::DepositorPosition {
+            depositor_address: inflow_address.clone(),
             denom: deposit_denom.clone(),
         };
 
         // Query the adapter - if it fails, skip this adapter
-        let result: Result<InflowDepositResponse, _> = deps
+        let result: Result<DepositorPositionResponse, _> = deps
             .querier
             .query_wasm_smart(adapter_info.address.to_string(), &query_msg);
 

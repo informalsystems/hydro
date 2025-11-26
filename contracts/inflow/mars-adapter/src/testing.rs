@@ -11,8 +11,8 @@ use crate::error::ContractError;
 use crate::mars::PositionsResponse;
 use crate::msg::{
     AdapterConfigResponse, AdapterExecuteMsg, AdapterQueryMsg, AvailableAmountResponse,
-    InflowDepositResponse, InflowDepositsResponse, InstantiateMsg, RegisteredInflowsResponse,
-    TimeEstimateResponse, TotalDepositedResponse,
+    DepositorPositionResponse, DepositorPositionsResponse, InstantiateMsg,
+    RegisteredDepositorsResponse, TimeEstimateResponse, TotalDepositedResponse,
 };
 use crate::state::{Depositor, ADMINS, CONFIG, WHITELISTED_DEPOSITORS};
 
@@ -69,16 +69,16 @@ fn default_instantiate_msg(
 ) -> (Addr, Addr, Addr, InstantiateMsg) {
     let admin = deps.api.addr_make("admin");
     let mars_contract = deps.api.addr_make("mars_contract");
-    let inflow_address = deps.api.addr_make("inflow");
+    let depositor_address = deps.api.addr_make("depositor");
 
     let msg = InstantiateMsg {
         admins: vec![admin.to_string()],
         mars_contract: mars_contract.to_string(),
         supported_denoms: vec![USDC_DENOM.to_string()],
-        inflow_address: Some(inflow_address.to_string()),
+        depositor_address: Some(depositor_address.to_string()),
     };
 
-    (admin, mars_contract, inflow_address, msg)
+    (admin, mars_contract, depositor_address, msg)
 }
 
 // Helper function to instantiate contract with valid addresses and simulate reply
@@ -91,7 +91,7 @@ fn setup_contract(
         sender: deps.api.addr_make("creator"),
         funds: vec![],
     };
-    let (_, mars_contract, inflow_address, msg) = default_instantiate_msg(&mut *deps);
+    let (_, mars_contract, depositor_address, msg) = default_instantiate_msg(&mut *deps);
 
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
@@ -99,7 +99,7 @@ fn setup_contract(
     let mock_reply = create_mock_mars_account_reply(mars_account_id);
     reply(deps.as_mut(), env, mock_reply).unwrap();
 
-    (mars_contract, inflow_address)
+    (mars_contract, depositor_address)
 }
 
 // Helper to create a mock reply for Mars account creation
@@ -119,10 +119,10 @@ fn create_mock_mars_account_reply(account_id: &str) -> Reply {
     }
 }
 
-// Helper to register an inflow contract with a Mars account ID for testing
-fn register_inflow_with_account(
+// Helper to register a depositor with a Mars account ID for testing
+fn register_depositor_with_account(
     deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
-    inflow_address: Addr,
+    depositor_address: Addr,
     mars_account_id: String,
 ) {
     let depositor = Depositor {
@@ -130,7 +130,7 @@ fn register_inflow_with_account(
         enabled: true,
     };
     WHITELISTED_DEPOSITORS
-        .save(deps.as_mut().storage, inflow_address, &depositor)
+        .save(deps.as_mut().storage, depositor_address, &depositor)
         .unwrap();
 }
 
@@ -147,7 +147,7 @@ fn proper_instantiation() {
         funds: vec![],
     };
 
-    let (admin, mars_contract, inflow_address, msg) = default_instantiate_msg(&mut deps);
+    let (admin, mars_contract, depositor_address, msg) = default_instantiate_msg(&mut deps);
 
     let res = instantiate(deps.as_mut(), env, info, msg).unwrap();
     assert_eq!(res.attributes.len(), 4);
@@ -164,9 +164,9 @@ fn proper_instantiation() {
     assert_eq!(admins.len(), 1);
     assert_eq!(admins[0], admin);
 
-    // Verify Inflow contract is initialized correctly
+    // Verify depositor is initialized correctly
     let depositor = WHITELISTED_DEPOSITORS
-        .load(&deps.storage, inflow_address)
+        .load(&deps.storage, depositor_address)
         .unwrap();
     assert!(depositor.enabled);
 }
@@ -178,7 +178,7 @@ fn instantiate_with_no_denoms_fails() {
 
     let admin = deps.api.addr_make("admin");
     let mars_contract = deps.api.addr_make("mars_contract");
-    let inflow_address = deps.api.addr_make("inflow");
+    let depositor_address = deps.api.addr_make("depositor");
 
     let info = MessageInfo {
         sender: deps.api.addr_make("creator"),
@@ -189,7 +189,7 @@ fn instantiate_with_no_denoms_fails() {
         admins: vec![admin.to_string()],
         mars_contract: mars_contract.to_string(),
         supported_denoms: vec![],
-        inflow_address: Some(inflow_address.to_string()),
+        depositor_address: Some(depositor_address.to_string()),
     };
 
     let err = instantiate(deps.as_mut(), env, info, msg).unwrap_err();
@@ -204,11 +204,11 @@ fn instantiate_with_no_denoms_fails() {
 fn deposit_success() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, "123");
+    let (_mars, depositor_addr) = setup_contract(&mut deps, "123");
 
     // Deposit funds
     let info = MessageInfo {
-        sender: inflow_addr.clone(),
+        sender: depositor_addr.clone(),
         funds: vec![Coin {
             denom: USDC_DENOM.to_string(),
             amount: Uint128::new(1000),
@@ -232,7 +232,7 @@ fn deposit_success() {
 fn deposit_unauthorized() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_mars, _inflow_addr) = setup_contract(&mut deps, "123");
+    let (_mars, _depositor_addr) = setup_contract(&mut deps, "123");
 
     // Try deposit from unauthorized address
     let info = MessageInfo {
@@ -253,12 +253,12 @@ fn deposit_unauthorized() {
 fn deposit_unsupported_denom() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, "123");
+    let (_mars, depositor_addr) = setup_contract(&mut deps, "123");
 
     // Try to deposit unsupported denom
     let unsupported_denom = "uatom".to_string();
     let info = MessageInfo {
-        sender: inflow_addr.clone(),
+        sender: depositor_addr.clone(),
         funds: vec![Coin {
             denom: unsupported_denom.clone(),
             amount: Uint128::new(1000),
@@ -280,11 +280,11 @@ fn deposit_unsupported_denom() {
 fn deposit_invalid_funds() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, "123");
+    let (_mars, depositor_addr) = setup_contract(&mut deps, "123");
 
     // Try to deposit with no coins
     let info = MessageInfo {
-        sender: inflow_addr.clone(),
+        sender: depositor_addr.clone(),
         funds: vec![],
     };
 
@@ -295,7 +295,7 @@ fn deposit_invalid_funds() {
 
     // Try to deposit with multiple coins
     let info = MessageInfo {
-        sender: inflow_addr.clone(),
+        sender: depositor_addr.clone(),
         funds: vec![
             Coin {
                 denom: USDC_DENOM.to_string(),
@@ -316,11 +316,11 @@ fn deposit_invalid_funds() {
 fn deposit_zero_amount() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, "123");
+    let (_mars, depositor_addr) = setup_contract(&mut deps, "123");
 
     // Try to deposit zero amount
     let info = MessageInfo {
-        sender: inflow_addr.clone(),
+        sender: depositor_addr.clone(),
         funds: vec![Coin {
             denom: USDC_DENOM.to_string(),
             amount: Uint128::zero(),
@@ -337,11 +337,11 @@ fn deposit_zero_amount() {
 fn deposit_multiple_times_creates_messages() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, "123");
+    let (_mars, depositor_addr) = setup_contract(&mut deps, "123");
 
     // First deposit: 1000 USDC
     let info = MessageInfo {
-        sender: inflow_addr.clone(),
+        sender: depositor_addr.clone(),
         funds: vec![Coin {
             denom: USDC_DENOM.to_string(),
             amount: Uint128::new(1000),
@@ -355,7 +355,7 @@ fn deposit_multiple_times_creates_messages() {
 
     // Second deposit: 500 USDC
     let info = MessageInfo {
-        sender: inflow_addr.clone(),
+        sender: depositor_addr.clone(),
         funds: vec![Coin {
             denom: USDC_DENOM.to_string(),
             amount: Uint128::new(500),
@@ -367,7 +367,7 @@ fn deposit_multiple_times_creates_messages() {
 
     // Third deposit: 300 USDC
     let info = MessageInfo {
-        sender: inflow_addr.clone(),
+        sender: depositor_addr.clone(),
         funds: vec![Coin {
             denom: USDC_DENOM.to_string(),
             amount: Uint128::new(300),
@@ -384,7 +384,7 @@ fn deposit_multiple_times_creates_messages() {
 
 #[test]
 fn withdraw_success() {
-    // Mock Mars positions: inflow has 1000 USDC lent
+    // Mock Mars positions: depositor has 1000 USDC lent
     let mars_account_id = "123".to_string();
     let positions = vec![(
         mars_account_id.clone(),
@@ -400,11 +400,11 @@ fn withdraw_success() {
     )];
     let mut deps = mock_dependencies_with_mars_positions(positions);
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, &mars_account_id);
+    let (_mars, depositor_addr) = setup_contract(&mut deps, &mars_account_id);
 
     // Withdraw 400
     let info = MessageInfo {
-        sender: inflow_addr.clone(),
+        sender: depositor_addr.clone(),
         funds: vec![],
     };
     let coin = Coin {
@@ -419,7 +419,7 @@ fn withdraw_success() {
 
     // Check attributes
     assert_eq!(res.attributes[0].value, "withdraw");
-    assert_eq!(res.attributes[1].value, inflow_addr.to_string());
+    assert_eq!(res.attributes[1].value, depositor_addr.to_string());
     assert_eq!(res.attributes[2].value, "400");
     assert_eq!(res.attributes[3].value, USDC_DENOM);
 }
@@ -428,7 +428,7 @@ fn withdraw_success() {
 fn withdraw_unauthorized() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_mars, _inflow_addr) = setup_contract(&mut deps, "123");
+    let (_mars, _depositor_addr) = setup_contract(&mut deps, "123");
 
     // Try withdraw from unauthorized address
     let info = MessageInfo {
@@ -446,13 +446,13 @@ fn withdraw_unauthorized() {
 }
 
 #[test]
-fn withdraw_unregistered_inflow() {
+fn withdraw_unregistered_depositor() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_mars, _inflow_addr) = setup_contract(&mut deps, "123");
+    let (_mars, _depositor_addr) = setup_contract(&mut deps, "123");
 
-    // Try withdraw from completely unregistered inflow address
-    let unregistered = deps.api.addr_make("unregistered_inflow");
+    // Try withdraw from completely unregistered depositor address
+    let unregistered = deps.api.addr_make("unregistered_depositor");
     let info = MessageInfo {
         sender: unregistered,
         funds: vec![],
@@ -471,11 +471,11 @@ fn withdraw_unregistered_inflow() {
 fn withdraw_unsupported_denom() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, "123");
+    let (_mars, depositor_addr) = setup_contract(&mut deps, "123");
 
     // Try to withdraw unsupported denom
     let info = MessageInfo {
-        sender: inflow_addr.clone(),
+        sender: depositor_addr.clone(),
         funds: vec![],
     };
     let unsupported_denom = "uatom".to_string();
@@ -496,7 +496,7 @@ fn withdraw_unsupported_denom() {
 
 #[test]
 fn withdraw_insufficient_balance() {
-    // Mock Mars positions: inflow has 500 USDC lent
+    // Mock Mars positions: depositor has 500 USDC lent
     let mars_account_id = "666";
     let positions = vec![(
         mars_account_id.to_string(),
@@ -512,11 +512,11 @@ fn withdraw_insufficient_balance() {
     )];
     let mut deps = mock_dependencies_with_mars_positions(positions);
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, mars_account_id);
+    let (_mars, depositor_addr) = setup_contract(&mut deps, mars_account_id);
 
     // Try to withdraw 1000 (more than lent)
     let info = MessageInfo {
-        sender: inflow_addr.clone(),
+        sender: depositor_addr.clone(),
         funds: vec![],
     };
     let coin = Coin {
@@ -533,11 +533,11 @@ fn withdraw_insufficient_balance() {
 fn withdraw_zero_amount() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, "123");
+    let (_mars, depositor_addr) = setup_contract(&mut deps, "123");
 
     // Try to withdraw zero amount
     let info = MessageInfo {
-        sender: inflow_addr.clone(),
+        sender: depositor_addr.clone(),
         funds: vec![],
     };
     let coin = Coin {
@@ -552,7 +552,7 @@ fn withdraw_zero_amount() {
 
 #[test]
 fn withdraw_full_amount() {
-    // Mock Mars positions: inflow has 1000 USDC lent
+    // Mock Mars positions: depositor has 1000 USDC lent
     let mars_account_id = "555";
     let positions = vec![(
         mars_account_id.to_string(),
@@ -568,11 +568,11 @@ fn withdraw_full_amount() {
     )];
     let mut deps = mock_dependencies_with_mars_positions(positions);
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, mars_account_id);
+    let (_mars, depositor_addr) = setup_contract(&mut deps, mars_account_id);
 
     // Withdraw full amount
     let info = MessageInfo {
-        sender: inflow_addr.clone(),
+        sender: depositor_addr.clone(),
         funds: vec![],
     };
     let coin = Coin {
@@ -587,10 +587,10 @@ fn withdraw_full_amount() {
     assert_eq!(res.attributes[0].value, "withdraw");
 }
 
-// Security Tests - Inflow Isolation
+// Security Tests - Depositor Isolation
 #[test]
-fn inflow_cannot_withdraw_another_inflows_funds() {
-    // Mock Mars positions: inflow1 has 1000, inflow2 has 500
+fn depositor_cannot_withdraw_another_depositors_funds() {
+    // Mock Mars positions: depositor1 has 1000, depositor2 has 500
     let positions = vec![
         (
             "100".to_string(),
@@ -620,22 +620,22 @@ fn inflow_cannot_withdraw_another_inflows_funds() {
     let mut deps = mock_dependencies_with_mars_positions(positions);
     let env = mock_env();
 
-    // Setup first inflow with account ID "100"
-    let (_mars, inflow1_addr) = setup_contract(&mut deps, "100");
+    // Setup first depositor with account ID "100"
+    let (_mars, depositor1_addr) = setup_contract(&mut deps, "100");
 
-    // Register second inflow manually with account ID "200"
-    let inflow2_addr = deps.api.addr_make("inflow2");
-    register_inflow_with_account(&mut deps, inflow2_addr.clone(), "200".to_string());
+    // Register second depositor manually with account ID "200"
+    let depositor2_addr = deps.api.addr_make("depositor2");
+    register_depositor_with_account(&mut deps, depositor2_addr.clone(), "200".to_string());
 
-    // Try to withdraw from inflow2's perspective (which only has 500 USDC)
-    // This tests that inflow2 can only access its own funds
+    // Try to withdraw from depositor2's perspective (which only has 500 USDC)
+    // This tests that depositor2 can only access its own funds
     let info = MessageInfo {
-        sender: inflow2_addr.clone(),
+        sender: depositor2_addr.clone(),
         funds: vec![],
     };
     let coin = Coin {
         denom: USDC_DENOM.to_string(),
-        amount: Uint128::new(600), // More than inflow2 has
+        amount: Uint128::new(600), // More than depositor2 has
     };
 
     // This should fail with InsufficientBalance
@@ -644,18 +644,18 @@ fn inflow_cannot_withdraw_another_inflows_funds() {
     let err = execute(deps.as_mut(), env.clone(), info, withdraw_msg.clone()).unwrap_err();
     assert_eq!(err, ContractError::InsufficientBalance {});
 
-    // Verify inflow1 cannot access inflow2's Mars account
-    // Inflow1 tries to withdraw, but it uses its own account (100), not account 200
+    // Verify depositor1 cannot access depositor2's Mars account
+    // Depositor1 tries to withdraw, but it uses its own account (100), not account 200
     let info = MessageInfo {
-        sender: inflow1_addr,
+        sender: depositor1_addr,
         funds: vec![],
     };
     let coin = Coin {
         denom: USDC_DENOM.to_string(),
-        amount: Uint128::new(900), // Within inflow1's balance
+        amount: Uint128::new(900), // Within depositor1's balance
     };
 
-    // This should succeed because inflow1 has 1000 USDC in its own account
+    // This should succeed because depositor1 has 1000 USDC in its own account
     let withdraw_msg = AdapterExecuteMsg::Withdraw { coin };
 
     let res = execute(deps.as_mut(), env, info, withdraw_msg).unwrap();
@@ -663,8 +663,8 @@ fn inflow_cannot_withdraw_another_inflows_funds() {
 }
 
 #[test]
-fn deposit_and_withdraw_isolation_between_inflows() {
-    // Mock Mars positions: inflow1 has 1000, inflow2 has 500
+fn deposit_and_withdraw_isolation_between_depositors() {
+    // Mock Mars positions: depositor1 has 1000, depositor2 has 500
     let positions = vec![
         (
             "300".to_string(),
@@ -694,16 +694,16 @@ fn deposit_and_withdraw_isolation_between_inflows() {
     let mut deps = mock_dependencies_with_mars_positions(positions);
     let env = mock_env();
 
-    // Setup first inflow with account ID "300"
-    let (_mars, inflow1_addr) = setup_contract(&mut deps, "300");
+    // Setup first depositor with account ID "300"
+    let (_mars, depositor1_addr) = setup_contract(&mut deps, "300");
 
-    // Register second inflow manually with account ID "400"
-    let inflow2_addr = deps.api.addr_make("inflow2_vault");
-    register_inflow_with_account(&mut deps, inflow2_addr.clone(), "400".to_string());
+    // Register second depositor manually with account ID "400"
+    let depositor2_addr = deps.api.addr_make("depositor2_vault");
+    register_depositor_with_account(&mut deps, depositor2_addr.clone(), "400".to_string());
 
-    // Inflow1 withdraws 300 from its own account (has 1000)
+    // Depositor1 withdraws 300 from its own account (has 1000)
     let info = MessageInfo {
-        sender: inflow1_addr.clone(),
+        sender: depositor1_addr.clone(),
         funds: vec![],
     };
     let coin = Coin {
@@ -714,9 +714,9 @@ fn deposit_and_withdraw_isolation_between_inflows() {
     let res = execute(deps.as_mut(), env.clone(), info, withdraw_msg.clone()).unwrap();
     assert_eq!(res.messages.len(), 1);
 
-    // Inflow2 withdraws 400 from its own account (has 500)
+    // Depositor2 withdraws 400 from its own account (has 500)
     let info = MessageInfo {
-        sender: inflow2_addr,
+        sender: depositor2_addr,
         funds: vec![],
     };
     let coin = Coin {
@@ -737,7 +737,7 @@ fn deposit_and_withdraw_isolation_between_inflows() {
 #[test]
 fn query_config_works() {
     let mut deps = mock_dependencies();
-    let (mars, _inflow) = setup_contract(&mut deps, "123");
+    let (mars, _depositor) = setup_contract(&mut deps, "123");
 
     // Query config
     let res = query(deps.as_ref(), mock_env(), AdapterQueryMsg::Config {}).unwrap();
@@ -748,96 +748,102 @@ fn query_config_works() {
 }
 
 #[test]
-fn query_registered_inflows_returns_all() {
+fn query_registered_depositors_returns_all() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, "123");
+    let (_mars, depositor_addr) = setup_contract(&mut deps, "123");
 
-    // Register a second inflow
-    let inflow2_addr = deps.api.addr_make("inflow2");
-    register_inflow_with_account(&mut deps, inflow2_addr.clone(), "456".to_string());
+    // Register a second depositor
+    let depositor2_addr = deps.api.addr_make("depositor2");
+    register_depositor_with_account(&mut deps, depositor2_addr.clone(), "456".to_string());
 
-    // Query all registered inflows
+    // Query all registered depositors
     let res = query(
         deps.as_ref(),
         env,
-        AdapterQueryMsg::RegisteredInflows { enabled: None },
+        AdapterQueryMsg::RegisteredDepositors { enabled: None },
     )
     .unwrap();
-    let response: RegisteredInflowsResponse = cosmwasm_std::from_json(&res).unwrap();
+    let response: RegisteredDepositorsResponse = cosmwasm_std::from_json(&res).unwrap();
 
-    assert_eq!(response.inflows.len(), 2);
+    assert_eq!(response.depositors.len(), 2);
     assert!(response
-        .inflows
+        .depositors
         .iter()
-        .any(|i| i.inflow_address == inflow_addr.to_string() && i.enabled));
+        .any(|i| i.depositor_address == depositor_addr.to_string() && i.enabled));
     assert!(response
-        .inflows
+        .depositors
         .iter()
-        .any(|i| i.inflow_address == inflow2_addr.to_string() && i.enabled));
+        .any(|i| i.depositor_address == depositor2_addr.to_string() && i.enabled));
 }
 
 #[test]
-fn query_registered_inflows_filter_enabled() {
+fn query_registered_depositors_filter_enabled() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, "123");
+    let (_mars, depositor_addr) = setup_contract(&mut deps, "123");
 
-    // Register a second inflow
-    let inflow2_addr = deps.api.addr_make("inflow2");
-    register_inflow_with_account(&mut deps, inflow2_addr.clone(), "456".to_string());
+    // Register a second depositor
+    let depositor2_addr = deps.api.addr_make("depositor2");
+    register_depositor_with_account(&mut deps, depositor2_addr.clone(), "456".to_string());
 
-    // Disable the first inflow
+    // Disable the first depositor
     let depositor = Depositor {
         mars_account_id: "123".to_string(),
         enabled: false,
     };
     WHITELISTED_DEPOSITORS
-        .save(&mut deps.storage, inflow_addr.clone(), &depositor)
+        .save(&mut deps.storage, depositor_addr.clone(), &depositor)
         .unwrap();
 
-    // Query only enabled inflows
+    // Query only enabled depositors
     let res = query(
         deps.as_ref(),
         env.clone(),
-        AdapterQueryMsg::RegisteredInflows {
+        AdapterQueryMsg::RegisteredDepositors {
             enabled: Some(true),
         },
     )
     .unwrap();
-    let response: RegisteredInflowsResponse = cosmwasm_std::from_json(&res).unwrap();
+    let response: RegisteredDepositorsResponse = cosmwasm_std::from_json(&res).unwrap();
 
-    assert_eq!(response.inflows.len(), 1);
-    assert_eq!(response.inflows[0].inflow_address, inflow2_addr.to_string());
-    assert!(response.inflows[0].enabled);
+    assert_eq!(response.depositors.len(), 1);
+    assert_eq!(
+        response.depositors[0].depositor_address,
+        depositor2_addr.to_string()
+    );
+    assert!(response.depositors[0].enabled);
 
-    // Query only disabled inflows
+    // Query only disabled depositors
     let res = query(
         deps.as_ref(),
         env,
-        AdapterQueryMsg::RegisteredInflows {
+        AdapterQueryMsg::RegisteredDepositors {
             enabled: Some(false),
         },
     )
     .unwrap();
-    let response: RegisteredInflowsResponse = cosmwasm_std::from_json(&res).unwrap();
+    let response: RegisteredDepositorsResponse = cosmwasm_std::from_json(&res).unwrap();
 
-    assert_eq!(response.inflows.len(), 1);
-    assert_eq!(response.inflows[0].inflow_address, inflow_addr.to_string());
-    assert!(!response.inflows[0].enabled);
+    assert_eq!(response.depositors.len(), 1);
+    assert_eq!(
+        response.depositors[0].depositor_address,
+        depositor_addr.to_string()
+    );
+    assert!(!response.depositors[0].enabled);
 }
 
 #[test]
 fn query_time_to_withdraw_is_instant() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, "123");
+    let (_mars, depositor_addr) = setup_contract(&mut deps, "123");
 
     let res = query(
         deps.as_ref(),
         env,
         AdapterQueryMsg::TimeToWithdraw {
-            inflow_address: inflow_addr.to_string(),
+            depositor_address: depositor_addr.to_string(),
             coin: Coin {
                 denom: USDC_DENOM.to_string(),
                 amount: Uint128::new(100),
@@ -855,19 +861,19 @@ fn query_time_to_withdraw_is_instant() {
 fn query_total_deposited_returns_empty() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_mars, _inflow) = setup_contract(&mut deps, "123");
+    let (_mars, _depositor) = setup_contract(&mut deps, "123");
 
     // Query total deposited - now deprecated and returns empty
     let res = query(deps.as_ref(), env, AdapterQueryMsg::TotalDeposited {}).unwrap();
     let response: TotalDepositedResponse = cosmwasm_std::from_json(&res).unwrap();
 
     // Returns empty because we query Mars directly for positions
-    assert_eq!(response.deposits.len(), 0);
+    assert_eq!(response.positions.len(), 0);
 }
 
 #[test]
 fn query_available_for_withdraw_returns_mars_position() {
-    // Mock Mars positions: inflow has 750 USDC lent
+    // Mock Mars positions: depositor has 750 USDC lent
     let positions = vec![(
         "789".to_string(),
         PositionsResponse {
@@ -882,14 +888,14 @@ fn query_available_for_withdraw_returns_mars_position() {
     )];
     let mut deps = mock_dependencies_with_mars_positions(positions);
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, "789");
+    let (_mars, depositor_addr) = setup_contract(&mut deps, "789");
 
     // Query available for withdraw
     let res = query(
         deps.as_ref(),
         env,
         AdapterQueryMsg::AvailableForWithdraw {
-            inflow_address: inflow_addr.to_string(),
+            depositor_address: depositor_addr.to_string(),
             denom: USDC_DENOM.to_string(),
         },
     )
@@ -900,8 +906,8 @@ fn query_available_for_withdraw_returns_mars_position() {
 }
 
 #[test]
-fn query_inflow_deposits_multiple_denoms() {
-    // Mock Mars positions: inflow has multiple denoms lent
+fn query_depositor_positions_multiple_denoms() {
+    // Mock Mars positions: depositor has multiple denoms lent
     let atom_denom = "uatom";
     let positions = vec![(
         "999".to_string(),
@@ -932,13 +938,13 @@ fn query_inflow_deposits_multiple_denoms() {
 
     let admin = deps.api.addr_make("admin");
     let mars_contract = deps.api.addr_make("mars_contract");
-    let inflow_address = deps.api.addr_make("inflow");
+    let depositor_address = deps.api.addr_make("depositor");
 
     let msg = InstantiateMsg {
         admins: vec![admin.to_string()],
         mars_contract: mars_contract.to_string(),
         supported_denoms: vec![USDC_DENOM.to_string(), atom_denom.to_string()],
-        inflow_address: Some(inflow_address.to_string()),
+        depositor_address: Some(depositor_address.to_string()),
     };
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
@@ -946,24 +952,24 @@ fn query_inflow_deposits_multiple_denoms() {
     let mock_reply = create_mock_mars_account_reply("999");
     reply(deps.as_mut(), env.clone(), mock_reply).unwrap();
 
-    // Query inflow deposits
+    // Query depositor positions
     let res = query(
         deps.as_ref(),
         env,
-        AdapterQueryMsg::InflowDeposits {
-            inflow_address: inflow_address.to_string(),
+        AdapterQueryMsg::DepositorPositions {
+            depositor_address: depositor_address.to_string(),
         },
     )
     .unwrap();
-    let response: InflowDepositsResponse = cosmwasm_std::from_json(&res).unwrap();
+    let response: DepositorPositionsResponse = cosmwasm_std::from_json(&res).unwrap();
 
-    assert_eq!(response.deposits.len(), 2);
+    assert_eq!(response.positions.len(), 2);
     assert!(response
-        .deposits
+        .positions
         .iter()
         .any(|c| c.denom == USDC_DENOM && c.amount == Uint128::new(500)));
     assert!(response
-        .deposits
+        .positions
         .iter()
         .any(|c| c.denom == atom_denom && c.amount == Uint128::new(300)));
 }
@@ -973,7 +979,7 @@ fn query_inflow_deposits_multiple_denoms() {
 // ============================================================================
 
 #[test]
-fn admin_can_register_new_inflow() {
+fn admin_can_register_new_depositor() {
     let mut deps = mock_dependencies();
     let env = mock_env();
     let (admin, _, _, msg) = default_instantiate_msg(&mut deps);
@@ -985,14 +991,14 @@ fn admin_can_register_new_inflow() {
     };
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
-    // Simulate reply for first inflow
+    // Simulate reply for first depositor
     let mock_reply = create_mock_mars_account_reply("111");
     reply(deps.as_mut(), env.clone(), mock_reply).unwrap();
 
-    // Admin registers a second inflow
-    let inflow2 = deps.api.addr_make("inflow2");
-    let msg = AdapterExecuteMsg::RegisterInflow {
-        inflow_address: inflow2.to_string(),
+    // Admin registers a second depositor
+    let depositor2 = deps.api.addr_make("depositor2");
+    let msg = AdapterExecuteMsg::RegisterDepositor {
+        depositor_address: depositor2.to_string(),
     };
 
     let info = MessageInfo {
@@ -1003,31 +1009,31 @@ fn admin_can_register_new_inflow() {
 
     // Should have submessage for Mars account creation
     assert_eq!(res.messages.len(), 1);
-    assert_eq!(res.attributes[0].value, "register_inflow");
-    assert_eq!(res.attributes[1].value, inflow2.to_string());
+    assert_eq!(res.attributes[0].value, "register_depositor");
+    assert_eq!(res.attributes[1].value, depositor2.to_string());
 
     // Simulate reply to complete registration
     let mock_reply2 = create_mock_mars_account_reply("222");
     reply(deps.as_mut(), env.clone(), mock_reply2).unwrap();
 
-    // Verify second inflow is registered using query
+    // Verify second depositor is registered using query
     let res = query(
         deps.as_ref(),
         env,
-        AdapterQueryMsg::RegisteredInflows { enabled: None },
+        AdapterQueryMsg::RegisteredDepositors { enabled: None },
     )
     .unwrap();
-    let response: RegisteredInflowsResponse = cosmwasm_std::from_json(&res).unwrap();
+    let response: RegisteredDepositorsResponse = cosmwasm_std::from_json(&res).unwrap();
 
-    assert_eq!(response.inflows.len(), 2);
+    assert_eq!(response.depositors.len(), 2);
     assert!(response
-        .inflows
+        .depositors
         .iter()
-        .any(|i| i.inflow_address == inflow2.to_string() && i.enabled));
+        .any(|i| i.depositor_address == depositor2.to_string() && i.enabled));
 }
 
 #[test]
-fn non_admin_cannot_register_inflow() {
+fn non_admin_cannot_register_depositor() {
     let mut deps = mock_dependencies();
     let env = mock_env();
     let (_, _, _, msg) = default_instantiate_msg(&mut deps);
@@ -1039,10 +1045,10 @@ fn non_admin_cannot_register_inflow() {
     };
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
-    // Non-admin tries to register inflow
-    let inflow2 = deps.api.addr_make("inflow2");
-    let msg = AdapterExecuteMsg::RegisterInflow {
-        inflow_address: inflow2.to_string(),
+    // Non-admin tries to register depositor
+    let depositor2 = deps.api.addr_make("depositor2");
+    let msg = AdapterExecuteMsg::RegisterDepositor {
+        depositor_address: depositor2.to_string(),
     };
 
     let info = MessageInfo {
@@ -1055,10 +1061,10 @@ fn non_admin_cannot_register_inflow() {
 }
 
 #[test]
-fn register_inflow_already_registered_fails() {
+fn register_depositor_already_registered_fails() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (admin, _, inflow_address, msg) = default_instantiate_msg(&mut deps);
+    let (admin, _, depositor_address, msg) = default_instantiate_msg(&mut deps);
 
     // Instantiate
     let info = MessageInfo {
@@ -1067,13 +1073,13 @@ fn register_inflow_already_registered_fails() {
     };
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
-    // Simulate reply for first inflow
+    // Simulate reply for first depositor
     let mock_reply = create_mock_mars_account_reply("123");
     reply(deps.as_mut(), env.clone(), mock_reply).unwrap();
 
-    // Try to register the same inflow again
-    let msg = AdapterExecuteMsg::RegisterInflow {
-        inflow_address: inflow_address.to_string(),
+    // Try to register the same depositor again
+    let msg = AdapterExecuteMsg::RegisterDepositor {
+        depositor_address: depositor_address.to_string(),
     };
 
     let info = MessageInfo {
@@ -1084,17 +1090,17 @@ fn register_inflow_already_registered_fails() {
 
     assert_eq!(
         err,
-        ContractError::InflowAlreadyRegistered {
-            inflow_address: inflow_address.to_string()
+        ContractError::DepositorAlreadyRegistered {
+            depositor_address: depositor_address.to_string()
         }
     );
 }
 
 #[test]
-fn admin_can_unregister_inflow() {
+fn admin_can_unregister_depositor() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (admin, _, inflow_address, msg) = default_instantiate_msg(&mut deps);
+    let (admin, _, depositor_address, msg) = default_instantiate_msg(&mut deps);
 
     // Instantiate
     let info = MessageInfo {
@@ -1107,15 +1113,15 @@ fn admin_can_unregister_inflow() {
     let mock_reply = create_mock_mars_account_reply("123");
     reply(deps.as_mut(), env.clone(), mock_reply).unwrap();
 
-    // Verify inflow is registered
+    // Verify depositor is registered
     assert!(WHITELISTED_DEPOSITORS
-        .may_load(&deps.storage, inflow_address.clone())
+        .may_load(&deps.storage, depositor_address.clone())
         .unwrap()
         .is_some());
 
-    // Unregister the inflow
-    let msg = AdapterExecuteMsg::UnregisterInflow {
-        inflow_address: inflow_address.to_string(),
+    // Unregister the depositor
+    let msg = AdapterExecuteMsg::UnregisterDepositor {
+        depositor_address: depositor_address.to_string(),
     };
 
     let info = MessageInfo {
@@ -1124,22 +1130,22 @@ fn admin_can_unregister_inflow() {
     };
     let res = execute(deps.as_mut(), env, info, msg).unwrap();
 
-    assert_eq!(res.attributes[0].value, "unregister_inflow");
-    assert_eq!(res.attributes[1].value, inflow_address.to_string());
+    assert_eq!(res.attributes[0].value, "unregister_depositor");
+    assert_eq!(res.attributes[1].value, depositor_address.to_string());
     assert_eq!(res.attributes[2].value, "123");
 
-    // Verify inflow is no longer registered
+    // Verify depositor is no longer registered
     assert!(WHITELISTED_DEPOSITORS
-        .may_load(&deps.storage, inflow_address)
+        .may_load(&deps.storage, depositor_address)
         .unwrap()
         .is_none());
 }
 
 #[test]
-fn non_admin_cannot_unregister_inflow() {
+fn non_admin_cannot_unregister_depositor() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_, _, inflow_address, msg) = default_instantiate_msg(&mut deps);
+    let (_, _, depositor_address, msg) = default_instantiate_msg(&mut deps);
 
     // Instantiate
     let info = MessageInfo {
@@ -1149,8 +1155,8 @@ fn non_admin_cannot_unregister_inflow() {
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
     // Non-admin tries to unregister
-    let msg = AdapterExecuteMsg::UnregisterInflow {
-        inflow_address: inflow_address.to_string(),
+    let msg = AdapterExecuteMsg::UnregisterDepositor {
+        depositor_address: depositor_address.to_string(),
     };
 
     let info = MessageInfo {
@@ -1163,7 +1169,7 @@ fn non_admin_cannot_unregister_inflow() {
 }
 
 #[test]
-fn unregister_nonexistent_inflow_fails() {
+fn unregister_nonexistent_depositor_fails() {
     let mut deps = mock_dependencies();
     let env = mock_env();
     let (admin, _, _, msg) = default_instantiate_msg(&mut deps);
@@ -1175,10 +1181,10 @@ fn unregister_nonexistent_inflow_fails() {
     };
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
-    // Try to unregister non-existent inflow
+    // Try to unregister non-existent depositor
     let nonexistent = deps.api.addr_make("nonexistent");
-    let msg = AdapterExecuteMsg::UnregisterInflow {
-        inflow_address: nonexistent.to_string(),
+    let msg = AdapterExecuteMsg::UnregisterDepositor {
+        depositor_address: nonexistent.to_string(),
     };
 
     let info = MessageInfo {
@@ -1189,17 +1195,17 @@ fn unregister_nonexistent_inflow_fails() {
 
     assert_eq!(
         err,
-        ContractError::InflowNotRegistered {
-            inflow_address: nonexistent.to_string()
+        ContractError::DepositorNotRegistered {
+            depositor_address: nonexistent.to_string()
         }
     );
 }
 
 #[test]
-fn admin_can_toggle_inflow_enabled() {
+fn admin_can_toggle_depositor_enabled() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (admin, _, inflow_address, msg) = default_instantiate_msg(&mut deps);
+    let (admin, _, depositor_address, msg) = default_instantiate_msg(&mut deps);
 
     // Instantiate
     let info = MessageInfo {
@@ -1212,15 +1218,15 @@ fn admin_can_toggle_inflow_enabled() {
     let mock_reply = create_mock_mars_account_reply("123");
     reply(deps.as_mut(), env.clone(), mock_reply).unwrap();
 
-    // Verify inflow is enabled by default
+    // Verify depositor is enabled by default
     let depositor = WHITELISTED_DEPOSITORS
-        .load(&deps.storage, inflow_address.clone())
+        .load(&deps.storage, depositor_address.clone())
         .unwrap();
     assert!(depositor.enabled);
 
-    // Disable the inflow
-    let msg = AdapterExecuteMsg::ToggleInflowEnabled {
-        inflow_address: inflow_address.to_string(),
+    // Disable the depositor
+    let msg = AdapterExecuteMsg::ToggleDepositorEnabled {
+        depositor_address: depositor_address.to_string(),
         enabled: false,
     };
 
@@ -1230,19 +1236,19 @@ fn admin_can_toggle_inflow_enabled() {
     };
     let res = execute(deps.as_mut(), env.clone(), info, msg).unwrap();
 
-    assert_eq!(res.attributes[0].value, "toggle_inflow_enabled");
-    assert_eq!(res.attributes[1].value, inflow_address.to_string());
+    assert_eq!(res.attributes[0].value, "toggle_depositor_enabled");
+    assert_eq!(res.attributes[1].value, depositor_address.to_string());
     assert_eq!(res.attributes[2].value, "false");
 
-    // Verify inflow is disabled
+    // Verify depositor is disabled
     let depositor = WHITELISTED_DEPOSITORS
-        .load(&deps.storage, inflow_address.clone())
+        .load(&deps.storage, depositor_address.clone())
         .unwrap();
     assert!(!depositor.enabled);
 
-    // Re-enable the inflow
-    let msg = AdapterExecuteMsg::ToggleInflowEnabled {
-        inflow_address: inflow_address.to_string(),
+    // Re-enable the depositor
+    let msg = AdapterExecuteMsg::ToggleDepositorEnabled {
+        depositor_address: depositor_address.to_string(),
         enabled: true,
     };
 
@@ -1254,18 +1260,18 @@ fn admin_can_toggle_inflow_enabled() {
 
     assert_eq!(res.attributes[2].value, "true");
 
-    // Verify inflow is enabled again
+    // Verify depositor is enabled again
     let depositor = WHITELISTED_DEPOSITORS
-        .load(&deps.storage, inflow_address)
+        .load(&deps.storage, depositor_address)
         .unwrap();
     assert!(depositor.enabled);
 }
 
 #[test]
-fn non_admin_cannot_toggle_inflow_enabled() {
+fn non_admin_cannot_toggle_depositor_enabled() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_, _, inflow_address, msg) = default_instantiate_msg(&mut deps);
+    let (_, _, depositor_address, msg) = default_instantiate_msg(&mut deps);
 
     // Instantiate
     let info = MessageInfo {
@@ -1275,8 +1281,8 @@ fn non_admin_cannot_toggle_inflow_enabled() {
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
     // Non-admin tries to toggle
-    let msg = AdapterExecuteMsg::ToggleInflowEnabled {
-        inflow_address: inflow_address.to_string(),
+    let msg = AdapterExecuteMsg::ToggleDepositorEnabled {
+        depositor_address: depositor_address.to_string(),
         enabled: false,
     };
 
@@ -1290,7 +1296,7 @@ fn non_admin_cannot_toggle_inflow_enabled() {
 }
 
 #[test]
-fn toggle_nonexistent_inflow_fails() {
+fn toggle_nonexistent_depositor_fails() {
     let mut deps = mock_dependencies();
     let env = mock_env();
     let (admin, _, _, msg) = default_instantiate_msg(&mut deps);
@@ -1302,10 +1308,10 @@ fn toggle_nonexistent_inflow_fails() {
     };
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
-    // Try to toggle non-existent inflow
+    // Try to toggle non-existent depositor
     let nonexistent = deps.api.addr_make("nonexistent");
-    let msg = AdapterExecuteMsg::ToggleInflowEnabled {
-        inflow_address: nonexistent.to_string(),
+    let msg = AdapterExecuteMsg::ToggleDepositorEnabled {
+        depositor_address: nonexistent.to_string(),
         enabled: false,
     };
 
@@ -1317,8 +1323,8 @@ fn toggle_nonexistent_inflow_fails() {
 
     assert_eq!(
         err,
-        ContractError::InflowNotRegistered {
-            inflow_address: nonexistent.to_string()
+        ContractError::DepositorNotRegistered {
+            depositor_address: nonexistent.to_string()
         }
     );
 }
@@ -1331,7 +1337,7 @@ fn toggle_nonexistent_inflow_fails() {
 fn update_config_protocol_address() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_, _, inflow_address, msg) = default_instantiate_msg(&mut deps);
+    let (admin, _, _, msg) = default_instantiate_msg(&mut deps);
 
     // Instantiate
     let info = MessageInfo {
@@ -1344,7 +1350,7 @@ fn update_config_protocol_address() {
     let mock_reply = create_mock_mars_account_reply("123");
     reply(deps.as_mut(), env.clone(), mock_reply).unwrap();
 
-    // Update protocol address
+    // Update protocol address (admin only)
     let new_mars = deps.api.addr_make("new_mars_contract");
     let msg = AdapterExecuteMsg::UpdateConfig {
         protocol_address: Some(new_mars.to_string()),
@@ -1352,7 +1358,7 @@ fn update_config_protocol_address() {
     };
 
     let info = MessageInfo {
-        sender: inflow_address,
+        sender: admin,
         funds: vec![],
     };
     let res = execute(deps.as_mut(), env, info, msg).unwrap();
@@ -1369,7 +1375,7 @@ fn update_config_protocol_address() {
 fn update_config_supported_denoms() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_, _, inflow_address, msg) = default_instantiate_msg(&mut deps);
+    let (admin, _, _, msg) = default_instantiate_msg(&mut deps);
 
     // Instantiate
     let info = MessageInfo {
@@ -1382,7 +1388,7 @@ fn update_config_supported_denoms() {
     let mock_reply = create_mock_mars_account_reply("123");
     reply(deps.as_mut(), env.clone(), mock_reply).unwrap();
 
-    // Update supported denoms
+    // Update supported denoms (admin only)
     let new_denoms = vec!["uatom".to_string(), "uosmo".to_string()];
     let msg = AdapterExecuteMsg::UpdateConfig {
         protocol_address: None,
@@ -1390,7 +1396,7 @@ fn update_config_supported_denoms() {
     };
 
     let info = MessageInfo {
-        sender: inflow_address,
+        sender: admin,
         funds: vec![],
     };
     let res = execute(deps.as_mut(), env, info, msg).unwrap();
@@ -1407,7 +1413,7 @@ fn update_config_supported_denoms() {
 fn update_config_both_parameters() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_, _, inflow_address, msg) = default_instantiate_msg(&mut deps);
+    let (admin, _, _, msg) = default_instantiate_msg(&mut deps);
 
     // Instantiate
     let info = MessageInfo {
@@ -1420,7 +1426,7 @@ fn update_config_both_parameters() {
     let mock_reply = create_mock_mars_account_reply("123");
     reply(deps.as_mut(), env.clone(), mock_reply).unwrap();
 
-    // Update both parameters
+    // Update both parameters (admin only)
     let new_mars = deps.api.addr_make("new_mars");
     let new_denoms = vec!["uatom".to_string()];
     let msg = AdapterExecuteMsg::UpdateConfig {
@@ -1429,7 +1435,7 @@ fn update_config_both_parameters() {
     };
 
     let info = MessageInfo {
-        sender: inflow_address,
+        sender: admin,
         funds: vec![],
     };
     let res = execute(deps.as_mut(), env, info, msg).unwrap();
@@ -1478,14 +1484,14 @@ fn update_config_unauthorized() {
 fn query_available_for_deposit_returns_max() {
     let mut deps = mock_dependencies();
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, "123");
+    let (_mars, depositor_addr) = setup_contract(&mut deps, "123");
 
     // Query available for deposit - Mars has no hard cap
     let res = query(
         deps.as_ref(),
         env,
         AdapterQueryMsg::AvailableForDeposit {
-            inflow_address: inflow_addr.to_string(),
+            depositor_address: depositor_addr.to_string(),
             denom: USDC_DENOM.to_string(),
         },
     )
@@ -1506,7 +1512,7 @@ fn instantiate_with_empty_admins_fails() {
     let env = mock_env();
 
     let mars_contract = deps.api.addr_make("mars_contract");
-    let inflow_address = deps.api.addr_make("inflow");
+    let depositor_address = deps.api.addr_make("depositor");
 
     let info = MessageInfo {
         sender: deps.api.addr_make("creator"),
@@ -1517,7 +1523,7 @@ fn instantiate_with_empty_admins_fails() {
         admins: vec![],
         mars_contract: mars_contract.to_string(),
         supported_denoms: vec![USDC_DENOM.to_string()],
-        inflow_address: Some(inflow_address.to_string()),
+        depositor_address: Some(depositor_address.to_string()),
     };
 
     let err = instantiate(deps.as_mut(), env, info, msg).unwrap_err();
@@ -1531,7 +1537,7 @@ fn instantiate_with_duplicate_admins_deduplicates() {
 
     let admin = deps.api.addr_make("admin");
     let mars_contract = deps.api.addr_make("mars_contract");
-    let inflow_address = deps.api.addr_make("inflow");
+    let depositor_address = deps.api.addr_make("depositor");
 
     let info = MessageInfo {
         sender: deps.api.addr_make("creator"),
@@ -1543,7 +1549,7 @@ fn instantiate_with_duplicate_admins_deduplicates() {
         admins: vec![admin.to_string(), admin.to_string()],
         mars_contract: mars_contract.to_string(),
         supported_denoms: vec![USDC_DENOM.to_string()],
-        inflow_address: Some(inflow_address.to_string()),
+        depositor_address: Some(depositor_address.to_string()),
     };
 
     instantiate(deps.as_mut(), env, info, msg).unwrap();
@@ -1644,12 +1650,12 @@ fn reply_handler_unknown_reply_id_fails() {
 }
 
 // ============================================================================
-// InflowDeposit Query Tests (singular - specific denom)
+// DepositorPosition Query Tests (singular - specific denom)
 // ============================================================================
 
 #[test]
-fn query_inflow_deposit_single_denom() {
-    // Mock Mars positions: inflow has 1500 USDC lent
+fn query_depositor_position_single_denom() {
+    // Mock Mars positions: depositor has 1500 USDC lent
     let mars_account_id = "555";
     let positions = vec![(
         mars_account_id.to_string(),
@@ -1665,26 +1671,26 @@ fn query_inflow_deposit_single_denom() {
     )];
     let mut deps = mock_dependencies_with_mars_positions(positions);
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, mars_account_id);
+    let (_mars, depositor_addr) = setup_contract(&mut deps, mars_account_id);
 
-    // Query inflow deposit for USDC
+    // Query depositor position for USDC
     let res = query(
         deps.as_ref(),
         env,
-        AdapterQueryMsg::InflowDeposit {
-            inflow_address: inflow_addr.to_string(),
+        AdapterQueryMsg::DepositorPosition {
+            depositor_address: depositor_addr.to_string(),
             denom: USDC_DENOM.to_string(),
         },
     )
     .unwrap();
-    let response: InflowDepositResponse = cosmwasm_std::from_json(&res).unwrap();
+    let response: DepositorPositionResponse = cosmwasm_std::from_json(&res).unwrap();
 
     assert_eq!(response.amount, Uint128::new(1500));
 }
 
 #[test]
-fn query_inflow_deposit_zero_when_no_position() {
-    // Mock Mars positions: inflow has no lends
+fn query_depositor_position_zero_when_no_position() {
+    // Mock Mars positions: depositor has no lends
     let mars_account_id = "777";
     let positions = vec![(
         mars_account_id.to_string(),
@@ -1697,26 +1703,26 @@ fn query_inflow_deposit_zero_when_no_position() {
     )];
     let mut deps = mock_dependencies_with_mars_positions(positions);
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, mars_account_id);
+    let (_mars, depositor_addr) = setup_contract(&mut deps, mars_account_id);
 
-    // Query inflow deposit for USDC when there are no lends
+    // Query depositor position for USDC when there are no lends
     let res = query(
         deps.as_ref(),
         env,
-        AdapterQueryMsg::InflowDeposit {
-            inflow_address: inflow_addr.to_string(),
+        AdapterQueryMsg::DepositorPosition {
+            depositor_address: depositor_addr.to_string(),
             denom: USDC_DENOM.to_string(),
         },
     )
     .unwrap();
-    let response: InflowDepositResponse = cosmwasm_std::from_json(&res).unwrap();
+    let response: DepositorPositionResponse = cosmwasm_std::from_json(&res).unwrap();
 
     assert_eq!(response.amount, Uint128::zero());
 }
 
 #[test]
-fn query_inflow_deposit_different_denom_returns_zero() {
-    // Mock Mars positions: inflow has 1000 USDC lent but we query for ATOM
+fn query_depositor_position_different_denom_returns_zero() {
+    // Mock Mars positions: depositor has 1000 USDC lent but we query for ATOM
     let mars_account_id = "888";
     let positions = vec![(
         mars_account_id.to_string(),
@@ -1732,26 +1738,26 @@ fn query_inflow_deposit_different_denom_returns_zero() {
     )];
     let mut deps = mock_dependencies_with_mars_positions(positions);
     let env = mock_env();
-    let (_mars, inflow_addr) = setup_contract(&mut deps, mars_account_id);
+    let (_mars, depositor_addr) = setup_contract(&mut deps, mars_account_id);
 
     // Query for ATOM when only USDC is lent
     let res = query(
         deps.as_ref(),
         env,
-        AdapterQueryMsg::InflowDeposit {
-            inflow_address: inflow_addr.to_string(),
+        AdapterQueryMsg::DepositorPosition {
+            depositor_address: depositor_addr.to_string(),
             denom: "uatom".to_string(),
         },
     )
     .unwrap();
-    let response: InflowDepositResponse = cosmwasm_std::from_json(&res).unwrap();
+    let response: DepositorPositionResponse = cosmwasm_std::from_json(&res).unwrap();
 
     assert_eq!(response.amount, Uint128::zero());
 }
 
 #[test]
-fn query_inflow_deposit_multiple_denoms_returns_correct_one() {
-    // Mock Mars positions: inflow has both USDC and ATOM lent
+fn query_depositor_position_multiple_denoms_returns_correct_one() {
+    // Mock Mars positions: depositor has both USDC and ATOM lent
     let mars_account_id = "999";
     let atom_denom = "uatom";
     let positions = vec![(
@@ -1783,13 +1789,13 @@ fn query_inflow_deposit_multiple_denoms_returns_correct_one() {
 
     let admin = deps.api.addr_make("admin");
     let mars_contract = deps.api.addr_make("mars_contract");
-    let inflow_address = deps.api.addr_make("inflow");
+    let depositor_address = deps.api.addr_make("depositor");
 
     let msg = InstantiateMsg {
         admins: vec![admin.to_string()],
         mars_contract: mars_contract.to_string(),
         supported_denoms: vec![USDC_DENOM.to_string(), atom_denom.to_string()],
-        inflow_address: Some(inflow_address.to_string()),
+        depositor_address: Some(depositor_address.to_string()),
     };
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
@@ -1801,54 +1807,54 @@ fn query_inflow_deposit_multiple_denoms_returns_correct_one() {
     let res_usdc = query(
         deps.as_ref(),
         env.clone(),
-        AdapterQueryMsg::InflowDeposit {
-            inflow_address: inflow_address.to_string(),
+        AdapterQueryMsg::DepositorPosition {
+            depositor_address: depositor_address.to_string(),
             denom: USDC_DENOM.to_string(),
         },
     )
     .unwrap();
-    let response_usdc: InflowDepositResponse = cosmwasm_std::from_json(&res_usdc).unwrap();
+    let response_usdc: DepositorPositionResponse = cosmwasm_std::from_json(&res_usdc).unwrap();
     assert_eq!(response_usdc.amount, Uint128::new(2000));
 
     // Query ATOM deposit
     let res_atom = query(
         deps.as_ref(),
         env,
-        AdapterQueryMsg::InflowDeposit {
-            inflow_address: inflow_address.to_string(),
+        AdapterQueryMsg::DepositorPosition {
+            depositor_address: depositor_address.to_string(),
             denom: atom_denom.to_string(),
         },
     )
     .unwrap();
-    let response_atom: InflowDepositResponse = cosmwasm_std::from_json(&res_atom).unwrap();
+    let response_atom: DepositorPositionResponse = cosmwasm_std::from_json(&res_atom).unwrap();
     assert_eq!(response_atom.amount, Uint128::new(500));
 }
 
 #[test]
-fn query_inflow_deposit_unregistered_inflow_returns_error() {
+fn query_depositor_position_unregistered_depositor_returns_error() {
     let mut deps = mock_dependencies();
     let env = mock_env();
     setup_contract(&mut deps, "123");
 
-    // Query for unregistered inflow
-    let unregistered = deps.api.addr_make("unregistered_inflow");
+    // Query for unregistered depositor
+    let unregistered = deps.api.addr_make("unregistered_depositor");
     let err = query(
         deps.as_ref(),
         env,
-        AdapterQueryMsg::InflowDeposit {
-            inflow_address: unregistered.to_string(),
+        AdapterQueryMsg::DepositorPosition {
+            depositor_address: unregistered.to_string(),
             denom: USDC_DENOM.to_string(),
         },
     )
     .unwrap_err();
     assert!(err
         .to_string()
-        .contains(&format!("Inflow vault not registered: {}", unregistered)));
+        .contains(&format!("Depositor not registered: {}", unregistered)));
 }
 
 #[test]
-fn query_inflow_deposit_isolation_between_inflows() {
-    // Mock Mars positions: inflow1 has 1000 USDC, inflow2 has 300 USDC
+fn query_depositor_position_isolation_between_depositors() {
+    // Mock Mars positions: depositor1 has 1000 USDC, depositor2 has 300 USDC
     let positions = vec![
         (
             "account1".to_string(),
@@ -1878,36 +1884,36 @@ fn query_inflow_deposit_isolation_between_inflows() {
     let mut deps = mock_dependencies_with_mars_positions(positions);
     let env = mock_env();
 
-    // Setup first inflow with account "account1"
-    let (_mars, inflow1_addr) = setup_contract(&mut deps, "account1");
+    // Setup first depositor with account "account1"
+    let (_mars, depositor1_addr) = setup_contract(&mut deps, "account1");
 
-    // Register second inflow manually with account "account2"
-    let inflow2_addr = deps.api.addr_make("inflow2");
-    register_inflow_with_account(&mut deps, inflow2_addr.clone(), "account2".to_string());
+    // Register second depositor manually with account "account2"
+    let depositor2_addr = deps.api.addr_make("depositor2");
+    register_depositor_with_account(&mut deps, depositor2_addr.clone(), "account2".to_string());
 
-    // Query inflow1 deposit
+    // Query depositor1 position
     let res1 = query(
         deps.as_ref(),
         env.clone(),
-        AdapterQueryMsg::InflowDeposit {
-            inflow_address: inflow1_addr.to_string(),
+        AdapterQueryMsg::DepositorPosition {
+            depositor_address: depositor1_addr.to_string(),
             denom: USDC_DENOM.to_string(),
         },
     )
     .unwrap();
-    let response1: InflowDepositResponse = cosmwasm_std::from_json(&res1).unwrap();
+    let response1: DepositorPositionResponse = cosmwasm_std::from_json(&res1).unwrap();
     assert_eq!(response1.amount, Uint128::new(1000));
 
-    // Query inflow2 deposit
+    // Query depositor2 position
     let res2 = query(
         deps.as_ref(),
         env,
-        AdapterQueryMsg::InflowDeposit {
-            inflow_address: inflow2_addr.to_string(),
+        AdapterQueryMsg::DepositorPosition {
+            depositor_address: depositor2_addr.to_string(),
             denom: USDC_DENOM.to_string(),
         },
     )
     .unwrap();
-    let response2: InflowDepositResponse = cosmwasm_std::from_json(&res2).unwrap();
+    let response2: DepositorPositionResponse = cosmwasm_std::from_json(&res2).unwrap();
     assert_eq!(response2.amount, Uint128::new(300));
 }

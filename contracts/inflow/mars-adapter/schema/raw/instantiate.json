@@ -16,8 +16,8 @@
         "type": "string"
       }
     },
-    "inflow_address": {
-      "description": "Optional: single inflow address to whitelist during instantiation",
+    "depositor_address": {
+      "description": "Optional: single depositor address to whitelist during instantiation",
       "type": [
         "string",
         "null"

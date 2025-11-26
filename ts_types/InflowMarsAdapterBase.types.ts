@@ -6,7 +6,7 @@
 
 export interface InstantiateMsg {
   admins: string[];
-  inflow_address?: string | null;
+  depositor_address?: string | null;
   mars_contract: string;
   supported_denoms: string[];
 }
@@ -17,17 +17,17 @@ export type ExecuteMsg = {
     coin: Coin;
   };
 } | {
-  register_inflow: {
-    inflow_address: string;
+  register_depositor: {
+    depositor_address: string;
   };
 } | {
-  unregister_inflow: {
-    inflow_address: string;
+  unregister_depositor: {
+    depositor_address: string;
   };
 } | {
-  toggle_inflow_enabled: {
+  toggle_depositor_enabled: {
+    depositor_address: string;
     enabled: boolean;
-    inflow_address: string;
   };
 } | {
   update_config: {
@@ -43,34 +43,34 @@ export interface Coin {
 export type QueryMsg = {
   available_for_deposit: {
     denom: string;
-    inflow_address: string;
+    depositor_address: string;
   };
 } | {
   available_for_withdraw: {
     denom: string;
-    inflow_address: string;
+    depositor_address: string;
   };
 } | {
   time_to_withdraw: {
     coin: Coin;
-    inflow_address: string;
+    depositor_address: string;
   };
 } | {
   config: {};
 } | {
   total_deposited: {};
 } | {
-  registered_inflows: {
+  registered_depositors: {
     enabled?: boolean | null;
   };
 } | {
-  inflow_deposit: {
+  depositor_position: {
     denom: string;
-    inflow_address: string;
+    depositor_address: string;
   };
 } | {
-  inflow_deposits: {
-    inflow_address: string;
+  depositor_positions: {
+    depositor_address: string;
   };
 };
 export interface AvailableAmountResponse {
@@ -80,23 +80,23 @@ export interface AdapterConfigResponse {
   protocol_address: string;
   supported_denoms: string[];
 }
-export interface InflowDepositResponse {
+export interface DepositorPositionResponse {
   amount: Uint128;
 }
-export interface InflowDepositsResponse {
-  deposits: Coin[];
+export interface DepositorPositionsResponse {
+  positions: Coin[];
 }
-export interface RegisteredInflowsResponse {
-  inflows: RegisteredInflowInfo[];
+export interface RegisteredDepositorsResponse {
+  depositors: RegisteredDepositorInfo[];
 }
-export interface RegisteredInflowInfo {
+export interface RegisteredDepositorInfo {
+  depositor_address: string;
   enabled: boolean;
-  inflow_address: string;
 }
 export interface TimeEstimateResponse {
   blocks: number;
   seconds: number;
 }
 export interface TotalDepositedResponse {
-  deposits: Coin[];
+  positions: Coin[];
 }

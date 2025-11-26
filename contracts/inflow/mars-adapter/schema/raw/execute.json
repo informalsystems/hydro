@@ -4,7 +4,7 @@
   "description": "Standard execute messages that all protocol adapters must implement",
   "oneOf": [
     {
-      "description": "Deposit tokens into the protocol Only callable by whitelisted Inflow contracts The coin is sent in info.funds",
+      "description": "Deposit tokens into the protocol Only callable by whitelisted depositors The coin is sent in info.funds",
       "type": "object",
       "required": [
         "deposit"
@@ -18,7 +18,7 @@
       "additionalProperties": false
     },
     {
-      "description": "Withdraw tokens from the protocol Only callable by whitelisted Inflow contracts",
+      "description": "Withdraw tokens from the protocol Only callable by whitelisted depositors",
       "type": "object",
       "required": [
         "withdraw"
@@ -45,20 +45,20 @@
       "additionalProperties": false
     },
     {
-      "description": "Register new Inflow address (admin only)",
+      "description": "Register new depositor address (admin only)",
       "type": "object",
       "required": [
-        "register_inflow"
+        "register_depositor"
       ],
       "properties": {
-        "register_inflow": {
+        "register_depositor": {
           "type": "object",
           "required": [
-            "inflow_address"
+            "depositor_address"
           ],
           "properties": {
-            "inflow_address": {
-              "description": "New Inflow contract address to register",
+            "depositor_address": {
+              "description": "New depositor contract address to register",
               "type": "string"
             }
           },
@@ -68,20 +68,20 @@
       "additionalProperties": false
     },
     {
-      "description": "Unregister Inflow address (admin only)",
+      "description": "Unregister depositor address (admin only)",
       "type": "object",
       "required": [
-        "unregister_inflow"
+        "unregister_depositor"
       ],
       "properties": {
-        "unregister_inflow": {
+        "unregister_depositor": {
           "type": "object",
           "required": [
-            "inflow_address"
+            "depositor_address"
           ],
           "properties": {
-            "inflow_address": {
-              "description": "Inflow contract address to unregister. The account should not have any funds deployed.",
+            "depositor_address": {
+              "description": "Depositor contract address to unregister. The account should not have any funds deployed.",
               "type": "string"
             }
           },
@@ -91,25 +91,25 @@
       "additionalProperties": false
     },
     {
-      "description": "Toggle Inflow address as enabled/disabled (admin only)",
+      "description": "Toggle depositor address as enabled/disabled (admin only)",
       "type": "object",
       "required": [
-        "toggle_inflow_enabled"
+        "toggle_depositor_enabled"
       ],
       "properties": {
-        "toggle_inflow_enabled": {
+        "toggle_depositor_enabled": {
           "type": "object",
           "required": [
-            "enabled",
-            "inflow_address"
+            "depositor_address",
+            "enabled"
           ],
           "properties": {
+            "depositor_address": {
+              "description": "Depositor contract address to enable or disable",
+              "type": "string"
+            },
             "enabled": {
               "type": "boolean"
-            },
-            "inflow_address": {
-              "description": "Inflow contract address to enable or disable",
-              "type": "string"
             }
           },
           "additionalProperties": false

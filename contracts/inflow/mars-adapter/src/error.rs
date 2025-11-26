@@ -15,17 +15,17 @@ pub enum ContractError {
     #[error("Unauthorized - only the admin can call this function")]
     UnauthorizedAdmin {},
 
-    #[error("Unauthorized - only Inflow contract can call this function")]
+    #[error("Unauthorized - only a registered depositor can call this function")]
     Unauthorized {},
 
     #[error("Unsupported denom: {denom}")]
     UnsupportedDenom { denom: String },
 
-    #[error("Inflow vault not registered: {inflow_address}")]
-    InflowNotRegistered { inflow_address: String },
+    #[error("Depositor not registered: {depositor_address}")]
+    DepositorNotRegistered { depositor_address: String },
 
-    #[error("Inflow vault already registered: {inflow_address}")]
-    InflowAlreadyRegistered { inflow_address: String },
+    #[error("Depositor already registered: {depositor_address}")]
+    DepositorAlreadyRegistered { depositor_address: String },
 
     #[error("Invalid funds: expected exactly one coin, got {count}")]
     InvalidFunds { count: usize },

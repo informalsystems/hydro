@@ -7,7 +7,7 @@ use cosmwasm_std::{
     SystemResult, Uint128, WasmQuery,
 };
 use interface::{
-    adapter::{AdapterQueryMsg, AvailableAmountResponse, InflowDepositResponse},
+    adapter::{AdapterQueryMsg, AvailableAmountResponse, DepositorPositionResponse},
     inflow_control_center::{
         Config, ConfigResponse, PoolInfoResponse, QueryMsg as ControlCenterQueryMsg,
     },
@@ -225,9 +225,11 @@ pub fn setup_adapter_mock(contract: Addr, config: MockAdapterConfig) -> (String,
                         amount: config.available_for_withdraw,
                     })
                 }
-                AdapterQueryMsg::InflowDeposit { .. } => to_json_binary(&InflowDepositResponse {
-                    amount: config.current_deposit,
-                }),
+                AdapterQueryMsg::DepositorPosition { .. } => {
+                    to_json_binary(&DepositorPositionResponse {
+                        amount: config.current_deposit,
+                    })
+                }
                 _ => {
                     return SystemResult::Err(SystemError::UnsupportedRequest {
                         kind: "unsupported query type in adapter mock".to_string(),

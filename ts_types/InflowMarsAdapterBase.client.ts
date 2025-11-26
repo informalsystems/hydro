@@ -6,49 +6,49 @@
 
 import { ICosmWasmClient, ISigningCosmWasmClient } from "./baseClient";
 import { StdFee } from "@interchainjs/types";
-import { InstantiateMsg, ExecuteMsg, Uint128, Coin, QueryMsg, AvailableAmountResponse, AdapterConfigResponse, InflowDepositResponse, InflowDepositsResponse, RegisteredInflowsResponse, RegisteredInflowInfo, TimeEstimateResponse, TotalDepositedResponse } from "./InflowMarsAdapterBase.types";
+import { InstantiateMsg, ExecuteMsg, Uint128, Coin, QueryMsg, AvailableAmountResponse, AdapterConfigResponse, DepositorPositionResponse, DepositorPositionsResponse, RegisteredDepositorsResponse, RegisteredDepositorInfo, TimeEstimateResponse, TotalDepositedResponse } from "./InflowMarsAdapterBase.types";
 export interface InflowMarsAdapterBaseReadOnlyInterface {
   contractAddress: string;
   availableForDeposit: ({
     denom,
-    inflowAddress
+    depositorAddress
   }: {
     denom: string;
-    inflowAddress: string;
+    depositorAddress: string;
   }) => Promise<AvailableAmountResponse>;
   availableForWithdraw: ({
     denom,
-    inflowAddress
+    depositorAddress
   }: {
     denom: string;
-    inflowAddress: string;
+    depositorAddress: string;
   }) => Promise<AvailableAmountResponse>;
   timeToWithdraw: ({
     coin,
-    inflowAddress
+    depositorAddress
   }: {
     coin: Coin;
-    inflowAddress: string;
+    depositorAddress: string;
   }) => Promise<TimeEstimateResponse>;
   config: () => Promise<AdapterConfigResponse>;
   totalDeposited: () => Promise<TotalDepositedResponse>;
-  registeredInflows: ({
+  registeredDepositors: ({
     enabled
   }: {
     enabled?: boolean;
-  }) => Promise<RegisteredInflowsResponse>;
-  inflowDeposit: ({
+  }) => Promise<RegisteredDepositorsResponse>;
+  depositorPosition: ({
     denom,
-    inflowAddress
+    depositorAddress
   }: {
     denom: string;
-    inflowAddress: string;
-  }) => Promise<InflowDepositResponse>;
-  inflowDeposits: ({
-    inflowAddress
+    depositorAddress: string;
+  }) => Promise<DepositorPositionResponse>;
+  depositorPositions: ({
+    depositorAddress
   }: {
-    inflowAddress: string;
-  }) => Promise<InflowDepositsResponse>;
+    depositorAddress: string;
+  }) => Promise<DepositorPositionsResponse>;
 }
 export class InflowMarsAdapterBaseQueryClient implements InflowMarsAdapterBaseReadOnlyInterface {
   client: ICosmWasmClient;
@@ -61,49 +61,49 @@ export class InflowMarsAdapterBaseQueryClient implements InflowMarsAdapterBaseRe
     this.timeToWithdraw = this.timeToWithdraw.bind(this);
     this.config = this.config.bind(this);
     this.totalDeposited = this.totalDeposited.bind(this);
-    this.registeredInflows = this.registeredInflows.bind(this);
-    this.inflowDeposit = this.inflowDeposit.bind(this);
-    this.inflowDeposits = this.inflowDeposits.bind(this);
+    this.registeredDepositors = this.registeredDepositors.bind(this);
+    this.depositorPosition = this.depositorPosition.bind(this);
+    this.depositorPositions = this.depositorPositions.bind(this);
   }
   availableForDeposit = async ({
     denom,
-    inflowAddress
+    depositorAddress
   }: {
     denom: string;
-    inflowAddress: string;
+    depositorAddress: string;
   }): Promise<AvailableAmountResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       available_for_deposit: {
         denom,
-        inflow_address: inflowAddress
+        depositor_address: depositorAddress
       }
     });
   };
   availableForWithdraw = async ({
     denom,
-    inflowAddress
+    depositorAddress
   }: {
     denom: string;
-    inflowAddress: string;
+    depositorAddress: string;
   }): Promise<AvailableAmountResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       available_for_withdraw: {
         denom,
-        inflow_address: inflowAddress
+        depositor_address: depositorAddress
       }
     });
   };
   timeToWithdraw = async ({
     coin,
-    inflowAddress
+    depositorAddress
   }: {
     coin: Coin;
-    inflowAddress: string;
+    depositorAddress: string;
   }): Promise<TimeEstimateResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       time_to_withdraw: {
         coin,
-        inflow_address: inflowAddress
+        depositor_address: depositorAddress
       }
     });
   };
@@ -117,39 +117,39 @@ export class InflowMarsAdapterBaseQueryClient implements InflowMarsAdapterBaseRe
       total_deposited: {}
     });
   };
-  registeredInflows = async ({
+  registeredDepositors = async ({
     enabled
   }: {
     enabled?: boolean;
-  }): Promise<RegisteredInflowsResponse> => {
+  }): Promise<RegisteredDepositorsResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      registered_inflows: {
+      registered_depositors: {
         enabled
       }
     });
   };
-  inflowDeposit = async ({
+  depositorPosition = async ({
     denom,
-    inflowAddress
+    depositorAddress
   }: {
     denom: string;
-    inflowAddress: string;
-  }): Promise<InflowDepositResponse> => {
+    depositorAddress: string;
+  }): Promise<DepositorPositionResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      inflow_deposit: {
+      depositor_position: {
         denom,
-        inflow_address: inflowAddress
+        depositor_address: depositorAddress
       }
     });
   };
-  inflowDeposits = async ({
-    inflowAddress
+  depositorPositions = async ({
+    depositorAddress
   }: {
-    inflowAddress: string;
-  }): Promise<InflowDepositsResponse> => {
+    depositorAddress: string;
+  }): Promise<DepositorPositionsResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      inflow_deposits: {
-        inflow_address: inflowAddress
+      depositor_positions: {
+        depositor_address: depositorAddress
       }
     });
   };
@@ -163,22 +163,22 @@ export interface InflowMarsAdapterBaseInterface extends InflowMarsAdapterBaseRea
   }: {
     coin: Coin;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
-  registerInflow: ({
-    inflowAddress
+  registerDepositor: ({
+    depositorAddress
   }: {
-    inflowAddress: string;
+    depositorAddress: string;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
-  unregisterInflow: ({
-    inflowAddress
+  unregisterDepositor: ({
+    depositorAddress
   }: {
-    inflowAddress: string;
+    depositorAddress: string;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
-  toggleInflowEnabled: ({
-    enabled,
-    inflowAddress
+  toggleDepositorEnabled: ({
+    depositorAddress,
+    enabled
   }: {
+    depositorAddress: string;
     enabled: boolean;
-    inflowAddress: string;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
   updateConfig: ({
     protocolAddress,
@@ -199,9 +199,9 @@ export class InflowMarsAdapterBaseClient extends InflowMarsAdapterBaseQueryClien
     this.contractAddress = contractAddress;
     this.deposit = this.deposit.bind(this);
     this.withdraw = this.withdraw.bind(this);
-    this.registerInflow = this.registerInflow.bind(this);
-    this.unregisterInflow = this.unregisterInflow.bind(this);
-    this.toggleInflowEnabled = this.toggleInflowEnabled.bind(this);
+    this.registerDepositor = this.registerDepositor.bind(this);
+    this.unregisterDepositor = this.unregisterDepositor.bind(this);
+    this.toggleDepositorEnabled = this.toggleDepositorEnabled.bind(this);
     this.updateConfig = this.updateConfig.bind(this);
   }
   deposit = async (fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
@@ -220,39 +220,39 @@ export class InflowMarsAdapterBaseClient extends InflowMarsAdapterBaseQueryClien
       }
     }, fee_, memo_, funds_);
   };
-  registerInflow = async ({
-    inflowAddress
+  registerDepositor = async ({
+    depositorAddress
   }: {
-    inflowAddress: string;
+    depositorAddress: string;
   }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      register_inflow: {
-        inflow_address: inflowAddress
+      register_depositor: {
+        depositor_address: depositorAddress
       }
     }, fee_, memo_, funds_);
   };
-  unregisterInflow = async ({
-    inflowAddress
+  unregisterDepositor = async ({
+    depositorAddress
   }: {
-    inflowAddress: string;
+    depositorAddress: string;
   }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      unregister_inflow: {
-        inflow_address: inflowAddress
+      unregister_depositor: {
+        depositor_address: depositorAddress
       }
     }, fee_, memo_, funds_);
   };
-  toggleInflowEnabled = async ({
-    enabled,
-    inflowAddress
+  toggleDepositorEnabled = async ({
+    depositorAddress,
+    enabled
   }: {
+    depositorAddress: string;
     enabled: boolean;
-    inflowAddress: string;
   }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      toggle_inflow_enabled: {
-        enabled,
-        inflow_address: inflowAddress
+      toggle_depositor_enabled: {
+        depositor_address: depositorAddress,
+        enabled
       }
     }, fee_, memo_, funds_);
   };

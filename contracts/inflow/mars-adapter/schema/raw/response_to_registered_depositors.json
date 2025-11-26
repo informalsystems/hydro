@@ -1,32 +1,32 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "RegisteredInflowsResponse",
+  "title": "RegisteredDepositorsResponse",
   "type": "object",
   "required": [
-    "inflows"
+    "depositors"
   ],
   "properties": {
-    "inflows": {
+    "depositors": {
       "type": "array",
       "items": {
-        "$ref": "#/definitions/RegisteredInflowInfo"
+        "$ref": "#/definitions/RegisteredDepositorInfo"
       }
     }
   },
   "additionalProperties": false,
   "definitions": {
-    "RegisteredInflowInfo": {
+    "RegisteredDepositorInfo": {
       "type": "object",
       "required": [
-        "enabled",
-        "inflow_address"
+        "depositor_address",
+        "enabled"
       ],
       "properties": {
+        "depositor_address": {
+          "type": "string"
+        },
         "enabled": {
           "type": "boolean"
-        },
-        "inflow_address": {
-          "type": "string"
         }
       },
       "additionalProperties": false

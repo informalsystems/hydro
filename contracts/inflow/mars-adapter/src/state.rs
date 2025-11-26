@@ -19,16 +19,16 @@ pub struct Depositor {
     pub enabled: bool,
 }
 
-// Every address in this list can change the configuration, register/unregister inflow vaults.
+// Every address in this list can change the configuration, register/unregister depositors.
 pub const ADMINS: Item<Vec<Addr>> = Item::new("admins");
 
-/// Maps inflow address to their Mars account ID
-/// Key: Addr (inflow address), Value: Depositor (mars_account_id + enabled)
+/// Maps depositor address to their Mars account ID
+/// Key: Addr (depositor address), Value: Depositor (mars_account_id + enabled)
 pub const WHITELISTED_DEPOSITORS: Map<Addr, Depositor> = Map::new("whitelisted_depositors");
 
-/// Temporary storage for tracking which inflow address is being set up during replies
+/// Temporary storage for tracking which depositor address is being set up during replies
 /// This is needed because reply handlers don't have access to the original message context
-pub const PENDING_ACCOUNT_SETUP: Item<Addr> = Item::new("pending_account_setup");
+pub const PENDING_DEPOSITOR_SETUP: Item<Addr> = Item::new("pending_depositor_setup");
 
 /// Configuration storage
 pub const CONFIG: Item<Config> = Item::new("config");

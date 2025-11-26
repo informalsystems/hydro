@@ -3,8 +3,8 @@ use cosmwasm_schema::cw_serde;
 // Re-export adapter interface message types
 pub use interface::adapter::{
     AdapterConfigResponse, AdapterExecuteMsg, AdapterQueryMsg, AvailableAmountResponse,
-    InflowDepositResponse, InflowDepositsResponse, RegisteredInflowInfo, RegisteredInflowsResponse,
-    TimeEstimateResponse, TotalDepositedResponse,
+    DepositorPositionResponse, DepositorPositionsResponse, RegisteredDepositorInfo,
+    RegisteredDepositorsResponse, TimeEstimateResponse, TotalDepositedResponse,
 };
 
 /// Message for instantiating the Mars adapter contract
@@ -16,6 +16,6 @@ pub struct InstantiateMsg {
     pub mars_contract: String,
     /// List of supported token denoms (e.g., USDC IBC denom)
     pub supported_denoms: Vec<String>,
-    /// Optional: single inflow address to whitelist during instantiation
-    pub inflow_address: Option<String>,
+    /// Optional: single depositor address to whitelist during instantiation
+    pub depositor_address: Option<String>,
 }

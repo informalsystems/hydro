@@ -3,10 +3,10 @@
   "title": "TotalDepositedResponse",
   "type": "object",
   "required": [
-    "deposits"
+    "positions"
   ],
   "properties": {
-    "deposits": {
+    "positions": {
       "type": "array",
       "items": {
         "$ref": "#/definitions/Coin"
