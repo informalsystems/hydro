@@ -2698,15 +2698,9 @@ fn withdraw_conversion_funds(
         });
     }
 
-    let withdraw_msg = BankMsg::Send {
-        to_address: info.sender.to_string(),
-        amount: withdrawn_funds.clone(),
-    };
-
-    Ok(Response::new()
-        .add_message(withdraw_msg)
+    let mut response = Response::new()
         .add_attribute("action", "withdraw_conversion_funds")
-        .add_attribute("sender", info.sender)
+        .add_attribute("sender", info.sender.clone())
         .add_attribute(
             "withdrawn_funds",
             withdrawn_funds
@@ -2714,7 +2708,16 @@ fn withdraw_conversion_funds(
                 .map(|c| c.to_string())
                 .collect::<Vec<String>>()
                 .join(", "),
-        ))
+        );
+
+    if !withdrawn_funds.is_empty() {
+        response = response.add_message(BankMsg::Send {
+            to_address: info.sender.to_string(),
+            amount: withdrawn_funds.clone(),
+        });
+    }
+
+    Ok(response)
 }
 
 // For each reply the following happens: (reply_id is lock_id)

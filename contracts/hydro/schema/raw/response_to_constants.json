@@ -37,6 +37,7 @@
         "lock_depth_limit",
         "lock_epoch_length",
         "lock_expiry_duration_seconds",
+        "lockup_conversion_fee_percent",
         "max_deployment_duration",
         "max_locked_tokens",
         "paused",
@@ -71,6 +72,9 @@
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
+        },
+        "lockup_conversion_fee_percent": {
+          "$ref": "#/definitions/Decimal"
         },
         "max_deployment_duration": {
           "type": "integer",

@@ -6,7 +6,7 @@
 
 import { ICosmWasmClient, ISigningCosmWasmClient } from "./baseClient";
 import { StdFee } from "@interchainjs/types";
-import { Timestamp, Uint64, Binary, Uint128, Decimal, TokenInfoProviderInstantiateMsg, InstantiateMsg, CollectionInfo, InstantiateContractMsg, TrancheInfo, ExecuteMsg, Expiration, LockTokensProof, SignatureInfo, ProposalToLockups, UpdateConfigData, Coin, TokenGroupRatioChange, QueryMsg, Addr, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponse, LockupWithPerTrancheInfo, LockEntryWithPower, LockEntryV2, PerTrancheLockupInfo, RoundWithBid, OperatorsResponse, TokensResponse, AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, ApprovalResponse, ApprovalsResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExpiredUserLockupsResponse, GatekeeperResponse, LiquidityDeploymentResponse, LiquidityDeployment, LockVotesHistoryResponse, LockVotesHistoryEntry, LockupVotingMetricsResponse, LockupVotingMetrics, LockupsPendingSlashesResponse, NumTokensResponse, ParentLockIdsResponse, ProposalResponse, Proposal, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, DtokenAmountsResponse, DtokenAmountResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSM, TokenInfoProviderBase, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotedLocksResponse, VotedLockInfo, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistResponse, WhitelistAdminsResponse } from "./HydroBase.types";
+import { Timestamp, Uint64, Binary, Decimal, Uint128, TokenInfoProviderInstantiateMsg, InstantiateMsg, CollectionInfo, InstantiateContractMsg, TrancheInfo, ExecuteMsg, Expiration, LockTokensProof, SignatureInfo, ProposalToLockups, UpdateConfigData, Coin, TokenGroupRatioChange, QueryMsg, Addr, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponse, LockupWithPerTrancheInfo, LockEntryWithPower, LockEntryV2, PerTrancheLockupInfo, RoundWithBid, OperatorsResponse, TokensResponse, AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, ApprovalResponse, ApprovalsResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExpiredUserLockupsResponse, GatekeeperResponse, LiquidityDeploymentResponse, LiquidityDeployment, LockVotesHistoryResponse, LockVotesHistoryEntry, LockupVotingMetricsResponse, LockupVotingMetrics, LockupsPendingSlashesResponse, NumTokensResponse, ParentLockIdsResponse, ProposalResponse, Proposal, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, DtokenAmountsResponse, DtokenAmountResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSM, TokenInfoProviderBase, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotedLocksResponse, VotedLockInfo, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistResponse, WhitelistAdminsResponse } from "./HydroBase.types";
 export interface HydroBaseReadOnlyInterface {
   contractAddress: string;
   constants: () => Promise<ConstantsResponse>;
@@ -283,6 +283,20 @@ export interface HydroBaseReadOnlyInterface {
   }: {
     lockIds: number[];
   }) => Promise<LockupVotingMetricsResponse>;
+  availableConversionFunds: ({
+    tokenDenom
+  }: {
+    tokenDenom: string;
+  }) => Promise<Uint128>;
+  convertedTokenNum: ({
+    lockId,
+    tokenDenom,
+    userProvidesFunds
+  }: {
+    lockId: number;
+    tokenDenom: string;
+    userProvidesFunds: boolean;
+  }) => Promise<Uint128>;
 }
 export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
   client: ICosmWasmClient;
@@ -334,6 +348,8 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     this.simulateDtokenAmounts = this.simulateDtokenAmounts.bind(this);
     this.parentLockIds = this.parentLockIds.bind(this);
     this.lockupVotingMetrics = this.lockupVotingMetrics.bind(this);
+    this.availableConversionFunds = this.availableConversionFunds.bind(this);
+    this.convertedTokenNum = this.convertedTokenNum.bind(this);
   }
   constants = async (): Promise<ConstantsResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -900,6 +916,34 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
       }
     });
   };
+  availableConversionFunds = async ({
+    tokenDenom
+  }: {
+    tokenDenom: string;
+  }): Promise<Uint128> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      available_conversion_funds: {
+        token_denom: tokenDenom
+      }
+    });
+  };
+  convertedTokenNum = async ({
+    lockId,
+    tokenDenom,
+    userProvidesFunds
+  }: {
+    lockId: number;
+    tokenDenom: string;
+    userProvidesFunds: boolean;
+  }): Promise<Uint128> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      converted_token_num: {
+        lock_id: lockId,
+        token_denom: tokenDenom,
+        user_provides_funds: userProvidesFunds
+      }
+    });
+  };
 }
 export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   contractAddress: string;
@@ -1116,6 +1160,19 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   }: {
     lockIds: number[];
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  convertLockup: ({
+    lockId,
+    targetDenom
+  }: {
+    lockId: number;
+    targetDenom: string;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  provideConversionFunds: (fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  withdrawConversionFunds: ({
+    fundsToWithdraw
+  }: {
+    fundsToWithdraw: Coin[];
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
   slashProposalVoters: ({
     limit,
     proposalId,
@@ -1176,6 +1233,9 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.revokeAll = this.revokeAll.bind(this);
     this.setDropTokenInfo = this.setDropTokenInfo.bind(this);
     this.convertLockupToDtoken = this.convertLockupToDtoken.bind(this);
+    this.convertLockup = this.convertLockup.bind(this);
+    this.provideConversionFunds = this.provideConversionFunds.bind(this);
+    this.withdrawConversionFunds = this.withdrawConversionFunds.bind(this);
     this.slashProposalVoters = this.slashProposalVoters.bind(this);
     this.buyoutPendingSlash = this.buyoutPendingSlash.bind(this);
   }
@@ -1599,6 +1659,36 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     return await this.client.execute(this.sender, this.contractAddress, {
       convert_lockup_to_dtoken: {
         lock_ids: lockIds
+      }
+    }, fee_, memo_, funds_);
+  };
+  convertLockup = async ({
+    lockId,
+    targetDenom
+  }: {
+    lockId: number;
+    targetDenom: string;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      convert_lockup: {
+        lock_id: lockId,
+        target_denom: targetDenom
+      }
+    }, fee_, memo_, funds_);
+  };
+  provideConversionFunds = async (fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      provide_conversion_funds: {}
+    }, fee_, memo_, funds_);
+  };
+  withdrawConversionFunds = async ({
+    fundsToWithdraw
+  }: {
+    fundsToWithdraw: Coin[];
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      withdraw_conversion_funds: {
+        funds_to_withdraw: fundsToWithdraw
       }
     }, fee_, memo_, funds_);
   };
