@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use cosmwasm_std::{
     from_json,
     testing::{MockApi, MockQuerier, MockStorage},
-    to_json_binary, Addr, ContractResult, Decimal, OwnedDeps, QuerierResult, SystemError,
+    to_json_binary, Addr, Coin, ContractResult, Decimal, OwnedDeps, QuerierResult, SystemError,
     SystemResult, Uint128, WasmQuery,
 };
 use interface::{
@@ -245,4 +245,20 @@ pub fn setup_adapter_mock(contract: Addr, config: MockAdapterConfig) -> (String,
     });
 
     (contract_addr, response)
+}
+
+// Helper to set up the querier to return a specific balance for the given address
+pub fn mock_address_balance(
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    address: &str,
+    denom: &str,
+    amount: Uint128,
+) {
+    deps.querier.bank.update_balance(
+        address,
+        vec![Coin {
+            denom: denom.to_string(),
+            amount,
+        }],
+    );
 }

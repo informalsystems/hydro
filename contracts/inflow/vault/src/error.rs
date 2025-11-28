@@ -1,4 +1,6 @@
-use cosmwasm_std::{CheckedFromRatioError, ConversionOverflowError, OverflowError, StdError};
+use cosmwasm_std::{
+    CheckedFromRatioError, ConversionOverflowError, OverflowError, StdError, Uint128,
+};
 use cw_utils::PaymentError;
 use neutron_sdk::NeutronError;
 use thiserror::Error;
@@ -32,11 +34,17 @@ pub enum ContractError {
     #[error("Adapter not found: {name}")]
     AdapterNotFound { name: String },
 
-    #[error("Adapter not active: {name}")]
-    AdapterNotActive { name: String },
+    #[error("Adapter not included in automated allocation: {name}")]
+    AdapterNotIncludedInAutomatedAllocation { name: String },
 
     #[error("Insufficient balance for adapter deployment")]
     InsufficientBalanceForDeployment,
+
+    #[error("Insufficient vault balance: available {available}, required {required}")]
+    InsufficientBalance {
+        available: Uint128,
+        required: Uint128,
+    },
 }
 
 pub fn new_generic_error(msg: impl Into<String>) -> ContractError {

@@ -249,10 +249,12 @@ export interface InflowVaultBaseInterface extends InflowVaultBaseReadOnlyInterfa
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
   registerAdapter: ({
     address,
+    autoAllocation,
     description,
     name
   }: {
     address: string;
+    autoAllocation: boolean;
     description?: string;
     name: string;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
@@ -261,12 +263,19 @@ export interface InflowVaultBaseInterface extends InflowVaultBaseReadOnlyInterfa
   }: {
     name: string;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
-  toggleAdapter: ({
+  toggleAdapterAutoAllocation: ({
     name
   }: {
     name: string;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
   withdrawFromAdapter: ({
+    adapterName,
+    amount
+  }: {
+    adapterName: string;
+    amount: Uint128;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  depositToAdapter: ({
     adapterName,
     amount
   }: {
@@ -295,8 +304,9 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
     this.updateConfig = this.updateConfig.bind(this);
     this.registerAdapter = this.registerAdapter.bind(this);
     this.unregisterAdapter = this.unregisterAdapter.bind(this);
-    this.toggleAdapter = this.toggleAdapter.bind(this);
+    this.toggleAdapterAutoAllocation = this.toggleAdapterAutoAllocation.bind(this);
     this.withdrawFromAdapter = this.withdrawFromAdapter.bind(this);
+    this.depositToAdapter = this.depositToAdapter.bind(this);
   }
   deposit = async ({
     onBehalfOf
@@ -410,16 +420,19 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
   };
   registerAdapter = async ({
     address,
+    autoAllocation,
     description,
     name
   }: {
     address: string;
+    autoAllocation: boolean;
     description?: string;
     name: string;
   }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       register_adapter: {
         address,
+        auto_allocation: autoAllocation,
         description,
         name
       }
@@ -436,13 +449,13 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
       }
     }, fee_, memo_, funds_);
   };
-  toggleAdapter = async ({
+  toggleAdapterAutoAllocation = async ({
     name
   }: {
     name: string;
   }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      toggle_adapter: {
+      toggle_adapter_auto_allocation: {
         name
       }
     }, fee_, memo_, funds_);
@@ -456,6 +469,20 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
   }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       withdraw_from_adapter: {
+        adapter_name: adapterName,
+        amount
+      }
+    }, fee_, memo_, funds_);
+  };
+  depositToAdapter = async ({
+    adapterName,
+    amount
+  }: {
+    adapterName: string;
+    amount: Uint128;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      deposit_to_adapter: {
         adapter_name: adapterName,
         amount
       }

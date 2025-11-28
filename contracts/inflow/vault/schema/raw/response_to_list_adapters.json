@@ -30,7 +30,7 @@
       "type": "object",
       "required": [
         "address",
-        "is_active",
+        "auto_allocation",
         "name"
       ],
       "properties": {
@@ -42,16 +42,16 @@
             }
           ]
         },
+        "auto_allocation": {
+          "description": "Whether the adapter is included in automated deposit/withdrawal allocation. When false, the adapter is skipped by calculate_venues_allocation. Admin operations (DepositToAdapter, WithdrawFromAdapter) work regardless of this flag.",
+          "type": "boolean"
+        },
         "description": {
           "description": "Optional description of the adapter and what protocol it integrates with",
           "type": [
             "string",
             "null"
           ]
-        },
-        "is_active": {
-          "description": "Whether the adapter is currently active and can be used for deployments",
-          "type": "boolean"
         },
         "name": {
           "description": "Human-readable name for display purposes",

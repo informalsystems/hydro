@@ -81,18 +81,27 @@ pub enum ExecuteMsg {
         name: String,
         address: String,
         description: Option<String>,
+        /// Whether to include this adapter in automated allocation from the start
+        auto_allocation: bool,
     },
     /// Unregister an existing adapter
     UnregisterAdapter {
         name: String,
     },
-    /// Toggle adapter active status
-    ToggleAdapter {
+    /// Toggle adapter's automated allocation status
+    /// Manual admin operations (DepositToAdapter, WithdrawFromAdapter) still work regardless of this flag
+    ToggleAdapterAutoAllocation {
         name: String,
     },
-    /// Withdraw funds from an adapter to the inflow contract (whitelisted only)
+    /// Withdraw funds from an adapter to the vault contract (whitelisted only)
     /// Funds stay in contract until withdraw_for_deployment is called
     WithdrawFromAdapter {
+        adapter_name: String,
+        amount: Uint128,
+    },
+    /// Deposit funds from vault contract balance to an adapter (whitelisted only)
+    /// Used for manual rebalancing between adapters
+    DepositToAdapter {
         adapter_name: String,
         amount: Uint128,
     },

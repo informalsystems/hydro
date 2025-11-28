@@ -11,7 +11,7 @@ use crate::{
     query::QueryMsg,
     state::{CONFIG, LAST_FUNDED_WITHDRAWAL_ID, WITHDRAWAL_QUEUE_INFO},
     testing_mocks::{
-        setup_control_center_mock, setup_default_control_center_mock,
+        mock_address_balance, setup_control_center_mock, setup_default_control_center_mock,
         setup_token_info_provider_mock, update_contract_mock, MockWasmQuerier,
     },
 };
@@ -52,22 +52,6 @@ pub fn get_message_info(api: &MockApi, sender: &str, funds: &[Coin]) -> MessageI
         sender: api.addr_make(sender),
         funds: funds.to_vec(),
     }
-}
-
-// Helper to set up the querier to return a specific balance for the given address
-fn mock_address_balance(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
-    address: &str,
-    denom: &str,
-    amount: Uint128,
-) {
-    deps.querier.bank.update_balance(
-        address,
-        vec![Coin {
-            denom: denom.to_string(),
-            amount,
-        }],
-    );
 }
 
 // Assuming dATOM as a deposit token
@@ -116,12 +100,12 @@ fn set_vault_shares_denom(
 fn deposit_withdrawal_for_deployment_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 
-    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
     let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
         DEPOSIT_DENOM,
@@ -134,7 +118,7 @@ fn deposit_withdrawal_for_deployment_test() {
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     let vault_shares_denom_str: String =
-        format!("factory/{inflow_contract_addr}/hydro_inflow_udatom");
+        format!("factory/{vault_contract_addr}/hydro_inflow_udatom");
 
     set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
 
@@ -169,7 +153,7 @@ fn deposit_withdrawal_for_deployment_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER1,
         &vault_shares_denom_str,
         user1_deposit1,
@@ -193,7 +177,7 @@ fn deposit_withdrawal_for_deployment_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER2,
         &vault_shares_denom_str,
         user2_deposit1,
@@ -229,10 +213,10 @@ fn deposit_withdrawal_for_deployment_test() {
         _ => panic!("Expected BankMsg::Send"),
     }
 
-    // Mock that the Inflow contract doesn't have any tokens left on its bank balance
+    // Mock that the vault contract doesn't have any tokens left on its bank balance
     mock_address_balance(
         &mut deps,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         DEPOSIT_DENOM,
         Uint128::zero(),
     );
@@ -249,7 +233,7 @@ fn deposit_withdrawal_for_deployment_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER1,
         &vault_shares_denom_str,
         user1_deposit2,
@@ -274,7 +258,7 @@ fn deposit_withdrawal_for_deployment_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER3,
         &vault_shares_denom_str,
         user3_deposit1,
@@ -310,10 +294,10 @@ fn deposit_withdrawal_for_deployment_test() {
         _ => panic!("Expected BankMsg::Send"),
     }
 
-    // Mock that the Inflow contract doesn't have any tokens left on its bank balance
+    // Mock that the vault contract doesn't have any tokens left on its bank balance
     mock_address_balance(
         &mut deps,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         DEPOSIT_DENOM,
         Uint128::zero(),
     );
@@ -331,7 +315,7 @@ fn deposit_withdrawal_for_deployment_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER3,
         &vault_shares_denom_str,
         user3_deposit2,
@@ -348,12 +332,12 @@ fn deposit_withdrawal_for_deployment_test() {
 fn deposit_mints_shares_for_on_behalf_recipient() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 
-    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
     let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
         DEPOSIT_DENOM,
@@ -364,7 +348,7 @@ fn deposit_mints_shares_for_on_behalf_recipient() {
     let info = get_message_info(&deps.api, "creator", &[]);
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    let vault_shares_denom_str = format!("factory/{inflow_contract_addr}/hydro_inflow_uatom");
+    let vault_shares_denom_str = format!("factory/{vault_contract_addr}/hydro_inflow_uatom");
     set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
 
     // Setup initial mocks: total pool value and shares issued are 0
@@ -398,7 +382,7 @@ fn deposit_mints_shares_for_on_behalf_recipient() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER1,
         Some(beneficiary_addr.as_str()),
         &vault_shares_denom_str,
@@ -416,12 +400,12 @@ fn deposit_mints_shares_for_on_behalf_recipient() {
 fn withdraw_pays_on_behalf_recipient() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 
-    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
     let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
         DEPOSIT_DENOM,
@@ -432,7 +416,7 @@ fn withdraw_pays_on_behalf_recipient() {
     let info = get_message_info(&deps.api, "creator", &[]);
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    let vault_shares_denom_str = format!("factory/{inflow_contract_addr}/hydro_inflow_uatom");
+    let vault_shares_denom_str = format!("factory/{vault_contract_addr}/hydro_inflow_uatom");
     set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
 
     let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
@@ -463,7 +447,7 @@ fn withdraw_pays_on_behalf_recipient() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER1,
         &vault_shares_denom_str,
         deposit_amount,
@@ -484,7 +468,7 @@ fn withdraw_pays_on_behalf_recipient() {
         &mut deps,
         &env,
         &wasm_querier,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         USER1,
         Some(beneficiary_addr.as_str()),
         &vault_shares_denom_str,
@@ -507,12 +491,12 @@ fn withdraw_pays_on_behalf_recipient() {
 fn withdraw_queue_uses_on_behalf_withdrawer() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 
-    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
     let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
         DEPOSIT_DENOM,
@@ -523,7 +507,7 @@ fn withdraw_queue_uses_on_behalf_withdrawer() {
     let info = get_message_info(&deps.api, "creator", &[]);
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    let vault_shares_denom_str = format!("factory/{inflow_contract_addr}/hydro_inflow_uatom");
+    let vault_shares_denom_str = format!("factory/{vault_contract_addr}/hydro_inflow_uatom");
     set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
 
     let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
@@ -554,7 +538,7 @@ fn withdraw_queue_uses_on_behalf_withdrawer() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER1,
         &vault_shares_denom_str,
         deposit_amount,
@@ -569,7 +553,7 @@ fn withdraw_queue_uses_on_behalf_withdrawer() {
     // Simulate that all funds have been deployed so withdrawals must queue.
     mock_address_balance(
         &mut deps,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         DEPOSIT_DENOM,
         Uint128::zero(),
     );
@@ -584,7 +568,7 @@ fn withdraw_queue_uses_on_behalf_withdrawer() {
         &mut deps,
         &env,
         &wasm_querier,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         USER1,
         Some(beneficiary_addr.as_str()),
         &vault_shares_denom_str,
@@ -609,13 +593,13 @@ fn withdraw_queue_uses_on_behalf_withdrawer() {
 fn withdrawal_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 
-    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
     let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
     let user1_addr = deps.api.addr_make(USER1);
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
         DEPOSIT_DENOM,
@@ -628,7 +612,7 @@ fn withdrawal_test() {
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     let vault_shares_denom_str: String =
-        format!("factory/{inflow_contract_addr}/hydro_inflow_udatom");
+        format!("factory/{vault_contract_addr}/hydro_inflow_udatom");
 
     set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
 
@@ -664,7 +648,7 @@ fn withdrawal_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER1,
         &vault_shares_denom_str,
         user1_deposit1,
@@ -688,7 +672,7 @@ fn withdrawal_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER2,
         &vault_shares_denom_str,
         user2_deposit1,
@@ -716,7 +700,7 @@ fn withdrawal_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         USER1,
         None,
         &vault_shares_denom_str,
@@ -738,7 +722,7 @@ fn withdrawal_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         USER1,
         None,
         &vault_shares_denom_str,
@@ -760,7 +744,7 @@ fn withdrawal_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         USER2,
         None,
         &vault_shares_denom_str,
@@ -787,7 +771,7 @@ fn withdrawal_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER1,
         &vault_shares_denom_str,
         user1_deposit2,
@@ -804,7 +788,7 @@ fn withdrawal_test() {
     execute_withdraw_for_deployment(
         &mut deps,
         &env,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         WHITELIST_ADDR,
         withdrawal_amount,
         Uint128::zero(),
@@ -822,7 +806,7 @@ fn withdrawal_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         USER1,
         None,
         &vault_shares_denom_str,
@@ -859,7 +843,7 @@ fn withdrawal_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER2,
         &vault_shares_denom_str,
         user2_deposit2,
@@ -897,7 +881,7 @@ fn withdrawal_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER2,
         &vault_shares_denom_str,
         user2_deposit3,
@@ -927,7 +911,7 @@ fn withdrawal_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         USER1,
         None,
         &vault_shares_denom_str,
@@ -960,14 +944,14 @@ fn withdrawal_test() {
 fn cancel_withdrawal_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 
-    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
     let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
     let user1_addr = deps.api.addr_make(USER1);
     let user2_addr = deps.api.addr_make(USER2);
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
         DEPOSIT_DENOM,
@@ -980,7 +964,7 @@ fn cancel_withdrawal_test() {
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     let vault_shares_denom_str: String =
-        format!("factory/{inflow_contract_addr}/hydro_inflow_udatom");
+        format!("factory/{vault_contract_addr}/hydro_inflow_udatom");
 
     set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
 
@@ -1015,7 +999,7 @@ fn cancel_withdrawal_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER1,
         &vault_shares_denom_str,
         user1_deposit1,
@@ -1031,7 +1015,7 @@ fn cancel_withdrawal_test() {
     execute_withdraw_for_deployment(
         &mut deps,
         &env,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         WHITELIST_ADDR,
         user1_deposit1,
         Uint128::zero(),
@@ -1046,7 +1030,7 @@ fn cancel_withdrawal_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         USER1,
         None,
         &vault_shares_denom_str,
@@ -1096,7 +1080,7 @@ fn cancel_withdrawal_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER2,
         &vault_shares_denom_str,
         user2_deposit1,
@@ -1112,7 +1096,7 @@ fn cancel_withdrawal_test() {
     execute_withdraw_for_deployment(
         &mut deps,
         &env,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         WHITELIST_ADDR,
         user2_deposit1,
         Uint128::zero(),
@@ -1135,7 +1119,7 @@ fn cancel_withdrawal_test() {
             &mut deps,
             &env,
             &wasm_querier,
-            inflow_contract_addr.as_ref(),
+            vault_contract_addr.as_ref(),
             USER1,
             None,
             &vault_shares_denom_str,
@@ -1176,7 +1160,7 @@ fn cancel_withdrawal_test() {
             &mut deps,
             &env,
             &wasm_querier,
-            inflow_contract_addr.as_ref(),
+            vault_contract_addr.as_ref(),
             USER2,
             None,
             &vault_shares_denom_str,
@@ -1266,14 +1250,14 @@ fn cancel_withdrawal_test() {
 fn fulfill_pending_withdrawals_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 
-    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
     let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
     let user1_addr = deps.api.addr_make(USER1);
     let user2_addr = deps.api.addr_make(USER2);
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
         DEPOSIT_DENOM,
@@ -1287,7 +1271,7 @@ fn fulfill_pending_withdrawals_test() {
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     let vault_shares_denom_str: String =
-        format!("factory/{inflow_contract_addr}/hydro_inflow_udatom");
+        format!("factory/{vault_contract_addr}/hydro_inflow_udatom");
 
     set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
 
@@ -1337,7 +1321,7 @@ fn fulfill_pending_withdrawals_test() {
             &mut deps,
             &env,
             &wasm_querier,
-            &inflow_contract_addr,
+            &vault_contract_addr,
             user_deposit.0,
             &vault_shares_denom_str,
             user_deposit.1,
@@ -1356,7 +1340,7 @@ fn fulfill_pending_withdrawals_test() {
     execute_withdraw_for_deployment(
         &mut deps,
         &env,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         WHITELIST_ADDR,
         user1_deposit1 + user2_deposit1,
         Uint128::zero(),
@@ -1393,7 +1377,7 @@ fn fulfill_pending_withdrawals_test() {
             &mut deps,
             &env,
             &wasm_querier,
-            inflow_contract_addr.as_ref(),
+            vault_contract_addr.as_ref(),
             user_withdrawal.0,
             None,
             &vault_shares_denom_str,
@@ -1441,7 +1425,7 @@ fn fulfill_pending_withdrawals_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER3,
         &vault_shares_denom_str,
         user3_deposit1,
@@ -1460,7 +1444,7 @@ fn fulfill_pending_withdrawals_test() {
     );
 
     // Provide 9000 extra tokens to the contract for all pending withdrawals to be fulfilled
-    execute_return_from_deployment(&mut deps, inflow_contract_addr.as_str(), Uint128::new(9000));
+    execute_return_from_deployment(&mut deps, vault_contract_addr.as_str(), Uint128::new(9000));
 
     // Execute fulfillment of pending withdrawals
     execute_fulfill_pending_withdrawals(&mut deps, &env, WHITELIST_ADDR);
@@ -1507,7 +1491,7 @@ fn fulfill_pending_withdrawals_test() {
             &mut deps,
             &env,
             &wasm_querier,
-            inflow_contract_addr.as_ref(),
+            vault_contract_addr.as_ref(),
             user_withdrawal.0,
             None,
             &vault_shares_denom_str,
@@ -1560,13 +1544,13 @@ fn fulfill_pending_withdrawals_test() {
     );
 
     // Provide 7000 tokens (on top of existing 12000) to the contract for User1's pending withdrawal to be fulfilled
-    execute_return_from_deployment(&mut deps, inflow_contract_addr.as_str(), Uint128::new(7000));
+    execute_return_from_deployment(&mut deps, vault_contract_addr.as_str(), Uint128::new(7000));
 
     // User1 executes claim_unbonded_withdrawals() for withdrawal request ID 1
     execute_claim_unbonded_withdrawals(
         &mut deps,
         &env,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         USER1,
         vec![1],
         None,
@@ -1615,14 +1599,14 @@ fn fulfill_pending_withdrawals_test() {
 fn claim_unbonded_withdrawals_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 
-    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
     let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
     let user1_addr = deps.api.addr_make(USER1);
     let user2_addr = deps.api.addr_make(USER2);
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
         DEPOSIT_DENOM,
@@ -1636,7 +1620,7 @@ fn claim_unbonded_withdrawals_test() {
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     let vault_shares_denom_str: String =
-        format!("factory/{inflow_contract_addr}/hydro_inflow_udatom");
+        format!("factory/{vault_contract_addr}/hydro_inflow_udatom");
 
     set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
 
@@ -1686,7 +1670,7 @@ fn claim_unbonded_withdrawals_test() {
             &mut deps,
             &env,
             &wasm_querier,
-            &inflow_contract_addr,
+            &vault_contract_addr,
             user_deposit.0,
             &vault_shares_denom_str,
             user_deposit.1,
@@ -1705,7 +1689,7 @@ fn claim_unbonded_withdrawals_test() {
     execute_withdraw_for_deployment(
         &mut deps,
         &env,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         WHITELIST_ADDR,
         user1_deposit1 + user2_deposit1,
         Uint128::zero(),
@@ -1770,7 +1754,7 @@ fn claim_unbonded_withdrawals_test() {
             &mut deps,
             &env,
             &wasm_querier,
-            inflow_contract_addr.as_ref(),
+            vault_contract_addr.as_ref(),
             user_withdrawal.0,
             None,
             &vault_shares_denom_str,
@@ -1817,7 +1801,7 @@ fn claim_unbonded_withdrawals_test() {
     );
 
     // Provide 9000 tokens to the contract to fulfill first 4 withdrawal requests
-    execute_return_from_deployment(&mut deps, inflow_contract_addr.as_str(), Uint128::new(9000));
+    execute_return_from_deployment(&mut deps, vault_contract_addr.as_str(), Uint128::new(9000));
 
     // Execute fulfillment of 4 pending withdrawals
     execute_fulfill_pending_withdrawals(&mut deps, &env, WHITELIST_ADDR);
@@ -1859,7 +1843,7 @@ fn claim_unbonded_withdrawals_test() {
     execute_claim_unbonded_withdrawals(
         &mut deps,
         &env,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         USER1,
         vec![4, 5, 4, 9],
         Some("must provide at least one valid withdrawal id"),
@@ -1872,7 +1856,7 @@ fn claim_unbonded_withdrawals_test() {
     execute_claim_unbonded_withdrawals(
         &mut deps,
         &env,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         USER1,
         vec![0, 1, 2, 0, 2, 4, 5],
         None,
@@ -1927,14 +1911,14 @@ fn claim_unbonded_withdrawals_test() {
 fn whitelist_add_remove_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 
-    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
     let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
     let user1_address = deps.api.addr_make(USER1);
     let user2_address = deps.api.addr_make(USER2);
     let user3_address = deps.api.addr_make(USER3);
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
         DEPOSIT_DENOM,
@@ -2039,13 +2023,13 @@ fn whitelist_add_remove_test() {
 fn reporting_balance_queries_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 
-    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
     let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
     let user1_address = deps.api.addr_make(USER1);
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
         DEPOSIT_DENOM,
@@ -2058,7 +2042,7 @@ fn reporting_balance_queries_test() {
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     let vault_shares_denom_str: String =
-        format!("factory/{inflow_contract_addr}/hydro_inflow_udatom");
+        format!("factory/{vault_contract_addr}/hydro_inflow_udatom");
 
     set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
 
@@ -2093,7 +2077,7 @@ fn reporting_balance_queries_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER1,
         &vault_shares_denom_str,
         user1_deposit1,
@@ -2147,13 +2131,13 @@ fn reporting_balance_queries_test() {
 fn withdrawal_with_config_update_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 
-    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
     let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
     let user1_addr = deps.api.addr_make(USER1);
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
         DEPOSIT_DENOM,
@@ -2167,7 +2151,7 @@ fn withdrawal_with_config_update_test() {
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg.clone()).unwrap();
 
     let vault_shares_denom_str: String =
-        format!("factory/{inflow_contract_addr}/hydro_inflow_udatom");
+        format!("factory/{vault_contract_addr}/hydro_inflow_udatom");
 
     set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
 
@@ -2202,7 +2186,7 @@ fn withdrawal_with_config_update_test() {
         &mut deps,
         &env,
         &wasm_querier,
-        &inflow_contract_addr,
+        &vault_contract_addr,
         USER1,
         &vault_shares_denom_str,
         user1_deposit1,
@@ -2218,7 +2202,7 @@ fn withdrawal_with_config_update_test() {
     execute_withdraw_for_deployment(
         &mut deps,
         &env,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         WHITELIST_ADDR,
         user1_deposit1,
         Uint128::zero(),
@@ -2238,7 +2222,7 @@ fn withdrawal_with_config_update_test() {
             &mut deps,
             &env,
             &wasm_querier,
-            inflow_contract_addr.as_ref(),
+            vault_contract_addr.as_ref(),
             USER1,
             None,
             &vault_shares_denom_str,
@@ -2390,7 +2374,7 @@ fn execute_deposit(
     deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
     env: &Env,
     wasm_querier: &MockWasmQuerier,
-    inflow_contract_addr: &Addr,
+    vault_contract_addr: &Addr,
     user_str: &str,
     vault_shares_denom_str: &String,
     deposit_amount: Uint128,
@@ -2407,7 +2391,7 @@ fn execute_deposit(
         deps,
         env,
         wasm_querier,
-        inflow_contract_addr,
+        vault_contract_addr,
         user_str,
         None,
         vault_shares_denom_str,
@@ -2426,7 +2410,7 @@ fn execute_deposit_with_recipient(
     deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
     env: &Env,
     wasm_querier: &MockWasmQuerier,
-    inflow_contract_addr: &Addr,
+    vault_contract_addr: &Addr,
     sender_str: &str,
     on_behalf_of: Option<&str>,
     vault_shares_denom_str: &String,
@@ -2438,11 +2422,11 @@ fn execute_deposit_with_recipient(
     mock_control_center_total_shares_before: u128,
     mock_control_center_total_shares_after: u128,
 ) {
-    // Mock that the Inflow contract has deposit tokens on its bank balance,
+    // Mock that the vault contract has deposit tokens on its bank balance,
     // since in reallity this happens before execute() is called.
     mock_address_balance(
         deps,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         DEPOSIT_DENOM,
         mock_inflow_deposit_tokens_total,
     );
@@ -2519,7 +2503,7 @@ fn execute_deposit_with_recipient(
 fn execute_withdraw_for_deployment(
     deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
     env: &Env,
-    inflow_contract_addr: &str,
+    vault_contract_addr: &str,
     whitelisted_user_str: &str,
     amount_to_withdraw: Uint128,
     mock_inflow_balance_after: Uint128,
@@ -2538,7 +2522,7 @@ fn execute_withdraw_for_deployment(
 
     mock_address_balance(
         deps,
-        inflow_contract_addr,
+        vault_contract_addr,
         DEPOSIT_DENOM,
         mock_inflow_balance_after,
     );
@@ -2546,14 +2530,14 @@ fn execute_withdraw_for_deployment(
 
 fn execute_return_from_deployment(
     deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
-    inflow_contract_addr: &str,
+    vault_contract_addr: &str,
     amount_to_return: Uint128,
 ) {
     let current_contract_balance: Uint128 = from_json::<BalanceResponse>(
         deps.querier
             .bank
             .query(&BankQuery::Balance {
-                address: inflow_contract_addr.to_owned(),
+                address: vault_contract_addr.to_owned(),
                 denom: DEPOSIT_DENOM.to_owned(),
             })
             .unwrap()
@@ -2565,7 +2549,7 @@ fn execute_return_from_deployment(
 
     mock_address_balance(
         deps,
-        inflow_contract_addr,
+        vault_contract_addr,
         DEPOSIT_DENOM,
         current_contract_balance + amount_to_return,
     );
@@ -2576,7 +2560,7 @@ fn execute_withdraw(
     deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
     env: &Env,
     wasm_querier: &MockWasmQuerier,
-    inflow_contract_addr: &str,
+    vault_contract_addr: &str,
     user_str: &str,
     on_behalf_of: Option<&str>,
     vault_shares_denom_str: &String,
@@ -2638,10 +2622,10 @@ fn execute_withdraw(
             _ => panic!("Expected MintTokens message"),
         }
 
-        // Update Inflow contract deposit tokens balance
+        // Update vault contract deposit tokens balance
         mock_address_balance(
             deps,
-            inflow_contract_addr,
+            vault_contract_addr,
             DEPOSIT_DENOM,
             contract_deposit_tokens_after,
         );
@@ -2739,7 +2723,7 @@ type ClaimUnbondedWithdrawalExpectedResult = (
 fn execute_claim_unbonded_withdrawals(
     deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
     env: &Env,
-    inflow_contract_addr: &str,
+    vault_contract_addr: &str,
     sender_str: &str,
     withdrawal_ids: Vec<u64>,
     expected_error: Option<&str>,
@@ -2788,7 +2772,7 @@ fn execute_claim_unbonded_withdrawals(
 
         mock_address_balance(
             deps,
-            inflow_contract_addr,
+            vault_contract_addr,
             DEPOSIT_DENOM,
             mock_inflow_contract_total_tokens,
         );

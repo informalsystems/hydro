@@ -90,8 +90,10 @@ pub struct PayoutEntry {
 pub struct AdapterInfo {
     /// Contract address of the adapter
     pub address: Addr,
-    /// Whether the adapter is currently active and can be used for deployments
-    pub is_active: bool,
+    /// Whether the adapter is included in automated deposit/withdrawal allocation.
+    /// When false, the adapter is skipped by calculate_venues_allocation.
+    /// Admin operations (DepositToAdapter, WithdrawFromAdapter) work regardless of this flag.
+    pub auto_allocation: bool,
     /// Human-readable name for display purposes
     pub name: String,
     /// Optional description of the adapter and what protocol it integrates with

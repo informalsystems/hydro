@@ -65,6 +65,7 @@ export type ExecuteMsg = {
 } | {
   register_adapter: {
     address: string;
+    auto_allocation: boolean;
     description?: string | null;
     name: string;
   };
@@ -73,11 +74,16 @@ export type ExecuteMsg = {
     name: string;
   };
 } | {
-  toggle_adapter: {
+  toggle_adapter_auto_allocation: {
     name: string;
   };
 } | {
   withdraw_from_adapter: {
+    adapter_name: string;
+    amount: Uint128;
+  };
+} | {
+  deposit_to_adapter: {
     adapter_name: string;
     amount: Uint128;
   };
@@ -137,8 +143,8 @@ export interface AdapterInfoResponse {
 }
 export interface AdapterInfo {
   address: Addr;
+  auto_allocation: boolean;
   description?: string | null;
-  is_active: boolean;
   name: string;
 }
 export interface ConfigResponse {

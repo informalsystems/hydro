@@ -182,13 +182,20 @@ pub fn execute(
             name,
             address,
             description,
-        } => register_adapter(deps, info, name, address, description),
+            auto_allocation,
+        } => register_adapter(deps, info, name, address, description, auto_allocation),
         ExecuteMsg::UnregisterAdapter { name } => unregister_adapter(deps, info, name),
-        ExecuteMsg::ToggleAdapter { name } => toggle_adapter(deps, info, name),
+        ExecuteMsg::ToggleAdapterAutoAllocation { name } => {
+            toggle_adapter_auto_allocation(deps, info, name)
+        }
         ExecuteMsg::WithdrawFromAdapter {
             adapter_name,
             amount,
         } => withdraw_from_adapter(deps, info, &config, adapter_name, amount),
+        ExecuteMsg::DepositToAdapter {
+            adapter_name,
+            amount,
+        } => deposit_to_adapter(deps, env, info, &config, adapter_name, amount),
     }
 }
 
@@ -245,9 +252,9 @@ fn deposit(
                 name: adapter_name.clone(),
             })?;
 
-        // Should never happen, because we filter out inactive adapters in calculate_venues_allocation
-        if !adapter_info.is_active {
-            return Err(ContractError::AdapterNotActive {
+        // Should never happen, because we filter out in calculate_venues_allocation
+        if !adapter_info.auto_allocation {
+            return Err(ContractError::AdapterNotIncludedInAutomatedAllocation {
                 name: adapter_name.clone(),
             });
         }
@@ -356,9 +363,9 @@ fn withdraw(
                     name: adapter_name.clone(),
                 })?;
 
-            // Should never happen, because we filter out inactive adapters in calculate_venues_allocation
-            if !adapter_info.is_active {
-                return Err(ContractError::AdapterNotActive {
+            // Should never happen, because we filter out in calculate_venues_allocation
+            if !adapter_info.auto_allocation {
+                return Err(ContractError::AdapterNotIncludedInAutomatedAllocation {
                     name: adapter_name.clone(),
                 });
             }
@@ -1011,6 +1018,7 @@ fn register_adapter(
     name: String,
     address: String,
     description: Option<String>,
+    auto_allocation: bool,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     // Validate caller is whitelisted
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
@@ -1023,10 +1031,10 @@ fn register_adapter(
         return Err(ContractError::AdapterAlreadyExists { name });
     }
 
-    // Save adapter info with is_active = true
+    // Save adapter info
     let adapter_info = AdapterInfo {
         address: adapter_addr.clone(),
-        is_active: true,
+        auto_allocation,
         name: name.clone(),
         description: description.clone(),
     };
@@ -1038,7 +1046,7 @@ fn register_adapter(
         .add_attribute("sender", info.sender)
         .add_attribute("adapter_name", name)
         .add_attribute("adapter_address", adapter_addr)
-        .add_attribute("is_active", "true")
+        .add_attribute("auto_allocation", auto_allocation.to_string())
         .add_attribute("description", description.unwrap_or_default()))
 }
 
@@ -1065,7 +1073,7 @@ fn unregister_adapter(
         .add_attribute("adapter_address", adapter_info.address))
 }
 
-fn toggle_adapter(
+fn toggle_adapter_auto_allocation(
     deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
     name: String,
@@ -1078,20 +1086,20 @@ fn toggle_adapter(
         .may_load(deps.storage, name.clone())?
         .ok_or_else(|| ContractError::AdapterNotFound { name: name.clone() })?;
 
-    // Toggle is_active status
-    adapter_info.is_active = !adapter_info.is_active;
+    // Toggle automated allocation status
+    adapter_info.auto_allocation = !adapter_info.auto_allocation;
 
     // Save updated adapter info
     ADAPTERS.save(deps.storage, name.clone(), &adapter_info)?;
 
     Ok(Response::new()
-        .add_attribute("action", "toggle_adapter")
+        .add_attribute("action", "toggle_adapter_auto_allocation")
         .add_attribute("sender", info.sender)
         .add_attribute("adapter_name", name)
-        .add_attribute("new_is_active", adapter_info.is_active.to_string()))
+        .add_attribute("auto_allocation", adapter_info.auto_allocation.to_string()))
 }
 
-/// Withdraws funds from an adapter to the inflow contract.
+/// Withdraws funds from an adapter to the vault contract.
 /// Only callable by whitelisted addresses.
 /// Funds stay in the contract and do NOT update DEPLOYED_AMOUNT.
 /// Use withdraw_for_deployment to move funds to multisig and track in DEPLOYED_AMOUNT.
@@ -1134,14 +1142,68 @@ fn withdraw_from_adapter(
         .add_attribute("amount", amount))
 }
 
+/// Deposits funds from vault balance to an adapter.
+/// Only callable by whitelisted addresses.
+/// Can deposit to any adapter regardless of auto_allocation status.
+/// Used for manual rebalancing operations between adapters.
+fn deposit_to_adapter(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    config: &Config,
+    adapter_name: String,
+    amount: Uint128,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Validate caller is whitelisted
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    // Load adapter (return error if not found)
+    let adapter_info = ADAPTERS
+        .may_load(deps.storage, adapter_name.clone())?
+        .ok_or_else(|| ContractError::AdapterNotFound {
+            name: adapter_name.clone(),
+        })?;
+
+    // Check vault has sufficient balance
+    let vault_balance = deps
+        .querier
+        .query_balance(&env.contract.address, &config.deposit_denom)?;
+
+    if vault_balance.amount < amount {
+        return Err(ContractError::InsufficientBalance {
+            available: vault_balance.amount,
+            required: amount,
+        });
+    }
+
+    // Create adapter deposit message with funds
+    let deposit_msg = AdapterExecuteMsg::Deposit {};
+
+    let wasm_msg = WasmMsg::Execute {
+        contract_addr: adapter_info.address.to_string(),
+        msg: to_json_binary(&deposit_msg)?,
+        funds: vec![Coin {
+            denom: config.deposit_denom.clone(),
+            amount,
+        }],
+    };
+
+    Ok(Response::new()
+        .add_message(wasm_msg)
+        .add_attribute("action", "deposit_to_adapter")
+        .add_attribute("sender", info.sender)
+        .add_attribute("adapter_name", adapter_name)
+        .add_attribute("amount", amount))
+}
+
 /// Calculates venue allocation based on registered adapters.
 ///
 /// Smart allocation strategy:
-/// - Iterates through active adapters in registration order (first to last)
+/// - Iterates through adapters included in automated allocation in registration order (first to last)
 /// - For deposits: queries AvailableForDeposit to check capacity
 /// - For withdrawals: queries AvailableForWithdraw to check balance
 /// - Distributes amount across multiple adapters if needed
-/// - If 0 active adapters → return empty vec (use contract balance)
+/// - If 0 adapters included in automated allocation -> return empty vec (use contract balance)
 ///
 /// # Arguments
 /// * `deps` - Contract dependencies (for querying adapters)
@@ -1162,17 +1224,17 @@ fn calculate_venues_allocation(
 ) -> Result<Vec<(String, Uint128)>, ContractError> {
     let inflow_address = env.contract.address.to_string();
 
-    // Get list of active adapters (sorted by name for deterministic ordering)
+    // Get list of adapters with automated allocation (sorted by name for deterministic ordering)
     let active_adapters: Vec<(String, AdapterInfo)> = ADAPTERS
         .range(deps.storage, None, None, Order::Ascending)
         .filter_map(|entry| match entry {
-            Ok((name, info)) if info.is_active => Some((name, info)),
+            Ok((name, info)) if info.auto_allocation => Some((name, info)),
             _ => None,
         })
         .collect();
 
     if active_adapters.is_empty() {
-        // No adapters available - funds stay in contract
+        // No adapters available for automated allocation - funds stay in contract
         return Ok(vec![]);
     }
 
@@ -1656,15 +1718,15 @@ fn create_set_denom_metadata_msg(
     })
 }
 
-/// Queries all registered adapters to get the total amount deposited by this inflow contract.
-/// Returns the sum of all deposits across all adapters for the given denom.
-fn query_total_adapter_deposits(
+/// Queries all registered adapters to get the total amount deposited by this vault contract.
+/// Returns the sum of all positions across all adapters for the given denom.
+fn query_total_adapter_positions(
     deps: &Deps<NeutronQuery>,
     env: &Env,
     deposit_denom: String,
 ) -> StdResult<Uint128> {
     let inflow_address = env.contract.address.to_string();
-    let mut total_deposits = Uint128::zero();
+    let mut total_positions = Uint128::zero();
 
     // Iterate through all adapters
     let adapters: Vec<(String, AdapterInfo)> = ADAPTERS
@@ -1673,7 +1735,7 @@ fn query_total_adapter_deposits(
         .collect();
 
     for (_name, adapter_info) in adapters {
-        // Query each adapter for deposits by this inflow contract
+        // Query each adapter for positions by this vault contract
         let query_msg = AdapterQueryMsg::DepositorPosition {
             depositor_address: inflow_address.clone(),
             denom: deposit_denom.clone(),
@@ -1685,12 +1747,12 @@ fn query_total_adapter_deposits(
             .query_wasm_smart(adapter_info.address.to_string(), &query_msg);
 
         if let Ok(response) = result {
-            total_deposits = total_deposits.checked_add(response.amount)?;
+            total_positions = total_positions.checked_add(response.amount)?;
         }
         // If query fails, we skip this adapter and continue
     }
 
-    Ok(total_deposits)
+    Ok(total_positions)
 }
 
 /// Returns the total value of the vault as well as the total number of shares issued by querying
@@ -1736,9 +1798,9 @@ fn get_pool_info(
         .query_balance(env.contract.address.clone(), config.deposit_denom.clone())?
         .amount;
 
-    // Get the total amount deposited in adapters. This amount should be added to the
+    // Get the total amount held in adapters. This amount should be added to the
     // total pool value, since it is available but not counted in the deployed amount
-    let adapter_deposits = query_total_adapter_deposits(deps, env, config.deposit_denom.clone())?;
+    let adapter_deposits = query_total_adapter_positions(deps, env, config.deposit_denom.clone())?;
 
     // Get the total amount already requested for withdrawal. This amount should be
     // subtracted from the total pool value, since we cannot count on it anymore.

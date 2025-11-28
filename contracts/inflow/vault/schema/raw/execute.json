@@ -235,11 +235,16 @@
           "type": "object",
           "required": [
             "address",
+            "auto_allocation",
             "name"
           ],
           "properties": {
             "address": {
               "type": "string"
+            },
+            "auto_allocation": {
+              "description": "Whether to include this adapter in automated allocation from the start",
+              "type": "boolean"
             },
             "description": {
               "type": [
@@ -279,13 +284,13 @@
       "additionalProperties": false
     },
     {
-      "description": "Toggle adapter active status",
+      "description": "Toggle adapter's automated allocation status Manual admin operations (DepositToAdapter, WithdrawFromAdapter) still work regardless of this flag",
       "type": "object",
       "required": [
-        "toggle_adapter"
+        "toggle_adapter_auto_allocation"
       ],
       "properties": {
-        "toggle_adapter": {
+        "toggle_adapter_auto_allocation": {
           "type": "object",
           "required": [
             "name"
@@ -301,13 +306,39 @@
       "additionalProperties": false
     },
     {
-      "description": "Withdraw funds from an adapter to the inflow contract (whitelisted only) Funds stay in contract until withdraw_for_deployment is called",
+      "description": "Withdraw funds from an adapter to the vault contract (whitelisted only) Funds stay in contract until withdraw_for_deployment is called",
       "type": "object",
       "required": [
         "withdraw_from_adapter"
       ],
       "properties": {
         "withdraw_from_adapter": {
+          "type": "object",
+          "required": [
+            "adapter_name",
+            "amount"
+          ],
+          "properties": {
+            "adapter_name": {
+              "type": "string"
+            },
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Deposit funds from vault contract balance to an adapter (whitelisted only) Used for manual rebalancing between adapters",
+      "type": "object",
+      "required": [
+        "deposit_to_adapter"
+      ],
+      "properties": {
+        "deposit_to_adapter": {
           "type": "object",
           "required": [
             "adapter_name",

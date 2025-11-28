@@ -5,8 +5,8 @@ use crate::{
     msg::{DenomMetadata, ExecuteMsg, InstantiateMsg},
     state::ADAPTERS,
     testing_mocks::{
-        setup_adapter_mock, setup_control_center_mock, setup_token_info_provider_mock,
-        update_contract_mock, MockAdapterConfig, MockWasmQuerier,
+        mock_address_balance, setup_adapter_mock, setup_control_center_mock,
+        setup_token_info_provider_mock, update_contract_mock, MockAdapterConfig, MockWasmQuerier,
     },
 };
 use cosmwasm_std::{testing::mock_env, Addr, CosmosMsg, Decimal, Uint128, WasmMsg};
@@ -75,6 +75,7 @@ fn register_adapter_success() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars lending protocol adapter".to_string()),
+            auto_allocation: true,
         },
     )
     .unwrap();
@@ -91,7 +92,7 @@ fn register_adapter_success() {
         .load(&deps.storage, "mars_adapter".to_string())
         .unwrap();
     assert_eq!(adapter_info.address, adapter_addr);
-    assert!(adapter_info.is_active);
+    assert!(adapter_info.auto_allocation);
     assert_eq!(adapter_info.name, "mars_adapter");
     assert_eq!(
         adapter_info.description,
@@ -129,6 +130,7 @@ fn register_adapter_unauthorized() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: None,
+            auto_allocation: true,
         },
     )
     .unwrap_err();
@@ -166,6 +168,7 @@ fn register_adapter_duplicate_name() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: None,
+            auto_allocation: true,
         },
     )
     .unwrap();
@@ -180,6 +183,7 @@ fn register_adapter_duplicate_name() {
             name: "mars_adapter".to_string(),
             address: another_adapter_addr.to_string(),
             description: None,
+            auto_allocation: true,
         },
     )
     .unwrap_err();
@@ -219,6 +223,7 @@ fn unregister_adapter_success() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: None,
+            auto_allocation: true,
         },
     )
     .unwrap();
@@ -312,6 +317,7 @@ fn unregister_adapter_unauthorized() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: None,
+            auto_allocation: true,
         },
     )
     .unwrap();
@@ -351,7 +357,7 @@ fn toggle_adapter_success() {
     let info = get_message_info(&deps.api, "creator", &[]);
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    // Register adapter (is_active = true by default)
+    // Register adapter (auto_allocation = true by default)
     let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
     execute(
         deps.as_mut(),
@@ -361,55 +367,56 @@ fn toggle_adapter_success() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: None,
+            auto_allocation: true,
         },
     )
     .unwrap();
 
-    // Verify adapter is active
+    // Verify adapter is included in automated allocation
     let adapter_info = ADAPTERS
         .load(&deps.storage, "mars_adapter".to_string())
         .unwrap();
-    assert!(adapter_info.is_active);
+    assert!(adapter_info.auto_allocation);
 
-    // Toggle adapter to inactive
+    // Toggle adapter to exclude from automated allocation
     let res = execute(
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::ToggleAdapter {
+        ExecuteMsg::ToggleAdapterAutoAllocation {
             name: "mars_adapter".to_string(),
         },
     )
     .unwrap();
 
     // Verify response attributes
-    assert_eq!(res.attributes[0].value, "toggle_adapter");
+    assert_eq!(res.attributes[0].value, "toggle_adapter_auto_allocation");
     assert_eq!(res.attributes[2].value, "mars_adapter");
     assert_eq!(res.attributes[3].value, "false");
 
-    // Verify adapter is now inactive
+    // Verify adapter is now excluded from automated allocation
     let adapter_info = ADAPTERS
         .load(&deps.storage, "mars_adapter".to_string())
         .unwrap();
-    assert!(!adapter_info.is_active);
+    assert!(!adapter_info.auto_allocation);
 
-    // Toggle adapter back to active
+    // Toggle adapter back to include in automated allocation
     let res = execute(
         deps.as_mut(),
         env,
         info,
-        ExecuteMsg::ToggleAdapter {
+        ExecuteMsg::ToggleAdapterAutoAllocation {
             name: "mars_adapter".to_string(),
         },
     )
     .unwrap();
 
-    // Verify adapter is active again
+    // Verify adapter is included in automated allocation again
     assert_eq!(res.attributes[3].value, "true");
     let adapter_info = ADAPTERS
         .load(&deps.storage, "mars_adapter".to_string())
         .unwrap();
-    assert!(adapter_info.is_active);
+    assert!(adapter_info.auto_allocation);
 }
 
 #[test]
@@ -437,7 +444,7 @@ fn toggle_adapter_not_found() {
         deps.as_mut(),
         env,
         info,
-        ExecuteMsg::ToggleAdapter {
+        ExecuteMsg::ToggleAdapterAutoAllocation {
             name: "nonexistent_adapter".to_string(),
         },
     )
@@ -478,6 +485,7 @@ fn toggle_adapter_unauthorized() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: None,
+            auto_allocation: true,
         },
     )
     .unwrap();
@@ -488,7 +496,7 @@ fn toggle_adapter_unauthorized() {
         deps.as_mut(),
         env,
         info,
-        ExecuteMsg::ToggleAdapter {
+        ExecuteMsg::ToggleAdapterAutoAllocation {
             name: "mars_adapter".to_string(),
         },
     )
@@ -528,6 +536,7 @@ fn register_multiple_adapters() {
             name: "mars_adapter".to_string(),
             address: adapter1_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
+            auto_allocation: true,
         },
     )
     .unwrap();
@@ -541,6 +550,7 @@ fn register_multiple_adapters() {
             name: "osmosis_adapter".to_string(),
             address: adapter2_addr.to_string(),
             description: Some("Osmosis DEX".to_string()),
+            auto_allocation: true,
         },
     )
     .unwrap();
@@ -624,6 +634,7 @@ fn query_list_adapters_with_adapters() {
             name: "mars_adapter".to_string(),
             address: adapter1_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
+            auto_allocation: true,
         },
     )
     .unwrap();
@@ -636,6 +647,7 @@ fn query_list_adapters_with_adapters() {
             name: "osmosis_adapter".to_string(),
             address: adapter2_addr.to_string(),
             description: Some("Osmosis DEX".to_string()),
+            auto_allocation: true,
         },
     )
     .unwrap();
@@ -650,7 +662,7 @@ fn query_list_adapters_with_adapters() {
     let (name1, info1) = &response.adapters[0];
     assert_eq!(name1, "mars_adapter");
     assert_eq!(info1.address, adapter1_addr);
-    assert!(info1.is_active);
+    assert!(info1.auto_allocation);
     assert_eq!(info1.name, "mars_adapter");
     assert_eq!(info1.description, Some("Mars Protocol".to_string()));
 
@@ -658,7 +670,7 @@ fn query_list_adapters_with_adapters() {
     let (name2, info2) = &response.adapters[1];
     assert_eq!(name2, "osmosis_adapter");
     assert_eq!(info2.address, adapter2_addr);
-    assert!(info2.is_active);
+    assert!(info2.auto_allocation);
 }
 
 #[test]
@@ -693,6 +705,7 @@ fn query_adapter_info_success() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
+            auto_allocation: true,
         },
     )
     .unwrap();
@@ -709,7 +722,7 @@ fn query_adapter_info_success() {
     let response: crate::query::AdapterInfoResponse = cosmwasm_std::from_json(&res).unwrap();
 
     assert_eq!(response.info.address, adapter_addr);
-    assert!(response.info.is_active);
+    assert!(response.info.auto_allocation);
     assert_eq!(response.info.name, "mars_adapter");
     assert_eq!(response.info.description, Some("Mars Protocol".to_string()));
 }
@@ -851,10 +864,10 @@ fn setup_contract_with_vault_denom(
         MockQuerier,
         neutron_sdk::bindings::query::NeutronQuery,
     >,
-    inflow_contract_addr: &Addr,
+    vault_contract_addr: &Addr,
 ) {
     let vault_shares_denom_str: String =
-        format!("factory/{inflow_contract_addr}/hydro_inflow_uatom");
+        format!("factory/{vault_contract_addr}/hydro_inflow_uatom");
 
     use crate::state::CONFIG;
     CONFIG
@@ -868,36 +881,15 @@ fn setup_contract_with_vault_denom(
         .unwrap();
 }
 
-/// Helper to mock contract balance
-fn mock_contract_balance(
-    deps: &mut OwnedDeps<
-        MockStorage,
-        MockApi,
-        MockQuerier,
-        neutron_sdk::bindings::query::NeutronQuery,
-    >,
-    contract_addr: &str,
-    denom: &str,
-    amount: Uint128,
-) {
-    deps.querier.bank.update_balance(
-        contract_addr,
-        vec![Coin {
-            denom: denom.to_string(),
-            amount,
-        }],
-    );
-}
-
 // ============================================================================
 // Test Group 1: Deposit with Adapter Allocation
 // ============================================================================
 
 #[test]
-fn test_deposit_with_single_active_adapter() {
+fn test_deposit_with_single_adapter_auto_allocation() {
     let deps = mock_dependencies();
 
-    let inflow_contract_addr = deps.api.addr_make("inflow");
+    let vault_contract_addr = deps.api.addr_make("inflow");
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
     let adapter_addr = deps.api.addr_make("adapter1");
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
@@ -918,7 +910,7 @@ fn test_deposit_with_single_active_adapter() {
     );
     let mut env = mock_env();
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
@@ -930,7 +922,7 @@ fn test_deposit_with_single_active_adapter() {
     let info = get_message_info(&deps.api, "creator", &[]);
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    setup_contract_with_vault_denom(&mut deps, &inflow_contract_addr);
+    setup_contract_with_vault_denom(&mut deps, &vault_contract_addr);
 
     // Register adapter
     let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
@@ -942,14 +934,15 @@ fn test_deposit_with_single_active_adapter() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
+            auto_allocation: true,
         },
     )
     .unwrap();
 
     // Mock that contract received deposit
-    mock_contract_balance(
+    mock_address_balance(
         &mut deps,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         DEPOSIT_DENOM,
         Uint128::new(1000),
     );
@@ -1002,7 +995,7 @@ fn test_deposit_with_single_active_adapter() {
 }
 
 #[test]
-fn test_deposit_with_inactive_adapter() {
+fn test_deposit_with_single_adapter_no_auto_allocation() {
     let deps = mock_dependencies();
 
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
@@ -1025,7 +1018,7 @@ fn test_deposit_with_inactive_adapter() {
     );
     let env = mock_env();
 
-    let inflow_contract_addr = env.contract.address.clone();
+    let vault_contract_addr = env.contract.address.clone();
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
@@ -1037,7 +1030,7 @@ fn test_deposit_with_inactive_adapter() {
     let info = get_message_info(&deps.api, "creator", &[]);
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    setup_contract_with_vault_denom(&mut deps, &inflow_contract_addr);
+    setup_contract_with_vault_denom(&mut deps, &vault_contract_addr);
 
     // Register adapter
     let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
@@ -1049,25 +1042,15 @@ fn test_deposit_with_inactive_adapter() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
-        },
-    )
-    .unwrap();
-
-    // Toggle adapter to inactive
-    execute(
-        deps.as_mut(),
-        env.clone(),
-        info,
-        ExecuteMsg::ToggleAdapter {
-            name: "mars_adapter".to_string(),
+            auto_allocation: false,
         },
     )
     .unwrap();
 
     // Mock that contract received deposit
-    mock_contract_balance(
+    mock_address_balance(
         &mut deps,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         DEPOSIT_DENOM,
         Uint128::new(1000),
     );
@@ -1090,7 +1073,7 @@ fn test_deposit_with_inactive_adapter() {
     )
     .unwrap();
 
-    // Should only have mint message, no adapter deposit (since adapter is inactive)
+    // Should only have mint message, no adapter deposit (since adapter is excluded from automated allocation)
     assert_eq!(res.messages.len(), 1);
 
     // Verify it's the mint message only
@@ -1112,7 +1095,7 @@ fn test_deposit_with_inactive_adapter() {
 fn test_deposit_no_adapters_stays_in_contract() {
     let deps = mock_dependencies();
 
-    let inflow_contract_addr = deps.api.addr_make("inflow");
+    let vault_contract_addr = deps.api.addr_make("inflow");
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
     let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
@@ -1131,7 +1114,7 @@ fn test_deposit_no_adapters_stays_in_contract() {
     );
     let mut env = mock_env();
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
@@ -1143,12 +1126,12 @@ fn test_deposit_no_adapters_stays_in_contract() {
     let info = get_message_info(&deps.api, "creator", &[]);
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    setup_contract_with_vault_denom(&mut deps, &inflow_contract_addr);
+    setup_contract_with_vault_denom(&mut deps, &vault_contract_addr);
 
     // Mock that contract received deposit
-    mock_contract_balance(
+    mock_address_balance(
         &mut deps,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         DEPOSIT_DENOM,
         Uint128::new(1000),
     );
@@ -1193,7 +1176,7 @@ fn test_deposit_no_adapters_stays_in_contract() {
 fn test_deposit_with_failing_adapter_stays_in_contract() {
     let deps = mock_dependencies();
 
-    let inflow_contract_addr = deps.api.addr_make("inflow");
+    let vault_contract_addr = deps.api.addr_make("inflow");
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
     let adapter_addr = deps.api.addr_make("adapter1");
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
@@ -1202,6 +1185,7 @@ fn test_deposit_with_failing_adapter_stays_in_contract() {
     // Configure adapter to fail queries
     let mut adapter_configs = HashMap::new();
     adapter_configs.insert(adapter_addr.clone(), MockAdapterConfig::failing());
+
     let control_center_config =
         ControlCenterMockConfig::new(control_center_contract_addr.clone(), 0, 0);
     let token_info_provider_config = TokenInfoProviderMockConfig::new(
@@ -1215,7 +1199,7 @@ fn test_deposit_with_failing_adapter_stays_in_contract() {
     );
     let mut env = mock_env();
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
@@ -1227,7 +1211,7 @@ fn test_deposit_with_failing_adapter_stays_in_contract() {
     let info = get_message_info(&deps.api, "creator", &[]);
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    setup_contract_with_vault_denom(&mut deps, &inflow_contract_addr);
+    setup_contract_with_vault_denom(&mut deps, &vault_contract_addr);
 
     // Register the failing adapter
     let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
@@ -1239,14 +1223,15 @@ fn test_deposit_with_failing_adapter_stays_in_contract() {
             name: "failing_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Adapter that fails".to_string()),
+            auto_allocation: true,
         },
     )
     .unwrap();
 
     // Mock that contract received deposit
-    mock_contract_balance(
+    mock_address_balance(
         &mut deps,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         DEPOSIT_DENOM,
         Uint128::new(1000),
     );
@@ -1290,7 +1275,7 @@ fn test_deposit_with_failing_adapter_stays_in_contract() {
 fn test_deposit_skips_failing_adapter() {
     let deps = mock_dependencies();
 
-    let inflow_contract_addr = deps.api.addr_make("inflow");
+    let vault_contract_addr = deps.api.addr_make("inflow");
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
     let failing_adapter_addr = deps.api.addr_make("adapter1");
     let working_adapter_addr = deps.api.addr_make("adapter2");
@@ -1304,6 +1289,7 @@ fn test_deposit_skips_failing_adapter() {
         working_adapter_addr.clone(),
         MockAdapterConfig::new(10000, 0, 0),
     );
+
     let control_center_config =
         ControlCenterMockConfig::new(control_center_contract_addr.clone(), 0, 0);
     let token_info_provider_config = TokenInfoProviderMockConfig::new(
@@ -1317,7 +1303,7 @@ fn test_deposit_skips_failing_adapter() {
     );
     let mut env = mock_env();
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
@@ -1329,7 +1315,7 @@ fn test_deposit_skips_failing_adapter() {
     let info = get_message_info(&deps.api, "creator", &[]);
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    setup_contract_with_vault_denom(&mut deps, &inflow_contract_addr);
+    setup_contract_with_vault_denom(&mut deps, &vault_contract_addr);
 
     // Register first adapter (failing)
     let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
@@ -1341,6 +1327,7 @@ fn test_deposit_skips_failing_adapter() {
             name: "failing_adapter".to_string(),
             address: failing_adapter_addr.to_string(),
             description: Some("First adapter that fails".to_string()),
+            auto_allocation: true,
         },
     )
     .unwrap();
@@ -1354,14 +1341,15 @@ fn test_deposit_skips_failing_adapter() {
             name: "working_adapter".to_string(),
             address: working_adapter_addr.to_string(),
             description: Some("Second adapter that works".to_string()),
+            auto_allocation: true,
         },
     )
     .unwrap();
 
     // Mock that contract received deposit
-    mock_contract_balance(
+    mock_address_balance(
         &mut deps,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         DEPOSIT_DENOM,
         Uint128::new(1000),
     );
@@ -1421,7 +1409,7 @@ fn test_deposit_skips_failing_adapter() {
 fn test_withdraw_partial_fulfillment_with_queue() {
     let deps = mock_dependencies();
 
-    let inflow_contract_addr = deps.api.addr_make("inflow");
+    let vault_contract_addr = deps.api.addr_make("inflow");
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
     let adapter_addr = deps.api.addr_make("adapter1");
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
@@ -1450,7 +1438,7 @@ fn test_withdraw_partial_fulfillment_with_queue() {
     );
     let mut env = mock_env();
 
-    env.contract.address = inflow_contract_addr.clone();
+    env.contract.address = vault_contract_addr.clone();
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
@@ -1462,7 +1450,7 @@ fn test_withdraw_partial_fulfillment_with_queue() {
     let info = get_message_info(&deps.api, "creator", &[]);
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    setup_contract_with_vault_denom(&mut deps, &inflow_contract_addr);
+    setup_contract_with_vault_denom(&mut deps, &vault_contract_addr);
 
     // Register adapter
     let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
@@ -1474,14 +1462,15 @@ fn test_withdraw_partial_fulfillment_with_queue() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
+            auto_allocation: true,
         },
     )
     .unwrap();
 
     // Mock contract balance with 2000 tokens
-    mock_contract_balance(
+    mock_address_balance(
         &mut deps,
-        inflow_contract_addr.as_ref(),
+        vault_contract_addr.as_ref(),
         DEPOSIT_DENOM,
         Uint128::new(2000),
     );
@@ -1520,14 +1509,8 @@ fn test_withdraw_partial_fulfillment_with_queue() {
 
     // Mock the vault shares balance for the user (2000 shares were minted during deposit)
     // update_balance automatically recalculates the supply
-    let vault_shares_denom = format!("factory/{}/hydro_inflow_uatom", inflow_contract_addr);
-    deps.querier.bank.update_balance(
-        USER1,
-        vec![Coin {
-            denom: vault_shares_denom.clone(),
-            amount: Uint128::new(2000),
-        }],
-    );
+    let vault_shares_denom = format!("factory/{}/hydro_inflow_uatom", vault_contract_addr);
+    mock_address_balance(&mut deps, USER1, &vault_shares_denom, Uint128::new(2000));
 
     // User now tries to withdraw all their shares
     // Their 2000 shares = 100% of vault = 10000 tokens worth
@@ -1537,7 +1520,7 @@ fn test_withdraw_partial_fulfillment_with_queue() {
         &deps.api,
         USER1,
         &[Coin {
-            denom: format!("factory/{}/hydro_inflow_uatom", inflow_contract_addr),
+            denom: format!("factory/{}/hydro_inflow_uatom", vault_contract_addr),
             amount: Uint128::new(2000), // All user's shares
         }],
     );
@@ -1668,6 +1651,7 @@ fn test_withdraw_from_adapter_success() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
+            auto_allocation: true,
         },
     )
     .unwrap();
@@ -1747,6 +1731,7 @@ fn test_withdraw_from_adapter_unauthorized() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
+            auto_allocation: true,
         },
     )
     .unwrap();
@@ -1802,4 +1787,306 @@ fn test_withdraw_from_adapter_not_found() {
     assert!(err
         .to_string()
         .contains("Adapter not found: nonexistent_adapter"));
+}
+
+#[test]
+fn test_deposit_to_adapter_success() {
+    use cosmwasm_std::from_json;
+
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let adapter_addr = deps.api.addr_make("adapter1");
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register adapter
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter_addr.to_string(),
+            description: Some("Mars lending protocol adapter".to_string()),
+            auto_allocation: true,
+        },
+    )
+    .unwrap();
+
+    // Mock vault balance
+    mock_address_balance(
+        &mut deps,
+        env.contract.address.as_ref(),
+        DEPOSIT_DENOM,
+        Uint128::new(10000),
+    );
+
+    // Deposit to adapter
+    let res = execute(
+        deps.as_mut(),
+        env,
+        info.clone(),
+        ExecuteMsg::DepositToAdapter {
+            adapter_name: "mars_adapter".to_string(),
+            amount: Uint128::new(5000),
+        },
+    )
+    .unwrap();
+
+    // Verify response attributes
+    assert_eq!(res.attributes.len(), 4);
+    assert_eq!(res.attributes[0].value, "deposit_to_adapter");
+    assert_eq!(res.attributes[1].value, whitelist_addr.as_str());
+    assert_eq!(res.attributes[2].value, "mars_adapter");
+    assert_eq!(res.attributes[3].value, "5000");
+
+    // Verify wasm message was created
+    assert_eq!(res.messages.len(), 1);
+
+    // Verify the message content
+    match &res.messages[0].msg {
+        CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr,
+            msg,
+            funds,
+        }) => {
+            assert_eq!(contract_addr, &adapter_addr.to_string());
+
+            // Should send funds with the deposit
+            assert_eq!(funds.len(), 1);
+            assert_eq!(funds[0].denom, DEPOSIT_DENOM);
+            assert_eq!(funds[0].amount, Uint128::new(5000));
+
+            // Verify it's a Deposit message
+            let adapter_msg: interface::adapter::AdapterExecuteMsg = from_json(msg).unwrap();
+            match adapter_msg {
+                interface::adapter::AdapterExecuteMsg::Deposit {} => {
+                    // Success - this is the expected message type
+                }
+                _ => panic!("Expected AdapterExecuteMsg::Deposit"),
+            }
+        }
+        _ => panic!("Expected WasmMsg::Execute for adapter deposit"),
+    }
+}
+
+#[test]
+fn test_deposit_to_adapter_insufficient_balance() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let adapter_addr = deps.api.addr_make("adapter1");
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register adapter
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter_addr.to_string(),
+            description: Some("Mars lending protocol adapter".to_string()),
+            auto_allocation: true,
+        },
+    )
+    .unwrap();
+
+    // Mock vault balance (less than requested)
+    mock_address_balance(
+        &mut deps,
+        env.contract.address.as_ref(),
+        DEPOSIT_DENOM,
+        Uint128::new(1000),
+    );
+
+    // Try to deposit more than available
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    let err = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::DepositToAdapter {
+            adapter_name: "mars_adapter".to_string(),
+            amount: Uint128::new(5000),
+        },
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("Insufficient vault balance"));
+}
+
+#[test]
+fn test_deposit_to_adapter_not_whitelisted() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let adapter_addr = deps.api.addr_make("adapter1");
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register adapter
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter_addr.to_string(),
+            description: Some("Mars lending protocol adapter".to_string()),
+            auto_allocation: true,
+        },
+    )
+    .unwrap();
+
+    // Try to deposit from non-whitelisted address
+    let info = get_message_info(&deps.api, NON_WHITELIST_ADDR, &[]);
+    let err = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::DepositToAdapter {
+            adapter_name: "mars_adapter".to_string(),
+            amount: Uint128::new(5000),
+        },
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("Unauthorized"));
+}
+
+#[test]
+fn test_deposit_to_adapter_adapter_not_found() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Try to deposit to non-existent adapter
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    let err = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::DepositToAdapter {
+            adapter_name: "nonexistent_adapter".to_string(),
+            amount: Uint128::new(5000),
+        },
+    )
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("Adapter not found: nonexistent_adapter"));
+}
+
+#[test]
+fn test_deposit_to_adapter_works_regardless_of_allocation_flag() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let adapter_addr = deps.api.addr_make("adapter1");
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register adapter with auto_allocation = false
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter_addr.to_string(),
+            description: Some("Mars lending protocol adapter".to_string()),
+            auto_allocation: false,
+        },
+    )
+    .unwrap();
+
+    // Mock vault balance
+    mock_address_balance(
+        &mut deps,
+        env.contract.address.as_ref(),
+        DEPOSIT_DENOM,
+        Uint128::new(10000),
+    );
+
+    // Deposit to adapter should work even though it's excluded from automated allocation
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    let res = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::DepositToAdapter {
+            adapter_name: "mars_adapter".to_string(),
+            amount: Uint128::new(5000),
+        },
+    )
+    .unwrap();
+
+    // Verify it succeeded
+    assert_eq!(res.attributes[0].value, "deposit_to_adapter");
+    assert_eq!(res.messages.len(), 1);
 }
