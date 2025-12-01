@@ -3,10 +3,17 @@
   "title": "InstantiateMsg",
   "type": "object",
   "required": [
-    "admins"
+    "admins",
+    "control_centers"
   ],
   "properties": {
     "admins": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "control_centers": {
       "type": "array",
       "items": {
         "type": "string"

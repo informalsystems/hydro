@@ -1,6 +1,6 @@
-use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, StdResult, Storage, Timestamp, Uint128};
+use cosmwasm_std::{Addr, StdResult, Storage};
 use cw_storage_plus::{Item, Map};
+use interface::inflow::{Config, PayoutEntry, WithdrawalEntry, WithdrawalQueueInfo};
 
 /// Configuration of the Inflow smart contract
 pub const CONFIG: Item<Config> = Item::new("config");
@@ -34,52 +34,6 @@ pub const USER_WITHDRAWAL_REQUESTS: Map<Addr, Vec<u64>> = Map::new("user_withdra
 /// History of all payouts made to users.
 /// PAYOUTS_HISTORY: key(user_address, payout_id) -> PayoutEntry
 pub const PAYOUTS_HISTORY: Map<(Addr, u64), PayoutEntry> = Map::new("payouts_history");
-
-#[cw_serde]
-pub struct Config {
-    /// Token denom that users can deposit into the vault.
-    pub deposit_denom: String,
-    /// Denom of the vault shares token that is issued to users when they deposit tokens into the vault.
-    pub vault_shares_denom: String,
-    /// Address of the Control Center contract.
-    pub control_center_contract: Addr,
-    /// Address of the token info provider contract used to obtain the ratio of the
-    /// deposit token to the base token. If None, then the deposit token is the base token.
-    pub token_info_provider_contract: Option<Addr>,
-    /// Maximum number of pending withdrawal requests allowed per user.
-    pub max_withdrawals_per_user: u64,
-}
-
-#[cw_serde]
-pub struct WithdrawalQueueInfo {
-    // Total shares burned for all withdrawals currently in the withdrawal queue.
-    pub total_shares_burned: Uint128,
-    // Total amount to be withdrawn for all withdrawal entries currently in the withdrawal queue.
-    // Sum of all `amount_to_receive` fields in all withdrawal entries, regardless of whether the
-    // funds for payouts have been provided to the smart contract or not.
-    pub total_withdrawal_amount: Uint128,
-    // Sum of `amount_to_receive` fields of all withdrawal entries from the withdrawal queue
-    // for which the funds have not been provided yet.
-    pub non_funded_withdrawal_amount: Uint128,
-}
-
-#[cw_serde]
-pub struct WithdrawalEntry {
-    pub id: u64,
-    pub initiated_at: Timestamp,
-    pub withdrawer: Addr,
-    pub shares_burned: Uint128,
-    pub amount_to_receive: Uint128,
-    pub is_funded: bool,
-}
-#[cw_serde]
-pub struct PayoutEntry {
-    pub id: u64,
-    pub executed_at: Timestamp,
-    pub recipient: Addr,
-    pub vault_shares_burned: Uint128,
-    pub amount_received: Uint128,
-}
 
 pub fn load_config(storage: &dyn Storage) -> StdResult<Config> {
     CONFIG.load(storage)

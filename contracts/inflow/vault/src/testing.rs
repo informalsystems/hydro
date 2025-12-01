@@ -7,8 +7,7 @@ use crate::{
         query_withdrawal_queue_info,
     },
     error::ContractError,
-    msg::{DenomMetadata, ExecuteMsg, InstantiateMsg, UpdateConfigData},
-    query::QueryMsg,
+    msg::{DenomMetadata, InstantiateMsg},
     state::{CONFIG, LAST_FUNDED_WITHDRAWAL_ID, WITHDRAWAL_QUEUE_INFO},
     testing_mocks::{
         setup_control_center_mock, setup_default_control_center_mock,
@@ -21,7 +20,7 @@ use cosmwasm_std::{
     Addr, Api, BalanceResponse, BankMsg, BankQuery, Coin, CosmosMsg, Decimal, Env, MemoryStorage,
     MessageInfo, Order, OwnedDeps, Uint128,
 };
-use interface::inflow::PoolInfoResponse;
+use interface::inflow::{ExecuteMsg, PoolInfoResponse, QueryMsg, UpdateConfigData};
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 const DEPOSIT_DENOM: &str =

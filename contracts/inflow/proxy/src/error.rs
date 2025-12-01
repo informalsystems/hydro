@@ -6,9 +6,10 @@ pub enum ContractError {
     #[error("{0}")]
     Std(#[from] StdError),
 
-    #[error("no admins provided")]
-    NoAdmins {},
-
     #[error("unauthorized")]
     Unauthorized {},
+}
+
+pub fn new_generic_error(msg: impl Into<String>) -> ContractError {
+    ContractError::Std(StdError::generic_err(msg))
 }
