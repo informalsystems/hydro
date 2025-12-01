@@ -385,7 +385,6 @@ func getValidatorWallets(ctx context.Context, chain *Chain) ([]ValidatorWallet, 
 	lock := new(sync.Mutex)
 	eg := new(errgroup.Group)
 	for i := 0; i < ValidatorCount; i++ {
-		i := i
 		eg.Go(func() error {
 			// This moniker is hardcoded into the chain's genesis process.
 			moniker := validatorMoniker
