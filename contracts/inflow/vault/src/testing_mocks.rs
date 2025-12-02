@@ -7,7 +7,10 @@ use cosmwasm_std::{
     SystemResult, Uint128, WasmQuery,
 };
 use interface::{
-    adapter::{AdapterQueryMsg, AvailableAmountResponse, DepositorPositionResponse},
+    adapter::{
+        deserialize_adapter_interface_query_msg, AdapterInterfaceQueryMsg, AvailableAmountResponse,
+        DepositorPositionResponse,
+    },
     inflow_control_center::{
         Config, ConfigResponse, PoolInfoResponse, QueryMsg as ControlCenterQueryMsg,
     },
@@ -214,18 +217,29 @@ pub fn setup_adapter_mock(contract: Addr, config: MockAdapterConfig) -> (String,
                 });
             }
 
-            let response = match from_json(msg).unwrap() {
-                AdapterQueryMsg::AvailableForDeposit { .. } => {
+            // Deserialize the wrapped query message
+            let query_msg = match deserialize_adapter_interface_query_msg(msg) {
+                Ok(q) => q,
+                Err(e) => {
+                    return SystemResult::Err(SystemError::InvalidRequest {
+                        error: format!("Failed to deserialize query wrapper: {}", e),
+                        request: msg.clone(),
+                    });
+                }
+            };
+
+            let response = match query_msg {
+                AdapterInterfaceQueryMsg::AvailableForDeposit { .. } => {
                     to_json_binary(&AvailableAmountResponse {
                         amount: config.available_for_deposit,
                     })
                 }
-                AdapterQueryMsg::AvailableForWithdraw { .. } => {
+                AdapterInterfaceQueryMsg::AvailableForWithdraw { .. } => {
                     to_json_binary(&AvailableAmountResponse {
                         amount: config.available_for_withdraw,
                     })
                 }
-                AdapterQueryMsg::DepositorPosition { .. } => {
+                AdapterInterfaceQueryMsg::DepositorPosition { .. } => {
                     to_json_binary(&DepositorPositionResponse {
                         amount: config.current_deposit,
                     })

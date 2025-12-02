@@ -1,0 +1,127 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "description": "Message for instantiating the IBC adapter contract",
+  "type": "object",
+  "required": [
+    "admins",
+    "default_timeout_seconds"
+  ],
+  "properties": {
+    "admins": {
+      "description": "The config admins who can update the config and manage chains/depositors/executors",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "default_timeout_seconds": {
+      "description": "Default IBC timeout in seconds",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "depositor_address": {
+      "description": "Optional: single depositor address to register during instantiation",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "depositor_capabilities": {
+      "description": "Optional: capabilities for the initial depositor (serialized as Binary)",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Binary"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "executors": {
+      "description": "Optional: initial executors who can call TransferFunds",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "initial_chains": {
+      "description": "Optional: initial chain configurations to register",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "array",
+        "items": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/definitions/ChainConfig"
+          }
+        ],
+        "maxItems": 2,
+        "minItems": 2
+      }
+    },
+    "initial_tokens": {
+      "description": "Optional: initial token configurations to register (denom, source_chain_id)",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "array",
+        "items": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "string"
+          }
+        ],
+        "maxItems": 2,
+        "minItems": 2
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "Binary": {
+      "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
+      "type": "string"
+    },
+    "ChainConfig": {
+      "description": "Chain configuration for IBC transfers",
+      "type": "object",
+      "required": [
+        "allowed_recipients",
+        "chain_id",
+        "channel_from_neutron"
+      ],
+      "properties": {
+        "allowed_recipients": {
+          "description": "List of allowed recipient addresses on this chain Empty vector means all recipients are allowed",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "chain_id": {
+          "description": "Chain ID (e.g., \"osmosis-1\")",
+          "type": "string"
+        },
+        "channel_from_neutron": {
+          "description": "IBC channel from Neutron to this chain (e.g., \"channel-0\")",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

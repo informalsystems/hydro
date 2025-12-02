@@ -7,9 +7,10 @@ use cw2::set_contract_version;
 use crate::error::ContractError;
 use crate::mars;
 use crate::msg::{
-    AdapterConfigResponse, AdapterExecuteMsg, AdapterQueryMsg, AllPositionsResponse,
-    AvailableAmountResponse, DepositorPositionResponse, DepositorPositionsResponse, InstantiateMsg,
-    RegisteredDepositorInfo, RegisteredDepositorsResponse, TimeEstimateResponse,
+    AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AllPositionsResponse, AvailableAmountResponse,
+    DepositorPositionResponse, DepositorPositionsResponse, ExecuteMsg, InstantiateMsg,
+    MarsAdapterMsg, MarsAdapterQueryMsg, MarsConfigResponse, QueryMsg, RegisteredDepositorInfo,
+    RegisteredDepositorsResponse, TimeEstimateResponse,
 };
 use crate::state::{
     Config, Depositor, ADMINS, CONFIG, PENDING_DEPOSITOR_SETUP, WHITELISTED_DEPOSITORS,
@@ -120,25 +121,54 @@ pub fn execute(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    msg: AdapterExecuteMsg,
+    msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        AdapterExecuteMsg::Deposit {} => execute_deposit(deps, env, info),
-        AdapterExecuteMsg::Withdraw { coin } => execute_withdraw(deps, env, info, coin),
-        AdapterExecuteMsg::UpdateConfig {
-            protocol_address,
-            supported_denoms,
-        } => execute_update_config(deps, info, protocol_address, supported_denoms),
-        AdapterExecuteMsg::RegisterDepositor { depositor_address } => {
-            execute_register_depositor(deps, env, info, depositor_address)
+        ExecuteMsg::Interface(interface_msg) => {
+            dispatch_execute_interface(deps, env, info, interface_msg)
         }
-        AdapterExecuteMsg::UnregisterDepositor { depositor_address } => {
+        ExecuteMsg::Custom(custom_msg) => dispatch_execute_custom(deps, info, custom_msg),
+    }
+}
+
+/// Dispatch standard adapter interface messages
+fn dispatch_execute_interface(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    msg: AdapterInterfaceMsg,
+) -> Result<Response, ContractError> {
+    match msg {
+        AdapterInterfaceMsg::Deposit {} => execute_deposit(deps, env, info),
+        AdapterInterfaceMsg::Withdraw { coin } => execute_withdraw(deps, env, info, coin),
+        AdapterInterfaceMsg::RegisterDepositor {
+            depositor_address,
+            metadata: _,
+        } => execute_register_depositor(deps, env, info, depositor_address),
+        AdapterInterfaceMsg::UnregisterDepositor { depositor_address } => {
             execute_unregister_depositor(deps, env, info, depositor_address)
         }
-        AdapterExecuteMsg::ToggleDepositorEnabled {
+        AdapterInterfaceMsg::ToggleDepositorEnabled {
             depositor_address,
             enabled,
         } => execute_toggle_depositor_enabled(deps, env, info, depositor_address, enabled),
+    }
+}
+
+/// Dispatch Mars adapter-specific custom messages
+fn dispatch_execute_custom(
+    deps: DepsMut,
+    info: MessageInfo,
+    msg: MarsAdapterMsg,
+) -> Result<Response, ContractError> {
+    // All custom operations require admin
+    validate_admin_caller(&deps, &info)?;
+
+    match msg {
+        MarsAdapterMsg::UpdateConfig {
+            mars_contract,
+            supported_denoms,
+        } => execute_update_config(deps, mars_contract, supported_denoms),
     }
 }
 
@@ -277,25 +307,27 @@ fn execute_withdraw(
         .add_attribute("denom", coin.denom))
 }
 
-/// If changing the protocol_address, one needs to be very careful,
-/// as it could prevent access to funds.
+/// Update Mars adapter configuration (admin-only)
+/// IMPORTANT: Changing mars_contract could prevent access to funds if not done carefully
 fn execute_update_config(
     deps: DepsMut,
-    info: MessageInfo,
-    protocol_address: Option<String>,
+    mars_contract: Option<String>,
     supported_denoms: Option<Vec<String>>,
 ) -> Result<Response, ContractError> {
-    validate_admin_caller(&deps, &info)?;
-
     let mut config = CONFIG.load(deps.storage)?;
     let mut response = Response::new().add_attribute("action", "update_config");
 
-    if let Some(protocol_address) = protocol_address {
-        config.mars_contract = deps.api.addr_validate(&protocol_address)?;
-        response = response.add_attribute("new_mars_contract", protocol_address);
+    // Update mars_contract if provided
+    if let Some(mars_contract) = mars_contract {
+        config.mars_contract = deps.api.addr_validate(&mars_contract)?;
+        response = response.add_attribute("new_mars_contract", mars_contract);
     }
 
+    // Update supported_denoms if provided
     if let Some(supported_denoms) = supported_denoms {
+        if supported_denoms.is_empty() {
+            return Err(ContractError::AtLeastOneDenom {});
+        }
         config.supported_denoms = supported_denoms.clone();
         response = response.add_attribute("new_supported_denoms", supported_denoms.join(","));
     }
@@ -382,10 +414,18 @@ fn execute_toggle_depositor_enabled(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, _env: Env, msg: AdapterQueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
-        AdapterQueryMsg::Config {} => to_json_binary(&query_config(deps)?),
-        AdapterQueryMsg::AvailableForDeposit {
+        QueryMsg::Interface(interface_msg) => dispatch_query_interface(deps, interface_msg),
+        QueryMsg::Custom(custom_msg) => dispatch_query_custom(deps, custom_msg),
+    }
+}
+
+/// Dispatch standard adapter interface queries
+fn dispatch_query_interface(deps: Deps, msg: AdapterInterfaceQueryMsg) -> StdResult<Binary> {
+    match msg {
+        AdapterInterfaceQueryMsg::Config {} => to_json_binary(&query_config(deps)?),
+        AdapterInterfaceQueryMsg::AvailableForDeposit {
             depositor_address,
             denom,
         } => to_json_binary(&query_available_for_deposit(
@@ -393,7 +433,7 @@ pub fn query(deps: Deps, _env: Env, msg: AdapterQueryMsg) -> StdResult<Binary> {
             depositor_address,
             denom,
         )?),
-        AdapterQueryMsg::AvailableForWithdraw {
+        AdapterInterfaceQueryMsg::AvailableForWithdraw {
             depositor_address,
             denom,
         } => to_json_binary(&query_available_for_withdraw(
@@ -401,28 +441,38 @@ pub fn query(deps: Deps, _env: Env, msg: AdapterQueryMsg) -> StdResult<Binary> {
             depositor_address,
             denom,
         )?),
-        AdapterQueryMsg::TimeToWithdraw {
+        AdapterInterfaceQueryMsg::TimeToWithdraw {
             depositor_address,
             coin,
         } => to_json_binary(&query_time_to_withdraw(deps, depositor_address, coin)?),
-        AdapterQueryMsg::RegisteredDepositors { enabled } => {
+        AdapterInterfaceQueryMsg::RegisteredDepositors { enabled } => {
             to_json_binary(&query_registered_depositors(deps, enabled)?)
         }
-        AdapterQueryMsg::AllPositions {} => to_json_binary(&query_all_positions(deps)?),
-        AdapterQueryMsg::DepositorPosition {
+        AdapterInterfaceQueryMsg::AllPositions {} => to_json_binary(&query_all_positions(deps)?),
+        AdapterInterfaceQueryMsg::DepositorPosition {
             depositor_address,
             denom,
         } => to_json_binary(&query_depositor_position(deps, depositor_address, denom)?),
-        AdapterQueryMsg::DepositorPositions { depositor_address } => {
+        AdapterInterfaceQueryMsg::DepositorPositions { depositor_address } => {
             to_json_binary(&query_depositor_positions(deps, depositor_address)?)
         }
     }
 }
 
-fn query_config(deps: Deps) -> StdResult<AdapterConfigResponse> {
+/// Dispatch Mars adapter-specific custom queries
+fn dispatch_query_custom(_deps: Deps, msg: MarsAdapterQueryMsg) -> StdResult<Binary> {
+    match msg {
+        // No custom queries yet, but the match is required
+    }
+}
+
+fn query_config(deps: Deps) -> StdResult<MarsConfigResponse> {
     let config = CONFIG.load(deps.storage)?;
-    Ok(AdapterConfigResponse {
-        protocol_address: config.mars_contract.to_string(),
+    let admins = ADMINS.load(deps.storage)?;
+
+    Ok(MarsConfigResponse {
+        admins: admins.iter().map(|a| a.to_string()).collect(),
+        mars_contract: config.mars_contract.to_string(),
         supported_denoms: config.supported_denoms,
     })
 }

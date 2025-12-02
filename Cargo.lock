@@ -2249,6 +2249,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ibc-adapter"
+version = "3.6.4"
+dependencies = [
+ "cosmwasm-schema 2.2.2",
+ "cosmwasm-std 2.2.2",
+ "cw-multi-test",
+ "cw-storage-plus 2.0.0",
+ "cw2 2.0.0",
+ "interface",
+ "neutron-sdk",
+ "schemars",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "ibc-proto"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2409,6 +2425,7 @@ version = "3.6.4"
 dependencies = [
  "cosmwasm-schema 2.2.2",
  "cosmwasm-std 2.2.2",
+ "serde",
 ]
 
 [[package]]

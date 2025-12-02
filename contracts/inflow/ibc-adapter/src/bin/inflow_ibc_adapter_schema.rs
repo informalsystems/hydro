@@ -1,5 +1,5 @@
 use cosmwasm_schema::write_api;
-use mars_adapter::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use ibc_adapter::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
 
 fn main() {
     write_api! {

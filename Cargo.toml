@@ -12,6 +12,7 @@ members = [
     "contracts/inflow/vault",
     "contracts/inflow/control-center",
     "contracts/inflow/mars-adapter",
+    "contracts/inflow/ibc-adapter",
     "packages/cw-orch-interface",
     "packages/interface",
     "test/e2e",

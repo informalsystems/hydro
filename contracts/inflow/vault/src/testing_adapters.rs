@@ -10,6 +10,7 @@ use crate::{
     },
 };
 use cosmwasm_std::{testing::mock_env, Addr, CosmosMsg, Decimal, Uint128, WasmMsg};
+use interface::adapter::deserialize_adapter_interface_msg;
 use std::collections::HashMap;
 
 const DEPOSIT_DENOM: &str = "ibc/C4CFF46FD6DE35CA4CF4CE031E643C8FDC9BA4B99AE598E9B0ED98FE3A2319F9";
@@ -768,7 +769,6 @@ fn query_adapter_info_not_found() {
 // ============================================================================
 
 use cosmwasm_std::{
-    from_json,
     testing::{MockApi, MockQuerier, MockStorage},
     Coin, OwnedDeps,
 };
@@ -979,11 +979,11 @@ fn test_deposit_with_single_adapter_auto_allocation() {
             assert_eq!(funds.len(), 1);
             assert_eq!(funds[0].amount, Uint128::new(1000));
             assert_eq!(funds[0].denom, DEPOSIT_DENOM);
-            // Verify it's a Deposit message
-            let adapter_msg: interface::adapter::AdapterExecuteMsg = from_json(msg).unwrap();
+            // Verify it's a Deposit message (wrapped in interface structure)
+            let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
             assert!(matches!(
                 adapter_msg,
-                interface::adapter::AdapterExecuteMsg::Deposit {}
+                interface::adapter::AdapterInterfaceMsg::Deposit { .. }
             ));
         }
         _ => panic!("Expected WasmMsg::Execute for adapter deposit"),
@@ -1387,11 +1387,11 @@ fn test_deposit_skips_failing_adapter() {
             assert_eq!(funds.len(), 1);
             assert_eq!(funds[0].amount, Uint128::new(1000));
             assert_eq!(funds[0].denom, DEPOSIT_DENOM);
-            // Verify it's a Deposit message
-            let adapter_msg: interface::adapter::AdapterExecuteMsg = from_json(msg).unwrap();
+            // Verify it's a Deposit message (wrapped in interface structure)
+            let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
             assert!(matches!(
                 adapter_msg,
-                interface::adapter::AdapterExecuteMsg::Deposit {}
+                interface::adapter::AdapterInterfaceMsg::Deposit { .. }
             ));
         }
         _ => panic!("Expected WasmMsg::Execute for adapter deposit to working adapter"),
@@ -1545,13 +1545,13 @@ fn test_withdraw_partial_fulfillment_with_queue() {
         }) => {
             assert_eq!(contract_addr, &adapter_addr.to_string());
             assert_eq!(funds.len(), 0);
-            let adapter_msg: interface::adapter::AdapterExecuteMsg = from_json(msg).unwrap();
+            let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
             match adapter_msg {
-                interface::adapter::AdapterExecuteMsg::Withdraw { coin } => {
+                interface::adapter::AdapterInterfaceMsg::Withdraw { coin } => {
                     assert_eq!(coin.denom, DEPOSIT_DENOM);
                     assert_eq!(coin.amount, Uint128::new(3000));
                 }
-                _ => panic!("Expected AdapterExecuteMsg::Withdraw"),
+                _ => panic!("Expected AdapterInterfaceMsg::Withdraw"),
             }
         }
         _ => panic!("Expected WasmMsg::Execute for adapter withdrawal"),
@@ -1682,13 +1682,13 @@ fn test_withdraw_from_adapter_success() {
             assert_eq!(funds.len(), 0); // No funds sent with withdrawal
 
             // Verify it's a Withdraw message with correct params
-            let adapter_msg: interface::adapter::AdapterExecuteMsg = from_json(msg).unwrap();
+            let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
             match adapter_msg {
-                interface::adapter::AdapterExecuteMsg::Withdraw { coin } => {
+                interface::adapter::AdapterInterfaceMsg::Withdraw { coin } => {
                     assert_eq!(coin.denom, DEPOSIT_DENOM);
                     assert_eq!(coin.amount, Uint128::new(5000));
                 }
-                _ => panic!("Expected AdapterExecuteMsg::Withdraw"),
+                _ => panic!("Expected AdapterInterfaceMsg::Withdraw"),
             }
         }
         _ => panic!("Expected WasmMsg::Execute for adapter withdrawal"),
@@ -1791,8 +1791,6 @@ fn test_withdraw_from_adapter_not_found() {
 
 #[test]
 fn test_deposit_to_adapter_success() {
-    use cosmwasm_std::from_json;
-
     let mut deps = mock_dependencies();
     let env = mock_env();
 
@@ -1871,12 +1869,12 @@ fn test_deposit_to_adapter_success() {
             assert_eq!(funds[0].amount, Uint128::new(5000));
 
             // Verify it's a Deposit message
-            let adapter_msg: interface::adapter::AdapterExecuteMsg = from_json(msg).unwrap();
+            let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
             match adapter_msg {
-                interface::adapter::AdapterExecuteMsg::Deposit {} => {
+                interface::adapter::AdapterInterfaceMsg::Deposit { .. } => {
                     // Success - this is the expected message type
                 }
-                _ => panic!("Expected AdapterExecuteMsg::Deposit"),
+                _ => panic!("Expected AdapterInterfaceMsg::Deposit"),
             }
         }
         _ => panic!("Expected WasmMsg::Execute for adapter deposit"),

@@ -6,13 +6,13 @@
 
 import { ICosmWasmClient, ISigningCosmWasmClient } from "./baseClient";
 import { StdFee } from "@interchainjs/types";
-import { InstantiateMsg, ExecuteMsg, AdapterInterfaceMsg, Uint128, Binary, MarsAdapterMsg, Coin, QueryMsg, AdapterInterfaceQueryMsg, MarsAdapterQueryMsg } from "./InflowMarsAdapterBase.types";
-export interface InflowMarsAdapterBaseReadOnlyInterface {
+import { Binary, InstantiateMsg, ChainConfig, ExecuteMsg, AdapterInterfaceMsg, Uint128, IbcAdapterMsg, Coin, TransferFundsInstructions, QueryMsg, AdapterInterfaceQueryMsg, IbcAdapterQueryMsg } from "./InflowIBCAdapterBase.types";
+export interface InflowIBCAdapterBaseReadOnlyInterface {
   contractAddress: string;
   interface: (adapterInterfaceQueryMsg: AdapterInterfaceQueryMsg) => Promise<Binary>;
-  custom: () => Promise<Binary>;
+  custom: (ibcAdapterQueryMsg: IbcAdapterQueryMsg) => Promise<Binary>;
 }
-export class InflowMarsAdapterBaseQueryClient implements InflowMarsAdapterBaseReadOnlyInterface {
+export class InflowIBCAdapterBaseQueryClient implements InflowIBCAdapterBaseReadOnlyInterface {
   client: ICosmWasmClient;
   contractAddress: string;
   constructor(client: ICosmWasmClient, contractAddress: string) {
@@ -26,19 +26,19 @@ export class InflowMarsAdapterBaseQueryClient implements InflowMarsAdapterBaseRe
       interface: adapterInterfaceQueryMsg
     });
   };
-  custom = async (): Promise<Binary> => {
+  custom = async (ibcAdapterQueryMsg: IbcAdapterQueryMsg): Promise<Binary> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      custom: {}
+      custom: ibcAdapterQueryMsg
     });
   };
 }
-export interface InflowMarsAdapterBaseInterface extends InflowMarsAdapterBaseReadOnlyInterface {
+export interface InflowIBCAdapterBaseInterface extends InflowIBCAdapterBaseReadOnlyInterface {
   contractAddress: string;
   sender: string;
   interface: (adapterInterfaceMsg: AdapterInterfaceMsg, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
-  custom: (marsAdapterMsg: MarsAdapterMsg, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  custom: (ibcAdapterMsg: IbcAdapterMsg, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
 }
-export class InflowMarsAdapterBaseClient extends InflowMarsAdapterBaseQueryClient implements InflowMarsAdapterBaseInterface {
+export class InflowIBCAdapterBaseClient extends InflowIBCAdapterBaseQueryClient implements InflowIBCAdapterBaseInterface {
   client: ISigningCosmWasmClient;
   sender: string;
   contractAddress: string;
@@ -55,9 +55,9 @@ export class InflowMarsAdapterBaseClient extends InflowMarsAdapterBaseQueryClien
       interface: adapterInterfaceMsg
     }, fee_, memo_, funds_);
   };
-  custom = async (marsAdapterMsg: MarsAdapterMsg, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+  custom = async (ibcAdapterMsg: IbcAdapterMsg, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      custom: marsAdapterMsg
+      custom: ibcAdapterMsg
     }, fee_, memo_, funds_);
   };
 }

@@ -4,16 +4,25 @@
 * and run the @cosmwasm/ts-codegen generate command to regenerate this file.
 */
 
+export type Binary = string;
 export interface InstantiateMsg {
   admins: string[];
+  default_timeout_seconds: number;
   depositor_address?: string | null;
-  mars_contract: string;
-  supported_denoms: string[];
+  depositor_capabilities?: Binary | null;
+  executors?: string[] | null;
+  initial_chains?: [string, ChainConfig][] | null;
+  initial_tokens?: [string, string][] | null;
+}
+export interface ChainConfig {
+  allowed_recipients: string[];
+  chain_id: string;
+  channel_from_neutron: string;
 }
 export type ExecuteMsg = {
   interface: AdapterInterfaceMsg;
 } | {
-  custom: MarsAdapterMsg;
+  custom: IbcAdapterMsg;
 };
 export type AdapterInterfaceMsg = {
   deposit: {};
@@ -37,21 +46,56 @@ export type AdapterInterfaceMsg = {
   };
 };
 export type Uint128 = string;
-export type Binary = string;
-export type MarsAdapterMsg = {
+export type IbcAdapterMsg = {
+  transfer_funds: {
+    coin: Coin;
+    instructions: TransferFundsInstructions;
+  };
+} | {
+  add_executor: {
+    executor_address: string;
+  };
+} | {
+  remove_executor: {
+    executor_address: string;
+  };
+} | {
+  register_chain: {
+    allowed_recipients: string[];
+    chain_id: string;
+    channel_from_neutron: string;
+  };
+} | {
+  unregister_chain: {
+    chain_id: string;
+  };
+} | {
+  register_token: {
+    denom: string;
+    source_chain_id: string;
+  };
+} | {
+  unregister_token: {
+    denom: string;
+  };
+} | {
   update_config: {
-    mars_contract?: string | null;
-    supported_denoms?: string[] | null;
+    default_timeout_seconds: number;
   };
 };
 export interface Coin {
   amount: Uint128;
   denom: string;
 }
+export interface TransferFundsInstructions {
+  destination_chain: string;
+  recipient: string;
+  timeout_seconds?: number | null;
+}
 export type QueryMsg = {
   interface: AdapterInterfaceQueryMsg;
 } | {
-  custom: MarsAdapterQueryMsg;
+  custom: IbcAdapterQueryMsg;
 };
 export type AdapterInterfaceQueryMsg = {
   available_for_deposit: {
@@ -86,4 +130,22 @@ export type AdapterInterfaceQueryMsg = {
     depositor_address: string;
   };
 };
-export type MarsAdapterQueryMsg = string;
+export type IbcAdapterQueryMsg = {
+  chain_config: {
+    chain_id: string;
+  };
+} | {
+  all_chains: {};
+} | {
+  token_config: {
+    denom: string;
+  };
+} | {
+  all_tokens: {};
+} | {
+  executors: {};
+} | {
+  depositor_capabilities: {
+    depositor_address: string;
+  };
+};

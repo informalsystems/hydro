@@ -43,7 +43,8 @@ use crate::{
 };
 
 use interface::adapter::{
-    AdapterExecuteMsg, AdapterQueryMsg, AvailableAmountResponse, DepositorPositionResponse,
+    serialize_adapter_interface_msg, AdapterInterfaceMsg, AdapterInterfaceQuery,
+    AdapterInterfaceQueryMsg, AvailableAmountResponse, DepositorPositionResponse,
 };
 
 /// Contract name that is used for migration.
@@ -260,11 +261,11 @@ fn deposit(
         }
 
         // Create adapter deposit message
-        let deposit_msg = AdapterExecuteMsg::Deposit {};
+        let deposit_msg = AdapterInterfaceMsg::Deposit {};
 
         let wasm_msg = WasmMsg::Execute {
             contract_addr: adapter_info.address.to_string(),
-            msg: to_json_binary(&deposit_msg)?,
+            msg: serialize_adapter_interface_msg(&deposit_msg)?,
             funds: vec![Coin {
                 denom: config.deposit_denom.clone(),
                 amount,
@@ -371,7 +372,7 @@ fn withdraw(
             }
 
             // Create adapter withdrawal message
-            let withdraw_msg = AdapterExecuteMsg::Withdraw {
+            let withdraw_msg = AdapterInterfaceMsg::Withdraw {
                 coin: Coin {
                     denom: config.deposit_denom.clone(),
                     amount,
@@ -380,7 +381,7 @@ fn withdraw(
 
             messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
                 contract_addr: adapter_info.address.to_string(),
-                msg: to_json_binary(&withdraw_msg)?,
+                msg: serialize_adapter_interface_msg(&withdraw_msg)?,
                 funds: vec![],
             }));
 
@@ -1121,7 +1122,7 @@ fn withdraw_from_adapter(
         })?;
 
     // Create adapter withdrawal message
-    let withdraw_msg = AdapterExecuteMsg::Withdraw {
+    let withdraw_msg = AdapterInterfaceMsg::Withdraw {
         coin: Coin {
             denom: config.deposit_denom.clone(),
             amount,
@@ -1130,7 +1131,7 @@ fn withdraw_from_adapter(
 
     let wasm_msg = WasmMsg::Execute {
         contract_addr: adapter_info.address.to_string(),
-        msg: to_json_binary(&withdraw_msg)?,
+        msg: serialize_adapter_interface_msg(&withdraw_msg)?,
         funds: vec![],
     };
 
@@ -1177,11 +1178,11 @@ fn deposit_to_adapter(
     }
 
     // Create adapter deposit message with funds
-    let deposit_msg = AdapterExecuteMsg::Deposit {};
+    let deposit_msg = AdapterInterfaceMsg::Deposit {};
 
     let wasm_msg = WasmMsg::Execute {
         contract_addr: adapter_info.address.to_string(),
-        msg: to_json_binary(&deposit_msg)?,
+        msg: serialize_adapter_interface_msg(&deposit_msg)?,
         funds: vec![Coin {
             denom: config.deposit_denom.clone(),
             amount,
@@ -1248,21 +1249,24 @@ fn calculate_venues_allocation(
 
         // Query adapter for available capacity/balance
         let query_msg = if is_deposit {
-            AdapterQueryMsg::AvailableForDeposit {
+            AdapterInterfaceQueryMsg::AvailableForDeposit {
                 depositor_address: inflow_address.clone(),
                 denom: denom.clone(),
             }
         } else {
-            AdapterQueryMsg::AvailableForWithdraw {
+            AdapterInterfaceQueryMsg::AvailableForWithdraw {
                 depositor_address: inflow_address.clone(),
                 denom: denom.clone(),
             }
         };
 
         // Query the adapter - if it fails, skip to next adapter
-        let available_result: Result<AvailableAmountResponse, _> = deps
-            .querier
-            .query_wasm_smart(adapter_info.address.to_string(), &query_msg);
+        let available_result: Result<AvailableAmountResponse, _> = deps.querier.query_wasm_smart(
+            adapter_info.address.to_string(),
+            &AdapterInterfaceQuery {
+                interface: &query_msg,
+            },
+        );
 
         if let Ok(available_response) = available_result {
             if available_response.amount > Uint128::zero() {
@@ -1736,15 +1740,18 @@ fn query_total_adapter_positions(
 
     for (_name, adapter_info) in adapters {
         // Query each adapter for positions by this vault contract
-        let query_msg = AdapterQueryMsg::DepositorPosition {
+        let query_msg = AdapterInterfaceQueryMsg::DepositorPosition {
             depositor_address: inflow_address.clone(),
             denom: deposit_denom.clone(),
         };
 
         // Query the adapter - if it fails, skip this adapter
-        let result: Result<DepositorPositionResponse, _> = deps
-            .querier
-            .query_wasm_smart(adapter_info.address.to_string(), &query_msg);
+        let result: Result<DepositorPositionResponse, _> = deps.querier.query_wasm_smart(
+            adapter_info.address.to_string(),
+            &AdapterInterfaceQuery {
+                interface: &query_msg,
+            },
+        );
 
         if let Ok(response) = result {
             total_positions = total_positions.checked_add(response.amount)?;
