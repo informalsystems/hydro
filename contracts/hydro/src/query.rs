@@ -237,6 +237,24 @@ pub enum QueryMsg {
     /// Returns the list of parent lock IDs (ancestors) for a given child lock.
     #[returns(ParentLockIdsResponse)]
     ParentLockIds { child_id: u64 },
+
+    /// Returns voting-related metrics for the specified lockups, including time-weighted shares,
+    /// token group classification, and remaining locked rounds.
+    #[returns(LockupVotingMetricsResponse)]
+    LockupVotingMetrics { lock_ids: Vec<u64> },
+
+    /// Returns number of tokens of a given token denom available for lockups conversion into the given denom.
+    #[returns(Uint128)]
+    AvailableConversionFunds { token_denom: String },
+
+    /// Given a lock id and a resulting token denom, returns the number of tokens of a resulting denom
+    /// that a given lockup would hold after conversion.
+    #[returns(Uint128)]
+    ConvertedTokenNum {
+        lock_id: u64,
+        token_denom: String,
+        user_provides_funds: bool,
+    },
 }
 
 #[cw_serde]
@@ -536,4 +554,20 @@ pub struct TotalPowerAtHeightResponse {
 pub struct VotingPowerAtHeightResponse {
     pub power: Uint128,
     pub height: u64,
+}
+
+// LockupVotingMetrics contains voting-related metrics for a single lockup.
+// This includes the time-weighted shares (used to calculate voting power),
+// the token group the lockup belongs to, and the number of rounds remaining until unlock.
+#[cw_serde]
+pub struct LockupVotingMetrics {
+    pub lock_id: u64,
+    pub time_weighted_shares: Uint128,
+    pub token_group_id: String,
+    pub locked_rounds_remaining: u64,
+}
+
+#[cw_serde]
+pub struct LockupVotingMetricsResponse {
+    pub lockups: Vec<LockupVotingMetrics>,
 }

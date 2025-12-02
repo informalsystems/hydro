@@ -1,5 +1,6 @@
 use cosmwasm_std::{attr, from_json, Binary, Response, Uint128};
 use cw_utils::Expiration;
+use interface::token_info_provider::DenomInfoResponse;
 use std::collections::HashMap;
 
 use crate::{
@@ -17,7 +18,7 @@ use crate::{
         setup_lsm_token_info_provider_mock, setup_multiple_token_info_provider_mocks,
         setup_st_atom_token_info_provider_mock, setup_token_info_providers_with_extra_mocks,
         IBC_DENOM_1, LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON,
-        ST_ATOM_ON_STRIDE, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
+        ST_ATOM_ON_STRIDE, ST_ATOM_TOKEN_GROUP, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
     },
     testing_mocks::{
         contract_info_mock, denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock,
@@ -2768,4 +2769,299 @@ fn test_handle_execute_approve_then_unlock() {
     // first check that the lockup exists, and error out if not
     let approval = NFT_APPROVALS.may_load(&deps.storage, (0, spender_addr.clone()));
     assert_eq!(approval.unwrap(), None);
+}
+
+#[test]
+fn test_handle_execute_lock_tokens_then_send_nft_success() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(
+            ST_ATOM_ON_NEUTRON.to_string(),
+            ST_ATOM_ON_STRIDE.to_string(),
+        )]),
+    );
+
+    // Setup initial state
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+
+    let user_address = "owner";
+    let info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(1000u64, ST_ATOM_ON_NEUTRON.to_string())],
+    );
+
+    // Proper contract initialization
+    let msg = get_default_instantiate_msg(&deps.api);
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
+
+    // Setup combined mock for both token info provider and contract info
+    let contract_address = deps.api.addr_make("recipient_contract");
+    let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
+
+    let derivative_providers = HashMap::from([(
+        token_info_provider_addr.to_string(),
+        HashMap::from([(
+            0u64,
+            DenomInfoResponse {
+                denom: ST_ATOM_ON_NEUTRON.to_string(),
+                token_group_id: ST_ATOM_TOKEN_GROUP.to_string(),
+                ratio: Decimal::one(),
+            },
+        )]),
+    )]);
+
+    setup_token_info_providers_with_extra_mocks(
+        &mut deps,
+        derivative_providers,
+        None,
+        true,
+        vec![contract_info_mock(contract_address.to_string())],
+    );
+
+    // Execute LockTokensThenSendNft
+    let execute_msg = ExecuteMsg::LockTokensThenSendNft {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+        contract: contract_address.to_string(),
+        msg: Binary::from(b"test_message"),
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), execute_msg);
+    assert!(
+        res.is_ok(),
+        "Failed to execute LockTokensThenSendNft: {res:?}"
+    );
+
+    let res = res.unwrap();
+
+    // Verify response attributes
+    assert!(res
+        .attributes
+        .iter()
+        .any(|attr| attr.key == "action" && attr.value == "lock_tokens_then_send_nft"));
+    assert!(res
+        .attributes
+        .iter()
+        .any(|attr| attr.key == "sender" && attr.value == info.sender.to_string()));
+    assert!(res
+        .attributes
+        .iter()
+        .any(|attr| attr.key == "lock_id" && attr.value == "0"));
+    assert!(res
+        .attributes
+        .iter()
+        .any(|attr| attr.key == "to" && attr.value == contract_address.to_string()));
+    assert!(res.attributes.iter().any(
+        |attr| attr.key == "locked_tokens" && attr.value == format!("1000{ST_ATOM_ON_NEUTRON}")
+    ));
+
+    // Verify that both submessages are present (gatekeeper + CW721 receive)
+    assert!(!res.messages.is_empty(), "Response should contain messages");
+
+    // Verify the NFT was sent by checking owner
+    let owner_of_res = query_owner_of(deps.as_ref(), env, "0".to_string(), None);
+    assert!(owner_of_res.is_ok());
+    let owner_of = owner_of_res.unwrap();
+    assert_eq!(owner_of.owner, contract_address.to_string());
+}
+
+#[test]
+fn test_handle_execute_lock_tokens_then_send_nft_lsm_fail() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([
+            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                ST_ATOM_ON_NEUTRON.to_string(),
+                ST_ATOM_ON_STRIDE.to_string(),
+            ),
+        ]),
+    );
+
+    // Setup initial state
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+
+    let user_address = "owner";
+    let info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(1000u64, IBC_DENOM_1.to_string())], // LSM token
+    );
+
+    // Proper contract initialization
+    let msg = get_default_instantiate_msg(&deps.api);
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
+
+    // Set up validators for LSM rounds
+    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
+    let lsm_provider = Some((
+        lsm_token_info_provider_addr.to_string(),
+        HashMap::from_iter((0..1).map(|round_id: u64| {
+            (
+                round_id,
+                HashMap::from([get_validator_info_mock_data(
+                    VALIDATOR_1.to_string(),
+                    Decimal::one(),
+                )]),
+            )
+        })),
+    ));
+
+    // Setup dependencies with custom wasm querier that recognizes "contract-address" as a contract
+    let contract_address = "contract-address";
+    let contract_addr = deps.api.addr_make(contract_address);
+
+    setup_token_info_providers_with_extra_mocks(
+        &mut deps,
+        HashMap::new(),
+        lsm_provider.clone(),
+        true,
+        vec![contract_info_mock(contract_addr.to_string())],
+    );
+
+    // Execute LockTokensThenSendNft with LSM tokens - should fail during lock_tokens
+    let execute_msg = ExecuteMsg::LockTokensThenSendNft {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+        contract: contract_addr.to_string(),
+        msg: Binary::from(b"test_message"),
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), execute_msg);
+
+    // This should fail because even if the lock succeeds, the send fails (LSM), making the whole tx fail.
+    assert!(
+        res.is_err(),
+        "LockTokensThenSendNft with LSM tokens should fail: {res:?}"
+    );
+
+    let error_msg = res.unwrap_err().to_string().to_lowercase();
+    assert!(
+        error_msg.contains("cannot transfer lsm lockups"),
+        "Error should mention LSM transfer restriction: {error_msg}"
+    );
+}
+
+#[test]
+fn test_handle_execute_lock_tokens_then_send_nft_invalid_contract_fail() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(
+            ST_ATOM_ON_NEUTRON.to_string(),
+            ST_ATOM_ON_STRIDE.to_string(),
+        )]),
+    );
+
+    // Setup initial state
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+
+    let user_address = "owner";
+    let info = get_message_info(
+        &deps.api,
+        user_address,
+        &[Coin::new(1000u64, ST_ATOM_ON_NEUTRON.to_string())],
+    );
+
+    // Proper contract initialization
+    let msg = get_default_instantiate_msg(&deps.api);
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
+
+    // Setup ST_ATOM token info provider
+    let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
+
+    // Use a regular address (not a contract) as recipient
+    let non_contract_address = get_address_as_str(&deps.api, "regular_user");
+
+    // Execute LockTokensThenSendNft with non-contract recipient - should fail
+    let execute_msg = ExecuteMsg::LockTokensThenSendNft {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+        contract: non_contract_address.clone(),
+        msg: Binary::from(b"test_message"),
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), execute_msg);
+
+    // This should fail because the recipient is not a contract
+    assert!(
+        res.is_err(),
+        "LockTokensThenSendNft with non-contract recipient should fail: {res:?}"
+    );
+
+    let error_msg = res.unwrap_err().to_string().to_lowercase();
+    assert!(
+        error_msg.contains("recipient is not a contract")
+            || error_msg.contains("contract")
+            || error_msg.contains("not found"),
+        "Error should mention invalid contract recipient: {error_msg}"
+    );
+}
+
+#[test]
+fn test_handle_execute_lock_tokens_then_send_nft_insufficient_funds_fail() {
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(
+            ST_ATOM_ON_NEUTRON.to_string(),
+            ST_ATOM_ON_STRIDE.to_string(),
+        )]),
+    );
+
+    // Setup initial state
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+
+    let user_address = "owner";
+    let info = get_message_info(&deps.api, user_address, &[]); // No funds provided
+
+    // Proper contract initialization
+    let msg = get_default_instantiate_msg(&deps.api);
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg);
+    assert!(res.is_ok(), "Failed to instantiate contract: {res:?}");
+
+    // Setup ST_ATOM token info provider
+    let token_info_provider_addr = deps.api.addr_make("token_info_provider_1");
+    setup_st_atom_token_info_provider_mock(
+        &mut deps,
+        token_info_provider_addr,
+        vec![(0, Decimal::one())],
+        true,
+    );
+
+    // Setup contract mock for recipient
+    let contract_address = deps.api.addr_make("recipient_contract");
+    setup_contract_info_mock(&mut deps, contract_address.clone());
+
+    // Execute LockTokensThenSendNft without funds - should fail
+    let execute_msg = ExecuteMsg::LockTokensThenSendNft {
+        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
+        proof: None,
+        contract: contract_address.to_string(),
+        msg: Binary::from(b"test_message"),
+    };
+
+    let res = execute(deps.as_mut(), env.clone(), info.clone(), execute_msg);
+
+    // This should fail because no funds were provided for locking
+    assert!(
+        res.is_err(),
+        "LockTokensThenSendNft without funds should fail: {res:?}"
+    );
+
+    let error_msg = res.unwrap_err().to_string().to_lowercase();
+    assert!(
+        error_msg.contains("must provide exactly one coin")
+            || error_msg.contains("funds")
+            || error_msg.contains("coin"),
+        "Error should mention missing funds: {error_msg}"
+    );
 }

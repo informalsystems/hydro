@@ -194,11 +194,6 @@ func (s *HydroSuite) TestPauseContract() {
 	err = s.EditTranche(contractAddr, "test", "test", 1)
 	RequirePaused(s, err)
 
-	err = s.AddICQManager(contractAddr, s.NeutronChain.ValidatorWallets[1].Address)
-	RequirePaused(s, err)
-	err = s.RemoveICQManager(contractAddr, s.NeutronChain.ValidatorWallets[1].Address)
-	RequirePaused(s, err)
-
 	err = s.UpdateMaxLockedTokens(contractAddr, 100000000000, time.Now().UTC().Add(time.Hour).UnixNano())
 	RequirePaused(s, err)
 }
@@ -364,7 +359,10 @@ func (s *HydroSuite) TestValidatorSlashing() {
 	// wait for icq to get the updated data
 	height, err := s.HubChain.Height(s.GetContext())
 	s.Require().NoError(err)
-	s.WaitForQueryUpdate(contractAddr, height)
+
+	lsmTokenInfoProviderAddr, err := s.GetLSMTokenInfoProviderAddress(contractAddr)
+	s.Require().NoError(err)
+	s.WaitForQueryUpdate(lsmTokenInfoProviderAddr, height)
 
 	// restart the node - not mandatory for this test
 	s.Require().NoError(s.HubChain.Validators[3].StartContainer(s.GetContext()))

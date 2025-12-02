@@ -1,0 +1,942 @@
+{
+  "contract_name": "vault",
+  "contract_version": "3.6.5",
+  "idl_version": "1.0.0",
+  "instantiate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "InstantiateMsg",
+    "type": "object",
+    "required": [
+      "control_center_contract",
+      "deposit_denom",
+      "max_withdrawals_per_user",
+      "subdenom",
+      "token_metadata",
+      "whitelist"
+    ],
+    "properties": {
+      "control_center_contract": {
+        "description": "Address of the Inflow Control Center contract that will manage this sub-vault.",
+        "type": "string"
+      },
+      "deposit_denom": {
+        "description": "The denom of the token that can be deposited into the vault.",
+        "type": "string"
+      },
+      "max_withdrawals_per_user": {
+        "description": "Maximum number of pending withdrawals per single user.",
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "subdenom": {
+        "description": "Inflow vault shares token subdenom. Used to derive the full token denom. E.g. if the subdenom is \"hydro_inflow_uatom\" then the full denom will be \"factory/{inflow_contract_address}/hydro_inflow_uatom\"",
+        "type": "string"
+      },
+      "token_info_provider_contract": {
+        "description": "Address of the token info provider contract used to obtain the ratio of the deposit token to the base token. If None, then the deposit token is the base token.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "token_metadata": {
+        "description": "Additional metadata to be set for the newly created vault shares token.",
+        "allOf": [
+          {
+            "$ref": "#/definitions/DenomMetadata"
+          }
+        ]
+      },
+      "whitelist": {
+        "description": "List of addresses allowed to execute permissioned actions.",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "DenomMetadata": {
+        "type": "object",
+        "required": [
+          "description",
+          "display",
+          "exponent",
+          "name",
+          "symbol"
+        ],
+        "properties": {
+          "description": {
+            "description": "Even longer description, example: \"The native staking token of the Cosmos Hub\"",
+            "type": "string"
+          },
+          "display": {
+            "description": "Lowercase moniker to be displayed in clients, example: \"atom\" Also used as a denom for the non-base denom unit.",
+            "type": "string"
+          },
+          "exponent": {
+            "description": "Number of decimals used for denom unit other than the base one. E.g. \"uatom\" as a base denom unit has 0 decimals, and \"atom\" would have 6.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "name": {
+            "description": "Descriptive token name, example: \"Cosmos Hub Atom\"",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Symbol is the token symbol usually shown on exchanges (eg: ATOM). This can be the same as the display.",
+            "type": "string"
+          },
+          "uri": {
+            "description": "URI to a document (on or off-chain) that contains additional information.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uri_hash": {
+            "description": "URIHash is a sha256 hash of a document pointed by URI. It's used to verify that the document didn't change.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "execute": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExecuteMsg",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "deposit"
+        ],
+        "properties": {
+          "deposit": {
+            "type": "object",
+            "properties": {
+              "on_behalf_of": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "withdraw"
+        ],
+        "properties": {
+          "withdraw": {
+            "type": "object",
+            "properties": {
+              "on_behalf_of": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "cancel_withdrawal"
+        ],
+        "properties": {
+          "cancel_withdrawal": {
+            "type": "object",
+            "required": [
+              "withdrawal_ids"
+            ],
+            "properties": {
+              "withdrawal_ids": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "fulfill_pending_withdrawals"
+        ],
+        "properties": {
+          "fulfill_pending_withdrawals": {
+            "type": "object",
+            "required": [
+              "limit"
+            ],
+            "properties": {
+              "limit": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "claim_unbonded_withdrawals"
+        ],
+        "properties": {
+          "claim_unbonded_withdrawals": {
+            "type": "object",
+            "required": [
+              "withdrawal_ids"
+            ],
+            "properties": {
+              "withdrawal_ids": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "withdraw_for_deployment"
+        ],
+        "properties": {
+          "withdraw_for_deployment": {
+            "type": "object",
+            "required": [
+              "amount"
+            ],
+            "properties": {
+              "amount": {
+                "$ref": "#/definitions/Uint128"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "set_token_info_provider_contract"
+        ],
+        "properties": {
+          "set_token_info_provider_contract": {
+            "type": "object",
+            "properties": {
+              "address": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "add_to_whitelist"
+        ],
+        "properties": {
+          "add_to_whitelist": {
+            "type": "object",
+            "required": [
+              "address"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "remove_from_whitelist"
+        ],
+        "properties": {
+          "remove_from_whitelist": {
+            "type": "object",
+            "required": [
+              "address"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "update_config"
+        ],
+        "properties": {
+          "update_config": {
+            "type": "object",
+            "required": [
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/definitions/UpdateConfigData"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    ],
+    "definitions": {
+      "Uint128": {
+        "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+        "type": "string"
+      },
+      "UpdateConfigData": {
+        "type": "object",
+        "properties": {
+          "max_withdrawals_per_user": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "query": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "QueryMsg",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "config"
+        ],
+        "properties": {
+          "config": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "pool_info"
+        ],
+        "properties": {
+          "pool_info": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "shares_equivalent_value"
+        ],
+        "properties": {
+          "shares_equivalent_value": {
+            "type": "object",
+            "required": [
+              "shares"
+            ],
+            "properties": {
+              "shares": {
+                "$ref": "#/definitions/Uint128"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "user_shares_equivalent_value"
+        ],
+        "properties": {
+          "user_shares_equivalent_value": {
+            "type": "object",
+            "required": [
+              "address"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Returns the number of tokens that are available for deployment, considering the amount required for any pending withdrawals.",
+        "type": "object",
+        "required": [
+          "available_for_deployment"
+        ],
+        "properties": {
+          "available_for_deployment": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "withdrawal_queue_info"
+        ],
+        "properties": {
+          "withdrawal_queue_info": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Number of tokens that needs to be provided to the contract in order to fund all pending withdrawal requests that have not been funded yet.",
+        "type": "object",
+        "required": [
+          "amount_to_fund_pending_withdrawals"
+        ],
+        "properties": {
+          "amount_to_fund_pending_withdrawals": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Returns a list of withdrawal request IDs that have been marked as funded and are ready to be paid out to users, but have not been paid out yet.",
+        "type": "object",
+        "required": [
+          "funded_withdrawal_requests"
+        ],
+        "properties": {
+          "funded_withdrawal_requests": {
+            "type": "object",
+            "required": [
+              "limit"
+            ],
+            "properties": {
+              "limit": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Returns a list of withdrawal requests made by the given user.",
+        "type": "object",
+        "required": [
+          "user_withdrawal_requests"
+        ],
+        "properties": {
+          "user_withdrawal_requests": {
+            "type": "object",
+            "required": [
+              "address",
+              "limit",
+              "start_from"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              "start_from": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Returns a list of executed payouts for the given user.",
+        "type": "object",
+        "required": [
+          "user_payouts_history"
+        ],
+        "properties": {
+          "user_payouts_history": {
+            "type": "object",
+            "required": [
+              "address",
+              "limit",
+              "order",
+              "start_from"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              "order": {
+                "$ref": "#/definitions/Order"
+              },
+              "start_from": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "whitelist"
+        ],
+        "properties": {
+          "whitelist": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    ],
+    "definitions": {
+      "Order": {
+        "type": "string",
+        "enum": [
+          "ascending",
+          "descending"
+        ]
+      },
+      "Uint128": {
+        "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+        "type": "string"
+      }
+    }
+  },
+  "migrate": null,
+  "sudo": null,
+  "responses": {
+    "amount_to_fund_pending_withdrawals": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Uint128",
+      "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+      "type": "string"
+    },
+    "available_for_deployment": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Uint128",
+      "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+      "type": "string"
+    },
+    "config": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ConfigResponse",
+      "type": "object",
+      "required": [
+        "config"
+      ],
+      "properties": {
+        "config": {
+          "$ref": "#/definitions/Config"
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Addr": {
+          "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
+          "type": "string"
+        },
+        "Config": {
+          "type": "object",
+          "required": [
+            "control_center_contract",
+            "deposit_denom",
+            "max_withdrawals_per_user",
+            "vault_shares_denom"
+          ],
+          "properties": {
+            "control_center_contract": {
+              "description": "Address of the Control Center contract.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Addr"
+                }
+              ]
+            },
+            "deposit_denom": {
+              "description": "Token denom that users can deposit into the vault.",
+              "type": "string"
+            },
+            "max_withdrawals_per_user": {
+              "description": "Maximum number of pending withdrawal requests allowed per user.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "token_info_provider_contract": {
+              "description": "Address of the token info provider contract used to obtain the ratio of the deposit token to the base token. If None, then the deposit token is the base token.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Addr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "vault_shares_denom": {
+              "description": "Denom of the vault shares token that is issued to users when they deposit tokens into the vault.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "funded_withdrawal_requests": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "FundedWithdrawalRequestsResponse",
+      "type": "object",
+      "required": [
+        "withdrawal_ids"
+      ],
+      "properties": {
+        "withdrawal_ids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "pool_info": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PoolInfoResponse",
+      "type": "object",
+      "required": [
+        "balance_base_tokens",
+        "shares_issued",
+        "withdrawal_queue_base_tokens"
+      ],
+      "properties": {
+        "balance_base_tokens": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "shares_issued": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "withdrawal_queue_base_tokens": {
+          "$ref": "#/definitions/Uint128"
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        }
+      }
+    },
+    "shares_equivalent_value": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Uint128",
+      "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+      "type": "string"
+    },
+    "user_payouts_history": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "UserPayoutsHistoryResponse",
+      "type": "object",
+      "required": [
+        "payouts"
+      ],
+      "properties": {
+        "payouts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PayoutEntry"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Addr": {
+          "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
+          "type": "string"
+        },
+        "PayoutEntry": {
+          "type": "object",
+          "required": [
+            "amount_received",
+            "executed_at",
+            "id",
+            "recipient",
+            "vault_shares_burned"
+          ],
+          "properties": {
+            "amount_received": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "executed_at": {
+              "$ref": "#/definitions/Timestamp"
+            },
+            "id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "recipient": {
+              "$ref": "#/definitions/Addr"
+            },
+            "vault_shares_burned": {
+              "$ref": "#/definitions/Uint128"
+            }
+          },
+          "additionalProperties": false
+        },
+        "Timestamp": {
+          "description": "A point in time in nanosecond precision.\n\nThis type can represent times from 1970-01-01T00:00:00Z to 2554-07-21T23:34:33Z.\n\n## Examples\n\n``` # use cosmwasm_std::Timestamp; let ts = Timestamp::from_nanos(1_000_000_202); assert_eq!(ts.nanos(), 1_000_000_202); assert_eq!(ts.seconds(), 1); assert_eq!(ts.subsec_nanos(), 202);\n\nlet ts = ts.plus_seconds(2); assert_eq!(ts.nanos(), 3_000_000_202); assert_eq!(ts.seconds(), 3); assert_eq!(ts.subsec_nanos(), 202); ```",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint64"
+            }
+          ]
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        },
+        "Uint64": {
+          "description": "A thin wrapper around u64 that is using strings for JSON encoding/decoding, such that the full u64 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u64` to get the value out:\n\n``` # use cosmwasm_std::Uint64; let a = Uint64::from(42u64); assert_eq!(a.u64(), 42);\n\nlet b = Uint64::from(70u32); assert_eq!(b.u64(), 70); ```",
+          "type": "string"
+        }
+      }
+    },
+    "user_shares_equivalent_value": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Uint128",
+      "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+      "type": "string"
+    },
+    "user_withdrawal_requests": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "UserWithdrawalRequestsResponse",
+      "type": "object",
+      "required": [
+        "withdrawals"
+      ],
+      "properties": {
+        "withdrawals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WithdrawalEntry"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Addr": {
+          "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
+          "type": "string"
+        },
+        "Timestamp": {
+          "description": "A point in time in nanosecond precision.\n\nThis type can represent times from 1970-01-01T00:00:00Z to 2554-07-21T23:34:33Z.\n\n## Examples\n\n``` # use cosmwasm_std::Timestamp; let ts = Timestamp::from_nanos(1_000_000_202); assert_eq!(ts.nanos(), 1_000_000_202); assert_eq!(ts.seconds(), 1); assert_eq!(ts.subsec_nanos(), 202);\n\nlet ts = ts.plus_seconds(2); assert_eq!(ts.nanos(), 3_000_000_202); assert_eq!(ts.seconds(), 3); assert_eq!(ts.subsec_nanos(), 202); ```",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uint64"
+            }
+          ]
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        },
+        "Uint64": {
+          "description": "A thin wrapper around u64 that is using strings for JSON encoding/decoding, such that the full u64 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u64` to get the value out:\n\n``` # use cosmwasm_std::Uint64; let a = Uint64::from(42u64); assert_eq!(a.u64(), 42);\n\nlet b = Uint64::from(70u32); assert_eq!(b.u64(), 70); ```",
+          "type": "string"
+        },
+        "WithdrawalEntry": {
+          "type": "object",
+          "required": [
+            "amount_to_receive",
+            "id",
+            "initiated_at",
+            "is_funded",
+            "shares_burned",
+            "withdrawer"
+          ],
+          "properties": {
+            "amount_to_receive": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "initiated_at": {
+              "$ref": "#/definitions/Timestamp"
+            },
+            "is_funded": {
+              "type": "boolean"
+            },
+            "shares_burned": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "withdrawer": {
+              "$ref": "#/definitions/Addr"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "whitelist": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "WhitelistResponse",
+      "type": "object",
+      "required": [
+        "whitelist"
+      ],
+      "properties": {
+        "whitelist": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Addr"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Addr": {
+          "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
+          "type": "string"
+        }
+      }
+    },
+    "withdrawal_queue_info": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "WithdrawalQueueInfoResponse",
+      "type": "object",
+      "required": [
+        "info"
+      ],
+      "properties": {
+        "info": {
+          "$ref": "#/definitions/WithdrawalQueueInfo"
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        },
+        "WithdrawalQueueInfo": {
+          "type": "object",
+          "required": [
+            "non_funded_withdrawal_amount",
+            "total_shares_burned",
+            "total_withdrawal_amount"
+          ],
+          "properties": {
+            "non_funded_withdrawal_amount": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "total_shares_burned": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "total_withdrawal_amount": {
+              "$ref": "#/definitions/Uint128"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}

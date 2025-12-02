@@ -194,8 +194,7 @@ pub fn token_info_providers_mock(
                         Some(denom_info) => denom_info.clone(),
                         None => {
                             return system_result_err_from(format!(
-                                "No mock DenomInfo for contract {} round_id {}",
-                                contract_addr, round_id
+                                "No mock DenomInfo for contract {contract_addr} round_id {round_id}"
                             ))
                         }
                     };
@@ -219,8 +218,7 @@ pub fn token_info_providers_mock(
                         Some(validators) => validators.clone(),
                         None => {
                             return system_result_err_from(format!(
-                                "No mock ValidatorsInfo for contract {} round_id {}",
-                                contract_addr, round_id
+                                "No mock ValidatorsInfo for contract {contract_addr} round_id {round_id}"
                             ))
                         }
                     };
@@ -228,6 +226,9 @@ pub fn token_info_providers_mock(
                         round_id,
                         validators,
                     })
+                }
+                _ => {
+                    return system_result_err_from("Unexpected mock contract call".to_owned());
                 }
             };
 

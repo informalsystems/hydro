@@ -46,6 +46,10 @@ pub enum QueryMsg {
 
     #[returns(OutstandingLockupClaimableCoinsResponse)]
     OutstandingLockupClaimableCoins { lock_id: u64 },
+
+    // Returns the tributes for a given list of tribute ids.
+    #[returns(SpecificTributesResponse)]
+    SpecificTributes { tribute_ids: Vec<u64> },
 }
 
 #[cw_serde]
@@ -59,13 +63,16 @@ pub struct ProposalTributesResponse {
 }
 
 #[cw_serde]
-pub struct TributeClaim {
+pub struct TributeData {
     pub round_id: u64,
     pub tranche_id: u64,
     pub proposal_id: u64,
     pub tribute_id: u64,
     pub amount: Coin,
 }
+
+pub type TributeClaim = TributeData;
+pub type TributeRecord = TributeData;
 
 #[cw_serde]
 pub struct HistoricalTributeClaimsResponse {
@@ -85,4 +92,9 @@ pub struct OutstandingTributeClaimsResponse {
 #[cw_serde]
 pub struct OutstandingLockupClaimableCoinsResponse {
     pub coins: Vec<Coin>,
+}
+
+#[cw_serde]
+pub struct SpecificTributesResponse {
+    pub tributes: Vec<TributeRecord>,
 }

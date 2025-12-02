@@ -660,6 +660,48 @@
       "additionalProperties": false
     },
     {
+      "description": "This locks the tokens first (same as `LockTokens`) then transfers ownership to the contract account (same as `SendNft`)",
+      "type": "object",
+      "required": [
+        "lock_tokens_then_send_nft"
+      ],
+      "properties": {
+        "lock_tokens_then_send_nft": {
+          "type": "object",
+          "required": [
+            "contract",
+            "lock_duration",
+            "msg"
+          ],
+          "properties": {
+            "contract": {
+              "type": "string"
+            },
+            "lock_duration": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "msg": {
+              "$ref": "#/definitions/Binary"
+            },
+            "proof": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/LockTokensProof"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
       "description": "Allows spender to transfer / send the lockup from the owner's account. If expiration is set, then this allowance has a time/height limit",
       "type": "object",
       "required": [
@@ -824,6 +866,73 @@
                 "type": "integer",
                 "format": "uint64",
                 "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Allows users to convert their existing lockup to one holding a different denom.",
+      "type": "object",
+      "required": [
+        "convert_lockup"
+      ],
+      "properties": {
+        "convert_lockup": {
+          "type": "object",
+          "required": [
+            "lock_id",
+            "target_denom"
+          ],
+          "properties": {
+            "lock_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "target_denom": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Allows whitelisted admins to add funds that can be used for lockup conversions.",
+      "type": "object",
+      "required": [
+        "provide_conversion_funds"
+      ],
+      "properties": {
+        "provide_conversion_funds": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Allows whitelisted admins to withdraw unutilized conversion funds.",
+      "type": "object",
+      "required": [
+        "withdraw_conversion_funds"
+      ],
+      "properties": {
+        "withdraw_conversion_funds": {
+          "type": "object",
+          "required": [
+            "funds_to_withdraw"
+          ],
+          "properties": {
+            "funds_to_withdraw": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Coin"
               }
             }
           },
@@ -1267,6 +1376,16 @@
           ],
           "format": "uint64",
           "minimum": 0.0
+        },
+        "lockup_conversion_fee_percent": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Decimal"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "max_deployment_duration": {
           "type": [

@@ -117,6 +117,9 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_json_binary(&query_config(deps)?),
         QueryMsg::DenomInfo { round_id } => to_json_binary(&query_denom_info(deps, round_id)?),
+        QueryMsg::RatioToBaseToken { denom } => {
+            to_json_binary(&query_ratio_to_base_denom(deps, denom)?)
+        }
     }
 }
 
@@ -134,6 +137,21 @@ fn query_denom_info(deps: Deps, round_id: u64) -> StdResult<DenomInfoResponse> {
         token_group_id: config.token_group_id,
         ratio: find_latest_known_token_ratio(deps.storage, round_id)?,
     })
+}
+
+fn query_ratio_to_base_denom(deps: Deps, denom: String) -> StdResult<Decimal> {
+    let config = CONFIG.load(deps.storage)?;
+
+    if denom != config.d_token_denom {
+        return Err(StdError::generic_err(format!(
+            "denom {denom} not known to this provider"
+        )));
+    }
+
+    let round_id = query_current_round_id(&deps, &config.hydro_contract_address)
+        .map_err(|_e| StdError::generic_err("failed to obtain ratio to base denom"))?;
+
+    find_latest_known_token_ratio(deps.storage, round_id)
 }
 
 pub fn query_current_round_id(deps: &Deps, hydro_contract: &Addr) -> Result<u64, ContractError> {

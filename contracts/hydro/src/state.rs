@@ -87,6 +87,7 @@ pub struct Constants {
     pub lock_depth_limit: u64,
     pub slash_percentage_threshold: Decimal,
     pub slash_tokens_receiver_addr: String,
+    pub lockup_conversion_fee_percent: Decimal,
 }
 
 // Used to store a set of token info providers that are able to validate various denoms allowed to be locked
@@ -331,6 +332,9 @@ pub const HEIGHT_TO_ROUND: Map<u64, u64> = Map::new("height_to_round");
 // Required because the initial implementation of the contract didn't have this maps, and the deployed
 // contracts will be able to handle some queries only after the migration to the newest code is done.
 pub const SNAPSHOTS_ACTIVATION_HEIGHT: Item<u64> = Item::new("snapshots_activation_height");
+
+// AVAILABLE_CONVERSION_FUNDS: key(token_denom) -> available_tokens_num
+pub const AVAILABLE_CONVERSION_FUNDS: Map<String, Uint128> = Map::new("available_conversion_funds");
 
 #[cw_serde]
 #[derive(Default)]
