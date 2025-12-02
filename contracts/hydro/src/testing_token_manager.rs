@@ -240,6 +240,7 @@ fn handle_token_info_provider_instantiate_reply_test() {
         lock_expiry_duration_seconds: 60 * 60 * 24 * 30 * 6, // 6 months
         slash_percentage_threshold: Decimal::from_str("0.5").unwrap(),
         slash_tokens_receiver_addr: String::new(),
+        lockup_conversion_fee_percent: Decimal::percent(2),
     };
     CONSTANTS
         .save(&mut deps.storage, env.block.time.nanos(), &constants)
@@ -335,6 +336,7 @@ fn add_remove_token_info_provider_test() {
                 lock_expiry_duration_seconds: 60 * 60 * 24 * 30 * 6, // 6 months
                 slash_percentage_threshold: Decimal::from_str("0.5").unwrap(),
                 slash_tokens_receiver_addr: String::new(),
+                lockup_conversion_fee_percent: Decimal::percent(2),
             },
         )
         .unwrap();

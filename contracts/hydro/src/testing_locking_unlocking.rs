@@ -753,6 +753,7 @@ fn max_locked_tokens_test() {
             lock_expiry_duration_seconds: None,
             slash_percentage_threshold: None,
             slash_tokens_receiver_addr: None,
+            lockup_conversion_fee_percent: None,
         },
     };
     let res = execute(
@@ -778,6 +779,7 @@ fn max_locked_tokens_test() {
             lock_expiry_duration_seconds: None,
             slash_percentage_threshold: None,
             slash_tokens_receiver_addr: None,
+            lockup_conversion_fee_percent: None,
         },
     };
     let res = execute(
@@ -823,6 +825,7 @@ fn max_locked_tokens_test() {
             lock_expiry_duration_seconds: None,
             slash_percentage_threshold: None,
             slash_tokens_receiver_addr: None,
+            lockup_conversion_fee_percent: None,
         },
     };
     let res = execute(
