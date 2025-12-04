@@ -13,12 +13,12 @@ export type ExecuteMsg = {
 } | {
   withdraw_receipt_tokens: {
     address: string;
-    amount: Coin;
+    coin: Coin;
   };
 } | {
   withdraw_funds: {
     address: string;
-    amount: Coin;
+    coin: Coin;
   };
 };
 export type Uint128 = string;

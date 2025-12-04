@@ -1,6 +1,6 @@
 {
   "contract_name": "proxy",
-  "contract_version": "3.6.4",
+  "contract_version": "3.6.5",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -53,13 +53,13 @@
             "type": "object",
             "required": [
               "address",
-              "amount"
+              "coin"
             ],
             "properties": {
               "address": {
                 "type": "string"
               },
-              "amount": {
+              "coin": {
                 "$ref": "#/definitions/Coin"
               }
             },
@@ -78,13 +78,13 @@
             "type": "object",
             "required": [
               "address",
-              "amount"
+              "coin"
             ],
             "properties": {
               "address": {
                 "type": "string"
               },
-              "amount": {
+              "coin": {
                 "$ref": "#/definitions/Coin"
               }
             },

@@ -31,17 +31,17 @@ export interface InflowProxyBaseInterface extends InflowProxyBaseReadOnlyInterfa
   forwardToInflow: (fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
   withdrawReceiptTokens: ({
     address,
-    amount
+    coin
   }: {
     address: string;
-    amount: Coin;
+    coin: Coin;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
   withdrawFunds: ({
     address,
-    amount
+    coin
   }: {
     address: string;
-    amount: Coin;
+    coin: Coin;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
 }
 export class InflowProxyBaseClient extends InflowProxyBaseQueryClient implements InflowProxyBaseInterface {
@@ -64,29 +64,29 @@ export class InflowProxyBaseClient extends InflowProxyBaseQueryClient implements
   };
   withdrawReceiptTokens = async ({
     address,
-    amount
+    coin
   }: {
     address: string;
-    amount: Coin;
+    coin: Coin;
   }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       withdraw_receipt_tokens: {
         address,
-        amount
+        coin
       }
     }, fee_, memo_, funds_);
   };
   withdrawFunds = async ({
     address,
-    amount
+    coin
   }: {
     address: string;
-    amount: Coin;
+    coin: Coin;
   }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       withdraw_funds: {
         address,
-        amount
+        coin
       }
     }, fee_, memo_, funds_);
   };

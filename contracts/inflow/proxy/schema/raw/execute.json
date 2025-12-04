@@ -25,13 +25,13 @@
           "type": "object",
           "required": [
             "address",
-            "amount"
+            "coin"
           ],
           "properties": {
             "address": {
               "type": "string"
             },
-            "amount": {
+            "coin": {
               "$ref": "#/definitions/Coin"
             }
           },
@@ -50,13 +50,13 @@
           "type": "object",
           "required": [
             "address",
-            "amount"
+            "coin"
           ],
           "properties": {
             "address": {
               "type": "string"
             },
-            "amount": {
+            "coin": {
               "$ref": "#/definitions/Coin"
             }
           },
