@@ -29,6 +29,7 @@ tools/build/*
 # log files from deployments
 *_res.json
 *_tx.json
+scripts/deploy-config.json
 
 .seed
 
