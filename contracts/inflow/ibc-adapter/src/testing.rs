@@ -72,7 +72,7 @@ mod tests {
         instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
         // Step 1: Depositor deposits funds (no routing yet)
-        let deposit_msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Deposit {});
+        let deposit_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Deposit {});
         let info = get_message_info(&deps.api, DEPOSITOR, &coins(1000000, DENOM));
 
         let res = execute(deps.as_mut(), env.clone(), info, deposit_msg).unwrap();
@@ -87,7 +87,7 @@ mod tests {
             .update_balance(MOCK_CONTRACT_ADDR, coins(1000000, DENOM));
 
         // Step 2: Admin routes funds via TransferFunds
-        let transfer_msg = ExecuteMsg::Custom(IbcAdapterMsg::TransferFunds {
+        let transfer_msg = ExecuteMsg::CustomAction(IbcAdapterMsg::TransferFunds {
             coin: Coin {
                 denom: DENOM.to_string(),
                 amount: Uint128::new(1000000),
@@ -142,7 +142,7 @@ mod tests {
 
         instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
-        let deposit_msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Deposit {});
+        let deposit_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Deposit {});
         let info = get_message_info(&deps.api, DEPOSITOR, &coins(1000000, "unknown_denom"));
 
         let err = execute(deps.as_mut(), env, info, deposit_msg).unwrap_err();
@@ -167,7 +167,7 @@ mod tests {
 
         instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
-        let withdraw_msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Withdraw {
+        let withdraw_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Withdraw {
             coin: Coin {
                 denom: DENOM.to_string(),
                 amount: Uint128::new(1000000),
@@ -191,7 +191,7 @@ mod tests {
 
         instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
-        let query_msg = QueryMsg::Interface(AdapterInterfaceQueryMsg::AvailableForDeposit {
+        let query_msg = QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::AvailableForDeposit {
             depositor_address: DEPOSITOR.to_string(),
             denom: DENOM.to_string(),
         });

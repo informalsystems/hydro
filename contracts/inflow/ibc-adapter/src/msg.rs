@@ -33,9 +33,9 @@ pub struct InstantiateMsg {
 #[cw_serde]
 pub enum ExecuteMsg {
     /// Standard adapter interface messages (deposit, withdraw, manage depositors)
-    Interface(AdapterInterfaceMsg),
+    StandardAction(AdapterInterfaceMsg),
     /// IBC adapter-specific custom messages
-    Custom(IbcAdapterMsg),
+    CustomAction(IbcAdapterMsg),
 }
 
 /// IBC adapter-specific execute messages
@@ -83,10 +83,10 @@ pub enum IbcAdapterMsg {
 pub enum QueryMsg {
     /// Standard adapter interface queries
     #[returns(cosmwasm_std::Binary)]
-    Interface(AdapterInterfaceQueryMsg),
+    StandardQuery(AdapterInterfaceQueryMsg),
     /// IBC adapter-specific custom queries
     #[returns(cosmwasm_std::Binary)]
-    Custom(IbcAdapterQueryMsg),
+    CustomQuery(IbcAdapterQueryMsg),
 }
 
 /// IBC adapter-specific query messages

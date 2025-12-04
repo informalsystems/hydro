@@ -11,9 +11,9 @@ export interface InstantiateMsg {
   supported_denoms: string[];
 }
 export type ExecuteMsg = {
-  interface: AdapterInterfaceMsg;
+  standard_action: AdapterInterfaceMsg;
 } | {
-  custom: MarsAdapterMsg;
+  custom_action: MarsAdapterMsg;
 };
 export type AdapterInterfaceMsg = {
   deposit: {};
@@ -49,9 +49,9 @@ export interface Coin {
   denom: string;
 }
 export type QueryMsg = {
-  interface: AdapterInterfaceQueryMsg;
+  standard_query: AdapterInterfaceQueryMsg;
 } | {
-  custom: MarsAdapterQueryMsg;
+  custom_query: MarsAdapterQueryMsg;
 };
 export type AdapterInterfaceQueryMsg = {
   available_for_deposit: {

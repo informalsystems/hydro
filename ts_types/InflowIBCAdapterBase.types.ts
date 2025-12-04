@@ -20,9 +20,9 @@ export interface ChainConfig {
   channel_from_neutron: string;
 }
 export type ExecuteMsg = {
-  interface: AdapterInterfaceMsg;
+  standard_action: AdapterInterfaceMsg;
 } | {
-  custom: IbcAdapterMsg;
+  custom_action: IbcAdapterMsg;
 };
 export type AdapterInterfaceMsg = {
   deposit: {};
@@ -93,9 +93,9 @@ export interface TransferFundsInstructions {
   timeout_seconds?: number | null;
 }
 export type QueryMsg = {
-  interface: AdapterInterfaceQueryMsg;
+  standard_query: AdapterInterfaceQueryMsg;
 } | {
-  custom: IbcAdapterQueryMsg;
+  custom_query: IbcAdapterQueryMsg;
 };
 export type AdapterInterfaceQueryMsg = {
   available_for_deposit: {

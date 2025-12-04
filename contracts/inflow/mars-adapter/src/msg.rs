@@ -24,9 +24,9 @@ pub struct InstantiateMsg {
 #[cw_serde]
 pub enum ExecuteMsg {
     /// Standard adapter interface messages (deposit, withdraw, manage depositors)
-    Interface(AdapterInterfaceMsg),
+    StandardAction(AdapterInterfaceMsg),
     /// Mars adapter-specific custom messages
-    Custom(MarsAdapterMsg),
+    CustomAction(MarsAdapterMsg),
 }
 
 /// Mars adapter-specific execute messages
@@ -46,10 +46,10 @@ pub enum MarsAdapterMsg {
 pub enum QueryMsg {
     /// Standard adapter interface queries
     #[returns(cosmwasm_std::Binary)]
-    Interface(AdapterInterfaceQueryMsg),
+    StandardQuery(AdapterInterfaceQueryMsg),
     /// Mars adapter-specific custom queries (none currently)
     #[returns(cosmwasm_std::Binary)]
-    Custom(MarsAdapterQueryMsg),
+    CustomQuery(MarsAdapterQueryMsg),
 }
 
 /// Mars adapter-specific query messages

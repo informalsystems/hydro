@@ -9,8 +9,8 @@ import { StdFee } from "@interchainjs/types";
 import { InstantiateMsg, ExecuteMsg, AdapterInterfaceMsg, Uint128, Binary, MarsAdapterMsg, Coin, QueryMsg, AdapterInterfaceQueryMsg, MarsAdapterQueryMsg } from "./InflowMarsAdapterBase.types";
 export interface InflowMarsAdapterBaseReadOnlyInterface {
   contractAddress: string;
-  interface: (adapterInterfaceQueryMsg: AdapterInterfaceQueryMsg) => Promise<Binary>;
-  custom: () => Promise<Binary>;
+  standardQuery: (adapterInterfaceQueryMsg: AdapterInterfaceQueryMsg) => Promise<Binary>;
+  customQuery: () => Promise<Binary>;
 }
 export class InflowMarsAdapterBaseQueryClient implements InflowMarsAdapterBaseReadOnlyInterface {
   client: ICosmWasmClient;
@@ -18,25 +18,25 @@ export class InflowMarsAdapterBaseQueryClient implements InflowMarsAdapterBaseRe
   constructor(client: ICosmWasmClient, contractAddress: string) {
     this.client = client;
     this.contractAddress = contractAddress;
-    this.interface = this.interface.bind(this);
-    this.custom = this.custom.bind(this);
+    this.standardQuery = this.standardQuery.bind(this);
+    this.customQuery = this.customQuery.bind(this);
   }
-  interface = async (adapterInterfaceQueryMsg: AdapterInterfaceQueryMsg): Promise<Binary> => {
+  standardQuery = async (adapterInterfaceQueryMsg: AdapterInterfaceQueryMsg): Promise<Binary> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      interface: adapterInterfaceQueryMsg
+      standard_query: adapterInterfaceQueryMsg
     });
   };
-  custom = async (): Promise<Binary> => {
+  customQuery = async (): Promise<Binary> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      custom: {}
+      custom_query: {}
     });
   };
 }
 export interface InflowMarsAdapterBaseInterface extends InflowMarsAdapterBaseReadOnlyInterface {
   contractAddress: string;
   sender: string;
-  interface: (adapterInterfaceMsg: AdapterInterfaceMsg, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
-  custom: (marsAdapterMsg: MarsAdapterMsg, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  standardAction: (adapterInterfaceMsg: AdapterInterfaceMsg, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  customAction: (marsAdapterMsg: MarsAdapterMsg, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
 }
 export class InflowMarsAdapterBaseClient extends InflowMarsAdapterBaseQueryClient implements InflowMarsAdapterBaseInterface {
   client: ISigningCosmWasmClient;
@@ -47,17 +47,17 @@ export class InflowMarsAdapterBaseClient extends InflowMarsAdapterBaseQueryClien
     this.client = client;
     this.sender = sender;
     this.contractAddress = contractAddress;
-    this.interface = this.interface.bind(this);
-    this.custom = this.custom.bind(this);
+    this.standardAction = this.standardAction.bind(this);
+    this.customAction = this.customAction.bind(this);
   }
-  interface = async (adapterInterfaceMsg: AdapterInterfaceMsg, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+  standardAction = async (adapterInterfaceMsg: AdapterInterfaceMsg, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      interface: adapterInterfaceMsg
+      standard_action: adapterInterfaceMsg
     }, fee_, memo_, funds_);
   };
-  custom = async (marsAdapterMsg: MarsAdapterMsg, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+  customAction = async (marsAdapterMsg: MarsAdapterMsg, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      custom: marsAdapterMsg
+      custom_action: marsAdapterMsg
     }, fee_, memo_, funds_);
   };
 }

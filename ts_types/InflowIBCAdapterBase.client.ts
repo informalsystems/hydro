@@ -9,8 +9,8 @@ import { StdFee } from "@interchainjs/types";
 import { Binary, InstantiateMsg, ChainConfig, ExecuteMsg, AdapterInterfaceMsg, Uint128, IbcAdapterMsg, Coin, TransferFundsInstructions, QueryMsg, AdapterInterfaceQueryMsg, IbcAdapterQueryMsg } from "./InflowIBCAdapterBase.types";
 export interface InflowIBCAdapterBaseReadOnlyInterface {
   contractAddress: string;
-  interface: (adapterInterfaceQueryMsg: AdapterInterfaceQueryMsg) => Promise<Binary>;
-  custom: (ibcAdapterQueryMsg: IbcAdapterQueryMsg) => Promise<Binary>;
+  standardQuery: (adapterInterfaceQueryMsg: AdapterInterfaceQueryMsg) => Promise<Binary>;
+  customQuery: (ibcAdapterQueryMsg: IbcAdapterQueryMsg) => Promise<Binary>;
 }
 export class InflowIBCAdapterBaseQueryClient implements InflowIBCAdapterBaseReadOnlyInterface {
   client: ICosmWasmClient;
@@ -18,25 +18,25 @@ export class InflowIBCAdapterBaseQueryClient implements InflowIBCAdapterBaseRead
   constructor(client: ICosmWasmClient, contractAddress: string) {
     this.client = client;
     this.contractAddress = contractAddress;
-    this.interface = this.interface.bind(this);
-    this.custom = this.custom.bind(this);
+    this.standardQuery = this.standardQuery.bind(this);
+    this.customQuery = this.customQuery.bind(this);
   }
-  interface = async (adapterInterfaceQueryMsg: AdapterInterfaceQueryMsg): Promise<Binary> => {
+  standardQuery = async (adapterInterfaceQueryMsg: AdapterInterfaceQueryMsg): Promise<Binary> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      interface: adapterInterfaceQueryMsg
+      standard_query: adapterInterfaceQueryMsg
     });
   };
-  custom = async (ibcAdapterQueryMsg: IbcAdapterQueryMsg): Promise<Binary> => {
+  customQuery = async (ibcAdapterQueryMsg: IbcAdapterQueryMsg): Promise<Binary> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      custom: ibcAdapterQueryMsg
+      custom_query: ibcAdapterQueryMsg
     });
   };
 }
 export interface InflowIBCAdapterBaseInterface extends InflowIBCAdapterBaseReadOnlyInterface {
   contractAddress: string;
   sender: string;
-  interface: (adapterInterfaceMsg: AdapterInterfaceMsg, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
-  custom: (ibcAdapterMsg: IbcAdapterMsg, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  standardAction: (adapterInterfaceMsg: AdapterInterfaceMsg, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  customAction: (ibcAdapterMsg: IbcAdapterMsg, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
 }
 export class InflowIBCAdapterBaseClient extends InflowIBCAdapterBaseQueryClient implements InflowIBCAdapterBaseInterface {
   client: ISigningCosmWasmClient;
@@ -47,17 +47,17 @@ export class InflowIBCAdapterBaseClient extends InflowIBCAdapterBaseQueryClient 
     this.client = client;
     this.sender = sender;
     this.contractAddress = contractAddress;
-    this.interface = this.interface.bind(this);
-    this.custom = this.custom.bind(this);
+    this.standardAction = this.standardAction.bind(this);
+    this.customAction = this.customAction.bind(this);
   }
-  interface = async (adapterInterfaceMsg: AdapterInterfaceMsg, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+  standardAction = async (adapterInterfaceMsg: AdapterInterfaceMsg, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      interface: adapterInterfaceMsg
+      standard_action: adapterInterfaceMsg
     }, fee_, memo_, funds_);
   };
-  custom = async (ibcAdapterMsg: IbcAdapterMsg, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+  customAction = async (ibcAdapterMsg: IbcAdapterMsg, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      custom: ibcAdapterMsg
+      custom_action: ibcAdapterMsg
     }, fee_, memo_, funds_);
   };
 }

@@ -50,10 +50,10 @@
         "description": "Standard adapter interface messages (deposit, withdraw, manage depositors)",
         "type": "object",
         "required": [
-          "interface"
+          "standard_action"
         ],
         "properties": {
-          "interface": {
+          "standard_action": {
             "$ref": "#/definitions/AdapterInterfaceMsg"
           }
         },
@@ -63,10 +63,10 @@
         "description": "Mars adapter-specific custom messages",
         "type": "object",
         "required": [
-          "custom"
+          "custom_action"
         ],
         "properties": {
-          "custom": {
+          "custom_action": {
             "$ref": "#/definitions/MarsAdapterMsg"
           }
         },
@@ -275,10 +275,10 @@
         "description": "Standard adapter interface queries",
         "type": "object",
         "required": [
-          "interface"
+          "standard_query"
         ],
         "properties": {
-          "interface": {
+          "standard_query": {
             "$ref": "#/definitions/AdapterInterfaceQueryMsg"
           }
         },
@@ -288,10 +288,10 @@
         "description": "Mars adapter-specific custom queries (none currently)",
         "type": "object",
         "required": [
-          "custom"
+          "custom_query"
         ],
         "properties": {
-          "custom": {
+          "custom_query": {
             "$ref": "#/definitions/MarsAdapterQueryMsg"
           }
         },
@@ -510,13 +510,13 @@
   "migrate": null,
   "sudo": null,
   "responses": {
-    "custom": {
+    "custom_query": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Binary",
       "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
       "type": "string"
     },
-    "interface": {
+    "standard_query": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Binary",
       "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",

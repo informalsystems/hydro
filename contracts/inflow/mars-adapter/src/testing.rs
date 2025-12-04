@@ -216,7 +216,7 @@ fn deposit_success() {
         }],
     };
 
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Deposit {});
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Deposit {});
 
     let res = execute(deps.as_mut(), env, info, msg).unwrap();
 
@@ -244,7 +244,7 @@ fn deposit_unauthorized() {
         }],
     };
 
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Deposit {});
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Deposit {});
 
     let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
     assert_eq!(err, ContractError::Unauthorized {});
@@ -266,7 +266,7 @@ fn deposit_unsupported_denom() {
         }],
     };
 
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Deposit {});
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Deposit {});
 
     let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
     assert_eq!(
@@ -289,7 +289,7 @@ fn deposit_invalid_funds() {
         funds: vec![],
     };
 
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Deposit {});
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Deposit {});
 
     let err = execute(deps.as_mut(), env.clone(), info, msg.clone()).unwrap_err();
     assert_eq!(err, ContractError::InvalidFunds { count: 0 });
@@ -328,7 +328,7 @@ fn deposit_zero_amount() {
         }],
     };
 
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Deposit {});
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Deposit {});
 
     let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
     assert_eq!(err, ContractError::ZeroAmount {});
@@ -349,7 +349,7 @@ fn deposit_multiple_times_creates_messages() {
         }],
     };
 
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Deposit {});
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Deposit {});
 
     let res1 = execute(deps.as_mut(), env.clone(), info, msg.clone()).unwrap();
     assert_eq!(res1.messages.len(), 1);
@@ -412,7 +412,7 @@ fn withdraw_success() {
         denom: USDC_DENOM.to_string(),
         amount: Uint128::new(400),
     };
-    let withdraw_msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Withdraw { coin });
+    let withdraw_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Withdraw { coin });
     let res = execute(deps.as_mut(), env.clone(), info, withdraw_msg).unwrap();
 
     // Should have Mars message
@@ -441,7 +441,7 @@ fn withdraw_unauthorized() {
         amount: Uint128::new(100),
     };
 
-    let withdraw_msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Withdraw { coin });
+    let withdraw_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Withdraw { coin });
     let err = execute(deps.as_mut(), env.clone(), info, withdraw_msg).unwrap_err();
     assert_eq!(err, ContractError::Unauthorized {});
 }
@@ -463,7 +463,7 @@ fn withdraw_unregistered_depositor() {
         amount: Uint128::new(100),
     };
 
-    let withdraw_msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Withdraw { coin });
+    let withdraw_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Withdraw { coin });
     let err = execute(deps.as_mut(), env.clone(), info, withdraw_msg).unwrap_err();
     assert_eq!(err, ContractError::Unauthorized {});
 }
@@ -485,7 +485,7 @@ fn withdraw_unsupported_denom() {
         amount: Uint128::new(100),
     };
 
-    let withdraw_msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Withdraw { coin });
+    let withdraw_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Withdraw { coin });
     let err = execute(deps.as_mut(), env, info, withdraw_msg).unwrap_err();
     assert_eq!(
         err,
@@ -525,7 +525,7 @@ fn withdraw_insufficient_balance() {
         amount: Uint128::new(1000),
     };
 
-    let withdraw_msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Withdraw { coin });
+    let withdraw_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Withdraw { coin });
     let err = execute(deps.as_mut(), env, info, withdraw_msg).unwrap_err();
     assert_eq!(err, ContractError::InsufficientBalance {});
 }
@@ -546,7 +546,7 @@ fn withdraw_zero_amount() {
         amount: Uint128::zero(),
     };
 
-    let withdraw_msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Withdraw { coin });
+    let withdraw_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Withdraw { coin });
     let err = execute(deps.as_mut(), env, info, withdraw_msg).unwrap_err();
     assert_eq!(err, ContractError::ZeroAmount {});
 }
@@ -580,7 +580,7 @@ fn withdraw_full_amount() {
         denom: USDC_DENOM.to_string(),
         amount: Uint128::new(1000),
     };
-    let withdraw_msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Withdraw { coin });
+    let withdraw_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Withdraw { coin });
     let res = execute(deps.as_mut(), env, info, withdraw_msg).unwrap();
 
     // Should have Mars message
@@ -640,7 +640,7 @@ fn depositor_cannot_withdraw_another_depositors_funds() {
     };
 
     // This should fail with InsufficientBalance
-    let withdraw_msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Withdraw { coin });
+    let withdraw_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Withdraw { coin });
 
     let err = execute(deps.as_mut(), env.clone(), info, withdraw_msg.clone()).unwrap_err();
     assert_eq!(err, ContractError::InsufficientBalance {});
@@ -657,7 +657,7 @@ fn depositor_cannot_withdraw_another_depositors_funds() {
     };
 
     // This should succeed because depositor1 has 1000 USDC in its own account
-    let withdraw_msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Withdraw { coin });
+    let withdraw_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Withdraw { coin });
 
     let res = execute(deps.as_mut(), env, info, withdraw_msg).unwrap();
     assert_eq!(res.messages.len(), 1);
@@ -711,7 +711,7 @@ fn deposit_and_withdraw_isolation_between_depositors() {
         denom: USDC_DENOM.to_string(),
         amount: Uint128::new(300),
     };
-    let withdraw_msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Withdraw { coin });
+    let withdraw_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Withdraw { coin });
     let res = execute(deps.as_mut(), env.clone(), info, withdraw_msg.clone()).unwrap();
     assert_eq!(res.messages.len(), 1);
 
@@ -724,7 +724,7 @@ fn deposit_and_withdraw_isolation_between_depositors() {
         denom: USDC_DENOM.to_string(),
         amount: Uint128::new(400),
     };
-    let withdraw_msg = ExecuteMsg::Interface(AdapterInterfaceMsg::Withdraw { coin });
+    let withdraw_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Withdraw { coin });
     let res = execute(deps.as_mut(), env.clone(), info, withdraw_msg).unwrap();
     assert_eq!(res.messages.len(), 1);
 
@@ -744,7 +744,7 @@ fn query_config_works() {
     let res = query(
         deps.as_ref(),
         mock_env(),
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::Config {}),
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::Config {}),
     )
     .unwrap();
     let config: MarsConfigResponse = from_json(&res).unwrap();
@@ -767,7 +767,7 @@ fn query_registered_depositors_returns_all() {
     let res = query(
         deps.as_ref(),
         env,
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::RegisteredDepositors { enabled: None }),
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::RegisteredDepositors { enabled: None }),
     )
     .unwrap();
     let response: RegisteredDepositorsResponse = from_json(&res).unwrap();
@@ -806,7 +806,7 @@ fn query_registered_depositors_filter_enabled() {
     let res = query(
         deps.as_ref(),
         env.clone(),
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::RegisteredDepositors {
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::RegisteredDepositors {
             enabled: Some(true),
         }),
     )
@@ -824,7 +824,7 @@ fn query_registered_depositors_filter_enabled() {
     let res = query(
         deps.as_ref(),
         env,
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::RegisteredDepositors {
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::RegisteredDepositors {
             enabled: Some(false),
         }),
     )
@@ -848,7 +848,7 @@ fn query_time_to_withdraw_is_instant() {
     let res = query(
         deps.as_ref(),
         env,
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::TimeToWithdraw {
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::TimeToWithdraw {
             depositor_address: depositor_addr.to_string(),
             coin: Coin {
                 denom: USDC_DENOM.to_string(),
@@ -931,7 +931,7 @@ fn query_all_positions_aggregates_from_all_depositors() {
     let res = query(
         deps.as_ref(),
         env,
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::AllPositions {}),
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::AllPositions {}),
     )
     .unwrap();
     let response: AllPositionsResponse = from_json(&res).unwrap();
@@ -979,7 +979,7 @@ fn query_available_for_withdraw_returns_mars_position() {
     let res = query(
         deps.as_ref(),
         env,
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::AvailableForWithdraw {
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::AvailableForWithdraw {
             depositor_address: depositor_addr.to_string(),
             denom: USDC_DENOM.to_string(),
         }),
@@ -1041,7 +1041,7 @@ fn query_depositor_positions_multiple_denoms() {
     let res = query(
         deps.as_ref(),
         env,
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::DepositorPositions {
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::DepositorPositions {
             depositor_address: depositor_address.to_string(),
         }),
     )
@@ -1082,7 +1082,7 @@ fn admin_can_register_new_depositor() {
 
     // Admin registers a second depositor
     let depositor2 = deps.api.addr_make("depositor2");
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::RegisterDepositor {
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::RegisterDepositor {
         depositor_address: depositor2.to_string(),
         metadata: None,
     });
@@ -1106,7 +1106,7 @@ fn admin_can_register_new_depositor() {
     let res = query(
         deps.as_ref(),
         env,
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::RegisteredDepositors { enabled: None }),
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::RegisteredDepositors { enabled: None }),
     )
     .unwrap();
     let response: RegisteredDepositorsResponse = from_json(&res).unwrap();
@@ -1133,7 +1133,7 @@ fn non_admin_cannot_register_depositor() {
 
     // Non-admin tries to register depositor
     let depositor2 = deps.api.addr_make("depositor2");
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::RegisterDepositor {
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::RegisterDepositor {
         depositor_address: depositor2.to_string(),
         metadata: None,
     });
@@ -1165,7 +1165,7 @@ fn register_depositor_already_registered_fails() {
     reply(deps.as_mut(), env.clone(), mock_reply).unwrap();
 
     // Try to register the same depositor again
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::RegisterDepositor {
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::RegisterDepositor {
         depositor_address: depositor_address.to_string(),
         metadata: None,
     });
@@ -1208,7 +1208,7 @@ fn admin_can_unregister_depositor() {
         .is_some());
 
     // Unregister the depositor
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::UnregisterDepositor {
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::UnregisterDepositor {
         depositor_address: depositor_address.to_string(),
     });
 
@@ -1243,7 +1243,7 @@ fn non_admin_cannot_unregister_depositor() {
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
     // Non-admin tries to unregister
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::UnregisterDepositor {
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::UnregisterDepositor {
         depositor_address: depositor_address.to_string(),
     });
 
@@ -1271,7 +1271,7 @@ fn unregister_nonexistent_depositor_fails() {
 
     // Try to unregister non-existent depositor
     let nonexistent = deps.api.addr_make("nonexistent");
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::UnregisterDepositor {
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::UnregisterDepositor {
         depositor_address: nonexistent.to_string(),
     });
 
@@ -1313,7 +1313,7 @@ fn admin_can_toggle_depositor_enabled() {
     assert!(depositor.enabled);
 
     // Disable the depositor
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::ToggleDepositorEnabled {
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::ToggleDepositorEnabled {
         depositor_address: depositor_address.to_string(),
         enabled: false,
     });
@@ -1335,7 +1335,7 @@ fn admin_can_toggle_depositor_enabled() {
     assert!(!depositor.enabled);
 
     // Re-enable the depositor
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::ToggleDepositorEnabled {
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::ToggleDepositorEnabled {
         depositor_address: depositor_address.to_string(),
         enabled: true,
     });
@@ -1369,7 +1369,7 @@ fn non_admin_cannot_toggle_depositor_enabled() {
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
     // Non-admin tries to toggle
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::ToggleDepositorEnabled {
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::ToggleDepositorEnabled {
         depositor_address: depositor_address.to_string(),
         enabled: false,
     });
@@ -1398,7 +1398,7 @@ fn toggle_nonexistent_depositor_fails() {
 
     // Try to toggle non-existent depositor
     let nonexistent = deps.api.addr_make("nonexistent");
-    let msg = ExecuteMsg::Interface(AdapterInterfaceMsg::ToggleDepositorEnabled {
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::ToggleDepositorEnabled {
         depositor_address: nonexistent.to_string(),
         enabled: false,
     });
@@ -1440,7 +1440,7 @@ fn update_config_protocol_address() {
 
     // Update protocol address (admin only)
     let new_mars = deps.api.addr_make("new_mars_contract");
-    let msg = ExecuteMsg::Custom(MarsAdapterMsg::UpdateConfig {
+    let msg = ExecuteMsg::CustomAction(MarsAdapterMsg::UpdateConfig {
         mars_contract: Some(new_mars.to_string()),
         supported_denoms: None,
     });
@@ -1478,7 +1478,7 @@ fn update_config_supported_denoms() {
 
     // Update supported denoms (admin only)
     let new_denoms = vec!["uatom".to_string(), "uosmo".to_string()];
-    let msg = ExecuteMsg::Custom(MarsAdapterMsg::UpdateConfig {
+    let msg = ExecuteMsg::CustomAction(MarsAdapterMsg::UpdateConfig {
         mars_contract: None,
         supported_denoms: Some(new_denoms.clone()),
     });
@@ -1519,7 +1519,7 @@ fn update_config_both_parameters() {
     let new_denoms = vec!["uatom".to_string()];
 
     // Update both in one call
-    let msg = ExecuteMsg::Custom(MarsAdapterMsg::UpdateConfig {
+    let msg = ExecuteMsg::CustomAction(MarsAdapterMsg::UpdateConfig {
         mars_contract: Some(new_mars.to_string()),
         supported_denoms: Some(new_denoms.clone()),
     });
@@ -1551,7 +1551,7 @@ fn update_config_unauthorized() {
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
     // Unauthorized tries to update config
-    let msg = ExecuteMsg::Custom(MarsAdapterMsg::UpdateConfig {
+    let msg = ExecuteMsg::CustomAction(MarsAdapterMsg::UpdateConfig {
         mars_contract: Some("new_mars".to_string()),
         supported_denoms: None,
     });
@@ -1579,7 +1579,7 @@ fn query_available_for_deposit_returns_max() {
     let res = query(
         deps.as_ref(),
         env,
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::AvailableForDeposit {
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::AvailableForDeposit {
             depositor_address: depositor_addr.to_string(),
             denom: USDC_DENOM.to_string(),
         }),
@@ -1766,7 +1766,7 @@ fn query_depositor_position_single_denom() {
     let res = query(
         deps.as_ref(),
         env,
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::DepositorPosition {
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::DepositorPosition {
             depositor_address: depositor_addr.to_string(),
             denom: USDC_DENOM.to_string(),
         }),
@@ -1798,7 +1798,7 @@ fn query_depositor_position_zero_when_no_position() {
     let res = query(
         deps.as_ref(),
         env,
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::DepositorPosition {
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::DepositorPosition {
             depositor_address: depositor_addr.to_string(),
             denom: USDC_DENOM.to_string(),
         }),
@@ -1833,7 +1833,7 @@ fn query_depositor_position_different_denom_returns_zero() {
     let res = query(
         deps.as_ref(),
         env,
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::DepositorPosition {
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::DepositorPosition {
             depositor_address: depositor_addr.to_string(),
             denom: "uatom".to_string(),
         }),
@@ -1896,7 +1896,7 @@ fn query_depositor_position_multiple_denoms_returns_correct_one() {
     let res_usdc = query(
         deps.as_ref(),
         env.clone(),
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::DepositorPosition {
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::DepositorPosition {
             depositor_address: depositor_address.to_string(),
             denom: USDC_DENOM.to_string(),
         }),
@@ -1909,7 +1909,7 @@ fn query_depositor_position_multiple_denoms_returns_correct_one() {
     let res_atom = query(
         deps.as_ref(),
         env,
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::DepositorPosition {
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::DepositorPosition {
             depositor_address: depositor_address.to_string(),
             denom: atom_denom.to_string(),
         }),
@@ -1930,7 +1930,7 @@ fn query_depositor_position_unregistered_depositor_returns_error() {
     let err = query(
         deps.as_ref(),
         env,
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::DepositorPosition {
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::DepositorPosition {
             depositor_address: unregistered.to_string(),
             denom: USDC_DENOM.to_string(),
         }),
@@ -1984,7 +1984,7 @@ fn query_depositor_position_isolation_between_depositors() {
     let res1 = query(
         deps.as_ref(),
         env.clone(),
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::DepositorPosition {
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::DepositorPosition {
             depositor_address: depositor1_addr.to_string(),
             denom: USDC_DENOM.to_string(),
         }),
@@ -1997,7 +1997,7 @@ fn query_depositor_position_isolation_between_depositors() {
     let res2 = query(
         deps.as_ref(),
         env,
-        QueryMsg::Interface(AdapterInterfaceQueryMsg::DepositorPosition {
+        QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::DepositorPosition {
             depositor_address: depositor2_addr.to_string(),
             denom: USDC_DENOM.to_string(),
         }),

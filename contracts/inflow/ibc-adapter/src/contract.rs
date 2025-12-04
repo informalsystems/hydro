@@ -152,10 +152,12 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     match msg {
-        ExecuteMsg::Interface(interface_msg) => {
+        ExecuteMsg::StandardAction(interface_msg) => {
             dispatch_execute_interface(deps, env, info, interface_msg)
         }
-        ExecuteMsg::Custom(custom_msg) => dispatch_execute_custom(deps, env, info, custom_msg),
+        ExecuteMsg::CustomAction(custom_msg) => {
+            dispatch_execute_custom(deps, env, info, custom_msg)
+        }
     }
 }
 
@@ -499,8 +501,10 @@ fn execute_toggle_depositor_enabled(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
-        QueryMsg::Interface(interface_msg) => dispatch_query_interface(deps, env, interface_msg),
-        QueryMsg::Custom(custom_msg) => dispatch_query_custom(deps, custom_msg),
+        QueryMsg::StandardQuery(interface_msg) => {
+            dispatch_query_interface(deps, env, interface_msg)
+        }
+        QueryMsg::CustomQuery(custom_msg) => dispatch_query_custom(deps, custom_msg),
     }
 }
 

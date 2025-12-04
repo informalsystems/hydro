@@ -7,10 +7,10 @@
       "description": "Standard adapter interface queries",
       "type": "object",
       "required": [
-        "interface"
+        "standard_query"
       ],
       "properties": {
-        "interface": {
+        "standard_query": {
           "$ref": "#/definitions/AdapterInterfaceQueryMsg"
         }
       },
@@ -20,10 +20,10 @@
       "description": "Mars adapter-specific custom queries (none currently)",
       "type": "object",
       "required": [
-        "custom"
+        "custom_query"
       ],
       "properties": {
-        "custom": {
+        "custom_query": {
           "$ref": "#/definitions/MarsAdapterQueryMsg"
         }
       },
