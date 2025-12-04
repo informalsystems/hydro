@@ -48,8 +48,8 @@ export RELAYER_NEUTRON_CHAIN_MAX_GAS_PRICE=0.011
 export RELAYER_NEUTRON_CHAIN_GAS_ADJUSTMENT=1.5  
 export RELAYER_NEUTRON_CHAIN_CONNECTION_ID=connection-15
 export RELAYER_NEUTRON_CHAIN_OUTPUT_FORMAT=json  
-export RELAYER_TARGET_CHAIN_RPC_ADDR=https://community.nuxian-node.ch:6797/stride/trpc
-export RELAYER_TARGET_CHAIN_API_ADDR=https://community.nuxian-node.ch:6797/stride/crpc
+export RELAYER_TARGET_CHAIN_RPC_ADDR=https://stride-rpc.polkachu.com:443
+export RELAYER_TARGET_CHAIN_API_ADDR=https://stride-api.polkachu.com
 
 #####
 # typically, no need to modify these  
