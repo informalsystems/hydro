@@ -250,7 +250,7 @@ fn withdraw_receipt_tokens_test() {
         non_admin_info.clone(),
         ExecuteMsg::WithdrawReceiptTokens {
             address: recipient.to_string(),
-            amount: Coin::new(1700u128, SHARES_DENOM_1),
+            coin: Coin::new(1700u128, SHARES_DENOM_1),
         },
     )
     .unwrap_err();
@@ -262,7 +262,7 @@ fn withdraw_receipt_tokens_test() {
         admin_info.clone(),
         ExecuteMsg::WithdrawReceiptTokens {
             address: recipient.to_string(),
-            amount: Coin::new(1700u128, SHARES_DENOM_1),
+            coin: Coin::new(1700u128, SHARES_DENOM_1),
         },
     )
     .unwrap();
@@ -334,7 +334,7 @@ fn withdraw_funds_test() {
         non_admin_info.clone(),
         ExecuteMsg::WithdrawFunds {
             address: recipient.to_string(),
-            amount: withdrawal_request.clone(),
+            coin: withdrawal_request.clone(),
         },
     )
     .unwrap_err();
@@ -347,7 +347,7 @@ fn withdraw_funds_test() {
         admin_info.clone(),
         ExecuteMsg::WithdrawFunds {
             address: recipient.to_string(),
-            amount: withdrawal_request.clone(),
+            coin: withdrawal_request.clone(),
         },
     )
     .unwrap_err();
@@ -367,7 +367,7 @@ fn withdraw_funds_test() {
         admin_info.clone(),
         ExecuteMsg::WithdrawFunds {
             address: recipient.to_string(),
-            amount: vault_shares_3_balance.clone(),
+            coin: vault_shares_3_balance.clone(),
         },
     )
     .unwrap_err();
@@ -386,7 +386,7 @@ fn withdraw_funds_test() {
         admin_info.clone(),
         ExecuteMsg::WithdrawFunds {
             address: recipient.to_string(),
-            amount: withdrawal_request.clone(),
+            coin: withdrawal_request.clone(),
         },
     )
     .unwrap();

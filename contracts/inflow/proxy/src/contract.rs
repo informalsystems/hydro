@@ -42,8 +42,8 @@ pub fn instantiate(
     let control_centers = msg
         .control_centers
         .iter()
-        .filter_map(|addr| deps.api.addr_validate(addr).ok())
-        .collect::<Vec<Addr>>();
+        .map(|addr| deps.api.addr_validate(addr))
+        .collect::<StdResult<Vec<Addr>>>()?;
 
     if control_centers.is_empty() {
         return Err(new_generic_error("no control centers provided"));
@@ -57,7 +57,7 @@ pub fn instantiate(
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    Ok(Response::new().add_attribute("action", "initialisation"))
+    Ok(Response::new().add_attribute("action", "initialization"))
 }
 
 #[entry_point]
@@ -71,11 +71,11 @@ pub fn execute(
 
     match msg {
         ExecuteMsg::ForwardToInflow {} => forward_to_inflow(deps, env, &config),
-        ExecuteMsg::WithdrawReceiptTokens { address, amount } => {
-            withdraw_receipt_tokens(deps, env, info, &config, address, amount)
+        ExecuteMsg::WithdrawReceiptTokens { address, coin } => {
+            withdraw_receipt_tokens(deps, env, info, &config, address, coin)
         }
-        ExecuteMsg::WithdrawFunds { address, amount } => {
-            withdraw_funds(deps, env, info, &config, address, amount)
+        ExecuteMsg::WithdrawFunds { address, coin } => {
+            withdraw_funds(deps, env, info, &config, address, coin)
         }
     }
 }
@@ -345,6 +345,7 @@ pub fn get_inflow_vault_for_shares_denom(
     ))))
 }
 
+/// Holds the address and configuration of an Inflow vault contract.
 pub struct InflowVaultConfig {
     pub address: Addr,
     pub config: InflowConfig,

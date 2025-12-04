@@ -13,8 +13,8 @@ pub struct InstantiateMsg {
 #[cw_serde]
 pub enum ExecuteMsg {
     ForwardToInflow {},
-    WithdrawReceiptTokens { address: String, amount: Coin },
-    WithdrawFunds { address: String, amount: Coin },
+    WithdrawReceiptTokens { address: String, coin: Coin },
+    WithdrawFunds { address: String, coin: Coin },
 }
 
 #[cw_serde]

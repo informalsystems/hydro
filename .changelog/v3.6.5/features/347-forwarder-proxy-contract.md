@@ -1,1 +1,1 @@
-- Add an Inflow proxy contract that allows permissionlessly forwarding deposits to Inflow, and gates withdrawals to only be callable by a designated admin.
+- Add an Inflow proxy contract that allows permissionlessly forwarding deposits to Inflow, and gates withdrawals to only be callable by a designated admin. ([\#347](https://github.com/informalsystems/hydro/pull/347))

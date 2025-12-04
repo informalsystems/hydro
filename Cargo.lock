@@ -4469,7 +4469,6 @@ dependencies = [
 name = "test-utils"
 version = "3.6.5"
 dependencies = [
- "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",
 ]
 

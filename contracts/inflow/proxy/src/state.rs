@@ -8,7 +8,7 @@ pub struct Config {
     pub control_centers: Vec<Addr>,
 }
 
-pub const CONFIG: Item<Config> = Item::new("state");
+pub const CONFIG: Item<Config> = Item::new("config");
 
 pub fn load_config(storage: &dyn Storage) -> StdResult<Config> {
     CONFIG.load(storage)
