@@ -8,7 +8,7 @@ use crate::{
 use cosmwasm_std::{
     from_json,
     testing::{mock_dependencies, mock_env, MockApi},
-    Addr, BankMsg, Coin, CosmosMsg, WasmMsg,
+    Addr, BankMsg, Coin, CosmosMsg, Uint128, WasmMsg,
 };
 use interface::inflow::{Config as InflowConfig, ExecuteMsg as InflowExecuteMsg};
 use test_utils::{
@@ -243,6 +243,7 @@ fn withdraw_receipt_tokens_test() {
         .update_balance(&env.contract.address, vec![vault_shares_1_balance.clone()]);
 
     // Only admin can execute this action
+    let withdrawal_request = Coin::new(1700u128, SHARES_DENOM_1);
     let non_admin_info = get_message_info(&deps.api, NON_ADMIN, &[]);
     let res = execute(
         deps.as_mut(),
@@ -250,19 +251,38 @@ fn withdraw_receipt_tokens_test() {
         non_admin_info.clone(),
         ExecuteMsg::WithdrawReceiptTokens {
             address: recipient.to_string(),
-            coin: Coin::new(1700u128, SHARES_DENOM_1),
+            coin: withdrawal_request.clone(),
         },
     )
     .unwrap_err();
     assert!(res.to_string().to_lowercase().contains("unauthorized"));
 
+    // Try to withdraw more than what is avaialble
     let res = execute(
         deps.as_mut(),
         env.clone(),
         admin_info.clone(),
         ExecuteMsg::WithdrawReceiptTokens {
             address: recipient.to_string(),
-            coin: Coin::new(1700u128, SHARES_DENOM_1),
+            coin: withdrawal_request.clone(),
+        },
+    )
+    .unwrap_err();
+    assert!(res
+        .to_string()
+        .contains(format!(
+            "failed to withdraw receipt tokens; available balance is less than requested; available: {}, requested: {}",
+            vault_shares_1_balance.amount, withdrawal_request.amount,
+        ).as_str()));
+
+    let withdrawal_request = Coin::new(1500u128, SHARES_DENOM_1);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        admin_info.clone(),
+        ExecuteMsg::WithdrawReceiptTokens {
+            address: recipient.to_string(),
+            coin: withdrawal_request,
         },
     )
     .unwrap();
@@ -325,7 +345,7 @@ fn withdraw_funds_test() {
 
     let vault_shares_1_balance = Coin::new(1500u128, SHARES_DENOM_1);
     let vault_shares_3_balance = Coin::new(1500u128, SHARES_DENOM_3);
-    let withdrawal_request = Coin::new(1700u128, SHARES_DENOM_1);
+    let withdrawal_request = Coin::new(1500u128, SHARES_DENOM_1);
 
     // Only admin can execute this action
     let res = execute(
@@ -353,8 +373,10 @@ fn withdraw_funds_test() {
     .unwrap_err();
     assert!(res
         .to_string()
-        .to_lowercase()
-        .contains(format!("failed to withdraw funds; zero balance of {SHARES_DENOM_1}").as_str()));
+        .contains(format!(
+            "failed to withdraw funds; available balance is less than requested; available: {}, requested: {}",
+            Uint128::zero(), withdrawal_request.amount,
+        ).as_str()));
 
     // Try to withdraw funds for vault shares tokens that cannot be mapped to any Inflow vault
     deps.querier

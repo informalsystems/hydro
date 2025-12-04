@@ -154,6 +154,10 @@ fn withdraw_receipt_tokens(
 ) -> Result<Response, ContractError> {
     ensure_admin(config, &info.sender)?;
 
+    if requested_for_withdrawal.amount.is_zero() {
+        return Err(new_generic_error("cannot withdraw zero amount"));
+    }
+
     let recipient = deps.api.addr_validate(&recipient)?;
 
     let vault_shares_token_balance = deps
@@ -164,21 +168,16 @@ fn withdraw_receipt_tokens(
         )?
         .amount;
 
-    let amount_to_withdraw = vault_shares_token_balance.min(requested_for_withdrawal.amount);
-
-    if amount_to_withdraw.is_zero() {
+    if vault_shares_token_balance < requested_for_withdrawal.amount {
         return Err(ContractError::Std(StdError::generic_err(format!(
-            "failed to withdraw receipt tokens; zero balance of {}",
-            requested_for_withdrawal.denom
+            "failed to withdraw receipt tokens; available balance is less than requested; available: {}, requested: {}",
+            vault_shares_token_balance, requested_for_withdrawal.amount,
         ))));
     }
 
     let bank_msg = BankMsg::Send {
         to_address: recipient.to_string(),
-        amount: vec![Coin {
-            denom: requested_for_withdrawal.denom.clone(),
-            amount: amount_to_withdraw,
-        }],
+        amount: vec![requested_for_withdrawal.clone()],
     };
 
     Ok(Response::new()
@@ -186,8 +185,7 @@ fn withdraw_receipt_tokens(
         .add_attribute("action", "withdraw_receipt_tokens")
         .add_attribute("recipient", recipient)
         .add_attribute("denom", requested_for_withdrawal.denom)
-        .add_attribute("amount_requested", requested_for_withdrawal.amount)
-        .add_attribute("amount_withdrawn", amount_to_withdraw))
+        .add_attribute("amount_withdrawn", requested_for_withdrawal.amount))
 }
 
 fn withdraw_funds(
@@ -200,6 +198,10 @@ fn withdraw_funds(
 ) -> Result<Response, ContractError> {
     ensure_admin(config, &info.sender)?;
 
+    if requested_for_withdrawal.amount.is_zero() {
+        return Err(new_generic_error("cannot withdraw zero amount"));
+    }
+
     let recipient = deps.api.addr_validate(&recipient)?;
 
     let vault_shares_token_balance = deps
@@ -210,12 +212,10 @@ fn withdraw_funds(
         )?
         .amount;
 
-    let amount_to_withdraw = vault_shares_token_balance.min(requested_for_withdrawal.amount);
-
-    if amount_to_withdraw.is_zero() {
+    if vault_shares_token_balance < requested_for_withdrawal.amount {
         return Err(ContractError::Std(StdError::generic_err(format!(
-            "failed to withdraw funds; zero balance of {}",
-            requested_for_withdrawal.denom
+            "failed to withdraw funds; available balance is less than requested; available: {}, requested: {}",
+            vault_shares_token_balance, requested_for_withdrawal.amount,
         ))));
     }
 
@@ -229,10 +229,7 @@ fn withdraw_funds(
     let wasm_msg = WasmMsg::Execute {
         contract_addr: inflow_vault.to_string(),
         msg: execute_withdraw_msg,
-        funds: vec![Coin {
-            denom: requested_for_withdrawal.denom.clone(),
-            amount: amount_to_withdraw,
-        }],
+        funds: vec![requested_for_withdrawal.clone()],
     };
 
     Ok(Response::new()
@@ -240,8 +237,7 @@ fn withdraw_funds(
         .add_attribute("action", "withdraw_funds")
         .add_attribute("recipient", recipient)
         .add_attribute("denom", requested_for_withdrawal.denom)
-        .add_attribute("amount_requested", requested_for_withdrawal.amount)
-        .add_attribute("amount_withdrawn", amount_to_withdraw))
+        .add_attribute("amount_withdrawn", requested_for_withdrawal.amount))
 }
 
 fn ensure_admin(config: &Config, sender: &Addr) -> Result<(), ContractError> {
