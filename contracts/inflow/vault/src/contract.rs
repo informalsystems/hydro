@@ -1264,7 +1264,7 @@ fn calculate_venues_allocation(
         let available_result: Result<AvailableAmountResponse, _> = deps.querier.query_wasm_smart(
             adapter_info.address.to_string(),
             &AdapterInterfaceQuery {
-                interface: &query_msg,
+                standard_query: &query_msg,
             },
         );
 
@@ -1749,7 +1749,7 @@ fn query_total_adapter_positions(
         let result: Result<DepositorPositionResponse, _> = deps.querier.query_wasm_smart(
             adapter_info.address.to_string(),
             &AdapterInterfaceQuery {
-                interface: &query_msg,
+                standard_query: &query_msg,
             },
         );
 

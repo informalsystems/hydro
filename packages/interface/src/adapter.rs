@@ -129,49 +129,51 @@ pub struct RegisteredDepositorsResponse {
 // ========== SERIALIZATION HELPERS FOR CALLING ADAPTERS ==========
 
 /// Helper to serialize AdapterInterfaceMsg for calling adapters from external contracts
-/// Wraps the message in the structure adapters expect: {"interface": {...}}
+/// Wraps the message in the structure adapters expect: {"standard_action": {...}}
 /// Used with WasmMsg::Execute which requires Binary
 pub fn serialize_adapter_interface_msg(msg: &AdapterInterfaceMsg) -> StdResult<Binary> {
     #[derive(Serialize)]
     struct Wrapper<'a> {
-        interface: &'a AdapterInterfaceMsg,
+        standard_action: &'a AdapterInterfaceMsg,
     }
 
-    to_json_binary(&Wrapper { interface: msg })
+    to_json_binary(&Wrapper {
+        standard_action: msg,
+    })
 }
 
 /// Wrapper for querying adapters from external contracts
 /// Used with query_wasm_smart which serializes internally
-/// Example: deps.querier.query_wasm_smart(addr, &AdapterInterfaceQuery { interface: &msg })
+/// Example: deps.querier.query_wasm_smart(addr, &AdapterInterfaceQuery { standard_query: &msg })
 #[derive(Serialize)]
 pub struct AdapterInterfaceQuery<'a> {
-    pub interface: &'a AdapterInterfaceQueryMsg,
+    pub standard_query: &'a AdapterInterfaceQueryMsg,
 }
 
 // ========== DESERIALIZATION HELPERS FOR TESTS ==========
 
 /// Helper to deserialize AdapterInterfaceMsg from Binary (for tests)
-/// Unwraps the {"interface": {...}} structure
+/// Unwraps the {"standard_action": {...}} structure
 pub fn deserialize_adapter_interface_msg(binary: &Binary) -> StdResult<AdapterInterfaceMsg> {
     #[derive(Deserialize)]
     struct Wrapper {
-        interface: AdapterInterfaceMsg,
+        standard_action: AdapterInterfaceMsg,
     }
 
     let wrapper: Wrapper = from_json(binary)?;
-    Ok(wrapper.interface)
+    Ok(wrapper.standard_action)
 }
 
 /// Helper to deserialize AdapterInterfaceQueryMsg from Binary (for tests)
-/// Unwraps the {"interface": {...}} structure
+/// Unwraps the {"standard_query": {...}} structure
 pub fn deserialize_adapter_interface_query_msg(
     binary: &Binary,
 ) -> StdResult<AdapterInterfaceQueryMsg> {
     #[derive(Deserialize)]
     struct Wrapper {
-        interface: AdapterInterfaceQueryMsg,
+        standard_query: AdapterInterfaceQueryMsg,
     }
 
     let wrapper: Wrapper = from_json(binary)?;
-    Ok(wrapper.interface)
+    Ok(wrapper.standard_query)
 }
