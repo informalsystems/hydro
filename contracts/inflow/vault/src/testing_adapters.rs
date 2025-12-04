@@ -10,7 +10,7 @@ use crate::{
     },
 };
 use cosmwasm_std::{testing::mock_env, Addr, CosmosMsg, Decimal, Uint128, WasmMsg};
-use interface::adapter::deserialize_adapter_interface_msg;
+use interface::inflow_adapter::deserialize_adapter_interface_msg;
 use std::collections::HashMap;
 
 const DEPOSIT_DENOM: &str = "ibc/C4CFF46FD6DE35CA4CF4CE031E643C8FDC9BA4B99AE598E9B0ED98FE3A2319F9";
@@ -983,7 +983,7 @@ fn test_deposit_with_single_adapter_auto_allocation() {
             let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
             assert!(matches!(
                 adapter_msg,
-                interface::adapter::AdapterInterfaceMsg::Deposit { .. }
+                interface::inflow_adapter::AdapterInterfaceMsg::Deposit { .. }
             ));
         }
         _ => panic!("Expected WasmMsg::Execute for adapter deposit"),
@@ -1391,7 +1391,7 @@ fn test_deposit_skips_failing_adapter() {
             let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
             assert!(matches!(
                 adapter_msg,
-                interface::adapter::AdapterInterfaceMsg::Deposit { .. }
+                interface::inflow_adapter::AdapterInterfaceMsg::Deposit { .. }
             ));
         }
         _ => panic!("Expected WasmMsg::Execute for adapter deposit to working adapter"),
@@ -1547,7 +1547,7 @@ fn test_withdraw_partial_fulfillment_with_queue() {
             assert_eq!(funds.len(), 0);
             let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
             match adapter_msg {
-                interface::adapter::AdapterInterfaceMsg::Withdraw { coin } => {
+                interface::inflow_adapter::AdapterInterfaceMsg::Withdraw { coin } => {
                     assert_eq!(coin.denom, DEPOSIT_DENOM);
                     assert_eq!(coin.amount, Uint128::new(3000));
                 }
@@ -1684,7 +1684,7 @@ fn test_withdraw_from_adapter_success() {
             // Verify it's a Withdraw message with correct params
             let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
             match adapter_msg {
-                interface::adapter::AdapterInterfaceMsg::Withdraw { coin } => {
+                interface::inflow_adapter::AdapterInterfaceMsg::Withdraw { coin } => {
                     assert_eq!(coin.denom, DEPOSIT_DENOM);
                     assert_eq!(coin.amount, Uint128::new(5000));
                 }
@@ -1871,7 +1871,7 @@ fn test_deposit_to_adapter_success() {
             // Verify it's a Deposit message
             let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
             match adapter_msg {
-                interface::adapter::AdapterInterfaceMsg::Deposit { .. } => {
+                interface::inflow_adapter::AdapterInterfaceMsg::Deposit { .. } => {
                     // Success - this is the expected message type
                 }
                 _ => panic!("Expected AdapterInterfaceMsg::Deposit"),

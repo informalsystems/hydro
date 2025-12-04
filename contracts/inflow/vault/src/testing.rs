@@ -21,7 +21,7 @@ use cosmwasm_std::{
     Addr, Api, BalanceResponse, BankMsg, BankQuery, Coin, CosmosMsg, Decimal, Env, MemoryStorage,
     MessageInfo, Order, OwnedDeps, Uint128,
 };
-use interface::inflow::PoolInfoResponse;
+use interface::inflow_vault::PoolInfoResponse;
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 const DEPOSIT_DENOM: &str =

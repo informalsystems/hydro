@@ -12,11 +12,11 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
 use interface::{
-    inflow::PoolInfoResponse,
     inflow_control_center::{
         ConfigResponse as ControlCenterConfigResponse, ExecuteMsg as ControlCenterExecuteMsg,
         PoolInfoResponse as ControlCenterPoolInfoResponse, QueryMsg as ControlCenterQueryMsg,
     },
+    inflow_vault::PoolInfoResponse,
     token_info_provider::TokenInfoProviderQueryMsg,
 };
 use neutron_sdk::{
@@ -42,7 +42,7 @@ use crate::{
     },
 };
 
-use interface::adapter::{
+use interface::inflow_adapter::{
     serialize_adapter_interface_msg, AdapterInterfaceMsg, AdapterInterfaceQuery,
     AdapterInterfaceQueryMsg, AvailableAmountResponse, DepositorPositionResponse,
 };
@@ -1790,10 +1790,11 @@ fn get_deposit_cap(
 }
 
 /// Returns information about this contract's pool including:
-///     1. balance
-///     2. withdrawal queue amount and
-///     3. total shares issued.
-/// Balance and withdrawal queue amount values returned are denominated in base tokens (e.g. ATOM).
+///     1. balance,
+///     2. adapter deposits amount,
+///     3. withdrawal queue amount and
+///     4. total shares issued.
+/// Balance, adapter deposits, and withdrawal queue amount values returned are denominated in base tokens (e.g. ATOM).
 /// Intended to be used by the Control Center contract to query the pool values of all its sub-vaults.
 fn get_pool_info(
     deps: &Deps<NeutronQuery>,

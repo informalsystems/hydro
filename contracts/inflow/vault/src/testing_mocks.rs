@@ -7,7 +7,7 @@ use cosmwasm_std::{
     SystemResult, Uint128, WasmQuery,
 };
 use interface::{
-    adapter::{
+    inflow_adapter::{
         deserialize_adapter_interface_query_msg, AdapterInterfaceQueryMsg, AvailableAmountResponse,
         DepositorPositionResponse,
     },

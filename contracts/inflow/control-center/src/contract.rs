@@ -4,11 +4,11 @@ use cosmwasm_std::{
 };
 use cw2::set_contract_version;
 use interface::{
-    inflow::{PoolInfoResponse as InflowPoolInfoResponse, QueryMsg as InflowQueryMsg},
     inflow_control_center::{
         Config, ConfigResponse, ExecuteMsg, PoolInfoResponse, QueryMsg, SubvaultsResponse,
         UpdateConfigData, WhitelistResponse,
     },
+    inflow_vault::{PoolInfoResponse as VaultPoolInfoResponse, QueryMsg as VaultQueryMsg},
 };
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
@@ -330,9 +330,9 @@ fn query_pool_info(deps: &Deps<NeutronQuery>, _env: &Env) -> StdResult<PoolInfoR
     let mut total_withdrawal_amount = Uint128::zero();
 
     for sub_vault in sub_vaults {
-        let vault_info: InflowPoolInfoResponse = deps
+        let vault_info: VaultPoolInfoResponse = deps
             .querier
-            .query_wasm_smart(sub_vault.to_string(), &InflowQueryMsg::PoolInfo {})?;
+            .query_wasm_smart(sub_vault.to_string(), &VaultQueryMsg::PoolInfo {})?;
 
         total_balance = total_balance.checked_add(vault_info.balance_base_tokens)?;
         total_adapter_deposits =

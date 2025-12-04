@@ -1,7 +1,7 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 
 // Re-export adapter interface types and response types
-pub use interface::adapter::{
+pub use interface::inflow_adapter::{
     AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AllPositionsResponse, AvailableAmountResponse,
     DepositorPositionResponse, DepositorPositionsResponse, RegisteredDepositorInfo,
     RegisteredDepositorsResponse, TimeEstimateResponse,
