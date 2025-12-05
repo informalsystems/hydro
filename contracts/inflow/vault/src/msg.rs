@@ -1,5 +1,4 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::Uint128;
 use serde::{Deserialize, Serialize};
 
 #[cw_serde]
@@ -41,25 +40,6 @@ pub struct DenomMetadata {
     pub uri: Option<String>,
     /// URIHash is a sha256 hash of a document pointed by URI. It's used to verify that the document didn't change.
     pub uri_hash: Option<String>,
-}
-
-#[cw_serde]
-pub enum ExecuteMsg {
-    Deposit { on_behalf_of: Option<String> },
-    Withdraw { on_behalf_of: Option<String> },
-    CancelWithdrawal { withdrawal_ids: Vec<u64> },
-    FulfillPendingWithdrawals { limit: u64 },
-    ClaimUnbondedWithdrawals { withdrawal_ids: Vec<u64> },
-    WithdrawForDeployment { amount: Uint128 },
-    SetTokenInfoProviderContract { address: Option<String> },
-    AddToWhitelist { address: String },
-    RemoveFromWhitelist { address: String },
-    UpdateConfig { config: UpdateConfigData },
-}
-
-#[cw_serde]
-pub struct UpdateConfigData {
-    pub max_withdrawals_per_user: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize)]

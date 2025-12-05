@@ -3252,6 +3252,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "proxy"
+version = "3.6.5"
+dependencies = [
+ "cosmwasm-schema 2.2.1",
+ "cosmwasm-std 2.2.1",
+ "cw-storage-plus 2.0.0",
+ "cw2 2.0.0",
+ "interface",
+ "schemars",
+ "serde",
+ "test-utils",
+ "thiserror",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4448,6 +4463,13 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "test-utils"
+version = "3.6.5"
+dependencies = [
+ "cosmwasm-std 2.2.1",
 ]
 
 [[package]]
