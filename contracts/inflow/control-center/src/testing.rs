@@ -232,8 +232,8 @@ fn subvaults_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::UpdateDeployedAmount {
-            amount: deployed_amount_update_1,
+        ExecuteMsg::AddToDeployedAmount {
+            amount_to_add: deployed_amount_update_1,
         },
     )
     .unwrap();
@@ -250,8 +250,8 @@ fn subvaults_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::UpdateDeployedAmount {
-            amount: deployed_amount_update_1,
+        ExecuteMsg::AddToDeployedAmount {
+            amount_to_add: deployed_amount_update_1,
         },
     )
     .unwrap_err()
@@ -279,8 +279,8 @@ fn subvaults_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::UpdateDeployedAmount {
-            amount: deployed_amount_update_2,
+        ExecuteMsg::AddToDeployedAmount {
+            amount_to_add: deployed_amount_update_2,
         },
     );
     assert!(res.is_ok());
@@ -288,6 +288,73 @@ fn subvaults_test() {
     assert_eq!(
         DEPLOYED_AMOUNT.load(&deps.storage).unwrap(),
         deployed_amount_update_1 + deployed_amount_update_2
+    );
+
+    // Have known vault subtract from deployed amount
+    let deployed_amount_sub_1 = Uint128::new(500);
+    let info = get_message_info(&deps.api, SUBVAULT1, &[]);
+
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::SubFromDeployedAmount {
+            amount_to_sub: deployed_amount_sub_1,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        DEPLOYED_AMOUNT.load(&deps.storage).unwrap(),
+        deployed_amount_update_1 + deployed_amount_update_2 - deployed_amount_sub_1
+    );
+
+    // Have unauthorized address try to subtract from deployed amount
+    let unauthorized_address = deps.api.addr_make(USER1);
+    let info = get_message_info(&deps.api, USER1, &[]);
+
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::SubFromDeployedAmount {
+            amount_to_sub: Uint128::new(100),
+        },
+    )
+    .unwrap_err()
+    .to_string()
+    .contains("Unauthorized");
+
+    // Have subvault try to subtract more than available (should cause overflow/underflow error)
+    let info = get_message_info(&deps.api, SUBVAULT2, &[]);
+
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::SubFromDeployedAmount {
+            amount_to_sub: Uint128::new(10000),
+        },
+    );
+    assert!(res.is_err());
+
+    // Have another subvault subtract from deployed amount
+    let deployed_amount_sub_2 = Uint128::new(1500);
+    let info = get_message_info(&deps.api, SUBVAULT2, &[]);
+
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::SubFromDeployedAmount {
+            amount_to_sub: deployed_amount_sub_2,
+        },
+    );
+    assert!(res.is_ok());
+
+    assert_eq!(
+        DEPLOYED_AMOUNT.load(&deps.storage).unwrap(),
+        deployed_amount_update_1 + deployed_amount_update_2 - deployed_amount_sub_1 - deployed_amount_sub_2
     );
 
     // Have a whitelisted address remove one subvault

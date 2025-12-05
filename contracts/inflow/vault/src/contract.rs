@@ -1361,8 +1361,8 @@ fn build_update_deployed_amount_msg(
     deployed_amount_in_base_tokens: Uint128,
     config: &Config,
 ) -> StdResult<CosmosMsg<NeutronMsg>> {
-    let update_deployed_amount_msg = ControlCenterExecuteMsg::UpdateDeployedAmount {
-        amount: deployed_amount_in_base_tokens,
+    let update_deployed_amount_msg = ControlCenterExecuteMsg::AddToDeployedAmount {
+        amount_to_add: deployed_amount_in_base_tokens,
     };
 
     Ok(CosmosMsg::Wasm(WasmMsg::Execute {

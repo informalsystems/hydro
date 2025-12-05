@@ -99,8 +99,11 @@ pub fn execute(
         ExecuteMsg::SubmitDeployedAmount { amount } => {
             submit_deployed_amount(deps, env, info, amount)
         }
-        ExecuteMsg::UpdateDeployedAmount { amount } => {
-            update_deployed_amount(deps, env, info, amount)
+        ExecuteMsg::AddToDeployedAmount { amount_to_add } => {
+            add_to_deployed_amount(deps, env, info, amount_to_add)
+        }
+        ExecuteMsg::SubFromDeployedAmount { amount_to_sub } => {
+            sub_from_deployed_amount(deps, env, info, amount_to_sub)
         }
         ExecuteMsg::AddToWhitelist { address } => add_to_whitelist(deps, env, info, address),
         ExecuteMsg::RemoveFromWhitelist { address } => {
@@ -131,26 +134,66 @@ fn submit_deployed_amount(
 fn update_deployed_amount(
     deps: DepsMut<NeutronQuery>,
     env: Env,
-    info: MessageInfo,
+    sender: Addr,
     amount: Uint128,
-) -> Result<Response<NeutronMsg>, ContractError> {
-    // Only registered sub-vaults can execute this function. This happens when
-    // a whitelisted address withdraws funds for deployment from a sub-vault.
-    if !SUBVAULTS.has(deps.storage, info.sender.clone()) {
+    to_add: bool, // true = add, false = sub
+) -> Result<(), ContractError> {
+    // Only registered sub-vaults can execute this function.
+    // This happens when a whitelisted address:
+    // - withdraws funds for deployment
+    // or
+    // - deposits funds from deployment
+    // from a sub-vault.
+    // This can also happen during adapter deposit/withdraw flows.
+    if !SUBVAULTS.has(deps.storage, sender.clone()) {
         return Err(ContractError::Unauthorized);
     }
 
-    DEPLOYED_AMOUNT.update(deps.storage, env.block.height, |current_value| {
-        current_value
-            .unwrap_or_default()
-            .checked_add(amount)
-            .map_err(|e| new_generic_error(format!("overflow error: {e}")))
-    })?;
+    if to_add {
+        DEPLOYED_AMOUNT.update(deps.storage, env.block.height, |current_value| {
+            current_value
+                .unwrap_or_default()
+                .checked_add(amount)
+                .map_err(|e| new_generic_error(format!("overflow error: {e}")))
+        })?;
+    } else {
+        DEPLOYED_AMOUNT.update(deps.storage, env.block.height, |current_value| {
+            current_value
+                .unwrap_or_default()
+                .checked_sub(amount)
+                .map_err(|e| new_generic_error(format!("overflow error: {e}")))
+        })?;
+    }
+
+    Ok(())
+}
+
+fn add_to_deployed_amount(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    amount_to_add: Uint128,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    update_deployed_amount(deps, env, info.sender.clone(), amount_to_add, true)?;
 
     Ok(Response::new()
-        .add_attribute("action", "update_deployed_amount")
+        .add_attribute("action", "add_to_deployed_amount")
         .add_attribute("sender", info.sender)
-        .add_attribute("amount", amount))
+        .add_attribute("amount_to_add", amount_to_add))
+}
+
+fn sub_from_deployed_amount(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    amount_to_sub: Uint128,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    update_deployed_amount(deps, env, info.sender.clone(), amount_to_sub, false)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "sub_from_deployed_amount")
+        .add_attribute("sender", info.sender)
+        .add_attribute("amount_to_sub", amount_to_sub))
 }
 
 // Adds a new account address to the whitelist.
@@ -344,7 +387,7 @@ fn query_pool_info(deps: &Deps<NeutronQuery>, _env: &Env) -> StdResult<PoolInfoR
 
     let deployed_amount = query_deployed_amount(deps)?;
 
-    // If the sum of total balance and deployed amount is less than the total withdrawal amount, return zero.
+    // If the sum of total balance, deployed amount and adapter deposits is less than the total withdrawal amount, return zero.
     let total_pool_value = total_balance
         .checked_add(deployed_amount)?
         .checked_add(total_adapter_deposits)?
