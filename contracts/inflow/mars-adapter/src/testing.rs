@@ -1313,7 +1313,7 @@ fn admin_can_toggle_depositor_enabled() {
     assert!(depositor.enabled);
 
     // Disable the depositor
-    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::ToggleDepositorEnabled {
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::SetDepositorEnabled {
         depositor_address: depositor_address.to_string(),
         enabled: false,
     });
@@ -1335,7 +1335,7 @@ fn admin_can_toggle_depositor_enabled() {
     assert!(!depositor.enabled);
 
     // Re-enable the depositor
-    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::ToggleDepositorEnabled {
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::SetDepositorEnabled {
         depositor_address: depositor_address.to_string(),
         enabled: true,
     });
@@ -1369,7 +1369,7 @@ fn non_admin_cannot_toggle_depositor_enabled() {
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
     // Non-admin tries to toggle
-    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::ToggleDepositorEnabled {
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::SetDepositorEnabled {
         depositor_address: depositor_address.to_string(),
         enabled: false,
     });
@@ -1398,7 +1398,7 @@ fn toggle_nonexistent_depositor_fails() {
 
     // Try to toggle non-existent depositor
     let nonexistent = deps.api.addr_make("nonexistent");
-    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::ToggleDepositorEnabled {
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::SetDepositorEnabled {
         depositor_address: nonexistent.to_string(),
         enabled: false,
     });

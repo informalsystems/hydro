@@ -6,7 +6,7 @@
 
 import { ICosmWasmClient, ISigningCosmWasmClient } from "./baseClient";
 import { Coin, StdFee } from "@interchainjs/types";
-import { InstantiateMsg, DenomMetadata, ExecuteMsg, Uint128, UpdateConfigData, QueryMsg, Order, Addr, AdapterInfoResponse, AdapterInfo, ConfigResponse, Config, FundedWithdrawalRequestsResponse, AdaptersListResponse, PoolInfoResponse, Timestamp, Uint64, UserPayoutsHistoryResponse, PayoutEntry, UserWithdrawalRequestsResponse, WithdrawalEntry, WhitelistResponse, WithdrawalQueueInfoResponse, WithdrawalQueueInfo } from "./InflowVaultBase.types";
+import { InstantiateMsg, DenomMetadata, ExecuteMsg, Uint128, AllocationMode, DeploymentTracking, UpdateConfigData, QueryMsg, Order, Addr, AdapterInfoResponse, AdapterInfo, ConfigResponse, Config, FundedWithdrawalRequestsResponse, AdaptersListResponse, PoolInfoResponse, Timestamp, Uint64, UserPayoutsHistoryResponse, PayoutEntry, UserWithdrawalRequestsResponse, WithdrawalEntry, WhitelistResponse, WithdrawalQueueInfoResponse, WithdrawalQueueInfo } from "./InflowVaultBase.types";
 export interface InflowVaultBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
@@ -249,12 +249,14 @@ export interface InflowVaultBaseInterface extends InflowVaultBaseReadOnlyInterfa
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
   registerAdapter: ({
     address,
-    autoAllocation,
+    allocationMode,
+    deploymentTracking,
     description,
     name
   }: {
     address: string;
-    autoAllocation: boolean;
+    allocationMode: AllocationMode;
+    deploymentTracking: DeploymentTracking;
     description?: string;
     name: string;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
@@ -263,9 +265,18 @@ export interface InflowVaultBaseInterface extends InflowVaultBaseReadOnlyInterfa
   }: {
     name: string;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
-  toggleAdapterAutoAllocation: ({
+  setAdapterAllocationMode: ({
+    allocationMode,
     name
   }: {
+    allocationMode: AllocationMode;
+    name: string;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  setAdapterDeploymentTracking: ({
+    deploymentTracking,
+    name
+  }: {
+    deploymentTracking: DeploymentTracking;
     name: string;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
   withdrawFromAdapter: ({
@@ -304,7 +315,8 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
     this.updateConfig = this.updateConfig.bind(this);
     this.registerAdapter = this.registerAdapter.bind(this);
     this.unregisterAdapter = this.unregisterAdapter.bind(this);
-    this.toggleAdapterAutoAllocation = this.toggleAdapterAutoAllocation.bind(this);
+    this.setAdapterAllocationMode = this.setAdapterAllocationMode.bind(this);
+    this.setAdapterDeploymentTracking = this.setAdapterDeploymentTracking.bind(this);
     this.withdrawFromAdapter = this.withdrawFromAdapter.bind(this);
     this.depositToAdapter = this.depositToAdapter.bind(this);
   }
@@ -420,19 +432,22 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
   };
   registerAdapter = async ({
     address,
-    autoAllocation,
+    allocationMode,
+    deploymentTracking,
     description,
     name
   }: {
     address: string;
-    autoAllocation: boolean;
+    allocationMode: AllocationMode;
+    deploymentTracking: DeploymentTracking;
     description?: string;
     name: string;
   }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       register_adapter: {
         address,
-        auto_allocation: autoAllocation,
+        allocation_mode: allocationMode,
+        deployment_tracking: deploymentTracking,
         description,
         name
       }
@@ -449,13 +464,30 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
       }
     }, fee_, memo_, funds_);
   };
-  toggleAdapterAutoAllocation = async ({
+  setAdapterAllocationMode = async ({
+    allocationMode,
     name
   }: {
+    allocationMode: AllocationMode;
     name: string;
   }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      toggle_adapter_auto_allocation: {
+      set_adapter_allocation_mode: {
+        allocation_mode: allocationMode,
+        name
+      }
+    }, fee_, memo_, funds_);
+  };
+  setAdapterDeploymentTracking = async ({
+    deploymentTracking,
+    name
+  }: {
+    deploymentTracking: DeploymentTracking;
+    name: string;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      set_adapter_deployment_tracking: {
+        deployment_tracking: deploymentTracking,
         name
       }
     }, fee_, memo_, funds_);

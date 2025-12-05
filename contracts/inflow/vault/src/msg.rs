@@ -2,6 +2,8 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::Uint128;
 use serde::{Deserialize, Serialize};
 
+use crate::state::{AllocationMode, DeploymentTracking};
+
 #[cw_serde]
 pub struct InstantiateMsg {
     /// The denom of the token that can be deposited into the vault.
@@ -81,17 +83,24 @@ pub enum ExecuteMsg {
         name: String,
         address: String,
         description: Option<String>,
-        /// Whether to include this adapter in automated allocation from the start
-        auto_allocation: bool,
+        /// Controls whether adapter participates in automated allocation
+        allocation_mode: AllocationMode,
+        /// Controls whether operations update Control Center's deployed amount
+        deployment_tracking: DeploymentTracking,
     },
     /// Unregister an existing adapter
     UnregisterAdapter {
         name: String,
     },
-    /// Toggle adapter's automated allocation status
-    /// Manual admin operations (DepositToAdapter, WithdrawFromAdapter) still work regardless of this flag
-    ToggleAdapterAutoAllocation {
+    /// Set adapter's allocation mode (whitelisted only)
+    SetAdapterAllocationMode {
         name: String,
+        allocation_mode: AllocationMode,
+    },
+    /// Set adapter's deployment tracking mode (whitelisted only)
+    SetAdapterDeploymentTracking {
+        name: String,
+        deployment_tracking: DeploymentTracking,
     },
     /// Withdraw funds from an adapter to the vault contract (whitelisted only)
     /// Funds stay in contract until withdraw_for_deployment is called

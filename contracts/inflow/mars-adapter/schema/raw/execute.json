@@ -136,10 +136,10 @@
           "description": "Toggle depositor address as enabled/disabled (admin only)",
           "type": "object",
           "required": [
-            "toggle_depositor_enabled"
+            "set_depositor_enabled"
           ],
           "properties": {
-            "toggle_depositor_enabled": {
+            "set_depositor_enabled": {
               "type": "object",
               "required": [
                 "depositor_address",

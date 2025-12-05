@@ -346,16 +346,29 @@
             "type": "object",
             "required": [
               "address",
-              "auto_allocation",
+              "allocation_mode",
+              "deployment_tracking",
               "name"
             ],
             "properties": {
               "address": {
                 "type": "string"
               },
-              "auto_allocation": {
-                "description": "Whether to include this adapter in automated allocation from the start",
-                "type": "boolean"
+              "allocation_mode": {
+                "description": "Controls whether adapter participates in automated allocation",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/AllocationMode"
+                  }
+                ]
+              },
+              "deployment_tracking": {
+                "description": "Controls whether operations update Control Center's deployed amount",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/DeploymentTracking"
+                  }
+                ]
               },
               "description": {
                 "type": [
@@ -395,18 +408,48 @@
         "additionalProperties": false
       },
       {
-        "description": "Toggle adapter's automated allocation status Manual admin operations (DepositToAdapter, WithdrawFromAdapter) still work regardless of this flag",
+        "description": "Set adapter's allocation mode (whitelisted only)",
         "type": "object",
         "required": [
-          "toggle_adapter_auto_allocation"
+          "set_adapter_allocation_mode"
         ],
         "properties": {
-          "toggle_adapter_auto_allocation": {
+          "set_adapter_allocation_mode": {
             "type": "object",
             "required": [
+              "allocation_mode",
               "name"
             ],
             "properties": {
+              "allocation_mode": {
+                "$ref": "#/definitions/AllocationMode"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Set adapter's deployment tracking mode (whitelisted only)",
+        "type": "object",
+        "required": [
+          "set_adapter_deployment_tracking"
+        ],
+        "properties": {
+          "set_adapter_deployment_tracking": {
+            "type": "object",
+            "required": [
+              "deployment_tracking",
+              "name"
+            ],
+            "properties": {
+              "deployment_tracking": {
+                "$ref": "#/definitions/DeploymentTracking"
+              },
               "name": {
                 "type": "string"
               }
@@ -470,6 +513,44 @@
       }
     ],
     "definitions": {
+      "AllocationMode": {
+        "description": "Controls whether an adapter participates in automated allocation",
+        "oneOf": [
+          {
+            "description": "Adapter is included in automated deposit/withdrawal allocation via calculate_venues_allocation",
+            "type": "string",
+            "enum": [
+              "automated"
+            ]
+          },
+          {
+            "description": "Adapter is only accessible via manual DepositToAdapter/WithdrawFromAdapter operations",
+            "type": "string",
+            "enum": [
+              "manual"
+            ]
+          }
+        ]
+      },
+      "DeploymentTracking": {
+        "description": "Controls whether adapter operations update the Control Center's deployed amount\n\n# Race Condition Warnings\n\n## Automated + Tracked (DANGEROUS) Using `Tracked` with `AllocationMode::Automated` creates a race condition: 1. Automated deposits/withdrawals update deployed amount without admin knowledge 2. If a manual `SubmitDeployedAmount` call is in progress, it may overwrite with stale data 3. Result: Deployed amount becomes inaccurate\n\n**Recommendation**: Use `NotTracked` for automated adapters unless absolutely necessary.\n\n## Manual + Tracked When using `Tracked` with `AllocationMode::Manual`: - Ensure no `SubmitDeployedAmount` proposal is pending before manual operations - After manual deposit/withdraw, re-snapshot deployed amount if a proposal was in flight - Otherwise, the proposal will overwrite the auto-updated value with stale data",
+        "oneOf": [
+          {
+            "description": "Deposits/withdrawals update Control Center's deployed amount WARNING: See race condition notes above",
+            "type": "string",
+            "enum": [
+              "tracked"
+            ]
+          },
+          {
+            "description": "Position is queryable but not included in deployed amount RECOMMENDED for automated adapters",
+            "type": "string",
+            "enum": [
+              "not_tracked"
+            ]
+          }
+        ]
+      },
       "Uint128": {
         "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
         "type": "string"
@@ -785,7 +866,8 @@
           "type": "object",
           "required": [
             "address",
-            "auto_allocation",
+            "allocation_mode",
+            "deployment_tracking",
             "name"
           ],
           "properties": {
@@ -797,9 +879,21 @@
                 }
               ]
             },
-            "auto_allocation": {
-              "description": "Whether the adapter is included in automated deposit/withdrawal allocation. When false, the adapter is skipped by calculate_venues_allocation. Admin operations (DepositToAdapter, WithdrawFromAdapter) work regardless of this flag.",
-              "type": "boolean"
+            "allocation_mode": {
+              "description": "Controls whether adapter participates in automated deposit/withdrawal allocation. When Manual, the adapter is skipped by calculate_venues_allocation. Admin operations (DepositToAdapter, WithdrawFromAdapter) work regardless of this setting.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AllocationMode"
+                }
+              ]
+            },
+            "deployment_tracking": {
+              "description": "Controls whether deposits/withdrawals to/from this adapter update Control Center's deployed amount. When Tracked, operations call AddToDeployedAmount/SubFromDeployedAmount. When NotTracked, position is queryable via DepositorPosition but not in deployed amount.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DeploymentTracking"
+                }
+              ]
             },
             "description": {
               "description": "Optional description of the adapter and what protocol it integrates with",
@@ -818,6 +912,44 @@
         "Addr": {
           "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
           "type": "string"
+        },
+        "AllocationMode": {
+          "description": "Controls whether an adapter participates in automated allocation",
+          "oneOf": [
+            {
+              "description": "Adapter is included in automated deposit/withdrawal allocation via calculate_venues_allocation",
+              "type": "string",
+              "enum": [
+                "automated"
+              ]
+            },
+            {
+              "description": "Adapter is only accessible via manual DepositToAdapter/WithdrawFromAdapter operations",
+              "type": "string",
+              "enum": [
+                "manual"
+              ]
+            }
+          ]
+        },
+        "DeploymentTracking": {
+          "description": "Controls whether adapter operations update the Control Center's deployed amount\n\n# Race Condition Warnings\n\n## Automated + Tracked (DANGEROUS) Using `Tracked` with `AllocationMode::Automated` creates a race condition: 1. Automated deposits/withdrawals update deployed amount without admin knowledge 2. If a manual `SubmitDeployedAmount` call is in progress, it may overwrite with stale data 3. Result: Deployed amount becomes inaccurate\n\n**Recommendation**: Use `NotTracked` for automated adapters unless absolutely necessary.\n\n## Manual + Tracked When using `Tracked` with `AllocationMode::Manual`: - Ensure no `SubmitDeployedAmount` proposal is pending before manual operations - After manual deposit/withdraw, re-snapshot deployed amount if a proposal was in flight - Otherwise, the proposal will overwrite the auto-updated value with stale data",
+          "oneOf": [
+            {
+              "description": "Deposits/withdrawals update Control Center's deployed amount WARNING: See race condition notes above",
+              "type": "string",
+              "enum": [
+                "tracked"
+              ]
+            },
+            {
+              "description": "Position is queryable but not included in deployed amount RECOMMENDED for automated adapters",
+              "type": "string",
+              "enum": [
+                "not_tracked"
+              ]
+            }
+          ]
         }
       }
     },
@@ -949,7 +1081,8 @@
           "type": "object",
           "required": [
             "address",
-            "auto_allocation",
+            "allocation_mode",
+            "deployment_tracking",
             "name"
           ],
           "properties": {
@@ -961,9 +1094,21 @@
                 }
               ]
             },
-            "auto_allocation": {
-              "description": "Whether the adapter is included in automated deposit/withdrawal allocation. When false, the adapter is skipped by calculate_venues_allocation. Admin operations (DepositToAdapter, WithdrawFromAdapter) work regardless of this flag.",
-              "type": "boolean"
+            "allocation_mode": {
+              "description": "Controls whether adapter participates in automated deposit/withdrawal allocation. When Manual, the adapter is skipped by calculate_venues_allocation. Admin operations (DepositToAdapter, WithdrawFromAdapter) work regardless of this setting.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AllocationMode"
+                }
+              ]
+            },
+            "deployment_tracking": {
+              "description": "Controls whether deposits/withdrawals to/from this adapter update Control Center's deployed amount. When Tracked, operations call AddToDeployedAmount/SubFromDeployedAmount. When NotTracked, position is queryable via DepositorPosition but not in deployed amount.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DeploymentTracking"
+                }
+              ]
             },
             "description": {
               "description": "Optional description of the adapter and what protocol it integrates with",
@@ -982,6 +1127,44 @@
         "Addr": {
           "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
           "type": "string"
+        },
+        "AllocationMode": {
+          "description": "Controls whether an adapter participates in automated allocation",
+          "oneOf": [
+            {
+              "description": "Adapter is included in automated deposit/withdrawal allocation via calculate_venues_allocation",
+              "type": "string",
+              "enum": [
+                "automated"
+              ]
+            },
+            {
+              "description": "Adapter is only accessible via manual DepositToAdapter/WithdrawFromAdapter operations",
+              "type": "string",
+              "enum": [
+                "manual"
+              ]
+            }
+          ]
+        },
+        "DeploymentTracking": {
+          "description": "Controls whether adapter operations update the Control Center's deployed amount\n\n# Race Condition Warnings\n\n## Automated + Tracked (DANGEROUS) Using `Tracked` with `AllocationMode::Automated` creates a race condition: 1. Automated deposits/withdrawals update deployed amount without admin knowledge 2. If a manual `SubmitDeployedAmount` call is in progress, it may overwrite with stale data 3. Result: Deployed amount becomes inaccurate\n\n**Recommendation**: Use `NotTracked` for automated adapters unless absolutely necessary.\n\n## Manual + Tracked When using `Tracked` with `AllocationMode::Manual`: - Ensure no `SubmitDeployedAmount` proposal is pending before manual operations - After manual deposit/withdraw, re-snapshot deployed amount if a proposal was in flight - Otherwise, the proposal will overwrite the auto-updated value with stale data",
+          "oneOf": [
+            {
+              "description": "Deposits/withdrawals update Control Center's deployed amount WARNING: See race condition notes above",
+              "type": "string",
+              "enum": [
+                "tracked"
+              ]
+            },
+            {
+              "description": "Position is queryable but not included in deployed amount RECOMMENDED for automated adapters",
+              "type": "string",
+              "enum": [
+                "not_tracked"
+              ]
+            }
+          ]
         }
       }
     },

@@ -148,10 +148,10 @@ fn dispatch_execute_interface(
         AdapterInterfaceMsg::UnregisterDepositor { depositor_address } => {
             execute_unregister_depositor(deps, env, info, depositor_address)
         }
-        AdapterInterfaceMsg::ToggleDepositorEnabled {
+        AdapterInterfaceMsg::SetDepositorEnabled {
             depositor_address,
             enabled,
-        } => execute_toggle_depositor_enabled(deps, env, info, depositor_address, enabled),
+        } => execute_set_depositor_enabled(deps, env, info, depositor_address, enabled),
     }
 }
 
@@ -384,7 +384,7 @@ fn execute_unregister_depositor(
 }
 
 /// Toggles whether a depositor is enabled or disabled
-fn execute_toggle_depositor_enabled(
+fn execute_set_depositor_enabled(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,

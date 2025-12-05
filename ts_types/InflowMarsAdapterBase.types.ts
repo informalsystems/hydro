@@ -31,7 +31,7 @@ export type AdapterInterfaceMsg = {
     depositor_address: string;
   };
 } | {
-  toggle_depositor_enabled: {
+  set_depositor_enabled: {
     depositor_address: string;
     enabled: boolean;
   };

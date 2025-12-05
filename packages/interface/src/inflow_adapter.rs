@@ -34,7 +34,7 @@ pub enum AdapterInterfaceMsg {
     },
 
     /// Toggle depositor address as enabled/disabled (admin only)
-    ToggleDepositorEnabled {
+    SetDepositorEnabled {
         /// Depositor address to enable or disable
         depositor_address: String,
         enabled: bool,

@@ -15,8 +15,12 @@ export type ExecuteMsg = {
     amount: Uint128;
   };
 } | {
-  update_deployed_amount: {
-    amount: Uint128;
+  add_to_deployed_amount: {
+    amount_to_add: Uint128;
+  };
+} | {
+  sub_from_deployed_amount: {
+    amount_to_sub: Uint128;
   };
 } | {
   add_to_whitelist: {

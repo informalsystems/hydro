@@ -70,19 +70,41 @@
         "additionalProperties": false
       },
       {
-        "description": "Updates the total amount of tokens deployed by adding the specified amount to already deployed one. Action can be performed only by the associated sub-vault smart contracts.",
+        "description": "Updates the total amount of tokens deployed by adding the specified amount to the already deployed one. Action can be performed only by the associated sub-vault smart contracts.",
         "type": "object",
         "required": [
-          "update_deployed_amount"
+          "add_to_deployed_amount"
         ],
         "properties": {
-          "update_deployed_amount": {
+          "add_to_deployed_amount": {
             "type": "object",
             "required": [
-              "amount"
+              "amount_to_add"
             ],
             "properties": {
-              "amount": {
+              "amount_to_add": {
+                "$ref": "#/definitions/Uint128"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Updates the total amount of tokens deployed by subtracting the specified amount from the already deployed one. Action can be performed only by the associated sub-vault smart contracts.",
+        "type": "object",
+        "required": [
+          "sub_from_deployed_amount"
+        ],
+        "properties": {
+          "sub_from_deployed_amount": {
+            "type": "object",
+            "required": [
+              "amount_to_sub"
+            ],
+            "properties": {
+              "amount_to_sub": {
                 "$ref": "#/definitions/Uint128"
               }
             },

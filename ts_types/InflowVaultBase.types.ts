@@ -65,7 +65,8 @@ export type ExecuteMsg = {
 } | {
   register_adapter: {
     address: string;
-    auto_allocation: boolean;
+    allocation_mode: AllocationMode;
+    deployment_tracking: DeploymentTracking;
     description?: string | null;
     name: string;
   };
@@ -74,7 +75,13 @@ export type ExecuteMsg = {
     name: string;
   };
 } | {
-  toggle_adapter_auto_allocation: {
+  set_adapter_allocation_mode: {
+    allocation_mode: AllocationMode;
+    name: string;
+  };
+} | {
+  set_adapter_deployment_tracking: {
+    deployment_tracking: DeploymentTracking;
     name: string;
   };
 } | {
@@ -89,6 +96,8 @@ export type ExecuteMsg = {
   };
 };
 export type Uint128 = string;
+export type AllocationMode = "automated" | "manual";
+export type DeploymentTracking = "tracked" | "not_tracked";
 export interface UpdateConfigData {
   max_withdrawals_per_user?: number | null;
 }
@@ -143,7 +152,8 @@ export interface AdapterInfoResponse {
 }
 export interface AdapterInfo {
   address: Addr;
-  auto_allocation: boolean;
+  allocation_mode: AllocationMode;
+  deployment_tracking: DeploymentTracking;
   description?: string | null;
   name: string;
 }

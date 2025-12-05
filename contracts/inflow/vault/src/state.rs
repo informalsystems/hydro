@@ -85,15 +85,55 @@ pub struct PayoutEntry {
     pub amount_received: Uint128,
 }
 
+/// Controls whether an adapter participates in automated allocation
+#[cw_serde]
+pub enum AllocationMode {
+    /// Adapter is included in automated deposit/withdrawal allocation via calculate_venues_allocation
+    Automated,
+    /// Adapter is only accessible via manual DepositToAdapter/WithdrawFromAdapter operations
+    Manual,
+}
+
+/// Controls whether adapter operations update the Control Center's deployed amount
+///
+/// # Race Condition Warnings
+///
+/// ## Automated + Tracked (DANGEROUS)
+/// Using `Tracked` with `AllocationMode::Automated` creates a race condition:
+/// 1. Automated deposits/withdrawals update deployed amount without admin knowledge
+/// 2. If a manual `SubmitDeployedAmount` call is in progress, it may overwrite with stale data
+/// 3. Result: Deployed amount becomes inaccurate
+///
+/// **Recommendation**: Use `NotTracked` for automated adapters unless absolutely necessary.
+///
+/// ## Manual + Tracked
+/// When using `Tracked` with `AllocationMode::Manual`:
+/// - Ensure no `SubmitDeployedAmount` proposal is pending before manual operations
+/// - After manual deposit/withdraw, re-snapshot deployed amount if a proposal was in flight
+/// - Otherwise, the proposal will overwrite the auto-updated value with stale data
+#[cw_serde]
+pub enum DeploymentTracking {
+    /// Deposits/withdrawals update Control Center's deployed amount
+    /// WARNING: See race condition notes above
+    Tracked,
+    /// Position is queryable but not included in deployed amount
+    /// RECOMMENDED for automated adapters
+    NotTracked,
+}
+
 /// Information about a registered adapter
 #[cw_serde]
 pub struct AdapterInfo {
     /// Contract address of the adapter
     pub address: Addr,
-    /// Whether the adapter is included in automated deposit/withdrawal allocation.
-    /// When false, the adapter is skipped by calculate_venues_allocation.
-    /// Admin operations (DepositToAdapter, WithdrawFromAdapter) work regardless of this flag.
-    pub auto_allocation: bool,
+    /// Controls whether adapter participates in automated deposit/withdrawal allocation.
+    /// When Manual, the adapter is skipped by calculate_venues_allocation.
+    /// Admin operations (DepositToAdapter, WithdrawFromAdapter) work regardless of this setting.
+    pub allocation_mode: AllocationMode,
+    /// Controls whether deposits/withdrawals to/from this adapter update Control Center's deployed amount.
+    /// When Tracked, operations call AddToDeployedAmount/SubFromDeployedAmount.
+    /// When NotTracked, position is queryable via DepositorPosition but not in deployed amount.
+    pub deployment_tracking: DeploymentTracking,
     /// Human-readable name for display purposes
     pub name: String,
     /// Optional description of the adapter and what protocol it integrates with

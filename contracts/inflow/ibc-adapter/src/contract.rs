@@ -153,7 +153,7 @@ pub fn execute(
 ) -> Result<Response<NeutronMsg>, ContractError> {
     match msg {
         ExecuteMsg::StandardAction(interface_msg) => {
-            dispatch_execute_interface(deps, env, info, interface_msg)
+            dispatch_execute_standard(deps, env, info, interface_msg)
         }
         ExecuteMsg::CustomAction(custom_msg) => {
             dispatch_execute_custom(deps, env, info, custom_msg)
@@ -162,7 +162,7 @@ pub fn execute(
 }
 
 /// Dispatch standard adapter interface messages
-fn dispatch_execute_interface(
+fn dispatch_execute_standard(
     deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
@@ -178,10 +178,10 @@ fn dispatch_execute_interface(
         AdapterInterfaceMsg::UnregisterDepositor { depositor_address } => {
             execute_unregister_depositor(deps, info, depositor_address)
         }
-        AdapterInterfaceMsg::ToggleDepositorEnabled {
+        AdapterInterfaceMsg::SetDepositorEnabled {
             depositor_address,
             enabled,
-        } => execute_toggle_depositor_enabled(deps, info, depositor_address, enabled),
+        } => execute_set_depositor_enabled(deps, info, depositor_address, enabled),
     }
 }
 
@@ -469,7 +469,7 @@ fn execute_unregister_depositor(
 }
 
 /// Toggle depositor enabled status
-fn execute_toggle_depositor_enabled(
+fn execute_set_depositor_enabled(
     deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
     depositor_address: String,
@@ -501,15 +501,13 @@ fn execute_toggle_depositor_enabled(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
-        QueryMsg::StandardQuery(interface_msg) => {
-            dispatch_query_interface(deps, env, interface_msg)
-        }
+        QueryMsg::StandardQuery(interface_msg) => dispatch_query_standard(deps, env, interface_msg),
         QueryMsg::CustomQuery(custom_msg) => dispatch_query_custom(deps, custom_msg),
     }
 }
 
 /// Dispatch standard adapter interface queries
-fn dispatch_query_interface(
+fn dispatch_query_standard(
     deps: Deps<NeutronQuery>,
     env: Env,
     msg: AdapterInterfaceQueryMsg,

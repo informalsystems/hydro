@@ -3,7 +3,7 @@ use super::testing::{get_message_info, mock_dependencies};
 use crate::{
     contract::{execute, instantiate},
     msg::{DenomMetadata, ExecuteMsg, InstantiateMsg},
-    state::ADAPTERS,
+    state::{AllocationMode, DeploymentTracking, ADAPTERS},
     testing_mocks::{
         mock_address_balance, setup_adapter_mock, setup_control_center_mock,
         setup_token_info_provider_mock, update_contract_mock, MockAdapterConfig, MockWasmQuerier,
@@ -76,24 +76,29 @@ fn register_adapter_success() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars lending protocol adapter".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
 
     // Verify response attributes
-    assert_eq!(res.attributes.len(), 6);
+    assert_eq!(res.attributes.len(), 7);
     assert_eq!(res.attributes[0].value, "register_adapter");
     assert_eq!(res.attributes[2].value, "mars_adapter");
     assert_eq!(res.attributes[3].value, adapter_addr.as_str());
-    assert_eq!(res.attributes[4].value, "true");
+    assert_eq!(res.attributes[4].value, "Automated");
+    assert_eq!(res.attributes[5].value, "NotTracked");
 
     // Verify adapter was saved correctly
     let adapter_info = ADAPTERS
         .load(&deps.storage, "mars_adapter".to_string())
         .unwrap();
     assert_eq!(adapter_info.address, adapter_addr);
-    assert!(adapter_info.auto_allocation);
+    assert!(matches!(
+        adapter_info.allocation_mode,
+        AllocationMode::Automated
+    ));
     assert_eq!(adapter_info.name, "mars_adapter");
     assert_eq!(
         adapter_info.description,
@@ -131,7 +136,8 @@ fn register_adapter_unauthorized() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: None,
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap_err();
@@ -169,7 +175,8 @@ fn register_adapter_duplicate_name() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: None,
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -184,7 +191,8 @@ fn register_adapter_duplicate_name() {
             name: "mars_adapter".to_string(),
             address: another_adapter_addr.to_string(),
             description: None,
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap_err();
@@ -224,7 +232,8 @@ fn unregister_adapter_success() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: None,
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -318,7 +327,8 @@ fn unregister_adapter_unauthorized() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: None,
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -368,7 +378,8 @@ fn toggle_adapter_success() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: None,
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -377,51 +388,62 @@ fn toggle_adapter_success() {
     let adapter_info = ADAPTERS
         .load(&deps.storage, "mars_adapter".to_string())
         .unwrap();
-    assert!(adapter_info.auto_allocation);
+    assert!(matches!(
+        adapter_info.allocation_mode,
+        AllocationMode::Automated
+    ));
 
-    // Toggle adapter to exclude from automated allocation
+    // Set adapter to exclude from automated allocation
     let res = execute(
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::ToggleAdapterAutoAllocation {
+        ExecuteMsg::SetAdapterAllocationMode {
             name: "mars_adapter".to_string(),
+            allocation_mode: AllocationMode::Manual,
         },
     )
     .unwrap();
 
     // Verify response attributes
-    assert_eq!(res.attributes[0].value, "toggle_adapter_auto_allocation");
+    assert_eq!(res.attributes[0].value, "set_adapter_allocation_mode");
     assert_eq!(res.attributes[2].value, "mars_adapter");
-    assert_eq!(res.attributes[3].value, "false");
+    assert_eq!(res.attributes[3].value, "Manual");
 
     // Verify adapter is now excluded from automated allocation
     let adapter_info = ADAPTERS
         .load(&deps.storage, "mars_adapter".to_string())
         .unwrap();
-    assert!(!adapter_info.auto_allocation);
+    assert!(matches!(
+        adapter_info.allocation_mode,
+        AllocationMode::Manual
+    ));
 
-    // Toggle adapter back to include in automated allocation
+    // Set adapter back to include in automated allocation
     let res = execute(
         deps.as_mut(),
         env,
         info,
-        ExecuteMsg::ToggleAdapterAutoAllocation {
+        ExecuteMsg::SetAdapterAllocationMode {
             name: "mars_adapter".to_string(),
+            allocation_mode: AllocationMode::Automated,
         },
     )
     .unwrap();
 
     // Verify adapter is included in automated allocation again
-    assert_eq!(res.attributes[3].value, "true");
+    assert_eq!(res.attributes[3].value, "Automated");
     let adapter_info = ADAPTERS
         .load(&deps.storage, "mars_adapter".to_string())
         .unwrap();
-    assert!(adapter_info.auto_allocation);
+    assert!(matches!(
+        adapter_info.allocation_mode,
+        AllocationMode::Automated
+    ));
 }
 
 #[test]
-fn toggle_adapter_not_found() {
+fn set_adapter_allocation_mode_not_found() {
     let mut deps = mock_dependencies();
     let env = mock_env();
 
@@ -439,14 +461,15 @@ fn toggle_adapter_not_found() {
     let info = get_message_info(&deps.api, "creator", &[]);
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    // Try to toggle non-existent adapter
+    // Try to set allocation mode for non-existent adapter
     let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
     let err = execute(
         deps.as_mut(),
         env,
         info,
-        ExecuteMsg::ToggleAdapterAutoAllocation {
+        ExecuteMsg::SetAdapterAllocationMode {
             name: "nonexistent_adapter".to_string(),
+            allocation_mode: AllocationMode::Manual,
         },
     )
     .unwrap_err();
@@ -457,7 +480,7 @@ fn toggle_adapter_not_found() {
 }
 
 #[test]
-fn toggle_adapter_unauthorized() {
+fn set_adapter_allocation_mode_unauthorized() {
     let mut deps = mock_dependencies();
     let env = mock_env();
 
@@ -486,19 +509,21 @@ fn toggle_adapter_unauthorized() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: None,
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
 
-    // Try to toggle from non-whitelisted address
+    // Try to set allocation mode from non-whitelisted address
     let info = get_message_info(&deps.api, NON_WHITELIST_ADDR, &[]);
     let err = execute(
         deps.as_mut(),
         env,
         info,
-        ExecuteMsg::ToggleAdapterAutoAllocation {
+        ExecuteMsg::SetAdapterAllocationMode {
             name: "mars_adapter".to_string(),
+            allocation_mode: AllocationMode::Manual,
         },
     )
     .unwrap_err();
@@ -537,7 +562,8 @@ fn register_multiple_adapters() {
             name: "mars_adapter".to_string(),
             address: adapter1_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -551,7 +577,8 @@ fn register_multiple_adapters() {
             name: "osmosis_adapter".to_string(),
             address: adapter2_addr.to_string(),
             description: Some("Osmosis DEX".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -635,7 +662,8 @@ fn query_list_adapters_with_adapters() {
             name: "mars_adapter".to_string(),
             address: adapter1_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -648,7 +676,8 @@ fn query_list_adapters_with_adapters() {
             name: "osmosis_adapter".to_string(),
             address: adapter2_addr.to_string(),
             description: Some("Osmosis DEX".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -663,7 +692,7 @@ fn query_list_adapters_with_adapters() {
     let (name1, info1) = &response.adapters[0];
     assert_eq!(name1, "mars_adapter");
     assert_eq!(info1.address, adapter1_addr);
-    assert!(info1.auto_allocation);
+    assert!(matches!(info1.allocation_mode, AllocationMode::Automated));
     assert_eq!(info1.name, "mars_adapter");
     assert_eq!(info1.description, Some("Mars Protocol".to_string()));
 
@@ -671,7 +700,7 @@ fn query_list_adapters_with_adapters() {
     let (name2, info2) = &response.adapters[1];
     assert_eq!(name2, "osmosis_adapter");
     assert_eq!(info2.address, adapter2_addr);
-    assert!(info2.auto_allocation);
+    assert!(matches!(info2.allocation_mode, AllocationMode::Automated));
 }
 
 #[test]
@@ -706,7 +735,8 @@ fn query_adapter_info_success() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -723,7 +753,10 @@ fn query_adapter_info_success() {
     let response: crate::query::AdapterInfoResponse = cosmwasm_std::from_json(&res).unwrap();
 
     assert_eq!(response.info.address, adapter_addr);
-    assert!(response.info.auto_allocation);
+    assert!(matches!(
+        response.info.allocation_mode,
+        AllocationMode::Automated
+    ));
     assert_eq!(response.info.name, "mars_adapter");
     assert_eq!(response.info.description, Some("Mars Protocol".to_string()));
 }
@@ -934,7 +967,8 @@ fn test_deposit_with_single_adapter_auto_allocation() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -1042,7 +1076,8 @@ fn test_deposit_with_single_adapter_no_auto_allocation() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
-            auto_allocation: false,
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -1223,7 +1258,8 @@ fn test_deposit_with_failing_adapter_stays_in_contract() {
             name: "failing_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Adapter that fails".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -1327,7 +1363,8 @@ fn test_deposit_skips_failing_adapter() {
             name: "failing_adapter".to_string(),
             address: failing_adapter_addr.to_string(),
             description: Some("First adapter that fails".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -1341,7 +1378,8 @@ fn test_deposit_skips_failing_adapter() {
             name: "working_adapter".to_string(),
             address: working_adapter_addr.to_string(),
             description: Some("Second adapter that works".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -1462,7 +1500,8 @@ fn test_withdraw_partial_fulfillment_with_queue() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -1651,7 +1690,8 @@ fn test_withdraw_from_adapter_success() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -1731,7 +1771,8 @@ fn test_withdraw_from_adapter_unauthorized() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars Protocol".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -1819,7 +1860,8 @@ fn test_deposit_to_adapter_success() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars lending protocol adapter".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -1845,11 +1887,12 @@ fn test_deposit_to_adapter_success() {
     .unwrap();
 
     // Verify response attributes
-    assert_eq!(res.attributes.len(), 4);
+    assert_eq!(res.attributes.len(), 5);
     assert_eq!(res.attributes[0].value, "deposit_to_adapter");
     assert_eq!(res.attributes[1].value, whitelist_addr.as_str());
     assert_eq!(res.attributes[2].value, "mars_adapter");
     assert_eq!(res.attributes[3].value, "5000");
+    assert_eq!(res.attributes[4].value, "NotTracked");
 
     // Verify wasm message was created
     assert_eq!(res.messages.len(), 1);
@@ -1911,7 +1954,8 @@ fn test_deposit_to_adapter_insufficient_balance() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars lending protocol adapter".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -1970,7 +2014,8 @@ fn test_deposit_to_adapter_not_whitelisted() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars lending protocol adapter".to_string()),
-            auto_allocation: true,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();
@@ -2058,7 +2103,8 @@ fn test_deposit_to_adapter_works_regardless_of_allocation_flag() {
             name: "mars_adapter".to_string(),
             address: adapter_addr.to_string(),
             description: Some("Mars lending protocol adapter".to_string()),
-            auto_allocation: false,
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::NotTracked,
         },
     )
     .unwrap();

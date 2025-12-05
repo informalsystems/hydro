@@ -310,7 +310,6 @@ fn subvaults_test() {
     );
 
     // Have unauthorized address try to subtract from deployed amount
-    let unauthorized_address = deps.api.addr_make(USER1);
     let info = get_message_info(&deps.api, USER1, &[]);
 
     execute(
@@ -354,7 +353,9 @@ fn subvaults_test() {
 
     assert_eq!(
         DEPLOYED_AMOUNT.load(&deps.storage).unwrap(),
-        deployed_amount_update_1 + deployed_amount_update_2 - deployed_amount_sub_1 - deployed_amount_sub_2
+        deployed_amount_update_1 + deployed_amount_update_2
+            - deployed_amount_sub_1
+            - deployed_amount_sub_2
     );
 
     // Have a whitelisted address remove one subvault
