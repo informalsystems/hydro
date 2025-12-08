@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecuteMsg",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "register_user"
+      ],
+      "properties": {
+        "register_user": {
+          "type": "object",
+          "required": [
+            "proxy_address",
+            "user_id"
+          ],
+          "properties": {
+            "proxy_address": {
+              "type": "string"
+            },
+            "user_id": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}
