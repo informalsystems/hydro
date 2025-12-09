@@ -47,6 +47,7 @@ schema:
 	cd contracts/inflow/vault && cargo run --bin inflow_vault_schema
 	cd contracts/inflow/proxy && cargo run --bin inflow_proxy_schema
 	cd contracts/inflow/control-center && cargo run --bin inflow_control_center_schema
+	cd contracts/inflow/user-registry && cargo run --bin inflow_user_registry_schema
 
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/hydro/schema NAME=HydroBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/tribute/schema NAME=TributeBase
@@ -59,6 +60,7 @@ schema:
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/vault/schema NAME=InflowVaultBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/proxy/schema NAME=InflowProxyBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/control-center/schema NAME=InflowControlCenterBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/user-registry/schema NAME=InflowUserRegistryBase
 
 ts-codegen-inner:
 	cosmwasm-ts-codegen generate \
