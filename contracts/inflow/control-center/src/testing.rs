@@ -234,6 +234,7 @@ fn subvaults_test() {
         info.clone(),
         ExecuteMsg::UpdateDeployedAmount {
             amount: deployed_amount_update_1,
+            direction: interface::inflow_control_center::DeploymentDirection::Add,
         },
     )
     .unwrap();
@@ -252,6 +253,7 @@ fn subvaults_test() {
         info.clone(),
         ExecuteMsg::UpdateDeployedAmount {
             amount: deployed_amount_update_1,
+            direction: interface::inflow_control_center::DeploymentDirection::Add,
         },
     )
     .unwrap_err()
@@ -281,6 +283,7 @@ fn subvaults_test() {
         info.clone(),
         ExecuteMsg::UpdateDeployedAmount {
             amount: deployed_amount_update_2,
+            direction: interface::inflow_control_center::DeploymentDirection::Add,
         },
     );
     assert!(res.is_ok());
@@ -309,4 +312,73 @@ fn subvaults_test() {
             .unwrap(),
         None
     );
+}
+
+#[test]
+fn update_deployed_amount_with_subtract_test() {
+    let (mut deps, env) = (mock_dependencies(), mock_env());
+
+    let whitelist_address = deps.api.addr_make(WHITELIST);
+    let subvault1_address = deps.api.addr_make(SUBVAULT1);
+
+    let instantiate_msg = get_default_instantiate_msg(
+        DEFAULT_DEPOSIT_CAP,
+        whitelist_address.clone(),
+        vec![subvault1_address.clone()],
+    );
+
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Add some deployed amount first
+    let initial_deployed_amount = Uint128::new(5000);
+    let info = get_message_info(&deps.api, SUBVAULT1, &[]);
+
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::UpdateDeployedAmount {
+            amount: initial_deployed_amount,
+            direction: interface::inflow_control_center::DeploymentDirection::Add,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        DEPLOYED_AMOUNT.load(&deps.storage).unwrap(),
+        initial_deployed_amount
+    );
+
+    // Now subtract some amount
+    let amount_to_subtract = Uint128::new(2000);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::UpdateDeployedAmount {
+            amount: amount_to_subtract,
+            direction: interface::inflow_control_center::DeploymentDirection::Subtract,
+        },
+    );
+    assert!(res.is_ok());
+
+    assert_eq!(
+        DEPLOYED_AMOUNT.load(&deps.storage).unwrap(),
+        initial_deployed_amount - amount_to_subtract
+    );
+
+    // Try to subtract more than available - should fail
+    let too_much_to_subtract = Uint128::new(10000);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::UpdateDeployedAmount {
+            amount: too_much_to_subtract,
+            direction: interface::inflow_control_center::DeploymentDirection::Subtract,
+        },
+    );
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("underflow error"));
 }

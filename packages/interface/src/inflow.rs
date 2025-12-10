@@ -55,6 +55,7 @@ pub enum ExecuteMsg {
     FulfillPendingWithdrawals { limit: u64 },
     ClaimUnbondedWithdrawals { withdrawal_ids: Vec<u64> },
     WithdrawForDeployment { amount: Uint128 },
+    DepositFromDeployment {},
     SetTokenInfoProviderContract { address: Option<String> },
     AddToWhitelist { address: String },
     RemoveFromWhitelist { address: String },
