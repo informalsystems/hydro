@@ -5,6 +5,10 @@
 
 set -e
 
+# Change to script directory to ensure all relative paths work correctly
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
 # Color codes for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -446,37 +450,177 @@ else
 fi
 echo ""
 
-# Step 4: Register Mars Adapter on Vault
-register_mars_adapter() {
-    printf "Registering Mars Adapter on Vault"
+# Step 4: Instantiate IBC Adapter
+instantiate_ibc_adapter() {
+    printf "Instantiating IBC Adapter contract"
 
-    REGISTER_ADAPTER_MSG=$(cat <<EOF
+    INIT_IBC_ADAPTER=$(cat <<EOF
 {
-  "register_adapter": {
-    "name": "Mars Adapter",
-    "address": "$MARS_ADAPTER_ADDRESS",
-    "auto_allocation": true
+  "admins": ["$ADMIN_ADDRESS"],
+  "default_timeout_seconds": 600,
+  "depositor_address": "$VAULT_ADDRESS"
+}
+EOF
+)
+
+    $NEUTRON_CLI tx wasm instantiate "$IBC_ADAPTER_CODE_ID" "$INIT_IBC_ADAPTER" \
+        --admin "$ADMIN_ADDRESS" \
+        --label "Test Inflow USDC IBC Adapter" \
+        --from "$DEPLOYER_WALLET" \
+        $NEUTRON_TX_FLAGS \
+        --output json &> ./instantiate_ibc_adapter_res.json
+
+    TX_HASH=$(grep -o '{.*}' ./instantiate_ibc_adapter_res.json | jq -r '.txhash')
+    TX_RESULT=$(retry_command "$NEUTRON_CLI q tx $TX_HASH $NEUTRON_NODE_FLAG --output json" 60)
+    export IBC_ADAPTER_ADDRESS=$(echo "$TX_RESULT" | jq -r '.events[] | select(.type == "instantiate") | .attributes[] | select(.key == "_contract_address") | .value')
+
+    echo "IBC Adapter instantiated at: $IBC_ADAPTER_ADDRESS"
+    update_config ".contracts.ibc_adapter" "$IBC_ADAPTER_ADDRESS"
+}
+
+echo -e "${YELLOW}Step 4: Instantiating IBC Adapter...${NC}"
+EXISTING_IBC_ADAPTER=$(jq -r '.contracts.ibc_adapter // empty' $CONFIG_FILE)
+if [ -n "$EXISTING_IBC_ADAPTER" ] && [ "$EXISTING_IBC_ADAPTER" != "null" ]; then
+    echo -e "${YELLOW}Existing IBC Adapter address: $EXISTING_IBC_ADAPTER${NC}"
+    read -p "Do you want to reinstantiate IBC Adapter? (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        instantiate_ibc_adapter
+    else
+        IBC_ADAPTER_ADDRESS="$EXISTING_IBC_ADAPTER"
+        echo "Using existing IBC Adapter at: $IBC_ADAPTER_ADDRESS"
+    fi
+else
+    instantiate_ibc_adapter
+fi
+echo ""
+
+# Step 4a: Register Noble chain on IBC Adapter
+register_noble_chain() {
+    printf "Registering Noble chain on IBC Adapter"
+
+    REGISTER_CHAIN_MSG=$(cat <<EOF
+{
+  "custom_action": {
+    "register_chain": {
+      "chain_id": "noble-1",
+      "channel_from_neutron": "channel-30",
+      "allowed_recipients": ["noble1k64ssp5pnkmwtndfzvgtnjmhx06w8mdvlzgrux"]
+    }
   }
 }
 EOF
 )
 
-    $NEUTRON_CLI tx wasm execute "$VAULT_ADDRESS" "$REGISTER_ADAPTER_MSG" \
+    $NEUTRON_CLI tx wasm execute "$IBC_ADAPTER_ADDRESS" "$REGISTER_CHAIN_MSG" \
         --from "$DEPLOYER_WALLET" \
         $NEUTRON_TX_FLAGS \
-        --output json &> ./register_adapter_res.json
+        --output json &> ./register_noble_chain_res.json
 
-    TX_HASH=$(grep -o '{.*}' ./register_adapter_res.json | jq -r '.txhash')
+    TX_HASH=$(grep -o '{.*}' ./register_noble_chain_res.json | jq -r '.txhash')
+    retry_command "$NEUTRON_CLI q tx $TX_HASH $NEUTRON_NODE_FLAG --output json" 60 > /dev/null
+
+    echo "Noble chain registered on IBC Adapter"
+}
+
+echo -e "${YELLOW}Step 4a: Registering Noble chain on IBC Adapter...${NC}"
+register_noble_chain
+echo ""
+
+# Step 4b: Register USDC token on IBC Adapter
+register_usdc_token() {
+    printf "Registering USDC token on IBC Adapter"
+
+    REGISTER_TOKEN_MSG=$(cat <<EOF
+{
+  "custom_action": {
+    "register_token": {
+      "denom": "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
+      "source_chain_id": "noble-1"
+    }
+  }
+}
+EOF
+)
+
+    $NEUTRON_CLI tx wasm execute "$IBC_ADAPTER_ADDRESS" "$REGISTER_TOKEN_MSG" \
+        --from "$DEPLOYER_WALLET" \
+        $NEUTRON_TX_FLAGS \
+        --output json &> ./register_usdc_token_res.json
+
+    TX_HASH=$(grep -o '{.*}' ./register_usdc_token_res.json | jq -r '.txhash')
+    retry_command "$NEUTRON_CLI q tx $TX_HASH $NEUTRON_NODE_FLAG --output json" 60 > /dev/null
+
+    echo "USDC token registered on IBC Adapter"
+}
+
+echo -e "${YELLOW}Step 4b: Registering USDC token on IBC Adapter...${NC}"
+register_usdc_token
+echo ""
+
+# Step 5: Register Mars Adapter on Vault
+register_mars_adapter() {
+    printf "Registering Mars Adapter on Vault"
+
+    REGISTER_MARS_ADAPTER_MSG=$(cat <<EOF
+{
+  "register_adapter": {
+    "name": "Mars Adapter",
+    "address": "$MARS_ADAPTER_ADDRESS",
+    "allocation_mode": "automated",
+    "deployment_tracking": "not_tracked"
+  }
+}
+EOF
+)
+
+    $NEUTRON_CLI tx wasm execute "$VAULT_ADDRESS" "$REGISTER_MARS_ADAPTER_MSG" \
+        --from "$DEPLOYER_WALLET" \
+        $NEUTRON_TX_FLAGS \
+        --output json &> ./register_mars_adapter_res.json
+
+    TX_HASH=$(grep -o '{.*}' ./register_mars_adapter_res.json | jq -r '.txhash')
     retry_command "$NEUTRON_CLI q tx $TX_HASH $NEUTRON_NODE_FLAG --output json" 60 > /dev/null
 
     echo "Mars Adapter registered on Vault"
 }
 
-echo -e "${YELLOW}Step 4: Registering Mars Adapter on Vault...${NC}"
+echo -e "${YELLOW}Step 5: Registering Mars Adapter on Vault...${NC}"
 register_mars_adapter
 echo ""
 
-# Step 5: Register Subvault in Control Center
+# Step 6: Register IBC Adapter on Vault
+register_ibc_adapter() {
+    printf "Registering IBC Adapter on Vault"
+
+    REGISTER_IBC_ADAPTER_MSG=$(cat <<EOF
+{
+  "register_adapter": {
+    "name": "IBC Adapter",
+    "address": "$IBC_ADAPTER_ADDRESS",
+    "allocation_mode": "manual",
+    "deployment_tracking": "tracked"
+  }
+}
+EOF
+)
+
+    $NEUTRON_CLI tx wasm execute "$VAULT_ADDRESS" "$REGISTER_IBC_ADAPTER_MSG" \
+        --from "$DEPLOYER_WALLET" \
+        $NEUTRON_TX_FLAGS \
+        --output json &> ./register_ibc_adapter_res.json
+
+    TX_HASH=$(grep -o '{.*}' ./register_ibc_adapter_res.json | jq -r '.txhash')
+    retry_command "$NEUTRON_CLI q tx $TX_HASH $NEUTRON_NODE_FLAG --output json" 60 > /dev/null
+
+    echo "IBC Adapter registered on Vault"
+}
+
+echo -e "${YELLOW}Step 6: Registering IBC Adapter on Vault...${NC}"
+register_ibc_adapter
+echo ""
+
+# Step 7: Register Subvault in Control Center
 register_subvault() {
     printf "Registering Subvault in Control Center"
 
@@ -500,7 +644,7 @@ EOF
     echo "Subvault registered in Control Center"
 }
 
-echo -e "${YELLOW}Step 5: Registering Subvault in Control Center...${NC}"
+echo -e "${YELLOW}Step 7: Registering Subvault in Control Center...${NC}"
 register_subvault
 echo ""
 
@@ -517,6 +661,7 @@ echo "Contract Addresses:"
 echo "  Control Center: $CONTROL_CENTER_ADDRESS"
 echo "  Vault: $VAULT_ADDRESS"
 echo "  Mars Adapter: $MARS_ADAPTER_ADDRESS"
+echo "  IBC Adapter: $IBC_ADAPTER_ADDRESS"
 echo ""
 echo "Configuration saved to: $CONFIG_FILE"
 echo ""
@@ -524,5 +669,6 @@ echo "To use these contracts in your tests, export the addresses:"
 echo "  export CONTROL_CENTER_ADDRESS=$CONTROL_CENTER_ADDRESS"
 echo "  export VAULT_ADDRESS=$VAULT_ADDRESS"
 echo "  export MARS_ADAPTER_ADDRESS=$MARS_ADAPTER_ADDRESS"
+echo "  export IBC_ADAPTER_ADDRESS=$IBC_ADAPTER_ADDRESS"
 echo ""
 echo "All contracts have been instantiated and configured successfully!"
