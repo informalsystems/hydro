@@ -6,8 +6,8 @@ use cw2::set_contract_version;
 use interface::{
     inflow::{PoolInfoResponse as InflowPoolInfoResponse, QueryMsg as InflowQueryMsg},
     inflow_control_center::{
-        Config, ConfigResponse, ExecuteMsg, PoolInfoResponse, QueryMsg, SubvaultsResponse,
-        UpdateConfigData, WhitelistResponse,
+        Config, ConfigResponse, DeploymentDirection, ExecuteMsg, PoolInfoResponse, QueryMsg,
+        SubvaultsResponse, UpdateConfigData, WhitelistResponse,
     },
 };
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
@@ -99,8 +99,8 @@ pub fn execute(
         ExecuteMsg::SubmitDeployedAmount { amount } => {
             submit_deployed_amount(deps, env, info, amount)
         }
-        ExecuteMsg::UpdateDeployedAmount { amount } => {
-            update_deployed_amount(deps, env, info, amount)
+        ExecuteMsg::UpdateDeployedAmount { amount, direction } => {
+            update_deployed_amount(deps, env, info, amount, direction)
         }
         ExecuteMsg::AddToWhitelist { address } => add_to_whitelist(deps, env, info, address),
         ExecuteMsg::RemoveFromWhitelist { address } => {
@@ -133,6 +133,7 @@ fn update_deployed_amount(
     env: Env,
     info: MessageInfo,
     amount: Uint128,
+    direction: DeploymentDirection,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     // Only registered sub-vaults can execute this function. This happens when
     // a whitelisted address withdraws funds for deployment from a sub-vault.
@@ -141,16 +142,22 @@ fn update_deployed_amount(
     }
 
     DEPLOYED_AMOUNT.update(deps.storage, env.block.height, |current_value| {
-        current_value
-            .unwrap_or_default()
-            .checked_add(amount)
-            .map_err(|e| new_generic_error(format!("overflow error: {e}")))
+        let current = current_value.unwrap_or_default();
+        match direction {
+            DeploymentDirection::Add => current
+                .checked_add(amount)
+                .map_err(|e| new_generic_error(format!("overflow error: {e}"))),
+            DeploymentDirection::Subtract => current
+                .checked_sub(amount)
+                .map_err(|e| new_generic_error(format!("underflow error: {e}"))),
+        }
     })?;
 
     Ok(Response::new()
         .add_attribute("action", "update_deployed_amount")
         .add_attribute("sender", info.sender)
-        .add_attribute("amount", amount))
+        .add_attribute("amount", amount)
+        .add_attribute("direction", format!("{:?}", direction)))
 }
 
 // Adds a new account address to the whitelist.
