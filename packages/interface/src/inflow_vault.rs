@@ -122,6 +122,7 @@ pub enum ExecuteMsg {
     WithdrawForDeployment {
         amount: Uint128,
     },
+    DepositFromDeployment {},
     SetTokenInfoProviderContract {
         address: Option<String>,
     },

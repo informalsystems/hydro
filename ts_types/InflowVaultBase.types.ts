@@ -47,6 +47,8 @@ export type ExecuteMsg = {
     amount: Uint128;
   };
 } | {
+  deposit_from_deployment: {};
+} | {
   set_token_info_provider_contract: {
     address?: string | null;
   };

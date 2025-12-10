@@ -227,6 +227,7 @@ export interface InflowVaultBaseInterface extends InflowVaultBaseReadOnlyInterfa
   }: {
     amount: Uint128;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  depositFromDeployment: (fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
   setTokenInfoProviderContract: ({
     address
   }: {
@@ -309,6 +310,7 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
     this.fulfillPendingWithdrawals = this.fulfillPendingWithdrawals.bind(this);
     this.claimUnbondedWithdrawals = this.claimUnbondedWithdrawals.bind(this);
     this.withdrawForDeployment = this.withdrawForDeployment.bind(this);
+    this.depositFromDeployment = this.depositFromDeployment.bind(this);
     this.setTokenInfoProviderContract = this.setTokenInfoProviderContract.bind(this);
     this.addToWhitelist = this.addToWhitelist.bind(this);
     this.removeFromWhitelist = this.removeFromWhitelist.bind(this);
@@ -384,6 +386,11 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
       withdraw_for_deployment: {
         amount
       }
+    }, fee_, memo_, funds_);
+  };
+  depositFromDeployment = async (fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      deposit_from_deployment: {}
     }, fee_, memo_, funds_);
   };
   setTokenInfoProviderContract = async ({

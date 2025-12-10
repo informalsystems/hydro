@@ -13,8 +13,9 @@ use cw2::set_contract_version;
 use cw_storage_plus::Bound;
 use interface::{
     inflow_control_center::{
-        ConfigResponse as ControlCenterConfigResponse, ExecuteMsg as ControlCenterExecuteMsg,
-        PoolInfoResponse as ControlCenterPoolInfoResponse, QueryMsg as ControlCenterQueryMsg,
+        ConfigResponse as ControlCenterConfigResponse, DeploymentDirection,
+        ExecuteMsg as ControlCenterExecuteMsg, PoolInfoResponse as ControlCenterPoolInfoResponse,
+        QueryMsg as ControlCenterQueryMsg,
     },
     inflow_vault::{
         AdapterInfo, AdapterInfoResponse, AdaptersListResponse, AllocationMode, Config,
@@ -171,6 +172,7 @@ pub fn execute(
         ExecuteMsg::WithdrawForDeployment { amount } => {
             withdraw_for_deployment(deps, env, info, config, amount)
         }
+        ExecuteMsg::DepositFromDeployment {} => deposit_from_deployment(deps, env, info, config),
         ExecuteMsg::SetTokenInfoProviderContract { address } => {
             set_token_info_provider_contract(deps, info, config, address)
         }
@@ -306,8 +308,11 @@ fn deposit(
     if !total_tracked_amount.is_zero() {
         let total_tracked_amount_in_base_tokens =
             convert_deposit_token_into_base_token(&deps.as_ref(), config, total_tracked_amount)?;
-        let update_msg =
-            build_add_to_deployed_amount_msg(total_tracked_amount_in_base_tokens, config)?;
+        let update_msg = build_update_deployed_amount_msg(
+            total_tracked_amount_in_base_tokens,
+            DeploymentDirection::Add,
+            config,
+        )?;
         messages.push(update_msg);
     }
 
@@ -447,8 +452,11 @@ fn withdraw(
                 config,
                 total_tracked_amount,
             )?;
-            let update_msg =
-                build_sub_from_deployed_amount_msg(total_tracked_amount_in_base_tokens, config)?;
+            let update_msg = build_update_deployed_amount_msg(
+                total_tracked_amount_in_base_tokens,
+                DeploymentDirection::Subtract,
+                config,
+            )?;
             messages.push(update_msg);
         }
     }
@@ -921,8 +929,11 @@ fn withdraw_for_deployment(
     let amount_to_withdraw_in_base_tokens =
         convert_deposit_token_into_base_token(&deps.as_ref(), &config, amount_to_withdraw)?;
 
-    let update_deployed_amount_msg =
-        build_add_to_deployed_amount_msg(amount_to_withdraw_in_base_tokens, &config)?;
+    let update_deployed_amount_msg = build_update_deployed_amount_msg(
+        amount_to_withdraw_in_base_tokens,
+        DeploymentDirection::Add,
+        &config,
+    )?;
 
     let send_tokens_msg = CosmosMsg::Bank(BankMsg::Send {
         to_address: info.sender.to_string(),
@@ -940,6 +951,37 @@ fn withdraw_for_deployment(
         .add_attribute("sender", info.sender)
         .add_attribute("amount_requested", amount)
         .add_attribute("amount_withdrawn", amount_to_withdraw))
+}
+
+// Deposits funds back from deployment.
+fn deposit_from_deployment(
+    deps: DepsMut<NeutronQuery>,
+    _env: Env,
+    info: MessageInfo,
+    config: Config,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    let deposited_amount = cw_utils::must_pay(&info, &config.deposit_denom)?;
+
+    // Convert deposited amount to base tokens
+    let deposited_amount_in_base_tokens =
+        convert_deposit_token_into_base_token(&deps.as_ref(), &config, deposited_amount)?;
+
+    // Call control center to subtract from deployed amount
+    let update_deployed_amount_msg = build_update_deployed_amount_msg(
+        deposited_amount_in_base_tokens,
+        DeploymentDirection::Subtract,
+        &config,
+    )?;
+
+    // Funds are automatically left in the vault's balance
+
+    Ok(Response::new()
+        .add_message(update_deployed_amount_msg)
+        .add_attribute("action", "deposit_from_deployment")
+        .add_attribute("sender", info.sender)
+        .add_attribute("amount_deposited", deposited_amount))
 }
 
 fn set_token_info_provider_contract(
@@ -1251,7 +1293,11 @@ fn withdraw_from_adapter(
     ) {
         let amount_in_base_tokens =
             convert_deposit_token_into_base_token(&deps.as_ref(), config, amount)?;
-        let update_msg = build_sub_from_deployed_amount_msg(amount_in_base_tokens, config)?;
+        let update_msg = build_update_deployed_amount_msg(
+            amount_in_base_tokens,
+            DeploymentDirection::Subtract,
+            config,
+        )?;
         messages.push(update_msg);
     }
 
@@ -1324,7 +1370,11 @@ fn deposit_to_adapter(
     ) {
         let amount_in_base_tokens =
             convert_deposit_token_into_base_token(&deps.as_ref(), config, amount)?;
-        let update_msg = build_add_to_deployed_amount_msg(amount_in_base_tokens, config)?;
+        let update_msg = build_update_deployed_amount_msg(
+            amount_in_base_tokens,
+            DeploymentDirection::Add,
+            config,
+        )?;
         messages.push(update_msg);
     }
 
@@ -1502,27 +1552,14 @@ fn get_token_ratio_to_base_token(deps: &Deps<NeutronQuery>, config: &Config) -> 
     })
 }
 
-fn build_add_to_deployed_amount_msg(
-    amount_to_add_in_base_tokens: Uint128,
+fn build_update_deployed_amount_msg(
+    diff_amount_in_base_tokens: Uint128,
+    direction: DeploymentDirection,
     config: &Config,
 ) -> StdResult<CosmosMsg<NeutronMsg>> {
-    let update_deployed_amount_msg = ControlCenterExecuteMsg::AddToDeployedAmount {
-        amount_to_add: amount_to_add_in_base_tokens,
-    };
-
-    Ok(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: config.control_center_contract.to_string(),
-        msg: to_json_binary(&update_deployed_amount_msg)?,
-        funds: vec![],
-    }))
-}
-
-fn build_sub_from_deployed_amount_msg(
-    amount_to_sub_in_base_tokens: Uint128,
-    config: &Config,
-) -> StdResult<CosmosMsg<NeutronMsg>> {
-    let update_deployed_amount_msg = ControlCenterExecuteMsg::SubFromDeployedAmount {
-        amount_to_sub: amount_to_sub_in_base_tokens,
+    let update_deployed_amount_msg = ControlCenterExecuteMsg::UpdateDeployedAmount {
+        amount: diff_amount_in_base_tokens,
+        direction,
     };
 
     Ok(CosmosMsg::Wasm(WasmMsg::Execute {

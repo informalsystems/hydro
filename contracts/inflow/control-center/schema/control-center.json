@@ -70,42 +70,24 @@
         "additionalProperties": false
       },
       {
-        "description": "Updates the total amount of tokens deployed by adding the specified amount to the already deployed one. Action can be performed only by the associated sub-vault smart contracts.",
+        "description": "Updates the total amount of tokens deployed by adding or subtracting the specified amount. Action can be performed only by the associated sub-vault smart contracts.",
         "type": "object",
         "required": [
-          "add_to_deployed_amount"
+          "update_deployed_amount"
         ],
         "properties": {
-          "add_to_deployed_amount": {
+          "update_deployed_amount": {
             "type": "object",
             "required": [
-              "amount_to_add"
+              "amount",
+              "direction"
             ],
             "properties": {
-              "amount_to_add": {
+              "amount": {
                 "$ref": "#/definitions/Uint128"
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
-      },
-      {
-        "description": "Updates the total amount of tokens deployed by subtracting the specified amount from the already deployed one. Action can be performed only by the associated sub-vault smart contracts.",
-        "type": "object",
-        "required": [
-          "sub_from_deployed_amount"
-        ],
-        "properties": {
-          "sub_from_deployed_amount": {
-            "type": "object",
-            "required": [
-              "amount_to_sub"
-            ],
-            "properties": {
-              "amount_to_sub": {
-                "$ref": "#/definitions/Uint128"
+              },
+              "direction": {
+                "$ref": "#/definitions/DeploymentDirection"
               }
             },
             "additionalProperties": false
@@ -225,6 +207,13 @@
       }
     ],
     "definitions": {
+      "DeploymentDirection": {
+        "type": "string",
+        "enum": [
+          "add",
+          "subtract"
+        ]
+      },
       "Uint128": {
         "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
         "type": "string"

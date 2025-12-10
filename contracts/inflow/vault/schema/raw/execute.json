@@ -143,6 +143,19 @@
     {
       "type": "object",
       "required": [
+        "deposit_from_deployment"
+      ],
+      "properties": {
+        "deposit_from_deployment": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
         "set_token_info_provider_contract"
       ],
       "properties": {
