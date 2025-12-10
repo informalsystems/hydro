@@ -1,0 +1,148 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "description": "Message for instantiating the Skip adapter contract",
+  "type": "object",
+  "required": [
+    "admins",
+    "default_timeout_nanos",
+    "skip_contract"
+  ],
+  "properties": {
+    "admins": {
+      "description": "The config admins who can update config and manage routes/recipients/executors",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "default_timeout_nanos": {
+      "description": "Default timeout in nanoseconds (e.g., 1800000000000 for 30 minutes)",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "depositor_address": {
+      "description": "Optional: single depositor address to register during instantiation",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "executors": {
+      "description": "Optional: initial executors who can call ExecuteSwap",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "initial_recipients": {
+      "description": "Optional: initial recipient configurations to register",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "array",
+        "items": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/definitions/RecipientConfig"
+          }
+        ],
+        "maxItems": 2,
+        "minItems": 2
+      }
+    },
+    "initial_routes": {
+      "description": "Optional: initial route configurations to register",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "array",
+        "items": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/definitions/RouteConfig"
+          }
+        ],
+        "maxItems": 2,
+        "minItems": 2
+      }
+    },
+    "skip_contract": {
+      "description": "Skip contract address on Neutron",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "RecipientConfig": {
+      "description": "Recipient configuration for post-swap transfers",
+      "type": "object",
+      "required": [
+        "address",
+        "enabled"
+      ],
+      "properties": {
+        "address": {
+          "description": "Recipient address",
+          "type": "string"
+        },
+        "description": {
+          "description": "Optional description/label",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enabled": {
+          "description": "Whether this recipient is currently enabled",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RouteConfig": {
+      "description": "Route configuration for a swap path",
+      "type": "object",
+      "required": [
+        "denom_in",
+        "denom_out",
+        "denoms_path",
+        "enabled"
+      ],
+      "properties": {
+        "denom_in": {
+          "description": "Starting denom",
+          "type": "string"
+        },
+        "denom_out": {
+          "description": "Final output denom",
+          "type": "string"
+        },
+        "denoms_path": {
+          "description": "Full ordered path of denoms for validation Example: [\"untrn\", \"ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81\", \"ibc/0E293A7622DC9A6439DB60E6D234B5AF446962E27CA3AB44D0590603DFF6968E\"]",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "enabled": {
+          "description": "Whether this route is currently enabled",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
