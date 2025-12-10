@@ -26,7 +26,10 @@ pub enum ExecuteMsg {
 
     /// Updates the total amount of tokens deployed by adding or subtracting the specified amount.
     /// Action can be performed only by the associated sub-vault smart contracts.
-    UpdateDeployedAmount { amount: Uint128, direction: DeploymentDirection },
+    UpdateDeployedAmount {
+        amount: Uint128,
+        direction: DeploymentDirection,
+    },
 
     /// Adds a new account address to the whitelist.
     AddToWhitelist { address: String },

@@ -3006,10 +3006,7 @@ fn deposit_from_deployment_test() {
         ExecuteMsg::DepositFromDeployment {},
     );
     assert!(res.is_err());
-    assert!(res
-        .unwrap_err()
-        .to_string()
-        .contains("invalid denom"));
+    assert!(res.unwrap_err().to_string().contains("invalid denom"));
 
     // Try to deposit with zero amount - should fail
     let info = get_message_info(
@@ -3081,24 +3078,39 @@ fn deposit_from_deployment_test() {
     assert!(res.is_ok());
 
     let response = res.unwrap();
-    
+
     // Verify response attributes
     assert_eq!(
-        response.attributes.iter().find(|a| a.key == "action").unwrap().value,
+        response
+            .attributes
+            .iter()
+            .find(|a| a.key == "action")
+            .unwrap()
+            .value,
         "deposit_from_deployment"
     );
     assert_eq!(
-        response.attributes.iter().find(|a| a.key == "sender").unwrap().value,
+        response
+            .attributes
+            .iter()
+            .find(|a| a.key == "sender")
+            .unwrap()
+            .value,
         whitelist_addr.to_string()
     );
     assert_eq!(
-        response.attributes.iter().find(|a| a.key == "amount_deposited").unwrap().value,
+        response
+            .attributes
+            .iter()
+            .find(|a| a.key == "amount_deposited")
+            .unwrap()
+            .value,
         deposit_back_amount.to_string()
     );
 
     // Verify that UpdateDeployedAmount message was sent with Subtract direction
     assert_eq!(response.messages.len(), 1);
-    
+
     // Update the mock balance to reflect the deposit
     mock_address_balance(
         &mut deps,

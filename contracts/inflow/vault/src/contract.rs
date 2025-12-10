@@ -20,8 +20,8 @@ use interface::{
     },
     inflow_control_center::{
         ConfigResponse as ControlCenterConfigResponse, DeploymentDirection,
-        ExecuteMsg as ControlCenterExecuteMsg,
-        PoolInfoResponse as ControlCenterPoolInfoResponse, QueryMsg as ControlCenterQueryMsg,
+        ExecuteMsg as ControlCenterExecuteMsg, PoolInfoResponse as ControlCenterPoolInfoResponse,
+        QueryMsg as ControlCenterQueryMsg,
     },
     token_info_provider::TokenInfoProviderQueryMsg,
 };
@@ -165,9 +165,7 @@ pub fn execute(
         ExecuteMsg::WithdrawForDeployment { amount } => {
             withdraw_for_deployment(deps, env, info, config, amount)
         }
-        ExecuteMsg::DepositFromDeployment {} => {
-            deposit_from_deployment(deps, env, info, config)
-        }
+        ExecuteMsg::DepositFromDeployment {} => deposit_from_deployment(deps, env, info, config),
         ExecuteMsg::SetTokenInfoProviderContract { address } => {
             set_token_info_provider_contract(deps, info, config, address)
         }
@@ -758,9 +756,7 @@ fn deposit_from_deployment(
 
     // Validate that only the vault's deposit_denom is sent
     if info.funds.len() != 1 {
-        return Err(new_generic_error(
-            "must send exactly one type of token",
-        ));
+        return Err(new_generic_error("must send exactly one type of token"));
     }
 
     let deposited_coin = &info.funds[0];
