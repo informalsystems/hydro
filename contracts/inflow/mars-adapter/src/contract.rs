@@ -1,8 +1,9 @@
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Order, Reply,
-    Response, StdError, StdResult, SubMsg, Uint128,
+    Response, StdError, StdResult, SubMsg, SubMsgResult, Uint128,
 };
 use cw2::set_contract_version;
+use std::collections::HashMap;
 
 use crate::error::ContractError;
 use crate::mars;
@@ -201,7 +202,7 @@ fn validate_admin_caller(deps: &DepsMut, info: &MessageInfo) -> Result<(), Contr
     let admins = ADMINS.load(deps.storage)?;
 
     if !admins.contains(&info.sender) {
-        return Err(ContractError::Unauthorized {});
+        return Err(ContractError::UnauthorizedAdmin {});
     }
 
     Ok(())
@@ -544,8 +545,6 @@ fn query_registered_depositors(
 
 /// This query will go through all depositors registered and compute the sum of funds in each account
 fn query_all_positions(deps: Deps) -> StdResult<AllPositionsResponse> {
-    use std::collections::HashMap;
-
     let config = CONFIG.load(deps.storage)?;
 
     // HashMap to aggregate positions by denom
@@ -669,8 +668,6 @@ fn handle_create_account_instantiate_reply(
 fn parse_account_id_from_reply(reply: &Reply) -> Result<String, ContractError> {
     // Mars returns the token_id in the events (credit accounts are NFTs)
     // Look for a "wasm" event with "action" = "mint" and extract "token_id"
-    use cosmwasm_std::SubMsgResult;
-
     let response = match &reply.result {
         SubMsgResult::Ok(response) => response,
         SubMsgResult::Err(err) => {

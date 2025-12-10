@@ -25,18 +25,6 @@ pub enum ContractError {
 
     #[error("Unauthorized")]
     Unauthorized,
-
-    #[error("Adapter already exists: {name}")]
-    AdapterAlreadyExists { name: String },
-
-    #[error("Adapter not found: {name}")]
-    AdapterNotFound { name: String },
-
-    #[error("Adapter not active: {name}")]
-    AdapterNotActive { name: String },
-
-    #[error("Insufficient balance for adapter deployment")]
-    InsufficientBalanceForDeployment,
 }
 
 pub fn new_generic_error(msg: impl Into<String>) -> ContractError {

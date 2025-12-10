@@ -17,8 +17,8 @@ use crate::msg::{
     TokenConfigResponse,
 };
 use crate::state::{
-    ChainConfig, Config, Depositor, TokenConfig, TransferFundsInstructions, ADMINS, CHAIN_REGISTRY,
-    CONFIG, EXECUTORS, TOKEN_REGISTRY, WHITELISTED_DEPOSITORS,
+    ChainConfig, Config, Depositor, DepositorCapabilities, TokenConfig, TransferFundsInstructions,
+    ADMINS, CHAIN_REGISTRY, CONFIG, EXECUTORS, TOKEN_REGISTRY, WHITELISTED_DEPOSITORS,
 };
 use crate::validation::{
     get_depositor, validate_admin_caller, validate_admin_or_executor, validate_capabilities_binary,
@@ -101,7 +101,7 @@ pub fn instantiate(
             validate_capabilities_binary(&cap_binary)?
         } else {
             // Default capabilities: can withdraw
-            crate::state::DepositorCapabilities { can_withdraw: true }
+            DepositorCapabilities { can_withdraw: true }
         };
 
         let depositor = Depositor {
@@ -434,7 +434,7 @@ fn execute_register_depositor(
         validate_capabilities_binary(&cap_binary)?
     } else {
         // Default capabilities: can withdraw
-        crate::state::DepositorCapabilities { can_withdraw: true }
+        DepositorCapabilities { can_withdraw: true }
     };
 
     let depositor = Depositor {

@@ -1144,7 +1144,7 @@ fn non_admin_cannot_register_depositor() {
     };
     let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
 
-    assert_eq!(err, ContractError::Unauthorized {});
+    assert_eq!(err, ContractError::UnauthorizedAdmin {});
 }
 
 #[test]
@@ -1253,7 +1253,7 @@ fn non_admin_cannot_unregister_depositor() {
     };
     let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
 
-    assert_eq!(err, ContractError::Unauthorized {});
+    assert_eq!(err, ContractError::UnauthorizedAdmin {});
 }
 
 #[test]
@@ -1380,7 +1380,7 @@ fn non_admin_cannot_toggle_depositor_enabled() {
     };
     let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
 
-    assert_eq!(err, ContractError::Unauthorized {});
+    assert_eq!(err, ContractError::UnauthorizedAdmin {});
 }
 
 #[test]
@@ -1562,7 +1562,7 @@ fn update_config_unauthorized() {
     };
     let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
 
-    assert_eq!(err, ContractError::Unauthorized {});
+    assert_eq!(err, ContractError::UnauthorizedAdmin {});
 }
 
 // ============================================================================

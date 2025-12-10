@@ -37,9 +37,6 @@ pub enum ContractError {
     #[error("Adapter not included in automated allocation: {name}")]
     AdapterNotIncludedInAutomatedAllocation { name: String },
 
-    #[error("Insufficient balance for adapter deployment")]
-    InsufficientBalanceForDeployment,
-
     #[error("Insufficient vault balance: available {available}, required {required}")]
     InsufficientBalance {
         available: Uint128,
