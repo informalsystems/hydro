@@ -151,6 +151,7 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         lock_depth_limit: 50,
         slash_percentage_threshold: Decimal::percent(50),
         slash_tokens_receiver_addr: slashed_tokens_receiver_address,
+        lockup_conversion_fee_percent: Decimal::percent(2),
     }
 }
 
@@ -2899,6 +2900,7 @@ fn delete_configs_test() {
                 lock_expiry_duration_seconds: None,
                 slash_percentage_threshold: None,
                 slash_tokens_receiver_addr: None,
+                lockup_conversion_fee_percent: None,
             },
         };
         let res = execute(
@@ -2993,6 +2995,7 @@ fn contract_pausing_test() {
                 lock_expiry_duration_seconds: None,
                 slash_percentage_threshold: None,
                 slash_tokens_receiver_addr: None,
+                lockup_conversion_fee_percent: None,
             },
         },
         ExecuteMsg::DeleteConfigs { timestamps: vec![] },

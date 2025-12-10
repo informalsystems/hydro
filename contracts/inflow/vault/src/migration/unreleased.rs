@@ -1,11 +1,12 @@
 use cosmwasm_std::{DepsMut, Response};
 use cw_storage_plus::Item;
+use interface::inflow_vault::Config;
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 use crate::{
     error::{new_generic_error, ContractError},
     migration::{migrate::MigrateMsg, v_3_6_1::ConfigV3_6_1},
-    state::{Config, CONFIG},
+    state::CONFIG,
 };
 
 pub fn migrate_config(

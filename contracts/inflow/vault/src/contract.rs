@@ -16,7 +16,13 @@ use interface::{
         ConfigResponse as ControlCenterConfigResponse, ExecuteMsg as ControlCenterExecuteMsg,
         PoolInfoResponse as ControlCenterPoolInfoResponse, QueryMsg as ControlCenterQueryMsg,
     },
-    inflow_vault::PoolInfoResponse,
+    inflow_vault::{
+        AdapterInfo, AdapterInfoResponse, AdaptersListResponse, AllocationMode, Config,
+        ConfigResponse, DeploymentTracking, ExecuteMsg, FundedWithdrawalRequestsResponse,
+        PayoutEntry, PoolInfoResponse, QueryMsg, UpdateConfigData, UserPayoutsHistoryResponse,
+        UserWithdrawalRequestsResponse, WhitelistResponse, WithdrawalEntry, WithdrawalQueueInfo,
+        WithdrawalQueueInfoResponse,
+    },
     token_info_provider::TokenInfoProviderQueryMsg,
 };
 use neutron_sdk::{
@@ -29,17 +35,12 @@ use prost::Message;
 
 use crate::{
     error::{new_generic_error, ContractError},
-    msg::{DenomMetadata, ExecuteMsg, InstantiateMsg, ReplyPayload, UpdateConfigData},
-    query::{
-        ConfigResponse, FundedWithdrawalRequestsResponse, QueryMsg, UserPayoutsHistoryResponse,
-        UserWithdrawalRequestsResponse, WhitelistResponse, WithdrawalQueueInfoResponse,
-    },
+    msg::{DenomMetadata, InstantiateMsg, ReplyPayload},
     state::{
         get_next_payout_id, get_next_withdrawal_id, load_config, load_withdrawal_queue_info,
-        AdapterInfo, AllocationMode, Config, DeploymentTracking, PayoutEntry, WithdrawalEntry,
-        WithdrawalQueueInfo, ADAPTERS, CONFIG, LAST_FUNDED_WITHDRAWAL_ID, NEXT_PAYOUT_ID,
-        NEXT_WITHDRAWAL_ID, PAYOUTS_HISTORY, USER_WITHDRAWAL_REQUESTS, WHITELIST,
-        WITHDRAWAL_QUEUE_INFO, WITHDRAWAL_REQUESTS,
+        ADAPTERS, CONFIG, LAST_FUNDED_WITHDRAWAL_ID, NEXT_PAYOUT_ID, NEXT_WITHDRAWAL_ID,
+        PAYOUTS_HISTORY, USER_WITHDRAWAL_REQUESTS, WHITELIST, WITHDRAWAL_QUEUE_INFO,
+        WITHDRAWAL_REQUESTS,
     },
 };
 
@@ -1761,7 +1762,7 @@ fn query_whitelist(deps: &Deps<NeutronQuery>) -> StdResult<WhitelistResponse> {
 }
 
 // Adapter query functions
-fn query_list_adapters(deps: &Deps<NeutronQuery>) -> StdResult<crate::query::AdaptersListResponse> {
+fn query_list_adapters(deps: &Deps<NeutronQuery>) -> StdResult<AdaptersListResponse> {
     let adapters = ADAPTERS
         .range(deps.storage, None, None, Order::Ascending)
         .filter_map(|entry| match entry {
@@ -1770,18 +1771,15 @@ fn query_list_adapters(deps: &Deps<NeutronQuery>) -> StdResult<crate::query::Ada
         })
         .collect::<Vec<(String, AdapterInfo)>>();
 
-    Ok(crate::query::AdaptersListResponse { adapters })
+    Ok(AdaptersListResponse { adapters })
 }
 
-fn query_adapter_info(
-    deps: &Deps<NeutronQuery>,
-    name: String,
-) -> StdResult<crate::query::AdapterInfoResponse> {
+fn query_adapter_info(deps: &Deps<NeutronQuery>, name: String) -> StdResult<AdapterInfoResponse> {
     let info = ADAPTERS
         .may_load(deps.storage, name.clone())?
         .ok_or_else(|| StdError::generic_err(format!("Adapter not found: {}", name)))?;
 
-    Ok(crate::query::AdapterInfoResponse { info })
+    Ok(AdapterInfoResponse { info })
 }
 
 /// Calculates the value of `shares` relative to the `total_pool_value` based on `total_shares_supply`.

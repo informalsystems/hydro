@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## v3.6.5
+
+Date: December 2nd, 2025
+
+### FEATURES
+
+- Allow Inflow deposit callers to optionally specify an `on_behalf_of` recipient so minted shares are issued to the intended account. ([\#329](https://github.com/informalsystems/hydro/pull/329))
+- Added support for locking different denoms in a single Inflow vault.
+  ([\#330](https://github.com/informalsystems/hydro/pull/330))
+- Prevent third-party proxy tribute claims for smart contracts
+  ([\#340](https://github.com/informalsystems/hydro/pull/340))
+- Allow users to lock tokens and send the lockup to other contracts, in one transaction.
+  ([\#341](https://github.com/informalsystems/hydro/pull/341))
+- Added query that returns voting-related metrics for lockups: TWS, token group ID, and remaining locked rounds
+  ([\#342](https://github.com/informalsystems/hydro/pull/342))
+- Added query to retrieve `TributeData` for only specified tribute IDs.
+  ([\#343](https://github.com/informalsystems/hydro/pull/343))
+- Allow Inflow withdrawals to specify an `on_behalf_of` recipient so withdrawal payouts and queue entries are attributed to that address instead of the caller. ([\#346](https://github.com/informalsystems/hydro/pull/346))
+- Ability for users to convert their existing lockup into one holding different denom.
+  ([\#348](https://github.com/informalsystems/hydro/pull/348))
+
 ## v3.6.4
 
 Date: November 10th, 2025
@@ -20,6 +41,11 @@ Date: November 7th, 2025
 
 ## v3.6.2
 
+<!--
+    Add a summary for the release here.
+
+    If you don't change this message, or if this file is empty, the release
+    will not be created. -->
 Date: October 6th, 2025
 
 ### BUG FIXES

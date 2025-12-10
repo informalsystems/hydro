@@ -1,16 +1,25 @@
 // Tests for adapter management functionality
 use super::testing::{get_message_info, mock_dependencies};
 use crate::{
-    contract::{execute, instantiate},
-    msg::{DenomMetadata, ExecuteMsg, InstantiateMsg},
-    state::{AllocationMode, DeploymentTracking, ADAPTERS},
+    contract::{execute, instantiate, query},
+    msg::{DenomMetadata, InstantiateMsg},
+    state::{ADAPTERS, CONFIG},
     testing_mocks::{
         mock_address_balance, setup_adapter_mock, setup_control_center_mock,
         setup_token_info_provider_mock, update_contract_mock, MockAdapterConfig, MockWasmQuerier,
     },
 };
-use cosmwasm_std::{testing::mock_env, Addr, CosmosMsg, Decimal, Uint128, WasmMsg};
-use interface::inflow_adapter::deserialize_adapter_interface_msg;
+use cosmwasm_std::{
+    testing::{mock_env, MockApi, MockQuerier, MockStorage},
+    Addr, Coin, CosmosMsg, Decimal, OwnedDeps, Uint128, WasmMsg,
+};
+use interface::{
+    inflow_adapter::deserialize_adapter_interface_msg,
+    inflow_vault::{
+        AdapterInfoResponse, AdaptersListResponse, AllocationMode, DeploymentTracking, ExecuteMsg,
+        QueryMsg,
+    },
+};
 use std::collections::HashMap;
 
 const DEPOSIT_DENOM: &str = "ibc/C4CFF46FD6DE35CA4CF4CE031E643C8FDC9BA4B99AE598E9B0ED98FE3A2319F9";
@@ -603,8 +612,6 @@ fn register_multiple_adapters() {
 
 #[test]
 fn query_list_adapters_empty() {
-    use crate::{contract::query, query::QueryMsg};
-
     let mut deps = mock_dependencies();
     let env = mock_env();
 
@@ -624,15 +631,13 @@ fn query_list_adapters_empty() {
 
     // Query adapters (should be empty)
     let res = query(deps.as_ref(), env, QueryMsg::ListAdapters {}).unwrap();
-    let response: crate::query::AdaptersListResponse = cosmwasm_std::from_json(&res).unwrap();
+    let response: AdaptersListResponse = cosmwasm_std::from_json(&res).unwrap();
 
     assert_eq!(response.adapters.len(), 0);
 }
 
 #[test]
 fn query_list_adapters_with_adapters() {
-    use crate::{contract::query, query::QueryMsg};
-
     let mut deps = mock_dependencies();
     let env = mock_env();
 
@@ -684,7 +689,7 @@ fn query_list_adapters_with_adapters() {
 
     // Query adapters
     let res = query(deps.as_ref(), env, QueryMsg::ListAdapters {}).unwrap();
-    let response: crate::query::AdaptersListResponse = cosmwasm_std::from_json(&res).unwrap();
+    let response: AdaptersListResponse = cosmwasm_std::from_json(&res).unwrap();
 
     assert_eq!(response.adapters.len(), 2);
 
@@ -705,8 +710,6 @@ fn query_list_adapters_with_adapters() {
 
 #[test]
 fn query_adapter_info_success() {
-    use crate::{contract::query, query::QueryMsg};
-
     let mut deps = mock_dependencies();
     let env = mock_env();
 
@@ -750,7 +753,7 @@ fn query_adapter_info_success() {
         },
     )
     .unwrap();
-    let response: crate::query::AdapterInfoResponse = cosmwasm_std::from_json(&res).unwrap();
+    let response: AdapterInfoResponse = cosmwasm_std::from_json(&res).unwrap();
 
     assert_eq!(response.info.address, adapter_addr);
     assert!(matches!(
@@ -763,8 +766,6 @@ fn query_adapter_info_success() {
 
 #[test]
 fn query_adapter_info_not_found() {
-    use crate::{contract::query, query::QueryMsg};
-
     let mut deps = mock_dependencies();
     let env = mock_env();
 
@@ -800,11 +801,6 @@ fn query_adapter_info_not_found() {
 // ============================================================================
 // Adapter Integration Tests - Mock Adapter Infrastructure
 // ============================================================================
-
-use cosmwasm_std::{
-    testing::{MockApi, MockQuerier, MockStorage},
-    Coin, OwnedDeps,
-};
 
 const USER1: &str = "user1";
 
@@ -902,7 +898,6 @@ fn setup_contract_with_vault_denom(
     let vault_shares_denom_str: String =
         format!("factory/{vault_contract_addr}/hydro_inflow_uatom");
 
-    use crate::state::CONFIG;
     CONFIG
         .update(
             &mut deps.storage,

@@ -242,6 +242,19 @@ pub enum QueryMsg {
     /// token group classification, and remaining locked rounds.
     #[returns(LockupVotingMetricsResponse)]
     LockupVotingMetrics { lock_ids: Vec<u64> },
+
+    /// Returns number of tokens of a given token denom available for lockups conversion into the given denom.
+    #[returns(Uint128)]
+    AvailableConversionFunds { token_denom: String },
+
+    /// Given a lock id and a resulting token denom, returns the number of tokens of a resulting denom
+    /// that a given lockup would hold after conversion.
+    #[returns(Uint128)]
+    ConvertedTokenNum {
+        lock_id: u64,
+        token_denom: String,
+        user_provides_funds: bool,
+    },
 }
 
 #[cw_serde]
