@@ -2129,3 +2129,735 @@ fn test_deposit_to_adapter_works_regardless_of_allocation_flag() {
     assert_eq!(res.attributes[0].value, "deposit_to_adapter");
     assert_eq!(res.messages.len(), 1);
 }
+
+// ============================================================================
+// Test Group 4: MoveAdapterFunds Tests
+// ============================================================================
+
+#[test]
+fn test_move_adapter_funds_deposit_denom_success() {
+    let mut deps = mock_dependencies();
+    let mut env = mock_env();
+
+    let vault_contract_addr = deps.api.addr_make("vault");
+    env.contract.address = vault_contract_addr.clone();
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let adapter1_addr = deps.api.addr_make("adapter1");
+    let adapter2_addr = deps.api.addr_make("adapter2");
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register two adapters
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter1_addr.to_string(),
+            description: Some("Mars Protocol".to_string()),
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "osmosis_adapter".to_string(),
+            address: adapter2_addr.to_string(),
+            description: Some("Osmosis DEX".to_string()),
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    // Mock vault balance to ensure deposit_to_adapter has sufficient funds
+    mock_address_balance(
+        &mut deps,
+        vault_contract_addr.as_ref(),
+        DEPOSIT_DENOM,
+        Uint128::new(10000),
+    );
+
+    // Move funds between adapters
+    let res = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::MoveAdapterFunds {
+            from_adapter: "mars_adapter".to_string(),
+            to_adapter: "osmosis_adapter".to_string(),
+            coin: Coin {
+                denom: DEPOSIT_DENOM.to_string(),
+                amount: Uint128::new(5000),
+            },
+        },
+    )
+    .unwrap();
+
+    // Verify we have 2 messages (withdraw + deposit)
+    assert_eq!(res.messages.len(), 2);
+
+    // Verify first message is withdraw from mars_adapter
+    match &res.messages[0].msg {
+        CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr,
+            msg,
+            funds,
+        }) => {
+            assert_eq!(contract_addr, &adapter1_addr.to_string());
+            assert_eq!(funds.len(), 0);
+
+            let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
+            match adapter_msg {
+                interface::inflow_adapter::AdapterInterfaceMsg::Withdraw { coin } => {
+                    assert_eq!(coin.denom, DEPOSIT_DENOM);
+                    assert_eq!(coin.amount, Uint128::new(5000));
+                }
+                _ => panic!("Expected AdapterInterfaceMsg::Withdraw"),
+            }
+        }
+        _ => panic!("Expected WasmMsg::Execute for adapter withdrawal"),
+    }
+
+    // Verify second message is deposit to osmosis_adapter
+    match &res.messages[1].msg {
+        CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr,
+            msg,
+            funds,
+        }) => {
+            assert_eq!(contract_addr, &adapter2_addr.to_string());
+            assert_eq!(funds.len(), 1);
+            assert_eq!(funds[0].denom, DEPOSIT_DENOM);
+            assert_eq!(funds[0].amount, Uint128::new(5000));
+
+            let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
+            match adapter_msg {
+                interface::inflow_adapter::AdapterInterfaceMsg::Deposit { .. } => {
+                    // Success
+                }
+                _ => panic!("Expected AdapterInterfaceMsg::Deposit"),
+            }
+        }
+        _ => panic!("Expected WasmMsg::Execute for adapter deposit"),
+    }
+
+    // Verify response attributes
+    assert_eq!(res.attributes[0].value, "move_adapter_funds");
+    assert_eq!(res.attributes[1].value, whitelist_addr.as_str());
+    assert_eq!(res.attributes[2].value, "mars_adapter");
+    assert_eq!(res.attributes[3].value, "osmosis_adapter");
+    assert_eq!(res.attributes[4].value, DEPOSIT_DENOM);
+    assert_eq!(res.attributes[5].value, "5000");
+}
+
+#[test]
+fn test_move_adapter_funds_non_deposit_denom_matching_tracking() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let adapter1_addr = deps.api.addr_make("adapter1");
+    let adapter2_addr = deps.api.addr_make("adapter2");
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register two adapters with SAME DeploymentTracking (NotTracked)
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter1_addr.to_string(),
+            description: Some("Mars Protocol".to_string()),
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "osmosis_adapter".to_string(),
+            address: adapter2_addr.to_string(),
+            description: Some("Osmosis DEX".to_string()),
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    // Move non-deposit_denom funds
+    let other_denom = "ibc/OTHER";
+    let res = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::MoveAdapterFunds {
+            from_adapter: "mars_adapter".to_string(),
+            to_adapter: "osmosis_adapter".to_string(),
+            coin: Coin {
+                denom: other_denom.to_string(),
+                amount: Uint128::new(3000),
+            },
+        },
+    )
+    .unwrap();
+
+    // Verify we have 2 messages (withdraw + deposit)
+    assert_eq!(res.messages.len(), 2);
+
+    // Verify first message is withdraw
+    match &res.messages[0].msg {
+        CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr,
+            msg,
+            funds,
+        }) => {
+            assert_eq!(contract_addr, &adapter1_addr.to_string());
+            assert_eq!(funds.len(), 0);
+
+            let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
+            match adapter_msg {
+                interface::inflow_adapter::AdapterInterfaceMsg::Withdraw { coin } => {
+                    assert_eq!(coin.denom, other_denom);
+                    assert_eq!(coin.amount, Uint128::new(3000));
+                }
+                _ => panic!("Expected AdapterInterfaceMsg::Withdraw"),
+            }
+        }
+        _ => panic!("Expected WasmMsg::Execute"),
+    }
+
+    // Verify second message is deposit
+    match &res.messages[1].msg {
+        CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr,
+            msg,
+            funds,
+        }) => {
+            assert_eq!(contract_addr, &adapter2_addr.to_string());
+            assert_eq!(funds.len(), 1);
+            assert_eq!(funds[0].denom, other_denom);
+            assert_eq!(funds[0].amount, Uint128::new(3000));
+
+            let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
+            match adapter_msg {
+                interface::inflow_adapter::AdapterInterfaceMsg::Deposit { .. } => {}
+                _ => panic!("Expected AdapterInterfaceMsg::Deposit"),
+            }
+        }
+        _ => panic!("Expected WasmMsg::Execute"),
+    }
+
+    // Verify attributes
+    assert_eq!(res.attributes[0].value, "move_adapter_funds");
+    assert_eq!(res.attributes[4].value, other_denom);
+}
+
+#[test]
+fn test_move_adapter_funds_non_deposit_denom_tracking_mismatch() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let adapter1_addr = deps.api.addr_make("adapter1");
+    let adapter2_addr = deps.api.addr_make("adapter2");
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register two adapters with DIFFERENT DeploymentTracking
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter1_addr.to_string(),
+            description: Some("Mars Protocol".to_string()),
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::Tracked, // Tracked
+        },
+    )
+    .unwrap();
+
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "osmosis_adapter".to_string(),
+            address: adapter2_addr.to_string(),
+            description: Some("Osmosis DEX".to_string()),
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::NotTracked, // NotTracked
+        },
+    )
+    .unwrap();
+
+    // Try to move non-deposit_denom funds - should fail
+    let other_denom = "ibc/OTHER";
+    let err = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::MoveAdapterFunds {
+            from_adapter: "mars_adapter".to_string(),
+            to_adapter: "osmosis_adapter".to_string(),
+            coin: Coin {
+                denom: other_denom.to_string(),
+                amount: Uint128::new(3000),
+            },
+        },
+    )
+    .unwrap_err();
+
+    // Verify error message contains tracking mismatch
+    assert!(err
+        .to_string()
+        .contains("Adapter deployment tracking mismatch"));
+    assert!(err.to_string().contains("mars_adapter"));
+    assert!(err.to_string().contains("osmosis_adapter"));
+}
+
+#[test]
+fn test_move_adapter_funds_unauthorized() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let adapter1_addr = deps.api.addr_make("adapter1");
+    let adapter2_addr = deps.api.addr_make("adapter2");
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register adapters
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter1_addr.to_string(),
+            description: None,
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::RegisterAdapter {
+            name: "osmosis_adapter".to_string(),
+            address: adapter2_addr.to_string(),
+            description: None,
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    // Try to move funds from non-whitelisted address
+    let info = get_message_info(&deps.api, NON_WHITELIST_ADDR, &[]);
+    let err = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::MoveAdapterFunds {
+            from_adapter: "mars_adapter".to_string(),
+            to_adapter: "osmosis_adapter".to_string(),
+            coin: Coin {
+                denom: DEPOSIT_DENOM.to_string(),
+                amount: Uint128::new(5000),
+            },
+        },
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("Unauthorized"));
+}
+
+#[test]
+fn test_move_adapter_funds_zero_amount() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let adapter1_addr = deps.api.addr_make("adapter1");
+    let adapter2_addr = deps.api.addr_make("adapter2");
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register adapters
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter1_addr.to_string(),
+            description: None,
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "osmosis_adapter".to_string(),
+            address: adapter2_addr.to_string(),
+            description: None,
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    // Try to move zero amount
+    let err = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::MoveAdapterFunds {
+            from_adapter: "mars_adapter".to_string(),
+            to_adapter: "osmosis_adapter".to_string(),
+            coin: Coin {
+                denom: DEPOSIT_DENOM.to_string(),
+                amount: Uint128::zero(),
+            },
+        },
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("Zero amount"));
+}
+
+#[test]
+fn test_move_adapter_funds_from_adapter_not_found() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let adapter2_addr = deps.api.addr_make("adapter2");
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register only destination adapter
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "osmosis_adapter".to_string(),
+            address: adapter2_addr.to_string(),
+            description: None,
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    // Try to move from non-existent adapter
+    let err = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::MoveAdapterFunds {
+            from_adapter: "nonexistent_adapter".to_string(),
+            to_adapter: "osmosis_adapter".to_string(),
+            coin: Coin {
+                denom: DEPOSIT_DENOM.to_string(),
+                amount: Uint128::new(5000),
+            },
+        },
+    )
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("Adapter not found: nonexistent_adapter"));
+}
+
+#[test]
+fn test_move_adapter_funds_to_adapter_not_found() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let adapter1_addr = deps.api.addr_make("adapter1");
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register only source adapter
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter1_addr.to_string(),
+            description: None,
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    // Try to move to non-existent adapter
+    let err = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::MoveAdapterFunds {
+            from_adapter: "mars_adapter".to_string(),
+            to_adapter: "nonexistent_adapter".to_string(),
+            coin: Coin {
+                denom: DEPOSIT_DENOM.to_string(),
+                amount: Uint128::new(5000),
+            },
+        },
+    )
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("Adapter not found: nonexistent_adapter"));
+}
+
+#[test]
+fn test_move_adapter_funds_deposit_denom_with_tracked_deployment() {
+    let mut deps = mock_dependencies();
+    let mut env = mock_env();
+
+    let vault_contract_addr = deps.api.addr_make("vault");
+    env.contract.address = vault_contract_addr.clone();
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let adapter1_addr = deps.api.addr_make("adapter1");
+    let adapter2_addr = deps.api.addr_make("adapter2");
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register two adapters with Tracked deployment
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter1_addr.to_string(),
+            description: Some("Mars Protocol".to_string()),
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::Tracked,
+        },
+    )
+    .unwrap();
+
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "osmosis_adapter".to_string(),
+            address: adapter2_addr.to_string(),
+            description: Some("Osmosis DEX".to_string()),
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::Tracked,
+        },
+    )
+    .unwrap();
+
+    // Setup mocks for token info provider
+    let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_control_center_mock(
+            control_center_contract_addr.clone(),
+            DEFAULT_DEPOSIT_CAP,
+            Uint128::zero(),
+            Uint128::zero(),
+        ),
+        setup_token_info_provider_mock(
+            token_info_provider_contract_addr,
+            DEPOSIT_DENOM.to_string(),
+            Decimal::one(),
+        ),
+    ]));
+
+    let querier_for_deps = wasm_querier.clone();
+    deps.querier
+        .update_wasm(move |q| querier_for_deps.handler(q));
+
+    // Mock vault balance
+    mock_address_balance(
+        &mut deps,
+        vault_contract_addr.as_ref(),
+        DEPOSIT_DENOM,
+        Uint128::new(10000),
+    );
+
+    // Move deposit_denom funds between tracked adapters
+    let res = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::MoveAdapterFunds {
+            from_adapter: "mars_adapter".to_string(),
+            to_adapter: "osmosis_adapter".to_string(),
+            coin: Coin {
+                denom: DEPOSIT_DENOM.to_string(),
+                amount: Uint128::new(5000),
+            },
+        },
+    )
+    .unwrap();
+
+    // Should have 4 messages:
+    // 1. Withdraw from mars_adapter
+    // 2. Update deployed amount (subtract)
+    // 3. Deposit to osmosis_adapter
+    // 4. Update deployed amount (add)
+    assert_eq!(res.messages.len(), 4);
+
+    // Verify withdraw message
+    match &res.messages[0].msg {
+        CosmosMsg::Wasm(WasmMsg::Execute { contract_addr, .. }) => {
+            assert_eq!(contract_addr, &adapter1_addr.to_string());
+        }
+        _ => panic!("Expected WasmMsg::Execute for withdraw"),
+    }
+
+    // Verify subtract deployed amount message
+    match &res.messages[1].msg {
+        CosmosMsg::Wasm(WasmMsg::Execute { contract_addr, .. }) => {
+            assert_eq!(contract_addr, &control_center_contract_addr.to_string());
+        }
+        _ => panic!("Expected WasmMsg::Execute for update deployed amount"),
+    }
+
+    // Verify deposit message
+    match &res.messages[2].msg {
+        CosmosMsg::Wasm(WasmMsg::Execute { contract_addr, .. }) => {
+            assert_eq!(contract_addr, &adapter2_addr.to_string());
+        }
+        _ => panic!("Expected WasmMsg::Execute for deposit"),
+    }
+
+    // Verify add deployed amount message
+    match &res.messages[3].msg {
+        CosmosMsg::Wasm(WasmMsg::Execute { contract_addr, .. }) => {
+            assert_eq!(contract_addr, &control_center_contract_addr.to_string());
+        }
+        _ => panic!("Expected WasmMsg::Execute for update deployed amount"),
+    }
+
+    // Verify attributes
+    assert_eq!(res.attributes[0].value, "move_adapter_funds");
+    assert_eq!(res.attributes[2].value, "mars_adapter");
+    assert_eq!(res.attributes[3].value, "osmosis_adapter");
+}

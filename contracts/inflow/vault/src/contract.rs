@@ -215,6 +215,11 @@ pub fn execute(
             adapter_name,
             amount,
         } => deposit_to_adapter(deps, env, info, &config, adapter_name, amount),
+        ExecuteMsg::MoveAdapterFunds {
+            from_adapter,
+            to_adapter,
+            coin,
+        } => move_adapter_funds(deps, env, info, &config, from_adapter, to_adapter, coin),
     }
 }
 
@@ -1388,6 +1393,120 @@ fn deposit_to_adapter(
             "deployment_tracking",
             format!("{:?}", adapter_info.deployment_tracking),
         ))
+}
+
+fn move_adapter_funds(
+    mut deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    config: &Config,
+    from_adapter: String,
+    to_adapter: String,
+    coin: Coin,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Validate caller is whitelisted (done by both helper functions, but check early)
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    // Validate non-zero amount
+    if coin.amount.is_zero() {
+        return Err(ContractError::ZeroAmount {});
+    }
+
+    // Check if moving deposit_denom or other denom
+    if coin.denom == config.deposit_denom {
+        // Case 1: Moving deposit_denom
+        // Reuse existing withdraw_from_adapter and deposit_to_adapter logic
+
+        // Withdraw from source adapter (handles DeploymentTracking automatically)
+        let withdraw_response = withdraw_from_adapter(
+            deps.branch(),
+            info.clone(),
+            config,
+            from_adapter.clone(),
+            coin.amount,
+        )?;
+
+        // Deposit to destination adapter (handles DeploymentTracking automatically)
+        let deposit_response = deposit_to_adapter(
+            deps,
+            env,
+            info.clone(),
+            config,
+            to_adapter.clone(),
+            coin.amount,
+        )?;
+
+        // Combine messages and attributes from both operations
+        // The messages will be executed in order: withdraw then deposit,
+        // and contain the necessary deployed amount updates
+        Ok(Response::new()
+            .add_submessages(withdraw_response.messages)
+            .add_submessages(deposit_response.messages)
+            .add_attribute("action", "move_adapter_funds")
+            .add_attribute("sender", info.sender)
+            .add_attribute("from_adapter", from_adapter)
+            .add_attribute("to_adapter", to_adapter)
+            .add_attribute("denom", coin.denom)
+            .add_attribute("amount", coin.amount))
+    } else {
+        // Case 2: Moving non-deposit_denom
+        // Require matching DeploymentTracking to prevent accounting issues,
+        // since no deployed amount updates will be made
+
+        // Load both adapters for validation
+        let from_adapter_info = ADAPTERS
+            .may_load(deps.storage, from_adapter.clone())?
+            .ok_or_else(|| ContractError::AdapterNotFound {
+                name: from_adapter.clone(),
+            })?;
+
+        let to_adapter_info = ADAPTERS
+            .may_load(deps.storage, to_adapter.clone())?
+            .ok_or_else(|| ContractError::AdapterNotFound {
+                name: to_adapter.clone(),
+            })?;
+
+        // Validate matching DeploymentTracking
+        if from_adapter_info.deployment_tracking != to_adapter_info.deployment_tracking {
+            return Err(ContractError::AdapterTrackingMismatch {
+                from_adapter: from_adapter.clone(),
+                to_adapter: to_adapter.clone(),
+                from_tracking: from_adapter_info.deployment_tracking.clone(),
+                to_tracking: to_adapter_info.deployment_tracking.clone(),
+            });
+        }
+
+        let mut messages = vec![];
+
+        // Withdraw from source adapter
+        let withdraw_msg = AdapterInterfaceMsg::Withdraw { coin: coin.clone() };
+        messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: from_adapter_info.address.to_string(),
+            msg: serialize_adapter_interface_msg(&withdraw_msg)?,
+            funds: vec![],
+        }));
+
+        // Deposit to destination adapter
+        let deposit_msg = AdapterInterfaceMsg::Deposit {};
+        messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: to_adapter_info.address.to_string(),
+            msg: serialize_adapter_interface_msg(&deposit_msg)?,
+            funds: vec![coin.clone()],
+        }));
+
+        // Note: No deployed amount updates for non-deposit_denom
+        // Even if both are Tracked, we can't convert non-deposit_denom to base tokens
+        // The tracking requirement ensures accounting consistency even without updates
+
+        Ok(Response::new()
+            .add_messages(messages)
+            .add_attribute("action", "move_adapter_funds")
+            .add_attribute("sender", info.sender)
+            .add_attribute("from_adapter", from_adapter)
+            .add_attribute("to_adapter", to_adapter)
+            .add_attribute("denom", coin.denom)
+            .add_attribute("amount", coin.amount))
+    }
 }
 
 /// Calculates venue allocation based on registered adapters.

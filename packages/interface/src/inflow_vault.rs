@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Order, Timestamp, Uint128};
+use cosmwasm_std::{Addr, Coin, Order, Timestamp, Uint128};
 
 #[cw_serde]
 pub struct Config {
@@ -171,6 +171,15 @@ pub enum ExecuteMsg {
     DepositToAdapter {
         adapter_name: String,
         amount: Uint128,
+    },
+    /// Move funds between adapters (whitelisted only)
+    /// Allows transferring non-deposit_denom tokens
+    /// For deposit_denom: behaves like WithdrawFromAdapter + DepositToAdapter
+    /// For non-deposit_denom: requires same DeploymentTracking type
+    MoveAdapterFunds {
+        from_adapter: String,
+        to_adapter: String,
+        coin: Coin,
     },
 }
 
