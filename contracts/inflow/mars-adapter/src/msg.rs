@@ -13,7 +13,11 @@ pub struct InstantiateMsg {
     /// The admins who can update the config
     pub admins: Vec<String>,
     /// Mars credit manager contract address
-    pub mars_contract: String,
+    pub mars_credit_manager: String,
+    /// Mars params contract address
+    pub mars_params: String,
+    /// Mars red bank contract address
+    pub mars_red_bank: String,
     /// List of supported token denoms (e.g., USDC IBC denom)
     pub supported_denoms: Vec<String>,
     /// Optional: single depositor address to whitelist during instantiation
@@ -35,7 +39,9 @@ pub enum ExecuteMsg {
 pub enum MarsAdapterMsg {
     /// Update Mars adapter configuration (admin-only)
     UpdateConfig {
-        mars_contract: Option<String>,
+        mars_credit_manager: Option<String>,
+        mars_params: Option<String>,
+        mars_red_bank: Option<String>,
         supported_denoms: Option<Vec<String>>,
     },
 }
@@ -64,6 +70,8 @@ pub enum MarsAdapterQueryMsg {
 #[cw_serde]
 pub struct MarsConfigResponse {
     pub admins: Vec<String>,
-    pub mars_contract: String,
+    pub mars_credit_manager: String,
+    pub mars_params: String,
+    pub mars_red_bank: String,
     pub supported_denoms: Vec<String>,
 }

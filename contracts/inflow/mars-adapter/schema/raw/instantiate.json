@@ -5,7 +5,9 @@
   "type": "object",
   "required": [
     "admins",
-    "mars_contract",
+    "mars_credit_manager",
+    "mars_params",
+    "mars_red_bank",
     "supported_denoms"
   ],
   "properties": {
@@ -23,8 +25,16 @@
         "null"
       ]
     },
-    "mars_contract": {
+    "mars_credit_manager": {
       "description": "Mars credit manager contract address",
+      "type": "string"
+    },
+    "mars_params": {
+      "description": "Mars params contract address",
+      "type": "string"
+    },
+    "mars_red_bank": {
+      "description": "Mars red bank contract address",
       "type": "string"
     },
     "supported_denoms": {

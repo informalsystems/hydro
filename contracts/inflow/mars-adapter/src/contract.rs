@@ -55,19 +55,23 @@ pub fn instantiate(
         return Err(ContractError::AtLeastOneDenom {});
     }
 
-    // Validate Mars contract address
-    let mars_contract = deps.api.addr_validate(&msg.mars_contract)?;
+    // Validate Mars contract addresses
+    let mars_credit_manager = deps.api.addr_validate(&msg.mars_credit_manager)?;
+    let mars_params = deps.api.addr_validate(&msg.mars_params)?;
+    let mars_red_bank = deps.api.addr_validate(&msg.mars_red_bank)?;
 
     // Save configuration
     let config = Config {
-        mars_contract: mars_contract.clone(),
+        mars_credit_manager: mars_credit_manager.clone(),
+        mars_params,
+        mars_red_bank,
         supported_denoms: msg.supported_denoms.clone(),
     };
     CONFIG.save(deps.storage, &config)?;
 
     let mut response = Response::new()
         .add_attribute("action", "instantiate")
-        .add_attribute("mars_contract", mars_contract.to_string())
+        .add_attribute("mars_credit_manager", mars_credit_manager.to_string())
         .add_attribute("supported_denoms", msg.supported_denoms.join(", "));
 
     // If a depositor address is provided, create a Mars account for it
@@ -110,7 +114,7 @@ fn create_depositor_account(
 
     // Create Mars account. We use "default" as the account_kind
     let create_account_msg =
-        mars::create_mars_account_msg(config.mars_contract, Some("default".to_string()))?;
+        mars::create_mars_account_msg(config.mars_credit_manager, Some("default".to_string()))?;
 
     let sub_msg = SubMsg::reply_on_success(create_account_msg, REPLY_CREATE_ACCOUNT_INSTANTIATE);
 
@@ -167,9 +171,17 @@ fn dispatch_execute_custom(
 
     match msg {
         MarsAdapterMsg::UpdateConfig {
-            mars_contract,
+            mars_credit_manager,
+            mars_params,
+            mars_red_bank,
             supported_denoms,
-        } => execute_update_config(deps, mars_contract, supported_denoms),
+        } => execute_update_config(
+            deps,
+            mars_credit_manager,
+            mars_params,
+            mars_red_bank,
+            supported_denoms,
+        ),
     }
 }
 
@@ -240,7 +252,7 @@ fn execute_deposit(deps: DepsMut, _env: Env, info: MessageInfo) -> Result<Respon
 
     // Create Mars UpdateCreditAccount message with Deposit + Lend actions
     let mars_msg =
-        mars::create_mars_deposit_lend_msg(config.mars_contract, account_id, coin.clone())?;
+        mars::create_mars_deposit_lend_msg(config.mars_credit_manager, account_id, coin.clone())?;
 
     Ok(Response::new()
         .add_message(mars_msg)
@@ -281,7 +293,7 @@ fn execute_withdraw(
     // This adapter just checks that the account has sufficient funds.
     let lent_amount = mars::get_lent_amount_for_denom(
         &deps.querier,
-        &config.mars_contract,
+        &config.mars_credit_manager,
         account_id.clone(),
         &coin.denom,
     )?;
@@ -294,7 +306,7 @@ fn execute_withdraw(
     // Create Mars UpdateCreditAccount message with Reclaim + WithdrawToWallet actions
     // Funds are sent back to the depositor
     let mars_msg = mars::create_mars_reclaim_withdraw_msg(
-        config.mars_contract,
+        config.mars_credit_manager,
         account_id,
         coin.clone(),
         info.sender.clone(),
@@ -309,33 +321,49 @@ fn execute_withdraw(
 }
 
 /// Update Mars adapter configuration (admin-only)
-/// IMPORTANT: Changing mars_contract could prevent access to funds if not done carefully
+/// IMPORTANT: Changing Mars contract addresses could prevent access to funds if not done carefully
 fn execute_update_config(
     deps: DepsMut,
-    mars_contract: Option<String>,
+    mars_credit_manager: Option<String>,
+    mars_params: Option<String>,
+    mars_red_bank: Option<String>,
     supported_denoms: Option<Vec<String>>,
 ) -> Result<Response, ContractError> {
     let mut config = CONFIG.load(deps.storage)?;
-    let mut response = Response::new().add_attribute("action", "update_config");
 
-    // Update mars_contract if provided
-    if let Some(mars_contract) = mars_contract {
-        config.mars_contract = deps.api.addr_validate(&mars_contract)?;
-        response = response.add_attribute("new_mars_contract", mars_contract);
+    // Update Mars Credit Manager if provided
+    if let Some(mars_credit_manager_addr) = mars_credit_manager {
+        config.mars_credit_manager = deps.api.addr_validate(&mars_credit_manager_addr)?;
     }
 
-    // Update supported_denoms if provided
-    if let Some(supported_denoms) = supported_denoms {
-        if supported_denoms.is_empty() {
+    // Update Mars Params if provided
+    if let Some(mars_params_addr) = mars_params {
+        config.mars_params = deps.api.addr_validate(&mars_params_addr)?;
+    }
+
+    // Update Mars Red Bank if provided
+    if let Some(mars_red_bank_addr) = mars_red_bank {
+        config.mars_red_bank = deps.api.addr_validate(&mars_red_bank_addr)?;
+    }
+
+    // Update supported denoms if provided
+    if let Some(denoms) = supported_denoms {
+        if denoms.is_empty() {
             return Err(ContractError::AtLeastOneDenom {});
         }
-        config.supported_denoms = supported_denoms.clone();
-        response = response.add_attribute("new_supported_denoms", supported_denoms.join(","));
+        config.supported_denoms = denoms;
     }
 
     CONFIG.save(deps.storage, &config)?;
 
-    Ok(response)
+    Ok(Response::new()
+        .add_attribute("action", "update_config")
+        .add_attribute(
+            "mars_credit_manager",
+            config.mars_credit_manager.to_string(),
+        )
+        .add_attribute("mars_params", config.mars_params.to_string())
+        .add_attribute("mars_red_bank", config.mars_red_bank.to_string()))
 }
 
 /// Registers a new depositor with its Mars account ID
@@ -473,47 +501,95 @@ fn query_config(deps: Deps) -> StdResult<MarsConfigResponse> {
 
     Ok(MarsConfigResponse {
         admins: admins.iter().map(|a| a.to_string()).collect(),
-        mars_contract: config.mars_contract.to_string(),
+        mars_credit_manager: config.mars_credit_manager.to_string(),
+        mars_params: config.mars_params.to_string(),
+        mars_red_bank: config.mars_red_bank.to_string(),
         supported_denoms: config.supported_denoms,
     })
 }
 
 fn query_available_for_deposit(
-    _deps: Deps,
-    _depositor_address: String,
-    _denom: String,
+    deps: Deps,
+    depositor_address: String,
+    denom: String,
 ) -> StdResult<AvailableAmountResponse> {
-    // For Mars lending, there's typically no hard cap
-    // Return a very large number to indicate no practical limit
-    // This can be refined later to query actual Mars deposit caps
-    Ok(AvailableAmountResponse {
-        amount: Uint128::MAX,
-    })
+    let config = CONFIG.load(deps.storage)?;
+
+    // Ensure depositor is registered
+    let depositor_addr = deps.api.addr_validate(&depositor_address)?;
+    get_depositor(deps, depositor_addr).map_err(|e| StdError::generic_err(e.to_string()))?;
+
+    // Query Mars Params for total deposit cap and current amount
+    let total_deposit = mars::query_mars_total_deposit(&deps.querier, &config.mars_params, denom)?;
+
+    // Available = cap - amount (saturating to prevent underflow)
+    let available = total_deposit.cap.saturating_sub(total_deposit.amount);
+
+    Ok(AvailableAmountResponse { amount: available })
 }
 
-/// As Mars lending allows immediate withdrawal, we can actually return
-/// the same amount as the depositor's current position
+fn get_red_bank_balance(deps: Deps, denom: String) -> StdResult<Uint128> {
+    let config = CONFIG.load(deps.storage)?;
+
+    // Query Red Bank balance for this denom using standard bank query
+    let red_bank_balance = deps
+        .querier
+        .query_balance(config.mars_red_bank.to_string(), denom)?;
+
+    Ok(red_bank_balance.amount)
+}
+
 fn query_available_for_withdraw(
     deps: Deps,
     depositor_address: String,
     denom: String,
 ) -> StdResult<AvailableAmountResponse> {
-    let depositor_position = query_depositor_position(deps, depositor_address, denom)?;
+    // Get depositor's position in Mars Credit Manager
+    let depositor_position = query_depositor_position(deps, depositor_address, denom.clone())?;
 
-    Ok(AvailableAmountResponse {
-        amount: depositor_position.amount,
-    })
+    let balance_amount = get_red_bank_balance(deps, denom)?;
+
+    // Return minimum of depositor position and Red Bank liquidity
+    let amount = depositor_position.amount.min(balance_amount);
+
+    Ok(AvailableAmountResponse { amount })
 }
 
 fn query_time_to_withdraw(
-    _deps: Deps,
-    _depositor_address: String,
-    _coin: Coin,
+    deps: Deps,
+    depositor_address: String,
+    coin: Coin,
 ) -> StdResult<TimeEstimateResponse> {
-    // Mars lending allows instant withdrawals
+    // Get depositor's position in Mars Credit Manager
+    let depositor_position = query_depositor_position(deps, depositor_address, coin.denom.clone())?;
+
+    // If depositor's position is less than requested amount, return error
+    if depositor_position.amount < coin.amount {
+        return Err(StdError::generic_err(
+            "Depositor position insufficient for requested withdrawal",
+        ));
+    }
+
+    let balance_amount = get_red_bank_balance(deps, coin.denom)?;
+
+    // If sufficient liquidity is available, return zero time estimate
+    if balance_amount >= coin.amount {
+        return Ok(TimeEstimateResponse {
+            blocks: 0,
+            seconds: 0,
+        });
+    }
+
+    // If liquidity is constrained, return a conservative 1-week estimate
+    // This is the time it might take for liquidity to become available through:
+    // - Borrowers repaying debts
+    // - New lenders providing liquidity
+    // 1 week = 7 days * 24 hours * 60 minutes * 60 seconds = 604,800 seconds
+    // Assuming 1 block per second
+    const ONE_WEEK_SECONDS: u64 = 604_800;
     Ok(TimeEstimateResponse {
-        blocks: 0,
-        seconds: 0,
+        blocks: ONE_WEEK_SECONDS,
+        seconds: ONE_WEEK_SECONDS,
     })
 }
 
@@ -557,7 +633,7 @@ fn query_all_positions(deps: Deps) -> StdResult<AllPositionsResponse> {
         // Query Mars positions for this depositor
         let positions = mars::query_mars_positions(
             &deps.querier,
-            &config.mars_contract,
+            &config.mars_credit_manager,
             depositor.mars_account_id,
         )?;
 
@@ -594,7 +670,7 @@ fn query_depositor_position(
     // Query Mars to get the total lent position in the account for the depositor address (includes yield)
     let amount = mars::get_lent_amount_for_denom(
         &deps.querier,
-        &config.mars_contract,
+        &config.mars_credit_manager,
         depositor.mars_account_id,
         &denom,
     )?;
@@ -618,7 +694,7 @@ fn query_depositor_positions(
     // Query Mars to get all lent positions in the depositor account (includes yield)
     let positions = mars::query_mars_positions(
         &deps.querier,
-        &config.mars_contract,
+        &config.mars_credit_manager,
         depositor.mars_account_id,
     )?;
 

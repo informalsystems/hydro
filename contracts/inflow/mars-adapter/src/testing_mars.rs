@@ -2,7 +2,7 @@
 
 use cosmwasm_std::{Coin, Uint128};
 
-use crate::mars::{Action, ActionAmount, ActionCoin, MarsExecuteMsg};
+use crate::mars::{Action, ActionAmount, ActionCoin, MarsCreditManagerExecuteMsg};
 
 #[test]
 fn test_action_json_serialization() {
@@ -75,7 +75,7 @@ fn test_action_json_serialization() {
 
 #[test]
 fn test_deposit_lend_message_serialization() {
-    let msg = MarsExecuteMsg::UpdateCreditAccount {
+    let msg = MarsCreditManagerExecuteMsg::UpdateCreditAccount {
         account_id: "5696".to_string(),
         actions: vec![
             Action::Deposit(Coin {
@@ -98,7 +98,7 @@ fn test_deposit_lend_message_serialization() {
 
 #[test]
 fn test_reclaim_withdraw_message_serialization() {
-    let msg = MarsExecuteMsg::UpdateCreditAccount {
+    let msg = MarsCreditManagerExecuteMsg::UpdateCreditAccount {
         account_id: "32168".to_string(),
         actions: vec![
             Action::Reclaim(ActionCoin {

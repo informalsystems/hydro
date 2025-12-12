@@ -6,7 +6,11 @@ use cw_storage_plus::{Item, Map};
 #[cw_serde]
 pub struct Config {
     /// Mars credit manager contract address
-    pub mars_contract: Addr,
+    pub mars_credit_manager: Addr,
+    /// Mars params contract address
+    pub mars_params: Addr,
+    /// Mars red bank contract address
+    pub mars_red_bank: Addr,
     /// List of supported token denoms (e.g., USDC IBC denom)
     pub supported_denoms: Vec<String>,
 }
