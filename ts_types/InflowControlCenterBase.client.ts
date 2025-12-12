@@ -6,7 +6,7 @@
 
 import { ICosmWasmClient, ISigningCosmWasmClient } from "./baseClient";
 import { Coin, StdFee } from "@interchainjs/types";
-import { Uint128, InstantiateMsg, ExecuteMsg, UpdateConfigData, QueryMsg, ConfigResponse, Config, PoolInfoResponse, Addr, SubvaultsResponse, WhitelistResponse } from "./InflowControlCenterBase.types";
+import { Uint128, InstantiateMsg, ExecuteMsg, DeploymentDirection, UpdateConfigData, QueryMsg, ConfigResponse, Config, PoolInfoResponse, Addr, SubvaultsResponse, WhitelistResponse } from "./InflowControlCenterBase.types";
 export interface InflowControlCenterBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
@@ -62,9 +62,11 @@ export interface InflowControlCenterBaseInterface extends InflowControlCenterBas
     amount: Uint128;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
   updateDeployedAmount: ({
-    amount
+    amount,
+    direction
   }: {
     amount: Uint128;
+    direction: DeploymentDirection;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
   addToWhitelist: ({
     address
@@ -121,13 +123,16 @@ export class InflowControlCenterBaseClient extends InflowControlCenterBaseQueryC
     }, fee_, memo_, funds_);
   };
   updateDeployedAmount = async ({
-    amount
+    amount,
+    direction
   }: {
     amount: Uint128;
+    direction: DeploymentDirection;
   }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       update_deployed_amount: {
-        amount
+        amount,
+        direction
       }
     }, fee_, memo_, funds_);
   };

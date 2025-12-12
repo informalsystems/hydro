@@ -5,8 +5,8 @@
 */
 
 import { ICosmWasmClient, ISigningCosmWasmClient } from "./baseClient";
-import { Coin, StdFee } from "@interchainjs/types";
-import { InstantiateMsg, DenomMetadata, ExecuteMsg, Uint128, UpdateConfigData, QueryMsg, Order, Addr, ConfigResponse, Config, FundedWithdrawalRequestsResponse, PoolInfoResponse, Timestamp, Uint64, UserPayoutsHistoryResponse, PayoutEntry, UserWithdrawalRequestsResponse, WithdrawalEntry, WhitelistResponse, WithdrawalQueueInfoResponse, WithdrawalQueueInfo } from "./InflowVaultBase.types";
+import { StdFee } from "@interchainjs/types";
+import { InstantiateMsg, DenomMetadata, ExecuteMsg, Uint128, AllocationMode, DeploymentTracking, UpdateConfigData, Coin, QueryMsg, Order, Addr, AdapterInfoResponse, AdapterInfo, ConfigResponse, Config, FundedWithdrawalRequestsResponse, AdaptersListResponse, PoolInfoResponse, Timestamp, Uint64, UserPayoutsHistoryResponse, PayoutEntry, UserWithdrawalRequestsResponse, WithdrawalEntry, WhitelistResponse, WithdrawalQueueInfoResponse, WithdrawalQueueInfo } from "./InflowVaultBase.types";
 export interface InflowVaultBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
@@ -50,6 +50,12 @@ export interface InflowVaultBaseReadOnlyInterface {
     startFrom: number;
   }) => Promise<UserPayoutsHistoryResponse>;
   whitelist: () => Promise<WhitelistResponse>;
+  listAdapters: () => Promise<AdaptersListResponse>;
+  adapterInfo: ({
+    name
+  }: {
+    name: string;
+  }) => Promise<AdapterInfoResponse>;
 }
 export class InflowVaultBaseQueryClient implements InflowVaultBaseReadOnlyInterface {
   client: ICosmWasmClient;
@@ -68,6 +74,8 @@ export class InflowVaultBaseQueryClient implements InflowVaultBaseReadOnlyInterf
     this.userWithdrawalRequests = this.userWithdrawalRequests.bind(this);
     this.userPayoutsHistory = this.userPayoutsHistory.bind(this);
     this.whitelist = this.whitelist.bind(this);
+    this.listAdapters = this.listAdapters.bind(this);
+    this.adapterInfo = this.adapterInfo.bind(this);
   }
   config = async (): Promise<ConfigResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -169,6 +177,22 @@ export class InflowVaultBaseQueryClient implements InflowVaultBaseReadOnlyInterf
       whitelist: {}
     });
   };
+  listAdapters = async (): Promise<AdaptersListResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      list_adapters: {}
+    });
+  };
+  adapterInfo = async ({
+    name
+  }: {
+    name: string;
+  }): Promise<AdapterInfoResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      adapter_info: {
+        name
+      }
+    });
+  };
 }
 export interface InflowVaultBaseInterface extends InflowVaultBaseReadOnlyInterface {
   contractAddress: string;
@@ -203,6 +227,7 @@ export interface InflowVaultBaseInterface extends InflowVaultBaseReadOnlyInterfa
   }: {
     amount: Uint128;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  depositFromDeployment: (fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
   setTokenInfoProviderContract: ({
     address
   }: {
@@ -223,6 +248,61 @@ export interface InflowVaultBaseInterface extends InflowVaultBaseReadOnlyInterfa
   }: {
     config: UpdateConfigData;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  registerAdapter: ({
+    address,
+    allocationMode,
+    deploymentTracking,
+    description,
+    name
+  }: {
+    address: string;
+    allocationMode: AllocationMode;
+    deploymentTracking: DeploymentTracking;
+    description?: string;
+    name: string;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  unregisterAdapter: ({
+    name
+  }: {
+    name: string;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  setAdapterAllocationMode: ({
+    allocationMode,
+    name
+  }: {
+    allocationMode: AllocationMode;
+    name: string;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  setAdapterDeploymentTracking: ({
+    deploymentTracking,
+    name
+  }: {
+    deploymentTracking: DeploymentTracking;
+    name: string;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  withdrawFromAdapter: ({
+    adapterName,
+    amount
+  }: {
+    adapterName: string;
+    amount: Uint128;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  depositToAdapter: ({
+    adapterName,
+    amount
+  }: {
+    adapterName: string;
+    amount: Uint128;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  moveAdapterFunds: ({
+    coin,
+    fromAdapter,
+    toAdapter
+  }: {
+    coin: Coin;
+    fromAdapter: string;
+    toAdapter: string;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
 }
 export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements InflowVaultBaseInterface {
   client: ISigningCosmWasmClient;
@@ -239,10 +319,18 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
     this.fulfillPendingWithdrawals = this.fulfillPendingWithdrawals.bind(this);
     this.claimUnbondedWithdrawals = this.claimUnbondedWithdrawals.bind(this);
     this.withdrawForDeployment = this.withdrawForDeployment.bind(this);
+    this.depositFromDeployment = this.depositFromDeployment.bind(this);
     this.setTokenInfoProviderContract = this.setTokenInfoProviderContract.bind(this);
     this.addToWhitelist = this.addToWhitelist.bind(this);
     this.removeFromWhitelist = this.removeFromWhitelist.bind(this);
     this.updateConfig = this.updateConfig.bind(this);
+    this.registerAdapter = this.registerAdapter.bind(this);
+    this.unregisterAdapter = this.unregisterAdapter.bind(this);
+    this.setAdapterAllocationMode = this.setAdapterAllocationMode.bind(this);
+    this.setAdapterDeploymentTracking = this.setAdapterDeploymentTracking.bind(this);
+    this.withdrawFromAdapter = this.withdrawFromAdapter.bind(this);
+    this.depositToAdapter = this.depositToAdapter.bind(this);
+    this.moveAdapterFunds = this.moveAdapterFunds.bind(this);
   }
   deposit = async ({
     onBehalfOf
@@ -310,6 +398,11 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
       }
     }, fee_, memo_, funds_);
   };
+  depositFromDeployment = async (fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      deposit_from_deployment: {}
+    }, fee_, memo_, funds_);
+  };
   setTokenInfoProviderContract = async ({
     address
   }: {
@@ -351,6 +444,113 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
     return await this.client.execute(this.sender, this.contractAddress, {
       update_config: {
         config
+      }
+    }, fee_, memo_, funds_);
+  };
+  registerAdapter = async ({
+    address,
+    allocationMode,
+    deploymentTracking,
+    description,
+    name
+  }: {
+    address: string;
+    allocationMode: AllocationMode;
+    deploymentTracking: DeploymentTracking;
+    description?: string;
+    name: string;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      register_adapter: {
+        address,
+        allocation_mode: allocationMode,
+        deployment_tracking: deploymentTracking,
+        description,
+        name
+      }
+    }, fee_, memo_, funds_);
+  };
+  unregisterAdapter = async ({
+    name
+  }: {
+    name: string;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      unregister_adapter: {
+        name
+      }
+    }, fee_, memo_, funds_);
+  };
+  setAdapterAllocationMode = async ({
+    allocationMode,
+    name
+  }: {
+    allocationMode: AllocationMode;
+    name: string;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      set_adapter_allocation_mode: {
+        allocation_mode: allocationMode,
+        name
+      }
+    }, fee_, memo_, funds_);
+  };
+  setAdapterDeploymentTracking = async ({
+    deploymentTracking,
+    name
+  }: {
+    deploymentTracking: DeploymentTracking;
+    name: string;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      set_adapter_deployment_tracking: {
+        deployment_tracking: deploymentTracking,
+        name
+      }
+    }, fee_, memo_, funds_);
+  };
+  withdrawFromAdapter = async ({
+    adapterName,
+    amount
+  }: {
+    adapterName: string;
+    amount: Uint128;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      withdraw_from_adapter: {
+        adapter_name: adapterName,
+        amount
+      }
+    }, fee_, memo_, funds_);
+  };
+  depositToAdapter = async ({
+    adapterName,
+    amount
+  }: {
+    adapterName: string;
+    amount: Uint128;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      deposit_to_adapter: {
+        adapter_name: adapterName,
+        amount
+      }
+    }, fee_, memo_, funds_);
+  };
+  moveAdapterFunds = async ({
+    coin,
+    fromAdapter,
+    toAdapter
+  }: {
+    coin: Coin;
+    fromAdapter: string;
+    toAdapter: string;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      move_adapter_funds: {
+        coin,
+        from_adapter: fromAdapter,
+        to_adapter: toAdapter
       }
     }, fee_, memo_, funds_);
   };

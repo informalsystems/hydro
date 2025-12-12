@@ -3,10 +3,14 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use cosmwasm_std::{
     from_json,
     testing::{MockApi, MockQuerier, MockStorage},
-    to_json_binary, Addr, ContractResult, Decimal, OwnedDeps, QuerierResult, SystemError,
+    to_json_binary, Addr, Coin, ContractResult, Decimal, OwnedDeps, QuerierResult, SystemError,
     SystemResult, Uint128, WasmQuery,
 };
 use interface::{
+    inflow_adapter::{
+        deserialize_adapter_interface_query_msg, AdapterInterfaceQueryMsg, AvailableAmountResponse,
+        DepositorPositionResponse,
+    },
     inflow_control_center::{
         Config, ConfigResponse, PoolInfoResponse, QueryMsg as ControlCenterQueryMsg,
     },
@@ -164,4 +168,111 @@ pub fn setup_default_control_center_mock(
         total_pool_value,
         total_shares_issued,
     )
+}
+
+/// Configuration for a mock adapter
+#[derive(Clone, Debug)]
+pub struct MockAdapterConfig {
+    pub available_for_deposit: Uint128,
+    pub available_for_withdraw: Uint128,
+    pub current_deposit: Uint128,
+    pub should_fail_queries: bool,
+}
+
+impl MockAdapterConfig {
+    pub fn new(deposit_capacity: u128, withdraw_capacity: u128, current_deposit: u128) -> Self {
+        Self {
+            available_for_deposit: Uint128::new(deposit_capacity),
+            available_for_withdraw: Uint128::new(withdraw_capacity),
+            current_deposit: Uint128::new(current_deposit),
+            should_fail_queries: false,
+        }
+    }
+
+    pub fn failing() -> Self {
+        Self {
+            available_for_deposit: Uint128::zero(),
+            available_for_withdraw: Uint128::zero(),
+            current_deposit: Uint128::zero(),
+            should_fail_queries: true,
+        }
+    }
+}
+
+pub fn setup_adapter_mock(contract: Addr, config: MockAdapterConfig) -> (String, WasmQueryFunc) {
+    let contract_addr = contract.to_string();
+
+    let response = Box::new(move |query: &WasmQuery| match query {
+        WasmQuery::Smart { contract_addr, msg } => {
+            if contract_addr != &contract.to_string() {
+                return SystemResult::Err(SystemError::UnsupportedRequest {
+                    kind: "unexpected contract address in adapter mock".to_string(),
+                });
+            }
+
+            if config.should_fail_queries {
+                return SystemResult::Err(SystemError::InvalidRequest {
+                    error: "Mock adapter query failure".to_string(),
+                    request: msg.clone(),
+                });
+            }
+
+            // Deserialize the wrapped query message
+            let query_msg = match deserialize_adapter_interface_query_msg(msg) {
+                Ok(q) => q,
+                Err(e) => {
+                    return SystemResult::Err(SystemError::InvalidRequest {
+                        error: format!("Failed to deserialize query wrapper: {}", e),
+                        request: msg.clone(),
+                    });
+                }
+            };
+
+            let response = match query_msg {
+                AdapterInterfaceQueryMsg::AvailableForDeposit { .. } => {
+                    to_json_binary(&AvailableAmountResponse {
+                        amount: config.available_for_deposit,
+                    })
+                }
+                AdapterInterfaceQueryMsg::AvailableForWithdraw { .. } => {
+                    to_json_binary(&AvailableAmountResponse {
+                        amount: config.available_for_withdraw,
+                    })
+                }
+                AdapterInterfaceQueryMsg::DepositorPosition { .. } => {
+                    to_json_binary(&DepositorPositionResponse {
+                        amount: config.current_deposit,
+                    })
+                }
+                _ => {
+                    return SystemResult::Err(SystemError::UnsupportedRequest {
+                        kind: "unsupported query type in adapter mock".to_string(),
+                    });
+                }
+            };
+
+            SystemResult::Ok(ContractResult::Ok(response.unwrap()))
+        }
+        _ => SystemResult::Err(SystemError::UnsupportedRequest {
+            kind: "only smart queries are supported in adapter mock".to_string(),
+        }),
+    });
+
+    (contract_addr, response)
+}
+
+// Helper to set up the querier to return a specific balance for the given address
+pub fn mock_address_balance(
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    address: &str,
+    denom: &str,
+    amount: Uint128,
+) {
+    deps.querier.bank.update_balance(
+        address,
+        vec![Coin {
+            denom: denom.to_string(),
+            amount,
+        }],
+    );
 }

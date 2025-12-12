@@ -1,6 +1,6 @@
 use cosmwasm_std::{DepsMut, Response};
 use cw_storage_plus::Item;
-use interface::inflow::Config;
+use interface::inflow_vault::Config;
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 use crate::{

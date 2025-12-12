@@ -59,10 +59,9 @@ impl CosmosSignature {
 
     pub fn derive_addr_from_pubkey(&self, hrp: &str) -> Result<String, ContractError> {
         // derive external address for merkle proof check
-        let sha_hash: [u8; 32] = Sha256::digest(self.pub_key.as_slice())
-            .as_slice()
-            .try_into()
-            .map_err(|_| ContractError::WrongLength)?;
+        let digest = Sha256::digest(self.pub_key.as_slice());
+        let slice: &[u8] = digest.as_ref();
+        let sha_hash: [u8; 32] = slice.try_into().map_err(|_| ContractError::WrongLength)?;
 
         let rip_hash = Ripemd160::digest(sha_hash);
 
@@ -70,7 +69,7 @@ impl CosmosSignature {
             new_generic_error("Couldn't derive address from pubkey, address prefix parsing failed.")
         })?;
 
-        let addr = bech32::encode::<Bech32>(hrp, rip_hash.as_slice())
+        let addr = bech32::encode::<Bech32>(hrp, rip_hash.as_ref())
             .map_err(|_| ContractError::VerificationFailed {})?;
 
         Ok(addr)

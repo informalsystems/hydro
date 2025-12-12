@@ -1,9 +1,9 @@
 use cosmwasm_std::{from_json, to_json_binary, Addr, Binary, StdError, StdResult};
 use interface::{
-    inflow::{
+    inflow_control_center::{QueryMsg as ControlCenterQueryMsg, SubvaultsResponse},
+    inflow_vault::{
         Config as InflowConfig, ConfigResponse as InflowConfigResponse, QueryMsg as InflowQueryMsg,
     },
-    inflow_control_center::{QueryMsg as ControlCenterQueryMsg, SubvaultsResponse},
 };
 
 pub fn control_center_subvaults_mock(

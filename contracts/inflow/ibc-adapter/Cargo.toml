@@ -1,0 +1,25 @@
+[package]
+name = "ibc-adapter"
+version = { workspace = true }
+edition = { workspace = true }
+authors = ["arlai-mk"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+library = []
+
+[dependencies]
+cosmwasm-std = { workspace = true }
+cosmwasm-schema = { workspace = true }
+cw-storage-plus = { workspace = true }
+cw2 = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+schemars = { workspace = true }
+neutron-sdk = { workspace = true }
+interface = { path = "../../../packages/interface" }
+
+[dev-dependencies]
+cw-multi-test = "2.0"

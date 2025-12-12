@@ -3,11 +3,15 @@
   "title": "PoolInfoResponse",
   "type": "object",
   "required": [
+    "adapter_deposits_base_tokens",
     "balance_base_tokens",
     "shares_issued",
     "withdrawal_queue_base_tokens"
   ],
   "properties": {
+    "adapter_deposits_base_tokens": {
+      "$ref": "#/definitions/Uint128"
+    },
     "balance_base_tokens": {
       "$ref": "#/definitions/Uint128"
     },
