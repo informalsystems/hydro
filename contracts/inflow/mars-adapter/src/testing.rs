@@ -136,7 +136,7 @@ fn default_instantiate_msg(
         mars_red_bank: mars_red_bank.to_string(),
         mars_params: mars_params.to_string(),
         supported_denoms: vec![USDC_DENOM.to_string()],
-        depositor_address: Some(depositor_address.to_string()),
+        initial_depositors: vec![depositor_address.to_string()],
     };
 
     TestSetupData {
@@ -263,7 +263,7 @@ fn instantiate_with_no_denoms_fails() {
         mars_params: mars_params.to_string(),
         mars_red_bank: mars_red_bank.to_string(),
         supported_denoms: vec![],
-        depositor_address: Some(depositor_address.to_string()),
+        initial_depositors: vec![depositor_address.to_string()],
     };
 
     let err = instantiate(deps.as_mut(), env, info, msg).unwrap_err();
@@ -1250,7 +1250,7 @@ fn query_depositor_positions_multiple_denoms() {
         mars_params: mars_params.to_string(),
         mars_red_bank: mars_red_bank.to_string(),
         supported_denoms: vec![USDC_DENOM.to_string(), atom_denom.to_string()],
-        depositor_address: Some(depositor_address.to_string()),
+        initial_depositors: vec![depositor_address.to_string()],
     };
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
@@ -1816,7 +1816,7 @@ fn instantiate_with_empty_admins_fails() {
         mars_params: mars_params.to_string(),
         mars_red_bank: mars_red_bank.to_string(),
         supported_denoms: vec![USDC_DENOM.to_string()],
-        depositor_address: Some(depositor_address.to_string()),
+        initial_depositors: vec![depositor_address.to_string()],
     };
 
     let err = instantiate(deps.as_mut(), env, info, msg).unwrap_err();
@@ -1846,7 +1846,7 @@ fn instantiate_with_duplicate_admins_deduplicates() {
         mars_params: mars_params.to_string(),
         mars_red_bank: mars_red_bank.to_string(),
         supported_denoms: vec![USDC_DENOM.to_string()],
-        depositor_address: Some(depositor_address.to_string()),
+        initial_depositors: vec![depositor_address.to_string()],
     };
 
     instantiate(deps.as_mut(), env, info, msg).unwrap();
@@ -2096,7 +2096,7 @@ fn query_depositor_position_multiple_denoms_returns_correct_one() {
         mars_params: mars_params.to_string(),
         mars_red_bank: mars_red_bank.to_string(),
         supported_denoms: vec![USDC_DENOM.to_string(), atom_denom.to_string()],
-        depositor_address: Some(depositor_address.to_string()),
+        initial_depositors: vec![depositor_address.to_string()],
     };
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 

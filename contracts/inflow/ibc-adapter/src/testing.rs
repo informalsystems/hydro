@@ -8,13 +8,16 @@ mod tests {
     use crate::error::ContractError;
     use crate::msg::{
         AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AvailableAmountResponse, ExecuteMsg,
-        IbcAdapterMsg, InstantiateMsg, QueryMsg,
+        IbcAdapterMsg, InitialDepositor, InstantiateMsg, QueryMsg,
     };
-    use crate::state::{ChainConfig, DepositorCapabilities, TransferFundsInstructions};
+    use crate::state::{
+        ChainConfig, DepositorCapabilities, TokenConfig, TransferFundsInstructions,
+    };
     use crate::testing_mocks::mock_dependencies;
 
     const ADMIN: &str = "admin";
     const DEPOSITOR: &str = "depositor";
+    const DEPOSITOR_CANNOT_WITHDRAW: &str = "depositor_cannot_withdraw";
     const DENOM: &str = "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2";
 
     fn get_message_info(mock_api: &MockApi, sender: &str, funds: &[Coin]) -> MessageInfo {
@@ -27,6 +30,7 @@ mod tests {
     fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         let admin = mock_api.addr_make(ADMIN);
         let depositor = mock_api.addr_make(DEPOSITOR);
+        let depositor_cannot_withdraw = mock_api.addr_make(DEPOSITOR_CANNOT_WITHDRAW);
 
         let chain_config = ChainConfig {
             chain_id: "osmosis-1".to_string(),
@@ -34,16 +38,30 @@ mod tests {
             allowed_recipients: vec![],
         };
 
-        let capabilities = DepositorCapabilities { can_withdraw: true };
+        let capabilities_can_withdraw = DepositorCapabilities { can_withdraw: true };
+        let capabilities_cannot_withdraw = DepositorCapabilities {
+            can_withdraw: false,
+        };
 
         InstantiateMsg {
             admins: vec![admin.to_string()],
-            executors: None,
+            initial_executors: vec![],
             default_timeout_seconds: 600,
-            initial_chains: Some(vec![("osmosis-1".to_string(), chain_config)]),
-            initial_tokens: Some(vec![(DENOM.to_string(), "osmosis-1".to_string())]),
-            depositor_address: Some(depositor.to_string()),
-            depositor_capabilities: Some(to_json_binary(&capabilities).unwrap()),
+            initial_chains: vec![chain_config],
+            initial_tokens: vec![TokenConfig {
+                denom: DENOM.to_string(),
+                source_chain_id: "osmosis-1".to_string(),
+            }],
+            initial_depositors: vec![
+                InitialDepositor {
+                    address: depositor.to_string(),
+                    capabilities: Some(to_json_binary(&capabilities_can_withdraw).unwrap()),
+                },
+                InitialDepositor {
+                    address: depositor_cannot_withdraw.to_string(),
+                    capabilities: Some(to_json_binary(&capabilities_cannot_withdraw).unwrap()),
+                },
+            ],
         }
     }
 
@@ -180,6 +198,39 @@ mod tests {
         // Verify bank send message
         assert_eq!(res.messages.len(), 1);
         assert_eq!(res.attributes[0].value, "withdraw");
+    }
+
+    #[test]
+    fn test_withdraw_fails_when_cannot_withdraw() {
+        let mut deps = mock_dependencies();
+
+        // Setup mock querier to return balance
+        deps.querier
+            .bank
+            .update_balance(MOCK_CONTRACT_ADDR, coins(2000000, DENOM));
+
+        let msg = get_default_instantiate_msg(&deps.api);
+        let info = get_message_info(&deps.api, ADMIN, &[]);
+        let env = mock_env();
+
+        instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
+
+        // Try to withdraw with depositor who cannot withdraw - should fail
+        let withdraw_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::Withdraw {
+            coin: Coin {
+                denom: DENOM.to_string(),
+                amount: Uint128::new(1000000),
+            },
+        });
+        let info = get_message_info(&deps.api, DEPOSITOR_CANNOT_WITHDRAW, &[]);
+
+        let err = execute(deps.as_mut(), env, info, withdraw_msg).unwrap_err();
+
+        // Verify it's the WithdrawalNotAllowed error
+        match err {
+            ContractError::WithdrawalNotAllowed {} => {}
+            _ => panic!("Expected WithdrawalNotAllowed error, got: {:?}", err),
+        }
     }
 
     #[test]

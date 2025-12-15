@@ -427,7 +427,7 @@ instantiate_mars_adapter() {
   "mars_credit_manager": "$MARS_CREDIT_MANAGER",
   "mars_params": "$MARS_PARAMS",
   "mars_red_bank": "$MARS_RED_BANK",
-  "depositor_address": "$VAULT_ADDRESS"
+  "initial_depositors": ["$VAULT_ADDRESS"]
 }
 EOF
 )
@@ -465,17 +465,27 @@ instantiate_ibc_adapter() {
     INIT_IBC_ADAPTER=$(cat <<EOF
 {
   "admins": ["$ADMIN_ADDRESS"],
+  "initial_depositors": [
+    {
+      "address": "$VAULT_ADDRESS",
+      "capabilities": "eyJjYW5fd2l0aGRyYXciOnRydWV9"
+    }
+  ],
   "default_timeout_seconds": 600,
-  "depositor_address": "$VAULT_ADDRESS",
-  "initial_chains": {
-    "noble-1": {
+  "initial_chains": [
+    {
+      "chain_id": "noble-1",
       "channel_from_neutron": "channel-30",
       "allowed_recipients": ["noble1k64ssp5pnkmwtndfzvgtnjmhx06w8mdvlzgrux"]
     }
-  },
-  "initial_tokens": {
-    "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81": "noble-1"
-  }
+  ],
+  "initial_tokens": [
+    {
+      "denom": "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81",
+      "source_chain_id": "noble-1"
+    }
+  ],
+  "initial_executors": []
 }
 EOF
 )

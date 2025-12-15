@@ -20,8 +20,8 @@ pub struct InstantiateMsg {
     pub mars_red_bank: String,
     /// List of supported token denoms (e.g., USDC IBC denom)
     pub supported_denoms: Vec<String>,
-    /// Optional: single depositor address to whitelist during instantiation
-    pub depositor_address: Option<String>,
+    /// Initial depositor addresses to whitelist during instantiation (can be empty array)
+    pub initial_depositors: Vec<String>,
 }
 
 /// Top-level execute message wrapper for Mars adapter

@@ -6,7 +6,7 @@
 
 export interface InstantiateMsg {
   admins: string[];
-  depositor_address?: string | null;
+  initial_depositors: string[];
   mars_credit_manager: string;
   mars_params: string;
   mars_red_bank: string;

@@ -9,6 +9,7 @@
     "type": "object",
     "required": [
       "admins",
+      "initial_depositors",
       "mars_credit_manager",
       "mars_params",
       "mars_red_bank",
@@ -22,12 +23,12 @@
           "type": "string"
         }
       },
-      "depositor_address": {
-        "description": "Optional: single depositor address to whitelist during instantiation",
-        "type": [
-          "string",
-          "null"
-        ]
+      "initial_depositors": {
+        "description": "Initial depositor addresses to whitelist during instantiation (can be empty array)",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
       },
       "mars_credit_manager": {
         "description": "Mars credit manager contract address",

@@ -30,9 +30,10 @@ pub const ADMINS: Item<Vec<Addr>> = Item::new("admins");
 /// Key: Addr (depositor address), Value: Depositor (mars_account_id + enabled)
 pub const WHITELISTED_DEPOSITORS: Map<Addr, Depositor> = Map::new("whitelisted_depositors");
 
-/// Temporary storage for tracking which depositor address is being set up during replies
+/// Temporary storage for list of depositor addresses being set up during account creation
 /// This is needed because reply handlers don't have access to the original message context
-pub const PENDING_DEPOSITOR_SETUP: Item<Addr> = Item::new("pending_depositor_setup");
+/// When a reply comes in, we find the first depositor with an empty account_id and update it
+pub const PENDING_DEPOSITORS: Item<Vec<Addr>> = Item::new("pending_depositors");
 
 /// Configuration storage
 pub const CONFIG: Item<Config> = Item::new("config");

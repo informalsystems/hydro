@@ -53,14 +53,11 @@ pub fn instantiate(
     ADMINS.save(deps.storage, &validated_admins)?;
 
     // Validate and store executors
-    let validated_executors = if let Some(exec_list) = msg.executors {
-        exec_list
-            .iter()
-            .map(|e| deps.api.addr_validate(e))
-            .collect::<StdResult<Vec<_>>>()?
-    } else {
-        vec![]
-    };
+    let validated_executors = msg
+        .initial_executors
+        .iter()
+        .map(|e| deps.api.addr_validate(e))
+        .collect::<StdResult<Vec<_>>>()?;
     EXECUTORS.save(deps.storage, &validated_executors)?;
 
     // Store config
@@ -69,35 +66,34 @@ pub fn instantiate(
     };
     CONFIG.save(deps.storage, &config)?;
 
-    // Initialize chain registry with initial chains if provided
+    // Initialize chain registry with initial chains
     let mut chains_count = 0;
-    if let Some(initial_chains) = msg.initial_chains {
-        for (chain_id, chain_config) in initial_chains {
-            CHAIN_REGISTRY.save(deps.storage, chain_id, &chain_config)?;
-            chains_count += 1;
-        }
+    for chain_config in msg.initial_chains {
+        CHAIN_REGISTRY.save(deps.storage, chain_config.chain_id.clone(), &chain_config)?;
+        chains_count += 1;
     }
 
-    // Initialize token registry with initial tokens if provided
+    // Initialize token registry with initial tokens
     let mut tokens_count = 0;
-    if let Some(initial_tokens) = msg.initial_tokens {
-        for (denom, source_chain_id) in initial_tokens {
-            let token_config = TokenConfig {
-                denom: denom.clone(),
-                source_chain_id,
-            };
-            TOKEN_REGISTRY.save(deps.storage, denom, &token_config)?;
-            tokens_count += 1;
-        }
+    for token_config in msg.initial_tokens {
+        TOKEN_REGISTRY.save(deps.storage, token_config.denom.clone(), &token_config)?;
+        tokens_count += 1;
     }
 
-    // Optionally register initial depositor
-    let mut depositor_registered = false;
-    if let Some(depositor_addr) = msg.depositor_address {
-        let addr = deps.api.addr_validate(&depositor_addr)?;
+    // Register initial depositors
+    let mut depositors_count = 0;
+    for initial_depositor in msg.initial_depositors {
+        let addr = deps.api.addr_validate(&initial_depositor.address)?;
 
-        // Parse capabilities or use default (simplified: only can_withdraw field)
-        let capabilities = if let Some(cap_binary) = msg.depositor_capabilities {
+        // Check for duplicate
+        if WHITELISTED_DEPOSITORS.has(deps.storage, addr.clone()) {
+            return Err(ContractError::DepositorAlreadyRegistered {
+                depositor_address: addr.to_string(),
+            });
+        }
+
+        // Parse capabilities or use default
+        let capabilities = if let Some(cap_binary) = initial_depositor.capabilities {
             validate_capabilities_binary(&cap_binary)?
         } else {
             // Default capabilities: can withdraw
@@ -109,8 +105,8 @@ pub fn instantiate(
             capabilities,
         };
 
-        WHITELISTED_DEPOSITORS.save(deps.storage, addr, &depositor)?;
-        depositor_registered = true;
+        WHITELISTED_DEPOSITORS.save(deps.storage, addr.clone(), &depositor)?;
+        depositors_count += 1;
     }
 
     let mut response = Response::new()
@@ -134,9 +130,9 @@ pub fn instantiate(
         response = response.add_attribute("initial_tokens_count", tokens_count.to_string());
     }
 
-    // Add depositor if registered
-    if depositor_registered {
-        response = response.add_attribute("depositor_registered", "true");
+    // Add initial depositors count
+    if depositors_count > 0 {
+        response = response.add_attribute("initial_depositors_count", depositors_count.to_string());
     }
 
     Ok(response)

@@ -8,16 +8,23 @@ export type Binary = string;
 export interface InstantiateMsg {
   admins: string[];
   default_timeout_seconds: number;
-  depositor_address?: string | null;
-  depositor_capabilities?: Binary | null;
-  executors?: string[] | null;
-  initial_chains?: [string, ChainConfig][] | null;
-  initial_tokens?: [string, string][] | null;
+  initial_chains: ChainConfig[];
+  initial_depositors: InitialDepositor[];
+  initial_executors: string[];
+  initial_tokens: TokenConfig[];
 }
 export interface ChainConfig {
   allowed_recipients: string[];
   chain_id: string;
   channel_from_neutron: string;
+}
+export interface InitialDepositor {
+  address: string;
+  capabilities?: Binary | null;
+}
+export interface TokenConfig {
+  denom: string;
+  source_chain_id: string;
 }
 export type ExecuteMsg = {
   standard_action: AdapterInterfaceMsg;

@@ -13,21 +13,19 @@ use crate::msg::{
     MarsAdapterMsg, MarsAdapterQueryMsg, MarsConfigResponse, QueryMsg, RegisteredDepositorInfo,
     RegisteredDepositorsResponse, TimeEstimateResponse,
 };
-use crate::state::{
-    Config, Depositor, ADMINS, CONFIG, PENDING_DEPOSITOR_SETUP, WHITELISTED_DEPOSITORS,
-};
+use crate::state::{Config, Depositor, ADMINS, CONFIG, PENDING_DEPOSITORS, WHITELISTED_DEPOSITORS};
 
 /// Contract name that is used for migration
 const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
 /// Contract version that is used for migration
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Reply ID for CreateCreditAccount submessage during instantiation
-const REPLY_CREATE_ACCOUNT_INSTANTIATE: u64 = 1;
+/// Reply ID for CreateCreditAccount submessage
+const REPLY_CREATE_CREDIT_ACCOUNT_ID: u64 = 1;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
-    deps: DepsMut,
+    mut deps: DepsMut,
     _env: Env,
     _info: MessageInfo,
     msg: InstantiateMsg,
@@ -74,13 +72,13 @@ pub fn instantiate(
         .add_attribute("mars_credit_manager", mars_credit_manager.to_string())
         .add_attribute("supported_denoms", msg.supported_denoms.join(", "));
 
-    // If a depositor address is provided, create a Mars account for it
-    if let Some(depositor_address) = msg.depositor_address {
-        let sub_msg = create_depositor_account(deps, depositor_address.clone())?;
+    // Create Mars accounts for initial depositors
+    for depositor_address in msg.initial_depositors {
+        let sub_msg = create_depositor_account(deps.branch(), depositor_address.clone())?;
 
         response = response
             .add_submessage(sub_msg)
-            .add_attribute("depositor_address", depositor_address);
+            .add_attribute("initial_depositor", depositor_address);
     }
 
     Ok(response)
@@ -102,8 +100,12 @@ fn create_depositor_account(
         });
     }
 
-    // Store pending setup info
-    PENDING_DEPOSITOR_SETUP.save(deps.storage, &depositor_addr)?;
+    // Add to pending depositors list
+    let mut pending = PENDING_DEPOSITORS
+        .may_load(deps.storage)?
+        .unwrap_or_default();
+    pending.push(depositor_addr.clone());
+    PENDING_DEPOSITORS.save(deps.storage, &pending)?;
 
     // Initialize with empty account ID (will be set in reply handler) and enabled=true
     let depositor = Depositor {
@@ -116,7 +118,7 @@ fn create_depositor_account(
     let create_account_msg =
         mars::create_mars_account_msg(config.mars_credit_manager, Some("default".to_string()))?;
 
-    let sub_msg = SubMsg::reply_on_success(create_account_msg, REPLY_CREATE_ACCOUNT_INSTANTIATE);
+    let sub_msg = SubMsg::reply_on_success(create_account_msg, REPLY_CREATE_CREDIT_ACCOUNT_ID);
 
     Ok(sub_msg)
 }
@@ -706,23 +708,38 @@ fn query_depositor_positions(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractError> {
     match msg.id {
-        REPLY_CREATE_ACCOUNT_INSTANTIATE => handle_create_account_instantiate_reply(deps, msg),
+        REPLY_CREATE_CREDIT_ACCOUNT_ID => handle_create_credit_account_reply(deps, msg),
         _ => Err(ContractError::Std(cosmwasm_std::StdError::generic_err(
             format!("Unknown reply ID: {}", msg.id),
         ))),
     }
 }
 
-/// Handler for account creation during instantiation (stores account_id in config)
-fn handle_create_account_instantiate_reply(
+/// Handler for account creation (stores account_id)
+fn handle_create_credit_account_reply(
     deps: DepsMut,
     msg: Reply,
 ) -> Result<Response, ContractError> {
     // Extract the account_id from Mars's response
     let account_id = parse_account_id_from_reply(&msg)?;
 
-    // Get which depositor this account is for
-    let depositor_addr = PENDING_DEPOSITOR_SETUP.load(deps.storage)?;
+    // Find the first depositor with an empty account_id (they're waiting for this reply)
+    let pending = PENDING_DEPOSITORS.load(deps.storage)?;
+
+    let mut depositor_addr: Option<Addr> = None;
+    for addr in &pending {
+        let depositor = WHITELISTED_DEPOSITORS.load(deps.storage, addr.clone())?;
+        if depositor.mars_account_id.is_empty() {
+            depositor_addr = Some(addr.clone());
+            break;
+        }
+    }
+
+    let depositor_addr = depositor_addr.ok_or_else(|| {
+        ContractError::Std(cosmwasm_std::StdError::generic_err(
+            "No pending depositor found for account creation",
+        ))
+    })?;
 
     // Update the depositor's account ID
     let depositor = Depositor {
@@ -731,8 +748,16 @@ fn handle_create_account_instantiate_reply(
     };
     WHITELISTED_DEPOSITORS.save(deps.storage, depositor_addr.clone(), &depositor)?;
 
-    // Clean up temporary storage
-    PENDING_DEPOSITOR_SETUP.remove(deps.storage);
+    // Remove this depositor from pending list
+    let pending: Vec<Addr> = pending
+        .into_iter()
+        .filter(|a| a != depositor_addr)
+        .collect();
+    if pending.is_empty() {
+        PENDING_DEPOSITORS.remove(deps.storage);
+    } else {
+        PENDING_DEPOSITORS.save(deps.storage, &pending)?;
+    }
 
     Ok(Response::new()
         .add_attribute("action", "account_created")
