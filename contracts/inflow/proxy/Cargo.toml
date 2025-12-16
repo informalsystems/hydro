@@ -8,6 +8,7 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 library = []
+cosmwasm_compat = ["interface/cosmwasm_compat"]
 
 [dependencies]
 cosmwasm-std = { workspace = true }
