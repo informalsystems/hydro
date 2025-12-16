@@ -1,3 +1,5 @@
+#[cfg(feature = "cosmwasm_compat")]
+use crate::compat::StdErrExt;
 use cosmwasm_std::{Reply, StdError, StdResult};
 
 // SubMsg ID is used so that we can differentiate submessages sent by the smart contract when the Wasm SDK module

@@ -3,6 +3,8 @@ use cosmwasm_std::{
     DepsMut, Env, MessageInfo, Reply, Response, StdError, StdResult, SubMsg, SubMsgResult, WasmMsg,
 };
 use cw2::set_contract_version;
+#[cfg(feature = "cosmwasm_compat")]
+use interface::compat::StdErrExt;
 
 use interface::{
     inflow::{
