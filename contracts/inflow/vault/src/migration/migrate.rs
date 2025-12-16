@@ -9,27 +9,23 @@ use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::contract::{CONTRACT_NAME, CONTRACT_VERSION};
 use crate::error::{new_generic_error, ContractError};
-use crate::migration::unreleased::migrate_config;
 
 #[cw_serde]
-pub struct MigrateMsg {
-    pub control_center_addr: String,
-    pub token_info_provider_addr: Option<String>,
-}
+pub struct MigrateMsg {}
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(
-    mut deps: DepsMut<NeutronQuery>,
+    deps: DepsMut<NeutronQuery>,
     _env: Env,
-    msg: MigrateMsg,
+    _msg: MigrateMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     check_contract_version(deps.storage)?;
 
-    let response = migrate_config(&mut deps, msg)?;
+    // No state migrations needed from v3.6.5 to v3.6.6
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    Ok(response)
+    Ok(Response::new())
 }
 
 fn check_contract_version(storage: &dyn cosmwasm_std::Storage) -> Result<(), ContractError> {
