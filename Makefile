@@ -47,6 +47,7 @@ schema:
 	cd contracts/inflow/vault && cargo run --bin inflow_vault_schema
 	cd contracts/inflow/proxy && cargo run --bin inflow_proxy_schema
 	cd contracts/inflow/control-center && cargo run --bin inflow_control_center_schema
+	cd contracts/inflow/user-registry && cargo run --bin inflow_user_registry_schema
 	cd contracts/inflow/mars-adapter && cargo run --bin inflow_mars_adapter_schema
 	cd contracts/inflow/ibc-adapter && cargo run --bin inflow_ibc_adapter_schema
 
@@ -61,6 +62,7 @@ schema:
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/vault/schema NAME=InflowVaultBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/proxy/schema NAME=InflowProxyBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/control-center/schema NAME=InflowControlCenterBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/user-registry/schema NAME=InflowUserRegistryBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/mars-adapter/schema NAME=InflowMarsAdapterBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/ibc-adapter/schema NAME=InflowIBCAdapterBase
 
