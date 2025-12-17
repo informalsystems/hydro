@@ -40,6 +40,8 @@ pub struct InstantiateMsg {
     pub slash_percentage_threshold: Decimal,
     // Address that will receive the tokens slashed from the lockups.
     pub slash_tokens_receiver_addr: String,
+    // Percentage fee applied during lockup conversions when the user does not provide conversion funds.
+    pub lockup_conversion_fee_percent: Decimal,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -260,6 +262,21 @@ pub enum ExecuteMsg {
     ConvertLockupToDtoken {
         lock_ids: Vec<u64>,
     },
+
+    /// Allows users to convert their existing lockup to one holding a different denom.
+    ConvertLockup {
+        lock_id: u64,
+        target_denom: String,
+    },
+
+    /// Allows whitelisted admins to add funds that can be used for lockup conversions.
+    ProvideConversionFunds {},
+
+    /// Allows whitelisted admins to withdraw unutilized conversion funds.
+    WithdrawConversionFunds {
+        funds_to_withdraw: Vec<Coin>,
+    },
+
     /// Allows whitelisted admins to slash lockups that voted for a given proposal.
     SlashProposalVoters {
         round_id: u64,
@@ -327,6 +344,7 @@ pub struct UpdateConfigData {
     pub lock_expiry_duration_seconds: Option<u64>,
     pub slash_percentage_threshold: Option<Decimal>,
     pub slash_tokens_receiver_addr: Option<String>,
+    pub lockup_conversion_fee_percent: Option<Decimal>,
 }
 
 #[derive(Serialize, Deserialize)]

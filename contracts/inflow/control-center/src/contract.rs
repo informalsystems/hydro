@@ -5,8 +5,8 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 use interface::{
     inflow_control_center::{
-        Config, ConfigResponse, ExecuteMsg, PoolInfoResponse, QueryMsg, SubvaultsResponse,
-        UpdateConfigData, WhitelistResponse,
+        Config, ConfigResponse, DeploymentDirection, ExecuteMsg, PoolInfoResponse, QueryMsg,
+        SubvaultsResponse, UpdateConfigData, WhitelistResponse,
     },
     inflow_vault::{PoolInfoResponse as VaultPoolInfoResponse, QueryMsg as VaultQueryMsg},
 };
@@ -99,11 +99,8 @@ pub fn execute(
         ExecuteMsg::SubmitDeployedAmount { amount } => {
             submit_deployed_amount(deps, env, info, amount)
         }
-        ExecuteMsg::AddToDeployedAmount { amount_to_add } => {
-            add_to_deployed_amount(deps, env, info, amount_to_add)
-        }
-        ExecuteMsg::SubFromDeployedAmount { amount_to_sub } => {
-            sub_from_deployed_amount(deps, env, info, amount_to_sub)
+        ExecuteMsg::UpdateDeployedAmount { amount, direction } => {
+            update_deployed_amount(deps, env, info, amount, direction)
         }
         ExecuteMsg::AddToWhitelist { address } => add_to_whitelist(deps, env, info, address),
         ExecuteMsg::RemoveFromWhitelist { address } => {
@@ -134,10 +131,10 @@ fn submit_deployed_amount(
 fn update_deployed_amount(
     deps: DepsMut<NeutronQuery>,
     env: Env,
-    sender: Addr,
+    info: MessageInfo,
     amount: Uint128,
-    to_add: bool, // true = add, false = sub
-) -> Result<(), ContractError> {
+    direction: DeploymentDirection,
+) -> Result<Response<NeutronMsg>, ContractError> {
     // Only registered sub-vaults can execute this function.
     // This happens when a whitelisted address:
     // - withdraws funds for deployment
@@ -145,55 +142,27 @@ fn update_deployed_amount(
     // - deposits funds from deployment
     // from a sub-vault.
     // This can also happen during adapter deposit/withdraw flows.
-    if !SUBVAULTS.has(deps.storage, sender.clone()) {
+    if !SUBVAULTS.has(deps.storage, info.sender.clone()) {
         return Err(ContractError::Unauthorized);
     }
 
-    if to_add {
-        DEPLOYED_AMOUNT.update(deps.storage, env.block.height, |current_value| {
-            current_value
-                .unwrap_or_default()
+    DEPLOYED_AMOUNT.update(deps.storage, env.block.height, |current_value| {
+        let current = current_value.unwrap_or_default();
+        match direction {
+            DeploymentDirection::Add => current
                 .checked_add(amount)
-                .map_err(|e| new_generic_error(format!("overflow error: {e}")))
-        })?;
-    } else {
-        DEPLOYED_AMOUNT.update(deps.storage, env.block.height, |current_value| {
-            current_value
-                .unwrap_or_default()
+                .map_err(|e| new_generic_error(format!("overflow error: {e}"))),
+            DeploymentDirection::Subtract => current
                 .checked_sub(amount)
-                .map_err(|e| new_generic_error(format!("overflow error: {e}")))
-        })?;
-    }
-
-    Ok(())
-}
-
-fn add_to_deployed_amount(
-    deps: DepsMut<NeutronQuery>,
-    env: Env,
-    info: MessageInfo,
-    amount_to_add: Uint128,
-) -> Result<Response<NeutronMsg>, ContractError> {
-    update_deployed_amount(deps, env, info.sender.clone(), amount_to_add, true)?;
+                .map_err(|e| new_generic_error(format!("underflow error: {e}"))),
+        }
+    })?;
 
     Ok(Response::new()
-        .add_attribute("action", "add_to_deployed_amount")
+        .add_attribute("action", "update_deployed_amount")
         .add_attribute("sender", info.sender)
-        .add_attribute("amount_to_add", amount_to_add))
-}
-
-fn sub_from_deployed_amount(
-    deps: DepsMut<NeutronQuery>,
-    env: Env,
-    info: MessageInfo,
-    amount_to_sub: Uint128,
-) -> Result<Response<NeutronMsg>, ContractError> {
-    update_deployed_amount(deps, env, info.sender.clone(), amount_to_sub, false)?;
-
-    Ok(Response::new()
-        .add_attribute("action", "sub_from_deployed_amount")
-        .add_attribute("sender", info.sender)
-        .add_attribute("amount_to_sub", amount_to_sub))
+        .add_attribute("amount", amount)
+        .add_attribute("direction", format!("{:?}", direction)))
 }
 
 // Adds a new account address to the whitelist.

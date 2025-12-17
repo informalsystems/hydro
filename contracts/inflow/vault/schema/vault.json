@@ -1,6 +1,6 @@
 {
   "contract_name": "vault",
-  "contract_version": "3.6.4",
+  "contract_version": "3.6.5",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -246,6 +246,19 @@
                 "$ref": "#/definitions/Uint128"
               }
             },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "deposit_from_deployment"
+        ],
+        "properties": {
+          "deposit_from_deployment": {
+            "type": "object",
             "additionalProperties": false
           }
         },
@@ -510,6 +523,36 @@
           }
         },
         "additionalProperties": false
+      },
+      {
+        "description": "Move funds between adapters (whitelisted only) Allows transferring non-deposit_denom tokens For deposit_denom: behaves like WithdrawFromAdapter + DepositToAdapter For non-deposit_denom: requires same DeploymentTracking type",
+        "type": "object",
+        "required": [
+          "move_adapter_funds"
+        ],
+        "properties": {
+          "move_adapter_funds": {
+            "type": "object",
+            "required": [
+              "coin",
+              "from_adapter",
+              "to_adapter"
+            ],
+            "properties": {
+              "coin": {
+                "$ref": "#/definitions/Coin"
+              },
+              "from_adapter": {
+                "type": "string"
+              },
+              "to_adapter": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
       }
     ],
     "definitions": {
@@ -531,6 +574,22 @@
             ]
           }
         ]
+      },
+      "Coin": {
+        "type": "object",
+        "required": [
+          "amount",
+          "denom"
+        ],
+        "properties": {
+          "amount": {
+            "$ref": "#/definitions/Uint128"
+          },
+          "denom": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "DeploymentTracking": {
         "description": "Controls whether adapter operations update the Control Center's deployed amount\n\n# Race Condition Warnings\n\n## Automated + Tracked (DANGEROUS) Using `Tracked` with `AllocationMode::Automated` creates a race condition: 1. Automated deposits/withdrawals update deployed amount without admin knowledge 2. If a manual `SubmitDeployedAmount` call is in progress, it may overwrite with stale data 3. Result: Deployed amount becomes inaccurate\n\n**Recommendation**: Use `NotTracked` for automated adapters unless absolutely necessary.\n\n## Manual + Tracked When using `Tracked` with `AllocationMode::Manual`: - Ensure no `SubmitDeployedAmount` proposal is pending before manual operations - After manual deposit/withdraw, re-snapshot deployed amount if a proposal was in flight - Otherwise, the proposal will overwrite the auto-updated value with stale data",

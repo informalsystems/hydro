@@ -13,10 +13,17 @@ use cw2::set_contract_version;
 use cw_storage_plus::Bound;
 use interface::{
     inflow_control_center::{
-        ConfigResponse as ControlCenterConfigResponse, ExecuteMsg as ControlCenterExecuteMsg,
-        PoolInfoResponse as ControlCenterPoolInfoResponse, QueryMsg as ControlCenterQueryMsg,
+        ConfigResponse as ControlCenterConfigResponse, DeploymentDirection,
+        ExecuteMsg as ControlCenterExecuteMsg, PoolInfoResponse as ControlCenterPoolInfoResponse,
+        QueryMsg as ControlCenterQueryMsg,
     },
-    inflow_vault::PoolInfoResponse,
+    inflow_vault::{
+        AdapterInfo, AdapterInfoResponse, AdaptersListResponse, AllocationMode, Config,
+        ConfigResponse, DeploymentTracking, ExecuteMsg, FundedWithdrawalRequestsResponse,
+        PayoutEntry, PoolInfoResponse, QueryMsg, UpdateConfigData, UserPayoutsHistoryResponse,
+        UserWithdrawalRequestsResponse, WhitelistResponse, WithdrawalEntry, WithdrawalQueueInfo,
+        WithdrawalQueueInfoResponse,
+    },
     token_info_provider::TokenInfoProviderQueryMsg,
 };
 use neutron_sdk::{
@@ -29,17 +36,12 @@ use prost::Message;
 
 use crate::{
     error::{new_generic_error, ContractError},
-    msg::{DenomMetadata, ExecuteMsg, InstantiateMsg, ReplyPayload, UpdateConfigData},
-    query::{
-        ConfigResponse, FundedWithdrawalRequestsResponse, QueryMsg, UserPayoutsHistoryResponse,
-        UserWithdrawalRequestsResponse, WhitelistResponse, WithdrawalQueueInfoResponse,
-    },
+    msg::{DenomMetadata, InstantiateMsg, ReplyPayload},
     state::{
         get_next_payout_id, get_next_withdrawal_id, load_config, load_withdrawal_queue_info,
-        AdapterInfo, AllocationMode, Config, DeploymentTracking, PayoutEntry, WithdrawalEntry,
-        WithdrawalQueueInfo, ADAPTERS, CONFIG, LAST_FUNDED_WITHDRAWAL_ID, NEXT_PAYOUT_ID,
-        NEXT_WITHDRAWAL_ID, PAYOUTS_HISTORY, USER_WITHDRAWAL_REQUESTS, WHITELIST,
-        WITHDRAWAL_QUEUE_INFO, WITHDRAWAL_REQUESTS,
+        ADAPTERS, CONFIG, LAST_FUNDED_WITHDRAWAL_ID, NEXT_PAYOUT_ID, NEXT_WITHDRAWAL_ID,
+        PAYOUTS_HISTORY, USER_WITHDRAWAL_REQUESTS, WHITELIST, WITHDRAWAL_QUEUE_INFO,
+        WITHDRAWAL_REQUESTS,
     },
 };
 
@@ -170,6 +172,7 @@ pub fn execute(
         ExecuteMsg::WithdrawForDeployment { amount } => {
             withdraw_for_deployment(deps, env, info, config, amount)
         }
+        ExecuteMsg::DepositFromDeployment {} => deposit_from_deployment(deps, env, info, config),
         ExecuteMsg::SetTokenInfoProviderContract { address } => {
             set_token_info_provider_contract(deps, info, config, address)
         }
@@ -212,6 +215,11 @@ pub fn execute(
             adapter_name,
             amount,
         } => deposit_to_adapter(deps, env, info, &config, adapter_name, amount),
+        ExecuteMsg::MoveAdapterFunds {
+            from_adapter,
+            to_adapter,
+            coin,
+        } => move_adapter_funds(deps, env, info, &config, from_adapter, to_adapter, coin),
     }
 }
 
@@ -305,8 +313,11 @@ fn deposit(
     if !total_tracked_amount.is_zero() {
         let total_tracked_amount_in_base_tokens =
             convert_deposit_token_into_base_token(&deps.as_ref(), config, total_tracked_amount)?;
-        let update_msg =
-            build_add_to_deployed_amount_msg(total_tracked_amount_in_base_tokens, config)?;
+        let update_msg = build_update_deployed_amount_msg(
+            total_tracked_amount_in_base_tokens,
+            DeploymentDirection::Add,
+            config,
+        )?;
         messages.push(update_msg);
     }
 
@@ -446,8 +457,11 @@ fn withdraw(
                 config,
                 total_tracked_amount,
             )?;
-            let update_msg =
-                build_sub_from_deployed_amount_msg(total_tracked_amount_in_base_tokens, config)?;
+            let update_msg = build_update_deployed_amount_msg(
+                total_tracked_amount_in_base_tokens,
+                DeploymentDirection::Subtract,
+                config,
+            )?;
             messages.push(update_msg);
         }
     }
@@ -920,8 +934,11 @@ fn withdraw_for_deployment(
     let amount_to_withdraw_in_base_tokens =
         convert_deposit_token_into_base_token(&deps.as_ref(), &config, amount_to_withdraw)?;
 
-    let update_deployed_amount_msg =
-        build_add_to_deployed_amount_msg(amount_to_withdraw_in_base_tokens, &config)?;
+    let update_deployed_amount_msg = build_update_deployed_amount_msg(
+        amount_to_withdraw_in_base_tokens,
+        DeploymentDirection::Add,
+        &config,
+    )?;
 
     let send_tokens_msg = CosmosMsg::Bank(BankMsg::Send {
         to_address: info.sender.to_string(),
@@ -939,6 +956,37 @@ fn withdraw_for_deployment(
         .add_attribute("sender", info.sender)
         .add_attribute("amount_requested", amount)
         .add_attribute("amount_withdrawn", amount_to_withdraw))
+}
+
+// Deposits funds back from deployment.
+fn deposit_from_deployment(
+    deps: DepsMut<NeutronQuery>,
+    _env: Env,
+    info: MessageInfo,
+    config: Config,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    let deposited_amount = cw_utils::must_pay(&info, &config.deposit_denom)?;
+
+    // Convert deposited amount to base tokens
+    let deposited_amount_in_base_tokens =
+        convert_deposit_token_into_base_token(&deps.as_ref(), &config, deposited_amount)?;
+
+    // Call control center to subtract from deployed amount
+    let update_deployed_amount_msg = build_update_deployed_amount_msg(
+        deposited_amount_in_base_tokens,
+        DeploymentDirection::Subtract,
+        &config,
+    )?;
+
+    // Funds are automatically left in the vault's balance
+
+    Ok(Response::new()
+        .add_message(update_deployed_amount_msg)
+        .add_attribute("action", "deposit_from_deployment")
+        .add_attribute("sender", info.sender)
+        .add_attribute("amount_deposited", deposited_amount))
 }
 
 fn set_token_info_provider_contract(
@@ -1250,7 +1298,11 @@ fn withdraw_from_adapter(
     ) {
         let amount_in_base_tokens =
             convert_deposit_token_into_base_token(&deps.as_ref(), config, amount)?;
-        let update_msg = build_sub_from_deployed_amount_msg(amount_in_base_tokens, config)?;
+        let update_msg = build_update_deployed_amount_msg(
+            amount_in_base_tokens,
+            DeploymentDirection::Subtract,
+            config,
+        )?;
         messages.push(update_msg);
     }
 
@@ -1323,7 +1375,11 @@ fn deposit_to_adapter(
     ) {
         let amount_in_base_tokens =
             convert_deposit_token_into_base_token(&deps.as_ref(), config, amount)?;
-        let update_msg = build_add_to_deployed_amount_msg(amount_in_base_tokens, config)?;
+        let update_msg = build_update_deployed_amount_msg(
+            amount_in_base_tokens,
+            DeploymentDirection::Add,
+            config,
+        )?;
         messages.push(update_msg);
     }
 
@@ -1337,6 +1393,120 @@ fn deposit_to_adapter(
             "deployment_tracking",
             format!("{:?}", adapter_info.deployment_tracking),
         ))
+}
+
+fn move_adapter_funds(
+    mut deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    config: &Config,
+    from_adapter: String,
+    to_adapter: String,
+    coin: Coin,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Validate caller is whitelisted (done by both helper functions, but check early)
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    // Validate non-zero amount
+    if coin.amount.is_zero() {
+        return Err(ContractError::ZeroAmount {});
+    }
+
+    // Check if moving deposit_denom or other denom
+    if coin.denom == config.deposit_denom {
+        // Case 1: Moving deposit_denom
+        // Reuse existing withdraw_from_adapter and deposit_to_adapter logic
+
+        // Withdraw from source adapter (handles DeploymentTracking automatically)
+        let withdraw_response = withdraw_from_adapter(
+            deps.branch(),
+            info.clone(),
+            config,
+            from_adapter.clone(),
+            coin.amount,
+        )?;
+
+        // Deposit to destination adapter (handles DeploymentTracking automatically)
+        let deposit_response = deposit_to_adapter(
+            deps,
+            env,
+            info.clone(),
+            config,
+            to_adapter.clone(),
+            coin.amount,
+        )?;
+
+        // Combine messages and attributes from both operations
+        // The messages will be executed in order: withdraw then deposit,
+        // and contain the necessary deployed amount updates
+        Ok(Response::new()
+            .add_submessages(withdraw_response.messages)
+            .add_submessages(deposit_response.messages)
+            .add_attribute("action", "move_adapter_funds")
+            .add_attribute("sender", info.sender)
+            .add_attribute("from_adapter", from_adapter)
+            .add_attribute("to_adapter", to_adapter)
+            .add_attribute("denom", coin.denom)
+            .add_attribute("amount", coin.amount))
+    } else {
+        // Case 2: Moving non-deposit_denom
+        // Require matching DeploymentTracking to prevent accounting issues,
+        // since no deployed amount updates will be made
+
+        // Load both adapters for validation
+        let from_adapter_info = ADAPTERS
+            .may_load(deps.storage, from_adapter.clone())?
+            .ok_or_else(|| ContractError::AdapterNotFound {
+                name: from_adapter.clone(),
+            })?;
+
+        let to_adapter_info = ADAPTERS
+            .may_load(deps.storage, to_adapter.clone())?
+            .ok_or_else(|| ContractError::AdapterNotFound {
+                name: to_adapter.clone(),
+            })?;
+
+        // Validate matching DeploymentTracking
+        if from_adapter_info.deployment_tracking != to_adapter_info.deployment_tracking {
+            return Err(ContractError::AdapterTrackingMismatch {
+                from_adapter: from_adapter.clone(),
+                to_adapter: to_adapter.clone(),
+                from_tracking: from_adapter_info.deployment_tracking.clone(),
+                to_tracking: to_adapter_info.deployment_tracking.clone(),
+            });
+        }
+
+        let mut messages = vec![];
+
+        // Withdraw from source adapter
+        let withdraw_msg = AdapterInterfaceMsg::Withdraw { coin: coin.clone() };
+        messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: from_adapter_info.address.to_string(),
+            msg: serialize_adapter_interface_msg(&withdraw_msg)?,
+            funds: vec![],
+        }));
+
+        // Deposit to destination adapter
+        let deposit_msg = AdapterInterfaceMsg::Deposit {};
+        messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: to_adapter_info.address.to_string(),
+            msg: serialize_adapter_interface_msg(&deposit_msg)?,
+            funds: vec![coin.clone()],
+        }));
+
+        // Note: No deployed amount updates for non-deposit_denom
+        // Even if both are Tracked, we can't convert non-deposit_denom to base tokens
+        // The tracking requirement ensures accounting consistency even without updates
+
+        Ok(Response::new()
+            .add_messages(messages)
+            .add_attribute("action", "move_adapter_funds")
+            .add_attribute("sender", info.sender)
+            .add_attribute("from_adapter", from_adapter)
+            .add_attribute("to_adapter", to_adapter)
+            .add_attribute("denom", coin.denom)
+            .add_attribute("amount", coin.amount))
+    }
 }
 
 /// Calculates venue allocation based on registered adapters.
@@ -1501,27 +1671,14 @@ fn get_token_ratio_to_base_token(deps: &Deps<NeutronQuery>, config: &Config) -> 
     })
 }
 
-fn build_add_to_deployed_amount_msg(
-    amount_to_add_in_base_tokens: Uint128,
+fn build_update_deployed_amount_msg(
+    diff_amount_in_base_tokens: Uint128,
+    direction: DeploymentDirection,
     config: &Config,
 ) -> StdResult<CosmosMsg<NeutronMsg>> {
-    let update_deployed_amount_msg = ControlCenterExecuteMsg::AddToDeployedAmount {
-        amount_to_add: amount_to_add_in_base_tokens,
-    };
-
-    Ok(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: config.control_center_contract.to_string(),
-        msg: to_json_binary(&update_deployed_amount_msg)?,
-        funds: vec![],
-    }))
-}
-
-fn build_sub_from_deployed_amount_msg(
-    amount_to_sub_in_base_tokens: Uint128,
-    config: &Config,
-) -> StdResult<CosmosMsg<NeutronMsg>> {
-    let update_deployed_amount_msg = ControlCenterExecuteMsg::SubFromDeployedAmount {
-        amount_to_sub: amount_to_sub_in_base_tokens,
+    let update_deployed_amount_msg = ControlCenterExecuteMsg::UpdateDeployedAmount {
+        amount: diff_amount_in_base_tokens,
+        direction,
     };
 
     Ok(CosmosMsg::Wasm(WasmMsg::Execute {
@@ -1761,7 +1918,7 @@ fn query_whitelist(deps: &Deps<NeutronQuery>) -> StdResult<WhitelistResponse> {
 }
 
 // Adapter query functions
-fn query_list_adapters(deps: &Deps<NeutronQuery>) -> StdResult<crate::query::AdaptersListResponse> {
+fn query_list_adapters(deps: &Deps<NeutronQuery>) -> StdResult<AdaptersListResponse> {
     let adapters = ADAPTERS
         .range(deps.storage, None, None, Order::Ascending)
         .filter_map(|entry| match entry {
@@ -1770,18 +1927,15 @@ fn query_list_adapters(deps: &Deps<NeutronQuery>) -> StdResult<crate::query::Ada
         })
         .collect::<Vec<(String, AdapterInfo)>>();
 
-    Ok(crate::query::AdaptersListResponse { adapters })
+    Ok(AdaptersListResponse { adapters })
 }
 
-fn query_adapter_info(
-    deps: &Deps<NeutronQuery>,
-    name: String,
-) -> StdResult<crate::query::AdapterInfoResponse> {
+fn query_adapter_info(deps: &Deps<NeutronQuery>, name: String) -> StdResult<AdapterInfoResponse> {
     let info = ADAPTERS
         .may_load(deps.storage, name.clone())?
         .ok_or_else(|| StdError::generic_err(format!("Adapter not found: {}", name)))?;
 
-    Ok(crate::query::AdapterInfoResponse { info })
+    Ok(AdapterInfoResponse { info })
 }
 
 /// Calculates the value of `shares` relative to the `total_pool_value` based on `total_shares_supply`.

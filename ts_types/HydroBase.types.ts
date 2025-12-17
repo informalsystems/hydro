@@ -7,8 +7,8 @@
 export type Timestamp = Uint64;
 export type Uint64 = string;
 export type Binary = string;
-export type Uint128 = string;
 export type Decimal = string;
+export type Uint128 = string;
 export type TokenInfoProviderInstantiateMsg = {
   lsm: {
     admin?: string | null;
@@ -38,6 +38,7 @@ export interface InstantiateMsg {
   lock_depth_limit: number;
   lock_epoch_length: number;
   lock_expiry_duration_seconds: number;
+  lockup_conversion_fee_percent: Decimal;
   max_deployment_duration: number;
   max_locked_tokens: Uint128;
   round_length: number;
@@ -214,6 +215,17 @@ export type ExecuteMsg = {
     lock_ids: number[];
   };
 } | {
+  convert_lockup: {
+    lock_id: number;
+    target_denom: string;
+  };
+} | {
+  provide_conversion_funds: {};
+} | {
+  withdraw_conversion_funds: {
+    funds_to_withdraw: Coin[];
+  };
+} | {
   slash_proposal_voters: {
     limit: number;
     proposal_id: number;
@@ -253,6 +265,7 @@ export interface UpdateConfigData {
   known_users_cap?: number | null;
   lock_depth_limit?: number | null;
   lock_expiry_duration_seconds?: number | null;
+  lockup_conversion_fee_percent?: Decimal | null;
   max_deployment_duration?: number | null;
   max_locked_tokens?: number | null;
   slash_percentage_threshold?: Decimal | null;
@@ -470,6 +483,16 @@ export type QueryMsg = {
   lockup_voting_metrics: {
     lock_ids: number[];
   };
+} | {
+  available_conversion_funds: {
+    token_denom: string;
+  };
+} | {
+  converted_token_num: {
+    lock_id: number;
+    token_denom: string;
+    user_provides_funds: boolean;
+  };
 };
 export type Addr = string;
 export interface AllNftInfoResponse {
@@ -564,6 +587,7 @@ export interface Constants {
   lock_depth_limit: number;
   lock_epoch_length: number;
   lock_expiry_duration_seconds: number;
+  lockup_conversion_fee_percent: Decimal;
   max_deployment_duration: number;
   max_locked_tokens: number;
   paused: boolean;

@@ -5,8 +5,8 @@
 */
 
 import { ICosmWasmClient, ISigningCosmWasmClient } from "./baseClient";
-import { Coin, StdFee } from "@interchainjs/types";
-import { InstantiateMsg, DenomMetadata, ExecuteMsg, Uint128, AllocationMode, DeploymentTracking, UpdateConfigData, QueryMsg, Order, Addr, AdapterInfoResponse, AdapterInfo, ConfigResponse, Config, FundedWithdrawalRequestsResponse, AdaptersListResponse, PoolInfoResponse, Timestamp, Uint64, UserPayoutsHistoryResponse, PayoutEntry, UserWithdrawalRequestsResponse, WithdrawalEntry, WhitelistResponse, WithdrawalQueueInfoResponse, WithdrawalQueueInfo } from "./InflowVaultBase.types";
+import { StdFee } from "@interchainjs/types";
+import { InstantiateMsg, DenomMetadata, ExecuteMsg, Uint128, AllocationMode, DeploymentTracking, UpdateConfigData, Coin, QueryMsg, Order, Addr, AdapterInfoResponse, AdapterInfo, ConfigResponse, Config, FundedWithdrawalRequestsResponse, AdaptersListResponse, PoolInfoResponse, Timestamp, Uint64, UserPayoutsHistoryResponse, PayoutEntry, UserWithdrawalRequestsResponse, WithdrawalEntry, WhitelistResponse, WithdrawalQueueInfoResponse, WithdrawalQueueInfo } from "./InflowVaultBase.types";
 export interface InflowVaultBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
@@ -227,6 +227,7 @@ export interface InflowVaultBaseInterface extends InflowVaultBaseReadOnlyInterfa
   }: {
     amount: Uint128;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  depositFromDeployment: (fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
   setTokenInfoProviderContract: ({
     address
   }: {
@@ -293,6 +294,15 @@ export interface InflowVaultBaseInterface extends InflowVaultBaseReadOnlyInterfa
     adapterName: string;
     amount: Uint128;
   }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
+  moveAdapterFunds: ({
+    coin,
+    fromAdapter,
+    toAdapter
+  }: {
+    coin: Coin;
+    fromAdapter: string;
+    toAdapter: string;
+  }, fee_?: number | StdFee | "auto", memo_?: string, funds_?: Coin[]) => Promise<any>;
 }
 export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements InflowVaultBaseInterface {
   client: ISigningCosmWasmClient;
@@ -309,6 +319,7 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
     this.fulfillPendingWithdrawals = this.fulfillPendingWithdrawals.bind(this);
     this.claimUnbondedWithdrawals = this.claimUnbondedWithdrawals.bind(this);
     this.withdrawForDeployment = this.withdrawForDeployment.bind(this);
+    this.depositFromDeployment = this.depositFromDeployment.bind(this);
     this.setTokenInfoProviderContract = this.setTokenInfoProviderContract.bind(this);
     this.addToWhitelist = this.addToWhitelist.bind(this);
     this.removeFromWhitelist = this.removeFromWhitelist.bind(this);
@@ -319,6 +330,7 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
     this.setAdapterDeploymentTracking = this.setAdapterDeploymentTracking.bind(this);
     this.withdrawFromAdapter = this.withdrawFromAdapter.bind(this);
     this.depositToAdapter = this.depositToAdapter.bind(this);
+    this.moveAdapterFunds = this.moveAdapterFunds.bind(this);
   }
   deposit = async ({
     onBehalfOf
@@ -384,6 +396,11 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
       withdraw_for_deployment: {
         amount
       }
+    }, fee_, memo_, funds_);
+  };
+  depositFromDeployment = async (fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      deposit_from_deployment: {}
     }, fee_, memo_, funds_);
   };
   setTokenInfoProviderContract = async ({
@@ -517,6 +534,23 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
       deposit_to_adapter: {
         adapter_name: adapterName,
         amount
+      }
+    }, fee_, memo_, funds_);
+  };
+  moveAdapterFunds = async ({
+    coin,
+    fromAdapter,
+    toAdapter
+  }: {
+    coin: Coin;
+    fromAdapter: string;
+    toAdapter: string;
+  }, fee_: number | StdFee | "auto" = "auto", memo_?: string, funds_?: Coin[]): Promise<any> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      move_adapter_funds: {
+        coin,
+        from_adapter: fromAdapter,
+        to_adapter: toAdapter
       }
     }, fee_, memo_, funds_);
   };

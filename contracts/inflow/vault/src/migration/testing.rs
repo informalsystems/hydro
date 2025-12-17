@@ -1,6 +1,7 @@
 use cosmwasm_std::{testing::mock_env, Uint128};
 use cw2::set_contract_version;
 use cw_storage_plus::Item;
+use interface::inflow_vault::Config;
 
 use crate::{
     contract::CONTRACT_NAME,
@@ -8,7 +9,7 @@ use crate::{
         migrate::{migrate, MigrateMsg},
         v_3_6_1::ConfigV3_6_1,
     },
-    state::{Config, CONFIG},
+    state::CONFIG,
     testing::mock_dependencies,
 };
 

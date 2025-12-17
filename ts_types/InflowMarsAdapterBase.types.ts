@@ -6,8 +6,10 @@
 
 export interface InstantiateMsg {
   admins: string[];
-  depositor_address?: string | null;
-  mars_contract: string;
+  initial_depositors: string[];
+  mars_credit_manager: string;
+  mars_params: string;
+  mars_red_bank: string;
   supported_denoms: string[];
 }
 export type ExecuteMsg = {
@@ -40,7 +42,9 @@ export type Uint128 = string;
 export type Binary = string;
 export type MarsAdapterMsg = {
   update_config: {
-    mars_contract?: string | null;
+    mars_credit_manager?: string | null;
+    mars_params?: string | null;
+    mars_red_bank?: string | null;
     supported_denoms?: string[] | null;
   };
 };

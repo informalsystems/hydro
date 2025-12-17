@@ -5,7 +5,7 @@ use cosmwasm_std::{
     testing::{mock_env, MockApi, MockQuerier, MockStorage},
     Addr, Coin, MessageInfo, OwnedDeps, Uint128,
 };
-use interface::inflow_control_center::{ExecuteMsg, QueryMsg};
+use interface::inflow_control_center::{DeploymentDirection, ExecuteMsg, QueryMsg};
 use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
@@ -232,8 +232,9 @@ fn subvaults_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::AddToDeployedAmount {
-            amount_to_add: deployed_amount_update_1,
+        ExecuteMsg::UpdateDeployedAmount {
+            amount: deployed_amount_update_1,
+            direction: DeploymentDirection::Add,
         },
     )
     .unwrap();
@@ -250,8 +251,9 @@ fn subvaults_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::AddToDeployedAmount {
-            amount_to_add: deployed_amount_update_1,
+        ExecuteMsg::UpdateDeployedAmount {
+            amount: deployed_amount_update_1,
+            direction: DeploymentDirection::Add,
         },
     )
     .unwrap_err()
@@ -279,8 +281,9 @@ fn subvaults_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::AddToDeployedAmount {
-            amount_to_add: deployed_amount_update_2,
+        ExecuteMsg::UpdateDeployedAmount {
+            amount: deployed_amount_update_2,
+            direction: DeploymentDirection::Add,
         },
     );
     assert!(res.is_ok());
@@ -298,8 +301,9 @@ fn subvaults_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::SubFromDeployedAmount {
-            amount_to_sub: deployed_amount_sub_1,
+        ExecuteMsg::UpdateDeployedAmount {
+            amount: deployed_amount_sub_1,
+            direction: DeploymentDirection::Subtract,
         },
     )
     .unwrap();
@@ -316,8 +320,9 @@ fn subvaults_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::SubFromDeployedAmount {
-            amount_to_sub: Uint128::new(100),
+        ExecuteMsg::UpdateDeployedAmount {
+            amount: Uint128::new(100),
+            direction: DeploymentDirection::Subtract,
         },
     )
     .unwrap_err()
@@ -331,8 +336,9 @@ fn subvaults_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::SubFromDeployedAmount {
-            amount_to_sub: Uint128::new(10000),
+        ExecuteMsg::UpdateDeployedAmount {
+            amount: Uint128::new(10000),
+            direction: DeploymentDirection::Subtract,
         },
     );
     assert!(res.is_err());
@@ -345,8 +351,9 @@ fn subvaults_test() {
         deps.as_mut(),
         env.clone(),
         info.clone(),
-        ExecuteMsg::SubFromDeployedAmount {
-            amount_to_sub: deployed_amount_sub_2,
+        ExecuteMsg::UpdateDeployedAmount {
+            amount: deployed_amount_sub_2,
+            direction: DeploymentDirection::Subtract,
         },
     );
     assert!(res.is_ok());

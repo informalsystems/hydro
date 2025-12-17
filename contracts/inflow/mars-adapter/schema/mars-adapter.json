@@ -1,6 +1,6 @@
 {
   "contract_name": "mars-adapter",
-  "contract_version": "3.6.4",
+  "contract_version": "3.6.5",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -9,7 +9,10 @@
     "type": "object",
     "required": [
       "admins",
-      "mars_contract",
+      "initial_depositors",
+      "mars_credit_manager",
+      "mars_params",
+      "mars_red_bank",
       "supported_denoms"
     ],
     "properties": {
@@ -20,15 +23,23 @@
           "type": "string"
         }
       },
-      "depositor_address": {
-        "description": "Optional: single depositor address to whitelist during instantiation",
-        "type": [
-          "string",
-          "null"
-        ]
+      "initial_depositors": {
+        "description": "Initial depositor addresses to whitelist during instantiation (can be empty array)",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
       },
-      "mars_contract": {
+      "mars_credit_manager": {
         "description": "Mars credit manager contract address",
+        "type": "string"
+      },
+      "mars_params": {
+        "description": "Mars params contract address",
+        "type": "string"
+      },
+      "mars_red_bank": {
+        "description": "Mars red bank contract address",
         "type": "string"
       },
       "supported_denoms": {
@@ -237,7 +248,19 @@
               "update_config": {
                 "type": "object",
                 "properties": {
-                  "mars_contract": {
+                  "mars_credit_manager": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "mars_params": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "mars_red_bank": {
                     "type": [
                       "string",
                       "null"

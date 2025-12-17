@@ -10,23 +10,31 @@ pub use interface::inflow_adapter::{
     RegisteredDepositorsResponse, TimeEstimateResponse,
 };
 
+/// Initial depositor configuration for instantiation
+#[cw_serde]
+pub struct InitialDepositor {
+    /// Depositor address to register
+    pub address: String,
+    /// Optional capabilities for this depositor (serialized as Binary)
+    /// If not provided, defaults to { can_withdraw: true }
+    pub capabilities: Option<Binary>,
+}
+
 /// Message for instantiating the IBC adapter contract
 #[cw_serde]
 pub struct InstantiateMsg {
     /// The config admins who can update the config and manage chains/depositors/executors
     pub admins: Vec<String>,
-    /// Optional: initial executors who can call TransferFunds
-    pub executors: Option<Vec<String>>,
+    /// Initial depositors to register during instantiation (can be empty array)
+    pub initial_depositors: Vec<InitialDepositor>,
     /// Default IBC timeout in seconds
     pub default_timeout_seconds: u64,
-    /// Optional: initial chain configurations to register
-    pub initial_chains: Option<Vec<(String, ChainConfig)>>,
-    /// Optional: initial token configurations to register (denom, source_chain_id)
-    pub initial_tokens: Option<Vec<(String, String)>>,
-    /// Optional: single depositor address to register during instantiation
-    pub depositor_address: Option<String>,
-    /// Optional: capabilities for the initial depositor (serialized as Binary)
-    pub depositor_capabilities: Option<Binary>,
+    /// Initial chain configurations to register (can be empty array)
+    pub initial_chains: Vec<ChainConfig>,
+    /// Initial token configurations to register (can be empty array)
+    pub initial_tokens: Vec<TokenConfig>,
+    /// Initial executors who can call TransferFunds (can be empty array)
+    pub initial_executors: Vec<String>,
 }
 
 /// Top-level execute message wrapper for IBC adapter

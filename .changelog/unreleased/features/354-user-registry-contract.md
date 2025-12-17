@@ -1,0 +1,1 @@
+- Add a User Registry contract that will manage the mappings between user IDs and their respective Proxy contract instances. ([\#354](https://github.com/informalsystems/hydro/pull/354))

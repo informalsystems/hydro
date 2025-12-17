@@ -7,8 +7,7 @@ use crate::{
         query_withdrawal_queue_info,
     },
     error::ContractError,
-    msg::{DenomMetadata, ExecuteMsg, InstantiateMsg, UpdateConfigData},
-    query::QueryMsg,
+    msg::{DenomMetadata, InstantiateMsg},
     state::{CONFIG, LAST_FUNDED_WITHDRAWAL_ID, WITHDRAWAL_QUEUE_INFO},
     testing_mocks::{
         mock_address_balance, setup_control_center_mock, setup_default_control_center_mock,
@@ -21,7 +20,7 @@ use cosmwasm_std::{
     Addr, Api, BalanceResponse, BankMsg, BankQuery, Coin, CosmosMsg, Decimal, Env, MemoryStorage,
     MessageInfo, Order, OwnedDeps, Uint128,
 };
-use interface::inflow_vault::PoolInfoResponse;
+use interface::inflow_vault::{ExecuteMsg, PoolInfoResponse, QueryMsg, UpdateConfigData};
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 const DEPOSIT_DENOM: &str =
@@ -2873,4 +2872,243 @@ fn verify_users_payouts_history(
             assert_eq!(user_payouts[i].amount_received, expected_payout.1);
         }
     }
+}
+
+#[test]
+fn deposit_from_deployment_test() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+
+    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+
+    env.contract.address = inflow_contract_addr.clone();
+
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let vault_shares_denom_str: String =
+        format!("factory/{inflow_contract_addr}/hydro_inflow_udatom");
+
+    set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
+
+    // Setup initial mocks: total pool value and shares issued are 0
+    let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_control_center_mock(
+            control_center_contract_addr.clone(),
+            DEFAULT_DEPOSIT_CAP,
+            Uint128::zero(),
+            Uint128::zero(),
+        ),
+        setup_token_info_provider_mock(
+            token_info_provider_contract_addr,
+            DEPOSIT_DENOM.to_string(),
+            DATOM_DEFAULT_RATIO,
+        ),
+    ]));
+
+    let querier_for_deps = wasm_querier.clone();
+    deps.querier
+        .update_wasm(move |q| querier_for_deps.handler(q));
+
+    let user1_deposit = Uint128::new(10000);
+    let user1_expected_shares = Uint128::new(12000); // 10000 * 1.2
+
+    let total_pool_value = 12000;
+    let total_shares_issued_before = 0;
+    let total_shares_issued_after = 12000;
+
+    // User1 deposits 10000 tokens
+    execute_deposit(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        &inflow_contract_addr,
+        USER1,
+        &vault_shares_denom_str,
+        user1_deposit,
+        user1_expected_shares,
+        user1_expected_shares,
+        user1_deposit,
+        total_pool_value,
+        total_shares_issued_before,
+        total_shares_issued_after,
+    );
+
+    // Whitelisted address withdraws 5000 tokens for deployment
+    let withdraw_amount = Uint128::new(5000);
+    execute_withdraw_for_deployment(
+        &mut deps,
+        &env,
+        inflow_contract_addr.as_ref(),
+        WHITELIST_ADDR,
+        withdraw_amount,
+        user1_deposit - withdraw_amount,
+    );
+
+    // Try to deposit from deployment with non-whitelisted address - should fail
+    let info = get_message_info(
+        &deps.api,
+        USER1,
+        &[Coin {
+            denom: DEPOSIT_DENOM.to_string(),
+            amount: Uint128::new(1000),
+        }],
+    );
+
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::DepositFromDeployment {},
+    );
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("Unauthorized"));
+
+    // Try to deposit with wrong denom - should fail
+    let info = get_message_info(
+        &deps.api,
+        WHITELIST_ADDR,
+        &[Coin {
+            denom: "wrong_denom".to_string(),
+            amount: Uint128::new(1000),
+        }],
+    );
+
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::DepositFromDeployment {},
+    );
+    assert!(res.is_err());
+
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .contains(format!("Must send reserve token '{DEPOSIT_DENOM}'").as_str()));
+
+    // Try to deposit with zero amount - should fail
+    let info = get_message_info(
+        &deps.api,
+        WHITELIST_ADDR,
+        &[Coin {
+            denom: DEPOSIT_DENOM.to_string(),
+            amount: Uint128::zero(),
+        }],
+    );
+
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::DepositFromDeployment {},
+    );
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("No funds sent"));
+
+    // Try to deposit with multiple coins - should fail
+    let info = get_message_info(
+        &deps.api,
+        WHITELIST_ADDR,
+        &[
+            Coin {
+                denom: DEPOSIT_DENOM.to_string(),
+                amount: Uint128::new(1000),
+            },
+            Coin {
+                denom: "another_denom".to_string(),
+                amount: Uint128::new(500),
+            },
+        ],
+    );
+
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::DepositFromDeployment {},
+    );
+    assert!(res.is_err());
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .contains("Sent more than one denomination"));
+
+    // Successfully deposit from deployment
+    let deposit_back_amount = Uint128::new(3000);
+    let info = get_message_info(
+        &deps.api,
+        WHITELIST_ADDR,
+        &[Coin {
+            denom: DEPOSIT_DENOM.to_string(),
+            amount: deposit_back_amount,
+        }],
+    );
+
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::DepositFromDeployment {},
+    );
+    assert!(res.is_ok());
+
+    let response = res.unwrap();
+
+    // Verify response attributes
+    assert_eq!(
+        response
+            .attributes
+            .iter()
+            .find(|a| a.key == "action")
+            .unwrap()
+            .value,
+        "deposit_from_deployment"
+    );
+    assert_eq!(
+        response
+            .attributes
+            .iter()
+            .find(|a| a.key == "sender")
+            .unwrap()
+            .value,
+        whitelist_addr.to_string()
+    );
+    assert_eq!(
+        response
+            .attributes
+            .iter()
+            .find(|a| a.key == "amount_deposited")
+            .unwrap()
+            .value,
+        deposit_back_amount.to_string()
+    );
+
+    // Verify that UpdateDeployedAmount message was sent with Subtract direction
+    assert_eq!(response.messages.len(), 1);
+
+    // Update the mock balance to reflect the deposit
+    mock_address_balance(
+        &mut deps,
+        inflow_contract_addr.as_ref(),
+        DEPOSIT_DENOM,
+        user1_deposit - withdraw_amount + deposit_back_amount,
+    );
+
+    // Verify the new balance is available for queries
+    let balance_query = query(
+        deps.as_ref(),
+        env.clone(),
+        QueryMsg::AvailableForDeployment {},
+    );
+    assert!(balance_query.is_ok());
 }

@@ -6,7 +6,7 @@
 
 import { ICosmWasmClient, ISigningCosmWasmClient } from "./baseClient";
 import { StdFee } from "@interchainjs/types";
-import { Binary, InstantiateMsg, ChainConfig, ExecuteMsg, AdapterInterfaceMsg, Uint128, IbcAdapterMsg, Coin, TransferFundsInstructions, QueryMsg, AdapterInterfaceQueryMsg, IbcAdapterQueryMsg } from "./InflowIBCAdapterBase.types";
+import { Binary, InstantiateMsg, ChainConfig, InitialDepositor, TokenConfig, ExecuteMsg, AdapterInterfaceMsg, Uint128, IbcAdapterMsg, Coin, TransferFundsInstructions, QueryMsg, AdapterInterfaceQueryMsg, IbcAdapterQueryMsg } from "./InflowIBCAdapterBase.types";
 export interface InflowIBCAdapterBaseReadOnlyInterface {
   contractAddress: string;
   standardQuery: (adapterInterfaceQueryMsg: AdapterInterfaceQueryMsg) => Promise<Binary>;

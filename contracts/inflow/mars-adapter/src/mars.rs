@@ -5,12 +5,10 @@
 
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{to_json_binary, Addr, Coin, QuerierWrapper, StdResult, Uint128, WasmMsg};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 
 /// Mars Credit Manager Execute Messages
 #[cw_serde]
-pub enum MarsExecuteMsg {
+pub enum MarsCreditManagerExecuteMsg {
     /// Create a new credit account
     CreateCreditAccount(Option<String>),
     /// Update an existing credit account with actions
@@ -21,9 +19,8 @@ pub enum MarsExecuteMsg {
 }
 
 /// Mars Credit Manager Query Messages
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum MarsQueryMsg {
+#[cw_serde]
+pub enum MarsCreditManagerQueryMsg {
     /// Query account positions
     Positions {
         account_id: String,
@@ -31,8 +28,22 @@ pub enum MarsQueryMsg {
     },
 }
 
+/// Mars Params contract query messages
+#[cw_serde]
+pub enum MarsParamsQueryMsg {
+    TotalDeposit { denom: String },
+}
+
+/// Response from Mars Params TotalDeposit query
+#[cw_serde]
+pub struct TotalDepositResponse {
+    pub denom: String,
+    pub cap: Uint128,
+    pub amount: Uint128,
+}
+
 /// Response from Mars Positions query
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[cw_serde]
 pub struct PositionsResponse {
     pub account_id: String,
     pub deposits: Vec<Coin>,
@@ -43,8 +54,7 @@ pub struct PositionsResponse {
 
 /// Amount type for Mars actions (Lend, Reclaim, Withdraw)
 /// Can be either "account_balance" or { exact: Uint128 }
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
 pub enum ActionAmount {
     /// Exact amount
     Exact(String),
@@ -53,15 +63,14 @@ pub enum ActionAmount {
 }
 
 /// ActionCoin used for Lend, Reclaim, and Withdraw actions
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[cw_serde]
 pub struct ActionCoin {
     pub denom: String,
     pub amount: ActionAmount,
 }
 
 /// Actions that can be performed on a Mars credit account
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[cw_serde]
 pub enum Action {
     /// Deposit coins into the credit account (uses regular Coin)
     Deposit(Coin),
@@ -77,12 +86,12 @@ pub enum Action {
 
 /// Helper function to create a Mars CreateCreditAccount message
 pub fn create_mars_account_msg(
-    mars_contract: Addr,
+    mars_credit_manager: Addr,
     account_kind: Option<String>,
 ) -> StdResult<WasmMsg> {
-    let msg = MarsExecuteMsg::CreateCreditAccount(account_kind);
+    let msg = MarsCreditManagerExecuteMsg::CreateCreditAccount(account_kind);
     Ok(WasmMsg::Execute {
-        contract_addr: mars_contract.to_string(),
+        contract_addr: mars_credit_manager.to_string(),
         msg: to_json_binary(&msg)?,
         funds: vec![],
     })
@@ -90,7 +99,7 @@ pub fn create_mars_account_msg(
 
 /// Helper function to create a Mars UpdateCreditAccount message for deposit + lend
 pub fn create_mars_deposit_lend_msg(
-    mars_contract: Addr,
+    mars_credit_manager: Addr,
     account_id: String,
     coin: Coin,
 ) -> StdResult<WasmMsg> {
@@ -99,12 +108,12 @@ pub fn create_mars_deposit_lend_msg(
         amount: ActionAmount::Exact(coin.amount.to_string()),
     };
 
-    let msg = MarsExecuteMsg::UpdateCreditAccount {
+    let msg = MarsCreditManagerExecuteMsg::UpdateCreditAccount {
         account_id,
         actions: vec![Action::Deposit(coin.clone()), Action::Lend(action_coin)],
     };
     Ok(WasmMsg::Execute {
-        contract_addr: mars_contract.to_string(),
+        contract_addr: mars_credit_manager.to_string(),
         msg: to_json_binary(&msg)?,
         funds: vec![coin],
     })
@@ -112,7 +121,7 @@ pub fn create_mars_deposit_lend_msg(
 
 /// Helper function to create a Mars UpdateCreditAccount message for reclaim + withdraw
 pub fn create_mars_reclaim_withdraw_msg(
-    mars_contract: Addr,
+    mars_credit_manager: Addr,
     account_id: String,
     coin: Coin,
     recipient: Addr,
@@ -122,7 +131,7 @@ pub fn create_mars_reclaim_withdraw_msg(
         amount: ActionAmount::Exact(coin.amount.to_string()),
     };
 
-    let msg = MarsExecuteMsg::UpdateCreditAccount {
+    let msg = MarsCreditManagerExecuteMsg::UpdateCreditAccount {
         account_id,
         actions: vec![
             Action::Reclaim(action_coin.clone()),
@@ -133,7 +142,7 @@ pub fn create_mars_reclaim_withdraw_msg(
         ],
     };
     Ok(WasmMsg::Execute {
-        contract_addr: mars_contract.to_string(),
+        contract_addr: mars_credit_manager.to_string(),
         msg: to_json_binary(&msg)?,
         funds: vec![],
     })
@@ -142,25 +151,25 @@ pub fn create_mars_reclaim_withdraw_msg(
 /// Query Mars positions for a given account
 pub fn query_mars_positions(
     querier: &QuerierWrapper,
-    mars_contract: &Addr,
+    mars_credit_manager: &Addr,
     account_id: String,
 ) -> StdResult<PositionsResponse> {
-    let query_msg = MarsQueryMsg::Positions {
+    let query_msg = MarsCreditManagerQueryMsg::Positions {
         account_id,
         action: None,
     };
 
-    querier.query_wasm_smart(mars_contract.to_string(), &query_msg)
+    querier.query_wasm_smart(mars_credit_manager.to_string(), &query_msg)
 }
 
 /// Get the lent amount for a specific denom from Mars positions
 pub fn get_lent_amount_for_denom(
     querier: &QuerierWrapper,
-    mars_contract: &Addr,
+    mars_credit_manager: &Addr,
     account_id: String,
     denom: &str,
 ) -> StdResult<Uint128> {
-    let positions = query_mars_positions(querier, mars_contract, account_id)?;
+    let positions = query_mars_positions(querier, mars_credit_manager, account_id)?;
 
     // Find the lent amount for the requested denom
     let lent_amount = positions
@@ -171,4 +180,14 @@ pub fn get_lent_amount_for_denom(
         .unwrap_or_else(Uint128::zero);
 
     Ok(lent_amount)
+}
+
+/// Query Mars Params contract for total deposit info
+pub fn query_mars_total_deposit(
+    querier: &QuerierWrapper,
+    mars_params: &Addr,
+    denom: String,
+) -> StdResult<TotalDepositResponse> {
+    let query_msg = MarsParamsQueryMsg::TotalDeposit { denom };
+    querier.query_wasm_smart(mars_params.to_string(), &query_msg)
 }

@@ -1,0 +1,1 @@
+- Add the concept of adapters that can be plugged on Inflow vaults contracts to automate specific operations. It introduces two adapters: Mars adapter that can automatically deposit/withdraw to/from Mars lending facility, and IBC adapter that can be triggered to IBC-send tokens to allowed chains and recipients. ([\#355](https://github.com/informalsystems/hydro/pull/355))

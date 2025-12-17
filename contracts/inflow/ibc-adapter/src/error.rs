@@ -39,12 +39,6 @@ pub enum ContractError {
     #[error("Recipient not allowed: {recipient} on chain {chain_id}")]
     RecipientNotAllowed { recipient: String, chain_id: String },
 
-    #[error("Chain not allowed for depositor: {chain_id}")]
-    ChainNotAllowedForDepositor { chain_id: String },
-
-    #[error("Deposit instructions required for IBC transfers")]
-    InstructionsRequired {},
-
     #[error("Withdrawal not allowed for this depositor")]
     WithdrawalNotAllowed {},
 

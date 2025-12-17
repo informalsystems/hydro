@@ -194,7 +194,19 @@
             "update_config": {
               "type": "object",
               "properties": {
-                "mars_contract": {
+                "mars_credit_manager": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "mars_params": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "mars_red_bank": {
                   "type": [
                     "string",
                     "null"

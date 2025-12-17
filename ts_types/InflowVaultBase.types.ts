@@ -47,6 +47,8 @@ export type ExecuteMsg = {
     amount: Uint128;
   };
 } | {
+  deposit_from_deployment: {};
+} | {
   set_token_info_provider_contract: {
     address?: string | null;
   };
@@ -94,12 +96,22 @@ export type ExecuteMsg = {
     adapter_name: string;
     amount: Uint128;
   };
+} | {
+  move_adapter_funds: {
+    coin: Coin;
+    from_adapter: string;
+    to_adapter: string;
+  };
 };
 export type Uint128 = string;
 export type AllocationMode = "automated" | "manual";
 export type DeploymentTracking = "tracked" | "not_tracked";
 export interface UpdateConfigData {
   max_withdrawals_per_user?: number | null;
+}
+export interface Coin {
+  amount: Uint128;
+  denom: string;
 }
 export type QueryMsg = {
   config: {};

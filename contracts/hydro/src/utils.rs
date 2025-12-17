@@ -12,11 +12,12 @@ use crate::{
     query::{LockEntryWithPower, LockupWithPerTrancheInfo, PerTrancheLockupInfo, RoundWithBid},
     score_keeper::get_total_power_for_round,
     state::{
-        Constants, HeightRange, LockEntryV2, Proposal, RoundLockPowerSchedule, Vote, CONSTANTS,
-        EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND,
-        LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V1, LOCKS_MAP_V2, LOCK_ID,
-        PROPOSAL_MAP, ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS,
-        USER_LOCKS_FOR_CLAIM, VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
+        Constants, HeightRange, LockEntryV2, Proposal, RoundLockPowerSchedule, Vote,
+        AVAILABLE_CONVERSION_FUNDS, CONSTANTS, EXTRA_LOCKED_TOKENS_CURRENT_USERS,
+        EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS,
+        LOCKS_MAP_V1, LOCKS_MAP_V2, LOCK_ID, PROPOSAL_MAP, ROUND_TO_HEIGHT_RANGE,
+        SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VOTE_MAP_V2,
+        VOTING_ALLOWED_ROUND,
     },
     token_manager::TokenManager,
 };
@@ -874,6 +875,47 @@ pub fn update_user_locks(
             current_locks.retain(|lock_id| !locks_to_remove.contains(lock_id));
 
             Ok(current_locks)
+        },
+    )?;
+
+    Ok(())
+}
+
+pub fn increase_available_conversion_funds(
+    storage: &mut dyn Storage,
+    denom: &str,
+    amount: Uint128,
+) -> Result<(), ContractError> {
+    update_available_conversion_funds(storage, denom, |current_funds| {
+        Ok(current_funds.checked_add(amount)?)
+    })
+}
+
+pub fn decrease_available_conversion_funds(
+    storage: &mut dyn Storage,
+    denom: &str,
+    amount: Uint128,
+) -> Result<(), ContractError> {
+    update_available_conversion_funds(storage, denom, |current_funds| {
+        current_funds.checked_sub(amount)
+            .map_err(|_| new_generic_error(
+                format!("insufficient funds to perform conversion into denom: {denom}. required funds: {amount}, available funds: {current_funds}")))
+    })
+}
+
+pub fn update_available_conversion_funds<T>(
+    storage: &mut dyn Storage,
+    denom: &str,
+    compute_new_funds_fn: T,
+) -> Result<(), ContractError>
+where
+    T: FnOnce(Uint128) -> Result<Uint128, ContractError>,
+{
+    AVAILABLE_CONVERSION_FUNDS.update(
+        storage,
+        denom.to_string(),
+        |current_funds| -> Result<Uint128, ContractError> {
+            compute_new_funds_fn(current_funds.unwrap_or_default())
         },
     )?;
 
