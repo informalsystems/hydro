@@ -1,8 +1,6 @@
 use cosmwasm_schema::write_api;
-use vault::{
-    msg::{ExecuteMsg, InstantiateMsg},
-    query::QueryMsg,
-};
+use interface::inflow::{ExecuteMsg, QueryMsg};
+use vault::msg::InstantiateMsg;
 
 fn main() {
     write_api! {

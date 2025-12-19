@@ -11,14 +11,17 @@ members = [
     "contracts/gatekeeper",
     "contracts/inflow/vault",
     "contracts/inflow/control-center",
+    "contracts/inflow/proxy",
+    "contracts/inflow/user-registry",
     "packages/cw-orch-interface",
     "packages/interface",
+    "packages/test-utils",
     "test/e2e",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "3.6.5"
+version = "3.6.6"
 edition = "2021"
 
 [profile.release]

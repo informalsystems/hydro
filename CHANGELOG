@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## v3.6.6
+
+Date: December 16th, 2025
+
+### FEATURES
+
+- Add an Inflow proxy contract that allows permissionlessly forwarding deposits to Inflow, and gates withdrawals to only be callable by a designated admin. ([\#347](https://github.com/informalsystems/hydro/pull/347))
+- Add a User Registry contract that will manage the mappings between user IDs and their respective Proxy contract instances. ([\#354](https://github.com/informalsystems/hydro/pull/354))
+
 ## v3.6.5
 
 Date: December 2nd, 2025

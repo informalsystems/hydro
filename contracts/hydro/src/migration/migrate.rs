@@ -1,29 +1,26 @@
 use crate::contract::{CONTRACT_NAME, CONTRACT_VERSION};
 use crate::error::{new_generic_error, ContractError};
-use crate::migration::unreleased::migrate_constants;
 use crate::state::CONSTANTS;
 use crate::utils::load_constants_active_at_timestamp;
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Decimal, DepsMut, Env, Response, StdError};
+use cosmwasm_std::{DepsMut, Env, Response, StdError};
 use cw2::{get_contract_version, set_contract_version};
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 #[allow(unused_imports)]
 use cosmwasm_std::entry_point;
 
 #[cw_serde]
-pub struct MigrateMsg {
-    pub lockup_conversion_fee_percent: Decimal,
-}
+pub struct MigrateMsg {}
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(mut deps: DepsMut, _env: Env, msg: MigrateMsg) -> Result<Response, ContractError> {
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
     check_contract_version(deps.storage)?;
 
-    let result = migrate_constants(&mut deps, msg.lockup_conversion_fee_percent)?;
+    // No state migrations needed from v3.6.5 to v3.6.6
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    Ok(result)
+    Ok(Response::new())
 }
 
 fn check_contract_version(storage: &dyn cosmwasm_std::Storage) -> Result<(), ContractError> {

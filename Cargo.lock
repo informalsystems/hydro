@@ -641,7 +641,7 @@ checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 
 [[package]]
 name = "control-center"
-version = "3.6.5"
+version = "3.6.6"
 dependencies = [
  "cosmos-sdk-proto 0.20.0",
  "cosmwasm-schema 2.2.1",
@@ -1154,7 +1154,7 @@ dependencies = [
 
 [[package]]
 name = "cw-orch-interface"
-version = "3.6.5"
+version = "3.6.6"
 dependencies = [
  "cw-orch",
  "hydro",
@@ -1338,7 +1338,7 @@ dependencies = [
 
 [[package]]
 name = "d-token-info-provider"
-version = "3.6.5"
+version = "3.6.6"
 dependencies = [
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",
@@ -1379,7 +1379,7 @@ dependencies = [
 
 [[package]]
 name = "dao-voting-adapter"
-version = "3.6.5"
+version = "3.6.6"
 dependencies = [
  "cosmwasm-schema 1.5.10",
  "cosmwasm-std 1.5.10",
@@ -1788,7 +1788,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeeper"
-version = "3.6.5"
+version = "3.6.6"
 dependencies = [
  "bech32 0.11.0",
  "cosmwasm-schema 2.2.1",
@@ -2072,7 +2072,7 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hydro"
-version = "3.6.5"
+version = "3.6.6"
 dependencies = [
  "bech32 0.11.0",
  "cosmos-sdk-proto 0.20.0",
@@ -2434,7 +2434,7 @@ dependencies = [
 
 [[package]]
 name = "interface"
-version = "3.6.5"
+version = "3.6.6"
 dependencies = [
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",
@@ -2540,7 +2540,7 @@ checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
 
 [[package]]
 name = "liquid-collateral"
-version = "3.6.5"
+version = "3.6.6"
 dependencies = [
  "anyhow",
  "bigdecimal",
@@ -2585,7 +2585,7 @@ checksum = "04cbf5b083de1c7e0222a7a51dbfdba1cbe1c6ab0b15e29fff3f6c077fd9cd9f"
 
 [[package]]
 name = "lsm-token-info-provider"
-version = "3.6.5"
+version = "3.6.6"
 dependencies = [
  "bech32 0.11.0",
  "cosmos-sdk-proto 0.20.0",
@@ -2606,7 +2606,7 @@ dependencies = [
 
 [[package]]
 name = "marketplace"
-version = "3.6.5"
+version = "3.6.6"
 dependencies = [
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",
@@ -3248,6 +3248,21 @@ version = "3.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6872f4d4f4b98303239a2b5838f5bbbb77b01ffc892d627957f37a22d7cfe69c"
 dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "proxy"
+version = "3.6.6"
+dependencies = [
+ "cosmwasm-schema 2.2.1",
+ "cosmwasm-std 2.2.1",
+ "cw-storage-plus 2.0.0",
+ "cw2 2.0.0",
+ "interface",
+ "schemars",
+ "serde",
+ "test-utils",
  "thiserror",
 ]
 
@@ -4044,7 +4059,7 @@ dependencies = [
 
 [[package]]
 name = "st-token-info-provider"
-version = "3.6.5"
+version = "3.6.6"
 dependencies = [
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",
@@ -4425,7 +4440,7 @@ dependencies = [
 
 [[package]]
 name = "test-e2e"
-version = "3.6.5"
+version = "3.6.6"
 dependencies = [
  "cosmwasm-std 2.2.1",
  "cw-orch",
@@ -4448,6 +4463,13 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "test-utils"
+version = "3.6.6"
+dependencies = [
+ "cosmwasm-std 2.2.1",
 ]
 
 [[package]]
@@ -4735,7 +4757,7 @@ dependencies = [
 
 [[package]]
 name = "tribute"
-version = "3.6.5"
+version = "3.6.6"
 dependencies = [
  "cosmwasm-schema 2.2.1",
  "cosmwasm-std 2.2.1",
@@ -4804,6 +4826,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "user-registry"
+version = "3.6.6"
+dependencies = [
+ "cosmwasm-schema 2.2.1",
+ "cosmwasm-std 2.2.1",
+ "cw-storage-plus 2.0.0",
+ "cw2 2.0.0",
+ "schemars",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "utf16_iter"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4827,7 +4862,7 @@ dependencies = [
 
 [[package]]
 name = "vault"
-version = "3.6.5"
+version = "3.6.6"
 dependencies = [
  "cosmos-sdk-proto 0.20.0",
  "cosmwasm-schema 2.2.1",

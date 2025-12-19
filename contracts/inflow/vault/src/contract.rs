@@ -12,7 +12,12 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
 use interface::{
-    inflow::PoolInfoResponse,
+    inflow::{
+        Config, ConfigResponse, ExecuteMsg, FundedWithdrawalRequestsResponse, PayoutEntry,
+        PoolInfoResponse, QueryMsg, UpdateConfigData, UserPayoutsHistoryResponse,
+        UserWithdrawalRequestsResponse, WhitelistResponse, WithdrawalEntry, WithdrawalQueueInfo,
+        WithdrawalQueueInfoResponse,
+    },
     inflow_control_center::{
         ConfigResponse as ControlCenterConfigResponse, ExecuteMsg as ControlCenterExecuteMsg,
         PoolInfoResponse as ControlCenterPoolInfoResponse, QueryMsg as ControlCenterQueryMsg,
@@ -29,15 +34,10 @@ use prost::Message;
 
 use crate::{
     error::{new_generic_error, ContractError},
-    msg::{DenomMetadata, ExecuteMsg, InstantiateMsg, ReplyPayload, UpdateConfigData},
-    query::{
-        ConfigResponse, FundedWithdrawalRequestsResponse, QueryMsg, UserPayoutsHistoryResponse,
-        UserWithdrawalRequestsResponse, WhitelistResponse, WithdrawalQueueInfoResponse,
-    },
+    msg::{DenomMetadata, InstantiateMsg, ReplyPayload},
     state::{
         get_next_payout_id, get_next_withdrawal_id, load_config, load_withdrawal_queue_info,
-        Config, PayoutEntry, WithdrawalEntry, WithdrawalQueueInfo, CONFIG,
-        LAST_FUNDED_WITHDRAWAL_ID, NEXT_PAYOUT_ID, NEXT_WITHDRAWAL_ID, PAYOUTS_HISTORY,
+        CONFIG, LAST_FUNDED_WITHDRAWAL_ID, NEXT_PAYOUT_ID, NEXT_WITHDRAWAL_ID, PAYOUTS_HISTORY,
         USER_WITHDRAWAL_REQUESTS, WHITELIST, WITHDRAWAL_QUEUE_INFO, WITHDRAWAL_REQUESTS,
     },
 };
