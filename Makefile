@@ -67,7 +67,7 @@ schema:
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/ibc-adapter/schema NAME=InflowIBCAdapterBase
 
 ts-codegen-inner:
-	cosmwasm-ts-codegen generate \
+	npx @cosmwasm/ts-codegen@1.7.2 generate \
           --plugin client \
           --schema $(SCHEMA_LOCATION) \
           --out ./ts_types \
