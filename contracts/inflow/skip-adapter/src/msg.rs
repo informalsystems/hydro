@@ -10,6 +10,14 @@ pub use interface::inflow_adapter::{
     RegisteredDepositorsResponse, TimeEstimateResponse,
 };
 
+/// Denom symbol mapping input for registration
+#[cw_serde]
+pub struct DenomSymbolInput {
+    pub denom: String,
+    pub symbol: String,
+    pub description: Option<String>,
+}
+
 /// Message for instantiating the Skip adapter contract
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -19,14 +27,16 @@ pub struct InstantiateMsg {
     pub skip_contract: String,
     /// Default timeout in nanoseconds (e.g., 1800000000000 for 30 minutes)
     pub default_timeout_nanos: u64,
-    /// Optional: initial executors who can call ExecuteSwap
-    pub executors: Option<Vec<String>>,
-    /// Optional: initial route configurations to register
-    pub initial_routes: Option<Vec<(String, RouteConfig)>>,
-    /// Optional: initial recipient configurations to register
-    pub initial_recipients: Option<Vec<(String, RecipientConfig)>>,
-    /// Optional: single depositor address to register during instantiation
-    pub depositor_address: Option<String>,
+    /// Maximum allowed slippage in basis points (e.g., 100 = 1%)
+    pub max_slippage_bps: u64,
+    /// Initial executors who can call ExecuteSwap (can be empty array)
+    pub executors: Vec<String>,
+    /// Initial route configurations to register (can be empty array)
+    pub initial_routes: Vec<(String, RouteConfig)>,
+    /// Initial recipient configurations to register (can be empty array)
+    pub initial_recipients: Vec<(String, RecipientConfig)>,
+    /// Initial depositor addresses to register during instantiation (can be empty array)
+    pub initial_depositors: Vec<String>,
 }
 
 /// Top-level execute message wrapper for Skip adapter
@@ -129,6 +139,22 @@ pub enum SkipAdapterMsg {
     UpdateConfig {
         skip_contract: Option<String>,
         default_timeout_nanos: Option<u64>,
+        max_slippage_bps: Option<u64>,
+    },
+
+    /// Register or update a denom-to-symbol mapping for oracle (config admin only)
+    RegisterDenomSymbol {
+        denom: String,
+        symbol: String,
+        description: Option<String>,
+    },
+
+    /// Unregister a denom-to-symbol mapping (config admin only)
+    UnregisterDenomSymbol { denom: String },
+
+    /// Bulk register denom-to-symbol mappings (config admin only)
+    BulkRegisterDenomSymbols {
+        mappings: Vec<DenomSymbolInput>,
     },
 }
 
@@ -171,6 +197,14 @@ pub enum SkipAdapterQueryMsg {
     /// Get list of executors
     #[returns(ExecutorsResponse)]
     Executors {},
+
+    /// Get denom symbol mapping
+    #[returns(DenomSymbolResponse)]
+    DenomSymbol { denom: String },
+
+    /// Get all denom symbol mappings
+    #[returns(AllDenomSymbolsResponse)]
+    AllDenomSymbols {},
 }
 
 // Response types
@@ -180,6 +214,7 @@ pub struct SkipConfigResponse {
     pub admins: Vec<String>,
     pub skip_contract: String,
     pub default_timeout_nanos: u64,
+    pub max_slippage_bps: u64,
 }
 
 #[cw_serde]
@@ -206,4 +241,16 @@ pub struct AllRecipientsResponse {
 #[cw_serde]
 pub struct ExecutorsResponse {
     pub executors: Vec<String>,
+}
+
+#[cw_serde]
+pub struct DenomSymbolResponse {
+    pub denom: String,
+    pub symbol: String,
+    pub description: Option<String>,
+}
+
+#[cw_serde]
+pub struct AllDenomSymbolsResponse {
+    pub mappings: Vec<DenomSymbolInput>,
 }

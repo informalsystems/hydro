@@ -4106,6 +4106,7 @@ dependencies = [
  "cw2 2.0.0",
  "interface",
  "neutron-sdk",
+ "neutron-std",
  "schemars",
  "serde",
  "serde_json",

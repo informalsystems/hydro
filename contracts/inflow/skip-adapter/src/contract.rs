@@ -8,12 +8,14 @@ use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::error::ContractError;
 use crate::msg::*;
+use crate::oracle;
 use crate::skip;
 use crate::state::*;
 use crate::validation;
 
 const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+const MAX_SLIPPAGE_BPS: u64 = 1000; // 10%
 
 // ========== INSTANTIATE ==========
 
@@ -26,12 +28,12 @@ pub fn instantiate(
 ) -> Result<Response<NeutronMsg>, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    // Validate at least one admin
+    // Validate at least one config admin
     if msg.admins.is_empty() {
         return Err(ContractError::AtLeastOneAdmin {});
     }
 
-    // Validate and store admins
+    // Validate and store config admins
     let mut admins: Vec<_> = msg
         .admins
         .iter()
@@ -42,48 +44,57 @@ pub fn instantiate(
     ADMINS.save(deps.storage, &admins)?;
 
     // Validate and store executors
-    let executors = if let Some(exec_list) = msg.executors {
-        let mut execs: Vec<_> = exec_list
-            .iter()
-            .map(|addr| deps.api.addr_validate(addr))
-            .collect::<StdResult<_>>()?;
-        execs.sort();
-        execs.dedup();
-        execs
-    } else {
-        vec![]
-    };
+    let mut executors: Vec<_> = msg
+        .executors
+        .iter()
+        .map(|addr| deps.api.addr_validate(addr))
+        .collect::<StdResult<_>>()?;
+    executors.sort();
+    executors.dedup();
     EXECUTORS.save(deps.storage, &executors)?;
 
     // Validate and store skip_contract
     let skip_contract = deps.api.addr_validate(&msg.skip_contract)?;
 
+    // Validate max_slippage_bps
+    if msg.max_slippage_bps > MAX_SLIPPAGE_BPS {
+        return Err(ContractError::InvalidSlippage {
+            bps: msg.max_slippage_bps,
+            max_bps: MAX_SLIPPAGE_BPS,
+        });
+    }
+
     // Store config
     let config = Config {
         skip_contract,
         default_timeout_nanos: msg.default_timeout_nanos,
+        max_slippage_bps: msg.max_slippage_bps,
     };
     CONFIG.save(deps.storage, &config)?;
 
-    // Register initial routes if provided
-    if let Some(routes) = msg.initial_routes {
-        for (route_id, route_config) in routes {
-            validation::validate_route_config(&route_config)?;
-            ROUTE_REGISTRY.save(deps.storage, route_id, &route_config)?;
-        }
+    // Register initial routes
+    for (route_id, route_config) in msg.initial_routes {
+        validation::validate_route_config(&route_config)?;
+        ROUTE_REGISTRY.save(deps.storage, route_id, &route_config)?;
     }
 
-    // Register initial recipients if provided
-    if let Some(recipients) = msg.initial_recipients {
-        for (recipient_addr_str, recipient_config) in recipients {
-            let recipient_addr = deps.api.addr_validate(&recipient_addr_str)?;
-            RECIPIENT_REGISTRY.save(deps.storage, recipient_addr, &recipient_config)?;
-        }
+    // Register initial recipients
+    for (recipient_addr_str, recipient_config) in msg.initial_recipients {
+        let recipient_addr = deps.api.addr_validate(&recipient_addr_str)?;
+        RECIPIENT_REGISTRY.save(deps.storage, recipient_addr, &recipient_config)?;
     }
 
-    // Register initial depositor if provided
-    if let Some(depositor_addr_str) = msg.depositor_address {
+    // Register initial depositors
+    for depositor_addr_str in msg.initial_depositors {
         let depositor_addr = deps.api.addr_validate(&depositor_addr_str)?;
+
+        // Check for duplicate
+        if WHITELISTED_DEPOSITORS.has(deps.storage, depositor_addr.clone()) {
+            return Err(ContractError::DepositorAlreadyRegistered {
+                depositor_address: depositor_addr.to_string(),
+            });
+        }
+
         let depositor = Depositor { enabled: true };
         WHITELISTED_DEPOSITORS.save(deps.storage, depositor_addr, &depositor)?;
     }
@@ -191,9 +202,26 @@ fn dispatch_execute_custom(
         SkipAdapterMsg::UpdateConfig {
             skip_contract,
             default_timeout_nanos,
+            max_slippage_bps,
         } => {
             validation::validate_config_admin(&deps, &info)?;
-            execute_update_config(deps, skip_contract, default_timeout_nanos)
+            execute_update_config(deps, skip_contract, default_timeout_nanos, max_slippage_bps)
+        }
+        SkipAdapterMsg::RegisterDenomSymbol {
+            denom,
+            symbol,
+            description,
+        } => {
+            validation::validate_config_admin(&deps, &info)?;
+            execute_register_denom_symbol(deps, denom, symbol, description)
+        }
+        SkipAdapterMsg::UnregisterDenomSymbol { denom } => {
+            validation::validate_config_admin(&deps, &info)?;
+            execute_unregister_denom_symbol(deps, denom)
+        }
+        SkipAdapterMsg::BulkRegisterDenomSymbols { mappings } => {
+            validation::validate_config_admin(&deps, &info)?;
+            execute_bulk_register_denom_symbols(deps, mappings)
         }
     }
 }
@@ -329,13 +357,22 @@ fn execute_swap(
         .timeout_nanos
         .unwrap_or(env.block.time.nanos() + config.default_timeout_nanos);
 
+    // 10.5. Calculate oracle-enhanced min_asset
+    let enhanced_min_asset = oracle::calculate_min_asset_with_oracle(
+        &deps.as_ref(),
+        &params.coin_in,
+        &route_config,
+        &config,
+        &params.min_asset,
+    );
+
     // 11. Create Skip swap message
     let swap_msg = skip::create_swap_and_action_msg(
         config.skip_contract,
         params.coin_in.clone(),
         params.operations,
         params.swap_venue_name,
-        params.min_asset,
+        enhanced_min_asset,
         params.post_swap_action,
         timeout_timestamp,
     )?;
@@ -583,6 +620,7 @@ fn execute_update_config(
     deps: DepsMut<NeutronQuery>,
     skip_contract: Option<String>,
     default_timeout_nanos: Option<u64>,
+    max_slippage_bps: Option<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let mut config = CONFIG.load(deps.storage)?;
 
@@ -594,9 +632,79 @@ fn execute_update_config(
         config.default_timeout_nanos = timeout;
     }
 
+    if let Some(slippage) = max_slippage_bps {
+        // Validate max_slippage_bps
+        if slippage > MAX_SLIPPAGE_BPS {
+            return Err(ContractError::InvalidSlippage {
+                bps: slippage,
+                max_bps: MAX_SLIPPAGE_BPS,
+            });
+        }
+        config.max_slippage_bps = slippage;
+    }
+
     CONFIG.save(deps.storage, &config)?;
 
     Ok(Response::new().add_attribute("action", "update_config"))
+}
+
+fn execute_register_denom_symbol(
+    deps: DepsMut<NeutronQuery>,
+    denom: String,
+    symbol: String,
+    description: Option<String>,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Check if already registered
+    if DENOM_SYMBOL_REGISTRY.has(deps.storage, denom.clone()) {
+        return Err(ContractError::DenomSymbolAlreadyRegistered { denom });
+    }
+
+    let mapping = DenomSymbolMapping {
+        symbol: symbol.clone(),
+        description,
+    };
+    DENOM_SYMBOL_REGISTRY.save(deps.storage, denom.clone(), &mapping)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "register_denom_symbol")
+        .add_attribute("denom", denom)
+        .add_attribute("symbol", symbol))
+}
+
+fn execute_unregister_denom_symbol(
+    deps: DepsMut<NeutronQuery>,
+    denom: String,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Check if registered
+    if !DENOM_SYMBOL_REGISTRY.has(deps.storage, denom.clone()) {
+        return Err(ContractError::DenomSymbolNotFound { denom });
+    }
+
+    DENOM_SYMBOL_REGISTRY.remove(deps.storage, denom.clone());
+
+    Ok(Response::new()
+        .add_attribute("action", "unregister_denom_symbol")
+        .add_attribute("denom", denom))
+}
+
+fn execute_bulk_register_denom_symbols(
+    deps: DepsMut<NeutronQuery>,
+    mappings: Vec<DenomSymbolInput>,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let mut count = 0;
+
+    for input in mappings {
+        let mapping = DenomSymbolMapping {
+            symbol: input.symbol,
+            description: input.description,
+        };
+        DENOM_SYMBOL_REGISTRY.save(deps.storage, input.denom, &mapping)?;
+        count += 1;
+    }
+
+    Ok(Response::new()
+        .add_attribute("action", "bulk_register_denom_symbols")
+        .add_attribute("count", count.to_string()))
 }
 
 // ========== QUERY ==========
@@ -670,6 +778,12 @@ fn dispatch_query_custom(deps: Deps<NeutronQuery>, msg: SkipAdapterQueryMsg) -> 
         }
         SkipAdapterQueryMsg::AllRecipients {} => to_json_binary(&query_all_recipients(deps)?),
         SkipAdapterQueryMsg::Executors {} => to_json_binary(&query_executors(deps)?),
+        SkipAdapterQueryMsg::DenomSymbol { denom } => {
+            to_json_binary(&query_denom_symbol(deps, denom)?)
+        }
+        SkipAdapterQueryMsg::AllDenomSymbols {} => {
+            to_json_binary(&query_all_denom_symbols(deps)?)
+        }
     }
 }
 
@@ -694,6 +808,7 @@ fn query_skip_config(deps: Deps<NeutronQuery>) -> StdResult<SkipConfigResponse> 
         admins: admins.iter().map(|a| a.to_string()).collect(),
         skip_contract: config.skip_contract.to_string(),
         default_timeout_nanos: config.default_timeout_nanos,
+        max_slippage_bps: config.max_slippage_bps,
     })
 }
 
@@ -774,5 +889,36 @@ fn query_registered_depositors(
 
     Ok(RegisteredDepositorsResponse {
         depositors: depositors?,
+    })
+}
+
+fn query_denom_symbol(
+    deps: Deps<NeutronQuery>,
+    denom: String,
+) -> StdResult<DenomSymbolResponse> {
+    let mapping = DENOM_SYMBOL_REGISTRY.load(deps.storage, denom.clone())?;
+
+    Ok(DenomSymbolResponse {
+        denom,
+        symbol: mapping.symbol,
+        description: mapping.description,
+    })
+}
+
+fn query_all_denom_symbols(deps: Deps<NeutronQuery>) -> StdResult<AllDenomSymbolsResponse> {
+    let mappings: StdResult<Vec<_>> = DENOM_SYMBOL_REGISTRY
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|item| {
+            let (denom, mapping) = item?;
+            Ok(DenomSymbolInput {
+                denom,
+                symbol: mapping.symbol,
+                description: mapping.description,
+            })
+        })
+        .collect();
+
+    Ok(AllDenomSymbolsResponse {
+        mappings: mappings?,
     })
 }

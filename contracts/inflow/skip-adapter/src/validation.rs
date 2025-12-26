@@ -26,20 +26,6 @@ pub fn validate_depositor_caller(
     Ok(depositor)
 }
 
-/// Validates that the caller is a config admin (immutable version)
-pub fn validate_admin_caller(
-    deps: &Deps<NeutronQuery>,
-    info: &MessageInfo,
-) -> Result<(), ContractError> {
-    let admins = ADMINS.load(deps.storage)?;
-
-    if !admins.contains(&info.sender) {
-        return Err(ContractError::UnauthorizedAdmin {});
-    }
-
-    Ok(())
-}
-
 /// Validates that the caller is a config admin (mutable version)
 pub fn validate_config_admin(
     deps: &DepsMut<NeutronQuery>,

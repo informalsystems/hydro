@@ -73,4 +73,16 @@ pub enum ContractError {
 
     #[error("Skip protocol error: {msg}")]
     SkipProtocolError { msg: String },
+
+    #[error("Invalid slippage: {bps} basis points exceeds maximum of {max_bps} (10%)")]
+    InvalidSlippage { bps: u64, max_bps: u64 },
+
+    #[error("Denom symbol mapping not found: {denom}")]
+    DenomSymbolNotFound { denom: String },
+
+    #[error("Denom symbol already registered: {denom}")]
+    DenomSymbolAlreadyRegistered { denom: String },
+
+    #[error("Price calculation overflow")]
+    PriceCalculationOverflow {},
 }

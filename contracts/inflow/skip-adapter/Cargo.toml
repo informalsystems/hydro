@@ -20,6 +20,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
 neutron-sdk = { workspace = true }
+neutron-std = { workspace = true }
 interface = { path = "../../../packages/interface" }
 
 [dev-dependencies]

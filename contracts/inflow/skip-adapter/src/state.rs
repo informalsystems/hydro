@@ -9,6 +9,8 @@ pub struct Config {
     pub skip_contract: Addr,
     /// Default timeout for swap operations (nanoseconds)
     pub default_timeout_nanos: u64,
+    /// Maximum allowed slippage in basis points (e.g., 100 = 1%)
+    pub max_slippage_bps: u64,
 }
 
 /// Route configuration for a swap path
@@ -43,6 +45,15 @@ pub struct Depositor {
     pub enabled: bool,
 }
 
+/// Denom to Slinky symbol mapping for oracle price queries
+#[cw_serde]
+pub struct DenomSymbolMapping {
+    /// Slinky currency symbol (e.g., "NTRN", "USDT", "ATOM")
+    pub symbol: String,
+    /// Optional description for human readability
+    pub description: Option<String>,
+}
+
 // Storage Items
 
 /// Configuration storage
@@ -63,3 +74,7 @@ pub const ROUTE_REGISTRY: Map<String, RouteConfig> = Map::new("route_registry");
 
 /// Maps recipient address to recipient configuration
 pub const RECIPIENT_REGISTRY: Map<Addr, RecipientConfig> = Map::new("recipient_registry");
+
+/// Maps denom to Slinky symbol for oracle price queries
+pub const DENOM_SYMBOL_REGISTRY: Map<String, DenomSymbolMapping> =
+    Map::new("denom_symbol_registry");
