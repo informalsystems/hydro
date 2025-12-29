@@ -1,5 +1,5 @@
 # Inflow EVM smart contracts
-This folder contains verious smart contract intended to be deployed on EVM compatible blockchains and used to bridge the gap to our Inflow smart contracts deployed on Neutron blockchain.
+This folder contains various smart contract intended to be deployed on EVM compatible blockchains and used to bridge the gap to our Inflow smart contracts deployed on Neutron blockchain.
 
 ## CCTP USDC Forwarder
 This smart contract will be used as a temporary holder of USDC tokens on EVM chains, until we bridge those tokens to Neutron chain for Inflow USDC vault deployment. There will be an off-chain component which will monitor balance changes of this contract and, once the contract has certain amount of USDC tokens, it will initiate the bridging request.
