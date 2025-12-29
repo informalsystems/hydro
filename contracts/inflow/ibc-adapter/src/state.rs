@@ -35,6 +35,9 @@ pub struct TokenConfig {
 pub struct DepositorCapabilities {
     /// Whether this depositor can withdraw funds
     pub can_withdraw: bool,
+    /// Whether this depositor can set custom memo in IBC transfers
+    /// This should be restricted to trusted contracts (e.g., skip-adapter)
+    pub can_set_memo: bool,
 }
 
 /// Depositor information
@@ -56,6 +59,9 @@ pub struct TransferFundsInstructions {
     /// Optional timeout override in seconds
     /// If None, uses the default from Config
     pub timeout_seconds: Option<u64>,
+    /// Optional memo for IBC transfer (used for PFM, wasm hooks, etc.)
+    /// If None, defaults to empty string
+    pub memo: Option<String>,
 }
 
 // Storage items

@@ -223,6 +223,53 @@ fn dispatch_execute_custom(
             validation::validate_config_admin(&deps, &info)?;
             execute_bulk_register_denom_symbols(deps, mappings)
         }
+        SkipAdapterMsg::ExecuteCrossChainSwap { params } => {
+            validation::validate_admin_or_executor(&deps, &info)?;
+            execute_cross_chain_swap(deps, env, info, params)
+        }
+        SkipAdapterMsg::RegisterToken {
+            symbol,
+            native_chain,
+            native_denom,
+            decimals,
+        } => {
+            validation::validate_config_admin(&deps, &info)?;
+            execute_register_token(deps, symbol, native_chain, native_denom, decimals)
+        }
+        SkipAdapterMsg::RegisterChain {
+            chain_id,
+            allowed_address,
+        } => {
+            validation::validate_config_admin(&deps, &info)?;
+            execute_register_chain(deps, chain_id, allowed_address)
+        }
+        SkipAdapterMsg::RegisterChannel {
+            source_chain,
+            dest_chain,
+            channel_id,
+        } => {
+            validation::validate_config_admin(&deps, &info)?;
+            execute_register_channel(deps, source_chain, dest_chain, channel_id)
+        }
+        SkipAdapterMsg::UpdateOsmosisConfig {
+            chain_id,
+            skip_contract,
+            swap_venue,
+            ibc_adapter,
+        } => {
+            validation::validate_config_admin(&deps, &info)?;
+            execute_update_osmosis_config(deps, chain_id, skip_contract, swap_venue, ibc_adapter)
+        }
+        SkipAdapterMsg::RegisterCrossChainRoute {
+            route_id,
+            token_in,
+            token_out,
+            swap_chain,
+            pool_id,
+        } => {
+            validation::validate_config_admin(&deps, &info)?;
+            execute_register_cross_chain_route(deps, route_id, token_in, token_out, swap_chain, pool_id)
+        }
     }
 }
 
@@ -707,6 +754,270 @@ fn execute_bulk_register_denom_symbols(
         .add_attribute("count", count.to_string()))
 }
 
+// ========== CROSS-CHAIN HANDLERS ==========
+
+fn execute_register_token(
+    deps: DepsMut<NeutronQuery>,
+    symbol: String,
+    native_chain: String,
+    native_denom: String,
+    decimals: Option<u8>,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let token_info = TokenInfo {
+        symbol: symbol.clone(),
+        native_chain,
+        native_denom,
+        decimals,
+    };
+
+    TOKEN_REGISTRY.save(deps.storage, symbol.clone(), &token_info)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "register_token")
+        .add_attribute("symbol", symbol))
+}
+
+fn execute_register_chain(
+    deps: DepsMut<NeutronQuery>,
+    chain_id: String,
+    allowed_address: String,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let chain_info = ChainInfo {
+        chain_id: chain_id.clone(),
+        allowed_address: allowed_address.clone(),
+    };
+
+    CHAIN_REGISTRY.save(deps.storage, chain_id.clone(), &chain_info)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "register_chain")
+        .add_attribute("chain_id", chain_id)
+        .add_attribute("allowed_address", allowed_address))
+}
+
+fn execute_register_channel(
+    deps: DepsMut<NeutronQuery>,
+    source_chain: String,
+    dest_chain: String,
+    channel_id: String,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let channel_info = ChannelInfo {
+        source_chain: source_chain.clone(),
+        dest_chain: dest_chain.clone(),
+        channel_id: channel_id.clone(),
+    };
+
+    CHANNEL_REGISTRY.save(
+        deps.storage,
+        (source_chain.clone(), dest_chain.clone()),
+        &channel_info,
+    )?;
+
+    Ok(Response::new()
+        .add_attribute("action", "register_channel")
+        .add_attribute("source_chain", source_chain)
+        .add_attribute("dest_chain", dest_chain)
+        .add_attribute("channel_id", channel_id))
+}
+
+fn execute_update_osmosis_config(
+    deps: DepsMut<NeutronQuery>,
+    chain_id: Option<String>,
+    skip_contract: Option<String>,
+    swap_venue: Option<String>,
+    ibc_adapter: Option<String>,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let existing_config = OSMOSIS_CONFIG.may_load(deps.storage)?;
+    let is_update = existing_config.is_some();
+
+    let mut config = if let Some(existing) = existing_config {
+        // Update existing config
+        existing
+    } else {
+        // Create new config - all fields must be provided
+        OsmosisConfig {
+            chain_id: chain_id
+                .clone()
+                .ok_or(ContractError::OsmosisConfigNotSet {})?,
+            skip_contract: skip_contract
+                .clone()
+                .ok_or(ContractError::OsmosisConfigNotSet {})?,
+            swap_venue: swap_venue
+                .clone()
+                .ok_or(ContractError::OsmosisConfigNotSet {})?,
+            ibc_adapter: deps.api.addr_validate(
+                &ibc_adapter
+                    .clone()
+                    .ok_or(ContractError::OsmosisConfigNotSet {})?,
+            )?,
+        }
+    };
+
+    // Apply updates if config already existed
+    if is_update {
+        if let Some(chain_id) = chain_id {
+            config.chain_id = chain_id;
+        }
+        if let Some(skip_contract) = skip_contract {
+            config.skip_contract = skip_contract;
+        }
+        if let Some(swap_venue) = swap_venue {
+            config.swap_venue = swap_venue;
+        }
+        if let Some(ibc_adapter) = ibc_adapter {
+            config.ibc_adapter = deps.api.addr_validate(&ibc_adapter)?;
+        }
+    }
+
+    OSMOSIS_CONFIG.save(deps.storage, &config)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "update_osmosis_config")
+        .add_attribute("chain_id", config.chain_id)
+        .add_attribute("skip_contract", config.skip_contract)
+        .add_attribute("swap_venue", config.swap_venue)
+        .add_attribute("ibc_adapter", config.ibc_adapter))
+}
+
+fn execute_register_cross_chain_route(
+    deps: DepsMut<NeutronQuery>,
+    route_id: String,
+    token_in: String,
+    token_out: String,
+    swap_chain: String,
+    pool_id: String,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let route = CrossChainRoute {
+        token_in: token_in.clone(),
+        token_out: token_out.clone(),
+        swap_chain: swap_chain.clone(),
+        pool_id: pool_id.clone(),
+        enabled: true,
+    };
+
+    CROSS_CHAIN_ROUTES.save(deps.storage, route_id.clone(), &route)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "register_cross_chain_route")
+        .add_attribute("route_id", route_id)
+        .add_attribute("token_in", token_in)
+        .add_attribute("token_out", token_out)
+        .add_attribute("swap_chain", swap_chain)
+        .add_attribute("pool_id", pool_id))
+}
+
+fn execute_cross_chain_swap(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    params: CrossChainSwapParams,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // 1. Load route config
+    let route = CROSS_CHAIN_ROUTES
+        .may_load(deps.storage, params.route_id.clone())?
+        .ok_or(ContractError::CrossChainRouteNotRegistered {
+            route_id: params.route_id.clone(),
+        })?;
+
+    // 2. Verify route is enabled
+    if !route.enabled {
+        return Err(ContractError::CrossChainRouteDisabled {
+            route_id: params.route_id.clone(),
+        });
+    }
+
+    // 3. Calculate denoms on Neutron
+    let neutron_denom_in =
+        crate::ibc::get_token_denom_on_chain(&deps.as_ref(), &route.token_in, "neutron-1")?;
+    let neutron_denom_out =
+        crate::ibc::get_token_denom_on_chain(&deps.as_ref(), &route.token_out, "neutron-1")?;
+
+    // 4. Calculate denoms on Osmosis
+    let osmosis_denom_in =
+        crate::ibc::get_token_denom_on_chain(&deps.as_ref(), &route.token_in, &route.swap_chain)?;
+    let osmosis_denom_out =
+        crate::ibc::get_token_denom_on_chain(&deps.as_ref(), &route.token_out, &route.swap_chain)?;
+
+    // 5. Validate user sent correct token and amount
+    if info.funds.len() != 1 {
+        return Err(ContractError::InvalidFunds {
+            count: info.funds.len(),
+        });
+    }
+
+    let sent_coin = &info.funds[0];
+    if sent_coin.denom != neutron_denom_in {
+        return Err(ContractError::InvalidDenom {
+            expected: neutron_denom_in.clone(),
+            actual: sent_coin.denom.clone(),
+        });
+    }
+
+    if sent_coin.amount != params.amount_in {
+        return Err(ContractError::AmountMismatch {
+            expected: params.amount_in.to_string(),
+            actual: sent_coin.amount.to_string(),
+        });
+    }
+
+    // 6. Load Osmosis config
+    let osmosis_config = OSMOSIS_CONFIG
+        .may_load(deps.storage)?
+        .ok_or(ContractError::OsmosisConfigNotSet {})?;
+
+    // 7. Get recovery address from chain registry (for Neutron)
+    let neutron_chain_info = CHAIN_REGISTRY
+        .may_load(deps.storage, "neutron-1".to_string())?
+        .ok_or(ContractError::ChainNotRegistered {
+            chain_id: "neutron-1".to_string(),
+        })?;
+
+    // 8. Construct nested memo (PFM + wasm hook)
+    let memo = crate::cross_chain::construct_osmosis_swap_memo(
+        &deps.as_ref(),
+        &osmosis_config,
+        &route,
+        &osmosis_denom_in,
+        &osmosis_denom_out,
+        &params.min_amount_out,
+        &neutron_chain_info.allowed_address,
+        &env,
+    )?;
+
+    // 9. Call IBC adapter with memo
+    // Note: IBC adapter needs to be registered as a depositor with can_set_memo permission
+    let ibc_transfer_msg = cosmwasm_std::WasmMsg::Execute {
+        contract_addr: osmosis_config.ibc_adapter.to_string(),
+        msg: to_json_binary(&serde_json::json!({
+            "custom_action": {
+                "transfer_funds": {
+                    "coin": sent_coin,
+                    "instructions": {
+                        "destination_chain": osmosis_config.chain_id,
+                        "recipient": osmosis_config.skip_contract,
+                        "timeout_seconds": null,
+                        "memo": memo,
+                    }
+                }
+            }
+        }))?,
+        funds: info.funds,
+    };
+
+    Ok(Response::new()
+        .add_message(ibc_transfer_msg)
+        .add_attribute("action", "cross_chain_swap")
+        .add_attribute("route_id", params.route_id)
+        .add_attribute("token_in", route.token_in)
+        .add_attribute("token_out", route.token_out)
+        .add_attribute("amount_in", params.amount_in)
+        .add_attribute("min_amount_out", params.min_amount_out)
+        .add_attribute("neutron_denom_in", neutron_denom_in)
+        .add_attribute("neutron_denom_out", neutron_denom_out)
+        .add_attribute("osmosis_denom_in", osmosis_denom_in)
+        .add_attribute("osmosis_denom_out", osmosis_denom_out))
+}
+
 // ========== QUERY ==========
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -921,4 +1232,296 @@ fn query_all_denom_symbols(deps: Deps<NeutronQuery>) -> StdResult<AllDenomSymbol
     Ok(AllDenomSymbolsResponse {
         mappings: mappings?,
     })
+}
+
+
+#[cfg(test)]
+mod cross_chain_tests {
+    use super::*;
+    use crate::testing_mocks::mock_dependencies;
+    use cosmwasm_std::testing::{message_info, mock_env};
+    use cosmwasm_std::Addr;
+
+    fn get_test_instantiate_msg(
+        admin: &str,
+        executor: &str,
+        skip_contract: &str,
+    ) -> InstantiateMsg {
+        InstantiateMsg {
+            admins: vec![admin.to_string()],
+            skip_contract: skip_contract.to_string(),
+            default_timeout_nanos: 1800000000000,
+            max_slippage_bps: 100,
+            executors: vec![executor.to_string()],
+            initial_routes: vec![],
+            initial_recipients: vec![],
+            initial_depositors: vec![],
+        }
+    }
+
+    #[test]
+    fn test_register_token() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+
+        let admin = deps.api.addr_make("admin");
+        let executor = deps.api.addr_make("executor");
+        let skip_addr = deps.api.addr_make("skip");
+        let info = message_info(&admin, &[]);
+
+        // Instantiate
+        instantiate(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            get_test_instantiate_msg(&admin.to_string(), &executor.to_string(), &skip_addr.to_string()),
+        )
+        .unwrap();
+
+        // Register token
+        let msg = ExecuteMsg::CustomAction(SkipAdapterMsg::RegisterToken {
+            symbol: "ATOM".to_string(),
+            native_chain: "cosmoshub-4".to_string(),
+            native_denom: "uatom".to_string(),
+            decimals: Some(6),
+        });
+
+        let res = execute(deps.as_mut(), env, info, msg).unwrap();
+        assert_eq!(res.attributes[0].value, "register_token");
+        assert_eq!(res.attributes[1].value, "ATOM");
+
+        // Verify stored
+        let token = TOKEN_REGISTRY.load(&deps.storage, "ATOM".to_string()).unwrap();
+        assert_eq!(token.symbol, "ATOM");
+        assert_eq!(token.native_chain, "cosmoshub-4");
+        assert_eq!(token.native_denom, "uatom");
+        assert_eq!(token.decimals, Some(6));
+    }
+
+    #[test]
+    fn test_register_chain() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+
+        let admin = deps.api.addr_make("admin");
+        let executor = deps.api.addr_make("executor");
+        let skip_addr = deps.api.addr_make("skip");
+        let info = message_info(&admin, &[]);
+
+        instantiate(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            get_test_instantiate_msg(&admin.to_string(), &executor.to_string(), &skip_addr.to_string()),
+        )
+        .unwrap();
+
+        // Register chain
+        let msg = ExecuteMsg::CustomAction(SkipAdapterMsg::RegisterChain {
+            chain_id: "neutron-1".to_string(),
+            allowed_address: "neutron1recovery".to_string(),
+        });
+
+        let res = execute(deps.as_mut(), env, info, msg).unwrap();
+        assert_eq!(res.attributes[0].value, "register_chain");
+
+        // Verify stored
+        let chain = CHAIN_REGISTRY.load(&deps.storage, "neutron-1".to_string()).unwrap();
+        assert_eq!(chain.chain_id, "neutron-1");
+        assert_eq!(chain.allowed_address, "neutron1recovery");
+    }
+
+    #[test]
+    fn test_register_channel() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+
+        let admin = deps.api.addr_make("admin");
+        let executor = deps.api.addr_make("executor");
+        let skip_addr = deps.api.addr_make("skip");
+        let info = message_info(&admin, &[]);
+
+        instantiate(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            get_test_instantiate_msg(&admin.to_string(), &executor.to_string(), &skip_addr.to_string()),
+        )
+        .unwrap();
+
+        // Register channel
+        let msg = ExecuteMsg::CustomAction(SkipAdapterMsg::RegisterChannel {
+            source_chain: "neutron-1".to_string(),
+            dest_chain: "osmosis-1".to_string(),
+            channel_id: "channel-0".to_string(),
+        });
+
+        let res = execute(deps.as_mut(), env, info, msg).unwrap();
+        assert_eq!(res.attributes[0].value, "register_channel");
+
+        // Verify stored
+        let channel = CHANNEL_REGISTRY
+            .load(&deps.storage, ("neutron-1".to_string(), "osmosis-1".to_string()))
+            .unwrap();
+        assert_eq!(channel.channel_id, "channel-0");
+    }
+
+    #[test]
+    fn test_update_osmosis_config() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+
+        let admin = deps.api.addr_make("admin");
+        let executor = deps.api.addr_make("executor");
+        let ibc_adapter = deps.api.addr_make("ibcadapter");
+        let skip_addr = deps.api.addr_make("skip");
+        let osmo_skip = deps.api.addr_make("osmoskip");
+        let info = message_info(&admin, &[]);
+
+        instantiate(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            get_test_instantiate_msg(&admin.to_string(), &executor.to_string(), &skip_addr.to_string()),
+        )
+        .unwrap();
+
+        // First initialize Osmosis config
+        let init_msg = ExecuteMsg::CustomAction(SkipAdapterMsg::UpdateOsmosisConfig {
+            chain_id: Some("osmosis-1".to_string()),
+            skip_contract: Some(skip_addr.to_string()),
+            swap_venue: Some("osmosis-poolmanager".to_string()),
+            ibc_adapter: Some(ibc_adapter.to_string()),
+        });
+        execute(deps.as_mut(), env.clone(), info.clone(), init_msg).unwrap();
+
+        // Now update with new values
+        let msg = ExecuteMsg::CustomAction(SkipAdapterMsg::UpdateOsmosisConfig {
+            chain_id: None,  // Keep existing
+            skip_contract: Some(osmo_skip.to_string()),  // Update this
+            swap_venue: None,  // Keep existing
+            ibc_adapter: None,  // Keep existing
+        });
+
+        let res = execute(deps.as_mut(), env, info, msg).unwrap();
+        assert_eq!(res.attributes[0].value, "update_osmosis_config");
+
+        // Verify stored
+        let config = OSMOSIS_CONFIG.load(&deps.storage).unwrap();
+        assert_eq!(config.chain_id, "osmosis-1");
+        assert_eq!(config.skip_contract, osmo_skip.to_string());
+        assert_eq!(config.swap_venue, "osmosis-poolmanager");
+        assert_eq!(config.ibc_adapter, ibc_adapter);
+    }
+
+    #[test]
+    fn test_register_cross_chain_route() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+
+        let admin = deps.api.addr_make("admin");
+        let executor = deps.api.addr_make("executor");
+        let skip_addr = deps.api.addr_make("skip");
+        let info = message_info(&admin, &[]);
+
+        instantiate(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            get_test_instantiate_msg(&admin.to_string(), &executor.to_string(), &skip_addr.to_string()),
+        )
+        .unwrap();
+
+        // Register route
+        let msg = ExecuteMsg::CustomAction(SkipAdapterMsg::RegisterCrossChainRoute {
+            route_id: "statom_to_atom_osmosis".to_string(),
+            token_in: "stATOM".to_string(),
+            token_out: "ATOM".to_string(),
+            swap_chain: "osmosis-1".to_string(),
+            pool_id: "1234".to_string(),
+        });
+
+        let res = execute(deps.as_mut(), env, info, msg).unwrap();
+        assert_eq!(res.attributes[0].value, "register_cross_chain_route");
+
+        // Verify stored
+        let route = CROSS_CHAIN_ROUTES
+            .load(&deps.storage, "statom_to_atom_osmosis".to_string())
+            .unwrap();
+        assert_eq!(route.token_in, "stATOM");
+        assert_eq!(route.token_out, "ATOM");
+        assert_eq!(route.pool_id, "1234");
+        assert!(route.enabled);
+    }
+
+    #[test]
+    fn test_cross_chain_swap_route_not_found() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+
+        let admin = deps.api.addr_make("admin");
+        let executor = deps.api.addr_make("executor");
+        let skip_addr = deps.api.addr_make("skip");
+        let info = message_info(&admin, &[]);
+
+        instantiate(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            get_test_instantiate_msg(&admin.to_string(), &executor.to_string(), &skip_addr.to_string()),
+        )
+        .unwrap();
+
+        // Try to execute swap with non-existent route
+        let msg = ExecuteMsg::CustomAction(SkipAdapterMsg::ExecuteCrossChainSwap {
+            params: CrossChainSwapParams {
+                route_id: "nonexistent".to_string(),
+                amount_in: Uint128::new(1000000),
+                min_amount_out: Uint128::new(950000),
+            },
+        });
+
+        let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+        match err {
+            ContractError::CrossChainRouteNotRegistered { route_id } => {
+                assert_eq!(route_id, "nonexistent");
+            }
+            _ => panic!("Expected CrossChainRouteNotRegistered error"),
+        }
+    }
+
+    #[test]
+    fn test_unauthorized_registration() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+
+        let admin = deps.api.addr_make("admin");
+        let executor = deps.api.addr_make("executor");
+        let hacker = deps.api.addr_make("hacker");
+        let skip_addr = deps.api.addr_make("skip");
+        let admin_info = message_info(&admin, &[]);
+
+        instantiate(
+            deps.as_mut(),
+            env.clone(),
+            admin_info,
+            get_test_instantiate_msg(&admin.to_string(), &executor.to_string(), &skip_addr.to_string()),
+        )
+        .unwrap();
+
+        // Try to register token as non-admin
+        let non_admin_info = message_info(&hacker, &[]);
+        let msg = ExecuteMsg::CustomAction(SkipAdapterMsg::RegisterToken {
+            symbol: "ATOM".to_string(),
+            native_chain: "cosmoshub-4".to_string(),
+            native_denom: "uatom".to_string(),
+            decimals: Some(6),
+        });
+
+        let err = execute(deps.as_mut(), env, non_admin_info, msg).unwrap_err();
+        match err {
+            ContractError::UnauthorizedAdmin {} => {}
+            _ => panic!("Expected UnauthorizedAdmin error"),
+        }
+    }
 }

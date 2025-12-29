@@ -96,8 +96,11 @@ pub fn instantiate(
         let capabilities = if let Some(cap_binary) = initial_depositor.capabilities {
             validate_capabilities_binary(&cap_binary)?
         } else {
-            // Default capabilities: can withdraw
-            DepositorCapabilities { can_withdraw: true }
+            // Default capabilities: can withdraw, cannot set memo
+            DepositorCapabilities {
+                can_withdraw: true,
+                can_set_memo: false,
+            }
         };
 
         let depositor = Depositor {
@@ -295,7 +298,28 @@ fn execute_transfer_funds(
     // 1. Validate caller is admin or executor
     validate_admin_or_executor(&deps, &info)?;
 
-    // 2. Validate non-zero amount
+    // 2. Check memo permissions if memo is provided
+    if instructions.memo.is_some() {
+        let admins = ADMINS.load(deps.storage)?;
+        let is_admin = admins.contains(&info.sender);
+
+        // If not admin, check if caller has can_set_memo capability
+        if !is_admin {
+            // Check if caller is a depositor with memo permission
+            let depositor = WHITELISTED_DEPOSITORS.may_load(deps.storage, info.sender.clone())?;
+            match depositor {
+                Some(dep) if dep.capabilities.can_set_memo => {
+                    // Depositor has memo permission, continue
+                }
+                _ => {
+                    // Caller doesn't have memo permission
+                    return Err(ContractError::UnauthorizedMemo {});
+                }
+            }
+        }
+    }
+
+    // 3. Validate non-zero amount
     if coin.amount.is_zero() {
         return Err(ContractError::ZeroAmount {});
     }
@@ -341,6 +365,7 @@ fn execute_transfer_funds(
         coin.clone(),
         instructions.recipient.clone(),
         timeout,
+        instructions.memo.clone(),
     )?;
 
     // 11. Return response with IBC message
@@ -425,12 +450,15 @@ fn execute_register_depositor(
         });
     }
 
-    // Parse capabilities or use default (simplified: only can_withdraw field)
+    // Parse capabilities or use default
     let capabilities = if let Some(cap_binary) = metadata {
         validate_capabilities_binary(&cap_binary)?
     } else {
-        // Default capabilities: can withdraw
-        DepositorCapabilities { can_withdraw: true }
+        // Default capabilities: can withdraw, cannot set memo
+        DepositorCapabilities {
+            can_withdraw: true,
+            can_set_memo: false,
+        }
     };
 
     let depositor = Depositor {

@@ -4104,12 +4104,14 @@ dependencies = [
  "cw-multi-test",
  "cw-storage-plus 2.0.0",
  "cw2 2.0.0",
+ "hex",
  "interface",
  "neutron-sdk",
  "neutron-std",
  "schemars",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
 ]
 

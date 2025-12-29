@@ -54,6 +54,68 @@ pub struct DenomSymbolMapping {
     pub description: Option<String>,
 }
 
+/// Token metadata - stores canonical info for cross-chain tokens
+#[cw_serde]
+pub struct TokenInfo {
+    /// Display symbol (e.g., "ATOM", "stATOM", "OSMO")
+    pub symbol: String,
+    /// Native chain ID where token originates (e.g., "stride-1", "cosmoshub-4")
+    pub native_chain: String,
+    /// Base denom on native chain (e.g., "uatom", "stuatom", "uosmo")
+    pub native_denom: String,
+    /// Optional decimals
+    pub decimals: Option<u8>,
+}
+
+/// Chain configuration with allowed address
+#[cw_serde]
+pub struct ChainInfo {
+    /// Chain ID (e.g., "neutron-1", "osmosis-1")
+    pub chain_id: String,
+    /// Allowed address on this chain for cross-chain operations
+    /// This is where funds return to after cross-chain swaps
+    pub allowed_address: String,
+}
+
+/// IBC channel between two chains
+#[cw_serde]
+pub struct ChannelInfo {
+    /// Source chain (e.g., "neutron-1")
+    pub source_chain: String,
+    /// Destination chain (e.g., "osmosis-1")
+    pub dest_chain: String,
+    /// Channel from source to dest (e.g., "channel-0")
+    pub channel_id: String,
+}
+
+/// Global Osmosis configuration
+#[cw_serde]
+pub struct OsmosisConfig {
+    /// Osmosis chain ID
+    pub chain_id: String,
+    /// Osmosis Skip contract address
+    pub skip_contract: String,
+    /// Default swap venue
+    pub swap_venue: String,
+    /// IBC adapter contract address on Neutron
+    pub ibc_adapter: Addr,
+}
+
+/// Simplified cross-chain route
+#[cw_serde]
+pub struct CrossChainRoute {
+    /// Input token symbol (e.g., "stATOM")
+    pub token_in: String,
+    /// Output token symbol (e.g., "ATOM")
+    pub token_out: String,
+    /// Chain where swap occurs (e.g., "osmosis-1")
+    pub swap_chain: String,
+    /// Osmosis pool ID for the swap (e.g., "1234")
+    pub pool_id: String,
+    /// Whether route is enabled
+    pub enabled: bool,
+}
+
 // Storage Items
 
 /// Configuration storage
@@ -78,3 +140,22 @@ pub const RECIPIENT_REGISTRY: Map<Addr, RecipientConfig> = Map::new("recipient_r
 /// Maps denom to Slinky symbol for oracle price queries
 pub const DENOM_SYMBOL_REGISTRY: Map<String, DenomSymbolMapping> =
     Map::new("denom_symbol_registry");
+
+/// Maps token symbol to token metadata
+/// Key: symbol (e.g., "ATOM", "stATOM")
+pub const TOKEN_REGISTRY: Map<String, TokenInfo> = Map::new("token_registry");
+
+/// Maps chain ID to chain configuration
+/// Key: chain_id (e.g., "neutron-1", "osmosis-1")
+pub const CHAIN_REGISTRY: Map<String, ChainInfo> = Map::new("chain_registry");
+
+/// Maps (source_chain, dest_chain) to channel info
+/// Key: tuple of (source_chain, dest_chain)
+pub const CHANNEL_REGISTRY: Map<(String, String), ChannelInfo> = Map::new("channel_registry");
+
+/// Global Osmosis configuration
+pub const OSMOSIS_CONFIG: Item<OsmosisConfig> = Item::new("osmosis_config");
+
+/// Maps route ID to cross-chain route configuration
+/// Key: route_id (e.g., "statom_to_atom_osmosis")
+pub const CROSS_CHAIN_ROUTES: Map<String, CrossChainRoute> = Map::new("cross_chain_routes");

@@ -53,4 +53,7 @@ pub enum ContractError {
 
     #[error("Unauthorized - only executors or admins can call this function")]
     UnauthorizedExecutor {},
+
+    #[error("Unauthorized - caller does not have permission to set memo in IBC transfers")]
+    UnauthorizedMemo {},
 }

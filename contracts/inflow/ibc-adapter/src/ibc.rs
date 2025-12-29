@@ -30,6 +30,7 @@ pub fn create_ibc_transfer_msg(
     coin: Coin,
     recipient: String,
     timeout_timestamp: u64,
+    memo: Option<String>,
 ) -> StdResult<NeutronMsg> {
     let fee = query_ibc_fee(deps, LOCAL_DENOM)?;
 
@@ -44,7 +45,7 @@ pub fn create_ibc_transfer_msg(
             revision_height: None,
         },
         timeout_timestamp,
-        memo: "".to_string(), // Empty for direct 1-hop transfers
+        memo: memo.unwrap_or_default(),
         fee,
     })
 }

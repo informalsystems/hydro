@@ -85,4 +85,32 @@ pub enum ContractError {
 
     #[error("Price calculation overflow")]
     PriceCalculationOverflow {},
+
+    // Cross-chain errors
+    #[error("Token not registered: {symbol}")]
+    TokenNotRegistered { symbol: String },
+
+    #[error("Chain not registered: {chain_id}")]
+    ChainNotRegistered { chain_id: String },
+
+    #[error("Channel not registered for route: {source_chain} -> {dest_chain}")]
+    ChannelNotRegistered {
+        source_chain: String,
+        dest_chain: String,
+    },
+
+    #[error("Cross-chain route not registered: {route_id}")]
+    CrossChainRouteNotRegistered { route_id: String },
+
+    #[error("Cross-chain route is disabled: {route_id}")]
+    CrossChainRouteDisabled { route_id: String },
+
+    #[error("Osmosis config not set")]
+    OsmosisConfigNotSet {},
+
+    #[error("Amount mismatch: expected {expected}, got {actual}")]
+    AmountMismatch { expected: String, actual: String },
+
+    #[error("Invalid denom: expected {expected}, got {actual}")]
+    InvalidDenom { expected: String, actual: String },
 }

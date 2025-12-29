@@ -96,6 +96,18 @@ pub enum PostSwapAction {
     // Future: could add IbcTransfer, ContractCall, etc.
 }
 
+/// Cross-chain swap parameters (simplified)
+#[cw_serde]
+pub struct CrossChainSwapParams {
+    /// Route ID (e.g., "statom_to_atom_osmosis")
+    pub route_id: String,
+    /// Amount of input token
+    pub amount_in: Uint128,
+    /// Minimum output amount
+    pub min_amount_out: Uint128,
+    // NOTE: osmosis_operations are auto-generated from route config
+}
+
 /// Skip adapter-specific execute messages
 #[cw_serde]
 pub enum SkipAdapterMsg {
@@ -155,6 +167,47 @@ pub enum SkipAdapterMsg {
     /// Bulk register denom-to-symbol mappings (config admin only)
     BulkRegisterDenomSymbols {
         mappings: Vec<DenomSymbolInput>,
+    },
+
+    /// Execute cross-chain swap on Osmosis (admin or executor only)
+    ExecuteCrossChainSwap { params: CrossChainSwapParams },
+
+    /// Register token (admin only)
+    RegisterToken {
+        symbol: String,
+        native_chain: String,
+        native_denom: String,
+        decimals: Option<u8>,
+    },
+
+    /// Register chain with allowed address (admin only)
+    RegisterChain {
+        chain_id: String,
+        allowed_address: String,
+    },
+
+    /// Register channel (admin only)
+    RegisterChannel {
+        source_chain: String,
+        dest_chain: String,
+        channel_id: String,
+    },
+
+    /// Update Osmosis config (admin only)
+    UpdateOsmosisConfig {
+        chain_id: Option<String>,
+        skip_contract: Option<String>,
+        swap_venue: Option<String>,
+        ibc_adapter: Option<String>,
+    },
+
+    /// Register cross-chain route (admin only)
+    RegisterCrossChainRoute {
+        route_id: String,
+        token_in: String,
+        token_out: String,
+        swap_chain: String,
+        pool_id: String,
     },
 }
 

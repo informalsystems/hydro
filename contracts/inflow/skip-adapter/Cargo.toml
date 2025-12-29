@@ -22,6 +22,8 @@ schemars = { workspace = true }
 neutron-sdk = { workspace = true }
 neutron-std = { workspace = true }
 interface = { path = "../../../packages/interface" }
+sha2 = "0.10"
+hex = "0.4"
 
 [dev-dependencies]
 cw-multi-test = "2.0"
