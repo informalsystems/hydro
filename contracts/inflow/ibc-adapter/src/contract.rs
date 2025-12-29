@@ -11,18 +11,20 @@ use crate::ibc::{calculate_timeout, create_ibc_transfer_msg};
 use crate::msg::{
     AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AllChainsResponse, AllPositionsResponse,
     AllTokensResponse, AvailableAmountResponse, ChainConfigResponse, DepositorCapabilitiesResponse,
-    DepositorPositionResponse, DepositorPositionsResponse, ExecuteMsg, ExecutorsResponse,
-    IbcAdapterMsg, IbcAdapterQueryMsg, IbcConfigResponse, InstantiateMsg, QueryMsg,
-    RegisteredDepositorInfo, RegisteredDepositorsResponse, TimeEstimateResponse,
-    TokenConfigResponse,
+    DepositorPositionResponse, DepositorPositionsResponse, ExecuteMsg,
+    ExecutorCapabilitiesResponse, ExecutorInfo, ExecutorsResponse, IbcAdapterMsg,
+    IbcAdapterQueryMsg, IbcConfigResponse, InstantiateMsg, QueryMsg, RegisteredDepositorInfo,
+    RegisteredDepositorsResponse, TimeEstimateResponse, TokenConfigResponse,
 };
 use crate::state::{
-    ChainConfig, Config, Depositor, DepositorCapabilities, TokenConfig, TransferFundsInstructions,
-    ADMINS, CHAIN_REGISTRY, CONFIG, EXECUTORS, TOKEN_REGISTRY, WHITELISTED_DEPOSITORS,
+    ChainConfig, Config, Depositor, DepositorCapabilities, Executor, ExecutorCapabilities,
+    TokenConfig, TransferFundsInstructions, ADMINS, CHAIN_REGISTRY, CONFIG, EXECUTORS,
+    TOKEN_REGISTRY, WHITELISTED_DEPOSITORS,
 };
 use crate::validation::{
-    get_depositor, validate_admin_caller, validate_admin_or_executor, validate_capabilities_binary,
-    validate_config_admin, validate_depositor_caller, validate_recipient_for_chain,
+    get_depositor, get_executor, validate_admin_caller, validate_admin_or_executor,
+    validate_capabilities_binary, validate_config_admin, validate_depositor_caller,
+    validate_recipient_for_chain,
 };
 
 const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -52,32 +54,28 @@ pub fn instantiate(
         .collect::<StdResult<Vec<_>>>()?;
     ADMINS.save(deps.storage, &validated_admins)?;
 
-    // Validate and store executors
-    let validated_executors = msg
-        .initial_executors
-        .iter()
-        .map(|e| deps.api.addr_validate(e))
-        .collect::<StdResult<Vec<_>>>()?;
-    EXECUTORS.save(deps.storage, &validated_executors)?;
+    // Validate and store executors with capabilities
+    let mut executors_count = 0;
+    for initial_executor in msg.initial_executors {
+        let addr = deps.api.addr_validate(&initial_executor.address)?;
 
-    // Store config
-    let config = Config {
-        default_timeout_seconds: msg.default_timeout_seconds,
-    };
-    CONFIG.save(deps.storage, &config)?;
+        // Check for duplicate
+        if EXECUTORS.has(deps.storage, addr.clone()) {
+            return Err(ContractError::ExecutorAlreadyExists {
+                executor: addr.to_string(),
+            });
+        }
 
-    // Initialize chain registry with initial chains
-    let mut chains_count = 0;
-    for chain_config in msg.initial_chains {
-        CHAIN_REGISTRY.save(deps.storage, chain_config.chain_id.clone(), &chain_config)?;
-        chains_count += 1;
-    }
+        // Use provided capabilities or default
+        let capabilities = initial_executor
+            .capabilities
+            .unwrap_or(ExecutorCapabilities {
+                can_set_memo: false,
+            });
 
-    // Initialize token registry with initial tokens
-    let mut tokens_count = 0;
-    for token_config in msg.initial_tokens {
-        TOKEN_REGISTRY.save(deps.storage, token_config.denom.clone(), &token_config)?;
-        tokens_count += 1;
+        let executor = Executor { capabilities };
+        EXECUTORS.save(deps.storage, addr, &executor)?;
+        executors_count += 1;
     }
 
     // Register initial depositors
@@ -109,33 +107,39 @@ pub fn instantiate(
         depositors_count += 1;
     }
 
-    let mut response = Response::new()
+    // Store config
+    let config = Config {
+        default_timeout_seconds: msg.default_timeout_seconds,
+    };
+    CONFIG.save(deps.storage, &config)?;
+
+    // Initialize chain registry with initial chains
+    let mut chains_count = 0;
+    for chain_config in msg.initial_chains {
+        CHAIN_REGISTRY.save(deps.storage, chain_config.chain_id.clone(), &chain_config)?;
+        chains_count += 1;
+    }
+
+    // Initialize token registry with initial tokens
+    let mut tokens_count = 0;
+    for token_config in msg.initial_tokens {
+        TOKEN_REGISTRY.save(deps.storage, token_config.denom.clone(), &token_config)?;
+        tokens_count += 1;
+    }
+
+    Ok(Response::new()
         .add_attribute("action", "instantiate")
         .add_attribute("contract_name", CONTRACT_NAME)
         .add_attribute("contract_version", CONTRACT_VERSION)
-        .add_attribute("admin_count", validated_admins.len().to_string())
-        .add_attribute("executor_count", validated_executors.len().to_string())
+        .add_attribute("admins_count", validated_admins.len().to_string())
+        .add_attribute("executors_count", executors_count.to_string())
+        .add_attribute("depositors_count", depositors_count.to_string())
+        .add_attribute("chains_count", chains_count.to_string())
+        .add_attribute("tokens_count", tokens_count.to_string())
         .add_attribute(
             "default_timeout_seconds",
             config.default_timeout_seconds.to_string(),
-        );
-
-    // Add initial chains count
-    if chains_count > 0 {
-        response = response.add_attribute("initial_chains_count", chains_count.to_string());
-    }
-
-    // Add initial tokens count
-    if tokens_count > 0 {
-        response = response.add_attribute("initial_tokens_count", tokens_count.to_string());
-    }
-
-    // Add initial depositors count
-    if depositors_count > 0 {
-        response = response.add_attribute("initial_depositors_count", depositors_count.to_string());
-    }
-
-    Ok(response)
+        ))
 }
 
 // ========== EXECUTE ==========
@@ -195,13 +199,23 @@ fn dispatch_execute_custom(
         }
 
         // CONFIG ADMIN ONLY - Executor Management
-        IbcAdapterMsg::AddExecutor { executor_address } => {
+        IbcAdapterMsg::AddExecutor {
+            executor_address,
+            capabilities,
+        } => {
             validate_config_admin(&deps, &info)?;
-            execute_add_executor(deps, info, executor_address)
+            execute_add_executor(deps, info, executor_address, capabilities)
         }
         IbcAdapterMsg::RemoveExecutor { executor_address } => {
             validate_config_admin(&deps, &info)?;
             execute_remove_executor(deps, info, executor_address)
+        }
+        IbcAdapterMsg::SetExecutorCapabilities {
+            executor_address,
+            capabilities,
+        } => {
+            validate_config_admin(&deps, &info)?;
+            execute_set_executor_capabilities(deps, info, executor_address, capabilities)
         }
 
         // CONFIG ADMIN ONLY - Chain/Token Management
@@ -295,7 +309,27 @@ fn execute_transfer_funds(
     // 1. Validate caller is admin or executor
     validate_admin_or_executor(&deps, &info)?;
 
-    // 2. Validate non-zero amount
+    // 2. Check memo permissions if memo is provided
+    if instructions.memo.is_some() {
+        let admins = ADMINS.load(deps.storage)?;
+        let is_admin = admins.contains(&info.sender);
+
+        // If not admin, check if caller is executor with can_set_memo capability
+        if !is_admin {
+            let executor = EXECUTORS.may_load(deps.storage, info.sender.clone())?;
+            match executor {
+                Some(exec) if exec.capabilities.can_set_memo => {
+                    // Executor has memo permission, continue
+                }
+                _ => {
+                    // Caller doesn't have memo permission
+                    return Err(ContractError::UnauthorizedMemo {});
+                }
+            }
+        }
+    }
+
+    // 3. Validate non-zero amount
     if coin.amount.is_zero() {
         return Err(ContractError::ZeroAmount {});
     }
@@ -341,6 +375,7 @@ fn execute_transfer_funds(
         coin.clone(),
         instructions.recipient.clone(),
         timeout,
+        instructions.memo.clone(),
     )?;
 
     // 11. Return response with IBC message
@@ -425,7 +460,7 @@ fn execute_register_depositor(
         });
     }
 
-    // Parse capabilities or use default (simplified: only can_withdraw field)
+    // Parse capabilities or use default
     let capabilities = if let Some(cap_binary) = metadata {
         validate_capabilities_binary(&cap_binary)?
     } else {
@@ -548,6 +583,9 @@ fn dispatch_query_custom(deps: Deps<NeutronQuery>, msg: IbcAdapterQueryMsg) -> S
         }
         IbcAdapterQueryMsg::AllTokens {} => to_json_binary(&query_all_tokens(deps)?),
         IbcAdapterQueryMsg::Executors {} => to_json_binary(&query_executors(deps)?),
+        IbcAdapterQueryMsg::ExecutorCapabilities { executor_address } => {
+            to_json_binary(&query_executor_capabilities(deps, executor_address)?)
+        }
         IbcAdapterQueryMsg::DepositorCapabilities { depositor_address } => {
             to_json_binary(&query_depositor_capabilities(deps, depositor_address)?)
         }
@@ -643,26 +681,33 @@ fn execute_add_executor(
     deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
     executor_address: String,
+    capabilities: Option<ExecutorCapabilities>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     // Already validated config admin in dispatch
 
     let executor_addr = deps.api.addr_validate(&executor_address)?;
 
-    let mut executors = EXECUTORS.load(deps.storage)?;
-
-    // Check not already in list
-    if executors.contains(&executor_addr) {
+    // Check if already exists
+    if EXECUTORS.has(deps.storage, executor_addr.clone()) {
         return Err(ContractError::ExecutorAlreadyExists {
             executor: executor_address,
         });
     }
 
-    executors.push(executor_addr.clone());
-    EXECUTORS.save(deps.storage, &executors)?;
+    // Use provided capabilities or default
+    let caps = capabilities.unwrap_or(ExecutorCapabilities {
+        can_set_memo: false,
+    });
+
+    let executor = Executor {
+        capabilities: caps.clone(),
+    };
+    EXECUTORS.save(deps.storage, executor_addr.clone(), &executor)?;
 
     Ok(Response::new()
         .add_attribute("action", "add_executor")
         .add_attribute("executor", executor_addr)
+        .add_attribute("can_set_memo", caps.can_set_memo.to_string())
         .add_attribute("added_by", info.sender))
 }
 
@@ -675,24 +720,47 @@ fn execute_remove_executor(
 
     let executor_addr = deps.api.addr_validate(&executor_address)?;
 
-    let mut executors = EXECUTORS.load(deps.storage)?;
-
-    // Find and remove
-    let original_len = executors.len();
-    executors.retain(|e| e != executor_addr);
-
-    if executors.len() == original_len {
+    // Check if exists
+    if !EXECUTORS.has(deps.storage, executor_addr.clone()) {
         return Err(ContractError::ExecutorNotFound {
             executor: executor_address,
         });
     }
 
-    EXECUTORS.save(deps.storage, &executors)?;
+    EXECUTORS.remove(deps.storage, executor_addr.clone());
 
     Ok(Response::new()
         .add_attribute("action", "remove_executor")
         .add_attribute("executor", executor_addr)
         .add_attribute("removed_by", info.sender))
+}
+
+fn execute_set_executor_capabilities(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    executor_address: String,
+    capabilities: ExecutorCapabilities,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Already validated config admin in dispatch
+
+    let executor_addr = deps.api.addr_validate(&executor_address)?;
+
+    // Load existing executor
+    let mut executor = EXECUTORS
+        .may_load(deps.storage, executor_addr.clone())?
+        .ok_or(ContractError::ExecutorNotFound {
+            executor: executor_address.clone(),
+        })?;
+
+    // Update capabilities
+    executor.capabilities = capabilities.clone();
+    EXECUTORS.save(deps.storage, executor_addr.clone(), &executor)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "set_executor_capabilities")
+        .add_attribute("executor", executor_addr)
+        .add_attribute("can_set_memo", capabilities.can_set_memo.to_string())
+        .add_attribute("updated_by", info.sender))
 }
 
 fn execute_register_chain(
@@ -808,11 +876,31 @@ fn query_all_tokens(deps: Deps<NeutronQuery>) -> StdResult<AllTokensResponse> {
 }
 
 fn query_executors(deps: Deps<NeutronQuery>) -> StdResult<ExecutorsResponse> {
-    let executors = EXECUTORS.load(deps.storage)?;
-    let executors_strings: Vec<String> = executors.iter().map(|e| e.to_string()).collect();
+    use cosmwasm_std::Order;
+
+    let executors: StdResult<Vec<ExecutorInfo>> = EXECUTORS
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|item| {
+            let (addr, executor) = item?;
+            Ok(ExecutorInfo {
+                executor_address: addr.to_string(),
+                capabilities: executor.capabilities,
+            })
+        })
+        .collect();
 
     Ok(ExecutorsResponse {
-        executors: executors_strings,
+        executors: executors?,
+    })
+}
+
+fn query_executor_capabilities(
+    deps: Deps<NeutronQuery>,
+    executor_address: String,
+) -> StdResult<ExecutorCapabilitiesResponse> {
+    let executor = get_executor(deps, executor_address)?;
+    Ok(ExecutorCapabilitiesResponse {
+        capabilities: executor.capabilities,
     })
 }
 

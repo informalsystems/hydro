@@ -10,7 +10,7 @@ export interface InstantiateMsg {
   default_timeout_seconds: number;
   initial_chains: ChainConfig[];
   initial_depositors: InitialDepositor[];
-  initial_executors: string[];
+  initial_executors: InitialExecutor[];
   initial_tokens: TokenConfig[];
 }
 export interface ChainConfig {
@@ -21,6 +21,13 @@ export interface ChainConfig {
 export interface InitialDepositor {
   address: string;
   capabilities?: Binary | null;
+}
+export interface InitialExecutor {
+  address: string;
+  capabilities?: ExecutorCapabilities | null;
+}
+export interface ExecutorCapabilities {
+  can_set_memo: boolean;
 }
 export interface TokenConfig {
   denom: string;
@@ -60,10 +67,16 @@ export type IbcAdapterMsg = {
   };
 } | {
   add_executor: {
+    capabilities?: ExecutorCapabilities | null;
     executor_address: string;
   };
 } | {
   remove_executor: {
+    executor_address: string;
+  };
+} | {
+  set_executor_capabilities: {
+    capabilities: ExecutorCapabilities;
     executor_address: string;
   };
 } | {
@@ -96,6 +109,7 @@ export interface Coin {
 }
 export interface TransferFundsInstructions {
   destination_chain: string;
+  memo?: string | null;
   recipient: string;
   timeout_seconds?: number | null;
 }
@@ -151,6 +165,10 @@ export type IbcAdapterQueryMsg = {
   all_tokens: {};
 } | {
   executors: {};
+} | {
+  executor_capabilities: {
+    executor_address: string;
+  };
 } | {
   depositor_capabilities: {
     depositor_address: string;

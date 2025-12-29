@@ -1,7 +1,10 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Binary, Coin};
 
-use crate::state::{ChainConfig, DepositorCapabilities, TokenConfig, TransferFundsInstructions};
+use crate::state::{
+    ChainConfig, DepositorCapabilities, ExecutorCapabilities, TokenConfig,
+    TransferFundsInstructions,
+};
 
 // Re-export adapter interface types and response types
 pub use interface::inflow_adapter::{
@@ -20,6 +23,16 @@ pub struct InitialDepositor {
     pub capabilities: Option<Binary>,
 }
 
+/// Initial executor configuration for instantiation
+#[cw_serde]
+pub struct InitialExecutor {
+    /// Executor address to register
+    pub address: String,
+    /// Optional capabilities for this executor
+    /// If not provided, defaults to { can_set_memo: false }
+    pub capabilities: Option<ExecutorCapabilities>,
+}
+
 /// Message for instantiating the IBC adapter contract
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -34,7 +47,7 @@ pub struct InstantiateMsg {
     /// Initial token configurations to register (can be empty array)
     pub initial_tokens: Vec<TokenConfig>,
     /// Initial executors who can call TransferFunds (can be empty array)
-    pub initial_executors: Vec<String>,
+    pub initial_executors: Vec<InitialExecutor>,
 }
 
 /// Top-level execute message wrapper for IBC adapter
@@ -57,10 +70,19 @@ pub enum IbcAdapterMsg {
     },
 
     /// Add a new executor (config admin only)
-    AddExecutor { executor_address: String },
+    AddExecutor {
+        executor_address: String,
+        capabilities: Option<ExecutorCapabilities>,
+    },
 
     /// Remove an executor (config admin only)
     RemoveExecutor { executor_address: String },
+
+    /// Set executor capabilities (config admin only)
+    SetExecutorCapabilities {
+        executor_address: String,
+        capabilities: ExecutorCapabilities,
+    },
 
     /// Register or update chain configuration (config admin only)
     RegisterChain {
@@ -121,6 +143,10 @@ pub enum IbcAdapterQueryMsg {
     #[returns(ExecutorsResponse)]
     Executors {},
 
+    /// Get executor capabilities
+    #[returns(ExecutorCapabilitiesResponse)]
+    ExecutorCapabilities { executor_address: String },
+
     /// Get depositor capabilities
     #[returns(DepositorCapabilitiesResponse)]
     DepositorCapabilities { depositor_address: String },
@@ -155,8 +181,19 @@ pub struct AllTokensResponse {
 }
 
 #[cw_serde]
+pub struct ExecutorInfo {
+    pub executor_address: String,
+    pub capabilities: ExecutorCapabilities,
+}
+
+#[cw_serde]
 pub struct ExecutorsResponse {
-    pub executors: Vec<String>,
+    pub executors: Vec<ExecutorInfo>,
+}
+
+#[cw_serde]
+pub struct ExecutorCapabilitiesResponse {
+    pub capabilities: ExecutorCapabilities,
 }
 
 #[cw_serde]

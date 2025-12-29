@@ -43,7 +43,7 @@
       "description": "Initial executors who can call TransferFunds (can be empty array)",
       "type": "array",
       "items": {
-        "type": "string"
+        "$ref": "#/definitions/InitialExecutor"
       }
     },
     "initial_tokens": {
@@ -87,6 +87,20 @@
       },
       "additionalProperties": false
     },
+    "ExecutorCapabilities": {
+      "description": "Executor capabilities for the IBC adapter",
+      "type": "object",
+      "required": [
+        "can_set_memo"
+      ],
+      "properties": {
+        "can_set_memo": {
+          "description": "Whether this executor can set custom memo in IBC transfers This should be restricted to trusted contracts (e.g., skip-adapter)",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "InitialDepositor": {
       "description": "Initial depositor configuration for instantiation",
       "type": "object",
@@ -103,6 +117,31 @@
           "anyOf": [
             {
               "$ref": "#/definitions/Binary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "InitialExecutor": {
+      "description": "Initial executor configuration for instantiation",
+      "type": "object",
+      "required": [
+        "address"
+      ],
+      "properties": {
+        "address": {
+          "description": "Executor address to register",
+          "type": "string"
+        },
+        "capabilities": {
+          "description": "Optional capabilities for this executor If not provided, defaults to { can_set_memo: false }",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ExecutorCapabilities"
             },
             {
               "type": "null"

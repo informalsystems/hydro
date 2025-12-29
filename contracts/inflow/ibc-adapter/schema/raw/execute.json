@@ -181,6 +181,20 @@
       },
       "additionalProperties": false
     },
+    "ExecutorCapabilities": {
+      "description": "Executor capabilities for the IBC adapter",
+      "type": "object",
+      "required": [
+        "can_set_memo"
+      ],
+      "properties": {
+        "can_set_memo": {
+          "description": "Whether this executor can set custom memo in IBC transfers This should be restricted to trusted contracts (e.g., skip-adapter)",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "IbcAdapterMsg": {
       "description": "IBC adapter-specific execute messages",
       "oneOf": [
@@ -223,6 +237,16 @@
                 "executor_address"
               ],
               "properties": {
+                "capabilities": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/ExecutorCapabilities"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "executor_address": {
                   "type": "string"
                 }
@@ -245,6 +269,32 @@
                 "executor_address"
               ],
               "properties": {
+                "executor_address": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Set executor capabilities (config admin only)",
+          "type": "object",
+          "required": [
+            "set_executor_capabilities"
+          ],
+          "properties": {
+            "set_executor_capabilities": {
+              "type": "object",
+              "required": [
+                "capabilities",
+                "executor_address"
+              ],
+              "properties": {
+                "capabilities": {
+                  "$ref": "#/definitions/ExecutorCapabilities"
+                },
                 "executor_address": {
                   "type": "string"
                 }
@@ -394,6 +444,13 @@
         "destination_chain": {
           "description": "Destination chain ID (e.g., \"osmosis-1\")",
           "type": "string"
+        },
+        "memo": {
+          "description": "Optional memo for IBC transfer (used for PFM, wasm hooks, etc.) If None, defaults to empty string",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "recipient": {
           "description": "Recipient address on the destination chain",
