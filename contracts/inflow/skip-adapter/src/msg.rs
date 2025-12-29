@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Binary, Uint128};
+use cosmwasm_std::Uint128;
 
 use crate::state::{SwapVenue, UnifiedRoute};
 
@@ -123,10 +123,10 @@ pub enum SkipAdapterMsg {
 #[derive(QueryResponses)]
 pub enum QueryMsg {
     /// Standard adapter interface queries
-    #[returns(Binary)]
+    #[returns(cosmwasm_std::Binary)]
     StandardQuery(AdapterInterfaceQueryMsg),
     /// Skip adapter-specific custom queries
-    #[returns(Binary)]
+    #[returns(cosmwasm_std::Binary)]
     CustomQuery(SkipAdapterQueryMsg),
 }
 
