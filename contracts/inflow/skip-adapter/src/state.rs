@@ -1,42 +1,99 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::Addr;
+use cosmwasm_std::{Addr, Binary};
 use cw_storage_plus::{Item, Map};
 
-/// Contract configuration
+// ============================================================================
+// Configuration
+// ============================================================================
+
+/// Contract configuration - unified for both Neutron and Osmosis venues
 #[cw_serde]
 pub struct Config {
     /// Skip contract address on Neutron
-    pub skip_contract: Addr,
-    /// Default timeout for swap operations (nanoseconds)
+    pub neutron_skip_contract: Addr,
+    /// Skip contract address on Osmosis (for wasm hook)
+    pub osmosis_skip_contract: String,
+    /// IBC adapter contract address on Neutron
+    pub ibc_adapter: Addr,
+    /// IBC channel from Neutron to Osmosis (for sending tokens)
+    pub osmosis_channel: String,
+    /// Default timeout in nanoseconds (e.g., 1800000000000 = 30 min)
     pub default_timeout_nanos: u64,
-    /// Maximum allowed slippage in basis points (e.g., 100 = 1%)
+    /// Maximum slippage in basis points (e.g., 100 = 1%)
     pub max_slippage_bps: u64,
 }
 
-/// Route configuration for a swap path
+// ============================================================================
+// Unified Route System
+// ============================================================================
+
+/// Swap venue - where the swap executes
 #[cw_serde]
-pub struct RouteConfig {
-    /// Starting denom
+pub enum SwapVenue {
+    /// Swap on Neutron (Astroport via Skip)
+    Neutron,
+    /// Swap on Osmosis (via PFM + wasm hook)
+    Osmosis,
+}
+
+/// A single swap operation (hop in the swap path)
+/// Matches Skip Protocol's SwapOperation schema
+#[cw_serde]
+pub struct SwapOperation {
+    /// Input denom for this hop
     pub denom_in: String,
-    /// Final output denom
+    /// Output denom for this hop
     pub denom_out: String,
-    /// Full ordered path of denoms for validation
-    /// Example: ["untrn", "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81", "ibc/0E293A7622DC9A6439DB60E6D234B5AF446962E27CA3AB44D0590603DFF6968E"]
-    pub denoms_path: Vec<String>,
-    /// Whether this route is currently enabled
+    /// Pool identifier
+    pub pool: String,
+    /// Optional interface specification
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interface: Option<Binary>,
+}
+
+/// A single hop in the return path from swap venue back to Neutron
+/// Used for Osmosis routes with multi-chain return (e.g., Osmosis → Secret → Neutron)
+#[cw_serde]
+pub struct ReturnHop {
+    /// IBC channel to use for this hop
+    pub channel: String,
+    /// Receiver address on the next chain (intermediary or final)
+    pub receiver: String,
+}
+
+/// Unified route configuration - works for both Neutron and Osmosis swaps
+#[cw_serde]
+pub struct UnifiedRoute {
+    /// Where the swap executes
+    pub venue: SwapVenue,
+
+    /// Input token denom on Neutron (what the adapter holds)
+    pub denom_in: String,
+
+    /// Output token denom on Neutron (what we expect back)
+    pub denom_out: String,
+
+    /// Swap operations (multi-hop path)
+    /// Denoms are AS THEY APPEAR ON THE SWAP VENUE (Neutron or Osmosis)
+    pub operations: Vec<SwapOperation>,
+
+    /// Swap venue name (e.g., "neutron-astroport", "osmosis-poolmanager")
+    pub swap_venue_name: String,
+
+    /// For Osmosis routes: return path back to Neutron
+    /// Empty for Neutron routes
+    pub return_path: Vec<ReturnHop>,
+
+    /// Recovery address on the swap venue (for Osmosis: osmo1..., for Neutron: not needed)
+    pub recover_address: Option<String>,
+
+    /// Whether route is enabled
     pub enabled: bool,
 }
 
-/// Recipient configuration for post-swap transfers
-#[cw_serde]
-pub struct RecipientConfig {
-    /// Recipient address
-    pub address: String,
-    /// Optional description/label
-    pub description: Option<String>,
-    /// Whether this recipient is currently enabled
-    pub enabled: bool,
-}
+// ============================================================================
+// Depositors
+// ============================================================================
 
 /// Depositor information
 #[cw_serde]
@@ -45,78 +102,9 @@ pub struct Depositor {
     pub enabled: bool,
 }
 
-/// Denom to Slinky symbol mapping for oracle price queries
-#[cw_serde]
-pub struct DenomSymbolMapping {
-    /// Slinky currency symbol (e.g., "NTRN", "USDT", "ATOM")
-    pub symbol: String,
-    /// Optional description for human readability
-    pub description: Option<String>,
-}
-
-/// Token metadata - stores canonical info for cross-chain tokens
-#[cw_serde]
-pub struct TokenInfo {
-    /// Display symbol (e.g., "ATOM", "stATOM", "OSMO")
-    pub symbol: String,
-    /// Native chain ID where token originates (e.g., "stride-1", "cosmoshub-4")
-    pub native_chain: String,
-    /// Base denom on native chain (e.g., "uatom", "stuatom", "uosmo")
-    pub native_denom: String,
-    /// Optional decimals
-    pub decimals: Option<u8>,
-}
-
-/// Chain configuration with allowed address
-#[cw_serde]
-pub struct ChainInfo {
-    /// Chain ID (e.g., "neutron-1", "osmosis-1")
-    pub chain_id: String,
-    /// Allowed address on this chain for cross-chain operations
-    /// This is where funds return to after cross-chain swaps
-    pub allowed_address: String,
-}
-
-/// IBC channel between two chains
-#[cw_serde]
-pub struct ChannelInfo {
-    /// Source chain (e.g., "neutron-1")
-    pub source_chain: String,
-    /// Destination chain (e.g., "osmosis-1")
-    pub dest_chain: String,
-    /// Channel from source to dest (e.g., "channel-0")
-    pub channel_id: String,
-}
-
-/// Global Osmosis configuration
-#[cw_serde]
-pub struct OsmosisConfig {
-    /// Osmosis chain ID
-    pub chain_id: String,
-    /// Osmosis Skip contract address
-    pub skip_contract: String,
-    /// Default swap venue
-    pub swap_venue: String,
-    /// IBC adapter contract address on Neutron
-    pub ibc_adapter: Addr,
-}
-
-/// Simplified cross-chain route
-#[cw_serde]
-pub struct CrossChainRoute {
-    /// Input token symbol (e.g., "stATOM")
-    pub token_in: String,
-    /// Output token symbol (e.g., "ATOM")
-    pub token_out: String,
-    /// Chain where swap occurs (e.g., "osmosis-1")
-    pub swap_chain: String,
-    /// Osmosis pool ID for the swap (e.g., "1234")
-    pub pool_id: String,
-    /// Whether route is enabled
-    pub enabled: bool,
-}
-
+// ============================================================================
 // Storage Items
+// ============================================================================
 
 /// Configuration storage
 pub const CONFIG: Item<Config> = Item::new("config");
@@ -130,32 +118,6 @@ pub const EXECUTORS: Item<Vec<Addr>> = Item::new("executors");
 /// Maps depositor address to their info
 pub const WHITELISTED_DEPOSITORS: Map<Addr, Depositor> = Map::new("whitelisted_depositors");
 
-/// Maps route identifier to route configuration
-/// Key: route_id (e.g., "untrn_to_usdt")
-pub const ROUTE_REGISTRY: Map<String, RouteConfig> = Map::new("route_registry");
-
-/// Maps recipient address to recipient configuration
-pub const RECIPIENT_REGISTRY: Map<Addr, RecipientConfig> = Map::new("recipient_registry");
-
-/// Maps denom to Slinky symbol for oracle price queries
-pub const DENOM_SYMBOL_REGISTRY: Map<String, DenomSymbolMapping> =
-    Map::new("denom_symbol_registry");
-
-/// Maps token symbol to token metadata
-/// Key: symbol (e.g., "ATOM", "stATOM")
-pub const TOKEN_REGISTRY: Map<String, TokenInfo> = Map::new("token_registry");
-
-/// Maps chain ID to chain configuration
-/// Key: chain_id (e.g., "neutron-1", "osmosis-1")
-pub const CHAIN_REGISTRY: Map<String, ChainInfo> = Map::new("chain_registry");
-
-/// Maps (source_chain, dest_chain) to channel info
-/// Key: tuple of (source_chain, dest_chain)
-pub const CHANNEL_REGISTRY: Map<(String, String), ChannelInfo> = Map::new("channel_registry");
-
-/// Global Osmosis configuration
-pub const OSMOSIS_CONFIG: Item<OsmosisConfig> = Item::new("osmosis_config");
-
-/// Maps route ID to cross-chain route configuration
-/// Key: route_id (e.g., "statom_to_atom_osmosis")
-pub const CROSS_CHAIN_ROUTES: Map<String, CrossChainRoute> = Map::new("cross_chain_routes");
+/// Maps route identifier to unified route configuration
+/// Key: route_id (e.g., "astro_to_ntrn", "ntrn_to_scrt_osmosis")
+pub const ROUTES: Map<String, UnifiedRoute> = Map::new("routes");

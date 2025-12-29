@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { InstantiateMsg, RecipientConfig, RouteConfig, ExecuteMsg, AdapterInterfaceMsg, Uint128, Binary, SkipAdapterMsg, Asset, PostSwapAction, Coin, SwapExecutionParams, SwapOperation, QueryMsg, AdapterInterfaceQueryMsg, SkipAdapterQueryMsg } from "./InflowSkipAdapterBase.types";
+import { Binary, SwapVenue, InstantiateMsg, UnifiedRoute, SwapOperation, ReturnHop, ExecuteMsg, AdapterInterfaceMsg, Uint128, SkipAdapterMsg, Coin, SwapParams, QueryMsg, AdapterInterfaceQueryMsg, SkipAdapterQueryMsg } from "./InflowSkipAdapterBase.types";
 export interface InflowSkipAdapterBaseReadOnlyInterface {
   contractAddress: string;
   standardQuery: (adapterInterfaceQueryMsg: AdapterInterfaceQueryMsg) => Promise<Binary>;

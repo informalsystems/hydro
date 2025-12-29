@@ -534,6 +534,13 @@
             "description": "Destination chain ID (e.g., \"osmosis-1\")",
             "type": "string"
           },
+          "memo": {
+            "description": "Optional memo for IBC transfer (used for PFM, wasm hooks, etc.) If None, defaults to empty string",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "recipient": {
             "description": "Recipient address on the destination chain",
             "type": "string"

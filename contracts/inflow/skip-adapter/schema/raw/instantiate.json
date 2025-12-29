@@ -6,11 +6,18 @@
   "required": [
     "admins",
     "default_timeout_nanos",
-    "skip_contract"
+    "executors",
+    "ibc_adapter",
+    "initial_depositors",
+    "initial_routes",
+    "max_slippage_bps",
+    "neutron_skip_contract",
+    "osmosis_channel",
+    "osmosis_skip_contract"
   ],
   "properties": {
     "admins": {
-      "description": "The config admins who can update config and manage routes/recipients/executors",
+      "description": "The config admins who can update config and manage routes/executors",
       "type": "array",
       "items": {
         "type": "string"
@@ -22,49 +29,27 @@
       "format": "uint64",
       "minimum": 0.0
     },
-    "depositor_address": {
-      "description": "Optional: single depositor address to register during instantiation",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
     "executors": {
-      "description": "Optional: initial executors who can call ExecuteSwap",
-      "type": [
-        "array",
-        "null"
-      ],
+      "description": "Initial executors who can call ExecuteSwap (can be empty array)",
+      "type": "array",
       "items": {
         "type": "string"
       }
     },
-    "initial_recipients": {
-      "description": "Optional: initial recipient configurations to register",
-      "type": [
-        "array",
-        "null"
-      ],
+    "ibc_adapter": {
+      "description": "IBC adapter contract address on Neutron",
+      "type": "string"
+    },
+    "initial_depositors": {
+      "description": "Initial depositor addresses to register during instantiation (can be empty array)",
+      "type": "array",
       "items": {
-        "type": "array",
-        "items": [
-          {
-            "type": "string"
-          },
-          {
-            "$ref": "#/definitions/RecipientConfig"
-          }
-        ],
-        "maxItems": 2,
-        "minItems": 2
+        "type": "string"
       }
     },
     "initial_routes": {
-      "description": "Optional: initial route configurations to register",
-      "type": [
-        "array",
-        "null"
-      ],
+      "description": "Initial route configurations to register (can be empty array)",
+      "type": "array",
       "items": {
         "type": "array",
         "items": [
@@ -72,74 +57,168 @@
             "type": "string"
           },
           {
-            "$ref": "#/definitions/RouteConfig"
+            "$ref": "#/definitions/UnifiedRoute"
           }
         ],
         "maxItems": 2,
         "minItems": 2
       }
     },
-    "skip_contract": {
+    "max_slippage_bps": {
+      "description": "Maximum allowed slippage in basis points (e.g., 100 = 1%)",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "neutron_skip_contract": {
       "description": "Skip contract address on Neutron",
+      "type": "string"
+    },
+    "osmosis_channel": {
+      "description": "IBC channel from Neutron to Osmosis",
+      "type": "string"
+    },
+    "osmosis_skip_contract": {
+      "description": "Skip contract address on Osmosis",
       "type": "string"
     }
   },
   "additionalProperties": false,
   "definitions": {
-    "RecipientConfig": {
-      "description": "Recipient configuration for post-swap transfers",
+    "Binary": {
+      "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
+      "type": "string"
+    },
+    "ReturnHop": {
+      "description": "A single hop in the return path from swap venue back to Neutron Used for Osmosis routes with multi-chain return (e.g., Osmosis → Secret → Neutron)",
       "type": "object",
       "required": [
-        "address",
-        "enabled"
+        "channel",
+        "receiver"
       ],
       "properties": {
-        "address": {
-          "description": "Recipient address",
+        "channel": {
+          "description": "IBC channel to use for this hop",
           "type": "string"
         },
-        "description": {
-          "description": "Optional description/label",
+        "receiver": {
+          "description": "Receiver address on the next chain (intermediary or final)",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SwapOperation": {
+      "description": "A single swap operation (hop in the swap path) Matches Skip Protocol's SwapOperation schema",
+      "type": "object",
+      "required": [
+        "denom_in",
+        "denom_out",
+        "pool"
+      ],
+      "properties": {
+        "denom_in": {
+          "description": "Input denom for this hop",
+          "type": "string"
+        },
+        "denom_out": {
+          "description": "Output denom for this hop",
+          "type": "string"
+        },
+        "interface": {
+          "description": "Optional interface specification",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Binary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pool": {
+          "description": "Pool identifier",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SwapVenue": {
+      "description": "Swap venue - where the swap executes",
+      "oneOf": [
+        {
+          "description": "Swap on Neutron (Astroport via Skip)",
+          "type": "string",
+          "enum": [
+            "neutron"
+          ]
+        },
+        {
+          "description": "Swap on Osmosis (via PFM + wasm hook)",
+          "type": "string",
+          "enum": [
+            "osmosis"
+          ]
+        }
+      ]
+    },
+    "UnifiedRoute": {
+      "description": "Unified route configuration - works for both Neutron and Osmosis swaps",
+      "type": "object",
+      "required": [
+        "denom_in",
+        "denom_out",
+        "enabled",
+        "operations",
+        "return_path",
+        "swap_venue_name",
+        "venue"
+      ],
+      "properties": {
+        "denom_in": {
+          "description": "Input token denom on Neutron (what the adapter holds)",
+          "type": "string"
+        },
+        "denom_out": {
+          "description": "Output token denom on Neutron (what we expect back)",
+          "type": "string"
+        },
+        "enabled": {
+          "description": "Whether route is enabled",
+          "type": "boolean"
+        },
+        "operations": {
+          "description": "Swap operations (multi-hop path) Denoms are AS THEY APPEAR ON THE SWAP VENUE (Neutron or Osmosis)",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SwapOperation"
+          }
+        },
+        "recover_address": {
+          "description": "Recovery address on the swap venue (for Osmosis: osmo1..., for Neutron: not needed)",
           "type": [
             "string",
             "null"
           ]
         },
-        "enabled": {
-          "description": "Whether this recipient is currently enabled",
-          "type": "boolean"
-        }
-      },
-      "additionalProperties": false
-    },
-    "RouteConfig": {
-      "description": "Route configuration for a swap path",
-      "type": "object",
-      "required": [
-        "denom_in",
-        "denom_out",
-        "denoms_path",
-        "enabled"
-      ],
-      "properties": {
-        "denom_in": {
-          "description": "Starting denom",
-          "type": "string"
-        },
-        "denom_out": {
-          "description": "Final output denom",
-          "type": "string"
-        },
-        "denoms_path": {
-          "description": "Full ordered path of denoms for validation Example: [\"untrn\", \"ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81\", \"ibc/0E293A7622DC9A6439DB60E6D234B5AF446962E27CA3AB44D0590603DFF6968E\"]",
+        "return_path": {
+          "description": "For Osmosis routes: return path back to Neutron Empty for Neutron routes",
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/definitions/ReturnHop"
           }
         },
-        "enabled": {
-          "description": "Whether this route is currently enabled",
-          "type": "boolean"
+        "swap_venue_name": {
+          "description": "Swap venue name (e.g., \"neutron-astroport\", \"osmosis-poolmanager\")",
+          "type": "string"
+        },
+        "venue": {
+          "description": "Where the swap executes",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SwapVenue"
+            }
+          ]
         }
       },
       "additionalProperties": false

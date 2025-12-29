@@ -246,13 +246,13 @@
           "additionalProperties": false
         },
         {
-          "description": "Get route configuration",
+          "description": "Get a specific route by ID",
           "type": "object",
           "required": [
-            "route_config"
+            "route"
           ],
           "properties": {
-            "route_config": {
+            "route": {
               "type": "object",
               "required": [
                 "route_id"
@@ -268,7 +268,7 @@
           "additionalProperties": false
         },
         {
-          "description": "Get all registered routes",
+          "description": "Get all registered routes (with optional venue filter)",
           "type": "object",
           "required": [
             "all_routes"
@@ -276,42 +276,18 @@
           "properties": {
             "all_routes": {
               "type": "object",
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "description": "Get recipient configuration",
-          "type": "object",
-          "required": [
-            "recipient_config"
-          ],
-          "properties": {
-            "recipient_config": {
-              "type": "object",
-              "required": [
-                "recipient_address"
-              ],
               "properties": {
-                "recipient_address": {
-                  "type": "string"
+                "venue": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/SwapVenue"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "description": "Get all registered recipients",
-          "type": "object",
-          "required": [
-            "all_recipients"
-          ],
-          "properties": {
-            "all_recipients": {
-              "type": "object",
               "additionalProperties": false
             }
           },
@@ -330,6 +306,25 @@
             }
           },
           "additionalProperties": false
+        }
+      ]
+    },
+    "SwapVenue": {
+      "description": "Swap venue - where the swap executes",
+      "oneOf": [
+        {
+          "description": "Swap on Neutron (Astroport via Skip)",
+          "type": "string",
+          "enum": [
+            "neutron"
+          ]
+        },
+        {
+          "description": "Swap on Osmosis (via PFM + wasm hook)",
+          "type": "string",
+          "enum": [
+            "osmosis"
+          ]
         }
       ]
     },

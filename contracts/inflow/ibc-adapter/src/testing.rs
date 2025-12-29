@@ -177,7 +177,8 @@ mod tests {
             .update_balance(MOCK_CONTRACT_ADDR, coins(1000000, DENOM));
 
         // Admin transfers with memo (should succeed)
-        let test_memo = r#"{"forward":{"receiver":"osmo1skip","port":"transfer","channel":"channel-1"}}"#;
+        let test_memo =
+            r#"{"forward":{"receiver":"osmo1skip","port":"transfer","channel":"channel-1"}}"#;
         let transfer_msg = ExecuteMsg::CustomAction(IbcAdapterMsg::TransferFunds {
             coin: Coin {
                 denom: DENOM.to_string(),

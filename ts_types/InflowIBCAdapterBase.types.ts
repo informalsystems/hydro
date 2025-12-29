@@ -96,6 +96,7 @@ export interface Coin {
 }
 export interface TransferFundsInstructions {
   destination_chain: string;
+  memo?: string | null;
   recipient: string;
   timeout_seconds?: number | null;
 }

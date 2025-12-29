@@ -1,12 +1,8 @@
-use cosmwasm_std::{Deps, DepsMut, MessageInfo, StdResult};
+use cosmwasm_std::{DepsMut, MessageInfo};
 use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::error::ContractError;
-use crate::msg::SwapOperation;
-use crate::state::{
-    Depositor, RecipientConfig, RouteConfig, ADMINS, EXECUTORS, RECIPIENT_REGISTRY,
-    WHITELISTED_DEPOSITORS,
-};
+use crate::state::{Depositor, UnifiedRoute, ADMINS, EXECUTORS, WHITELISTED_DEPOSITORS};
 
 /// Validates that the caller is a registered and enabled depositor
 pub fn validate_depositor_caller(
@@ -26,7 +22,7 @@ pub fn validate_depositor_caller(
     Ok(depositor)
 }
 
-/// Validates that the caller is a config admin (mutable version)
+/// Validates that the caller is a config admin
 pub fn validate_config_admin(
     deps: &DepsMut<NeutronQuery>,
     info: &MessageInfo,
@@ -59,97 +55,49 @@ pub fn validate_admin_or_executor(
 }
 
 /// Validates a route configuration
-pub fn validate_route_config(route_config: &RouteConfig) -> Result<(), ContractError> {
-    // Must have at least 2 denoms (in + out)
-    if route_config.denoms_path.len() < 2 {
-        return Err(ContractError::InvalidDenomPath {});
+pub fn validate_route_config(route: &UnifiedRoute) -> Result<(), ContractError> {
+    // Must have at least one operation
+    if route.operations.is_empty() {
+        return Err(ContractError::InvalidRoute {
+            reason: "Route must have at least one operation".to_string(),
+        });
     }
 
-    // First denom must match denom_in
-    if route_config.denoms_path[0] != route_config.denom_in {
+    // First operation denom_in must match route denom_in
+    if route.operations[0].denom_in != route.denom_in {
         return Err(ContractError::InvalidRoute {
             reason: format!(
-                "First denom in path ({}) does not match denom_in ({})",
-                route_config.denoms_path[0], route_config.denom_in
+                "First operation denom_in ({}) does not match route denom_in ({})",
+                route.operations[0].denom_in, route.denom_in
             ),
         });
     }
 
-    // Last denom must match denom_out
-    let last_idx = route_config.denoms_path.len() - 1;
-    if route_config.denoms_path[last_idx] != route_config.denom_out {
+    // Last operation denom_out must match route denom_out
+    let last_idx = route.operations.len() - 1;
+    if route.operations[last_idx].denom_out != route.denom_out {
         return Err(ContractError::InvalidRoute {
             reason: format!(
-                "Last denom in path ({}) does not match denom_out ({})",
-                route_config.denoms_path[last_idx], route_config.denom_out
+                "Last operation denom_out ({}) does not match route denom_out ({})",
+                route.operations[last_idx].denom_out, route.denom_out
             ),
         });
     }
 
-    Ok(())
-}
-
-/// Validates that operations match the route's denom path
-pub fn validate_operations_match_route(
-    route_config: &RouteConfig,
-    operations: &[SwapOperation],
-) -> Result<(), ContractError> {
-    // Number of operations should be len(denoms_path) - 1
-    let expected_ops = route_config.denoms_path.len() - 1;
-    if operations.len() != expected_ops {
-        return Err(ContractError::OperationsCountMismatch {
-            route_hops: expected_ops,
-            operations_count: operations.len(),
-        });
-    }
-
-    // Validate each operation matches the expected denom transition
-    for (idx, operation) in operations.iter().enumerate() {
-        let expected_denom_in = &route_config.denoms_path[idx];
-        let expected_denom_out = &route_config.denoms_path[idx + 1];
-
-        if &operation.denom_in != expected_denom_in {
-            return Err(ContractError::RoutePathMismatch {
-                expected: format!("operation[{}].denom_in = {}", idx, expected_denom_in),
-                actual: format!("operation[{}].denom_in = {}", idx, operation.denom_in),
-            });
-        }
-
-        if &operation.denom_out != expected_denom_out {
-            return Err(ContractError::RoutePathMismatch {
-                expected: format!("operation[{}].denom_out = {}", idx, expected_denom_out),
-                actual: format!("operation[{}].denom_out = {}", idx, operation.denom_out),
+    // Validate operations form a continuous path
+    for i in 0..route.operations.len() - 1 {
+        if route.operations[i].denom_out != route.operations[i + 1].denom_in {
+            return Err(ContractError::InvalidRoute {
+                reason: format!(
+                    "Operation[{}].denom_out ({}) does not match Operation[{}].denom_in ({})",
+                    i,
+                    route.operations[i].denom_out,
+                    i + 1,
+                    route.operations[i + 1].denom_in
+                ),
             });
         }
     }
 
     Ok(())
-}
-
-/// Validates a recipient for post-swap transfer
-pub fn validate_recipient(
-    deps: &DepsMut<NeutronQuery>,
-    recipient_address: &str,
-) -> Result<RecipientConfig, ContractError> {
-    let recipient_addr = deps.api.addr_validate(recipient_address)?;
-
-    let recipient_config = RECIPIENT_REGISTRY
-        .may_load(deps.storage, recipient_addr)?
-        .ok_or(ContractError::RecipientNotRegistered {
-            recipient: recipient_address.to_string(),
-        })?;
-
-    if !recipient_config.enabled {
-        return Err(ContractError::RecipientDisabled {
-            recipient: recipient_address.to_string(),
-        });
-    }
-
-    Ok(recipient_config)
-}
-
-/// Helper function to get depositor from storage (used in queries)
-pub fn get_depositor(deps: Deps<NeutronQuery>, depositor_address: String) -> StdResult<Depositor> {
-    let addr = deps.api.addr_validate(&depositor_address)?;
-    WHITELISTED_DEPOSITORS.load(deps.storage, addr)
 }

@@ -4,10 +4,9 @@
 // swap contract on Neutron.
 
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{to_json_binary, Addr, Binary, Coin, StdResult, Uint128, WasmMsg};
+use cosmwasm_std::{to_json_binary, Addr, Coin, StdResult, Uint128, WasmMsg};
 
-use crate::msg::{Asset, PostSwapAction, SwapOperation};
-use crate::state::RouteConfig;
+use crate::state::SwapOperation;
 
 /// Skip Protocol Execute Messages
 #[cw_serde]
@@ -24,8 +23,6 @@ pub enum SkipExecuteMsg {
         timeout_timestamp: u64,
         /// Affiliate fees (empty for now)
         affiliates: Vec<Affiliate>,
-        /// Optional: sent asset specification
-        sent_asset: Option<SkipAsset>,
     },
 }
 
@@ -40,44 +37,21 @@ pub enum Swap {
 #[cw_serde]
 pub struct SwapExactAssetIn {
     /// Swap operations (route hops)
-    pub operations: Vec<SkipSwapOperation>,
-    /// Swap venue name (e.g., "neutron-duality", "neutron-astroport")
+    pub operations: Vec<SwapOperation>,
+    /// Swap venue name (e.g., "neutron-astroport", "osmosis-poolmanager")
     pub swap_venue_name: String,
 }
 
-/// Skip swap operation (single hop)
-/// Matches Skip Protocol schema exactly
-#[cw_serde]
-pub struct SkipSwapOperation {
-    /// Input denom
-    pub denom_in: String,
-    /// Output denom
-    pub denom_out: String,
-    /// Pool identifier
-    pub pool: String,
-    /// Optional interface specification
-    pub interface: Option<Binary>,
-}
-
-/// Asset type for Skip protocol (matches schema)
+/// Asset type for Skip protocol - native tokens only
 #[cw_serde]
 pub enum SkipAsset {
     Native(Coin),
-    Cw20(Cw20Coin),
 }
 
-/// CW20 coin structure
-#[cw_serde]
-pub struct Cw20Coin {
-    pub address: String,
-    pub amount: Uint128,
-}
-
-/// Action type for Skip protocol (matches schema)
+/// Action type for Skip protocol
 #[cw_serde]
 pub enum SkipAction {
     Transfer { to_address: String },
-    // Future: IbcTransfer, ContractCall, HplTransfer, etc.
 }
 
 /// Affiliate fee structure
@@ -87,52 +61,32 @@ pub struct Affiliate {
     pub basis_points_fee: Uint128,
 }
 
-/// Helper function to create Skip SwapAndAction message
+/// Helper function to create Skip SwapAndAction message for Neutron swaps
+#[allow(clippy::too_many_arguments)]
 pub fn create_swap_and_action_msg(
     skip_contract: Addr,
     coin_in: Coin,
     operations: Vec<SwapOperation>,
     swap_venue_name: String,
-    min_asset: Asset,
-    post_swap_action: Option<PostSwapAction>,
+    min_denom_out: String,
+    min_amount_out: Uint128,
+    recipient: String,
     timeout_timestamp: u64,
 ) -> StdResult<WasmMsg> {
-    // Convert operations to Skip format
-    let skip_operations: Vec<SkipSwapOperation> = operations
-        .into_iter()
-        .map(|op| SkipSwapOperation {
-            denom_in: op.denom_in,
-            denom_out: op.denom_out,
-            pool: op.pool,
-            interface: op.interface,
-        })
-        .collect();
-
-    // Convert min_asset to Skip format
-    let skip_min_asset = match min_asset {
-        Asset::Native { denom, amount } => SkipAsset::Native(Coin { denom, amount }),
-        Asset::Cw20 { address, amount } => SkipAsset::Cw20(Cw20Coin { address, amount }),
-    };
-
-    // Convert post_swap_action to Skip format
-    // Default to transfer back to adapter if no action specified
-    let skip_post_swap_action = match post_swap_action {
-        Some(PostSwapAction::Transfer { to_address }) => SkipAction::Transfer { to_address },
-        None => SkipAction::Transfer {
-            to_address: skip_contract.to_string(), // Keep funds in adapter
-        },
-    };
-
     let msg = SkipExecuteMsg::SwapAndAction {
         user_swap: Swap::SwapExactAssetIn(SwapExactAssetIn {
-            operations: skip_operations,
+            operations,
             swap_venue_name,
         }),
-        min_asset: skip_min_asset,
-        post_swap_action: skip_post_swap_action,
+        min_asset: SkipAsset::Native(Coin {
+            denom: min_denom_out,
+            amount: min_amount_out,
+        }),
+        post_swap_action: SkipAction::Transfer {
+            to_address: recipient,
+        },
         timeout_timestamp,
-        affiliates: vec![], // Empty for now
-        sent_asset: None,   // Optional field, not needed for our use case
+        affiliates: vec![],
     };
 
     Ok(WasmMsg::Execute {
@@ -140,18 +94,4 @@ pub fn create_swap_and_action_msg(
         msg: to_json_binary(&msg)?,
         funds: vec![coin_in],
     })
-}
-
-/// Validates that coin_in denom matches route's denom_in
-pub fn validate_coin_in_matches_route(
-    coin_in: &Coin,
-    route_config: &RouteConfig,
-) -> Result<(), String> {
-    if coin_in.denom != route_config.denom_in {
-        return Err(format!(
-            "Coin denom ({}) does not match route denom_in ({})",
-            coin_in.denom, route_config.denom_in
-        ));
-    }
-    Ok(())
 }

@@ -4105,6 +4105,7 @@ dependencies = [
  "cw-storage-plus 2.0.0",
  "cw2 2.0.0",
  "hex",
+ "ibc-adapter",
  "interface",
  "neutron-sdk",
  "neutron-std",

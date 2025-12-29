@@ -4,25 +4,39 @@
 * and run the @cosmwasm/ts-codegen generate command to regenerate this file.
 */
 
+export type Binary = string;
+export type SwapVenue = "neutron" | "osmosis";
 export interface InstantiateMsg {
   admins: string[];
   default_timeout_nanos: number;
-  depositor_address?: string | null;
-  executors?: string[] | null;
-  initial_recipients?: [string, RecipientConfig][] | null;
-  initial_routes?: [string, RouteConfig][] | null;
-  skip_contract: string;
+  executors: string[];
+  ibc_adapter: string;
+  initial_depositors: string[];
+  initial_routes: [string, UnifiedRoute][];
+  max_slippage_bps: number;
+  neutron_skip_contract: string;
+  osmosis_channel: string;
+  osmosis_skip_contract: string;
 }
-export interface RecipientConfig {
-  address: string;
-  description?: string | null;
-  enabled: boolean;
-}
-export interface RouteConfig {
+export interface UnifiedRoute {
   denom_in: string;
   denom_out: string;
-  denoms_path: string[];
   enabled: boolean;
+  operations: SwapOperation[];
+  recover_address?: string | null;
+  return_path: ReturnHop[];
+  swap_venue_name: string;
+  venue: SwapVenue;
+}
+export interface SwapOperation {
+  denom_in: string;
+  denom_out: string;
+  interface?: Binary | null;
+  pool: string;
+}
+export interface ReturnHop {
+  channel: string;
+  receiver: string;
 }
 export type ExecuteMsg = {
   standard_action: AdapterInterfaceMsg;
@@ -51,22 +65,13 @@ export type AdapterInterfaceMsg = {
   };
 };
 export type Uint128 = string;
-export type Binary = string;
 export type SkipAdapterMsg = {
   execute_swap: {
-    params: SwapExecutionParams;
-  };
-} | {
-  add_executor: {
-    executor_address: string;
-  };
-} | {
-  remove_executor: {
-    executor_address: string;
+    params: SwapParams;
   };
 } | {
   register_route: {
-    route_config: RouteConfig;
+    route: UnifiedRoute;
     route_id: string;
   };
 } | {
@@ -79,59 +84,31 @@ export type SkipAdapterMsg = {
     route_id: string;
   };
 } | {
-  register_recipient: {
-    description?: string | null;
-    recipient_address: string;
+  add_executor: {
+    executor_address: string;
   };
 } | {
-  unregister_recipient: {
-    recipient_address: string;
-  };
-} | {
-  set_recipient_enabled: {
-    enabled: boolean;
-    recipient_address: string;
+  remove_executor: {
+    executor_address: string;
   };
 } | {
   update_config: {
     default_timeout_nanos?: number | null;
-    skip_contract?: string | null;
-  };
-};
-export type Asset = {
-  native: {
-    amount: Uint128;
-    denom: string;
-  };
-} | {
-  cw20: {
-    address: string;
-    amount: Uint128;
-  };
-};
-export type PostSwapAction = {
-  transfer: {
-    to_address: string;
+    ibc_adapter?: string | null;
+    max_slippage_bps?: number | null;
+    neutron_skip_contract?: string | null;
+    osmosis_channel?: string | null;
+    osmosis_skip_contract?: string | null;
   };
 };
 export interface Coin {
   amount: Uint128;
   denom: string;
 }
-export interface SwapExecutionParams {
-  coin_in: Coin;
-  min_asset: Asset;
-  operations: SwapOperation[];
-  post_swap_action?: PostSwapAction | null;
+export interface SwapParams {
+  amount_in: Uint128;
+  min_amount_out: Uint128;
   route_id: string;
-  swap_venue_name: string;
-  timeout_nanos?: number | null;
-}
-export interface SwapOperation {
-  denom_in: string;
-  denom_out: string;
-  interface?: Binary | null;
-  pool: string;
 }
 export type QueryMsg = {
   standard_query: AdapterInterfaceQueryMsg;
@@ -174,17 +151,13 @@ export type AdapterInterfaceQueryMsg = {
 export type SkipAdapterQueryMsg = {
   config: {};
 } | {
-  route_config: {
+  route: {
     route_id: string;
   };
 } | {
-  all_routes: {};
-} | {
-  recipient_config: {
-    recipient_address: string;
+  all_routes: {
+    venue?: SwapVenue | null;
   };
-} | {
-  all_recipients: {};
 } | {
   executors: {};
 };

@@ -8,10 +8,10 @@ use neutron_sdk::bindings::query::NeutronQuery;
 pub fn mock_dependencies(
 ) -> OwnedDeps<MockStorage, MockApi, MockQuerier<NeutronQuery>, NeutronQuery> {
     let custom_querier: MockQuerier<NeutronQuery> =
-        MockQuerier::new(&[]).with_custom_handler(|query| match query {
-            _ => SystemResult::Err(cosmwasm_std::SystemError::UnsupportedRequest {
+        MockQuerier::new(&[]).with_custom_handler(|_| {
+            SystemResult::Err(cosmwasm_std::SystemError::UnsupportedRequest {
                 kind: "unsupported neutron query".to_string(),
-            }),
+            })
         });
 
     OwnedDeps {

@@ -1,138 +1,162 @@
-use cosmwasm_std::{Deps, Env, StdResult, Uint128};
-use neutron_sdk::bindings::query::NeutronQuery;
+use cosmwasm_std::{to_json_binary, Coin, Env, StdResult, Uint128, WasmMsg};
 use serde_json::json;
 
-use crate::msg::SwapOperation;
-use crate::state::{CrossChainRoute, OsmosisConfig, CHANNEL_REGISTRY};
+use crate::state::{Config, UnifiedRoute};
 
-/// Construct PFM + wasm hook memo for Osmosis swap
-///
-/// This creates a nested JSON memo structure:
-/// 1. PFM forward to Osmosis
-/// 2. Wasm hook calling Skip contract on Osmosis
-/// 3. Skip swap message with auto-generated operations
-/// 4. IBC transfer back to recovery address
-pub fn construct_osmosis_swap_memo(
-    deps: &Deps<NeutronQuery>,
-    osmosis_config: &OsmosisConfig,
-    route: &CrossChainRoute,
-    osmosis_denom_in: &str,
-    osmosis_denom_out: &str,
+// Re-export IBC adapter types for use in tests and external contracts
+pub use ibc_adapter::msg::{ExecuteMsg as IbcAdapterExecuteMsg, IbcAdapterMsg};
+pub use ibc_adapter::state::TransferFundsInstructions;
+
+const OSMOSIS_CHAIN_ID: &str = "osmosis-1";
+
+// ============================================================================
+// Public Functions
+// ============================================================================
+
+/// Build typed IBC adapter message for Osmosis swap
+pub fn build_osmosis_swap_ibc_adapter_msg(
+    ibc_adapter_addr: String,
+    coin: Coin,
+    osmosis_recipient: String,
+    memo: String,
+) -> StdResult<WasmMsg> {
+    let msg = IbcAdapterExecuteMsg::CustomAction(IbcAdapterMsg::TransferFunds {
+        coin: coin.clone(),
+        instructions: TransferFundsInstructions {
+            destination_chain: OSMOSIS_CHAIN_ID.to_string(),
+            recipient: osmosis_recipient,
+            timeout_seconds: None, // Use IBC adapter's default
+            memo: Some(memo),
+        },
+    });
+
+    Ok(WasmMsg::Execute {
+        contract_addr: ibc_adapter_addr,
+        msg: to_json_binary(&msg)?,
+        funds: vec![],
+    })
+}
+
+/// Construct wasm hook memo for Osmosis swap
+/// Based on real Skip entry-point format from examples-swaps.txt
+pub fn construct_osmosis_wasm_hook_memo(
+    config: &Config,
+    route: &UnifiedRoute,
     min_amount_out: &Uint128,
-    recovery_address: &str,
     env: &Env,
 ) -> StdResult<String> {
-    // Auto-generate operations from route config
-    // For Osmosis, we use a single operation with the pool_id
-    let operations = vec![SwapOperation {
-        denom_in: osmosis_denom_in.to_string(),
-        denom_out: osmosis_denom_out.to_string(),
-        pool: route.pool_id.clone(),
-        interface: None,
-    }];
+    let timeout = env.block.time.nanos() + config.default_timeout_nanos;
 
-    // Get channel to Osmosis (from Neutron)
-    let channel_to_osmosis = CHANNEL_REGISTRY
-        .load(
-            deps.storage,
-            ("neutron-1".to_string(), osmosis_config.chain_id.clone()),
-        )?
-        .channel_id;
+    // Get output denom from last operation
+    let output_denom = route
+        .operations
+        .last()
+        .map(|op| op.denom_out.clone())
+        .ok_or_else(|| cosmwasm_std::StdError::generic_err("Route has no operations"))?;
 
-    // Get return channel from Osmosis (back to Neutron)
-    let channel_from_osmosis = CHANNEL_REGISTRY
-        .load(
-            deps.storage,
-            (osmosis_config.chain_id.clone(), "neutron-1".to_string()),
-        )?
-        .channel_id;
+    // Build post_swap_action based on return path
+    let post_swap_action = build_ibc_return_action(route, timeout)?;
 
-    // Calculate timeout (30 minutes from now)
-    let timeout_timestamp = (env.block.time.nanos() + 1_800_000_000_000).to_string();
-
-    // Construct Skip swap message for Osmosis
-    // This follows Skip Protocol's message format
+    // Build Skip swap message
     let skip_msg = json!({
         "swap_and_action": {
             "user_swap": {
                 "swap_exact_asset_in": {
-                    "operations": operations,
-                    "swap_venue_name": osmosis_config.swap_venue,
+                    "swap_venue_name": route.swap_venue_name,
+                    "operations": route.operations,
                 }
             },
             "min_asset": {
                 "native": {
-                    "denom": osmosis_denom_out,
-                    "amount": min_amount_out.to_string(),
+                    "denom": output_denom,
+                    "amount": min_amount_out.to_string()
                 }
             },
-            "post_swap_action": {
-                "ibc_transfer": {
-                    "receiver": recovery_address,
-                    "source_channel": channel_from_osmosis,
-                    "memo": "",
-                    "timeout_timestamp": timeout_timestamp,
-                }
-            },
-            "timeout_timestamp": timeout_timestamp,
-            "affiliates": [],
+            "timeout_timestamp": timeout,
+            "post_swap_action": post_swap_action,
+            "affiliates": []
         }
     });
 
     // Wrap in wasm hook
     let wasm_hook = json!({
         "wasm": {
-            "contract": osmosis_config.skip_contract,
-            "msg": skip_msg,
+            "contract": config.osmosis_skip_contract,
+            "msg": skip_msg
         }
     });
 
-    // Wrap in PFM forward
-    let wasm_hook_str = serde_json::to_string(&wasm_hook)
-        .map_err(|e| cosmwasm_std::StdError::generic_err(e.to_string()))?;
-
-    let pfm_memo = json!({
-        "forward": {
-            "receiver": osmosis_config.skip_contract,
-            "port": "transfer",
-            "channel": channel_to_osmosis,
-            "timeout": "1800000000000",
-            "retries": 2,
-            "next": wasm_hook_str,
-        }
-    });
-
-    serde_json::to_string(&pfm_memo)
+    serde_json::to_string(&wasm_hook)
         .map_err(|e| cosmwasm_std::StdError::generic_err(e.to_string()))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use cosmwasm_std::testing::mock_env;
-    use cosmwasm_std::Addr;
+// ============================================================================
+// Internal Functions
+// ============================================================================
 
-    #[test]
-    fn test_memo_structure() {
-        // Just verify the JSON structure is valid
-        let osmosis_config = OsmosisConfig {
-            chain_id: "osmosis-1".to_string(),
-            skip_contract: "osmo1skip".to_string(),
-            swap_venue: "osmosis-poolmanager".to_string(),
-            ibc_adapter: Addr::unchecked("neutron1ibc"),
-        };
-
-        let route = CrossChainRoute {
-            token_in: "stATOM".to_string(),
-            token_out: "ATOM".to_string(),
-            swap_chain: "osmosis-1".to_string(),
-            pool_id: "1234".to_string(),
-            enabled: true,
-        };
-
-        // Note: This test would need proper deps with channel registry setup
-        // For now, just verify the types compile
-        assert!(osmosis_config.skip_contract == "osmo1skip");
-        assert!(route.pool_id == "1234");
+/// Build ibc_transfer post_swap_action with potential PFM forward
+fn build_ibc_return_action(route: &UnifiedRoute, timeout: u64) -> StdResult<serde_json::Value> {
+    if route.return_path.is_empty() {
+        return Err(cosmwasm_std::StdError::generic_err(
+            "Osmosis route must have return path",
+        ));
     }
+
+    let first_hop = &route.return_path[0];
+
+    // Build nested PFM forward memo for remaining hops
+    let forward_memo = if route.return_path.len() > 1 {
+        build_pfm_forward_memo(&route.return_path[1..], timeout)?
+    } else {
+        "".to_string()
+    };
+
+    Ok(json!({
+        "ibc_transfer": {
+            "ibc_info": {
+                "source_channel": first_hop.channel,
+                "receiver": first_hop.receiver,
+                "memo": forward_memo,
+                "recover_address": route.recover_address.as_ref().unwrap_or(&"".to_string())
+            }
+        }
+    }))
+}
+
+/// Build nested PFM forward memo for multi-hop return
+fn build_pfm_forward_memo(
+    remaining_hops: &[crate::state::ReturnHop],
+    timeout: u64,
+) -> StdResult<String> {
+    if remaining_hops.is_empty() {
+        return Ok("".to_string());
+    }
+
+    let hop = &remaining_hops[0];
+    let next_memo = if remaining_hops.len() > 1 {
+        build_pfm_forward_memo(&remaining_hops[1..], timeout)?
+    } else {
+        "".to_string()
+    };
+
+    let mut forward = json!({
+        "forward": {
+            "channel": hop.channel,
+            "port": "transfer",
+            "receiver": hop.receiver,
+            "retries": 2,
+            "timeout": timeout
+        }
+    });
+
+    // If there are more hops, nest the memo
+    if !next_memo.is_empty() {
+        if let Some(forward_obj) = forward.get_mut("forward") {
+            if let Some(obj) = forward_obj.as_object_mut() {
+                obj.insert("next".to_string(), serde_json::Value::String(next_memo));
+            }
+        }
+    }
+
+    serde_json::to_string(&forward).map_err(|e| cosmwasm_std::StdError::generic_err(e.to_string()))
 }

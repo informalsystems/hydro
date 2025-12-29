@@ -45,72 +45,12 @@ pub enum ContractError {
     #[error("Invalid route: {reason}")]
     InvalidRoute { reason: String },
 
-    #[error("Route path mismatch: expected {expected}, got {actual}")]
-    RoutePathMismatch { expected: String, actual: String },
-
-    #[error("Recipient not registered: {recipient}")]
-    RecipientNotRegistered { recipient: String },
-
-    #[error("Recipient is disabled: {recipient}")]
-    RecipientDisabled { recipient: String },
-
     #[error("Executor already exists: {executor}")]
     ExecutorAlreadyExists { executor: String },
 
     #[error("Executor not found: {executor}")]
     ExecutorNotFound { executor: String },
 
-    #[error("Invalid denom path: must have at least 2 denoms")]
-    InvalidDenomPath {},
-
-    #[error(
-        "Operations count mismatch: route has {route_hops} hops, got {operations_count} operations"
-    )]
-    OperationsCountMismatch {
-        route_hops: usize,
-        operations_count: usize,
-    },
-
-    #[error("Skip protocol error: {msg}")]
-    SkipProtocolError { msg: String },
-
     #[error("Invalid slippage: {bps} basis points exceeds maximum of {max_bps} (10%)")]
     InvalidSlippage { bps: u64, max_bps: u64 },
-
-    #[error("Denom symbol mapping not found: {denom}")]
-    DenomSymbolNotFound { denom: String },
-
-    #[error("Denom symbol already registered: {denom}")]
-    DenomSymbolAlreadyRegistered { denom: String },
-
-    #[error("Price calculation overflow")]
-    PriceCalculationOverflow {},
-
-    // Cross-chain errors
-    #[error("Token not registered: {symbol}")]
-    TokenNotRegistered { symbol: String },
-
-    #[error("Chain not registered: {chain_id}")]
-    ChainNotRegistered { chain_id: String },
-
-    #[error("Channel not registered for route: {source_chain} -> {dest_chain}")]
-    ChannelNotRegistered {
-        source_chain: String,
-        dest_chain: String,
-    },
-
-    #[error("Cross-chain route not registered: {route_id}")]
-    CrossChainRouteNotRegistered { route_id: String },
-
-    #[error("Cross-chain route is disabled: {route_id}")]
-    CrossChainRouteDisabled { route_id: String },
-
-    #[error("Osmosis config not set")]
-    OsmosisConfigNotSet {},
-
-    #[error("Amount mismatch: expected {expected}, got {actual}")]
-    AmountMismatch { expected: String, actual: String },
-
-    #[error("Invalid denom: expected {expected}, got {actual}")]
-    InvalidDenom { expected: String, actual: String },
 }
