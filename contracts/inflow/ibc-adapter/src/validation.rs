@@ -3,7 +3,8 @@ use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::error::ContractError;
 use crate::state::{
-    ChainConfig, Depositor, DepositorCapabilities, ADMINS, EXECUTORS, WHITELISTED_DEPOSITORS,
+    ChainConfig, Depositor, DepositorCapabilities, Executor, ADMINS, EXECUTORS,
+    WHITELISTED_DEPOSITORS,
 };
 
 /// Validates that the caller is a registered and enabled depositor
@@ -58,9 +59,7 @@ pub fn validate_executor(
     deps: &DepsMut<NeutronQuery>,
     info: &MessageInfo,
 ) -> Result<(), ContractError> {
-    let executors = EXECUTORS.load(deps.storage)?;
-
-    if !executors.contains(&info.sender) {
+    if !EXECUTORS.has(deps.storage, info.sender.clone()) {
         return Err(ContractError::UnauthorizedExecutor {});
     }
 
@@ -78,8 +77,7 @@ pub fn validate_admin_or_executor(
         return Ok(true); // Is config admin
     }
 
-    let executors = EXECUTORS.load(deps.storage)?;
-    if executors.contains(&info.sender) {
+    if EXECUTORS.has(deps.storage, info.sender.clone()) {
         return Ok(false); // Is executor (not admin)
     }
 
@@ -111,8 +109,7 @@ pub fn validate_recipient_for_chain(
     Ok(())
 }
 
-/// Parses and validates capabilities from Binary format
-/// Returns default capabilities (can_withdraw: true) if parsing fails
+/// Parses and validates depositor capabilities from Binary format
 pub fn validate_capabilities_binary(
     capabilities_binary: &Binary,
 ) -> Result<DepositorCapabilities, ContractError> {
@@ -126,4 +123,10 @@ pub fn validate_capabilities_binary(
 pub fn get_depositor(deps: Deps<NeutronQuery>, depositor_address: String) -> StdResult<Depositor> {
     let addr = deps.api.addr_validate(&depositor_address)?;
     WHITELISTED_DEPOSITORS.load(deps.storage, addr)
+}
+
+/// Helper function to get executor from storage (used in queries)
+pub fn get_executor(deps: Deps<NeutronQuery>, executor_address: String) -> StdResult<Executor> {
+    let addr = deps.api.addr_validate(&executor_address)?;
+    EXECUTORS.load(deps.storage, addr)
 }

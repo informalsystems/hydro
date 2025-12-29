@@ -8,10 +8,11 @@ mod tests {
     use crate::error::ContractError;
     use crate::msg::{
         AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AvailableAmountResponse, ExecuteMsg,
-        IbcAdapterMsg, InitialDepositor, InstantiateMsg, QueryMsg,
+        IbcAdapterMsg, InitialDepositor, InitialExecutor, InstantiateMsg, QueryMsg,
     };
     use crate::state::{
-        ChainConfig, DepositorCapabilities, TokenConfig, TransferFundsInstructions,
+        ChainConfig, DepositorCapabilities, ExecutorCapabilities, TokenConfig,
+        TransferFundsInstructions,
     };
     use crate::testing_mocks::mock_dependencies;
 
@@ -38,13 +39,9 @@ mod tests {
             allowed_recipients: vec![],
         };
 
-        let capabilities_can_withdraw = DepositorCapabilities {
-            can_withdraw: true,
-            can_set_memo: false,
-        };
+        let capabilities_can_withdraw = DepositorCapabilities { can_withdraw: true };
         let capabilities_cannot_withdraw = DepositorCapabilities {
             can_withdraw: false,
-            can_set_memo: false,
         };
 
         InstantiateMsg {
@@ -209,25 +206,21 @@ mod tests {
     }
 
     #[test]
-    fn test_transfer_with_memo_as_authorized_depositor() {
+    fn test_transfer_with_memo_as_authorized_executor() {
         let mut deps = mock_dependencies();
         let env = mock_env();
 
-        // Create depositor with memo permission
-        let authorized_depositor = "authorized_depositor";
-        let authorized_addr = deps.api.addr_make(authorized_depositor);
+        // Create executor with memo permission
+        let authorized_executor = "authorized_executor";
+        let authorized_addr = deps.api.addr_make(authorized_executor);
 
-        let capabilities_with_memo = DepositorCapabilities {
-            can_withdraw: true,
-            can_set_memo: true,
-        };
+        let capabilities_with_memo = ExecutorCapabilities { can_set_memo: true };
 
         let mut msg = get_default_instantiate_msg(&deps.api);
-        msg.initial_executors = vec![authorized_addr.to_string()]; // Make them executor
-        msg.initial_depositors.push(InitialDepositor {
+        msg.initial_executors = vec![InitialExecutor {
             address: authorized_addr.to_string(),
-            capabilities: Some(to_json_binary(&capabilities_with_memo).unwrap()),
-        });
+            capabilities: Some(capabilities_with_memo),
+        }];
 
         let info = get_message_info(&deps.api, ADMIN, &[]);
         instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
@@ -237,7 +230,7 @@ mod tests {
             .bank
             .update_balance(MOCK_CONTRACT_ADDR, coins(1000000, DENOM));
 
-        // Authorized depositor transfers with memo (should succeed)
+        // Authorized executor transfers with memo (should succeed)
         let test_memo = r#"{"wasm":{"contract":"osmo1skip","msg":{}}}"#;
         let transfer_msg = ExecuteMsg::CustomAction(IbcAdapterMsg::TransferFunds {
             coin: Coin {
@@ -251,7 +244,7 @@ mod tests {
                 memo: Some(test_memo.to_string()),
             },
         });
-        let info = get_message_info(&deps.api, authorized_depositor, &[]);
+        let info = get_message_info(&deps.api, authorized_executor, &[]);
 
         let res = execute(deps.as_mut(), env.clone(), info, transfer_msg).unwrap();
 
@@ -268,12 +261,15 @@ mod tests {
         let mut deps = mock_dependencies();
         let env = mock_env();
 
-        // Create executor without memo permission
+        // Create executor without memo permission (default capabilities)
         let executor = "executor_no_memo";
         let executor_addr = deps.api.addr_make(executor);
 
         let mut msg = get_default_instantiate_msg(&deps.api);
-        msg.initial_executors = vec![executor_addr.to_string()];
+        msg.initial_executors = vec![InitialExecutor {
+            address: executor_addr.to_string(),
+            capabilities: None, // Default: cannot set memo
+        }];
 
         let info = get_message_info(&deps.api, ADMIN, &[]);
         instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();

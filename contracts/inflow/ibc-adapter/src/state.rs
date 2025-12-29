@@ -30,14 +30,26 @@ pub struct TokenConfig {
     pub source_chain_id: String,
 }
 
+/// Executor capabilities for the IBC adapter
+#[cw_serde]
+pub struct ExecutorCapabilities {
+    /// Whether this executor can set custom memo in IBC transfers
+    /// This should be restricted to trusted contracts (e.g., skip-adapter)
+    pub can_set_memo: bool,
+}
+
+/// Executor information
+#[cw_serde]
+pub struct Executor {
+    /// Executor-specific capabilities
+    pub capabilities: ExecutorCapabilities,
+}
+
 /// Depositor capabilities for the IBC adapter
 #[cw_serde]
 pub struct DepositorCapabilities {
     /// Whether this depositor can withdraw funds
     pub can_withdraw: bool,
-    /// Whether this depositor can set custom memo in IBC transfers
-    /// This should be restricted to trusted contracts (e.g., skip-adapter)
-    pub can_set_memo: bool,
 }
 
 /// Depositor information
@@ -72,8 +84,8 @@ pub const CONFIG: Item<Config> = Item::new("config");
 /// List of admin addresses who can manage the adapter (config admins)
 pub const ADMINS: Item<Vec<Addr>> = Item::new("admins");
 
-/// List of executor addresses who can call TransferFunds
-pub const EXECUTORS: Item<Vec<Addr>> = Item::new("executors");
+/// Maps executor address to their info (capabilities)
+pub const EXECUTORS: Map<Addr, Executor> = Map::new("executors");
 
 /// Maps depositor address to their info (enabled status + capabilities)
 pub const WHITELISTED_DEPOSITORS: Map<Addr, Depositor> = Map::new("whitelisted_depositors");

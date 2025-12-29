@@ -318,6 +318,28 @@
           "additionalProperties": false
         },
         {
+          "description": "Get executor capabilities",
+          "type": "object",
+          "required": [
+            "executor_capabilities"
+          ],
+          "properties": {
+            "executor_capabilities": {
+              "type": "object",
+              "required": [
+                "executor_address"
+              ],
+              "properties": {
+                "executor_address": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
           "description": "Get depositor capabilities",
           "type": "object",
           "required": [

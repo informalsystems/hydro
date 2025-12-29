@@ -47,7 +47,7 @@
         "description": "Initial executors who can call TransferFunds (can be empty array)",
         "type": "array",
         "items": {
-          "type": "string"
+          "$ref": "#/definitions/InitialExecutor"
         }
       },
       "initial_tokens": {
@@ -91,6 +91,20 @@
         },
         "additionalProperties": false
       },
+      "ExecutorCapabilities": {
+        "description": "Executor capabilities for the IBC adapter",
+        "type": "object",
+        "required": [
+          "can_set_memo"
+        ],
+        "properties": {
+          "can_set_memo": {
+            "description": "Whether this executor can set custom memo in IBC transfers This should be restricted to trusted contracts (e.g., skip-adapter)",
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "InitialDepositor": {
         "description": "Initial depositor configuration for instantiation",
         "type": "object",
@@ -107,6 +121,31 @@
             "anyOf": [
               {
                 "$ref": "#/definitions/Binary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "InitialExecutor": {
+        "description": "Initial executor configuration for instantiation",
+        "type": "object",
+        "required": [
+          "address"
+        ],
+        "properties": {
+          "address": {
+            "description": "Executor address to register",
+            "type": "string"
+          },
+          "capabilities": {
+            "description": "Optional capabilities for this executor If not provided, defaults to { can_set_memo: false }",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ExecutorCapabilities"
               },
               {
                 "type": "null"
@@ -320,6 +359,20 @@
         },
         "additionalProperties": false
       },
+      "ExecutorCapabilities": {
+        "description": "Executor capabilities for the IBC adapter",
+        "type": "object",
+        "required": [
+          "can_set_memo"
+        ],
+        "properties": {
+          "can_set_memo": {
+            "description": "Whether this executor can set custom memo in IBC transfers This should be restricted to trusted contracts (e.g., skip-adapter)",
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "IbcAdapterMsg": {
         "description": "IBC adapter-specific execute messages",
         "oneOf": [
@@ -362,6 +415,16 @@
                   "executor_address"
                 ],
                 "properties": {
+                  "capabilities": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/definitions/ExecutorCapabilities"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "executor_address": {
                     "type": "string"
                   }
@@ -384,6 +447,32 @@
                   "executor_address"
                 ],
                 "properties": {
+                  "executor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Set executor capabilities (config admin only)",
+            "type": "object",
+            "required": [
+              "set_executor_capabilities"
+            ],
+            "properties": {
+              "set_executor_capabilities": {
+                "type": "object",
+                "required": [
+                  "capabilities",
+                  "executor_address"
+                ],
+                "properties": {
+                  "capabilities": {
+                    "$ref": "#/definitions/ExecutorCapabilities"
+                  },
                   "executor_address": {
                     "type": "string"
                   }
@@ -877,6 +966,28 @@
             "properties": {
               "executors": {
                 "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Get executor capabilities",
+            "type": "object",
+            "required": [
+              "executor_capabilities"
+            ],
+            "properties": {
+              "executor_capabilities": {
+                "type": "object",
+                "required": [
+                  "executor_address"
+                ],
+                "properties": {
+                  "executor_address": {
+                    "type": "string"
+                  }
+                },
                 "additionalProperties": false
               }
             },
