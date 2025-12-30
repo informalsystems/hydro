@@ -38,14 +38,21 @@ mod contract_tests {
             funds: vec![],
         };
 
-        let msg = InstantiateMsg {
-            admins: vec![test_data.admin.to_string()],
-            neutron_skip_contract: deps
-                .api
+        let mut skip_contracts = std::collections::BTreeMap::new();
+        skip_contracts.insert(
+            "neutron".to_string(),
+            deps.api
                 .addr_make("neutron1zvesudsdfxusz06jztpph4d3h5x6veglqsspxns2v2jqml9nhywskcc923")
                 .to_string(),
-            osmosis_skip_contract:
-                "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
+        );
+        skip_contracts.insert(
+            "osmosis".to_string(),
+            "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
+        );
+
+        let msg = InstantiateMsg {
+            admins: vec![test_data.admin.to_string()],
+            skip_contracts,
             ibc_adapter: deps.api.addr_make("ibc_adapter").to_string(),
             default_timeout_nanos: 1800000000000,
             max_slippage_bps: 100,
@@ -126,14 +133,21 @@ mod contract_tests {
             funds: vec![],
         };
 
-        let msg = InstantiateMsg {
-            admins: vec![deps.api.addr_make("admin1").to_string()],
-            neutron_skip_contract: deps
-                .api
+        let mut skip_contracts = std::collections::BTreeMap::new();
+        skip_contracts.insert(
+            "neutron".to_string(),
+            deps.api
                 .addr_make("neutron1zvesudsdfxusz06jztpph4d3h5x6veglqsspxns2v2jqml9nhywskcc923")
                 .to_string(),
-            osmosis_skip_contract:
-                "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
+        );
+        skip_contracts.insert(
+            "osmosis".to_string(),
+            "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
+        );
+
+        let msg = InstantiateMsg {
+            admins: vec![deps.api.addr_make("admin1").to_string()],
+            skip_contracts,
             ibc_adapter: deps.api.addr_make("ibc_adapter").to_string(),
             default_timeout_nanos: 1800000000000,
             max_slippage_bps: 100,
@@ -155,11 +169,16 @@ mod contract_tests {
             funds: vec![],
         };
 
+        let mut skip_contracts = std::collections::BTreeMap::new();
+        skip_contracts.insert("neutron".to_string(), "neutron1skip".to_string());
+        skip_contracts.insert(
+            "osmosis".to_string(),
+            "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
+        );
+
         let msg = InstantiateMsg {
             admins: vec![],
-            neutron_skip_contract: "neutron1skip".to_string(),
-            osmosis_skip_contract:
-                "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
+            skip_contracts,
             ibc_adapter: "neutron1ibc".to_string(),
             default_timeout_nanos: 1800000000000,
             max_slippage_bps: 100,
@@ -181,14 +200,21 @@ mod contract_tests {
             funds: vec![],
         };
 
-        let msg = InstantiateMsg {
-            admins: vec![deps.api.addr_make("admin1").to_string()],
-            neutron_skip_contract: deps
-                .api
+        let mut skip_contracts = std::collections::BTreeMap::new();
+        skip_contracts.insert(
+            "neutron".to_string(),
+            deps.api
                 .addr_make("neutron1zvesudsdfxusz06jztpph4d3h5x6veglqsspxns2v2jqml9nhywskcc923")
                 .to_string(),
-            osmosis_skip_contract:
-                "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
+        );
+        skip_contracts.insert(
+            "osmosis".to_string(),
+            "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
+        );
+
+        let msg = InstantiateMsg {
+            admins: vec![deps.api.addr_make("admin1").to_string()],
+            skip_contracts,
             ibc_adapter: deps.api.addr_make("ibc_adapter").to_string(),
             default_timeout_nanos: 1800000000000,
             max_slippage_bps: 2000,
@@ -492,19 +518,25 @@ mod cross_chain_tests {
     use cosmwasm_std::{from_json, Addr, Coin, Uint128, WasmMsg};
 
     use crate::cross_chain::{
-        build_osmosis_swap_ibc_adapter_msg, construct_osmosis_wasm_hook_memo, IbcAdapterExecuteMsg,
-        IbcAdapterMsg,
+        build_cross_chain_swap_ibc_adapter_msg, construct_cross_chain_wasm_hook_memo,
+        IbcAdapterExecuteMsg, IbcAdapterMsg,
     };
     use crate::state::{Config, PathHop, SwapOperation, SwapVenue, UnifiedRoute};
 
     #[test]
     fn test_statom_to_atom_swap_memo() {
+        let mut skip_contracts = std::collections::BTreeMap::new();
+        skip_contracts.insert(
+            "neutron".to_string(),
+            "neutron1zvesudsdfxusz06jztpph4d3h5x6veglqsspxns2v2jqml9nhywskcc923".to_string(),
+        );
+        skip_contracts.insert(
+            "osmosis".to_string(),
+            "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
+        );
+
         let config = Config {
-            neutron_skip_contract: Addr::unchecked(
-                "neutron1zvesudsdfxusz06jztpph4d3h5x6veglqsspxns2v2jqml9nhywskcc923",
-            ),
-            osmosis_skip_contract:
-                "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
+            skip_contracts,
             ibc_adapter: Addr::unchecked("neutron1ibc"),
             default_timeout_nanos: 1800000000000,
             max_slippage_bps: 100,
@@ -554,7 +586,8 @@ mod cross_chain_tests {
         let env = mock_env();
         let timeout = env.block.time.nanos() + config.default_timeout_nanos;
 
-        let result = construct_osmosis_wasm_hook_memo(&config, &route, &Uint128::new(229521), &env);
+        let result =
+            construct_cross_chain_wasm_hook_memo(&config, &route, &Uint128::new(229521), &env);
         assert!(result.is_ok());
 
         let actual_memo = result.unwrap();
@@ -622,7 +655,7 @@ mod cross_chain_tests {
     }
 
     #[test]
-    fn test_build_osmosis_swap_ibc_adapter_msg_single_hop() {
+    fn test_build_cross_chain_swap_ibc_adapter_msg_single_hop() {
         let coin = Coin::new(1000000u128, "untrn");
         let wasm_hook_memo = "{\"wasm\":{\"contract\":\"osmo1skip\"}}".to_string();
         let forward_path = vec![PathHop {
@@ -632,7 +665,7 @@ mod cross_chain_tests {
         }];
         let timeout_nanos = 1800000000000u64;
 
-        let result = build_osmosis_swap_ibc_adapter_msg(
+        let result = build_cross_chain_swap_ibc_adapter_msg(
             "neutron1ibc".to_string(),
             coin.clone(),
             &forward_path,
@@ -665,31 +698,23 @@ mod cross_chain_tests {
                         assert_eq!(transfer_coin, coin);
 
                         // Verify transfer instructions
+                        // First hop goes in IBC transfer, not in PFM memo
                         assert_eq!(instructions.destination_chain, "osmosis-1");
                         assert_eq!(instructions.recipient, forward_path[0].receiver);
                         assert_eq!(instructions.timeout_seconds, None);
 
-                        // Verify memo contains PFM forward structure with wasm hook
+                        // For single hop, memo should be just the wasm hook (no PFM wrapper)
                         assert!(instructions.memo.is_some());
                         let memo_value: serde_json::Value =
                             serde_json::from_str(&instructions.memo.unwrap()).unwrap();
 
-                        // Should have forward structure
-                        assert!(memo_value.get("forward").is_some());
-                        let forward = memo_value.get("forward").unwrap();
+                        // Should be the wasm hook directly (no forward wrapper for single hop)
+                        assert!(memo_value.get("wasm").is_some());
+                        let wasm = memo_value.get("wasm").unwrap();
                         assert_eq!(
-                            forward.get("channel").unwrap().as_str().unwrap(),
-                            "channel-10"
+                            wasm.get("contract").unwrap().as_str().unwrap(),
+                            "osmo1skip"
                         );
-                        assert_eq!(
-                            forward.get("receiver").unwrap().as_str().unwrap(),
-                            "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u"
-                        );
-
-                        // Should have nested wasm hook
-                        assert!(forward.get("next").is_some());
-                        let wasm_next = forward.get("next").unwrap();
-                        assert!(wasm_next.get("wasm").is_some());
                     }
                     _ => panic!("Expected CustomAction(TransferFunds)"),
                 }
@@ -699,7 +724,7 @@ mod cross_chain_tests {
     }
 
     #[test]
-    fn test_build_osmosis_swap_ibc_adapter_msg_multi_hop() {
+    fn test_build_cross_chain_swap_ibc_adapter_msg_multi_hop() {
         // Test multi-hop forward path: Neutron -> Cosmos Hub -> Osmosis
         let coin = Coin::new(1000000u128, "ibc/ATOM");
         let wasm_hook_memo = "{\"wasm\":{\"contract\":\"osmo1skip\"}}".to_string();
@@ -717,7 +742,7 @@ mod cross_chain_tests {
         ];
         let timeout_nanos = 1800000000000u64;
 
-        let result = build_osmosis_swap_ibc_adapter_msg(
+        let result = build_cross_chain_swap_ibc_adapter_msg(
             "neutron1ibc".to_string(),
             coin.clone(),
             &forward_path,
@@ -749,40 +774,36 @@ mod cross_chain_tests {
                         // Verify coin
                         assert_eq!(transfer_coin, coin);
 
-                        // For multi-hop, first destination should be Cosmos Hub
+                        // For multi-hop, IBC transfer goes to first hop (Cosmos Hub)
+                        // First hop is in the IBC transfer itself, not in PFM memo
                         assert_eq!(instructions.destination_chain, "cosmoshub-4");
                         assert_eq!(instructions.recipient, "cosmos1intermediate");
 
-                        // Verify nested PFM structure
+                        // Verify PFM memo contains ONLY the second hop (Cosmos Hub -> Osmosis)
                         assert!(instructions.memo.is_some());
                         let memo_value: serde_json::Value =
                             serde_json::from_str(&instructions.memo.unwrap()).unwrap();
 
-                        // First forward hop
+                        // Should have forward structure for the SECOND hop (channel-0)
                         assert!(memo_value.get("forward").is_some());
-                        let first_forward = memo_value.get("forward").unwrap();
+                        let forward = memo_value.get("forward").unwrap();
                         assert_eq!(
-                            first_forward.get("channel").unwrap().as_str().unwrap(),
-                            "channel-1"
-                        );
-
-                        // Should have nested second hop
-                        assert!(first_forward.get("next").is_some());
-                        let second_forward =
-                            first_forward.get("next").unwrap().get("forward").unwrap();
-                        assert_eq!(
-                            second_forward.get("channel").unwrap().as_str().unwrap(),
-                            "channel-0"
+                            forward.get("channel").unwrap().as_str().unwrap(),
+                            "channel-0" // Second hop: Cosmos Hub -> Osmosis
                         );
                         assert_eq!(
-                            second_forward.get("receiver").unwrap().as_str().unwrap(),
+                            forward.get("receiver").unwrap().as_str().unwrap(),
                             "osmo1skip"
                         );
 
-                        // Final hop should have wasm hook
-                        assert!(second_forward.get("next").is_some());
-                        let wasm_next = second_forward.get("next").unwrap();
+                        // Should have nested wasm hook
+                        assert!(forward.get("next").is_some());
+                        let wasm_next = forward.get("next").unwrap();
                         assert!(wasm_next.get("wasm").is_some());
+                        assert_eq!(
+                            wasm_next.get("wasm").unwrap().get("contract").unwrap().as_str().unwrap(),
+                            "osmo1skip"
+                        );
                     }
                     _ => panic!("Expected CustomAction(TransferFunds)"),
                 }

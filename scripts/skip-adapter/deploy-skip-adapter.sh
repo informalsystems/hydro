@@ -56,7 +56,7 @@ done
 
 # Paths to WASM files
 IBC_ADAPTER_WASM="../../artifacts/ibc_adapter.wasm"
-SKIP_ADAPTER_WASM="../../artifacts/inflow_skip_adapter.wasm"
+SKIP_ADAPTER_WASM="../../artifacts/skip_adapter.wasm"
 
 echo -e "${GREEN}=== Skip Adapter & IBC Adapter Deployment Script ===${NC}"
 echo ""
@@ -80,10 +80,10 @@ NEUTRON_BINARY=$(jq -r '.neutron_binary' $CONFIG_FILE)
 NEUTRON_DIR=$(jq -r '.neutron_dir' $CONFIG_FILE)
 
 # Load skip adapter configuration
-NEUTRON_SKIP_CONTRACT=$(jq -r '.skip_adapter.neutron_skip_contract' $CONFIG_FILE)
-OSMOSIS_SKIP_CONTRACT=$(jq -r '.skip_adapter.osmosis_skip_contract' $CONFIG_FILE)
 DEFAULT_TIMEOUT_NANOS=$(jq -r '.skip_adapter.default_timeout_nanos' $CONFIG_FILE)
 MAX_SLIPPAGE_BPS=$(jq -r '.skip_adapter.max_slippage_bps' $CONFIG_FILE)
+# Skip contracts are loaded as JSON object from config
+SKIP_CONTRACTS_JSON=$(jq -c '.skip_adapter.skip_contracts' $CONFIG_FILE)
 
 # Load IBC adapter configuration
 IBC_DEFAULT_TIMEOUT=$(jq -r '.ibc_adapter.default_timeout_seconds' $CONFIG_FILE)
@@ -180,14 +180,14 @@ store_contract() {
     local wasm_path=$2
     local config_key=$3
 
-    printf "Storing $contract_name wasm"
+    printf "Storing $contract_name wasm" >&2
 
     $NEUTRON_CLI tx wasm store "$wasm_path" --from "$DEPLOYER_WALLET" $NEUTRON_TX_FLAGS --output json &> "./store_${contract_name}_res.json"
     TX_HASH=$(grep -o '{.*}' "./store_${contract_name}_res.json" | jq -r '.txhash')
     TX_RESULT=$(retry_command "$NEUTRON_CLI q tx $TX_HASH $NEUTRON_NODE_FLAG --output json" 60)
     CODE_ID=$(echo "$TX_RESULT" | jq -r '.events[] | select(.type == "store_code") | .attributes[] | select(.key == "code_id") | .value')
 
-    echo "$contract_name contract stored with code ID: $CODE_ID"
+    echo "$contract_name contract stored with code ID: $CODE_ID" >&2
 
     # Update config with code ID
     update_config_number "$config_key" "$CODE_ID"
@@ -206,17 +206,21 @@ instantiate_ibc_adapter() {
     # Build initial_chains array from config
     INITIAL_CHAINS=$(jq -c '[.ibc_adapter.chains[] | {chain_id: .chain_id, channel_from_neutron: .channel_from_neutron, allowed_recipients: []}]' $CONFIG_FILE)
 
+    # Build initial_tokens array from config
+    INITIAL_TOKENS=$(jq -c '.ibc_adapter.tokens // []' $CONFIG_FILE)
+
     # Build instantiate message
     INIT_MSG=$(jq -n \
         --arg admin "$ADMIN_ADDRESS" \
         --argjson timeout "$IBC_DEFAULT_TIMEOUT" \
         --argjson chains "$INITIAL_CHAINS" \
+        --argjson tokens "$INITIAL_TOKENS" \
         '{
             admins: [$admin],
-            initial_depositors: [],
+            initial_depositors: [{address: $admin, capabilities: null}],
             default_timeout_seconds: $timeout,
             initial_chains: $chains,
-            initial_tokens: [],
+            initial_tokens: $tokens,
             initial_executors: []
         }'
     )
@@ -248,28 +252,29 @@ instantiate_skip_adapter() {
     echo -e "${BLUE}Instantiating Skip Adapter...${NC}"
 
     # Check if we have required config values
-    if [ -z "$NEUTRON_SKIP_CONTRACT" ] || [ "$NEUTRON_SKIP_CONTRACT" == "null" ] || [ "$NEUTRON_SKIP_CONTRACT" == "" ]; then
-        echo -e "${YELLOW}Warning: neutron_skip_contract is not configured${NC}"
-    fi
-    if [ -z "$OSMOSIS_SKIP_CONTRACT" ] || [ "$OSMOSIS_SKIP_CONTRACT" == "null" ] || [ "$OSMOSIS_SKIP_CONTRACT" == "" ]; then
-        echo -e "${YELLOW}Warning: osmosis_skip_contract is not configured${NC}"
+    if [ -z "$SKIP_CONTRACTS_JSON" ] || [ "$SKIP_CONTRACTS_JSON" == "null" ]; then
+        echo -e "${YELLOW}Warning: skip_contracts is not configured${NC}"
+        SKIP_CONTRACTS_JSON="{}"
     fi
 
-    # Build instantiate message (osmosis_channel removed as per plan)
-    INIT_MSG=$(cat <<EOF
-{
-  "admins": ["$ADMIN_ADDRESS"],
-  "neutron_skip_contract": "$NEUTRON_SKIP_CONTRACT",
-  "osmosis_skip_contract": "$OSMOSIS_SKIP_CONTRACT",
-  "ibc_adapter": "$IBC_ADAPTER_ADDRESS",
-  "default_timeout_nanos": $DEFAULT_TIMEOUT_NANOS,
-  "max_slippage_bps": $MAX_SLIPPAGE_BPS,
-  "executors": [],
-  "initial_routes": [],
-  "initial_depositors": ["$ADMIN_ADDRESS"]
-}
-EOF
-)
+    # Build instantiate message using jq for proper JSON formatting
+    INIT_MSG=$(jq -n \
+        --arg admin "$ADMIN_ADDRESS" \
+        --arg ibc_adapter "$IBC_ADAPTER_ADDRESS" \
+        --argjson timeout "$DEFAULT_TIMEOUT_NANOS" \
+        --argjson slippage "$MAX_SLIPPAGE_BPS" \
+        --argjson skip_contracts "$SKIP_CONTRACTS_JSON" \
+        '{
+            admins: [$admin],
+            skip_contracts: $skip_contracts,
+            ibc_adapter: $ibc_adapter,
+            default_timeout_nanos: $timeout,
+            max_slippage_bps: $slippage,
+            executors: [],
+            initial_routes: [],
+            initial_depositors: [$admin]
+        }'
+    )
 
     echo "Instantiate message:"
     echo "$INIT_MSG" | jq .
@@ -480,7 +485,13 @@ main() {
 
     # Step 4: Register skip-adapter as executor
     echo -e "${BLUE}=== Step 4: Configuring IBC Adapter ===${NC}"
-    register_skip_adapter_as_executor
+    read -p "Register Skip Adapter as executor on IBC Adapter? (y/n): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        register_skip_adapter_as_executor
+    else
+        echo -e "${YELLOW}Skipping executor registration.${NC}"
+    fi
     echo ""
 
     # Step 5: Route Registration
@@ -535,3 +546,128 @@ main() {
 
 # Run main function
 main
+
+# ============================================================================
+# TESTING & VERIFICATION QUERIES
+# ============================================================================
+#
+# Use these JSON queries to verify deployment and test the contract.
+# Replace contract addresses and amounts as needed.
+#
+# SKIP_ADAPTER=neutron1v4wcvnfue7frmyd8z07evurq78jlyxdgc89cfj0mee9fyss6cr9s4xtnx0
+# IBC_ADAPTER=neutron1acch5vl9r07dfhnz8rg6q7puz54chca6gphe99f8uqdx7gsp34askzg9ku
+# ADMIN=neutron134xnhryf2v2qkvp9ahnxtgqmq83hc868yeh0sl
+# ATOM_DENOM=ibc/C4CFF46FD6DE35CA4CF4CE031E643C8FDC9BA4B99AE598E9B0ED98FE3A2319F9
+# DATOM_DENOM=factory/neutron1k6hr0f83e7un2wjf29cspk7j69jrnskk65k3ek2nj9dztrlzpj6q00rtsa/udatom
+# STATOM_DENOM=ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA5222815620B3C
+#
+# --- SKIP ADAPTER VERIFICATION QUERIES ---
+#
+# 1. Check config (addresses, timeouts, slippage):
+# neutrond query wasm contract-state smart $SKIP_ADAPTER '{"standard_query":{"config":{}}}'
+#
+# 2. Check executors:
+# neutrond query wasm contract-state smart $SKIP_ADAPTER '{"custom_query":{"executors":{}}}'
+#
+# 3. Check all registered depositors:
+# neutrond query wasm contract-state smart $SKIP_ADAPTER '{"standard_query":{"registered_depositors":{}}}'
+#
+# 4. Check enabled depositors only:
+# neutrond query wasm contract-state smart $SKIP_ADAPTER '{"standard_query":{"registered_depositors":{"enabled":true}}}'
+#
+# 5. Check all routes:
+# neutrond query wasm contract-state smart $SKIP_ADAPTER '{"custom_query":{"all_routes":{}}}'
+#
+# 6. Check local Neutron routes only:
+# neutrond query wasm contract-state smart $SKIP_ADAPTER '{"custom_query":{"all_routes":{"venue":"neutron_astroport"}}}'
+#
+# 7. Check cross-chain Osmosis routes only:
+# neutrond query wasm contract-state smart $SKIP_ADAPTER '{"custom_query":{"all_routes":{"venue":"osmosis"}}}'
+#
+# 8. Check specific route (neutron-atom-datom):
+# neutrond query wasm contract-state smart $SKIP_ADAPTER '{"custom_query":{"route":{"route_id":"neutron-atom-datom"}}}'
+#
+# 9. Check available for deposit:
+# neutrond query wasm contract-state smart $SKIP_ADAPTER '{"standard_query":{"available_for_deposit":{"depositor_address":"'$ADMIN'","denom":"'$ATOM_DENOM'"}}}'
+#
+# 10. Check available for withdraw:
+# neutrond query wasm contract-state smart $SKIP_ADAPTER '{"standard_query":{"available_for_withdraw":{"depositor_address":"'$ADMIN'","denom":"'$ATOM_DENOM'"}}}'
+#
+# 11. Check contract ATOM balance:
+# neutrond query bank balances $SKIP_ADAPTER --denom $ATOM_DENOM
+#
+# 12. Check contract dATOM balance:
+# neutrond query bank balances $SKIP_ADAPTER --denom $DATOM_DENOM
+#
+# --- IBC ADAPTER VERIFICATION QUERIES ---
+#
+# 13. Check IBC adapter config:
+# neutrond query wasm contract-state smart $IBC_ADAPTER '{"standard_query":{"config":{}}}'
+#
+# 14. Check IBC adapter executors:
+# neutrond query wasm contract-state smart $IBC_ADAPTER '{"custom_query":{"executors":{}}}'
+#
+# 15. Check IBC adapter registered depositors:
+# neutrond query wasm contract-state smart $IBC_ADAPTER '{"standard_query":{"registered_depositors":{}}}'
+#
+# 16. Check IBC adapter enabled depositors only:
+# neutrond query wasm contract-state smart $IBC_ADAPTER '{"standard_query":{"registered_depositors":{"enabled":true}}}'
+#
+# 17. Check IBC adapter chains:
+# neutrond query wasm contract-state smart $IBC_ADAPTER '{"custom_query":{"all_chains":{}}}'
+#
+# 18. Check specific chain config (Osmosis):
+# neutrond query wasm contract-state smart $IBC_ADAPTER '{"custom_query":{"chain_config":{"chain_id":"osmosis-1"}}}'
+#
+# 19. Check IBC adapter tokens:
+# neutrond query wasm contract-state smart $IBC_ADAPTER '{"custom_query":{"all_tokens":{}}}'
+#
+# --- EXECUTE MESSAGES ---
+#
+# 20. Deposit 1 ATOM (1000000 uatom):
+# neutrond tx wasm execute $SKIP_ADAPTER '{"standard_action":{"deposit":{}}}' --from $ADMIN --amount 1000000$ATOM_DENOM --gas auto --gas-adjustment 1.3 --gas-prices 0.0053untrn --chain-id neutron-1 --node https://rpc-lb.neutron.org/ --keyring-backend test -y
+#
+# 21. Execute local swap (ATOM -> dATOM on Neutron, 1 ATOM with 5% slippage):
+# neutrond tx wasm execute $SKIP_ADAPTER '{"custom_action":{"execute_swap":{"params":{"route_id":"neutron-atom-datom","amount_in":"1000000","min_amount_out":"950000"}}}}' --from $ADMIN --gas auto --gas-adjustment 1.3 --gas-prices 0.0053untrn --chain-id neutron-1 --node https://rpc-lb.neutron.org/ --keyring-backend test -y
+#
+# 22. Withdraw dATOM from Skip Adapter (adjust amount based on swap output):
+# neutrond tx wasm execute $SKIP_ADAPTER '{"standard_action":{"withdraw":{"coin":{"denom":"'$DATOM_DENOM'","amount":"950000"}}}}' --from $ADMIN --gas auto --gas-adjustment 1.3 --gas-prices 0.0053untrn --chain-id neutron-1 --node https://rpc-lb.neutron.org/ --keyring-backend test -y
+#
+# --- CROSS-CHAIN SWAP TEST (OSMOSIS) ---
+#
+# 23. Deposit 1 ATOM to IBC Adapter:
+# neutrond tx wasm execute $IBC_ADAPTER '{"standard_action":{"deposit":{}}}' --from $ADMIN --amount 1000000$ATOM_DENOM --gas auto --gas-adjustment 1.3 --gas-prices 0.0053untrn --chain-id neutron-1 --node https://rpc-lb.neutron.org/ --keyring-backend test -y
+#
+# 24. Check IBC Adapter ATOM balance:
+# neutrond query bank balances $IBC_ADAPTER --denom $ATOM_DENOM
+#
+# 25. Execute cross-chain swap (ATOM -> stATOM via Osmosis, 1 ATOM with 5% slippage):
+# neutrond tx wasm execute $SKIP_ADAPTER '{"custom_action":{"execute_swap":{"params":{"route_id":"osmosis-atom-statom","amount_in":"1000000","min_amount_out":"950000"}}}}' --from $ADMIN --gas auto --gas-adjustment 1.3 --gas-prices 0.0053untrn --chain-id neutron-1 --node https://rpc-lb.neutron.org/ --keyring-backend test -y
+#
+# 26. Wait for IBC transfers to complete (check periodically, may take 1-5 minutes):
+# neutrond query bank balances $SKIP_ADAPTER --denom $STATOM_DENOM
+#
+# 27. Withdraw stATOM from Skip Adapter (adjust amount based on swap output):
+# neutrond tx wasm execute $SKIP_ADAPTER '{"standard_action":{"withdraw":{"coin":{"denom":"'$STATOM_DENOM'","amount":"950000"}}}}' --from $ADMIN --gas auto --gas-adjustment 1.3 --gas-prices 0.0053untrn --chain-id neutron-1 --node https://rpc-lb.neutron.org/ --keyring-backend test -y
+#
+# 28. Alternative: Execute cross-chain swap (ATOM -> dATOM via Osmosis, 1 ATOM with 5% slippage):
+# neutrond tx wasm execute $SKIP_ADAPTER '{"custom_action":{"execute_swap":{"params":{"route_id":"osmosis-atom-datom","amount_in":"1000000","min_amount_out":"950000"}}}}' --from $ADMIN --gas auto --gas-adjustment 1.3 --gas-prices 0.0053untrn --chain-id neutron-1 --node https://rpc-lb.neutron.org/ --keyring-backend test -y
+#
+# --- RECOMMENDED TESTING FLOW ---
+#
+# LOCAL SWAP TEST (Neutron):
+# 1. Run queries 1-12 to verify Skip Adapter (config, executors, depositors, routes, balances)
+# 2. Run queries 13-19 to verify IBC Adapter (config, executors, depositors, chains)
+# 3. Deposit ATOM to Skip Adapter using command 20
+# 4. Verify deposit with queries 9 and 11
+# 5. Execute local swap (ATOM -> dATOM on Neutron) using command 21
+# 6. Check dATOM received with query 12
+# 7. Withdraw dATOM from Skip Adapter using command 22
+#
+# CROSS-CHAIN SWAP TEST (Osmosis):
+# 1. Deposit ATOM to IBC Adapter using command 23
+# 2. Verify deposit with command 24
+# 3. Execute cross-chain swap (ATOM -> stATOM via Osmosis) using command 25
+# 4. Wait for IBC transfers to complete (1-5 minutes), check with command 26
+# 5. Withdraw stATOM from Skip Adapter using command 27
+# 6. (Alternative) Test ATOM -> dATOM via Osmosis using command 28

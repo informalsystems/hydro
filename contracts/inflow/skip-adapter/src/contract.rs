@@ -6,7 +6,9 @@ use cw2::set_contract_version;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use neutron_sdk::bindings::query::NeutronQuery;
 
-use crate::cross_chain::{build_osmosis_swap_ibc_adapter_msg, construct_osmosis_wasm_hook_memo};
+use crate::cross_chain::{
+    build_cross_chain_swap_ibc_adapter_msg, construct_cross_chain_wasm_hook_memo,
+};
 use crate::error::ContractError;
 use crate::msg::{
     AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AllPositionsResponse, AllRoutesResponse,
@@ -65,8 +67,7 @@ pub fn instantiate(
     executors.dedup();
     EXECUTORS.save(deps.storage, &executors)?;
 
-    // Validate addresses
-    let neutron_skip_contract = deps.api.addr_validate(&msg.neutron_skip_contract)?;
+    // Validate addresses (only for contracts on this chain)
     let ibc_adapter = deps.api.addr_validate(&msg.ibc_adapter)?;
 
     // Validate max_slippage_bps
@@ -78,9 +79,9 @@ pub fn instantiate(
     }
 
     // Store unified config
+    // Skip contracts are not validated since they may be on different chains
     let config = Config {
-        neutron_skip_contract,
-        osmosis_skip_contract: msg.osmosis_skip_contract,
+        skip_contracts: msg.skip_contracts,
         ibc_adapter,
         default_timeout_nanos: msg.default_timeout_nanos,
         max_slippage_bps: msg.max_slippage_bps,
@@ -198,8 +199,7 @@ fn dispatch_execute_custom(
             execute_set_route_enabled(deps, route_id, enabled)
         }
         SkipAdapterMsg::UpdateConfig {
-            neutron_skip_contract,
-            osmosis_skip_contract,
+            skip_contracts,
             ibc_adapter,
             default_timeout_nanos,
             max_slippage_bps,
@@ -207,8 +207,7 @@ fn dispatch_execute_custom(
             validate_config_admin(&deps, &info)?;
             execute_update_config(
                 deps,
-                neutron_skip_contract,
-                osmosis_skip_contract,
+                skip_contracts,
                 ibc_adapter,
                 default_timeout_nanos,
                 max_slippage_bps,
@@ -348,6 +347,10 @@ fn execute_local_swap(
     // Calculate timeout
     let timeout = env.block.time.nanos() + config.default_timeout_nanos;
 
+    // Get Skip contract for this venue
+    let skip_contract_str = config.get_skip_contract(&route.swap_venue_name)?;
+    let skip_contract = deps.api.addr_validate(skip_contract_str)?;
+
     // Build Skip message using stored operations from route
     // Transfer output back to this adapter contract
     let min_coin_out = Coin {
@@ -355,7 +358,7 @@ fn execute_local_swap(
         amount: params.min_amount_out,
     };
     let swap_msg = create_local_swap_and_action_msg(
-        config.neutron_skip_contract.clone(),
+        skip_contract,
         coin_in.clone(),
         min_coin_out,
         route.operations.clone(),
@@ -391,13 +394,13 @@ fn execute_cross_chain_swap(
 
     // Build wasm hook memo (Skip swap message)
     let wasm_hook_memo =
-        construct_osmosis_wasm_hook_memo(config, route, &params.min_amount_out, &env)?;
+        construct_cross_chain_wasm_hook_memo(config, route, &params.min_amount_out, &env)?;
 
     // Calculate timeout for PFM messages
     let timeout_nanos = env.block.time.nanos() + config.default_timeout_nanos;
 
     // Build typed IBC adapter message using route's forward_path
-    let ibc_adapter_msg = build_osmosis_swap_ibc_adapter_msg(
+    let ibc_adapter_msg = build_cross_chain_swap_ibc_adapter_msg(
         config.ibc_adapter.to_string(),
         coin_in.clone(),
         &route.forward_path,
@@ -408,7 +411,8 @@ fn execute_cross_chain_swap(
     Ok(Response::new()
         .add_message(ibc_adapter_msg)
         .add_attribute("action", "swap")
-        .add_attribute("venue", "osmosis")
+        .add_attribute("venue", "cross_chain")
+        .add_attribute("swap_venue_name", &route.swap_venue_name)
         .add_attribute("route_id", &params.route_id)
         .add_attribute("amount_in", coin_in.amount))
 }
@@ -582,20 +586,18 @@ fn execute_set_route_enabled(
 
 fn execute_update_config(
     deps: DepsMut<NeutronQuery>,
-    neutron_skip_contract: Option<String>,
-    osmosis_skip_contract: Option<String>,
+    skip_contracts: Option<std::collections::BTreeMap<String, String>>,
     ibc_adapter: Option<String>,
     default_timeout_nanos: Option<u64>,
     max_slippage_bps: Option<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let mut config = CONFIG.load(deps.storage)?;
 
-    if let Some(addr) = neutron_skip_contract {
-        config.neutron_skip_contract = deps.api.addr_validate(&addr)?;
-    }
-
-    if let Some(addr) = osmosis_skip_contract {
-        config.osmosis_skip_contract = addr;
+    // Merge skip_contracts (add/update entries, don't remove existing)
+    if let Some(contracts) = skip_contracts {
+        for (chain, contract_addr) in contracts {
+            config.skip_contracts.insert(chain, contract_addr);
+        }
     }
 
     if let Some(addr) = ibc_adapter {
@@ -696,8 +698,7 @@ fn query_config(deps: Deps<NeutronQuery>) -> StdResult<SkipConfigResponse> {
 
     Ok(SkipConfigResponse {
         admins: admins.iter().map(|a| a.to_string()).collect(),
-        neutron_skip_contract: config.neutron_skip_contract.to_string(),
-        osmosis_skip_contract: config.osmosis_skip_contract,
+        skip_contracts: config.skip_contracts,
         ibc_adapter: config.ibc_adapter.to_string(),
         default_timeout_nanos: config.default_timeout_nanos,
         max_slippage_bps: config.max_slippage_bps,

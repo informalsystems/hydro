@@ -1,24 +1,41 @@
+use std::collections::BTreeMap;
+
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Binary};
+use cosmwasm_std::{Addr, Binary, StdError, StdResult};
 use cw_storage_plus::{Item, Map};
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-/// Contract configuration - unified for both Neutron and Osmosis venues
+/// Contract configuration - unified for both local and cross-chain venues
 #[cw_serde]
 pub struct Config {
-    /// Skip contract address on Neutron
-    pub neutron_skip_contract: Addr,
-    /// Skip contract address on Osmosis (for wasm hook)
-    pub osmosis_skip_contract: String,
+    /// Skip contract addresses by chain (e.g., "neutron" -> "neutron1...", "osmosis" -> "osmo1...")
+    /// Each chain has one Skip entry-point contract
+    pub skip_contracts: BTreeMap<String, String>,
     /// IBC adapter contract address on Neutron
     pub ibc_adapter: Addr,
     /// Default timeout in nanoseconds (e.g., 1800000000000 = 30 min)
     pub default_timeout_nanos: u64,
     /// Maximum slippage in basis points (e.g., 100 = 1%)
     pub max_slippage_bps: u64,
+}
+
+impl Config {
+    /// Get the Skip contract address for a given swap venue name
+    /// Extracts the chain from venue name (e.g., "neutron" from "neutron-astroport") and looks it up
+    pub fn get_skip_contract(&self, swap_venue_name: &str) -> StdResult<&String> {
+        // Extract chain from venue name (e.g., "neutron-astroport" -> "neutron")
+        let chain = swap_venue_name.split('-').next().unwrap_or(swap_venue_name);
+
+        self.skip_contracts.get(chain).ok_or_else(|| {
+            StdError::generic_err(format!(
+                "No Skip contract configured for chain '{}' (from venue: {})",
+                chain, swap_venue_name
+            ))
+        })
+    }
 }
 
 // ============================================================================

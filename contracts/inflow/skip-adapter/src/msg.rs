@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::Uint128;
 
@@ -22,10 +24,8 @@ pub use crate::state::SwapOperation;
 pub struct InstantiateMsg {
     /// The config admins who can update config and manage routes/executors
     pub admins: Vec<String>,
-    /// Skip contract address on Neutron
-    pub neutron_skip_contract: String,
-    /// Skip contract address on Osmosis
-    pub osmosis_skip_contract: String,
+    /// Skip contract addresses by chain (e.g., {"neutron": "neutron1...", "osmosis": "osmo1..."})
+    pub skip_contracts: BTreeMap<String, String>,
     /// IBC adapter contract address on Neutron
     pub ibc_adapter: String,
     /// Default timeout in nanoseconds (e.g., 1800000000000 for 30 minutes)
@@ -103,8 +103,8 @@ pub enum SkipAdapterMsg {
     // =========================================================================
     /// Update contract configuration (admin only)
     UpdateConfig {
-        neutron_skip_contract: Option<String>,
-        osmosis_skip_contract: Option<String>,
+        /// Skip contract addresses to add/update by chain (merges with existing)
+        skip_contracts: Option<BTreeMap<String, String>>,
         ibc_adapter: Option<String>,
         default_timeout_nanos: Option<u64>,
         max_slippage_bps: Option<u64>,
@@ -151,8 +151,7 @@ pub enum SkipAdapterQueryMsg {
 #[cw_serde]
 pub struct SkipConfigResponse {
     pub admins: Vec<String>,
-    pub neutron_skip_contract: String,
-    pub osmosis_skip_contract: String,
+    pub skip_contracts: BTreeMap<String, String>,
     pub ibc_adapter: String,
     pub default_timeout_nanos: u64,
     pub max_slippage_bps: u64,

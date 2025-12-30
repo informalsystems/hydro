@@ -11,8 +11,7 @@
     "initial_depositors",
     "initial_routes",
     "max_slippage_bps",
-    "neutron_skip_contract",
-    "osmosis_skip_contract"
+    "skip_contracts"
   ],
   "properties": {
     "admins": {
@@ -69,13 +68,10 @@
       "format": "uint64",
       "minimum": 0.0
     },
-    "neutron_skip_contract": {
-      "description": "Skip contract address on Neutron",
-      "type": "string"
-    },
-    "osmosis_skip_contract": {
-      "description": "Skip contract address on Osmosis",
-      "type": "string"
+    "skip_contracts": {
+      "description": "Skip contract addresses by chain (e.g., {\"neutron\": \"neutron1...\", \"osmosis\": \"osmo1...\"})",
+      "type": "object",
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,

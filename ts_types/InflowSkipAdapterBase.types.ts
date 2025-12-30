@@ -14,8 +14,7 @@ export interface InstantiateMsg {
   initial_depositors: string[];
   initial_routes: [string, UnifiedRoute][];
   max_slippage_bps: number;
-  neutron_skip_contract: string;
-  osmosis_skip_contract: string;
+  skip_contracts: {};
 }
 export interface UnifiedRoute {
   denom_in: string;
@@ -97,8 +96,7 @@ export type SkipAdapterMsg = {
     default_timeout_nanos?: number | null;
     ibc_adapter?: string | null;
     max_slippage_bps?: number | null;
-    neutron_skip_contract?: string | null;
-    osmosis_skip_contract?: string | null;
+    skip_contracts?: {} | null;
   };
 };
 export interface Coin {

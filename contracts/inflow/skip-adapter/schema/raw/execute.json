@@ -380,17 +380,13 @@
                   "format": "uint64",
                   "minimum": 0.0
                 },
-                "neutron_skip_contract": {
+                "skip_contracts": {
+                  "description": "Skip contract addresses to add/update by chain (merges with existing)",
                   "type": [
-                    "string",
+                    "object",
                     "null"
-                  ]
-                },
-                "osmosis_skip_contract": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               },
               "additionalProperties": false

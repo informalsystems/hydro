@@ -11,8 +11,8 @@ pub use ibc_adapter::state::TransferFundsInstructions;
 // Public Functions
 // ============================================================================
 
-/// Build typed IBC adapter message for Osmosis swap with forward path
-pub fn build_osmosis_swap_ibc_adapter_msg(
+/// Build typed IBC adapter message for cross-chain swap with forward path
+pub fn build_cross_chain_swap_ibc_adapter_msg(
     ibc_adapter_addr: String,
     coin: Coin,
     forward_path: &[PathHop],
@@ -21,14 +21,20 @@ pub fn build_osmosis_swap_ibc_adapter_msg(
 ) -> StdResult<WasmMsg> {
     if forward_path.is_empty() {
         return Err(cosmwasm_std::StdError::generic_err(
-            "Forward path cannot be empty for Osmosis swaps",
+            "Forward path cannot be empty for cross-chain swaps",
         ));
     }
 
-    // Build the nested PFM forward memo with the wasm hook as the final payload
-    // All hops are included in the PFM structure
-    let pfm_memo =
-        build_pfm_forward_memo_with_payload(forward_path, &wasm_hook_memo, timeout_nanos)?;
+    // Build PFM memo for hops AFTER the first one
+    // The first hop is already specified in the IBC transfer itself (destination_chain, recipient)
+    // PFM memo tells the receiving chain where to forward NEXT
+    let pfm_memo = if forward_path.len() > 1 {
+        // Multiple hops: build PFM forward for remaining hops (excluding first)
+        build_pfm_forward_memo_with_payload(&forward_path[1..], &wasm_hook_memo, timeout_nanos)?
+    } else {
+        // Single hop (direct to swap chain): just use the wasm hook as memo
+        wasm_hook_memo.clone()
+    };
 
     // First hop determines the initial IBC transfer destination
     // IBC adapter sends to this chain, then PFM handles the forwarding
@@ -51,15 +57,18 @@ pub fn build_osmosis_swap_ibc_adapter_msg(
     })
 }
 
-/// Construct wasm hook memo for Osmosis swap
+/// Construct wasm hook memo for cross-chain swap
 /// Based on real Skip entry-point format from examples-swaps.txt
-pub fn construct_osmosis_wasm_hook_memo(
+pub fn construct_cross_chain_wasm_hook_memo(
     config: &Config,
     route: &UnifiedRoute,
     min_amount_out: &Uint128,
     env: &Env,
 ) -> StdResult<String> {
     let timeout = env.block.time.nanos() + config.default_timeout_nanos;
+
+    // Get Skip contract for this venue
+    let skip_contract = config.get_skip_contract(&route.swap_venue_name)?;
 
     // Get output denom from last operation
     let output_denom = route
@@ -95,7 +104,7 @@ pub fn construct_osmosis_wasm_hook_memo(
     // Wrap in wasm hook
     let wasm_hook = json!({
         "wasm": {
-            "contract": config.osmosis_skip_contract,
+            "contract": skip_contract,
             "msg": skip_msg
         }
     });
