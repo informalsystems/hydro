@@ -92,15 +92,18 @@ mod contract_tests {
             }],
             swap_venue_name: "osmosis-poolmanager".to_string(),
             forward_path: vec![PathHop {
+                chain_id: "osmosis-1".to_string(),
                 channel: "channel-10".to_string(),
                 receiver: "osmo1skip".to_string(),
             }],
             return_path: vec![
                 PathHop {
+                    chain_id: "cosmoshub-4".to_string(),
                     channel: "channel-0".to_string(),
                     receiver: "cosmos1addr".to_string(),
                 },
                 PathHop {
+                    chain_id: "neutron-1".to_string(),
                     channel: "channel-569".to_string(),
                     receiver: "neutron1addr".to_string(),
                 },
@@ -523,17 +526,20 @@ mod cross_chain_tests {
             }],
             swap_venue_name: "osmosis-poolmanager".to_string(),
             forward_path: vec![PathHop {
+                chain_id: "osmosis-1".to_string(),
                 channel: "channel-10".to_string(),
                 receiver: "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u"
                     .to_string(),
             }],
             return_path: vec![
                 PathHop {
+                    chain_id: "cosmoshub-4".to_string(),
                     channel: "channel-0".to_string(),
                     receiver: "cosmos16482tz43umq6c034efueggp73tpnc2q6pjhm7fjz0ghrpezwqcmq32xh7j"
                         .to_string(),
                 },
                 PathHop {
+                    chain_id: "neutron-1".to_string(),
                     channel: "channel-569".to_string(),
                     receiver: "neutron1g4ydedvm96rqt9e8smcvwsqu8twp52gkrcg3aqg22uzj75d29res7avj8l"
                         .to_string(),
@@ -620,6 +626,7 @@ mod cross_chain_tests {
         let coin = Coin::new(1000000u128, "untrn");
         let wasm_hook_memo = "{\"wasm\":{\"contract\":\"osmo1skip\"}}".to_string();
         let forward_path = vec![PathHop {
+            chain_id: "osmosis-1".to_string(),
             channel: "channel-10".to_string(),
             receiver: "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
         }];
@@ -698,10 +705,12 @@ mod cross_chain_tests {
         let wasm_hook_memo = "{\"wasm\":{\"contract\":\"osmo1skip\"}}".to_string();
         let forward_path = vec![
             PathHop {
+                chain_id: "cosmoshub-4".to_string(),
                 channel: "channel-1".to_string(), // Neutron -> Cosmos Hub
                 receiver: "cosmos1intermediate".to_string(),
             },
             PathHop {
+                chain_id: "osmosis-1".to_string(),
                 channel: "channel-0".to_string(), // Cosmos Hub -> Osmosis
                 receiver: "osmo1skip".to_string(),
             },

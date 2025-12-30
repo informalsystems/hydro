@@ -2,7 +2,7 @@ use cosmwasm_std::{DepsMut, MessageInfo};
 use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::error::ContractError;
-use crate::state::{Depositor, SwapVenue, UnifiedRoute, ADMINS, EXECUTORS, WHITELISTED_DEPOSITORS};
+use crate::state::{Depositor, UnifiedRoute, ADMINS, EXECUTORS, WHITELISTED_DEPOSITORS};
 
 /// Validates that the caller is a registered and enabled depositor
 pub fn validate_depositor_caller(
@@ -63,25 +63,29 @@ pub fn validate_route_config(route: &UnifiedRoute) -> Result<(), ContractError> 
         });
     }
 
-    // First operation denom_in must match route denom_in
-    if route.operations[0].denom_in != route.denom_in {
-        return Err(ContractError::InvalidRoute {
-            reason: format!(
-                "First operation denom_in ({}) does not match route denom_in ({})",
-                route.operations[0].denom_in, route.denom_in
-            ),
-        });
-    }
+    // For local swaps only: validate first and last operation denoms match route denoms
+    // Cross-chain swaps will have different denoms due to IBC transfers
+    if route.venue.is_local() {
+        // First operation denom_in must match route denom_in
+        if route.operations[0].denom_in != route.denom_in {
+            return Err(ContractError::InvalidRoute {
+                reason: format!(
+                    "First operation denom_in ({}) does not match route denom_in ({})",
+                    route.operations[0].denom_in, route.denom_in
+                ),
+            });
+        }
 
-    // Last operation denom_out must match route denom_out
-    let last_idx = route.operations.len() - 1;
-    if route.operations[last_idx].denom_out != route.denom_out {
-        return Err(ContractError::InvalidRoute {
-            reason: format!(
-                "Last operation denom_out ({}) does not match route denom_out ({})",
-                route.operations[last_idx].denom_out, route.denom_out
-            ),
-        });
+        // Last operation denom_out must match route denom_out
+        let last_idx = route.operations.len() - 1;
+        if route.operations[last_idx].denom_out != route.denom_out {
+            return Err(ContractError::InvalidRoute {
+                reason: format!(
+                    "Last operation denom_out ({}) does not match route denom_out ({})",
+                    route.operations[last_idx].denom_out, route.denom_out
+                ),
+            });
+        }
     }
 
     // Validate operations form a continuous path
@@ -99,36 +103,33 @@ pub fn validate_route_config(route: &UnifiedRoute) -> Result<(), ContractError> 
         }
     }
 
-    // Validate forward_path based on venue
-    match route.venue {
-        SwapVenue::NeutronAstroport => {
-            // Neutron routes must have empty forward_path
-            if !route.forward_path.is_empty() {
-                return Err(ContractError::InvalidForwardPath {
-                    reason: "Neutron routes should not have forward_path".to_string(),
-                });
-            }
+    // Validate forward_path based on venue type
+    if route.venue.is_local() {
+        // Local routes must have empty forward_path
+        if !route.forward_path.is_empty() {
+            return Err(ContractError::InvalidForwardPath {
+                reason: "Local routes should not have forward_path".to_string(),
+            });
         }
-        SwapVenue::Osmosis => {
-            // Osmosis routes must have non-empty forward_path
-            if route.forward_path.is_empty() {
+    } else if route.venue.is_cross_chain() {
+        // Cross-chain routes must have non-empty forward_path
+        if route.forward_path.is_empty() {
+            return Err(ContractError::InvalidForwardPath {
+                reason: "Cross-chain routes must specify forward_path".to_string(),
+            });
+        }
+
+        // Validate each hop has channel and receiver
+        for (idx, hop) in route.forward_path.iter().enumerate() {
+            if hop.channel.is_empty() {
                 return Err(ContractError::InvalidForwardPath {
-                    reason: "Osmosis routes must specify forward_path".to_string(),
+                    reason: format!("Forward hop {} has empty channel", idx),
                 });
             }
-
-            // Validate each hop has channel and receiver
-            for (idx, hop) in route.forward_path.iter().enumerate() {
-                if hop.channel.is_empty() {
-                    return Err(ContractError::InvalidForwardPath {
-                        reason: format!("Forward hop {} has empty channel", idx),
-                    });
-                }
-                if hop.receiver.is_empty() {
-                    return Err(ContractError::InvalidForwardPath {
-                        reason: format!("Forward hop {} has empty receiver", idx),
-                    });
-                }
+            if hop.receiver.is_empty() {
+                return Err(ContractError::InvalidForwardPath {
+                    reason: format!("Forward hop {} has empty receiver", idx),
+                });
             }
         }
     }

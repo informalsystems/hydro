@@ -92,10 +92,15 @@
         "description": "A single hop in an IBC path (used for both forward and return paths) Used for multi-chain transfers (e.g., Neutron → Cosmos → Osmosis or Osmosis → Stride → Neutron)",
         "type": "object",
         "required": [
+          "chain_id",
           "channel",
           "receiver"
         ],
         "properties": {
+          "chain_id": {
+            "description": "Chain ID of the destination for this hop (e.g., \"cosmoshub-4\", \"osmosis-1\")",
+            "type": "string"
+          },
           "channel": {
             "description": "IBC channel to use for this hop",
             "type": "string"
@@ -419,10 +424,15 @@
         "description": "A single hop in an IBC path (used for both forward and return paths) Used for multi-chain transfers (e.g., Neutron → Cosmos → Osmosis or Osmosis → Stride → Neutron)",
         "type": "object",
         "required": [
+          "chain_id",
           "channel",
           "receiver"
         ],
         "properties": {
+          "chain_id": {
+            "description": "Chain ID of the destination for this hop (e.g., \"cosmoshub-4\", \"osmosis-1\")",
+            "type": "string"
+          },
           "channel": {
             "description": "IBC channel to use for this hop",
             "type": "string"

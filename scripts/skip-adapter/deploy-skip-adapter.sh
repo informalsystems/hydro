@@ -87,12 +87,7 @@ MAX_SLIPPAGE_BPS=$(jq -r '.skip_adapter.max_slippage_bps' $CONFIG_FILE)
 
 # Load IBC adapter configuration
 IBC_DEFAULT_TIMEOUT=$(jq -r '.ibc_adapter.default_timeout_seconds' $CONFIG_FILE)
-OSMOSIS_CHAIN_ID=$(jq -r '.ibc_adapter.osmosis_chain_id' $CONFIG_FILE)
-OSMOSIS_CHANNEL=$(jq -r '.ibc_adapter.osmosis_channel_from_neutron' $CONFIG_FILE)
-COSMOS_HUB_CHAIN_ID=$(jq -r '.ibc_adapter.cosmos_hub_chain_id' $CONFIG_FILE)
-COSMOS_HUB_CHANNEL=$(jq -r '.ibc_adapter.cosmos_hub_channel_from_neutron' $CONFIG_FILE)
-STRIDE_CHAIN_ID=$(jq -r '.ibc_adapter.stride_chain_id' $CONFIG_FILE)
-STRIDE_CHANNEL=$(jq -r '.ibc_adapter.stride_channel_from_neutron' $CONFIG_FILE)
+# Chains array is used directly in instantiation
 
 # Load existing code IDs
 IBC_ADAPTER_CODE_ID=$(jq -r '.code_ids.ibc_adapter // 0' $CONFIG_FILE)
@@ -208,40 +203,23 @@ store_contract() {
 instantiate_ibc_adapter() {
     echo -e "${BLUE}Instantiating IBC Adapter...${NC}"
 
-    # Check if we have required config values
-    if [ -z "$OSMOSIS_CHANNEL" ] || [ "$OSMOSIS_CHANNEL" == "null" ] || [ "$OSMOSIS_CHANNEL" == "" ]; then
-        echo -e "${YELLOW}Warning: osmosis_channel_from_neutron is not configured${NC}"
-        echo "Please update your config file with IBC channel information"
-    fi
+    # Build initial_chains array from config
+    INITIAL_CHAINS=$(jq -c '[.ibc_adapter.chains[] | {chain_id: .chain_id, channel_from_neutron: .channel_from_neutron, allowed_recipients: []}]' $CONFIG_FILE)
 
     # Build instantiate message
-    INIT_MSG=$(cat <<EOF
-{
-  "admins": ["$ADMIN_ADDRESS"],
-  "initial_depositors": [],
-  "default_timeout_seconds": $IBC_DEFAULT_TIMEOUT,
-  "initial_chains": [
-    {
-      "chain_id": "$OSMOSIS_CHAIN_ID",
-      "channel_from_neutron": "$OSMOSIS_CHANNEL",
-      "allowed_recipients": []
-    },
-    {
-      "chain_id": "$COSMOS_HUB_CHAIN_ID",
-      "channel_from_neutron": "$COSMOS_HUB_CHANNEL",
-      "allowed_recipients": []
-    },
-    {
-      "chain_id": "$STRIDE_CHAIN_ID",
-      "channel_from_neutron": "$STRIDE_CHANNEL",
-      "allowed_recipients": []
-    }
-  ],
-  "initial_tokens": [],
-  "initial_executors": []
-}
-EOF
-)
+    INIT_MSG=$(jq -n \
+        --arg admin "$ADMIN_ADDRESS" \
+        --argjson timeout "$IBC_DEFAULT_TIMEOUT" \
+        --argjson chains "$INITIAL_CHAINS" \
+        '{
+            admins: [$admin],
+            initial_depositors: [],
+            default_timeout_seconds: $timeout,
+            initial_chains: $chains,
+            initial_tokens: [],
+            initial_executors: []
+        }'
+    )
 
     echo "Instantiate message:"
     echo "$INIT_MSG" | jq .
@@ -354,13 +332,88 @@ EOF
 }
 
 # Function to register a route on skip-adapter
-# Note: This function is prepared but routes will need manual registration
-# once the contract is updated to support forward_path
 register_route() {
-    local route_id=$1
-    echo -e "${BLUE}Route registration for '$route_id' is prepared in config${NC}"
-    echo -e "${YELLOW}Note: Route registration will need to be done manually once the contract supports forward_path${NC}"
+    local route_key=$1  # e.g., "osmosis_atom_statom"
+
+    echo -e "${BLUE}Registering route: $route_key${NC}"
+
+    # Extract route config from JSON
+    local route_config=$(jq -r ".routes.$route_key" $CONFIG_FILE)
+    local route_id=$(echo "$route_config" | jq -r '.route_id')
+    local venue=$(echo "$route_config" | jq -r '.venue')
+    local denom_in=$(echo "$route_config" | jq -r '.denom_in')
+    local denom_out=$(echo "$route_config" | jq -r '.denom_out')
+    local swap_venue_name=$(echo "$route_config" | jq -r '.swap_venue_name')
+    local recover_address=$(echo "$route_config" | jq -r '.recover_address // ""')
+
+    # Check for required fields
+    if [ -z "$denom_in" ] || [ "$denom_in" == "" ]; then
+        echo -e "${YELLOW}Skipping $route_key: denom_in is not configured${NC}"
+        return
+    fi
+
+    # Build operations array (strip comments from path hops)
+    local operations=$(echo "$route_config" | jq -c '.operations')
+
+    # Build forward_path (strip comments)
+    local forward_path=$(echo "$route_config" | jq -c '[.forward_path[] | {chain_id, channel, receiver}]')
+
+    # Build return_path (strip comments and auto-fill empty receivers with skip-adapter address)
+    local return_path=$(echo "$route_config" | jq -c \
+        --arg skip_adapter "$SKIP_ADAPTER_ADDRESS" \
+        '[.return_path[] | {chain_id, channel, receiver: (if .receiver == "" then $skip_adapter else .receiver end)}]')
+
+    # Build the UnifiedRoute object
+    local route_obj=$(jq -n \
+        --arg venue "$venue" \
+        --arg denom_in "$denom_in" \
+        --arg denom_out "$denom_out" \
+        --argjson operations "$operations" \
+        --arg swap_venue_name "$swap_venue_name" \
+        --argjson forward_path "$forward_path" \
+        --argjson return_path "$return_path" \
+        --arg recover_address "$recover_address" \
+        '{
+            venue: $venue,
+            denom_in: $denom_in,
+            denom_out: $denom_out,
+            operations: $operations,
+            swap_venue_name: $swap_venue_name,
+            forward_path: $forward_path,
+            return_path: $return_path,
+            recover_address: (if $recover_address == "" then null else $recover_address end),
+            enabled: true
+        }'
+    )
+
+    # Build execute message
+    local EXEC_MSG=$(jq -n \
+        --arg route_id "$route_id" \
+        --argjson route "$route_obj" \
+        '{
+            custom_action: {
+                register_route: {
+                    route_id: $route_id,
+                    route: $route
+                }
+            }
+        }'
+    )
+
+    echo "Execute message:"
+    echo "$EXEC_MSG" | jq .
     echo ""
+
+    printf "Registering route $route_id"
+    $NEUTRON_CLI tx wasm execute "$SKIP_ADAPTER_ADDRESS" "$EXEC_MSG" \
+        --from "$DEPLOYER_WALLET" \
+        $NEUTRON_TX_FLAGS \
+        --output json &> "./register_route_${route_key}_res.json"
+
+    TX_HASH=$(grep -o '{.*}' "./register_route_${route_key}_res.json" | jq -r '.txhash')
+    retry_command "$NEUTRON_CLI q tx $TX_HASH $NEUTRON_NODE_FLAG --output json" 60 > /dev/null
+
+    echo -e "${GREEN}Route $route_id registered${NC}"
 }
 
 # ============================================================================
@@ -430,21 +483,31 @@ main() {
     register_skip_adapter_as_executor
     echo ""
 
-    # Step 5: Note about route registration
+    # Step 5: Route Registration
     echo -e "${BLUE}=== Step 5: Route Registration ===${NC}"
-    echo -e "${YELLOW}Routes are configured in deploy-config.json but need to be registered manually${NC}"
-    echo -e "${YELLOW}Once the skip-adapter contract is updated to support forward_path:${NC}"
     echo ""
-    echo "Route 1: osmo-atom-statom (ATOM → stATOM via Osmosis)"
-    echo "  - Forward: Neutron → Cosmos Hub → Osmosis"
-    echo "  - Return: Osmosis → Stride → Neutron"
+    echo "Routes to register:"
+    echo "  1. osmosis-atom-statom: ATOM → stATOM via Osmosis (Neutron → Cosmos Hub → Osmosis, return via Stride)"
+    echo "  2. osmosis-atom-datom:  ATOM → dATOM via Osmosis (Neutron → Cosmos Hub → Osmosis, direct return)"
+    echo "  3. neutron-atom-datom:  ATOM → dATOM on Neutron (local swap)"
     echo ""
-    echo "Route 2: osmo-atom-datom (ATOM → dATOM via Osmosis)"
-    echo "  - Forward: Neutron → Osmosis (direct)"
-    echo "  - Return: Osmosis → Neutron (direct)"
-    echo ""
-    echo "Route 3: neutron-atom-datom (ATOM → dATOM on Neutron Astroport)"
-    echo "  - Local swap, no IBC transfers"
+
+    read -p "Register routes now? (y/n): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        # Get list of route keys from config
+        ROUTE_KEYS=$(jq -r '.routes | keys[]' $CONFIG_FILE)
+
+        for route_key in $ROUTE_KEYS; do
+            register_route "$route_key"
+            echo ""
+        done
+    else
+        echo -e "${YELLOW}Skipping route registration. You can register routes manually later.${NC}"
+        echo ""
+        echo "To register a route manually, execute:"
+        echo '  neutrond tx wasm execute $SKIP_ADAPTER_ADDRESS '"'"'{"custom_action":{"register_route":{...}}}'"'"' ...'
+    fi
     echo ""
 
     # Display summary
@@ -465,10 +528,9 @@ main() {
     echo -e "${GREEN}Deployment complete!${NC}"
     echo ""
     echo "Next steps:"
-    echo "1. Fill in missing values in $CONFIG_FILE (channels, denoms, pool IDs, etc.)"
-    echo "2. Update skip-adapter contract to support forward_path field"
-    echo "3. Register routes manually using the config file as reference"
-    echo "4. Test by depositing ATOM and executing swaps on each route"
+    echo "1. Fill in missing values in $CONFIG_FILE (denoms, operations, receiver addresses)"
+    echo "2. If routes were not registered, run the script again or register manually"
+    echo "3. Test by depositing ATOM and executing swaps on each route"
 }
 
 # Run main function

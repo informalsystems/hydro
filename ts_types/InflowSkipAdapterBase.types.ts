@@ -29,6 +29,7 @@ export interface UnifiedRoute {
   venue: SwapVenue;
 }
 export interface PathHop {
+  chain_id: string;
   channel: string;
   receiver: string;
 }

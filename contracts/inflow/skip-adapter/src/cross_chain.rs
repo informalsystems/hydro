@@ -7,8 +7,6 @@ use crate::state::{Config, PathHop, UnifiedRoute};
 pub use ibc_adapter::msg::{ExecuteMsg as IbcAdapterExecuteMsg, IbcAdapterMsg};
 pub use ibc_adapter::state::TransferFundsInstructions;
 
-const OSMOSIS_CHAIN_ID: &str = "osmosis-1";
-
 // ============================================================================
 // Public Functions
 // ============================================================================
@@ -28,29 +26,19 @@ pub fn build_osmosis_swap_ibc_adapter_msg(
     }
 
     // Build the nested PFM forward memo with the wasm hook as the final payload
+    // All hops are included in the PFM structure
     let pfm_memo =
         build_pfm_forward_memo_with_payload(forward_path, &wasm_hook_memo, timeout_nanos)?;
 
-    // The first hop from Neutron
-    // Determine the target chain based on the number of hops
-    let (target_chain, recipient) = if forward_path.len() == 1 {
-        // Direct to Osmosis
-        (
-            OSMOSIS_CHAIN_ID.to_string(),
-            forward_path[0].receiver.clone(),
-        )
-    } else {
-        // Multi-hop: first hop is to an intermediate chain
-        // We need to derive the chain_id from context or use a default
-        // For now, we'll assume the first hop is always to Cosmos Hub for multi-hop paths
-        ("cosmoshub-4".to_string(), forward_path[0].receiver.clone())
-    };
+    // First hop determines the initial IBC transfer destination
+    // IBC adapter sends to this chain, then PFM handles the forwarding
+    let first_hop = &forward_path[0];
 
     let msg = IbcAdapterExecuteMsg::CustomAction(IbcAdapterMsg::TransferFunds {
         coin: coin.clone(),
         instructions: TransferFundsInstructions {
-            destination_chain: target_chain,
-            recipient,
+            destination_chain: first_hop.chain_id.clone(),
+            recipient: first_hop.receiver.clone(),
             timeout_seconds: None, // Use IBC adapter's default
             memo: Some(pfm_memo),
         },

@@ -320,12 +320,11 @@ fn execute_swap(
         amount: params.amount_in,
     };
 
-    // 6. Dispatch based on venue (balance verification happens within each function)
-    match route.venue {
-        SwapVenue::NeutronAstroport => {
-            execute_local_swap(deps, env, &config, &route, &coin_in, &params)
-        }
-        SwapVenue::Osmosis => execute_osmosis_swap(deps, env, &config, &route, &coin_in, &params),
+    // 6. Dispatch based on venue type (balance verification happens within each function)
+    if route.venue.is_local() {
+        execute_local_swap(deps, env, &config, &route, &coin_in, &params)
+    } else {
+        execute_cross_chain_swap(deps, env, &config, &route, &coin_in, &params)
     }
 }
 
@@ -373,7 +372,7 @@ fn execute_local_swap(
         .add_attribute("amount_in", coin_in.amount))
 }
 
-fn execute_osmosis_swap(
+fn execute_cross_chain_swap(
     deps: DepsMut<NeutronQuery>,
     env: Env,
     config: &Config,

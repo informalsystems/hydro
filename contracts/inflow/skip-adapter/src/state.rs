@@ -34,6 +34,18 @@ pub enum SwapVenue {
     Osmosis,
 }
 
+impl SwapVenue {
+    /// Returns true if this venue executes swaps locally (on Neutron)
+    pub fn is_local(&self) -> bool {
+        matches!(self, SwapVenue::NeutronAstroport)
+    }
+
+    /// Returns true if this venue executes swaps cross-chain (e.g., Osmosis)
+    pub fn is_cross_chain(&self) -> bool {
+        !self.is_local()
+    }
+}
+
 /// A single swap operation (hop in the swap path)
 /// Matches Skip Protocol's SwapOperation schema
 #[cw_serde]
@@ -53,6 +65,8 @@ pub struct SwapOperation {
 /// Used for multi-chain transfers (e.g., Neutron → Cosmos → Osmosis or Osmosis → Stride → Neutron)
 #[cw_serde]
 pub struct PathHop {
+    /// Chain ID of the destination for this hop (e.g., "cosmoshub-4", "osmosis-1")
+    pub chain_id: String,
     /// IBC channel to use for this hop
     pub channel: String,
     /// Receiver address on the next chain (intermediary or final)
