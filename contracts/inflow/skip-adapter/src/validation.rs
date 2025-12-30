@@ -2,7 +2,7 @@ use cosmwasm_std::{DepsMut, MessageInfo};
 use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::error::ContractError;
-use crate::state::{Depositor, UnifiedRoute, ADMINS, EXECUTORS, WHITELISTED_DEPOSITORS};
+use crate::state::{Depositor, SwapVenue, UnifiedRoute, ADMINS, EXECUTORS, WHITELISTED_DEPOSITORS};
 
 /// Validates that the caller is a registered and enabled depositor
 pub fn validate_depositor_caller(
@@ -96,6 +96,40 @@ pub fn validate_route_config(route: &UnifiedRoute) -> Result<(), ContractError> 
                     route.operations[i + 1].denom_in
                 ),
             });
+        }
+    }
+
+    // Validate forward_path based on venue
+    match route.venue {
+        SwapVenue::NeutronAstroport => {
+            // Neutron routes must have empty forward_path
+            if !route.forward_path.is_empty() {
+                return Err(ContractError::InvalidForwardPath {
+                    reason: "Neutron routes should not have forward_path".to_string(),
+                });
+            }
+        }
+        SwapVenue::Osmosis => {
+            // Osmosis routes must have non-empty forward_path
+            if route.forward_path.is_empty() {
+                return Err(ContractError::InvalidForwardPath {
+                    reason: "Osmosis routes must specify forward_path".to_string(),
+                });
+            }
+
+            // Validate each hop has channel and receiver
+            for (idx, hop) in route.forward_path.iter().enumerate() {
+                if hop.channel.is_empty() {
+                    return Err(ContractError::InvalidForwardPath {
+                        reason: format!("Forward hop {} has empty channel", idx),
+                    });
+                }
+                if hop.receiver.is_empty() {
+                    return Err(ContractError::InvalidForwardPath {
+                        reason: format!("Forward hop {} has empty receiver", idx),
+                    });
+                }
+            }
         }
     }
 

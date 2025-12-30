@@ -7,7 +7,7 @@ mod contract_tests {
     use crate::contract::{execute, instantiate, query};
     use crate::error::ContractError;
     use crate::msg::*;
-    use crate::state::{ReturnHop, SwapOperation, SwapVenue, UnifiedRoute};
+    use crate::state::{PathHop, SwapOperation, SwapVenue, UnifiedRoute};
     use crate::testing_mocks::mock_dependencies;
 
     // Test data structure
@@ -47,7 +47,6 @@ mod contract_tests {
             osmosis_skip_contract:
                 "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
             ibc_adapter: deps.api.addr_make("ibc_adapter").to_string(),
-            osmosis_channel: "channel-10".to_string(),
             default_timeout_nanos: 1800000000000,
             max_slippage_bps: 100,
             executors: vec![],
@@ -61,7 +60,7 @@ mod contract_tests {
 
     fn create_valid_neutron_route() -> UnifiedRoute {
         UnifiedRoute {
-            venue: SwapVenue::Neutron,
+            venue: SwapVenue::NeutronAstroport,
             denom_in: "factory/neutron1/astro".to_string(),
             denom_out: "untrn".to_string(),
             operations: vec![SwapOperation {
@@ -71,6 +70,7 @@ mod contract_tests {
                 interface: None,
             }],
             swap_venue_name: "neutron-astroport".to_string(),
+            forward_path: vec![],
             return_path: vec![],
             recover_address: None,
             enabled: true,
@@ -91,12 +91,16 @@ mod contract_tests {
                 interface: None,
             }],
             swap_venue_name: "osmosis-poolmanager".to_string(),
+            forward_path: vec![PathHop {
+                channel: "channel-10".to_string(),
+                receiver: "osmo1skip".to_string(),
+            }],
             return_path: vec![
-                ReturnHop {
+                PathHop {
                     channel: "channel-0".to_string(),
                     receiver: "cosmos1addr".to_string(),
                 },
-                ReturnHop {
+                PathHop {
                     channel: "channel-569".to_string(),
                     receiver: "neutron1addr".to_string(),
                 },
@@ -128,7 +132,6 @@ mod contract_tests {
             osmosis_skip_contract:
                 "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
             ibc_adapter: deps.api.addr_make("ibc_adapter").to_string(),
-            osmosis_channel: "channel-10".to_string(),
             default_timeout_nanos: 1800000000000,
             max_slippage_bps: 100,
             executors: vec![],
@@ -155,7 +158,6 @@ mod contract_tests {
             osmosis_skip_contract:
                 "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
             ibc_adapter: "neutron1ibc".to_string(),
-            osmosis_channel: "channel-10".to_string(),
             default_timeout_nanos: 1800000000000,
             max_slippage_bps: 100,
             executors: vec![],
@@ -185,7 +187,6 @@ mod contract_tests {
             osmosis_skip_contract:
                 "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
             ibc_adapter: deps.api.addr_make("ibc_adapter").to_string(),
-            osmosis_channel: "channel-10".to_string(),
             default_timeout_nanos: 1800000000000,
             max_slippage_bps: 2000,
             executors: vec![],
@@ -372,7 +373,7 @@ mod contract_tests {
         };
 
         let route = UnifiedRoute {
-            venue: SwapVenue::Neutron,
+            venue: SwapVenue::NeutronAstroport,
             denom_in: "tokenA".to_string(),
             denom_out: "tokenC".to_string(),
             operations: vec![
@@ -390,6 +391,7 @@ mod contract_tests {
                 },
             ],
             swap_venue_name: "neutron-astroport".to_string(),
+            forward_path: vec![],
             return_path: vec![],
             recover_address: None,
             enabled: true,
@@ -472,12 +474,12 @@ mod contract_tests {
 
         // Query Neutron routes only
         let query_msg = QueryMsg::CustomQuery(SkipAdapterQueryMsg::AllRoutes {
-            venue: Some(SwapVenue::Neutron),
+            venue: Some(SwapVenue::NeutronAstroport),
         });
         let res = query(deps.as_ref(), env, query_msg).unwrap();
         let routes: AllRoutesResponse = cosmwasm_std::from_json(&res).unwrap();
         assert_eq!(routes.routes.len(), 1);
-        assert_eq!(routes.routes[0].1.venue, SwapVenue::Neutron);
+        assert_eq!(routes.routes[0].1.venue, SwapVenue::NeutronAstroport);
     }
 }
 
@@ -490,7 +492,7 @@ mod cross_chain_tests {
         build_osmosis_swap_ibc_adapter_msg, construct_osmosis_wasm_hook_memo, IbcAdapterExecuteMsg,
         IbcAdapterMsg,
     };
-    use crate::state::{Config, ReturnHop, SwapOperation, SwapVenue, UnifiedRoute};
+    use crate::state::{Config, PathHop, SwapOperation, SwapVenue, UnifiedRoute};
 
     #[test]
     fn test_statom_to_atom_swap_memo() {
@@ -501,7 +503,6 @@ mod cross_chain_tests {
             osmosis_skip_contract:
                 "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
             ibc_adapter: Addr::unchecked("neutron1ibc"),
-            osmosis_channel: "channel-10".to_string(),
             default_timeout_nanos: 1800000000000,
             max_slippage_bps: 100,
         };
@@ -521,13 +522,18 @@ mod cross_chain_tests {
                 interface: None,
             }],
             swap_venue_name: "osmosis-poolmanager".to_string(),
+            forward_path: vec![PathHop {
+                channel: "channel-10".to_string(),
+                receiver: "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u"
+                    .to_string(),
+            }],
             return_path: vec![
-                ReturnHop {
+                PathHop {
                     channel: "channel-0".to_string(),
                     receiver: "cosmos16482tz43umq6c034efueggp73tpnc2q6pjhm7fjz0ghrpezwqcmq32xh7j"
                         .to_string(),
                 },
-                ReturnHop {
+                PathHop {
                     channel: "channel-569".to_string(),
                     receiver: "neutron1g4ydedvm96rqt9e8smcvwsqu8twp52gkrcg3aqg22uzj75d29res7avj8l"
                         .to_string(),
@@ -610,19 +616,27 @@ mod cross_chain_tests {
     }
 
     #[test]
-    fn test_build_osmosis_swap_ibc_adapter_msg() {
+    fn test_build_osmosis_swap_ibc_adapter_msg_single_hop() {
         let coin = Coin::new(1000000u128, "untrn");
-        let recipient =
-            "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string();
-        let memo = "{\"wasm\":{}}".to_string();
+        let wasm_hook_memo = "{\"wasm\":{\"contract\":\"osmo1skip\"}}".to_string();
+        let forward_path = vec![PathHop {
+            channel: "channel-10".to_string(),
+            receiver: "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u".to_string(),
+        }];
+        let timeout_nanos = 1800000000000u64;
 
         let result = build_osmosis_swap_ibc_adapter_msg(
             "neutron1ibc".to_string(),
             coin.clone(),
-            recipient.clone(),
-            memo.clone(),
+            &forward_path,
+            wasm_hook_memo.clone(),
+            timeout_nanos,
         );
-        assert!(result.is_ok());
+        assert!(
+            result.is_ok(),
+            "Failed to build IBC adapter message: {:?}",
+            result.err()
+        );
 
         let msg = result.unwrap();
         match msg {
@@ -645,9 +659,121 @@ mod cross_chain_tests {
 
                         // Verify transfer instructions
                         assert_eq!(instructions.destination_chain, "osmosis-1");
-                        assert_eq!(instructions.recipient, recipient);
+                        assert_eq!(instructions.recipient, forward_path[0].receiver);
                         assert_eq!(instructions.timeout_seconds, None);
-                        assert_eq!(instructions.memo, Some(memo));
+
+                        // Verify memo contains PFM forward structure with wasm hook
+                        assert!(instructions.memo.is_some());
+                        let memo_value: serde_json::Value =
+                            serde_json::from_str(&instructions.memo.unwrap()).unwrap();
+
+                        // Should have forward structure
+                        assert!(memo_value.get("forward").is_some());
+                        let forward = memo_value.get("forward").unwrap();
+                        assert_eq!(
+                            forward.get("channel").unwrap().as_str().unwrap(),
+                            "channel-10"
+                        );
+                        assert_eq!(
+                            forward.get("receiver").unwrap().as_str().unwrap(),
+                            "osmo10a3k4hvk37cc4hnxctw4p95fhscd2z6h2rmx0aukc6rm8u9qqx9smfsh7u"
+                        );
+
+                        // Should have nested wasm hook
+                        assert!(forward.get("next").is_some());
+                        let wasm_next = forward.get("next").unwrap();
+                        assert!(wasm_next.get("wasm").is_some());
+                    }
+                    _ => panic!("Expected CustomAction(TransferFunds)"),
+                }
+            }
+            _ => panic!("Expected WasmMsg::Execute"),
+        }
+    }
+
+    #[test]
+    fn test_build_osmosis_swap_ibc_adapter_msg_multi_hop() {
+        // Test multi-hop forward path: Neutron -> Cosmos Hub -> Osmosis
+        let coin = Coin::new(1000000u128, "ibc/ATOM");
+        let wasm_hook_memo = "{\"wasm\":{\"contract\":\"osmo1skip\"}}".to_string();
+        let forward_path = vec![
+            PathHop {
+                channel: "channel-1".to_string(), // Neutron -> Cosmos Hub
+                receiver: "cosmos1intermediate".to_string(),
+            },
+            PathHop {
+                channel: "channel-0".to_string(), // Cosmos Hub -> Osmosis
+                receiver: "osmo1skip".to_string(),
+            },
+        ];
+        let timeout_nanos = 1800000000000u64;
+
+        let result = build_osmosis_swap_ibc_adapter_msg(
+            "neutron1ibc".to_string(),
+            coin.clone(),
+            &forward_path,
+            wasm_hook_memo,
+            timeout_nanos,
+        );
+        assert!(
+            result.is_ok(),
+            "Failed to build multi-hop IBC adapter message: {:?}",
+            result.err()
+        );
+
+        let msg = result.unwrap();
+        match msg {
+            WasmMsg::Execute {
+                contract_addr,
+                msg: binary,
+                ..
+            } => {
+                assert_eq!(contract_addr, "neutron1ibc");
+
+                // Deserialize and verify the message content
+                let ibc_msg: IbcAdapterExecuteMsg = from_json(&binary).unwrap();
+                match ibc_msg {
+                    IbcAdapterExecuteMsg::CustomAction(IbcAdapterMsg::TransferFunds {
+                        coin: transfer_coin,
+                        instructions,
+                    }) => {
+                        // Verify coin
+                        assert_eq!(transfer_coin, coin);
+
+                        // For multi-hop, first destination should be Cosmos Hub
+                        assert_eq!(instructions.destination_chain, "cosmoshub-4");
+                        assert_eq!(instructions.recipient, "cosmos1intermediate");
+
+                        // Verify nested PFM structure
+                        assert!(instructions.memo.is_some());
+                        let memo_value: serde_json::Value =
+                            serde_json::from_str(&instructions.memo.unwrap()).unwrap();
+
+                        // First forward hop
+                        assert!(memo_value.get("forward").is_some());
+                        let first_forward = memo_value.get("forward").unwrap();
+                        assert_eq!(
+                            first_forward.get("channel").unwrap().as_str().unwrap(),
+                            "channel-1"
+                        );
+
+                        // Should have nested second hop
+                        assert!(first_forward.get("next").is_some());
+                        let second_forward =
+                            first_forward.get("next").unwrap().get("forward").unwrap();
+                        assert_eq!(
+                            second_forward.get("channel").unwrap().as_str().unwrap(),
+                            "channel-0"
+                        );
+                        assert_eq!(
+                            second_forward.get("receiver").unwrap().as_str().unwrap(),
+                            "osmo1skip"
+                        );
+
+                        // Final hop should have wasm hook
+                        assert!(second_forward.get("next").is_some());
+                        let wasm_next = second_forward.get("next").unwrap();
+                        assert!(wasm_next.get("wasm").is_some());
                     }
                     _ => panic!("Expected CustomAction(TransferFunds)"),
                 }

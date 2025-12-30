@@ -5,7 +5,7 @@
 */
 
 export type Binary = string;
-export type SwapVenue = "neutron" | "osmosis";
+export type SwapVenue = "neutron_astroport" | "osmosis";
 export interface InstantiateMsg {
   admins: string[];
   default_timeout_nanos: number;
@@ -15,28 +15,28 @@ export interface InstantiateMsg {
   initial_routes: [string, UnifiedRoute][];
   max_slippage_bps: number;
   neutron_skip_contract: string;
-  osmosis_channel: string;
   osmosis_skip_contract: string;
 }
 export interface UnifiedRoute {
   denom_in: string;
   denom_out: string;
   enabled: boolean;
+  forward_path: PathHop[];
   operations: SwapOperation[];
   recover_address?: string | null;
-  return_path: ReturnHop[];
+  return_path: PathHop[];
   swap_venue_name: string;
   venue: SwapVenue;
+}
+export interface PathHop {
+  channel: string;
+  receiver: string;
 }
 export interface SwapOperation {
   denom_in: string;
   denom_out: string;
   interface?: Binary | null;
   pool: string;
-}
-export interface ReturnHop {
-  channel: string;
-  receiver: string;
 }
 export type ExecuteMsg = {
   standard_action: AdapterInterfaceMsg;
@@ -97,7 +97,6 @@ export type SkipAdapterMsg = {
     ibc_adapter?: string | null;
     max_slippage_bps?: number | null;
     neutron_skip_contract?: string | null;
-    osmosis_channel?: string | null;
     osmosis_skip_contract?: string | null;
   };
 };
@@ -149,8 +148,6 @@ export type AdapterInterfaceQueryMsg = {
   };
 };
 export type SkipAdapterQueryMsg = {
-  config: {};
-} | {
   route: {
     route_id: string;
   };

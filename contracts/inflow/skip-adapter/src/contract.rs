@@ -15,7 +15,7 @@ use crate::msg::{
     RegisteredDepositorsResponse, RouteResponse, SkipAdapterMsg, SkipAdapterQueryMsg,
     SkipConfigResponse, SwapParams, TimeEstimateResponse,
 };
-use crate::skip::create_swap_and_action_msg;
+use crate::skip::create_local_swap_and_action_msg;
 use crate::state::{
     Config, Depositor, SwapVenue, UnifiedRoute, ADMINS, CONFIG, EXECUTORS, ROUTES,
     WHITELISTED_DEPOSITORS,
@@ -82,7 +82,6 @@ pub fn instantiate(
         neutron_skip_contract,
         osmosis_skip_contract: msg.osmosis_skip_contract,
         ibc_adapter,
-        osmosis_channel: msg.osmosis_channel,
         default_timeout_nanos: msg.default_timeout_nanos,
         max_slippage_bps: msg.max_slippage_bps,
     };
@@ -95,7 +94,7 @@ pub fn instantiate(
     }
 
     // Register initial depositors
-    for depositor_addr_str in msg.initial_depositors {
+    for depositor_addr_str in msg.initial_depositors.clone() {
         let depositor_addr = deps.api.addr_validate(&depositor_addr_str)?;
 
         // Check for duplicate
@@ -112,7 +111,10 @@ pub fn instantiate(
     Ok(Response::new()
         .add_attribute("action", "instantiate")
         .add_attribute("contract", CONTRACT_NAME)
-        .add_attribute("version", CONTRACT_VERSION))
+        .add_attribute("version", CONTRACT_VERSION)
+        .add_attribute("num_admins", admins.len().to_string())
+        .add_attribute("num_executors", executors.len().to_string())
+        .add_attribute("num_depositors", msg.initial_depositors.len().to_string()))
 }
 
 // ========== EXECUTE ==========
@@ -199,7 +201,6 @@ fn dispatch_execute_custom(
             neutron_skip_contract,
             osmosis_skip_contract,
             ibc_adapter,
-            osmosis_channel,
             default_timeout_nanos,
             max_slippage_bps,
         } => {
@@ -209,7 +210,6 @@ fn dispatch_execute_custom(
                 neutron_skip_contract,
                 osmosis_skip_contract,
                 ibc_adapter,
-                osmosis_channel,
                 default_timeout_nanos,
                 max_slippage_bps,
             )
@@ -282,7 +282,7 @@ fn execute_withdraw(
     Ok(Response::new()
         .add_message(send_msg)
         .add_attribute("action", "withdraw")
-        .add_attribute("depositor", info.sender)
+        .add_attribute("withdrawer", info.sender)
         .add_attribute("amount", coin.amount)
         .add_attribute("denom", coin.denom))
 }
@@ -314,48 +314,53 @@ fn execute_swap(
     // 4. Load config
     let config = CONFIG.load(deps.storage)?;
 
-    // 5. Query adapter's balance (funds already deposited via Deposit)
-    let balance = deps
-        .querier
-        .query_balance(env.contract.address.clone(), route.denom_in.clone())?;
-
-    // 6. Verify adapter has sufficient balance
-    if balance.amount < params.amount_in {
-        return Err(ContractError::InsufficientBalance {});
-    }
-
-    // 7. Build coin from adapter's balance
+    // 5. Build coin from input parameters
     let coin_in = Coin {
         denom: route.denom_in.clone(),
         amount: params.amount_in,
     };
 
-    // 8. Dispatch based on venue
+    // 6. Dispatch based on venue (balance verification happens within each function)
     match route.venue {
-        SwapVenue::Neutron => execute_neutron_swap(env, &config, &route, &coin_in, &params),
-        SwapVenue::Osmosis => execute_osmosis_swap(env, &config, &route, &coin_in, &params),
+        SwapVenue::NeutronAstroport => {
+            execute_local_swap(deps, env, &config, &route, &coin_in, &params)
+        }
+        SwapVenue::Osmosis => execute_osmosis_swap(deps, env, &config, &route, &coin_in, &params),
     }
 }
 
-fn execute_neutron_swap(
+fn execute_local_swap(
+    deps: DepsMut<NeutronQuery>,
     env: Env,
     config: &Config,
     route: &UnifiedRoute,
     coin_in: &Coin,
     params: &SwapParams,
 ) -> Result<Response<NeutronMsg>, ContractError> {
+    // Verify skip-adapter has sufficient balance (funds already deposited via Deposit)
+    let balance = deps
+        .querier
+        .query_balance(env.contract.address.clone(), coin_in.denom.clone())?;
+
+    if balance.amount < coin_in.amount {
+        return Err(ContractError::InsufficientBalance {});
+    }
+
     // Calculate timeout
     let timeout = env.block.time.nanos() + config.default_timeout_nanos;
 
     // Build Skip message using stored operations from route
     // Transfer output back to this adapter contract
-    let swap_msg = create_swap_and_action_msg(
+    let min_coin_out = Coin {
+        denom: route.denom_out.clone(),
+        amount: params.min_amount_out,
+    };
+    let swap_msg = create_local_swap_and_action_msg(
         config.neutron_skip_contract.clone(),
         coin_in.clone(),
+        min_coin_out,
         route.operations.clone(),
         route.swap_venue_name.clone(),
-        route.denom_out.clone(),
-        params.min_amount_out,
         env.contract.address.to_string(), // Return funds to adapter
         timeout,
     )?;
@@ -369,21 +374,36 @@ fn execute_neutron_swap(
 }
 
 fn execute_osmosis_swap(
+    deps: DepsMut<NeutronQuery>,
     env: Env,
     config: &Config,
     route: &UnifiedRoute,
     coin_in: &Coin,
     params: &SwapParams,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    // Build wasm hook memo (Skip swap message)
-    let memo = construct_osmosis_wasm_hook_memo(config, route, &params.min_amount_out, &env)?;
+    // Verify IBC adapter has sufficient balance (funds already deposited via Deposit)
+    let balance = deps
+        .querier
+        .query_balance(config.ibc_adapter.clone(), coin_in.denom.clone())?;
 
-    // Build typed IBC adapter message
+    if balance.amount < coin_in.amount {
+        return Err(ContractError::InsufficientBalance {});
+    }
+
+    // Build wasm hook memo (Skip swap message)
+    let wasm_hook_memo =
+        construct_osmosis_wasm_hook_memo(config, route, &params.min_amount_out, &env)?;
+
+    // Calculate timeout for PFM messages
+    let timeout_nanos = env.block.time.nanos() + config.default_timeout_nanos;
+
+    // Build typed IBC adapter message using route's forward_path
     let ibc_adapter_msg = build_osmosis_swap_ibc_adapter_msg(
         config.ibc_adapter.to_string(),
         coin_in.clone(),
-        config.osmosis_skip_contract.clone(),
-        memo,
+        &route.forward_path,
+        wasm_hook_memo,
+        timeout_nanos,
     )?;
 
     Ok(Response::new()
@@ -566,7 +586,6 @@ fn execute_update_config(
     neutron_skip_contract: Option<String>,
     osmosis_skip_contract: Option<String>,
     ibc_adapter: Option<String>,
-    osmosis_channel: Option<String>,
     default_timeout_nanos: Option<u64>,
     max_slippage_bps: Option<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
@@ -582,10 +601,6 @@ fn execute_update_config(
 
     if let Some(addr) = ibc_adapter {
         config.ibc_adapter = deps.api.addr_validate(&addr)?;
-    }
-
-    if let Some(channel) = osmosis_channel {
-        config.osmosis_channel = channel;
     }
 
     if let Some(timeout) = default_timeout_nanos {
@@ -623,22 +638,20 @@ fn dispatch_query_standard(
     msg: AdapterInterfaceQueryMsg,
 ) -> StdResult<Binary> {
     match msg {
-        AdapterInterfaceQueryMsg::Config {} => to_json_binary(&query_adapter_config(deps)?),
+        AdapterInterfaceQueryMsg::Config {} => to_json_binary(&query_config(deps)?),
         AdapterInterfaceQueryMsg::AvailableForDeposit {
-            depositor_address: _,
+            depositor_address,
             denom: _,
-        } => to_json_binary(&AvailableAmountResponse {
-            amount: Uint128::MAX, // No deposit cap
-        }),
+        } => to_json_binary(&query_available_for_deposit(deps, depositor_address)?),
         AdapterInterfaceQueryMsg::AvailableForWithdraw {
-            depositor_address: _,
+            depositor_address,
             denom,
-        } => {
-            let balance = deps.querier.query_balance(env.contract.address, denom)?;
-            to_json_binary(&AvailableAmountResponse {
-                amount: balance.amount,
-            })
-        }
+        } => to_json_binary(&query_available_for_withdraw(
+            deps,
+            env,
+            depositor_address,
+            denom,
+        )?),
         AdapterInterfaceQueryMsg::TimeToWithdraw {
             depositor_address: _,
             coin: _,
@@ -666,7 +679,6 @@ fn dispatch_query_standard(
 
 fn dispatch_query_custom(deps: Deps<NeutronQuery>, msg: SkipAdapterQueryMsg) -> StdResult<Binary> {
     match msg {
-        SkipAdapterQueryMsg::Config {} => to_json_binary(&query_skip_config(deps)?),
         SkipAdapterQueryMsg::Route { route_id } => {
             to_json_binary(&query_route_config(deps, route_id)?)
         }
@@ -679,17 +691,7 @@ fn dispatch_query_custom(deps: Deps<NeutronQuery>, msg: SkipAdapterQueryMsg) -> 
 
 // ========== QUERY HANDLERS ==========
 
-fn query_adapter_config(deps: Deps<NeutronQuery>) -> StdResult<Binary> {
-    let config = CONFIG.load(deps.storage)?;
-    let admins = ADMINS.load(deps.storage)?;
-
-    to_json_binary(&serde_json::json!({
-        "skip_contract": config.neutron_skip_contract.to_string(),
-        "admins": admins.iter().map(|a| a.to_string()).collect::<Vec<_>>(),
-    }))
-}
-
-fn query_skip_config(deps: Deps<NeutronQuery>) -> StdResult<SkipConfigResponse> {
+fn query_config(deps: Deps<NeutronQuery>) -> StdResult<SkipConfigResponse> {
     let config = CONFIG.load(deps.storage)?;
     let admins = ADMINS.load(deps.storage)?;
 
@@ -698,7 +700,6 @@ fn query_skip_config(deps: Deps<NeutronQuery>) -> StdResult<SkipConfigResponse> 
         neutron_skip_contract: config.neutron_skip_contract.to_string(),
         osmosis_skip_contract: config.osmosis_skip_contract,
         ibc_adapter: config.ibc_adapter.to_string(),
-        osmosis_channel: config.osmosis_channel,
         default_timeout_nanos: config.default_timeout_nanos,
         max_slippage_bps: config.max_slippage_bps,
     })
@@ -761,4 +762,44 @@ fn query_registered_depositors(
     Ok(RegisteredDepositorsResponse {
         depositors: depositors?,
     })
+}
+
+fn query_available_for_deposit(
+    deps: Deps<NeutronQuery>,
+    depositor_address: String,
+) -> StdResult<AvailableAmountResponse> {
+    let depositor_addr = deps.api.addr_validate(&depositor_address)?;
+
+    // Check if depositor is registered and enabled
+    let depositor = WHITELISTED_DEPOSITORS.may_load(deps.storage, depositor_addr)?;
+
+    let amount = match depositor {
+        Some(d) if d.enabled => Uint128::MAX, // No deposit cap if enabled
+        _ => Uint128::zero(),                 // Not registered or not enabled
+    };
+
+    Ok(AvailableAmountResponse { amount })
+}
+
+fn query_available_for_withdraw(
+    deps: Deps<NeutronQuery>,
+    env: Env,
+    depositor_address: String,
+    denom: String,
+) -> StdResult<AvailableAmountResponse> {
+    let depositor_addr = deps.api.addr_validate(&depositor_address)?;
+
+    // Check if depositor is registered and enabled
+    let depositor = WHITELISTED_DEPOSITORS.may_load(deps.storage, depositor_addr)?;
+
+    let amount = match depositor {
+        Some(d) if d.enabled => {
+            // Query contract balance if depositor is enabled
+            let balance = deps.querier.query_balance(env.contract.address, denom)?;
+            balance.amount
+        }
+        _ => Uint128::zero(), // Not registered or not enabled
+    };
+
+    Ok(AvailableAmountResponse { amount })
 }

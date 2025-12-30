@@ -1,7 +1,7 @@
 use cosmwasm_std::{to_json_binary, Coin, Env, StdResult, Uint128, WasmMsg};
 use serde_json::json;
 
-use crate::state::{Config, UnifiedRoute};
+use crate::state::{Config, PathHop, UnifiedRoute};
 
 // Re-export IBC adapter types for use in tests and external contracts
 pub use ibc_adapter::msg::{ExecuteMsg as IbcAdapterExecuteMsg, IbcAdapterMsg};
@@ -13,20 +13,46 @@ const OSMOSIS_CHAIN_ID: &str = "osmosis-1";
 // Public Functions
 // ============================================================================
 
-/// Build typed IBC adapter message for Osmosis swap
+/// Build typed IBC adapter message for Osmosis swap with forward path
 pub fn build_osmosis_swap_ibc_adapter_msg(
     ibc_adapter_addr: String,
     coin: Coin,
-    osmosis_recipient: String,
-    memo: String,
+    forward_path: &[PathHop],
+    wasm_hook_memo: String,
+    timeout_nanos: u64,
 ) -> StdResult<WasmMsg> {
+    if forward_path.is_empty() {
+        return Err(cosmwasm_std::StdError::generic_err(
+            "Forward path cannot be empty for Osmosis swaps",
+        ));
+    }
+
+    // Build the nested PFM forward memo with the wasm hook as the final payload
+    let pfm_memo =
+        build_pfm_forward_memo_with_payload(forward_path, &wasm_hook_memo, timeout_nanos)?;
+
+    // The first hop from Neutron
+    // Determine the target chain based on the number of hops
+    let (target_chain, recipient) = if forward_path.len() == 1 {
+        // Direct to Osmosis
+        (
+            OSMOSIS_CHAIN_ID.to_string(),
+            forward_path[0].receiver.clone(),
+        )
+    } else {
+        // Multi-hop: first hop is to an intermediate chain
+        // We need to derive the chain_id from context or use a default
+        // For now, we'll assume the first hop is always to Cosmos Hub for multi-hop paths
+        ("cosmoshub-4".to_string(), forward_path[0].receiver.clone())
+    };
+
     let msg = IbcAdapterExecuteMsg::CustomAction(IbcAdapterMsg::TransferFunds {
         coin: coin.clone(),
         instructions: TransferFundsInstructions {
-            destination_chain: OSMOSIS_CHAIN_ID.to_string(),
-            recipient: osmosis_recipient,
+            destination_chain: target_chain,
+            recipient,
             timeout_seconds: None, // Use IBC adapter's default
-            memo: Some(memo),
+            memo: Some(pfm_memo),
         },
     });
 
@@ -98,7 +124,7 @@ pub fn construct_osmosis_wasm_hook_memo(
 fn build_ibc_return_action(route: &UnifiedRoute, timeout: u64) -> StdResult<serde_json::Value> {
     if route.return_path.is_empty() {
         return Err(cosmwasm_std::StdError::generic_err(
-            "Osmosis route must have return path",
+            "Cross chain route must have return path",
         ));
     }
 
@@ -123,11 +149,11 @@ fn build_ibc_return_action(route: &UnifiedRoute, timeout: u64) -> StdResult<serd
     }))
 }
 
-/// Build nested PFM forward memo for multi-hop return
-fn build_pfm_forward_memo(
-    remaining_hops: &[crate::state::ReturnHop],
-    timeout: u64,
-) -> StdResult<String> {
+/// Build nested PFM forward memo for multi-hop paths (both forward and return)
+///
+/// This recursively builds nested PFM forward messages. For the final hop, you can optionally
+/// provide a payload (e.g., wasm hook for forward path, or empty string for return path).
+fn build_pfm_forward_memo(remaining_hops: &[PathHop], timeout: u64) -> StdResult<String> {
     if remaining_hops.is_empty() {
         return Ok("".to_string());
     }
@@ -159,4 +185,53 @@ fn build_pfm_forward_memo(
     }
 
     serde_json::to_string(&forward).map_err(|e| cosmwasm_std::StdError::generic_err(e.to_string()))
+}
+
+/// Build nested PFM forward memo with a final payload (e.g., wasm hook)
+/// Used for forward paths where the final destination needs a wasm execution
+fn build_pfm_forward_memo_with_payload(
+    path_hops: &[PathHop],
+    final_payload: &str,
+    timeout: u64,
+) -> StdResult<String> {
+    if path_hops.is_empty() {
+        return Err(cosmwasm_std::StdError::generic_err("Path cannot be empty"));
+    }
+
+    // Parse the payload as JSON
+    let payload_json: serde_json::Value = serde_json::from_str(final_payload)
+        .map_err(|e| cosmwasm_std::StdError::generic_err(format!("Invalid payload JSON: {}", e)))?;
+
+    // Build from the end backwards to build nested structure
+    let last_idx = path_hops.len() - 1;
+
+    // Start with the final hop that contains the payload
+    let mut current_memo = json!({
+        "forward": {
+            "channel": path_hops[last_idx].channel,
+            "port": "transfer",
+            "receiver": path_hops[last_idx].receiver,
+            "retries": 2,
+            "timeout": timeout.to_string(),
+            "next": payload_json
+        }
+    });
+
+    // Build backwards from second-to-last hop to first
+    for i in (0..last_idx).rev() {
+        let hop = &path_hops[i];
+        current_memo = json!({
+            "forward": {
+                "channel": hop.channel,
+                "port": "transfer",
+                "receiver": hop.receiver,
+                "retries": 2,
+                "timeout": timeout.to_string(),
+                "next": current_memo
+            }
+        });
+    }
+
+    serde_json::to_string(&current_memo)
+        .map_err(|e| cosmwasm_std::StdError::generic_err(e.to_string()))
 }

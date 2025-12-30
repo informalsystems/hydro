@@ -16,7 +16,6 @@
       "initial_routes",
       "max_slippage_bps",
       "neutron_skip_contract",
-      "osmosis_channel",
       "osmosis_skip_contract"
     ],
     "properties": {
@@ -78,10 +77,6 @@
         "description": "Skip contract address on Neutron",
         "type": "string"
       },
-      "osmosis_channel": {
-        "description": "IBC channel from Neutron to Osmosis",
-        "type": "string"
-      },
       "osmosis_skip_contract": {
         "description": "Skip contract address on Osmosis",
         "type": "string"
@@ -93,8 +88,8 @@
         "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
         "type": "string"
       },
-      "ReturnHop": {
-        "description": "A single hop in the return path from swap venue back to Neutron Used for Osmosis routes with multi-chain return (e.g., Osmosis → Secret → Neutron)",
+      "PathHop": {
+        "description": "A single hop in an IBC path (used for both forward and return paths) Used for multi-chain transfers (e.g., Neutron → Cosmos → Osmosis or Osmosis → Stride → Neutron)",
         "type": "object",
         "required": [
           "channel",
@@ -154,7 +149,7 @@
             "description": "Swap on Neutron (Astroport via Skip)",
             "type": "string",
             "enum": [
-              "neutron"
+              "neutron_astroport"
             ]
           },
           {
@@ -173,6 +168,7 @@
           "denom_in",
           "denom_out",
           "enabled",
+          "forward_path",
           "operations",
           "return_path",
           "swap_venue_name",
@@ -191,6 +187,13 @@
             "description": "Whether route is enabled",
             "type": "boolean"
           },
+          "forward_path": {
+            "description": "For Osmosis routes: forward path from Neutron to Osmosis Empty for Neutron routes Example: [Neutron → Cosmos Hub → Osmosis]",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/PathHop"
+            }
+          },
           "operations": {
             "description": "Swap operations (multi-hop path) Denoms are AS THEY APPEAR ON THE SWAP VENUE (Neutron or Osmosis)",
             "type": "array",
@@ -206,10 +209,10 @@
             ]
           },
           "return_path": {
-            "description": "For Osmosis routes: return path back to Neutron Empty for Neutron routes",
+            "description": "For Osmosis routes: return path back to Neutron Empty for Neutron routes Example: [Osmosis → Stride → Neutron]",
             "type": "array",
             "items": {
-              "$ref": "#/definitions/ReturnHop"
+              "$ref": "#/definitions/PathHop"
             }
           },
           "swap_venue_name": {
@@ -412,8 +415,8 @@
         },
         "additionalProperties": false
       },
-      "ReturnHop": {
-        "description": "A single hop in the return path from swap venue back to Neutron Used for Osmosis routes with multi-chain return (e.g., Osmosis → Secret → Neutron)",
+      "PathHop": {
+        "description": "A single hop in an IBC path (used for both forward and return paths) Used for multi-chain transfers (e.g., Neutron → Cosmos → Osmosis or Osmosis → Stride → Neutron)",
         "type": "object",
         "required": [
           "channel",
@@ -612,12 +615,6 @@
                       "null"
                     ]
                   },
-                  "osmosis_channel": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
                   "osmosis_skip_contract": {
                     "type": [
                       "string",
@@ -706,7 +703,7 @@
             "description": "Swap on Neutron (Astroport via Skip)",
             "type": "string",
             "enum": [
-              "neutron"
+              "neutron_astroport"
             ]
           },
           {
@@ -729,6 +726,7 @@
           "denom_in",
           "denom_out",
           "enabled",
+          "forward_path",
           "operations",
           "return_path",
           "swap_venue_name",
@@ -747,6 +745,13 @@
             "description": "Whether route is enabled",
             "type": "boolean"
           },
+          "forward_path": {
+            "description": "For Osmosis routes: forward path from Neutron to Osmosis Empty for Neutron routes Example: [Neutron → Cosmos Hub → Osmosis]",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/PathHop"
+            }
+          },
           "operations": {
             "description": "Swap operations (multi-hop path) Denoms are AS THEY APPEAR ON THE SWAP VENUE (Neutron or Osmosis)",
             "type": "array",
@@ -762,10 +767,10 @@
             ]
           },
           "return_path": {
-            "description": "For Osmosis routes: return path back to Neutron Empty for Neutron routes",
+            "description": "For Osmosis routes: return path back to Neutron Empty for Neutron routes Example: [Osmosis → Stride → Neutron]",
             "type": "array",
             "items": {
-              "$ref": "#/definitions/ReturnHop"
+              "$ref": "#/definitions/PathHop"
             }
           },
           "swap_venue_name": {
@@ -1019,20 +1024,6 @@
         "description": "Skip adapter-specific query messages",
         "oneOf": [
           {
-            "description": "Get contract configuration",
-            "type": "object",
-            "required": [
-              "config"
-            ],
-            "properties": {
-              "config": {
-                "type": "object",
-                "additionalProperties": false
-              }
-            },
-            "additionalProperties": false
-          },
-          {
             "description": "Get a specific route by ID",
             "type": "object",
             "required": [
@@ -1103,7 +1094,7 @@
             "description": "Swap on Neutron (Astroport via Skip)",
             "type": "string",
             "enum": [
-              "neutron"
+              "neutron_astroport"
             ]
           },
           {

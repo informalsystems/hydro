@@ -28,8 +28,6 @@ pub struct InstantiateMsg {
     pub osmosis_skip_contract: String,
     /// IBC adapter contract address on Neutron
     pub ibc_adapter: String,
-    /// IBC channel from Neutron to Osmosis
-    pub osmosis_channel: String,
     /// Default timeout in nanoseconds (e.g., 1800000000000 for 30 minutes)
     pub default_timeout_nanos: u64,
     /// Maximum allowed slippage in basis points (e.g., 100 = 1%)
@@ -108,7 +106,6 @@ pub enum SkipAdapterMsg {
         neutron_skip_contract: Option<String>,
         osmosis_skip_contract: Option<String>,
         ibc_adapter: Option<String>,
-        osmosis_channel: Option<String>,
         default_timeout_nanos: Option<u64>,
         max_slippage_bps: Option<u64>,
     },
@@ -134,10 +131,6 @@ pub enum QueryMsg {
 #[cw_serde]
 #[derive(QueryResponses)]
 pub enum SkipAdapterQueryMsg {
-    /// Get contract configuration
-    #[returns(SkipConfigResponse)]
-    Config {},
-
     /// Get a specific route by ID
     #[returns(RouteResponse)]
     Route { route_id: String },
@@ -161,7 +154,6 @@ pub struct SkipConfigResponse {
     pub neutron_skip_contract: String,
     pub osmosis_skip_contract: String,
     pub ibc_adapter: String,
-    pub osmosis_channel: String,
     pub default_timeout_nanos: u64,
     pub max_slippage_bps: u64,
 }

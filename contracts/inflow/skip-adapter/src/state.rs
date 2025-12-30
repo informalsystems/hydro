@@ -15,8 +15,6 @@ pub struct Config {
     pub osmosis_skip_contract: String,
     /// IBC adapter contract address on Neutron
     pub ibc_adapter: Addr,
-    /// IBC channel from Neutron to Osmosis (for sending tokens)
-    pub osmosis_channel: String,
     /// Default timeout in nanoseconds (e.g., 1800000000000 = 30 min)
     pub default_timeout_nanos: u64,
     /// Maximum slippage in basis points (e.g., 100 = 1%)
@@ -31,7 +29,7 @@ pub struct Config {
 #[cw_serde]
 pub enum SwapVenue {
     /// Swap on Neutron (Astroport via Skip)
-    Neutron,
+    NeutronAstroport,
     /// Swap on Osmosis (via PFM + wasm hook)
     Osmosis,
 }
@@ -51,10 +49,10 @@ pub struct SwapOperation {
     pub interface: Option<Binary>,
 }
 
-/// A single hop in the return path from swap venue back to Neutron
-/// Used for Osmosis routes with multi-chain return (e.g., Osmosis → Secret → Neutron)
+/// A single hop in an IBC path (used for both forward and return paths)
+/// Used for multi-chain transfers (e.g., Neutron → Cosmos → Osmosis or Osmosis → Stride → Neutron)
 #[cw_serde]
-pub struct ReturnHop {
+pub struct PathHop {
     /// IBC channel to use for this hop
     pub channel: String,
     /// Receiver address on the next chain (intermediary or final)
@@ -80,9 +78,15 @@ pub struct UnifiedRoute {
     /// Swap venue name (e.g., "neutron-astroport", "osmosis-poolmanager")
     pub swap_venue_name: String,
 
+    /// For Osmosis routes: forward path from Neutron to Osmosis
+    /// Empty for Neutron routes
+    /// Example: [Neutron → Cosmos Hub → Osmosis]
+    pub forward_path: Vec<PathHop>,
+
     /// For Osmosis routes: return path back to Neutron
     /// Empty for Neutron routes
-    pub return_path: Vec<ReturnHop>,
+    /// Example: [Osmosis → Stride → Neutron]
+    pub return_path: Vec<PathHop>,
 
     /// Recovery address on the swap venue (for Osmosis: osmo1..., for Neutron: not needed)
     pub recover_address: Option<String>,

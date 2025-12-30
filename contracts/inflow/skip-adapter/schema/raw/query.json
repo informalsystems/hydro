@@ -232,20 +232,6 @@
       "description": "Skip adapter-specific query messages",
       "oneOf": [
         {
-          "description": "Get contract configuration",
-          "type": "object",
-          "required": [
-            "config"
-          ],
-          "properties": {
-            "config": {
-              "type": "object",
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        },
-        {
           "description": "Get a specific route by ID",
           "type": "object",
           "required": [
@@ -316,7 +302,7 @@
           "description": "Swap on Neutron (Astroport via Skip)",
           "type": "string",
           "enum": [
-            "neutron"
+            "neutron_astroport"
           ]
         },
         {

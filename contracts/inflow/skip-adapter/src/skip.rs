@@ -62,14 +62,12 @@ pub struct Affiliate {
 }
 
 /// Helper function to create Skip SwapAndAction message for Neutron swaps
-#[allow(clippy::too_many_arguments)]
-pub fn create_swap_and_action_msg(
+pub fn create_local_swap_and_action_msg(
     skip_contract: Addr,
     coin_in: Coin,
+    min_coin_out: Coin,
     operations: Vec<SwapOperation>,
     swap_venue_name: String,
-    min_denom_out: String,
-    min_amount_out: Uint128,
     recipient: String,
     timeout_timestamp: u64,
 ) -> StdResult<WasmMsg> {
@@ -78,10 +76,7 @@ pub fn create_swap_and_action_msg(
             operations,
             swap_venue_name,
         }),
-        min_asset: SkipAsset::Native(Coin {
-            denom: min_denom_out,
-            amount: min_amount_out,
-        }),
+        min_asset: SkipAsset::Native(min_coin_out),
         post_swap_action: SkipAction::Transfer {
             to_address: recipient,
         },
