@@ -319,11 +319,23 @@ fn execute_swap(
         amount: params.amount_in,
     };
 
+    // 6. Verify skip-adapter has sufficient balance
+    let balance = deps
+        .querier
+        .query_balance(env.contract.address.clone(), coin_in.denom.clone())?;
+
+    if balance.amount < coin_in.amount {
+        return Err(ContractError::InsufficientBalance {});
+    }
+
+    // 7. Calculate timeout
+    let timeout_nanos = env.block.time.nanos() + config.default_timeout_nanos;
+
     // 6. Dispatch based on venue type (balance verification happens within each function)
     if route.venue.is_local() {
-        execute_local_swap(deps, env, &config, &route, &coin_in, &params)
+        execute_local_swap(deps, env, &config, &route, &coin_in, &params, timeout_nanos)
     } else {
-        execute_cross_chain_swap(deps, env, &config, &route, &coin_in, &params)
+        execute_cross_chain_swap(env, &config, &route, &coin_in, &params, timeout_nanos)
     }
 }
 
@@ -334,19 +346,8 @@ fn execute_local_swap(
     route: &UnifiedRoute,
     coin_in: &Coin,
     params: &SwapParams,
+    timeout_nanos: u64,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    // Verify skip-adapter has sufficient balance (funds already deposited via Deposit)
-    let balance = deps
-        .querier
-        .query_balance(env.contract.address.clone(), coin_in.denom.clone())?;
-
-    if balance.amount < coin_in.amount {
-        return Err(ContractError::InsufficientBalance {});
-    }
-
-    // Calculate timeout
-    let timeout = env.block.time.nanos() + config.default_timeout_nanos;
-
     // Get Skip contract for this venue
     let skip_contract_str = config.get_skip_contract(&route.swap_venue_name)?;
     let skip_contract = deps.api.addr_validate(skip_contract_str)?;
@@ -364,7 +365,7 @@ fn execute_local_swap(
         route.operations.clone(),
         route.swap_venue_name.clone(),
         env.contract.address.to_string(), // Return funds to adapter
-        timeout,
+        timeout_nanos,
     )?;
 
     Ok(Response::new()
@@ -376,28 +377,16 @@ fn execute_local_swap(
 }
 
 fn execute_cross_chain_swap(
-    deps: DepsMut<NeutronQuery>,
     env: Env,
     config: &Config,
     route: &UnifiedRoute,
     coin_in: &Coin,
     params: &SwapParams,
+    timeout_nanos: u64,
 ) -> Result<Response<NeutronMsg>, ContractError> {
-    // Verify IBC adapter has sufficient balance (funds already deposited via Deposit)
-    let balance = deps
-        .querier
-        .query_balance(config.ibc_adapter.clone(), coin_in.denom.clone())?;
-
-    if balance.amount < coin_in.amount {
-        return Err(ContractError::InsufficientBalance {});
-    }
-
     // Build wasm hook memo (Skip swap message)
     let wasm_hook_memo =
         construct_cross_chain_wasm_hook_memo(config, route, &params.min_amount_out, &env)?;
-
-    // Calculate timeout for PFM messages
-    let timeout_nanos = env.block.time.nanos() + config.default_timeout_nanos;
 
     // Build typed IBC adapter message using route's forward_path
     let ibc_adapter_msg = build_cross_chain_swap_ibc_adapter_msg(
@@ -408,8 +397,15 @@ fn execute_cross_chain_swap(
         timeout_nanos,
     )?;
 
+    // Send funds from Skip adapter to IBC adapter via bank send
+    let bank_send_msg = BankMsg::Send {
+        to_address: config.ibc_adapter.to_string(),
+        amount: vec![coin_in.clone()],
+    };
+
     Ok(Response::new()
-        .add_message(ibc_adapter_msg)
+        .add_message(bank_send_msg) // First: send funds to IBC adapter
+        .add_message(ibc_adapter_msg) // Second: call TransferFunds
         .add_attribute("action", "swap")
         .add_attribute("venue", "cross_chain")
         .add_attribute("swap_venue_name", &route.swap_venue_name)

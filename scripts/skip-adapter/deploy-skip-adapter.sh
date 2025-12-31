@@ -499,8 +499,9 @@ main() {
     echo ""
     echo "Routes to register:"
     echo "  1. osmosis-atom-statom: ATOM → stATOM via Osmosis (Neutron → Cosmos Hub → Osmosis, return via Stride)"
-    echo "  2. osmosis-atom-datom:  ATOM → dATOM via Osmosis (Neutron → Cosmos Hub → Osmosis, direct return)"
-    echo "  3. neutron-atom-datom:  ATOM → dATOM on Neutron (local swap)"
+    echo "  2. osmosis-statom-atom: stATOM → ATOM via Osmosis (Neutron → Stride → Osmosis, return via Cosmos Hub)"
+    echo "  3. osmosis-atom-datom:  ATOM → dATOM via Osmosis (Neutron → Cosmos Hub → Osmosis, direct return)"
+    echo "  4. neutron-atom-datom:  ATOM → dATOM on Neutron (local swap)"
     echo ""
 
     read -p "Register routes now? (y/n): " -n 1 -r
@@ -554,8 +555,8 @@ main
 # Use these JSON queries to verify deployment and test the contract.
 # Replace contract addresses and amounts as needed.
 #
-# SKIP_ADAPTER=neutron1v4wcvnfue7frmyd8z07evurq78jlyxdgc89cfj0mee9fyss6cr9s4xtnx0
-# IBC_ADAPTER=neutron1acch5vl9r07dfhnz8rg6q7puz54chca6gphe99f8uqdx7gsp34askzg9ku
+# SKIP_ADAPTER=neutron1rq9w6v4sdc8e4nusycata77ad7zl3acxxna9jrw7wunezq9ltppqx4mfy9
+# IBC_ADAPTER=neutron1q9ma567k5z0wezwtwq69a385dnzug7qe3n3nr2gsma7es8rrjvmsem7lvr
 # ADMIN=neutron134xnhryf2v2qkvp9ahnxtgqmq83hc868yeh0sl
 # ATOM_DENOM=ibc/C4CFF46FD6DE35CA4CF4CE031E643C8FDC9BA4B99AE598E9B0ED98FE3A2319F9
 # DATOM_DENOM=factory/neutron1k6hr0f83e7un2wjf29cspk7j69jrnskk65k3ek2nj9dztrlzpj6q00rtsa/udatom
@@ -650,9 +651,6 @@ main
 # 27. Withdraw stATOM from Skip Adapter (adjust amount based on swap output):
 # neutrond tx wasm execute $SKIP_ADAPTER '{"standard_action":{"withdraw":{"coin":{"denom":"'$STATOM_DENOM'","amount":"950000"}}}}' --from $ADMIN --gas auto --gas-adjustment 1.3 --gas-prices 0.0053untrn --chain-id neutron-1 --node https://rpc-lb.neutron.org/ --keyring-backend test -y
 #
-# 28. Alternative: Execute cross-chain swap (ATOM -> dATOM via Osmosis, 1 ATOM with 5% slippage):
-# neutrond tx wasm execute $SKIP_ADAPTER '{"custom_action":{"execute_swap":{"params":{"route_id":"osmosis-atom-datom","amount_in":"1000000","min_amount_out":"950000"}}}}' --from $ADMIN --gas auto --gas-adjustment 1.3 --gas-prices 0.0053untrn --chain-id neutron-1 --node https://rpc-lb.neutron.org/ --keyring-backend test -y
-#
 # --- RECOMMENDED TESTING FLOW ---
 #
 # LOCAL SWAP TEST (Neutron):
@@ -670,4 +668,3 @@ main
 # 3. Execute cross-chain swap (ATOM -> stATOM via Osmosis) using command 25
 # 4. Wait for IBC transfers to complete (1-5 minutes), check with command 26
 # 5. Withdraw stATOM from Skip Adapter using command 27
-# 6. (Alternative) Test ATOM -> dATOM via Osmosis using command 28
