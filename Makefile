@@ -50,6 +50,7 @@ schema:
 	cd contracts/inflow/user-registry && cargo run --bin inflow_user_registry_schema
 	cd contracts/inflow/mars-adapter && cargo run --bin inflow_mars_adapter_schema
 	cd contracts/inflow/ibc-adapter && cargo run --bin inflow_ibc_adapter_schema
+	cd contracts/inflow/datom-adapter && cargo run --bin inflow_datom_adapter_schema
 
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/hydro/schema NAME=HydroBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/tribute/schema NAME=TributeBase
