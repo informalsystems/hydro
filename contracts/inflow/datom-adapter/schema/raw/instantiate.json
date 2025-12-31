@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "type": "object",
+  "required": [
+    "admins",
+    "atom_denom",
+    "datom_denom",
+    "drop_staking_core",
+    "drop_voucher",
+    "drop_withdrawal_manager",
+    "executors",
+    "vault_contract"
+  ],
+  "properties": {
+    "admins": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "atom_denom": {
+      "type": "string"
+    },
+    "datom_denom": {
+      "type": "string"
+    },
+    "drop_staking_core": {
+      "type": "string"
+    },
+    "drop_voucher": {
+      "type": "string"
+    },
+    "drop_withdrawal_manager": {
+      "type": "string"
+    },
+    "executors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "vault_contract": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}
