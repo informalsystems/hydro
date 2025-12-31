@@ -232,7 +232,7 @@ instantiate_ibc_adapter() {
     printf "Instantiating IBC Adapter"
     $NEUTRON_CLI tx wasm instantiate "$IBC_ADAPTER_CODE_ID" "$INIT_MSG" \
         --from "$DEPLOYER_WALLET" \
-        --label "Skip Adapter IBC Adapter" \
+        --label "Inflow IBC Adapter" \
         --admin "$ADMIN_ADDRESS" \
         $NEUTRON_TX_FLAGS \
         --output json &> ./instantiate_ibc_adapter_res.json
@@ -283,7 +283,7 @@ instantiate_skip_adapter() {
     printf "Instantiating Skip Adapter"
     $NEUTRON_CLI tx wasm instantiate "$SKIP_ADAPTER_CODE_ID" "$INIT_MSG" \
         --from "$DEPLOYER_WALLET" \
-        --label "Skip Swap Adapter" \
+        --label "Inflow Skip Swap Adapter" \
         --admin "$ADMIN_ADDRESS" \
         $NEUTRON_TX_FLAGS \
         --output json &> ./instantiate_skip_adapter_res.json
@@ -639,13 +639,13 @@ main
 # neutrond tx wasm execute $IBC_ADAPTER '{"standard_action":{"deposit":{}}}' --from $ADMIN --amount 1000000$ATOM_DENOM --gas auto --gas-adjustment 1.3 --gas-prices 0.0053untrn --chain-id neutron-1 --node https://rpc-lb.neutron.org/ --keyring-backend test -y
 #
 # 24. Check IBC Adapter ATOM balance:
-# neutrond query bank balances $IBC_ADAPTER --denom $ATOM_DENOM
+# neutrond query bank balance $IBC_ADAPTER $ATOM_DENOM
 #
 # 25. Execute cross-chain swap (ATOM -> stATOM via Osmosis, 1 ATOM with 5% slippage):
 # neutrond tx wasm execute $SKIP_ADAPTER '{"custom_action":{"execute_swap":{"params":{"route_id":"osmosis-atom-statom","amount_in":"1000000","min_amount_out":"950000"}}}}' --from $ADMIN --gas auto --gas-adjustment 1.3 --gas-prices 0.0053untrn --chain-id neutron-1 --node https://rpc-lb.neutron.org/ --keyring-backend test -y
 #
 # 26. Wait for IBC transfers to complete (check periodically, may take 1-5 minutes):
-# neutrond query bank balances $SKIP_ADAPTER --denom $STATOM_DENOM
+# neutrond query bank balance $SKIP_ADAPTER $STATOM_DENOM
 #
 # 27. Withdraw stATOM from Skip Adapter (adjust amount based on swap output):
 # neutrond tx wasm execute $SKIP_ADAPTER '{"standard_action":{"withdraw":{"coin":{"denom":"'$STATOM_DENOM'","amount":"950000"}}}}' --from $ADMIN --gas auto --gas-adjustment 1.3 --gas-prices 0.0053untrn --chain-id neutron-1 --node https://rpc-lb.neutron.org/ --keyring-backend test -y

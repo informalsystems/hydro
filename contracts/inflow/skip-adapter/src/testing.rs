@@ -711,10 +711,7 @@ mod cross_chain_tests {
                         // Should be the wasm hook directly (no forward wrapper for single hop)
                         assert!(memo_value.get("wasm").is_some());
                         let wasm = memo_value.get("wasm").unwrap();
-                        assert_eq!(
-                            wasm.get("contract").unwrap().as_str().unwrap(),
-                            "osmo1skip"
-                        );
+                        assert_eq!(wasm.get("contract").unwrap().as_str().unwrap(), "osmo1skip");
                     }
                     _ => panic!("Expected CustomAction(TransferFunds)"),
                 }
@@ -801,7 +798,13 @@ mod cross_chain_tests {
                         let wasm_next = forward.get("next").unwrap();
                         assert!(wasm_next.get("wasm").is_some());
                         assert_eq!(
-                            wasm_next.get("wasm").unwrap().get("contract").unwrap().as_str().unwrap(),
+                            wasm_next
+                                .get("wasm")
+                                .unwrap()
+                                .get("contract")
+                                .unwrap()
+                                .as_str()
+                                .unwrap(),
                             "osmo1skip"
                         );
                     }

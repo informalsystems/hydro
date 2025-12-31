@@ -209,7 +209,7 @@ fn build_pfm_forward_memo_with_payload(
             "port": "transfer",
             "receiver": path_hops[last_idx].receiver,
             "retries": 2,
-            "timeout": timeout.to_string(),
+            "timeout": timeout,
             "next": payload_json
         }
     });
@@ -223,7 +223,7 @@ fn build_pfm_forward_memo_with_payload(
                 "port": "transfer",
                 "receiver": hop.receiver,
                 "retries": 2,
-                "timeout": timeout.to_string(),
+                "timeout": timeout,
                 "next": current_memo
             }
         });
