@@ -2889,3 +2889,58 @@ fn verify_users_payouts_history(
         }
     }
 }
+
+#[test]
+fn control_center_pool_info_query_test() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+
+    let inflow_contract_addr = deps.api.addr_make(INFLOW);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+
+    env.contract.address = inflow_contract_addr.clone();
+
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Set up control center mock with specific pool values
+    let expected_total_pool_value = Uint128::new(1_000_000);
+    let expected_total_shares_issued = Uint128::new(800_000);
+
+    let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_control_center_mock(
+            control_center_contract_addr.clone(),
+            DEFAULT_DEPOSIT_CAP,
+            expected_total_pool_value,
+            expected_total_shares_issued,
+        ),
+        setup_token_info_provider_mock(
+            token_info_provider_contract_addr,
+            DEPOSIT_DENOM.to_string(),
+            DATOM_DEFAULT_RATIO,
+        ),
+    ]));
+
+    let querier_for_deps = wasm_querier.clone();
+    deps.querier
+        .update_wasm(move |q| querier_for_deps.handler(q));
+
+    // Query the control center pool info through the vault contract
+    let query_msg = QueryMsg::ControlCenterPoolInfo {};
+    let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(query_res.is_ok());
+
+    // Verify the response matches what we expect from the control center
+    let pool_info: interface::inflow_control_center::PoolInfoResponse =
+        from_json(query_res.unwrap()).unwrap();
+    assert_eq!(pool_info.total_pool_value, expected_total_pool_value);
+    assert_eq!(pool_info.total_shares_issued, expected_total_shares_issued);
+}
