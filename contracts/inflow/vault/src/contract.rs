@@ -998,6 +998,13 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
             &deps, address, start_from, limit, order,
         )?),
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(&deps)?),
+        QueryMsg::ControlCenterPoolInfo {} => {
+            let config = load_config(deps.storage)?;
+            to_json_binary(&get_control_center_pool_info(
+                &deps,
+                &config.control_center_contract,
+            )?)
+        }
     }
 }
 
