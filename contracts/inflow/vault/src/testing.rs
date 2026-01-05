@@ -1746,7 +1746,6 @@ fn claim_unbonded_withdrawals_test() {
         ),
     ] {
         total_pool_value -= user_withdrawal.1.u128();
-        total_shares_issued_before -= user_withdrawal.1.u128();
         total_shares_issued_after -= user_withdrawal.1.u128();
 
         execute_withdraw(
