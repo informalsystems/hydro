@@ -17,8 +17,8 @@ use interface::{
 
 use crate::{
     error::{new_generic_error, ContractError},
-    msg::{ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, ReplyPayload},
-    state::{load_config, Config, CONFIG},
+    msg::{ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, ReplyPayload, StateResponse},
+    state::{load_config, ActionState, Config, State, CONFIG, STATE},
 };
 
 const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -56,6 +56,7 @@ pub fn instantiate(
         control_centers,
     };
     CONFIG.save(deps.storage, &config)?;
+    STATE.save(deps.storage, &State::default())?;
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
@@ -70,6 +71,25 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     let config = load_config(deps.storage)?;
+
+    // Update action state
+    let action_state = match &msg {
+        ExecuteMsg::ForwardToInflow {} => ActionState::Forwarded,
+        ExecuteMsg::WithdrawReceiptTokens { address, coin } => ActionState::WithdrawReceiptTokens {
+            recipient: deps.api.addr_validate(address)?,
+            coin: coin.clone(),
+        },
+        ExecuteMsg::WithdrawFunds { address, coin } => ActionState::WithdrawFunds {
+            recipient: deps.api.addr_validate(address)?,
+            coin: coin.clone(),
+        },
+    };
+    STATE.save(
+        deps.storage,
+        &State {
+            last_action: action_state,
+        },
+    )?;
 
     match msg {
         ExecuteMsg::ForwardToInflow {} => forward_to_inflow(deps, env, &config),
@@ -255,6 +275,9 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_json_binary(&ConfigResponse {
             config: load_config(deps.storage)?,
+        }),
+        QueryMsg::State {} => to_json_binary(&StateResponse {
+            state: STATE.load(deps.storage)?,
         }),
     }
 }
