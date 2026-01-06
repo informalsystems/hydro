@@ -72,7 +72,6 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
     let config = load_config(deps.storage)?;
 
-    // Update action state
     let action_state = match &msg {
         ExecuteMsg::ForwardToInflow {} => ActionState::Forwarded,
         ExecuteMsg::WithdrawReceiptTokens { address, coin } => ActionState::WithdrawReceiptTokens {
