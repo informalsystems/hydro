@@ -48,6 +48,8 @@ jobs:
             - Test coverage
 
             Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
+            Do not give a star-rating to evaluate performance. Avoid "celebratory" emojis (rockets, partyhats, etc) and
+            use Emojis only where they help in styling e.g. a green checkbox, red cross to  designate things that are working/not working.
 
             Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
 
