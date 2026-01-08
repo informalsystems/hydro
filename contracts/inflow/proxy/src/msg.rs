@@ -1,7 +1,7 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::Coin;
 
-use crate::state::Config;
+use crate::state::{Config, State};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -22,11 +22,18 @@ pub enum ExecuteMsg {
 pub enum QueryMsg {
     #[returns(ConfigResponse)]
     Config {},
+    #[returns(StateResponse)]
+    State {},
 }
 
 #[cw_serde]
 pub struct ConfigResponse {
     pub config: Config,
+}
+
+#[cw_serde]
+pub struct StateResponse {
+    pub state: State,
 }
 
 #[cw_serde]

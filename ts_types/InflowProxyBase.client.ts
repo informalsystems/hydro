@@ -6,10 +6,11 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { InstantiateMsg, ExecuteMsg, Uint128, Coin, QueryMsg, Addr, ConfigResponse, Config } from "./InflowProxyBase.types";
+import { InstantiateMsg, ExecuteMsg, Uint128, Coin, QueryMsg, Addr, ConfigResponse, Config, ActionState, StateResponse, State } from "./InflowProxyBase.types";
 export interface InflowProxyBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
+  state: () => Promise<StateResponse>;
 }
 export class InflowProxyBaseQueryClient implements InflowProxyBaseReadOnlyInterface {
   client: CosmWasmClient;
@@ -18,10 +19,16 @@ export class InflowProxyBaseQueryClient implements InflowProxyBaseReadOnlyInterf
     this.client = client;
     this.contractAddress = contractAddress;
     this.config = this.config.bind(this);
+    this.state = this.state.bind(this);
   }
   config = async (): Promise<ConfigResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       config: {}
+    });
+  };
+  state = async (): Promise<StateResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      state: {}
     });
   };
 }

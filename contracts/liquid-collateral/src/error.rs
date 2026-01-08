@@ -78,13 +78,13 @@ pub enum ContractError {
     #[error("NotEnoughCounterpartyAmount")]
     NotEnoughCounterpartyAmount {},
 
-    #[error("BidTooSmall")]
+    #[error("BidTooSmall: min_required {min_required}, provided {provided}")]
     BidTooSmall {
         min_required: Uint128,
         provided: Uint128,
     },
 
-    #[error("RequestedAmountTooHigh")]
+    #[error("RequestedAmountTooHigh: requested {requested}, available {available}")]
     RequestedAmountTooHigh {
         requested: Uint128,
         available: Uint128,

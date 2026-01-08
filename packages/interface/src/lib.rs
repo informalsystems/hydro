@@ -1,3 +1,5 @@
+#[cfg(feature = "cosmwasm_compat")]
+pub mod compat;
 pub mod drop_core;
 pub mod drop_puppeteer;
 pub mod gatekeeper;
