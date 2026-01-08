@@ -35,10 +35,10 @@ pub fn migrate(
                     // Check if there's an active query for this validator
                     match VALIDATOR_TO_QUERY_ID
                         .may_load(deps.storage, validator_info.address.clone())
-                        .unwrap_or(None)
                     {
-                        None => Some(validator_info),
-                        Some(_) => None, // Active query exists, do not remove
+                        Ok(Some(_query_id)) => None,      // Active query exists
+                        Ok(None) => Some(validator_info), // No query, should remove
+                        Err(_) => None, // Log error but don't remove on storage errors
                     }
                 }
                 _ => None,
