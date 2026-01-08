@@ -1,4 +1,6 @@
 use cosmwasm_std::{from_json, to_json_binary, Addr, Binary, StdError, StdResult};
+#[cfg(feature = "cosmwasm_compat")]
+use interface::compat::StdErrExt;
 use interface::{
     inflow_control_center::{QueryMsg as ControlCenterQueryMsg, SubvaultsResponse},
     inflow_vault::{

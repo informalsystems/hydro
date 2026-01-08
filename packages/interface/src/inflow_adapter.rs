@@ -12,6 +12,7 @@ pub enum AdapterInterfaceMsg {
 
     /// Withdraw tokens from the protocol
     /// Only callable by whitelisted depositors
+    /// The execution MUST fail if insufficient funds are available
     Withdraw {
         /// Coin (denom + amount) to withdraw
         coin: Coin,
