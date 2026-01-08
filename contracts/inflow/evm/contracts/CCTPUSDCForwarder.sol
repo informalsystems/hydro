@@ -18,15 +18,25 @@ interface ICCTPBridge {
 contract CCTPUSDCForwarder {
     uint256 public constant MAX_BPS = 10_000; // 100% = 10000 basis points
 
+    // Address of Skip's contract used to initiate CCTP transfer
     address public immutable cctpContract;
+    // Destination domain ID accorindg to CCTP protocol: https://developers.circle.com/cctp/v1/supported-domains
     uint32 public immutable destinationDomain;
+    // Address of the USDC ERC-20 token to bridge
     address public immutable tokenToBridge;
+    // Recipient Forwarding Account address on the Noble blockchain encoded as bytes32
     bytes32 public immutable recipient;
+    // Skip's relayer address on the Noble blockchain authorized to execute the minting
     bytes32 public immutable destinationCaller;
+    // Address of the operator that can only initiate bridging transactions
     address public immutable operator;
+    // Address of the admin that can pause the contract and safeguard tokens in case of emergency
     address public immutable admin;
+    // Operational fee in basis points (bps) charged on each bridging transaction in order to cover operational costs
     uint256 public immutable operationalFeeBps;
+    // Minimum operational fee amount charged on each bridging transaction to cover operational costs
     uint256 public immutable minOperationalFee;
+    // Indicates whether the contract is paused or not
     bool public paused;
 
     using Strings for uint256;
@@ -95,19 +105,20 @@ contract CCTPUSDCForwarder {
     }
 
     // In case of emergency, admin can safeguard the tokens by sending them to a specified receiver address
-    function safeguardTokens(address receiver, uint256 amount) external onlyAdmin {
+    function safeguardTokens(address receiver, address token, uint256 amount) external onlyAdmin {
         require(receiver != address(0), "receiver is required");
+        require(token != address(0), "token is required");
         require(amount > 0, "amount must be greater than zero");
 
-        IERC20 erc20TokenToBridge = IERC20(tokenToBridge);
-        uint256 availableBalance = erc20TokenToBridge.balanceOf(address(this));
+        IERC20 erc20Token = IERC20(token);
+        uint256 availableBalance = erc20Token.balanceOf(address(this));
         require(availableBalance >= amount, "insufficient balance");
 
-        bool success = erc20TokenToBridge.transfer(receiver, amount);
+        bool success = erc20Token.transfer(receiver, amount);
         if (!success) {
             revert(string(abi.encodePacked("failed to transfer tokens to receiver: ", Strings.toHexString(receiver))));
         }
-        emit SafeguardTokens(msg.sender, receiver, tokenToBridge, amount);
+        emit SafeguardTokens(msg.sender, receiver, token, amount);
     }
 
     // Initiates bridging of USDC tokens to the destination chain via CCTP protocol.
