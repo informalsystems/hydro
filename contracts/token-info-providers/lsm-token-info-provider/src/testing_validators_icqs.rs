@@ -150,14 +150,15 @@ fn icq_results_parse_test() {
     let mock_tokens = Uint128::new(1000001000);
     let mock_shares = Uint128::new(1000001000) * TOKENS_TO_SHARES_MULTIPLIER;
     let mock_validator = get_mock_validator(VALIDATOR_1, mock_tokens, mock_shares);
+    let query_id = 1;
 
     let test_cases = vec![
         ICQResultsParseTestCase {
             description: "failed to obtain registered query".to_string(),
             expected_validator_added: None,
-            query_id: 1,
+            query_id,
             mock_data: HashMap::from([(
-                1,
+                query_id,
                 ICQMockData {
                     query_type: QueryType::KV,
                     should_query_return_error: true,
@@ -168,10 +169,10 @@ fn icq_results_parse_test() {
         },
         ICQResultsParseTestCase {
             description: "failed to obtain registered query result".to_string(),
-            query_id: 1,
+            query_id,
             expected_validator_added: None,
             mock_data: HashMap::from([(
-                1,
+                query_id,
                 ICQMockData {
                     query_type: QueryType::KV,
                     should_query_return_error: false,
@@ -183,9 +184,9 @@ fn icq_results_parse_test() {
         ICQResultsParseTestCase {
             description: "wrong interchain query type".to_string(),
             expected_validator_added: None,
-            query_id: 1,
+            query_id,
             mock_data: HashMap::from([(
-                1,
+                query_id,
                 ICQMockData {
                     query_type: QueryType::TX,
                     should_query_return_error: false,
@@ -196,10 +197,10 @@ fn icq_results_parse_test() {
         },
         ICQResultsParseTestCase {
             description: "no KV results received".to_string(),
-            query_id: 1,
+            query_id,
             expected_validator_added: None,
             mock_data: HashMap::from([(
-                1,
+                query_id,
                 ICQMockData {
                     query_type: QueryType::KV,
                     should_query_return_error: false,
@@ -212,10 +213,10 @@ fn icq_results_parse_test() {
             description:
                 "KV results with empty storage value received (address is not a validator)"
                     .to_string(),
-            query_id: 1,
+            query_id,
             expected_validator_added: None,
             mock_data: HashMap::from([(
-                1,
+                query_id,
                 ICQMockData {
                     query_type: QueryType::KV,
                     should_query_return_error: false,
@@ -230,14 +231,14 @@ fn icq_results_parse_test() {
         },
         ICQResultsParseTestCase {
             description: "happy path".to_string(),
-            query_id: 1,
+            query_id,
             expected_validator_added: Some(ValidatorInfo {
                 address: mock_validator.operator_address.clone(),
                 delegated_tokens: mock_tokens,
                 power_ratio: Decimal::one(),
             }),
             mock_data: HashMap::from([(
-                1,
+                query_id,
                 ICQMockData {
                     query_type: QueryType::KV,
                     should_query_return_error: false,
@@ -268,6 +269,14 @@ fn icq_results_parse_test() {
 
         let msg = get_default_instantiate_msg(&deps.api);
         let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
+        assert!(res.is_ok());
+
+        // Mock mapping from query ID to validator address
+        let res = QUERY_ID_TO_VALIDATOR.save(
+            deps.as_mut().storage,
+            test_case.query_id,
+            &mock_validator.operator_address,
+        );
         assert!(res.is_ok());
 
         let msg = SudoMsg::KVQueryResult {
@@ -479,6 +488,58 @@ fn icq_results_state_update_test() {
                     storage_prefix: STAKING_STORE_KEY.to_string(),
                     key: Binary::default(),
                     value: Binary::from(mock_validator1.encode_to_vec()),
+                }],
+            })]),
+        },
+        ICQResultsStoreUpdateTestCase {
+            description: "ICQ result with empty kv_results received for a validator that is currently only validator in the set- validator gets removed".to_string(),
+            query_id: 1,
+            top_n_validators: 3,
+            initial_validators: vec![ValidatorInfo {
+                address: VALIDATOR_1.to_string(),
+                delegated_tokens: Uint128::new(300000000),
+                power_ratio: Decimal::one(),
+            }],
+            expected_validators: vec![],
+            expected_token_group_ratios_changes: HashMap::from_iter([
+                (VALIDATOR_1.to_string(), TokenGroupRatioChange {
+                    token_group_id: VALIDATOR_1.to_string(),
+                    old_ratio: Decimal::one(),
+                    new_ratio: Decimal::zero(),
+                }),
+            ]),
+            mock_data: HashMap::from([(1, ICQMockData {
+                query_type: QueryType::KV,
+                should_query_return_error: false,
+                should_query_result_return_error: false,
+                kv_results: vec![],
+            })]),
+        },
+        ICQResultsStoreUpdateTestCase {
+            description: "ICQ result with 0 tokens and 0 shares received for a validator that is currently the only validator in the set- validator gets removed".to_string(),
+            query_id: 1,
+            top_n_validators: 3,
+            initial_validators: vec![ValidatorInfo {
+                address: VALIDATOR_1.to_string(),
+                delegated_tokens: Uint128::new(300000000),
+                power_ratio: Decimal::one(),
+            }],
+            expected_validators: vec![],
+            expected_token_group_ratios_changes: HashMap::from_iter([
+                (VALIDATOR_1.to_string(), TokenGroupRatioChange {
+                    token_group_id: VALIDATOR_1.to_string(),
+                    old_ratio: Decimal::one(),
+                    new_ratio: Decimal::zero(),
+                }),
+            ]),
+            mock_data: HashMap::from([(1, ICQMockData {
+                query_type: QueryType::KV,
+                should_query_return_error: false,
+                should_query_result_return_error: false,
+                kv_results: vec![StorageValue {
+                    storage_prefix: STAKING_STORE_KEY.to_string(),
+                    key: Binary::default(),
+                    value: Binary::from(get_mock_validator(VALIDATOR_1, Uint128::zero(), Uint128::zero()).encode_to_vec()),
                 }],
             })]),
         },

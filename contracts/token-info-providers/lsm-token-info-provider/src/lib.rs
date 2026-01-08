@@ -15,3 +15,6 @@ mod testing_mocks;
 
 #[cfg(test)]
 mod testing_validators_icqs;
+
+#[cfg(test)]
+mod testing_migrate;
