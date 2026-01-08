@@ -1,6 +1,6 @@
 // Tests for Mars message JSON serialization
 
-use cosmwasm_std::{to_json_string, Coin, Uint128};
+use cosmwasm_std::{Coin, Uint128};
 
 use crate::mars::{Action, ActionAmount, ActionCoin, MarsCreditManagerExecuteMsg};
 
@@ -11,7 +11,7 @@ fn test_action_json_serialization() {
         denom: "uatom".to_string(),
         amount: Uint128::new(1000),
     });
-    let json = to_json_string(&deposit).unwrap();
+    let json = cosmwasm_std::to_json_string(&deposit).unwrap();
     assert_eq!(json, r#"{"deposit":{"denom":"uatom","amount":"1000"}}"#);
 
     // Test Lend action with exact amount
@@ -19,7 +19,7 @@ fn test_action_json_serialization() {
         denom: "uatom".to_string(),
         amount: ActionAmount::Exact("1000".to_string()),
     });
-    let json = to_json_string(&lend).unwrap();
+    let json = cosmwasm_std::to_json_string(&lend).unwrap();
     assert_eq!(
         json,
         r#"{"lend":{"denom":"uatom","amount":{"exact":"1000"}}}"#
@@ -30,7 +30,7 @@ fn test_action_json_serialization() {
         denom: "uatom".to_string(),
         amount: ActionAmount::Exact("500".to_string()),
     });
-    let json = to_json_string(&reclaim).unwrap();
+    let json = cosmwasm_std::to_json_string(&reclaim).unwrap();
     assert_eq!(
         json,
         r#"{"reclaim":{"denom":"uatom","amount":{"exact":"500"}}}"#
@@ -41,7 +41,7 @@ fn test_action_json_serialization() {
         denom: "uatom".to_string(),
         amount: ActionAmount::Exact("250".to_string()),
     });
-    let json = to_json_string(&withdraw).unwrap();
+    let json = cosmwasm_std::to_json_string(&withdraw).unwrap();
     assert_eq!(
         json,
         r#"{"withdraw":{"denom":"uatom","amount":{"exact":"250"}}}"#
@@ -55,7 +55,7 @@ fn test_action_json_serialization() {
         },
         recipient: "neutron1234".to_string(),
     };
-    let json = to_json_string(&withdraw_to_wallet).unwrap();
+    let json = cosmwasm_std::to_json_string(&withdraw_to_wallet).unwrap();
     assert_eq!(
         json,
         r#"{"withdraw_to_wallet":{"coin":{"denom":"uatom","amount":{"exact":"100"}},"recipient":"neutron1234"}}"#
@@ -66,7 +66,7 @@ fn test_action_json_serialization() {
         denom: "uatom".to_string(),
         amount: ActionAmount::AccountBalance,
     });
-    let json = to_json_string(&lend_all).unwrap();
+    let json = cosmwasm_std::to_json_string(&lend_all).unwrap();
     assert_eq!(
         json,
         r#"{"lend":{"denom":"uatom","amount":"account_balance"}}"#
@@ -91,7 +91,7 @@ fn test_deposit_lend_message_serialization() {
         ],
     };
 
-    let json = to_json_string(&msg).unwrap();
+    let json = cosmwasm_std::to_json_string(&msg).unwrap();
     let expected = r#"{"update_credit_account":{"account_id":"5696","actions":[{"deposit":{"denom":"ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81","amount":"12820000000"}},{"lend":{"denom":"ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81","amount":{"exact":"12820000000"}}}]}}"#;
     assert_eq!(json, expected);
 }
@@ -114,7 +114,7 @@ fn test_reclaim_withdraw_message_serialization() {
         ],
     };
 
-    let json = to_json_string(&msg).unwrap();
+    let json = cosmwasm_std::to_json_string(&msg).unwrap();
     let expected = r#"{"update_credit_account":{"account_id":"32168","actions":[{"reclaim":{"denom":"ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2","amount":{"exact":"2500000000"}}},{"withdraw":{"denom":"ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2","amount":{"exact":"2500000000"}}}]}}"#;
     assert_eq!(json, expected);
 }
