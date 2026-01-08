@@ -1,0 +1,174 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "description": "Message for instantiating the IBC adapter contract",
+  "type": "object",
+  "required": [
+    "admins",
+    "default_timeout_seconds",
+    "initial_chains",
+    "initial_depositors",
+    "initial_executors",
+    "initial_tokens"
+  ],
+  "properties": {
+    "admins": {
+      "description": "The config admins who can update the config and manage chains/depositors/executors",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "default_timeout_seconds": {
+      "description": "Default IBC timeout in seconds",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "initial_chains": {
+      "description": "Initial chain configurations to register (can be empty array)",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ChainConfig"
+      }
+    },
+    "initial_depositors": {
+      "description": "Initial depositors to register during instantiation (can be empty array)",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/InitialDepositor"
+      }
+    },
+    "initial_executors": {
+      "description": "Initial executors who can call TransferFunds (can be empty array)",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/InitialExecutor"
+      }
+    },
+    "initial_tokens": {
+      "description": "Initial token configurations to register (can be empty array)",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/TokenConfig"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "Binary": {
+      "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
+      "type": "string"
+    },
+    "ChainConfig": {
+      "description": "Chain configuration for IBC transfers",
+      "type": "object",
+      "required": [
+        "allowed_recipients",
+        "chain_id",
+        "channel_from_neutron"
+      ],
+      "properties": {
+        "allowed_recipients": {
+          "description": "List of allowed recipient addresses on this chain Empty vector means all recipients are allowed",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "chain_id": {
+          "description": "Chain ID (e.g., \"osmosis-1\")",
+          "type": "string"
+        },
+        "channel_from_neutron": {
+          "description": "IBC channel from Neutron to this chain (e.g., \"channel-0\")",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExecutorCapabilities": {
+      "description": "Executor capabilities for the IBC adapter",
+      "type": "object",
+      "required": [
+        "can_set_memo"
+      ],
+      "properties": {
+        "can_set_memo": {
+          "description": "Whether this executor can set custom memo in IBC transfers This should be restricted to trusted contracts (e.g., skip-adapter)",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "InitialDepositor": {
+      "description": "Initial depositor configuration for instantiation",
+      "type": "object",
+      "required": [
+        "address"
+      ],
+      "properties": {
+        "address": {
+          "description": "Depositor address to register",
+          "type": "string"
+        },
+        "capabilities": {
+          "description": "Optional capabilities for this depositor (serialized as Binary) If not provided, defaults to { can_withdraw: true }",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Binary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "InitialExecutor": {
+      "description": "Initial executor configuration for instantiation",
+      "type": "object",
+      "required": [
+        "address"
+      ],
+      "properties": {
+        "address": {
+          "description": "Executor address to register",
+          "type": "string"
+        },
+        "capabilities": {
+          "description": "Optional capabilities for this executor If not provided, defaults to { can_set_memo: false }",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ExecutorCapabilities"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "TokenConfig": {
+      "description": "Token configuration",
+      "type": "object",
+      "required": [
+        "denom",
+        "source_chain_id"
+      ],
+      "properties": {
+        "denom": {
+          "description": "Token denom (e.g., IBC denom like \"ibc/27394FB...\")",
+          "type": "string"
+        },
+        "source_chain_id": {
+          "description": "Source chain ID where the token originates (e.g., \"osmosis-1\")",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

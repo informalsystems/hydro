@@ -13,14 +13,23 @@ pub struct UpdateConfigData {
 }
 
 #[cw_serde]
+pub enum DeploymentDirection {
+    Add,
+    Subtract,
+}
+
+#[cw_serde]
 pub enum ExecuteMsg {
     /// Submits the total amount of tokens deployed by the whitelisted addresses.
     /// Action can be performed only by the whitelisted addresses.
     SubmitDeployedAmount { amount: Uint128 },
 
-    /// Updates the total amount of tokens deployed by adding the specified amount to already deployed one.
+    /// Updates the total amount of tokens deployed by adding or subtracting the specified amount.
     /// Action can be performed only by the associated sub-vault smart contracts.
-    UpdateDeployedAmount { amount: Uint128 },
+    UpdateDeployedAmount {
+        amount: Uint128,
+        direction: DeploymentDirection,
+    },
 
     /// Adds a new account address to the whitelist.
     AddToWhitelist { address: String },

@@ -28,6 +28,8 @@ export interface Coin {
 }
 export type QueryMsg = {
   config: {};
+} | {
+  state: {};
 };
 export type Addr = string;
 export interface ConfigResponse {
@@ -36,4 +38,21 @@ export interface ConfigResponse {
 export interface Config {
   admins: Addr[];
   control_centers: Addr[];
+}
+export type ActionState = ("idle" | "forwarded") | {
+  withdraw_receipt_tokens: {
+    coin: Coin;
+    recipient: Addr;
+  };
+} | {
+  withdraw_funds: {
+    coin: Coin;
+    recipient: Addr;
+  };
+};
+export interface StateResponse {
+  state: State;
+}
+export interface State {
+  last_action: ActionState;
 }

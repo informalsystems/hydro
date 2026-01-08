@@ -12,7 +12,7 @@ use cosmwasm_std::{
 };
 #[cfg(feature = "cosmwasm_compat")]
 use interface::compat::Uint256TestingExt;
-use interface::inflow::{Config as InflowConfig, ExecuteMsg as InflowExecuteMsg};
+use interface::inflow_vault::{Config as InflowConfig, ExecuteMsg as InflowExecuteMsg};
 use test_utils::{
     testing_mocks::{setup_contract_smart_query_mock, MockWasmQuerier},
     utils::get_message_info,

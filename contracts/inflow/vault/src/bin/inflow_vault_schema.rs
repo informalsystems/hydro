@@ -1,5 +1,5 @@
 use cosmwasm_schema::write_api;
-use interface::inflow::{ExecuteMsg, QueryMsg};
+use interface::inflow_vault::{ExecuteMsg, QueryMsg};
 use vault::msg::InstantiateMsg;
 
 fn main() {

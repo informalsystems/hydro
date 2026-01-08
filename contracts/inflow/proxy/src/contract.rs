@@ -7,11 +7,11 @@ use cw2::set_contract_version;
 use interface::compat::StdErrExt;
 
 use interface::{
-    inflow::{
+    inflow_control_center::{QueryMsg as ControlCenterQueryMsg, SubvaultsResponse},
+    inflow_vault::{
         Config as InflowConfig, ConfigResponse as InflowConfigResponse,
         ExecuteMsg as InflowExecuteMsg, QueryMsg as InflowQueryMsg,
     },
-    inflow_control_center::{QueryMsg as ControlCenterQueryMsg, SubvaultsResponse},
     utils::UNUSED_MSG_ID,
 };
 

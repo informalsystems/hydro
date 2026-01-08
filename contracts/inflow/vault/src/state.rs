@@ -1,6 +1,8 @@
 use cosmwasm_std::{Addr, StdResult, Storage};
 use cw_storage_plus::{Item, Map};
-use interface::inflow::{Config, PayoutEntry, WithdrawalEntry, WithdrawalQueueInfo};
+use interface::inflow_vault::{
+    AdapterInfo, Config, PayoutEntry, WithdrawalEntry, WithdrawalQueueInfo,
+};
 
 /// Configuration of the Inflow smart contract
 pub const CONFIG: Item<Config> = Item::new("config");
@@ -34,6 +36,10 @@ pub const USER_WITHDRAWAL_REQUESTS: Map<Addr, Vec<u64>> = Map::new("user_withdra
 /// History of all payouts made to users.
 /// PAYOUTS_HISTORY: key(user_address, payout_id) -> PayoutEntry
 pub const PAYOUTS_HISTORY: Map<(Addr, u64), PayoutEntry> = Map::new("payouts_history");
+
+/// Registered adapters for deploying funds to external protocols.
+/// ADAPTERS: key(adapter_name) -> AdapterInfo
+pub const ADAPTERS: Map<String, AdapterInfo> = Map::new("adapters");
 
 pub fn load_config(storage: &dyn Storage) -> StdResult<Config> {
     CONFIG.load(storage)

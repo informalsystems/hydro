@@ -8,4 +8,7 @@ pub mod state;
 mod testing;
 
 #[cfg(test)]
+mod testing_adapters;
+
+#[cfg(test)]
 mod testing_mocks;

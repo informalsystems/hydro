@@ -9,3 +9,4 @@ cosmwasm_compat = []
 [dependencies]
 cosmwasm-std = { workspace = true }
 cosmwasm-schema = { workspace = true }
+serde = { workspace = true }
