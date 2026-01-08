@@ -340,12 +340,19 @@ fn deposit(
 }
 
 // User initiates withdrawal request by sending a certain number of vault shares tokens to the contract
-// in order to redeem them for the underlying deposit tokens. The withdrawal follows a 4-step process:
-// 1. Try to fulfill from unreserved contract balance first
-// 2. If insufficient, try to withdraw from adapters
-// 3. Queue any unfulfilled amount
-// 4. Send any fulfilled amount immediately
-// In all cases, the vault shares tokens sent by the user will be burned immediately.
+// in order to redeem them for the underlying deposit tokens.
+//
+// The withdrawal follows an "all-or-nothing" approach:
+// 1. Calculate total available funds (unreserved contract balance + available from adapters)
+// 2. If total available >= withdrawal amount: Fulfill the entire withdrawal
+//    - Withdraw from adapters if needed
+//    - Send the full amount to the user immediately
+// 3. If total available < withdrawal amount: Queue the entire withdrawal
+//    - No adapter withdrawals are executed
+//    - No immediate payout is sent
+//    - The entire withdrawal request is added to the queue
+//
+// In all cases, the vault shares tokens sent by the user are burned immediately.
 fn withdraw(
     deps: DepsMut<NeutronQuery>,
     env: Env,
@@ -374,10 +381,8 @@ fn withdraw(
         .add_attribute("withdrawer", withdrawer.to_string())
         .add_attribute("vault_shares_sent", vault_shares_sent);
 
-    let mut messages = vec![];
-    let mut amount_fulfilled = Uint128::zero();
-
-    // === STEP 1: Try to fulfill from unreserved contract balance first ===
+    // === STEP 1: Check if we can fulfill the entire withdrawal ===
+    // All-or-nothing: either fulfill completely or queue entirely
     let withdrawal_queue_info = load_withdrawal_queue_info(deps.storage)?;
     let available_contract_balance = get_balance_available_for_pending_withdrawals(
         &deps.as_ref(),
@@ -386,27 +391,34 @@ fn withdraw(
         &withdrawal_queue_info,
     )?;
 
-    if available_contract_balance > Uint128::zero() {
-        let from_contract = available_contract_balance.min(amount_to_withdraw);
-        amount_fulfilled = amount_fulfilled.checked_add(from_contract)?;
-    }
-
-    // === STEP 2: If still need more, try to withdraw from adapters ===
-    let remaining = amount_to_withdraw.checked_sub(amount_fulfilled)?;
-    if remaining > Uint128::zero() {
-        let allocations = calculate_venues_allocation(
+    // Calculate how much adapters can provide (without withdrawing yet)
+    let remaining_after_contract = amount_to_withdraw.saturating_sub(available_contract_balance);
+    let adapter_allocations = if remaining_after_contract > Uint128::zero() {
+        calculate_venues_allocation(
             &deps.as_ref(),
             &env,
-            remaining,
+            remaining_after_contract,
             config.deposit_denom.clone(),
             false, // is_deposit = false
-        )?;
+        )?
+    } else {
+        vec![]
+    };
 
+    let total_from_adapters: Uint128 = adapter_allocations.iter().map(|(_, amt)| *amt).sum();
+    let total_available = available_contract_balance.checked_add(total_from_adapters)?;
+
+    // Determine if we can fulfill entirely - all or nothing
+    let can_fulfill_entirely = total_available >= amount_to_withdraw;
+
+    // === STEP 2: If we can fulfill entirely, withdraw from adapters ===
+    let mut messages = vec![];
+    if can_fulfill_entirely && !adapter_allocations.is_empty() {
         // Track total amount withdrawn from tracked adapters for single deployed amount update
         let mut total_tracked_amount = Uint128::zero();
 
-        for (adapter_name, amount) in allocations {
-            // Should never happen, calculate_venues_allocation already retrieves adapters from ADAPTERS
+        for (adapter_name, amount) in adapter_allocations {
+            // Should always succeed, as calculate_venues_allocation already retrieves adapters from ADAPTERS
             let adapter_info = ADAPTERS
                 .may_load(deps.storage, adapter_name.clone())?
                 .ok_or_else(|| ContractError::AdapterNotFound {
@@ -420,7 +432,11 @@ fn withdraw(
                 });
             }
 
-            // Create adapter withdrawal message
+            // The amount has been retrieved from calculate_venues_allocation, which ensures
+            // that the adapter has sufficient available balance for the withdrawal.
+            // However, if the adapter cannot process the withdrawal fully for any reason,
+            // it MUST fail (as clarified in the adapter interface documentation)
+            // and the entire transaction will revert.
             let withdraw_msg = AdapterInterfaceMsg::Withdraw {
                 coin: Coin {
                     denom: config.deposit_denom.clone(),
@@ -441,13 +457,6 @@ fn withdraw(
             ) {
                 total_tracked_amount = total_tracked_amount.checked_add(amount)?;
             }
-
-            // Note: We don't track deployments locally.
-            // The calculate_venues_allocation function should return the available amount for withdraw.
-            // Otherwise, the adapter contract will return an error if insufficient balance.
-            // If it failed, this entire transaction would revert.
-
-            amount_fulfilled = amount_fulfilled.checked_add(amount)?;
         }
 
         // If any tracked adapters had withdrawals, update deployed amount once
@@ -466,41 +475,29 @@ fn withdraw(
         }
     }
 
-    // === STEP 3: Queue any unfulfilled amount ===
-    let unfulfilled_amount = amount_to_withdraw.checked_sub(amount_fulfilled)?;
-    let queued_shares = if unfulfilled_amount > Uint128::zero() {
-        // Calculate proportional shares for the queued amount
-        vault_shares_sent
-            .checked_multiply_ratio(unfulfilled_amount, amount_to_withdraw)
-            .map_err(|e| {
-                new_generic_error(format!("overflow error calculating queued shares: {e}"))
-            })?
-    } else {
-        Uint128::zero()
-    };
-
-    if unfulfilled_amount > Uint128::zero() {
-        // Create withdrawal queue entry for the unfulfilled amount
+    // === STEP 3a: Queue everything if cannot fulfill entirely ===
+    if !can_fulfill_entirely {
+        // Queue the ENTIRE withdrawal
         let withdrawal_id = get_next_withdrawal_id(deps.storage)?;
 
         let withdrawal_entry = WithdrawalEntry {
             id: withdrawal_id,
             initiated_at: env.block.time,
             withdrawer: withdrawer.clone(),
-            shares_burned: queued_shares,
-            amount_to_receive: unfulfilled_amount,
+            shares_burned: vault_shares_sent,
+            amount_to_receive: amount_to_withdraw,
             is_funded: false,
         };
 
         // Add the new withdrawal entry to the queue
         WITHDRAWAL_REQUESTS.save(deps.storage, withdrawal_id, &withdrawal_entry)?;
 
-        // Update the withdrawal queue info with only the unfulfilled amount and queued shares
+        // Update the withdrawal queue info with the full amount and all shares
         update_withdrawal_queue_info(
             deps.storage,
-            Some(Int128::try_from(queued_shares)?),
-            Some(Int128::try_from(unfulfilled_amount)?),
-            Some(Int128::try_from(unfulfilled_amount)?),
+            Some(Int128::try_from(vault_shares_sent)?),
+            Some(Int128::try_from(amount_to_withdraw)?),
+            Some(Int128::try_from(amount_to_withdraw)?),
         )?;
 
         // Add the new withdrawal id to the list of user's withdrawal requests
@@ -515,28 +512,26 @@ fn withdraw(
 
         response = response
             .add_attribute("withdrawal_id", withdrawal_id.to_string())
-            .add_attribute("amount_queued_for_withdrawal", unfulfilled_amount);
+            .add_attribute("amount_queued_for_withdrawal", amount_to_withdraw);
     }
 
-    // === STEP 4: Send any fulfilled amount ===
-    if amount_fulfilled > Uint128::zero() {
-        // Calculate shares for the fulfilled amount
-        let fulfilled_shares = vault_shares_sent.checked_sub(queued_shares)?;
-
+    // === STEP 3b: Send full amount if fulfilled ===
+    if can_fulfill_entirely {
+        // This message is added after adapter withdrawals to ensure funds are available
         messages.push(CosmosMsg::Bank(BankMsg::Send {
             to_address: withdrawer.to_string(),
-            amount: vec![Coin::new(amount_fulfilled, config.deposit_denom.clone())],
+            amount: vec![Coin::new(amount_to_withdraw, config.deposit_denom.clone())],
         }));
 
-        response = response.add_attribute("paid_out_amount", amount_fulfilled);
+        response = response.add_attribute("paid_out_amount", amount_to_withdraw);
 
-        // Add entry to the payout history
+        // Add entry to the payout history with all shares
         add_payout_history_entry(
             deps.storage,
             &env,
             &withdrawer,
-            fulfilled_shares,
-            amount_fulfilled,
+            vault_shares_sent,
+            amount_to_withdraw,
         )?;
     }
 

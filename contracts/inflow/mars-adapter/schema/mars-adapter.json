@@ -103,7 +103,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Withdraw tokens from the protocol Only callable by whitelisted depositors",
+            "description": "Withdraw tokens from the protocol Only callable by whitelisted depositors The execution MUST fail if insufficient funds are available",
             "type": "object",
             "required": [
               "withdraw"

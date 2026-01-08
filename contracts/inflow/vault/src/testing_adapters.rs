@@ -1439,7 +1439,215 @@ fn test_deposit_skips_failing_adapter() {
 // ============================================================================
 
 #[test]
-fn test_withdraw_partial_fulfillment_with_queue() {
+fn test_withdraw_all_or_nothing_can_fulfill() {
+    let deps = mock_dependencies();
+
+    let vault_contract_addr = deps.api.addr_make("inflow");
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let adapter_addr = deps.api.addr_make("adapter1");
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    // Configure adapter with 3000 tokens deposited and available for withdrawal
+    let mut adapter_configs = HashMap::new();
+    adapter_configs.insert(
+        adapter_addr.clone(),
+        MockAdapterConfig::new(0, 3000, 3000), // 3000 available for withdraw, 3000 current deposit
+    );
+    // Control center tracks total pool value = 10000 (2000 contract + 3000 adapter + 5000 deployed elsewhere)
+    let control_center_config = ControlCenterMockConfig::new(
+        control_center_contract_addr.clone(),
+        10000, // total_pool_value includes 5000 "deployed" amount
+        0,     // no shares issued yet
+    );
+    let token_info_provider_config = TokenInfoProviderMockConfig::new(
+        token_info_provider_contract_addr.clone(),
+        DEPOSIT_DENOM.to_string(),
+    );
+    let (mut deps, wasm_querier) = mock_dependencies_with_adapters(
+        adapter_configs,
+        control_center_config,
+        token_info_provider_config,
+    );
+    let mut env = mock_env();
+
+    env.contract.address = vault_contract_addr.clone();
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    setup_contract_with_vault_denom(&mut deps, &vault_contract_addr);
+
+    // Register adapter
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter_addr.to_string(),
+            description: Some("Mars Protocol".to_string()),
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    // Mock contract balance with 2000 tokens
+    mock_address_balance(
+        &mut deps,
+        vault_contract_addr.as_ref(),
+        DEPOSIT_DENOM,
+        Uint128::new(2000),
+    );
+
+    // User deposits 2000 tokens
+    // Since there are no shares yet (total supply = 0), they get 2000 shares (1:1 ratio)
+    // These 2000 shares represent 100% of the vault
+    // Total vault value = 2000 (contract) + 3000 (adapter) + 5000 (deployed) = 10000 tokens
+    let info = get_message_info(
+        &deps.api,
+        USER1,
+        &[Coin {
+            denom: DEPOSIT_DENOM.to_string(),
+            amount: Uint128::new(2000),
+        }],
+    );
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::Deposit { on_behalf_of: None },
+    )
+    .unwrap();
+
+    // Update the control center mock to reflect post-deposit state (2000 shares issued)
+    update_contract_mock(
+        &mut deps,
+        &wasm_querier,
+        setup_control_center_mock(
+            control_center_contract_addr.clone(),
+            DEFAULT_DEPOSIT_CAP,
+            Uint128::new(10000), // total_pool_value stays the same
+            Uint128::new(2000),  // 2000 shares were minted
+        ),
+    );
+
+    // Mock the vault shares balance for the user (2000 shares were minted during deposit)
+    // update_balance automatically recalculates the supply
+    let vault_shares_denom = format!("factory/{}/hydro_inflow_uatom", vault_contract_addr);
+    mock_address_balance(&mut deps, USER1, &vault_shares_denom, Uint128::new(2000));
+
+    // User now tries to withdraw half their shares (1000 shares)
+    // Their 1000 shares = 50% of vault = 5000 tokens worth
+    // Available immediately: 2000 (contract) + 3000 (adapter) = 5000 tokens
+    // All-or-nothing: We CAN fulfill entirely (5000 >= 5000), so withdraw and send
+    let info = get_message_info(
+        &deps.api,
+        USER1,
+        &[Coin {
+            denom: format!("factory/{}/hydro_inflow_uatom", vault_contract_addr),
+            amount: Uint128::new(1000), // Half of user's shares
+        }],
+    );
+
+    let res = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::Withdraw { on_behalf_of: None },
+    )
+    .unwrap();
+
+    // Should have 3 messages: adapter withdrawal + bank send + burn shares
+    assert_eq!(res.messages.len(), 3);
+
+    // First message should be adapter withdrawal for 3000 (remaining after contract balance)
+    match &res.messages[0].msg {
+        CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr,
+            msg,
+            funds,
+        }) => {
+            assert_eq!(contract_addr, &adapter_addr.to_string());
+            assert_eq!(funds.len(), 0);
+            let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
+            match adapter_msg {
+                interface::inflow_adapter::AdapterInterfaceMsg::Withdraw { coin } => {
+                    assert_eq!(coin.denom, DEPOSIT_DENOM);
+                    assert_eq!(coin.amount, Uint128::new(3000));
+                }
+                _ => panic!("Expected AdapterInterfaceMsg::Withdraw"),
+            }
+        }
+        _ => panic!("Expected WasmMsg::Execute for adapter withdrawal"),
+    }
+
+    // Second message should be bank send for full amount (5000)
+    match &res.messages[1].msg {
+        CosmosMsg::Bank(cosmwasm_std::BankMsg::Send { to_address, amount }) => {
+            assert_eq!(to_address, &deps.api.addr_make(USER1).to_string());
+            assert_eq!(amount.len(), 1);
+            assert_eq!(amount[0].denom, DEPOSIT_DENOM);
+            assert_eq!(amount[0].amount, Uint128::new(5000));
+        }
+        _ => panic!("Expected BankMsg::Send"),
+    }
+
+    // Third message should be burn shares
+    match &res.messages[2].msg {
+        CosmosMsg::Custom(neutron_sdk::bindings::msg::NeutronMsg::BurnTokens {
+            denom,
+            amount,
+            burn_from_address: _,
+        }) => {
+            assert!(denom.contains("hydro_inflow_uatom"));
+            assert_eq!(*amount, Uint128::new(1000));
+        }
+        _ => panic!("Expected BurnTokens message"),
+    }
+
+    // Verify response attributes
+    // attributes[0]: action = "withdraw"
+    // attributes[1]: sender = USER1
+    // attributes[2]: withdrawer = USER1
+    // attributes[3]: vault_shares_sent = "1000"
+    assert_eq!(res.attributes[0].value, "withdraw");
+    assert_eq!(
+        res.attributes[1].value,
+        deps.api.addr_make(USER1).to_string()
+    );
+    assert_eq!(res.attributes[3].value, "1000"); // vault_shares_sent
+
+    // Should have paid_out_amount = 5000
+    let paid_out_attr = res
+        .attributes
+        .iter()
+        .find(|attr| attr.key == "paid_out_amount")
+        .unwrap();
+    assert_eq!(paid_out_attr.value, "5000");
+
+    // Should NOT have withdrawal_id or amount_queued_for_withdrawal (everything was fulfilled)
+    assert!(!res
+        .attributes
+        .iter()
+        .any(|attr| attr.key == "withdrawal_id"));
+    assert!(!res
+        .attributes
+        .iter()
+        .any(|attr| attr.key == "amount_queued_for_withdrawal"));
+}
+
+#[test]
+fn test_withdraw_all_or_nothing_cannot_fulfill() {
     let deps = mock_dependencies();
 
     let vault_contract_addr = deps.api.addr_make("inflow");
@@ -1549,7 +1757,7 @@ fn test_withdraw_partial_fulfillment_with_queue() {
     // User now tries to withdraw all their shares
     // Their 2000 shares = 100% of vault = 10000 tokens worth
     // Available immediately: 2000 (contract) + 3000 (adapter) = 5000 tokens
-    // Will be queued: 10000 - 5000 = 5000 tokens
+    // All-or-nothing: We CANNOT fulfill entirely (5000 < 10000), so queue everything
     let info = get_message_info(
         &deps.api,
         USER1,
@@ -1567,43 +1775,11 @@ fn test_withdraw_partial_fulfillment_with_queue() {
     )
     .unwrap();
 
-    // Should have 3 messages: adapter withdrawal + bank send + burn shares
-    assert_eq!(res.messages.len(), 3);
+    // Should have only 1 message: burn shares (no adapter withdrawal, no bank send)
+    assert_eq!(res.messages.len(), 1);
 
-    // First message should be adapter withdrawal for 3000 (remaining after contract balance)
+    // Only message should be burn all shares
     match &res.messages[0].msg {
-        CosmosMsg::Wasm(WasmMsg::Execute {
-            contract_addr,
-            msg,
-            funds,
-        }) => {
-            assert_eq!(contract_addr, &adapter_addr.to_string());
-            assert_eq!(funds.len(), 0);
-            let adapter_msg = deserialize_adapter_interface_msg(msg).unwrap();
-            match adapter_msg {
-                interface::inflow_adapter::AdapterInterfaceMsg::Withdraw { coin } => {
-                    assert_eq!(coin.denom, DEPOSIT_DENOM);
-                    assert_eq!(coin.amount, Uint128::new(3000));
-                }
-                _ => panic!("Expected AdapterInterfaceMsg::Withdraw"),
-            }
-        }
-        _ => panic!("Expected WasmMsg::Execute for adapter withdrawal"),
-    }
-
-    // Second message should be bank send for fulfilled amount (2000 + 3000 = 5000)
-    match &res.messages[1].msg {
-        CosmosMsg::Bank(cosmwasm_std::BankMsg::Send { to_address, amount }) => {
-            assert_eq!(to_address, &deps.api.addr_make(USER1).to_string());
-            assert_eq!(amount.len(), 1);
-            assert_eq!(amount[0].denom, DEPOSIT_DENOM);
-            assert_eq!(amount[0].amount, Uint128::new(5000));
-        }
-        _ => panic!("Expected BankMsg::Send"),
-    }
-
-    // Third message should be burn all shares
-    match &res.messages[2].msg {
         CosmosMsg::Custom(neutron_sdk::bindings::msg::NeutronMsg::BurnTokens {
             denom,
             amount,
@@ -1616,10 +1792,6 @@ fn test_withdraw_partial_fulfillment_with_queue() {
     }
 
     // Verify response attributes
-    // attributes[0]: action = "withdraw"
-    // attributes[1]: sender = USER1
-    // attributes[2]: withdrawer = USER1
-    // attributes[3]: vault_shares_sent = "2000"
     assert_eq!(res.attributes[0].value, "withdraw");
     assert_eq!(
         res.attributes[1].value,
@@ -1627,15 +1799,13 @@ fn test_withdraw_partial_fulfillment_with_queue() {
     );
     assert_eq!(res.attributes[3].value, "2000"); // vault_shares_sent
 
-    // Should have paid_out_amount = 5000
-    let paid_out_attr = res
+    // Should NOT have paid_out_amount (nothing was paid out)
+    assert!(!res
         .attributes
         .iter()
-        .find(|attr| attr.key == "paid_out_amount")
-        .unwrap();
-    assert_eq!(paid_out_attr.value, "5000");
+        .any(|attr| attr.key == "paid_out_amount"));
 
-    // Should have withdrawal_id and amount_queued_for_withdrawal = 5000
+    // Should have withdrawal_id and amount_queued_for_withdrawal = 10000 (entire amount)
     let withdrawal_id_attr = res
         .attributes
         .iter()
@@ -1648,7 +1818,7 @@ fn test_withdraw_partial_fulfillment_with_queue() {
         .iter()
         .find(|attr| attr.key == "amount_queued_for_withdrawal")
         .unwrap();
-    assert_eq!(amount_queued_attr.value, "5000");
+    assert_eq!(amount_queued_attr.value, "10000"); // Entire amount queued
 }
 
 // ============================================================================
