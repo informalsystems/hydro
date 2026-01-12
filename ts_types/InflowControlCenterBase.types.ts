@@ -17,6 +17,7 @@ export type ExecuteMsg = {
 } | {
   update_deployed_amount: {
     amount: Uint128;
+    direction: DeploymentDirection;
   };
 } | {
   add_to_whitelist: {
@@ -39,6 +40,7 @@ export type ExecuteMsg = {
     address: string;
   };
 };
+export type DeploymentDirection = "add" | "subtract";
 export interface UpdateConfigData {
   deposit_cap?: Uint128 | null;
 }

@@ -47,6 +47,8 @@ export type ExecuteMsg = {
     amount: Uint128;
   };
 } | {
+  deposit_from_deployment: {};
+} | {
   set_token_info_provider_contract: {
     address?: string | null;
   };
@@ -62,10 +64,54 @@ export type ExecuteMsg = {
   update_config: {
     config: UpdateConfigData;
   };
+} | {
+  register_adapter: {
+    address: string;
+    allocation_mode: AllocationMode;
+    deployment_tracking: DeploymentTracking;
+    description?: string | null;
+    name: string;
+  };
+} | {
+  unregister_adapter: {
+    name: string;
+  };
+} | {
+  set_adapter_allocation_mode: {
+    allocation_mode: AllocationMode;
+    name: string;
+  };
+} | {
+  set_adapter_deployment_tracking: {
+    deployment_tracking: DeploymentTracking;
+    name: string;
+  };
+} | {
+  withdraw_from_adapter: {
+    adapter_name: string;
+    amount: Uint128;
+  };
+} | {
+  deposit_to_adapter: {
+    adapter_name: string;
+    amount: Uint128;
+  };
+} | {
+  move_adapter_funds: {
+    coin: Coin;
+    from_adapter: string;
+    to_adapter: string;
+  };
 };
 export type Uint128 = string;
+export type AllocationMode = "automated" | "manual";
+export type DeploymentTracking = "tracked" | "not_tracked";
 export interface UpdateConfigData {
   max_withdrawals_per_user?: number | null;
+}
+export interface Coin {
+  amount: Uint128;
+  denom: string;
 }
 export type QueryMsg = {
   config: {};
@@ -104,9 +150,25 @@ export type QueryMsg = {
   };
 } | {
   whitelist: {};
+} | {
+  list_adapters: {};
+} | {
+  adapter_info: {
+    name: string;
+  };
 };
 export type Order = "ascending" | "descending";
 export type Addr = string;
+export interface AdapterInfoResponse {
+  info: AdapterInfo;
+}
+export interface AdapterInfo {
+  address: Addr;
+  allocation_mode: AllocationMode;
+  deployment_tracking: DeploymentTracking;
+  description?: string | null;
+  name: string;
+}
 export interface ConfigResponse {
   config: Config;
 }
@@ -120,7 +182,11 @@ export interface Config {
 export interface FundedWithdrawalRequestsResponse {
   withdrawal_ids: number[];
 }
+export interface AdaptersListResponse {
+  adapters: [string, AdapterInfo][];
+}
 export interface PoolInfoResponse {
+  adapter_deposits_base_tokens: Uint128;
   balance_base_tokens: Uint128;
   shares_issued: Uint128;
   withdrawal_queue_base_tokens: Uint128;

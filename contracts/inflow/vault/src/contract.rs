@@ -12,15 +12,17 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
 use interface::{
-    inflow::{
-        Config, ConfigResponse, ExecuteMsg, FundedWithdrawalRequestsResponse, PayoutEntry,
-        PoolInfoResponse, QueryMsg, UpdateConfigData, UserPayoutsHistoryResponse,
+    inflow_control_center::{
+        ConfigResponse as ControlCenterConfigResponse, DeploymentDirection,
+        ExecuteMsg as ControlCenterExecuteMsg, PoolInfoResponse as ControlCenterPoolInfoResponse,
+        QueryMsg as ControlCenterQueryMsg,
+    },
+    inflow_vault::{
+        AdapterInfo, AdapterInfoResponse, AdaptersListResponse, AllocationMode, Config,
+        ConfigResponse, DeploymentTracking, ExecuteMsg, FundedWithdrawalRequestsResponse,
+        PayoutEntry, PoolInfoResponse, QueryMsg, UpdateConfigData, UserPayoutsHistoryResponse,
         UserWithdrawalRequestsResponse, WhitelistResponse, WithdrawalEntry, WithdrawalQueueInfo,
         WithdrawalQueueInfoResponse,
-    },
-    inflow_control_center::{
-        ConfigResponse as ControlCenterConfigResponse, ExecuteMsg as ControlCenterExecuteMsg,
-        PoolInfoResponse as ControlCenterPoolInfoResponse, QueryMsg as ControlCenterQueryMsg,
     },
     token_info_provider::TokenInfoProviderQueryMsg,
 };
@@ -37,9 +39,15 @@ use crate::{
     msg::{DenomMetadata, InstantiateMsg, ReplyPayload},
     state::{
         get_next_payout_id, get_next_withdrawal_id, load_config, load_withdrawal_queue_info,
-        CONFIG, LAST_FUNDED_WITHDRAWAL_ID, NEXT_PAYOUT_ID, NEXT_WITHDRAWAL_ID, PAYOUTS_HISTORY,
-        USER_WITHDRAWAL_REQUESTS, WHITELIST, WITHDRAWAL_QUEUE_INFO, WITHDRAWAL_REQUESTS,
+        ADAPTERS, CONFIG, LAST_FUNDED_WITHDRAWAL_ID, NEXT_PAYOUT_ID, NEXT_WITHDRAWAL_ID,
+        PAYOUTS_HISTORY, USER_WITHDRAWAL_REQUESTS, WHITELIST, WITHDRAWAL_QUEUE_INFO,
+        WITHDRAWAL_REQUESTS,
     },
+};
+
+use interface::inflow_adapter::{
+    serialize_adapter_interface_msg, AdapterInterfaceMsg, AdapterInterfaceQuery,
+    AdapterInterfaceQueryMsg, AvailableAmountResponse, DepositorPositionResponse,
 };
 
 /// Contract name that is used for migration.
@@ -164,6 +172,7 @@ pub fn execute(
         ExecuteMsg::WithdrawForDeployment { amount } => {
             withdraw_for_deployment(deps, env, info, config, amount)
         }
+        ExecuteMsg::DepositFromDeployment {} => deposit_from_deployment(deps, env, info, config),
         ExecuteMsg::SetTokenInfoProviderContract { address } => {
             set_token_info_provider_contract(deps, info, config, address)
         }
@@ -174,13 +183,50 @@ pub fn execute(
         ExecuteMsg::UpdateConfig {
             config: config_update,
         } => update_config(deps, info, config, config_update),
+        ExecuteMsg::RegisterAdapter {
+            name,
+            address,
+            description,
+            allocation_mode,
+            deployment_tracking,
+        } => register_adapter(
+            deps,
+            info,
+            name,
+            address,
+            description,
+            allocation_mode,
+            deployment_tracking,
+        ),
+        ExecuteMsg::UnregisterAdapter { name } => unregister_adapter(deps, info, name),
+        ExecuteMsg::SetAdapterAllocationMode {
+            name,
+            allocation_mode,
+        } => set_adapter_allocation_mode(deps, info, name, allocation_mode),
+        ExecuteMsg::SetAdapterDeploymentTracking {
+            name,
+            deployment_tracking,
+        } => set_adapter_deployment_tracking(deps, info, name, deployment_tracking),
+        ExecuteMsg::WithdrawFromAdapter {
+            adapter_name,
+            amount,
+        } => withdraw_from_adapter(deps, info, &config, adapter_name, amount),
+        ExecuteMsg::DepositToAdapter {
+            adapter_name,
+            amount,
+        } => deposit_to_adapter(deps, env, info, &config, adapter_name, amount),
+        ExecuteMsg::MoveAdapterFunds {
+            from_adapter,
+            to_adapter,
+            coin,
+        } => move_adapter_funds(deps, env, info, &config, from_adapter, to_adapter, coin),
     }
 }
 
 // Deposits tokens accepted by the vault and issues certain amount of vault shares tokens in return.
 fn deposit(
     deps: DepsMut<NeutronQuery>,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     config: &Config,
     on_behalf_of: Option<String>,
@@ -210,14 +256,82 @@ fn deposit(
         total_shares_issued,
     )?;
 
+    let mut messages = vec![];
+
+    // Determine where to deploy funds
+    let allocations = calculate_venues_allocation(
+        &deps.as_ref(),
+        &env,
+        deposit_amount,
+        config.deposit_denom.clone(),
+        true, // is_deposit
+    )?;
+
+    // Track total amount deposited to tracked adapters for single deployed amount update
+    let mut total_tracked_amount = Uint128::zero();
+
+    // If allocations exist, send funds to adapters
+    for (adapter_name, amount) in allocations {
+        // Should never happen, calculate_venues_allocation already retrieves adapters from ADAPTERS
+        let adapter_info = ADAPTERS
+            .may_load(deps.storage, adapter_name.clone())?
+            .ok_or_else(|| ContractError::AdapterNotFound {
+                name: adapter_name.clone(),
+            })?;
+
+        // Should never happen, because we filter out in calculate_venues_allocation
+        if !matches!(adapter_info.allocation_mode, AllocationMode::Automated) {
+            return Err(ContractError::AdapterNotIncludedInAutomatedAllocation {
+                name: adapter_name.clone(),
+            });
+        }
+
+        // Create adapter deposit message
+        let deposit_msg = AdapterInterfaceMsg::Deposit {};
+
+        let wasm_msg = WasmMsg::Execute {
+            contract_addr: adapter_info.address.to_string(),
+            msg: serialize_adapter_interface_msg(&deposit_msg)?,
+            funds: vec![Coin {
+                denom: config.deposit_denom.clone(),
+                amount,
+            }],
+        };
+
+        messages.push(CosmosMsg::Wasm(wasm_msg));
+
+        // If adapter is tracked in deployed amount, accumulate for batch update
+        if matches!(
+            adapter_info.deployment_tracking,
+            DeploymentTracking::Tracked
+        ) {
+            total_tracked_amount = total_tracked_amount.checked_add(amount)?;
+        }
+    }
+
+    // If any tracked adapters received deposits, update deployed amount once
+    if !total_tracked_amount.is_zero() {
+        let total_tracked_amount_in_base_tokens =
+            convert_deposit_token_into_base_token(&deps.as_ref(), config, total_tracked_amount)?;
+        let update_msg = build_update_deployed_amount_msg(
+            total_tracked_amount_in_base_tokens,
+            DeploymentDirection::Add,
+            config,
+        )?;
+        messages.push(update_msg);
+    }
+
+    // Mint vault shares to the user
     let mint_vault_shares_msg = NeutronMsg::submit_mint_tokens(
         &config.vault_shares_denom,
         vault_shares_to_mint,
         recipient.to_string(),
     );
 
+    messages.push(CosmosMsg::Custom(mint_vault_shares_msg));
+
     Ok(Response::new()
-        .add_message(mint_vault_shares_msg)
+        .add_messages(messages)
         .add_attribute("action", "deposit")
         .add_attribute("sender", info.sender)
         .add_attribute("recipient", recipient.to_string())
@@ -226,10 +340,19 @@ fn deposit(
 }
 
 // User initiates withdrawal request by sending a certain number of vault shares tokens to the contract
-// in order to redeem them for the underlying deposit tokens. If the contract has enough balance
-// to cover the entire amount from existing withdrawal queue plus the new request, user will
-// receive deposit tokens immediately. Otherwise, the request will be added to the withdrawal queue.
-// In both cases, the vault shares tokens sent by the user will be burned immediately.
+// in order to redeem them for the underlying deposit tokens.
+//
+// The withdrawal follows an "all-or-nothing" approach:
+// 1. Calculate total available funds (unreserved contract balance + available from adapters)
+// 2. If total available >= withdrawal amount: Fulfill the entire withdrawal
+//    - Withdraw from adapters if needed
+//    - Send the full amount to the user immediately
+// 3. If total available < withdrawal amount: Queue the entire withdrawal
+//    - No adapter withdrawals are executed
+//    - No immediate payout is sent
+//    - The entire withdrawal request is added to the queue
+//
+// In all cases, the vault shares tokens sent by the user are burned immediately.
 fn withdraw(
     deps: DepsMut<NeutronQuery>,
     env: Env,
@@ -252,43 +375,109 @@ fn withdraw(
         return Err(new_generic_error("cannot withdraw zero amount"));
     }
 
-    // Get the current contract balance of the deposit token
-    let contract_balance = deps
-        .querier
-        .query_balance(
-            env.contract.address.to_string(),
-            config.deposit_denom.clone(),
-        )?
-        .amount;
-
-    // Get the total amount already requested for withdrawal
-    let withdrawal_queue_amount = load_withdrawal_queue_info(deps.storage)?.total_withdrawal_amount;
-
     let mut response = Response::new()
         .add_attribute("action", "withdraw")
         .add_attribute("sender", info.sender.clone())
         .add_attribute("withdrawer", withdrawer.to_string())
         .add_attribute("vault_shares_sent", vault_shares_sent);
 
-    // If the contract has enough balance to cover the entire withdrawal queue amount
-    // plus the new request, send the tokens to the user immediately.
-    if withdrawal_queue_amount.checked_add(amount_to_withdraw)? <= contract_balance {
-        response = response
-            .add_message(BankMsg::Send {
-                to_address: withdrawer.to_string(),
-                amount: vec![Coin::new(amount_to_withdraw, config.deposit_denom.clone())],
-            })
-            .add_attribute("paid_out_amount", amount_to_withdraw);
+    // === STEP 1: Check if we can fulfill the entire withdrawal ===
+    // All-or-nothing: either fulfill completely or queue entirely
+    let withdrawal_queue_info = load_withdrawal_queue_info(deps.storage)?;
+    let available_contract_balance = get_balance_available_for_pending_withdrawals(
+        &deps.as_ref(),
+        env.contract.address.as_ref(),
+        &config.deposit_denom,
+        &withdrawal_queue_info,
+    )?;
 
-        // Add entry to the payout history
-        add_payout_history_entry(
-            deps.storage,
+    // Calculate how much adapters can provide (without withdrawing yet)
+    let remaining_after_contract = amount_to_withdraw.saturating_sub(available_contract_balance);
+    let adapter_allocations = if remaining_after_contract > Uint128::zero() {
+        calculate_venues_allocation(
+            &deps.as_ref(),
             &env,
-            &withdrawer,
-            vault_shares_sent,
-            amount_to_withdraw,
-        )?;
+            remaining_after_contract,
+            config.deposit_denom.clone(),
+            false, // is_deposit = false
+        )?
     } else {
+        vec![]
+    };
+
+    let total_from_adapters: Uint128 = adapter_allocations.iter().map(|(_, amt)| *amt).sum();
+    let total_available = available_contract_balance.checked_add(total_from_adapters)?;
+
+    // Determine if we can fulfill entirely - all or nothing
+    let can_fulfill_entirely = total_available >= amount_to_withdraw;
+
+    // === STEP 2: If we can fulfill entirely, withdraw from adapters ===
+    let mut messages = vec![];
+    if can_fulfill_entirely && !adapter_allocations.is_empty() {
+        // Track total amount withdrawn from tracked adapters for single deployed amount update
+        let mut total_tracked_amount = Uint128::zero();
+
+        for (adapter_name, amount) in adapter_allocations {
+            // Should always succeed, as calculate_venues_allocation already retrieves adapters from ADAPTERS
+            let adapter_info = ADAPTERS
+                .may_load(deps.storage, adapter_name.clone())?
+                .ok_or_else(|| ContractError::AdapterNotFound {
+                    name: adapter_name.clone(),
+                })?;
+
+            // Should never happen, because we filter out in calculate_venues_allocation
+            if !matches!(adapter_info.allocation_mode, AllocationMode::Automated) {
+                return Err(ContractError::AdapterNotIncludedInAutomatedAllocation {
+                    name: adapter_name.clone(),
+                });
+            }
+
+            // The amount has been retrieved from calculate_venues_allocation, which ensures
+            // that the adapter has sufficient available balance for the withdrawal.
+            // However, if the adapter cannot process the withdrawal fully for any reason,
+            // it MUST fail (as clarified in the adapter interface documentation)
+            // and the entire transaction will revert.
+            let withdraw_msg = AdapterInterfaceMsg::Withdraw {
+                coin: Coin {
+                    denom: config.deposit_denom.clone(),
+                    amount,
+                },
+            };
+
+            messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+                contract_addr: adapter_info.address.to_string(),
+                msg: serialize_adapter_interface_msg(&withdraw_msg)?,
+                funds: vec![],
+            }));
+
+            // If adapter is tracked in deployed amount, accumulate for batch update
+            if matches!(
+                adapter_info.deployment_tracking,
+                DeploymentTracking::Tracked
+            ) {
+                total_tracked_amount = total_tracked_amount.checked_add(amount)?;
+            }
+        }
+
+        // If any tracked adapters had withdrawals, update deployed amount once
+        if !total_tracked_amount.is_zero() {
+            let total_tracked_amount_in_base_tokens = convert_deposit_token_into_base_token(
+                &deps.as_ref(),
+                config,
+                total_tracked_amount,
+            )?;
+            let update_msg = build_update_deployed_amount_msg(
+                total_tracked_amount_in_base_tokens,
+                DeploymentDirection::Subtract,
+                config,
+            )?;
+            messages.push(update_msg);
+        }
+    }
+
+    // === STEP 3a: Queue everything if cannot fulfill entirely ===
+    if !can_fulfill_entirely {
+        // Queue the ENTIRE withdrawal
         let withdrawal_id = get_next_withdrawal_id(deps.storage)?;
 
         let withdrawal_entry = WithdrawalEntry {
@@ -303,7 +492,7 @@ fn withdraw(
         // Add the new withdrawal entry to the queue
         WITHDRAWAL_REQUESTS.save(deps.storage, withdrawal_id, &withdrawal_entry)?;
 
-        // Update the withdrawal queue info
+        // Update the withdrawal queue info with the full amount and all shares
         update_withdrawal_queue_info(
             deps.storage,
             Some(Int128::try_from(vault_shares_sent)?),
@@ -326,10 +515,31 @@ fn withdraw(
             .add_attribute("amount_queued_for_withdrawal", amount_to_withdraw);
     }
 
+    // === STEP 3b: Send full amount if fulfilled ===
+    if can_fulfill_entirely {
+        // This message is added after adapter withdrawals to ensure funds are available
+        messages.push(CosmosMsg::Bank(BankMsg::Send {
+            to_address: withdrawer.to_string(),
+            amount: vec![Coin::new(amount_to_withdraw, config.deposit_denom.clone())],
+        }));
+
+        response = response.add_attribute("paid_out_amount", amount_to_withdraw);
+
+        // Add entry to the payout history with all shares
+        add_payout_history_entry(
+            deps.storage,
+            &env,
+            &withdrawer,
+            vault_shares_sent,
+            amount_to_withdraw,
+        )?;
+    }
+
     // Burn the vault shares tokens sent by the user
     let burn_shares_msg = NeutronMsg::submit_burn_tokens(&vault_shares_denom, vault_shares_sent);
+    messages.push(CosmosMsg::Custom(burn_shares_msg));
 
-    Ok(response.add_message(burn_shares_msg))
+    Ok(response.add_messages(messages))
 }
 
 // Users can cancel any of their pending withdrawal requests until the funds for those withdrawals
@@ -719,8 +929,11 @@ fn withdraw_for_deployment(
     let amount_to_withdraw_in_base_tokens =
         convert_deposit_token_into_base_token(&deps.as_ref(), &config, amount_to_withdraw)?;
 
-    let update_deployed_amount_msg =
-        build_update_deployed_amount_msg(amount_to_withdraw_in_base_tokens, &config)?;
+    let update_deployed_amount_msg = build_update_deployed_amount_msg(
+        amount_to_withdraw_in_base_tokens,
+        DeploymentDirection::Add,
+        &config,
+    )?;
 
     let send_tokens_msg = CosmosMsg::Bank(BankMsg::Send {
         to_address: info.sender.to_string(),
@@ -738,6 +951,37 @@ fn withdraw_for_deployment(
         .add_attribute("sender", info.sender)
         .add_attribute("amount_requested", amount)
         .add_attribute("amount_withdrawn", amount_to_withdraw))
+}
+
+// Deposits funds back from deployment.
+fn deposit_from_deployment(
+    deps: DepsMut<NeutronQuery>,
+    _env: Env,
+    info: MessageInfo,
+    config: Config,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    let deposited_amount = cw_utils::must_pay(&info, &config.deposit_denom)?;
+
+    // Convert deposited amount to base tokens
+    let deposited_amount_in_base_tokens =
+        convert_deposit_token_into_base_token(&deps.as_ref(), &config, deposited_amount)?;
+
+    // Call control center to subtract from deployed amount
+    let update_deployed_amount_msg = build_update_deployed_amount_msg(
+        deposited_amount_in_base_tokens,
+        DeploymentDirection::Subtract,
+        &config,
+    )?;
+
+    // Funds are automatically left in the vault's balance
+
+    Ok(Response::new()
+        .add_message(update_deployed_amount_msg)
+        .add_attribute("action", "deposit_from_deployment")
+        .add_attribute("sender", info.sender)
+        .add_attribute("amount_deposited", deposited_amount))
 }
 
 fn set_token_info_provider_contract(
@@ -869,6 +1113,484 @@ pub fn calculate_number_of_shares_to_mint(
         .map_err(|e| new_generic_error(format!("overflow error: {e}")))
 }
 
+// Adapter management functions
+
+/// Registers a new adapter.
+///
+/// # Race Condition Warning
+/// When using `DeploymentTracking::Tracked`:
+/// - With `Automated` allocation: DANGEROUS - creates race conditions with `SubmitDeployedAmount`
+/// - With `Manual` allocation: Ensure no `SubmitDeployedAmount` proposals are pending during operations
+///
+/// See `DeploymentTracking` enum documentation for details.
+fn register_adapter(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    name: String,
+    address: String,
+    description: Option<String>,
+    allocation_mode: AllocationMode,
+    deployment_tracking: DeploymentTracking,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Validate caller is whitelisted
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    // Validate adapter address
+    let adapter_addr = deps.api.addr_validate(&address)?;
+
+    // Check if adapter already exists
+    if ADAPTERS.has(deps.storage, name.clone()) {
+        return Err(ContractError::AdapterAlreadyExists { name });
+    }
+
+    // Save adapter info
+    let adapter_info = AdapterInfo {
+        address: adapter_addr.clone(),
+        allocation_mode: allocation_mode.clone(),
+        deployment_tracking: deployment_tracking.clone(),
+        name: name.clone(),
+        description: description.clone(),
+    };
+
+    ADAPTERS.save(deps.storage, name.clone(), &adapter_info)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "register_adapter")
+        .add_attribute("sender", info.sender)
+        .add_attribute("adapter_name", name)
+        .add_attribute("adapter_address", adapter_addr)
+        .add_attribute("allocation_mode", format!("{:?}", allocation_mode))
+        .add_attribute("deployment_tracking", format!("{:?}", deployment_tracking))
+        .add_attribute("description", description.unwrap_or_default()))
+}
+
+fn unregister_adapter(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    name: String,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Validate caller is whitelisted
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    // Load adapter (return error if not found)
+    let adapter_info = ADAPTERS
+        .may_load(deps.storage, name.clone())?
+        .ok_or_else(|| ContractError::AdapterNotFound { name: name.clone() })?;
+
+    // Remove adapter from ADAPTERS map
+    ADAPTERS.remove(deps.storage, name.clone());
+
+    Ok(Response::new()
+        .add_attribute("action", "unregister_adapter")
+        .add_attribute("sender", info.sender)
+        .add_attribute("adapter_name", name)
+        .add_attribute("adapter_address", adapter_info.address))
+}
+
+fn set_adapter_allocation_mode(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    name: String,
+    allocation_mode: AllocationMode,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Validate caller is whitelisted
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    // Load adapter (return error if not found)
+    let mut adapter_info = ADAPTERS
+        .may_load(deps.storage, name.clone())?
+        .ok_or_else(|| ContractError::AdapterNotFound { name: name.clone() })?;
+
+    // Update allocation mode
+    adapter_info.allocation_mode = allocation_mode.clone();
+
+    // Save updated adapter info
+    ADAPTERS.save(deps.storage, name.clone(), &adapter_info)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "set_adapter_allocation_mode")
+        .add_attribute("sender", info.sender)
+        .add_attribute("adapter_name", name)
+        .add_attribute("allocation_mode", format!("{:?}", allocation_mode)))
+}
+
+/// Sets deployment tracking mode for an adapter.
+///
+/// # Race Condition Warning
+/// When setting to `Tracked`:
+/// - With `Automated` allocation: Creates race condition with manual `SubmitDeployedAmount` calls
+/// - With `Manual` allocation: Ensure no `SubmitDeployedAmount` proposal is pending
+///
+/// See `DeploymentTracking` enum documentation for details.
+fn set_adapter_deployment_tracking(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    name: String,
+    deployment_tracking: DeploymentTracking,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Validate caller is whitelisted
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    // Load adapter (return error if not found)
+    let mut adapter_info = ADAPTERS
+        .may_load(deps.storage, name.clone())?
+        .ok_or_else(|| ContractError::AdapterNotFound { name: name.clone() })?;
+
+    // Update deployment tracking
+    adapter_info.deployment_tracking = deployment_tracking.clone();
+
+    // Save updated adapter info
+    ADAPTERS.save(deps.storage, name.clone(), &adapter_info)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "set_adapter_deployment_tracking")
+        .add_attribute("sender", info.sender)
+        .add_attribute("adapter_name", name)
+        .add_attribute("deployment_tracking", format!("{:?}", deployment_tracking)))
+}
+
+/// Withdraws funds from an adapter to the vault contract.
+/// Only callable by whitelisted addresses.
+/// If the adapter's deployment tracking is Tracked, updates the Control Center's DEPLOYED_AMOUNT.
+fn withdraw_from_adapter(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    config: &Config,
+    adapter_name: String,
+    amount: Uint128,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Validate caller is whitelisted
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    // Load adapter (return error if not found)
+    let adapter_info = ADAPTERS
+        .may_load(deps.storage, adapter_name.clone())?
+        .ok_or_else(|| ContractError::AdapterNotFound {
+            name: adapter_name.clone(),
+        })?;
+
+    let mut messages = vec![];
+
+    // Create adapter withdrawal message
+    let withdraw_msg = AdapterInterfaceMsg::Withdraw {
+        coin: Coin {
+            denom: config.deposit_denom.clone(),
+            amount,
+        },
+    };
+
+    let wasm_msg = WasmMsg::Execute {
+        contract_addr: adapter_info.address.to_string(),
+        msg: serialize_adapter_interface_msg(&withdraw_msg)?,
+        funds: vec![],
+    };
+    messages.push(CosmosMsg::Wasm(wasm_msg));
+
+    // If adapter is tracked in deployed amount, update Control Center
+    if matches!(
+        adapter_info.deployment_tracking,
+        DeploymentTracking::Tracked
+    ) {
+        let amount_in_base_tokens =
+            convert_deposit_token_into_base_token(&deps.as_ref(), config, amount)?;
+        let update_msg = build_update_deployed_amount_msg(
+            amount_in_base_tokens,
+            DeploymentDirection::Subtract,
+            config,
+        )?;
+        messages.push(update_msg);
+    }
+
+    Ok(Response::new()
+        .add_messages(messages)
+        .add_attribute("action", "withdraw_from_adapter")
+        .add_attribute("sender", info.sender)
+        .add_attribute("adapter_name", adapter_name)
+        .add_attribute("amount", amount)
+        .add_attribute(
+            "deployment_tracking",
+            format!("{:?}", adapter_info.deployment_tracking),
+        ))
+}
+
+/// Deposits funds from vault balance to an adapter.
+/// Only callable by whitelisted addresses.
+/// Can deposit to any adapter regardless of allocation mode.
+/// Used for manual rebalancing operations between adapters.
+/// If the adapter's deployment tracking is Tracked, updates the Control Center's DEPLOYED_AMOUNT.
+fn deposit_to_adapter(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    config: &Config,
+    adapter_name: String,
+    amount: Uint128,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Validate caller is whitelisted
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    // Load adapter (return error if not found)
+    let adapter_info = ADAPTERS
+        .may_load(deps.storage, adapter_name.clone())?
+        .ok_or_else(|| ContractError::AdapterNotFound {
+            name: adapter_name.clone(),
+        })?;
+
+    // Check vault has sufficient balance
+    let vault_balance = deps
+        .querier
+        .query_balance(&env.contract.address, &config.deposit_denom)?;
+
+    if vault_balance.amount < amount {
+        return Err(ContractError::InsufficientBalance {
+            available: vault_balance.amount,
+            required: amount,
+        });
+    }
+
+    let mut messages = vec![];
+
+    // Create adapter deposit message with funds
+    let deposit_msg = AdapterInterfaceMsg::Deposit {};
+
+    let wasm_msg = WasmMsg::Execute {
+        contract_addr: adapter_info.address.to_string(),
+        msg: serialize_adapter_interface_msg(&deposit_msg)?,
+        funds: vec![Coin {
+            denom: config.deposit_denom.clone(),
+            amount,
+        }],
+    };
+    messages.push(CosmosMsg::Wasm(wasm_msg));
+
+    // If adapter is tracked in deployed amount, update Control Center
+    if matches!(
+        adapter_info.deployment_tracking,
+        DeploymentTracking::Tracked
+    ) {
+        let amount_in_base_tokens =
+            convert_deposit_token_into_base_token(&deps.as_ref(), config, amount)?;
+        let update_msg = build_update_deployed_amount_msg(
+            amount_in_base_tokens,
+            DeploymentDirection::Add,
+            config,
+        )?;
+        messages.push(update_msg);
+    }
+
+    Ok(Response::new()
+        .add_messages(messages)
+        .add_attribute("action", "deposit_to_adapter")
+        .add_attribute("sender", info.sender)
+        .add_attribute("adapter_name", adapter_name)
+        .add_attribute("amount", amount)
+        .add_attribute(
+            "deployment_tracking",
+            format!("{:?}", adapter_info.deployment_tracking),
+        ))
+}
+
+fn move_adapter_funds(
+    mut deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    config: &Config,
+    from_adapter: String,
+    to_adapter: String,
+    coin: Coin,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Validate caller is whitelisted (done by both helper functions, but check early)
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    // Validate non-zero amount
+    if coin.amount.is_zero() {
+        return Err(ContractError::ZeroAmount {});
+    }
+
+    // Check if moving deposit_denom or other denom
+    if coin.denom == config.deposit_denom {
+        // Case 1: Moving deposit_denom
+        // Reuse existing withdraw_from_adapter and deposit_to_adapter logic
+
+        // Withdraw from source adapter (handles DeploymentTracking automatically)
+        let withdraw_response = withdraw_from_adapter(
+            deps.branch(),
+            info.clone(),
+            config,
+            from_adapter.clone(),
+            coin.amount,
+        )?;
+
+        // Deposit to destination adapter (handles DeploymentTracking automatically)
+        let deposit_response = deposit_to_adapter(
+            deps,
+            env,
+            info.clone(),
+            config,
+            to_adapter.clone(),
+            coin.amount,
+        )?;
+
+        // Combine messages and attributes from both operations
+        // The messages will be executed in order: withdraw then deposit,
+        // and contain the necessary deployed amount updates
+        Ok(Response::new()
+            .add_submessages(withdraw_response.messages)
+            .add_submessages(deposit_response.messages)
+            .add_attribute("action", "move_adapter_funds")
+            .add_attribute("sender", info.sender)
+            .add_attribute("from_adapter", from_adapter)
+            .add_attribute("to_adapter", to_adapter)
+            .add_attribute("denom", coin.denom)
+            .add_attribute("amount", coin.amount))
+    } else {
+        // Case 2: Moving non-deposit_denom
+        // Require matching DeploymentTracking to prevent accounting issues,
+        // since no deployed amount updates will be made
+
+        // Load both adapters for validation
+        let from_adapter_info = ADAPTERS
+            .may_load(deps.storage, from_adapter.clone())?
+            .ok_or_else(|| ContractError::AdapterNotFound {
+                name: from_adapter.clone(),
+            })?;
+
+        let to_adapter_info = ADAPTERS
+            .may_load(deps.storage, to_adapter.clone())?
+            .ok_or_else(|| ContractError::AdapterNotFound {
+                name: to_adapter.clone(),
+            })?;
+
+        // Validate matching DeploymentTracking
+        if from_adapter_info.deployment_tracking != to_adapter_info.deployment_tracking {
+            return Err(ContractError::AdapterTrackingMismatch {
+                from_adapter: from_adapter.clone(),
+                to_adapter: to_adapter.clone(),
+                from_tracking: from_adapter_info.deployment_tracking.clone(),
+                to_tracking: to_adapter_info.deployment_tracking.clone(),
+            });
+        }
+
+        let mut messages = vec![];
+
+        // Withdraw from source adapter
+        let withdraw_msg = AdapterInterfaceMsg::Withdraw { coin: coin.clone() };
+        messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: from_adapter_info.address.to_string(),
+            msg: serialize_adapter_interface_msg(&withdraw_msg)?,
+            funds: vec![],
+        }));
+
+        // Deposit to destination adapter
+        let deposit_msg = AdapterInterfaceMsg::Deposit {};
+        messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: to_adapter_info.address.to_string(),
+            msg: serialize_adapter_interface_msg(&deposit_msg)?,
+            funds: vec![coin.clone()],
+        }));
+
+        // Note: No deployed amount updates for non-deposit_denom
+        // Even if both are Tracked, we can't convert non-deposit_denom to base tokens
+        // The tracking requirement ensures accounting consistency even without updates
+
+        Ok(Response::new()
+            .add_messages(messages)
+            .add_attribute("action", "move_adapter_funds")
+            .add_attribute("sender", info.sender)
+            .add_attribute("from_adapter", from_adapter)
+            .add_attribute("to_adapter", to_adapter)
+            .add_attribute("denom", coin.denom)
+            .add_attribute("amount", coin.amount))
+    }
+}
+
+/// Calculates venue allocation based on registered adapters.
+///
+/// Smart allocation strategy:
+/// - Iterates through adapters included in automated allocation in registration order (first to last)
+/// - For deposits: queries AvailableForDeposit to check capacity
+/// - For withdrawals: queries AvailableForWithdraw to check balance
+/// - Distributes amount across multiple adapters if needed
+/// - If 0 adapters included in automated allocation -> return empty vec (use contract balance)
+///
+/// # Arguments
+/// * `deps` - Contract dependencies (for querying adapters)
+/// * `env` - Environment (for inflow address)
+/// * `amount` - Amount to allocate
+/// * `denom` - Token denom
+/// * `is_deposit` - Whether this is a deposit (true) or withdrawal (false)
+///
+/// # Returns
+/// * `Ok(vec![])` - Empty vector means keep funds in contract
+/// * `Ok(vec![(adapter_name, amount), ...])` - List of adapters with amounts to allocate
+fn calculate_venues_allocation(
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
+    amount: Uint128,
+    denom: String,
+    is_deposit: bool,
+) -> Result<Vec<(String, Uint128)>, ContractError> {
+    let inflow_address = env.contract.address.to_string();
+
+    // Get list of adapters with automated allocation (sorted by name for deterministic ordering)
+    let automated_adapters: Vec<(String, AdapterInfo)> = ADAPTERS
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter_map(|entry| match entry {
+            Ok((name, info)) if matches!(info.allocation_mode, AllocationMode::Automated) => {
+                Some((name, info))
+            }
+            _ => None,
+        })
+        .collect();
+
+    if automated_adapters.is_empty() {
+        // No adapters available for automated allocation - funds stay in contract
+        return Ok(vec![]);
+    }
+
+    let mut allocations: Vec<(String, Uint128)> = Vec::new();
+    let mut remaining = amount;
+
+    for (adapter_name, adapter_info) in automated_adapters {
+        if remaining.is_zero() {
+            break;
+        }
+
+        // Query adapter for available capacity/balance
+        let query_msg = if is_deposit {
+            AdapterInterfaceQueryMsg::AvailableForDeposit {
+                depositor_address: inflow_address.clone(),
+                denom: denom.clone(),
+            }
+        } else {
+            AdapterInterfaceQueryMsg::AvailableForWithdraw {
+                depositor_address: inflow_address.clone(),
+                denom: denom.clone(),
+            }
+        };
+
+        // Query the adapter - if it fails, skip to next adapter
+        let available_result: Result<AvailableAmountResponse, _> = deps.querier.query_wasm_smart(
+            adapter_info.address.to_string(),
+            &AdapterInterfaceQuery {
+                standard_query: &query_msg,
+            },
+        );
+
+        if let Ok(available_response) = available_result {
+            if available_response.amount > Uint128::zero() {
+                // Allocate the minimum of available and remaining
+                let to_allocate = available_response.amount.min(remaining);
+                allocations.push((adapter_name, to_allocate));
+                remaining = remaining.checked_sub(to_allocate)?;
+            }
+        }
+        // If query fails or amount is zero, skip to next adapter
+    }
+
+    Ok(allocations)
+}
+
 fn update_config(
     deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
@@ -945,11 +1667,13 @@ fn get_token_ratio_to_base_token(deps: &Deps<NeutronQuery>, config: &Config) -> 
 }
 
 fn build_update_deployed_amount_msg(
-    deployed_amount_in_base_tokens: Uint128,
+    diff_amount_in_base_tokens: Uint128,
+    direction: DeploymentDirection,
     config: &Config,
 ) -> StdResult<CosmosMsg<NeutronMsg>> {
     let update_deployed_amount_msg = ControlCenterExecuteMsg::UpdateDeployedAmount {
-        amount: deployed_amount_in_base_tokens,
+        amount: diff_amount_in_base_tokens,
+        direction,
     };
 
     Ok(CosmosMsg::Wasm(WasmMsg::Execute {
@@ -1005,6 +1729,8 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
                 &config.control_center_contract,
             )?)
         }
+        QueryMsg::ListAdapters {} => to_json_binary(&query_list_adapters(&deps)?),
+        QueryMsg::AdapterInfo { name } => to_json_binary(&query_adapter_info(&deps, name)?),
     }
 }
 
@@ -1193,6 +1919,27 @@ fn query_whitelist(deps: &Deps<NeutronQuery>) -> StdResult<WhitelistResponse> {
     })
 }
 
+// Adapter query functions
+fn query_list_adapters(deps: &Deps<NeutronQuery>) -> StdResult<AdaptersListResponse> {
+    let adapters = ADAPTERS
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter_map(|entry| match entry {
+            Ok((name, info)) => Some((name, info)),
+            Err(_) => None,
+        })
+        .collect::<Vec<(String, AdapterInfo)>>();
+
+    Ok(AdaptersListResponse { adapters })
+}
+
+fn query_adapter_info(deps: &Deps<NeutronQuery>, name: String) -> StdResult<AdapterInfoResponse> {
+    let info = ADAPTERS
+        .may_load(deps.storage, name.clone())?
+        .ok_or_else(|| StdError::generic_err(format!("Adapter not found: {}", name)))?;
+
+    Ok(AdapterInfoResponse { info })
+}
+
 /// Calculates the value of `shares` relative to the `total_pool_value` based on `total_shares_supply`.
 /// Returned value is denominated in the deposit tokens.
 /// Returns an error if the `shares` exceed supply. Returns zero if supply is zero.
@@ -1290,6 +2037,55 @@ fn create_set_denom_metadata_msg(
     })
 }
 
+/// Queries all registered adapters to get the total amount deposited by this vault contract.
+/// Returns the sum of all positions across all adapters for the given denom.
+fn query_total_adapter_positions(
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
+    deposit_denom: String,
+) -> StdResult<Uint128> {
+    let inflow_address = env.contract.address.to_string();
+    let mut total_positions = Uint128::zero();
+
+    // Iterate through all adapters
+    let adapters: Vec<(String, AdapterInfo)> = ADAPTERS
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter_map(|entry| entry.ok())
+        .collect();
+
+    for (_name, adapter_info) in adapters {
+        // Skip adapters tracked in deployed amount to avoid double counting
+        // These adapters are already counted in Control Center's DEPLOYED_AMOUNT
+        if matches!(
+            adapter_info.deployment_tracking,
+            DeploymentTracking::Tracked
+        ) {
+            continue;
+        }
+
+        // Query each adapter for positions by this vault contract
+        let query_msg = AdapterInterfaceQueryMsg::DepositorPosition {
+            depositor_address: inflow_address.clone(),
+            denom: deposit_denom.clone(),
+        };
+
+        // Query the adapter - if it fails, skip this adapter
+        let result: Result<DepositorPositionResponse, _> = deps.querier.query_wasm_smart(
+            adapter_info.address.to_string(),
+            &AdapterInterfaceQuery {
+                standard_query: &query_msg,
+            },
+        );
+
+        if let Ok(response) = result {
+            total_positions = total_positions.checked_add(response.amount)?;
+        }
+        // If query fails, we skip this adapter and continue
+    }
+
+    Ok(total_positions)
+}
+
 /// Returns the total value of the vault as well as the total number of shares issued by querying
 /// the Control Center contract. The total pool value is denominated in base tokens (e.g. ATOM).
 fn get_control_center_pool_info(
@@ -1318,10 +2114,11 @@ fn get_deposit_cap(
 }
 
 /// Returns information about this contract's pool including:
-///     1. balance
-///     2. withdrawal queue amount and
-///     3. total shares issued.
-/// Balance and withdrawal queue amount values returned are denominated in base tokens (e.g. ATOM).
+///     1. balance,
+///     2. adapter deposits amount,
+///     3. withdrawal queue amount and
+///     4. total shares issued.
+/// Balance, adapter deposits, and withdrawal queue amount values returned are denominated in base tokens (e.g. ATOM).
 /// Intended to be used by the Control Center contract to query the pool values of all its sub-vaults.
 fn get_pool_info(
     deps: &Deps<NeutronQuery>,
@@ -1333,7 +2130,14 @@ fn get_pool_info(
         .query_balance(env.contract.address.clone(), config.deposit_denom.clone())?
         .amount;
 
+    // Get the total amount held in adapters. This amount should be added to the
+    // total pool value, since it is available but not counted in the deployed amount
+    let adapter_deposits = query_total_adapter_positions(deps, env, config.deposit_denom.clone())?;
+
+    // Get the total amount already requested for withdrawal. This amount should be
+    // subtracted from the total pool value, since we cannot count on it anymore.
     let withdrawal_queue_amount = load_withdrawal_queue_info(deps.storage)?.total_withdrawal_amount;
+
     let shares_issued = query_shares_issued(deps)?;
 
     // Convert the values from deposit tokens into base tokens
@@ -1341,6 +2145,14 @@ fn get_pool_info(
     let denominator = Decimal::one().atomics();
 
     let balance_base_tokens = deposit_token_balance
+        .checked_multiply_ratio(ratio_to_base_token, denominator)
+        .map_err(|e| {
+            StdError::generic_err(format!(
+                "failed to convert deposit token into base token representation: {e}"
+            ))
+        })?;
+
+    let adapter_deposits_base_tokens = adapter_deposits
         .checked_multiply_ratio(ratio_to_base_token, denominator)
         .map_err(|e| {
             StdError::generic_err(format!(
@@ -1358,6 +2170,7 @@ fn get_pool_info(
 
     Ok(PoolInfoResponse {
         balance_base_tokens,
+        adapter_deposits_base_tokens,
         withdrawal_queue_base_tokens,
         shares_issued,
     })

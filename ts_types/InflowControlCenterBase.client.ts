@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
-import { Uint128, InstantiateMsg, ExecuteMsg, UpdateConfigData, QueryMsg, ConfigResponse, Config, PoolInfoResponse, Addr, SubvaultsResponse, WhitelistResponse } from "./InflowControlCenterBase.types";
+import { Uint128, InstantiateMsg, ExecuteMsg, DeploymentDirection, UpdateConfigData, QueryMsg, ConfigResponse, Config, PoolInfoResponse, Addr, SubvaultsResponse, WhitelistResponse } from "./InflowControlCenterBase.types";
 export interface InflowControlCenterBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
@@ -62,9 +62,11 @@ export interface InflowControlCenterBaseInterface extends InflowControlCenterBas
     amount: Uint128;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   updateDeployedAmount: ({
-    amount
+    amount,
+    direction
   }: {
     amount: Uint128;
+    direction: DeploymentDirection;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   addToWhitelist: ({
     address
@@ -121,13 +123,16 @@ export class InflowControlCenterBaseClient extends InflowControlCenterBaseQueryC
     }, fee, memo, _funds);
   };
   updateDeployedAmount = async ({
-    amount
+    amount,
+    direction
   }: {
     amount: Uint128;
+    direction: DeploymentDirection;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       update_deployed_amount: {
-        amount
+        amount,
+        direction
       }
     }, fee, memo, _funds);
   };
