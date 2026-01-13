@@ -20,7 +20,7 @@ mod tests {
     ) {
         let deps = mock_dependencies();
         let env = mock_env();
-        let api = deps.api.clone();
+        let api = deps.api;
         (deps, api, env)
     }
 
