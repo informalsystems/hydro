@@ -42,7 +42,7 @@ mod tests {
             datom_denom: "datom".to_string(),
             atom_denom: "uatom".to_string(),
         }
-    }    
+    }
 
     // --------------------------------------------------
     // Instantiate
