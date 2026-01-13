@@ -1,8 +1,8 @@
 use std::str::FromStr;
 
 use cosmwasm_std::{
-    from_json, to_json_binary, to_json_vec, Addr, Coin, Decimal, Deps, DepsMut, Env, Order, Reply,
-    Response, StdError, StdResult, SubMsg, Uint128, WasmMsg,
+    from_json, to_json_binary, to_json_vec, Addr, Attribute, Coin, Decimal, Deps, DepsMut, Env,
+    Order, Reply, Response, StdError, StdResult, SubMsg, Uint128, WasmMsg,
 };
 use interface::{
     hydro::{ExecuteMsg as HydroExecuteMsg, TokenGroupRatioChange},
@@ -97,25 +97,52 @@ pub fn handle_delivered_interchain_query_result(
     env: Env,
     query_id: u64,
 ) -> Result<Response<NeutronMsg>, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+    let current_round = query_current_round_id(&deps.as_ref(), &config.hydro_contract_address)?;
+    run_on_each_transaction(&mut deps, current_round)?;
+
     let validator = match get_interchain_query_result(deps.as_ref(), env.clone(), query_id) {
         Ok(validator) => validator,
         Err(_) => {
-            return Ok(
-                Response::default().add_submessage(build_remove_interchain_query_submsg(query_id)?)
+            // Error is returned in one of the following cases:
+            //  1. Validator with a given address doesn't exist, and it never existed
+            //  2. Validator did exist, but it completely unbonded in the meantime and was removed
+            // In both cases, we should remove the ICQ for this validator, but in second case we
+            // should also remove it from the top N validators stores, if it was present there.
+            let validator_address = QUERY_ID_TO_VALIDATOR.load(deps.storage, query_id)?;
+            return handle_validator_removal(
+                deps,
+                current_round,
+                validator_address,
+                query_id,
+                config.hydro_contract_address,
             );
         }
     };
 
-    let config = CONFIG.load(deps.storage)?;
-    let current_round = query_current_round_id(&deps.as_ref(), &config.hydro_contract_address)?;
-
-    run_on_each_transaction(&mut deps, current_round)?;
-
     let validator_address = validator.operator_address.clone();
     let new_tokens = Uint128::from_str(&validator.tokens)?;
     let new_shares = Uint128::from_str(&validator.delegator_shares)?;
+
+    // When a validator unbonds all its tokens, staking module will still return that validator
+    // with 0 tokens and shares for some time, so we need to handle this case gracefully.
+    if new_tokens.is_zero() || new_shares.is_zero() {
+        return handle_validator_removal(
+            deps,
+            current_round,
+            validator_address,
+            query_id,
+            config.hydro_contract_address,
+        );
+    }
+
     let new_power_ratio = Decimal::from_ratio(new_tokens * TOKENS_TO_SHARES_MULTIPLIER, new_shares);
 
+    let mut attributes = vec![
+        Attribute::new("action", "handle_delivered_interchain_query_result"),
+        Attribute::new("query_id", query_id.to_string().as_str()),
+        Attribute::new("validator_address", &validator_address),
+    ];
     let mut submsgs = vec![];
     let mut token_groups_ratios_changes = vec![];
 
@@ -182,6 +209,11 @@ pub fn handle_delivered_interchain_query_result(
                         submsgs.push(build_remove_interchain_query_submsg(
                             last_validator_query_id,
                         )?);
+
+                        attributes.extend_from_slice(&[
+                            Attribute::new("removed_query_id", last_validator_query_id.to_string()),
+                            Attribute::new("removed_validator_address", last_validator.1.as_str()),
+                        ]);
                     } else {
                         // remove ICQ for this validator since it is not in the top N
                         submsgs.push(build_remove_interchain_query_submsg(query_id)?);
@@ -198,7 +230,39 @@ pub fn handle_delivered_interchain_query_result(
         )?);
     }
 
-    Ok(Response::default().add_submessages(submsgs))
+    Ok(Response::default()
+        .add_attributes(attributes)
+        .add_submessages(submsgs))
+}
+
+fn handle_validator_removal(
+    mut deps: DepsMut<NeutronQuery>,
+    current_round: u64,
+    validator_address: String,
+    query_id: u64,
+    hydro_contract_address: Addr,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let mut submsgs = vec![];
+
+    if let Some(validator_info) =
+        VALIDATORS_INFO.may_load(deps.storage, (current_round, validator_address.clone()))?
+    {
+        let token_group_ratio_change =
+            top_n_validator_remove(&mut deps, current_round, validator_info)?;
+
+        submsgs.push(build_token_groups_ratios_update_msg(
+            &hydro_contract_address,
+            vec![token_group_ratio_change],
+        )?);
+    }
+
+    submsgs.push(build_remove_interchain_query_submsg(query_id)?);
+
+    Ok(Response::default()
+        .add_attribute("action", "handle_delivered_interchain_query_result")
+        .add_attribute("removed_query_id", query_id.to_string())
+        .add_attribute("validator_address", validator_address)
+        .add_submessages(submsgs))
 }
 
 fn top_n_validator_add(
