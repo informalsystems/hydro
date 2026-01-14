@@ -174,3 +174,26 @@ After modifying contract messages:
 - Contracts target `wasm32-unknown-unknown`
 - Release builds use aggressive optimization (LTO, single codegen unit)
 - The workspace version (currently 3.6.6) is synchronized across all contracts
+
+## Before Creating a PR
+
+Run these commands before committing:
+
+```bash
+# Format code (required)
+make fmt
+
+# Run linter
+make clippy
+
+# Run unit tests
+make test-unit
+
+# Regenerate schemas if you modified contract messages
+make schema
+
+# Compile contracts (requires Docker)
+make compile
+```
+
+Add artifacts, schemas, and a changelog entry to your PR.
