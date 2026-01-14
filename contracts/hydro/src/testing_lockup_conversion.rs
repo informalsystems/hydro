@@ -625,10 +625,12 @@ fn query_all_available_conversion_funds_test() {
     );
 
     // Test 1: Query when no conversion funds exist - should return empty response
-    let response = query_all_available_conversion_funds(deps.as_ref(), round_id).unwrap();
+    let response =
+        query_all_available_conversion_funds(deps.as_ref(), round_id, None, None).unwrap();
     assert_eq!(response.round_id, round_id);
     assert!(response.funds.is_empty());
     assert_eq!(response.total_base_token_equivalent, Uint128::zero());
+    assert!(!response.has_more);
 
     // Test 2: Provide conversion funds for stATOM (ratio 1.6) and dATOM (ratio 1.2)
     let st_atom_amount = 1000u128;
@@ -665,10 +667,12 @@ fn query_all_available_conversion_funds_test() {
     assert!(res.is_ok());
 
     // Query all available conversion funds
-    let response = query_all_available_conversion_funds(deps.as_ref(), round_id).unwrap();
+    let response =
+        query_all_available_conversion_funds(deps.as_ref(), round_id, None, None).unwrap();
 
     assert_eq!(response.round_id, round_id);
     assert_eq!(response.funds.len(), 2);
+    assert!(!response.has_more);
 
     // Expected base token equivalents:
     // stATOM: 1000 * 1.6 = 1600
@@ -707,9 +711,11 @@ fn query_all_available_conversion_funds_test() {
         )
         .unwrap();
 
-    let response = query_all_available_conversion_funds(deps.as_ref(), round_id).unwrap();
+    let response =
+        query_all_available_conversion_funds(deps.as_ref(), round_id, None, None).unwrap();
 
     assert_eq!(response.funds.len(), 3);
+    assert!(!response.has_more);
 
     // Total should still be 2200 (unknown token contributes 0 due to zero ratio)
     assert_eq!(response.total_base_token_equivalent, expected_total);
@@ -723,4 +729,116 @@ fn query_all_available_conversion_funds_test() {
     assert_eq!(unknown_fund.amount, Uint128::new(unknown_amount));
     assert_eq!(unknown_fund.ratio, Decimal::zero());
     assert_eq!(unknown_fund.base_token_equivalent, Uint128::zero());
+}
+
+#[test]
+fn query_all_available_conversion_funds_pagination_test() {
+    use crate::contract::query_all_available_conversion_funds;
+
+    let grpc_query = denom_trace_grpc_query_mock(
+        "transfer/channel-0".to_string(),
+        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+    );
+
+    let round_id = 0u64;
+
+    let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
+
+    let whitelist_admin_address = deps.api.addr_make("addr0001");
+
+    let mut instantiate_msg = get_default_instantiate_msg(&deps.api);
+    instantiate_msg.round_length = instantiate_msg.lock_epoch_length;
+    instantiate_msg.whitelist_admins = vec![whitelist_admin_address.to_string()];
+
+    let whitelist_admin_info = get_message_info(&deps.api, "addr0001", &[]);
+
+    let res = instantiate(
+        deps.as_mut(),
+        env.clone(),
+        whitelist_admin_info.clone(),
+        instantiate_msg.clone(),
+    );
+    assert!(res.is_ok());
+
+    // Add 5 denoms directly to storage for pagination testing
+    // Using alphabetically ordered denoms: denom_a, denom_b, denom_c, denom_d, denom_e
+    let denoms = ["denom_a", "denom_b", "denom_c", "denom_d", "denom_e"];
+    for (i, denom) in denoms.iter().enumerate() {
+        AVAILABLE_CONVERSION_FUNDS
+            .save(
+                &mut deps.storage,
+                denom.to_string(),
+                &Uint128::new((i as u128 + 1) * 100), // 100, 200, 300, 400, 500
+            )
+            .unwrap();
+    }
+
+    // Test 1: Query with limit=2 - should return first 2 denoms and has_more=true
+    let response =
+        query_all_available_conversion_funds(deps.as_ref(), round_id, None, Some(2)).unwrap();
+    assert_eq!(response.funds.len(), 2);
+    assert!(response.has_more);
+    assert_eq!(response.funds[0].denom, "denom_a");
+    assert_eq!(response.funds[0].amount, Uint128::new(100));
+    assert_eq!(response.funds[1].denom, "denom_b");
+    assert_eq!(response.funds[1].amount, Uint128::new(200));
+
+    // Test 2: Query with start_after="denom_b" and limit=2 - should return denom_c and denom_d
+    let response = query_all_available_conversion_funds(
+        deps.as_ref(),
+        round_id,
+        Some("denom_b".to_string()),
+        Some(2),
+    )
+    .unwrap();
+    assert_eq!(response.funds.len(), 2);
+    assert!(response.has_more);
+    assert_eq!(response.funds[0].denom, "denom_c");
+    assert_eq!(response.funds[0].amount, Uint128::new(300));
+    assert_eq!(response.funds[1].denom, "denom_d");
+    assert_eq!(response.funds[1].amount, Uint128::new(400));
+
+    // Test 3: Query with start_after="denom_d" and limit=2 - should return denom_e and has_more=false
+    let response = query_all_available_conversion_funds(
+        deps.as_ref(),
+        round_id,
+        Some("denom_d".to_string()),
+        Some(2),
+    )
+    .unwrap();
+    assert_eq!(response.funds.len(), 1);
+    assert!(!response.has_more);
+    assert_eq!(response.funds[0].denom, "denom_e");
+    assert_eq!(response.funds[0].amount, Uint128::new(500));
+
+    // Test 4: Query with start_after="denom_e" - should return empty with has_more=false
+    let response = query_all_available_conversion_funds(
+        deps.as_ref(),
+        round_id,
+        Some("denom_e".to_string()),
+        Some(2),
+    )
+    .unwrap();
+    assert!(response.funds.is_empty());
+    assert!(!response.has_more);
+
+    // Test 5: Query all at once (limit=10) - should return all 5 with has_more=false
+    let response =
+        query_all_available_conversion_funds(deps.as_ref(), round_id, None, Some(10)).unwrap();
+    assert_eq!(response.funds.len(), 5);
+    assert!(!response.has_more);
+
+    // Test 6: Verify default limit works (no limit specified)
+    let response =
+        query_all_available_conversion_funds(deps.as_ref(), round_id, None, None).unwrap();
+    assert_eq!(response.funds.len(), 5);
+    assert!(!response.has_more);
+
+    // Test 7: Verify total_base_token_equivalent is correct for paginated results
+    // Since these denoms are not recognized by any token info provider, ratios are 0
+    // and base_token_equivalent should be 0
+    let response =
+        query_all_available_conversion_funds(deps.as_ref(), round_id, None, Some(3)).unwrap();
+    assert_eq!(response.funds.len(), 3);
+    assert_eq!(response.total_base_token_equivalent, Uint128::zero()); // All ratios are 0
 }

@@ -11,6 +11,7 @@ use cosmwasm_std::{
     MessageInfo, Order, Reply, Response, StdError, StdResult, Storage, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
+use cw_storage_plus::Bound;
 use interface::drop_puppeteer::{DelegationsResponse, PuppeteerQueryMsg, QueryExtMsg};
 use interface::hydro::{CurrentRoundResponse, TokenGroupRatioChange};
 
@@ -3221,9 +3222,16 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, ContractErro
         QueryMsg::AvailableConversionFunds { token_denom } => {
             to_json_binary(&query_available_conversion_funds(deps, token_denom)?)
         }
-        QueryMsg::AllAvailableConversionFunds { round_id } => {
-            to_json_binary(&query_all_available_conversion_funds(deps, round_id)?)
-        }
+        QueryMsg::AllAvailableConversionFunds {
+            round_id,
+            start_after,
+            limit,
+        } => to_json_binary(&query_all_available_conversion_funds(
+            deps,
+            round_id,
+            start_after,
+            limit,
+        )?),
         QueryMsg::ConvertedTokenNum {
             lock_id,
             token_denom,
@@ -4137,15 +4145,34 @@ pub fn query_available_conversion_funds(deps: Deps, token_denom: String) -> StdR
         .unwrap_or_default())
 }
 
+/// Default limit for pagination queries
+const DEFAULT_PAGINATION_LIMIT: u32 = 30;
+/// Maximum limit for pagination queries
+const MAX_PAGINATION_LIMIT: u32 = 100;
+
 pub fn query_all_available_conversion_funds(
     deps: Deps,
     round_id: u64,
+    start_after: Option<String>,
+    limit: Option<u32>,
 ) -> Result<AllAvailableConversionFundsResponse, ContractError> {
     let mut token_manager = TokenManager::new(&deps);
     let mut funds: Vec<ConversionFundInfo> = vec![];
     let mut total_base_token_equivalent = Uint128::zero();
 
-    for item in AVAILABLE_CONVERSION_FUNDS.range(deps.storage, None, None, Order::Ascending) {
+    // Apply pagination limits
+    let limit = limit
+        .unwrap_or(DEFAULT_PAGINATION_LIMIT)
+        .min(MAX_PAGINATION_LIMIT) as usize;
+
+    // Set up the range bounds based on start_after
+    let min_bound = start_after.as_ref().map(|s| Bound::exclusive(s.as_str()));
+
+    // Request one more than the limit to determine if there are more results
+    for item in AVAILABLE_CONVERSION_FUNDS
+        .range(deps.storage, min_bound, None, Order::Ascending)
+        .take(limit + 1)
+    {
         let (denom, amount) = item?;
 
         // Get ratio (returns zero if denom not recognized)
@@ -4165,10 +4192,24 @@ pub fn query_all_available_conversion_funds(
         });
     }
 
+    // Check if there are more results beyond the requested limit
+    let has_more = funds.len() > limit;
+    if has_more {
+        // Remove the extra item we used to check for more results
+        let removed = funds.pop();
+        // Subtract its base_token_equivalent from the total
+        if let Some(removed_fund) = removed {
+            total_base_token_equivalent = total_base_token_equivalent
+                .checked_sub(removed_fund.base_token_equivalent)
+                .unwrap_or_default();
+        }
+    }
+
     Ok(AllAvailableConversionFundsResponse {
         round_id,
         funds,
         total_base_token_equivalent,
+        has_more,
     })
 }
 
