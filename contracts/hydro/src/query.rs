@@ -249,8 +249,13 @@ pub enum QueryMsg {
 
     /// Returns all available conversion funds with their amounts and base token equivalents for a given round.
     /// The total_base_token_equivalent is the sum of all funds converted to base token using their ratios.
+    /// Supports pagination via start_after (denom to start after) and limit (max items to return).
     #[returns(AllAvailableConversionFundsResponse)]
-    AllAvailableConversionFunds { round_id: u64 },
+    AllAvailableConversionFunds {
+        round_id: u64,
+        start_after: Option<String>,
+        limit: Option<u32>,
+    },
 
     /// Given a lock id and a resulting token denom, returns the number of tokens of a resulting denom
     /// that a given lockup would hold after conversion.
@@ -596,8 +601,10 @@ pub struct ConversionFundInfo {
 pub struct AllAvailableConversionFundsResponse {
     /// The round ID used for ratio calculations
     pub round_id: u64,
-    /// List of all conversion funds with their base token equivalents
+    /// List of conversion funds with their base token equivalents (paginated)
     pub funds: Vec<ConversionFundInfo>,
-    /// Total base token equivalent across all denoms (sum of all base_token_equivalent values)
+    /// Total base token equivalent for the funds returned in this page (sum of base_token_equivalent values)
     pub total_base_token_equivalent: Uint128,
+    /// Indicates if there are more funds after this page. Use the last denom as start_after for the next page.
+    pub has_more: bool,
 }

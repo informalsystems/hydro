@@ -289,9 +289,13 @@ export interface HydroBaseReadOnlyInterface {
     tokenDenom: string;
   }) => Promise<Uint128>;
   allAvailableConversionFunds: ({
-    roundId
+    limit,
+    roundId,
+    startAfter
   }: {
+    limit?: number;
     roundId: number;
+    startAfter?: string;
   }) => Promise<AllAvailableConversionFundsResponse>;
   convertedTokenNum: ({
     lockId,
@@ -934,13 +938,19 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     });
   };
   allAvailableConversionFunds = async ({
-    roundId
+    limit,
+    roundId,
+    startAfter
   }: {
+    limit?: number;
     roundId: number;
+    startAfter?: string;
   }): Promise<AllAvailableConversionFundsResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       all_available_conversion_funds: {
-        round_id: roundId
+        limit,
+        round_id: roundId,
+        start_after: startAfter
       }
     });
   };

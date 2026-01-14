@@ -2974,7 +2974,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Returns all available conversion funds with their amounts and base token equivalents for a given round. The total_base_token_equivalent is the sum of all funds converted to base token using their ratios.",
+        "description": "Returns all available conversion funds with their amounts and base token equivalents for a given round. The total_base_token_equivalent is the sum of all funds converted to base token using their ratios. Supports pagination via start_after (denom to start after) and limit (max items to return).",
         "type": "object",
         "required": [
           "all_available_conversion_funds"
@@ -2986,10 +2986,24 @@
               "round_id"
             ],
             "properties": {
+              "limit": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint32",
+                "minimum": 0.0
+              },
               "round_id": {
                 "type": "integer",
                 "format": "uint64",
                 "minimum": 0.0
+              },
+              "start_after": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "additionalProperties": false
@@ -3040,16 +3054,21 @@
       "type": "object",
       "required": [
         "funds",
+        "has_more",
         "round_id",
         "total_base_token_equivalent"
       ],
       "properties": {
         "funds": {
-          "description": "List of all conversion funds with their base token equivalents",
+          "description": "List of conversion funds with their base token equivalents (paginated)",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ConversionFundInfo"
           }
+        },
+        "has_more": {
+          "description": "Indicates if there are more funds after this page. Use the last denom as start_after for the next page.",
+          "type": "boolean"
         },
         "round_id": {
           "description": "The round ID used for ratio calculations",
@@ -3058,7 +3077,7 @@
           "minimum": 0.0
         },
         "total_base_token_equivalent": {
-          "description": "Total base token equivalent across all denoms (sum of all base_token_equivalent values)",
+          "description": "Total base token equivalent for the funds returned in this page (sum of base_token_equivalent values)",
           "allOf": [
             {
               "$ref": "#/definitions/Uint128"
