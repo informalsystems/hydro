@@ -1224,6 +1224,30 @@
       "additionalProperties": false
     },
     {
+      "description": "Returns all available conversion funds with their amounts and base token equivalents for a given round. The total_base_token_equivalent is the sum of all funds converted to base token using their ratios.",
+      "type": "object",
+      "required": [
+        "all_available_conversion_funds"
+      ],
+      "properties": {
+        "all_available_conversion_funds": {
+          "type": "object",
+          "required": [
+            "round_id"
+          ],
+          "properties": {
+            "round_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
       "description": "Given a lock id and a resulting token denom, returns the number of tokens of a resulting denom that a given lockup would hold after conversion.",
       "type": "object",
       "required": [

@@ -247,6 +247,11 @@ pub enum QueryMsg {
     #[returns(Uint128)]
     AvailableConversionFunds { token_denom: String },
 
+    /// Returns all available conversion funds with their amounts and base token equivalents for a given round.
+    /// The total_base_token_equivalent is the sum of all funds converted to base token using their ratios.
+    #[returns(AllAvailableConversionFundsResponse)]
+    AllAvailableConversionFunds { round_id: u64 },
+
     /// Given a lock id and a resulting token denom, returns the number of tokens of a resulting denom
     /// that a given lockup would hold after conversion.
     #[returns(Uint128)]
@@ -570,4 +575,29 @@ pub struct LockupVotingMetrics {
 #[cw_serde]
 pub struct LockupVotingMetricsResponse {
     pub lockups: Vec<LockupVotingMetrics>,
+}
+
+/// Information about available conversion funds for a single token denom.
+#[cw_serde]
+pub struct ConversionFundInfo {
+    /// The token denomination (e.g., "ibc/...", "statom", etc.)
+    pub denom: String,
+    /// The raw amount of tokens available for conversion
+    pub amount: Uint128,
+    /// The ratio of this token to base token for the given round.
+    /// Will be Decimal::zero() if the token info provider doesn't recognize the denom.
+    pub ratio: Decimal,
+    /// The base token equivalent of the amount (amount * ratio), truncated to nearest integer.
+    /// Will be Uint128::zero() if ratio is zero.
+    pub base_token_equivalent: Uint128,
+}
+
+#[cw_serde]
+pub struct AllAvailableConversionFundsResponse {
+    /// The round ID used for ratio calculations
+    pub round_id: u64,
+    /// List of all conversion funds with their base token equivalents
+    pub funds: Vec<ConversionFundInfo>,
+    /// Total base token equivalent across all denoms (sum of all base_token_equivalent values)
+    pub total_base_token_equivalent: Uint128,
 }
