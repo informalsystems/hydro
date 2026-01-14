@@ -641,7 +641,12 @@ fn query_all_available_conversion_funds_test() {
         &[Coin::new(st_atom_amount, ST_ATOM_ON_NEUTRON.to_string())],
     );
     let msg = ExecuteMsg::ProvideConversionFunds {};
-    let res = execute(deps.as_mut(), env.clone(), whitelist_admin_info.clone(), msg);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        whitelist_admin_info.clone(),
+        msg,
+    );
     assert!(res.is_ok());
 
     // Provide dATOM conversion funds
@@ -651,7 +656,12 @@ fn query_all_available_conversion_funds_test() {
         &[Coin::new(d_atom_amount, D_ATOM_ON_NEUTRON.to_string())],
     );
     let msg = ExecuteMsg::ProvideConversionFunds {};
-    let res = execute(deps.as_mut(), env.clone(), whitelist_admin_info.clone(), msg);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        whitelist_admin_info.clone(),
+        msg,
+    );
     assert!(res.is_ok());
 
     // Query all available conversion funds
@@ -690,7 +700,11 @@ fn query_all_available_conversion_funds_test() {
     let unknown_denom = "unknown_token";
     let unknown_amount = 2000u128;
     AVAILABLE_CONVERSION_FUNDS
-        .save(&mut deps.storage, unknown_denom.to_string(), &Uint128::new(unknown_amount))
+        .save(
+            &mut deps.storage,
+            unknown_denom.to_string(),
+            &Uint128::new(unknown_amount),
+        )
         .unwrap();
 
     let response = query_all_available_conversion_funds(deps.as_ref(), round_id).unwrap();

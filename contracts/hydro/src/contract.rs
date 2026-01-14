@@ -4154,7 +4154,8 @@ pub fn query_all_available_conversion_funds(
         // Calculate base token equivalent
         let base_token_equivalent = amount.mul_floor(ratio);
 
-        total_base_token_equivalent = total_base_token_equivalent.checked_add(base_token_equivalent)?;
+        total_base_token_equivalent =
+            total_base_token_equivalent.checked_add(base_token_equivalent)?;
 
         funds.push(ConversionFundInfo {
             denom,
