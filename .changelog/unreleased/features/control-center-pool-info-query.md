@@ -1,0 +1,1 @@
+- Add `ControlCenterPoolInfo` query to the Inflow vault contract that returns the pool info from the Control Center contract.

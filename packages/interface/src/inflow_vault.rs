@@ -241,6 +241,10 @@ pub enum QueryMsg {
     #[returns(WhitelistResponse)]
     Whitelist {},
 
+    /// Returns the pool info of the Control Center contract.
+    #[returns(super::inflow_control_center::PoolInfoResponse)]
+    ControlCenterPoolInfo {},
+
     /// Returns a list of all registered adapters
     #[returns(AdaptersListResponse)]
     ListAdapters {},
