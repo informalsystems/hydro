@@ -488,12 +488,30 @@ export type QueryMsg = {
     token_denom: string;
   };
 } | {
+  all_available_conversion_funds: {
+    limit?: number | null;
+    round_id: number;
+    start_after?: string | null;
+  };
+} | {
   converted_token_num: {
     lock_id: number;
     token_denom: string;
     user_provides_funds: boolean;
   };
 };
+export interface AllAvailableConversionFundsResponse {
+  funds: ConversionFundInfo[];
+  has_more: boolean;
+  round_id: number;
+  total_base_token_equivalent: Uint128;
+}
+export interface ConversionFundInfo {
+  amount: Uint128;
+  base_token_equivalent: Uint128;
+  denom: string;
+  ratio: Decimal;
+}
 export type Addr = string;
 export interface AllNftInfoResponse {
   access: OwnerOfResponse;
