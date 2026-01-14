@@ -1,8 +1,6 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Coin, Order, Timestamp, Uint128};
 
-use super::inflow_control_center::PoolInfoResponse as ControlCenterPoolInfoResponse;
-
 #[cw_serde]
 pub struct Config {
     /// Token denom that users can deposit into the vault.
@@ -244,7 +242,7 @@ pub enum QueryMsg {
     Whitelist {},
 
     /// Returns the pool info of the Control Center contract.
-    #[returns(ControlCenterPoolInfoResponse)]
+    #[returns(super::inflow_control_center::PoolInfoResponse)]
     ControlCenterPoolInfo {},
 
     /// Returns a list of all registered adapters
