@@ -50,6 +50,7 @@ schema:
 	cd contracts/inflow/user-registry && cargo run --bin inflow_user_registry_schema
 	cd contracts/inflow/mars-adapter && cargo run --bin inflow_mars_adapter_schema
 	cd contracts/inflow/ibc-adapter && cargo run --bin inflow_ibc_adapter_schema
+	cd contracts/inflow/skip-adapter && cargo run --bin inflow_skip_adapter_schema
 
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/hydro/schema NAME=HydroBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/tribute/schema NAME=TributeBase
@@ -65,6 +66,7 @@ schema:
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/user-registry/schema NAME=InflowUserRegistryBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/mars-adapter/schema NAME=InflowMarsAdapterBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/ibc-adapter/schema NAME=InflowIBCAdapterBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/skip-adapter/schema NAME=InflowSkipAdapterBase
 
 ts-codegen-inner:
 	npx @cosmwasm/ts-codegen@1.7.2 generate \

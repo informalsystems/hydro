@@ -1,0 +1,1 @@
+- Add the skip swap adapter that can be triggered to request token swaps on local or remote chains via IBC + PFM + Hooks, using Skip swap contracts. ([\#361](https://github.com/informalsystems/hydro/pull/361))
