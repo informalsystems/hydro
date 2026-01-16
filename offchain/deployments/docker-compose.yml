@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: inflow-postgres
+    environment:
+      POSTGRES_DB: inflow_service
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../internal/database/migrations:/migrations:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - inflow-network
+
+  # Uncomment when ready to run the service
+  # service:
+  #   build:
+  #     context: ..
+  #     dockerfile: deployments/Dockerfile
+  #   container_name: inflow-service
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     SERVER_PORT: 8080
+  #     DB_HOST: postgres
+  #     DB_PORT: 5432
+  #     DB_USER: postgres
+  #     DB_PASSWORD: postgres
+  #     DB_NAME: inflow_service
+  #     DB_SSL_MODE: disable
+  #     # Add other environment variables from .env file
+  #   env_file:
+  #     - .env
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - inflow-network
+  #   restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  inflow-network:
+    driver: bridge
