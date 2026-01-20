@@ -169,7 +169,7 @@ After modifying contract messages:
 3. CW Orchestrator interfaces in `packages/interface/` may need manual updates
 
 ## Artifact Compilation
-After modifying any contract code (even queries, though not including tests), before committing:
+After modifying any contract code (including queries, but excluding tests), before committing:
 1. Run `make compile` to regenerate artifacts
 2. Artifacts are auto-generated in `artifacts`, including their checksums
 
