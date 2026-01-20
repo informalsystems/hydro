@@ -290,11 +290,9 @@ export interface HydroBaseReadOnlyInterface {
   }) => Promise<Uint128>;
   allAvailableConversionFunds: ({
     limit,
-    roundId,
     startAfter
   }: {
     limit?: number;
-    roundId: number;
     startAfter?: string;
   }) => Promise<AllAvailableConversionFundsResponse>;
   convertedTokenNum: ({
@@ -939,17 +937,14 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
   };
   allAvailableConversionFunds = async ({
     limit,
-    roundId,
     startAfter
   }: {
     limit?: number;
-    roundId: number;
     startAfter?: string;
   }): Promise<AllAvailableConversionFundsResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       all_available_conversion_funds: {
         limit,
-        round_id: roundId,
         start_after: startAfter
       }
     });

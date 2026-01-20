@@ -14,6 +14,7 @@ use cw2::set_contract_version;
 use cw_storage_plus::Bound;
 use interface::drop_puppeteer::{DelegationsResponse, PuppeteerQueryMsg, QueryExtMsg};
 use interface::hydro::{CurrentRoundResponse, TokenGroupRatioChange};
+use interface::utils::{DEFAULT_PAGINATION_LIMIT, MAX_PAGINATION_LIMIT};
 
 use crate::cw721;
 use crate::error::{new_generic_error, ContractError};
@@ -3222,16 +3223,9 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, ContractErro
         QueryMsg::AvailableConversionFunds { token_denom } => {
             to_json_binary(&query_available_conversion_funds(deps, token_denom)?)
         }
-        QueryMsg::AllAvailableConversionFunds {
-            round_id,
-            start_after,
-            limit,
-        } => to_json_binary(&query_all_available_conversion_funds(
-            deps,
-            round_id,
-            start_after,
-            limit,
-        )?),
+        QueryMsg::AllAvailableConversionFunds { start_after, limit } => to_json_binary(
+            &query_all_available_conversion_funds(deps, &env, start_after, limit)?,
+        ),
         QueryMsg::ConvertedTokenNum {
             lock_id,
             token_denom,
@@ -4145,17 +4139,15 @@ pub fn query_available_conversion_funds(deps: Deps, token_denom: String) -> StdR
         .unwrap_or_default())
 }
 
-/// Default limit for pagination queries
-const DEFAULT_PAGINATION_LIMIT: u32 = 30;
-/// Maximum limit for pagination queries
-const MAX_PAGINATION_LIMIT: u32 = 100;
-
 pub fn query_all_available_conversion_funds(
     deps: Deps,
-    round_id: u64,
+    env: &Env,
     start_after: Option<String>,
     limit: Option<u32>,
 ) -> Result<AllAvailableConversionFundsResponse, ContractError> {
+    let constants = load_current_constants(&deps, env)?;
+    let round_id = compute_current_round_id(env, &constants)?;
+
     let mut token_manager = TokenManager::new(&deps);
     let mut funds: Vec<ConversionFundInfo> = vec![];
     let mut total_base_token_equivalent = Uint128::zero();
@@ -4206,7 +4198,6 @@ pub fn query_all_available_conversion_funds(
     }
 
     Ok(AllAvailableConversionFundsResponse {
-        round_id,
         funds,
         total_base_token_equivalent,
         has_more,
