@@ -171,7 +171,9 @@ After modifying contract messages:
 ## Artifact Compilation
 After modifying any contract code (including queries, but excluding tests), before committing:
 1. Run `make compile` to regenerate artifacts
-2. Artifacts are auto-generated in `artifacts`, including their checksums
+2. Artifacts are auto-generated in `artifacts`, including their checksums.
+
+This is important to ensure that the binaries are consistent with the code.
 
 Note that for `make compile` to work, Docker has to be running.
 If `make compile` fails with a message about Docker not running, ask the user to start it.
