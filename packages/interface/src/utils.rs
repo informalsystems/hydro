@@ -7,6 +7,11 @@ use cosmwasm_std::{Reply, StdError, StdResult};
 // that we need when reply() is called, we don't need to set a unique SubMsg ID and can use 0 for all SubMsgs.
 pub const UNUSED_MSG_ID: u64 = 0;
 
+/// Default limit for pagination queries
+pub const DEFAULT_PAGINATION_LIMIT: u32 = 30;
+/// Maximum limit for pagination queries
+pub const MAX_PAGINATION_LIMIT: u32 = 100;
+
 // This function extracts the response message bytes from the Reply message instance.
 // Note that it only works if the Reply message contains a single response.
 pub fn extract_response_msg_bytes_from_reply_msg(msg: &Reply) -> StdResult<Vec<u8>> {
