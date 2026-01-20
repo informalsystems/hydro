@@ -207,3 +207,6 @@ make compile
 ```
 
 Add artifacts, schemas, and a changelog entry to your PR.
+Changelog entries live in the `.changelog` directory. You can look at examples
+from previous entries, stick closely to their format. Generally, entries should land in the `unreleased` folder.
+DO NOT DIRECTLY MODIFY THE `CHANGELOG` FILE.
