@@ -562,8 +562,6 @@ fn query_all_available_conversion_funds_test() {
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
 
-    let round_id = 0u64;
-
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
 
     let whitelist_admin_address = deps.api.addr_make("addr0001");
@@ -625,9 +623,7 @@ fn query_all_available_conversion_funds_test() {
     );
 
     // Test 1: Query when no conversion funds exist - should return empty response
-    let response =
-        query_all_available_conversion_funds(deps.as_ref(), round_id, None, None).unwrap();
-    assert_eq!(response.round_id, round_id);
+    let response = query_all_available_conversion_funds(deps.as_ref(), &env, None, None).unwrap();
     assert!(response.funds.is_empty());
     assert_eq!(response.total_base_token_equivalent, Uint128::zero());
     assert!(!response.has_more);
@@ -667,10 +663,8 @@ fn query_all_available_conversion_funds_test() {
     assert!(res.is_ok());
 
     // Query all available conversion funds
-    let response =
-        query_all_available_conversion_funds(deps.as_ref(), round_id, None, None).unwrap();
+    let response = query_all_available_conversion_funds(deps.as_ref(), &env, None, None).unwrap();
 
-    assert_eq!(response.round_id, round_id);
     assert_eq!(response.funds.len(), 2);
     assert!(!response.has_more);
 
@@ -711,8 +705,7 @@ fn query_all_available_conversion_funds_test() {
         )
         .unwrap();
 
-    let response =
-        query_all_available_conversion_funds(deps.as_ref(), round_id, None, None).unwrap();
+    let response = query_all_available_conversion_funds(deps.as_ref(), &env, None, None).unwrap();
 
     assert_eq!(response.funds.len(), 3);
     assert!(!response.has_more);
@@ -739,8 +732,6 @@ fn query_all_available_conversion_funds_pagination_test() {
         "transfer/channel-0".to_string(),
         HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
     );
-
-    let round_id = 0u64;
 
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
 
@@ -775,7 +766,7 @@ fn query_all_available_conversion_funds_pagination_test() {
 
     // Test 1: Query with limit=2 - should return first 2 denoms and has_more=true
     let response =
-        query_all_available_conversion_funds(deps.as_ref(), round_id, None, Some(2)).unwrap();
+        query_all_available_conversion_funds(deps.as_ref(), &env, None, Some(2)).unwrap();
     assert_eq!(response.funds.len(), 2);
     assert!(response.has_more);
     assert_eq!(response.funds[0].denom, "denom_a");
@@ -786,7 +777,7 @@ fn query_all_available_conversion_funds_pagination_test() {
     // Test 2: Query with start_after="denom_b" and limit=2 - should return denom_c and denom_d
     let response = query_all_available_conversion_funds(
         deps.as_ref(),
-        round_id,
+        &env,
         Some("denom_b".to_string()),
         Some(2),
     )
@@ -801,7 +792,7 @@ fn query_all_available_conversion_funds_pagination_test() {
     // Test 3: Query with start_after="denom_d" and limit=2 - should return denom_e and has_more=false
     let response = query_all_available_conversion_funds(
         deps.as_ref(),
-        round_id,
+        &env,
         Some("denom_d".to_string()),
         Some(2),
     )
@@ -814,7 +805,7 @@ fn query_all_available_conversion_funds_pagination_test() {
     // Test 4: Query with start_after="denom_e" - should return empty with has_more=false
     let response = query_all_available_conversion_funds(
         deps.as_ref(),
-        round_id,
+        &env,
         Some("denom_e".to_string()),
         Some(2),
     )
@@ -824,13 +815,12 @@ fn query_all_available_conversion_funds_pagination_test() {
 
     // Test 5: Query all at once (limit=10) - should return all 5 with has_more=false
     let response =
-        query_all_available_conversion_funds(deps.as_ref(), round_id, None, Some(10)).unwrap();
+        query_all_available_conversion_funds(deps.as_ref(), &env, None, Some(10)).unwrap();
     assert_eq!(response.funds.len(), 5);
     assert!(!response.has_more);
 
     // Test 6: Verify default limit works (no limit specified)
-    let response =
-        query_all_available_conversion_funds(deps.as_ref(), round_id, None, None).unwrap();
+    let response = query_all_available_conversion_funds(deps.as_ref(), &env, None, None).unwrap();
     assert_eq!(response.funds.len(), 5);
     assert!(!response.has_more);
 
@@ -838,7 +828,7 @@ fn query_all_available_conversion_funds_pagination_test() {
     // Since these denoms are not recognized by any token info provider, ratios are 0
     // and base_token_equivalent should be 0
     let response =
-        query_all_available_conversion_funds(deps.as_ref(), round_id, None, Some(3)).unwrap();
+        query_all_available_conversion_funds(deps.as_ref(), &env, None, Some(3)).unwrap();
     assert_eq!(response.funds.len(), 3);
     assert_eq!(response.total_base_token_equivalent, Uint128::zero()); // All ratios are 0
 }

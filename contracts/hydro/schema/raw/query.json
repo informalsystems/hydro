@@ -1224,7 +1224,7 @@
       "additionalProperties": false
     },
     {
-      "description": "Returns all available conversion funds with their amounts and base token equivalents for a given round. The total_base_token_equivalent is the sum of all funds converted to base token using their ratios. Supports pagination via start_after (denom to start after) and limit (max items to return).",
+      "description": "Returns all available conversion funds with their amounts and base token equivalents for the current round. The total_base_token_equivalent is the sum of all funds converted to base token using their ratios. Supports pagination via start_after (denom to start after) and limit (max items to return).",
       "type": "object",
       "required": [
         "all_available_conversion_funds"
@@ -1232,9 +1232,6 @@
       "properties": {
         "all_available_conversion_funds": {
           "type": "object",
-          "required": [
-            "round_id"
-          ],
           "properties": {
             "limit": {
               "type": [
@@ -1242,11 +1239,6 @@
                 "null"
               ],
               "format": "uint32",
-              "minimum": 0.0
-            },
-            "round_id": {
-              "type": "integer",
-              "format": "uint64",
               "minimum": 0.0
             },
             "start_after": {

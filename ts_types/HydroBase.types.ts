@@ -490,7 +490,6 @@ export type QueryMsg = {
 } | {
   all_available_conversion_funds: {
     limit?: number | null;
-    round_id: number;
     start_after?: string | null;
   };
 } | {
@@ -503,7 +502,6 @@ export type QueryMsg = {
 export interface AllAvailableConversionFundsResponse {
   funds: ConversionFundInfo[];
   has_more: boolean;
-  round_id: number;
   total_base_token_equivalent: Uint128;
 }
 export interface ConversionFundInfo {
