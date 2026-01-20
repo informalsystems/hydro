@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { InstantiateMsg, DenomMetadata, ExecuteMsg, Uint128, AllocationMode, DeploymentTracking, UpdateConfigData, Coin, QueryMsg, Order, Addr, AdapterInfoResponse, AdapterInfo, ConfigResponse, Config, FundedWithdrawalRequestsResponse, AdaptersListResponse, PoolInfoResponse, Timestamp, Uint64, UserPayoutsHistoryResponse, PayoutEntry, UserWithdrawalRequestsResponse, WithdrawalEntry, WhitelistResponse, WithdrawalQueueInfoResponse, WithdrawalQueueInfo } from "./InflowVaultBase.types";
+import { InstantiateMsg, DenomMetadata, ExecuteMsg, Uint128, AllocationMode, DeploymentTracking, UpdateConfigData, Coin, QueryMsg, Order, Addr, AdapterInfoResponse, AdapterInfo, ConfigResponse, Config, PoolInfoResponse, FundedWithdrawalRequestsResponse, AdaptersListResponse, Timestamp, Uint64, UserPayoutsHistoryResponse, PayoutEntry, UserWithdrawalRequestsResponse, WithdrawalEntry, WhitelistResponse, WithdrawalQueueInfoResponse, WithdrawalQueueInfo } from "./InflowVaultBase.types";
 export interface InflowVaultBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
@@ -50,6 +50,7 @@ export interface InflowVaultBaseReadOnlyInterface {
     startFrom: number;
   }) => Promise<UserPayoutsHistoryResponse>;
   whitelist: () => Promise<WhitelistResponse>;
+  controlCenterPoolInfo: () => Promise<PoolInfoResponse>;
   listAdapters: () => Promise<AdaptersListResponse>;
   adapterInfo: ({
     name
@@ -74,6 +75,7 @@ export class InflowVaultBaseQueryClient implements InflowVaultBaseReadOnlyInterf
     this.userWithdrawalRequests = this.userWithdrawalRequests.bind(this);
     this.userPayoutsHistory = this.userPayoutsHistory.bind(this);
     this.whitelist = this.whitelist.bind(this);
+    this.controlCenterPoolInfo = this.controlCenterPoolInfo.bind(this);
     this.listAdapters = this.listAdapters.bind(this);
     this.adapterInfo = this.adapterInfo.bind(this);
   }
@@ -175,6 +177,11 @@ export class InflowVaultBaseQueryClient implements InflowVaultBaseReadOnlyInterf
   whitelist = async (): Promise<WhitelistResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       whitelist: {}
+    });
+  };
+  controlCenterPoolInfo = async (): Promise<PoolInfoResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      control_center_pool_info: {}
     });
   };
   listAdapters = async (): Promise<AdaptersListResponse> => {
