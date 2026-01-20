@@ -6,9 +6,6 @@ on:
 
 jobs:
   claude-review:
-    # Skip draft PRs - only review when ready
-    if: github.event.pull_request.draft == false
-
     runs-on: ubuntu-latest
     permissions:
       contents: read
