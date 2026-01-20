@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
-import { Uint128, InstantiateMsg, ExecuteMsg, DeploymentDirection, UpdateConfigData, QueryMsg, ConfigResponse, Config, PoolInfoResponse, Addr, SubvaultsResponse, WhitelistResponse } from "./InflowControlCenterBase.types";
+import { Uint128, Decimal, InstantiateMsg, FeeConfigInit, ExecuteMsg, DeploymentDirection, UpdateConfigData, QueryMsg, ConfigResponse, Config, FeeAccrualInfoResponse, Addr, FeeConfigResponse, PoolInfoResponse, SubvaultsResponse, WhitelistResponse } from "./InflowControlCenterBase.types";
 export interface InflowControlCenterBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
@@ -14,6 +14,8 @@ export interface InflowControlCenterBaseReadOnlyInterface {
   poolInfo: () => Promise<PoolInfoResponse>;
   whitelist: () => Promise<WhitelistResponse>;
   subvaults: () => Promise<SubvaultsResponse>;
+  feeConfig: () => Promise<FeeConfigResponse>;
+  feeAccrualInfo: () => Promise<FeeAccrualInfoResponse>;
 }
 export class InflowControlCenterBaseQueryClient implements InflowControlCenterBaseReadOnlyInterface {
   client: CosmWasmClient;
@@ -26,6 +28,8 @@ export class InflowControlCenterBaseQueryClient implements InflowControlCenterBa
     this.poolInfo = this.poolInfo.bind(this);
     this.whitelist = this.whitelist.bind(this);
     this.subvaults = this.subvaults.bind(this);
+    this.feeConfig = this.feeConfig.bind(this);
+    this.feeAccrualInfo = this.feeAccrualInfo.bind(this);
   }
   config = async (): Promise<ConfigResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -50,6 +54,16 @@ export class InflowControlCenterBaseQueryClient implements InflowControlCenterBa
   subvaults = async (): Promise<SubvaultsResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       subvaults: {}
+    });
+  };
+  feeConfig = async (): Promise<FeeConfigResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      fee_config: {}
+    });
+  };
+  feeAccrualInfo = async (): Promise<FeeAccrualInfoResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      fee_accrual_info: {}
     });
   };
 }
@@ -93,6 +107,16 @@ export interface InflowControlCenterBaseInterface extends InflowControlCenterBas
   }: {
     address: string;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  accrueFees: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  updateFeeConfig: ({
+    enabled,
+    feeRate,
+    feeRecipient
+  }: {
+    enabled?: boolean;
+    feeRate?: Decimal;
+    feeRecipient?: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class InflowControlCenterBaseClient extends InflowControlCenterBaseQueryClient implements InflowControlCenterBaseInterface {
   client: SigningCosmWasmClient;
@@ -110,6 +134,8 @@ export class InflowControlCenterBaseClient extends InflowControlCenterBaseQueryC
     this.updateConfig = this.updateConfig.bind(this);
     this.addSubvault = this.addSubvault.bind(this);
     this.removeSubvault = this.removeSubvault.bind(this);
+    this.accrueFees = this.accrueFees.bind(this);
+    this.updateFeeConfig = this.updateFeeConfig.bind(this);
   }
   submitDeployedAmount = async ({
     amount
@@ -188,6 +214,28 @@ export class InflowControlCenterBaseClient extends InflowControlCenterBaseQueryC
     return await this.client.execute(this.sender, this.contractAddress, {
       remove_subvault: {
         address
+      }
+    }, fee, memo, _funds);
+  };
+  accrueFees = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      accrue_fees: {}
+    }, fee, memo, _funds);
+  };
+  updateFeeConfig = async ({
+    enabled,
+    feeRate,
+    feeRecipient
+  }: {
+    enabled?: boolean;
+    feeRate?: Decimal;
+    feeRecipient?: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      update_fee_config: {
+        enabled,
+        fee_rate: feeRate,
+        fee_recipient: feeRecipient
       }
     }, fee, memo, _funds);
   };

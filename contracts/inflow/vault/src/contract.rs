@@ -220,6 +220,9 @@ pub fn execute(
             to_adapter,
             coin,
         } => move_adapter_funds(deps, env, info, &config, from_adapter, to_adapter, coin),
+        ExecuteMsg::MintFeeShares { amount, recipient } => {
+            mint_fee_shares(deps, env, info, &config, amount, recipient)
+        }
     }
 }
 
@@ -1502,6 +1505,48 @@ fn move_adapter_funds(
             .add_attribute("denom", coin.denom)
             .add_attribute("amount", coin.amount))
     }
+}
+
+/// Mints fee shares to a recipient. Only callable by the control center.
+fn mint_fee_shares(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    info: MessageInfo,
+    config: &Config,
+    amount: Uint128,
+    recipient: String,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Verify sender is control_center
+    if info.sender != config.control_center_contract {
+        return Err(ContractError::Unauthorized);
+    }
+
+    // Validate amount
+    if amount.is_zero() {
+        return Err(ContractError::ZeroAmount {});
+    }
+
+    // Validate recipient
+    let recipient_addr = deps.api.addr_validate(&recipient)?;
+
+    // Mint shares using token factory
+    let mint_msg = neutron_sdk::proto_types::osmosis::tokenfactory::v1beta1::MsgMint {
+        sender: env.contract.address.to_string(),
+        amount: Some(cosmos_sdk_proto::cosmos::base::v1beta1::Coin {
+            denom: config.vault_shares_denom.clone(),
+            amount: amount.to_string(),
+        }),
+        mint_to_address: recipient_addr.to_string(),
+    };
+
+    Ok(Response::new()
+        .add_message(CosmosMsg::Any(AnyMsg {
+            type_url: "/osmosis.tokenfactory.v1beta1.MsgMint".to_string(),
+            value: mint_msg.encode_to_vec().into(),
+        }))
+        .add_attribute("action", "mint_fee_shares")
+        .add_attribute("amount", amount)
+        .add_attribute("recipient", recipient_addr))
 }
 
 /// Calculates venue allocation based on registered adapters.

@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Uint128};
+use cosmwasm_std::{Addr, Decimal, Uint128};
 
 #[cw_serde]
 pub struct Config {
@@ -10,6 +10,28 @@ pub struct Config {
 #[cw_serde]
 pub struct UpdateConfigData {
     pub deposit_cap: Option<Uint128>,
+}
+
+/// Configuration for performance fee tracking, used during instantiation or migration.
+#[cw_serde]
+pub struct FeeConfigInit {
+    /// Fee rate as a decimal (e.g., 0.2 for 20%)
+    pub fee_rate: Decimal,
+    /// Address where fee shares are minted to
+    pub fee_recipient: String,
+    /// Whether fee accrual is enabled
+    pub enabled: bool,
+}
+
+/// Stored fee configuration
+#[cw_serde]
+pub struct FeeConfig {
+    /// Fee rate as a decimal (e.g., 0.2 for 20%)
+    pub fee_rate: Decimal,
+    /// Address where fee shares are minted to
+    pub fee_recipient: Addr,
+    /// Whether fee accrual is enabled
+    pub enabled: bool,
 }
 
 #[cw_serde]
@@ -45,6 +67,17 @@ pub enum ExecuteMsg {
 
     /// Removes a sub-vault smart contract from being managed by the Control Center.
     RemoveSubvault { address: String },
+
+    /// Accrues performance fees based on yield since last accrual.
+    /// This is a permissionless operation - anyone can call it.
+    AccrueFees {},
+
+    /// Updates the fee configuration. Only whitelisted addresses can call this.
+    UpdateFeeConfig {
+        fee_rate: Option<Decimal>,
+        fee_recipient: Option<String>,
+        enabled: Option<bool>,
+    },
 }
 
 #[cw_serde]
@@ -64,6 +97,14 @@ pub enum QueryMsg {
 
     #[returns(SubvaultsResponse)]
     Subvaults {},
+
+    /// Returns the current fee configuration.
+    #[returns(FeeConfigResponse)]
+    FeeConfig {},
+
+    /// Returns information about pending fee accrual.
+    #[returns(FeeAccrualInfoResponse)]
+    FeeAccrualInfo {},
 }
 
 #[cw_serde]
@@ -85,4 +126,21 @@ pub struct WhitelistResponse {
 #[cw_serde]
 pub struct SubvaultsResponse {
     pub subvaults: Vec<Addr>,
+}
+
+#[cw_serde]
+pub struct FeeConfigResponse {
+    pub fee_rate: Decimal,
+    pub fee_recipient: Addr,
+    pub enabled: bool,
+}
+
+#[cw_serde]
+pub struct FeeAccrualInfoResponse {
+    pub last_accrual_share_price: Decimal,
+    pub current_share_price: Decimal,
+    /// Pending yield amount (in base tokens) since last accrual
+    pub pending_yield: Uint128,
+    /// Pending fee amount (in base tokens) based on current yield
+    pub pending_fee: Uint128,
 }

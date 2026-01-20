@@ -102,6 +102,11 @@ export type ExecuteMsg = {
     from_adapter: string;
     to_adapter: string;
   };
+} | {
+  mint_fee_shares: {
+    amount: Uint128;
+    recipient: string;
+  };
 };
 export type Uint128 = string;
 export type AllocationMode = "automated" | "manual";

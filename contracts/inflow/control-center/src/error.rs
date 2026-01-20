@@ -25,6 +25,18 @@ pub enum ContractError {
 
     #[error("Unauthorized")]
     Unauthorized,
+
+    #[error("Invalid fee rate: must be between 0 and 1")]
+    InvalidFeeRate,
+
+    #[error("Fee accrual is disabled")]
+    FeeAccrualDisabled,
+
+    #[error("No shares have been issued yet")]
+    NoSharesIssued,
+
+    #[error("Fee recipient must be set before enabling fee accrual")]
+    FeeRecipientNotSet,
 }
 
 pub fn new_generic_error(msg: impl Into<String>) -> ContractError {

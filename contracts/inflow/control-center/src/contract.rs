@@ -1,21 +1,28 @@
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Order, Response,
-    StdResult, Uint128,
+    entry_point, to_json_binary, Addr, Binary, Decimal, Deps, DepsMut, Env, MessageInfo, Order,
+    Response, StdResult, Uint128, WasmMsg,
 };
 use cw2::set_contract_version;
 use interface::{
     inflow_control_center::{
-        Config, ConfigResponse, DeploymentDirection, ExecuteMsg, PoolInfoResponse, QueryMsg,
-        SubvaultsResponse, UpdateConfigData, WhitelistResponse,
+        Config, ConfigResponse, DeploymentDirection, ExecuteMsg, FeeAccrualInfoResponse, FeeConfig,
+        FeeConfigResponse, PoolInfoResponse, QueryMsg, SubvaultsResponse, UpdateConfigData,
+        WhitelistResponse,
     },
-    inflow_vault::{PoolInfoResponse as VaultPoolInfoResponse, QueryMsg as VaultQueryMsg},
+    inflow_vault::{
+        ExecuteMsg as VaultExecuteMsg, PoolInfoResponse as VaultPoolInfoResponse,
+        QueryMsg as VaultQueryMsg,
+    },
 };
 use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 use crate::{
     error::{new_generic_error, ContractError},
-    msg::InstantiateMsg,
-    state::{load_config, CONFIG, DEPLOYED_AMOUNT, SUBVAULTS, WHITELIST},
+    msg::{InstantiateMsg, MigrateMsg},
+    state::{
+        load_config, load_fee_config, CONFIG, DEPLOYED_AMOUNT, FEE_CONFIG,
+        LAST_ACCRUAL_SHARE_PRICE, SUBVAULTS, WHITELIST,
+    },
 };
 
 /// Contract name that is used for migration.
@@ -67,6 +74,36 @@ pub fn instantiate(
         SUBVAULTS.save(deps.storage, subvault.clone(), &())?;
     }
 
+    // Initialize fee config
+    let fee_config = match msg.fee_config {
+        Some(init) => {
+            // Validate fee_rate (0-100%)
+            if init.fee_rate > Decimal::one() {
+                return Err(ContractError::InvalidFeeRate);
+            }
+            let fee_recipient = deps.api.addr_validate(&init.fee_recipient)?;
+            FeeConfig {
+                fee_rate: init.fee_rate,
+                fee_recipient,
+                enabled: init.enabled,
+            }
+        }
+        None => {
+            // Default: fees disabled with placeholder recipient
+            FeeConfig {
+                fee_rate: Decimal::zero(),
+                fee_recipient: Addr::unchecked(""),
+                enabled: false,
+            }
+        }
+    };
+
+    FEE_CONFIG.save(deps.storage, &fee_config)?;
+
+    // Initialize high-water mark to 1.0
+    // This will be updated on first accrual if shares exist
+    LAST_ACCRUAL_SHARE_PRICE.save(deps.storage, &Decimal::one())?;
+
     Ok(Response::new()
         .add_attribute("action", "initialisation")
         .add_attribute("sender", info.sender)
@@ -85,7 +122,8 @@ pub fn instantiate(
                 .map(|addr| addr.to_string())
                 .collect::<Vec<String>>()
                 .join(", "),
-        ))
+        )
+        .add_attribute("fee_enabled", fee_config.enabled.to_string()))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -109,6 +147,12 @@ pub fn execute(
         ExecuteMsg::AddSubvault { address } => add_subvault(deps, info, address),
         ExecuteMsg::RemoveSubvault { address } => remove_subvault(deps, info, address),
         ExecuteMsg::UpdateConfig { config } => update_config(deps, info, config),
+        ExecuteMsg::AccrueFees {} => accrue_fees(deps, env),
+        ExecuteMsg::UpdateFeeConfig {
+            fee_rate,
+            fee_recipient,
+            enabled,
+        } => update_fee_config(deps, info, fee_rate, fee_recipient, enabled),
     }
 }
 
@@ -303,6 +347,174 @@ fn remove_subvault(
         .add_attribute("subvault_address", subvault_address))
 }
 
+/// Accrues performance fees based on yield since last accrual.
+/// This is a permissionless operation - anyone can call it.
+fn accrue_fees(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    let fee_config = load_fee_config(deps.storage)?;
+
+    if !fee_config.enabled {
+        return Err(ContractError::FeeAccrualDisabled);
+    }
+
+    let last_accrual_price = LAST_ACCRUAL_SHARE_PRICE.load(deps.storage)?;
+
+    // Get current pool state
+    let pool_info = query_pool_info(&deps.as_ref(), &env)?;
+
+    if pool_info.total_shares_issued.is_zero() {
+        return Err(ContractError::NoSharesIssued);
+    }
+
+    // Calculate current share price
+    let current_share_price =
+        Decimal::from_ratio(pool_info.total_pool_value, pool_info.total_shares_issued);
+
+    // High-water mark check: only charge fees on gains above the last accrual price
+    if current_share_price <= last_accrual_price {
+        return Ok(Response::new()
+            .add_attribute("action", "accrue_fees")
+            .add_attribute("result", "below_high_water_mark")
+            .add_attribute("current_share_price", current_share_price.to_string())
+            .add_attribute("last_accrual_share_price", last_accrual_price.to_string()));
+    }
+
+    // Calculate fee
+    // yield_per_share is a Decimal
+    let yield_per_share = current_share_price - last_accrual_price;
+    // Convert total_shares to Decimal for multiplication
+    let total_shares_decimal = Decimal::from_ratio(pool_info.total_shares_issued, 1u128);
+    // total_yield is in base token units (as Decimal)
+    let total_yield = yield_per_share * total_shares_decimal;
+    // fee_amount is the fee portion of the yield (as Decimal)
+    let fee_amount = total_yield * fee_config.fee_rate;
+    // shares_to_mint = fee_amount / current_share_price (as Decimal)
+    let shares_to_mint = fee_amount / current_share_price;
+
+    // Update high-water mark
+    LAST_ACCRUAL_SHARE_PRICE.save(deps.storage, &current_share_price)?;
+
+    // Handle zero fee rate or dust case
+    if shares_to_mint.is_zero() {
+        let result = if fee_config.fee_rate.is_zero() {
+            "zero_fee_rate"
+        } else {
+            "dust_yield"
+        };
+        return Ok(Response::new()
+            .add_attribute("action", "accrue_fees")
+            .add_attribute("result", result)
+            .add_attribute("current_share_price", current_share_price.to_string()));
+    }
+
+    // Convert shares_to_mint from Decimal to Uint128
+    let shares_to_mint_uint = Uint128::new(shares_to_mint.to_uint_floor().u128());
+
+    if shares_to_mint_uint.is_zero() {
+        return Ok(Response::new()
+            .add_attribute("action", "accrue_fees")
+            .add_attribute("result", "dust_yield")
+            .add_attribute("current_share_price", current_share_price.to_string()));
+    }
+
+    // Get all subvaults and their share counts
+    let subvaults: Vec<Addr> = SUBVAULTS
+        .keys(deps.storage, None, None, Order::Ascending)
+        .filter_map(|v| v.ok())
+        .collect();
+
+    // Calculate proportional minting for each subvault
+    let mut msgs: Vec<WasmMsg> = vec![];
+    let mut total_minted = Uint128::zero();
+
+    for (i, subvault) in subvaults.iter().enumerate() {
+        let vault_info: VaultPoolInfoResponse = deps
+            .querier
+            .query_wasm_smart(subvault.to_string(), &VaultQueryMsg::PoolInfo {})?;
+
+        if vault_info.shares_issued.is_zero() {
+            continue;
+        }
+
+        // Calculate this vault's share of the fee shares to mint
+        let vault_mint_amount = if i == subvaults.len() - 1 {
+            // Last vault gets the remainder to handle rounding
+            shares_to_mint_uint.checked_sub(total_minted)?
+        } else {
+            shares_to_mint_uint
+                .multiply_ratio(vault_info.shares_issued, pool_info.total_shares_issued)
+        };
+
+        if vault_mint_amount.is_zero() {
+            continue;
+        }
+
+        total_minted = total_minted.checked_add(vault_mint_amount)?;
+
+        let mint_msg = WasmMsg::Execute {
+            contract_addr: subvault.to_string(),
+            msg: to_json_binary(&VaultExecuteMsg::MintFeeShares {
+                amount: vault_mint_amount,
+                recipient: fee_config.fee_recipient.to_string(),
+            })?,
+            funds: vec![],
+        };
+        msgs.push(mint_msg);
+    }
+
+    Ok(Response::new()
+        .add_messages(msgs)
+        .add_attribute("action", "accrue_fees")
+        .add_attribute("result", "fees_accrued")
+        .add_attribute("yield", total_yield.to_string())
+        .add_attribute("fee_amount", fee_amount.to_string())
+        .add_attribute("shares_minted", shares_to_mint_uint.to_string())
+        .add_attribute("current_share_price", current_share_price.to_string()))
+}
+
+/// Updates the fee configuration. Only whitelisted addresses can call this.
+fn update_fee_config(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    fee_rate: Option<Decimal>,
+    fee_recipient: Option<String>,
+    enabled: Option<bool>,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    let mut fee_config = load_fee_config(deps.storage)?;
+
+    if let Some(rate) = fee_rate {
+        if rate > Decimal::one() {
+            return Err(ContractError::InvalidFeeRate);
+        }
+        fee_config.fee_rate = rate;
+    }
+
+    if let Some(recipient) = fee_recipient {
+        fee_config.fee_recipient = deps.api.addr_validate(&recipient)?;
+    }
+
+    if let Some(enabled) = enabled {
+        // If enabling, ensure we have a valid recipient
+        if enabled && fee_config.fee_recipient.as_str().is_empty() {
+            return Err(ContractError::FeeRecipientNotSet);
+        }
+        fee_config.enabled = enabled;
+    }
+
+    FEE_CONFIG.save(deps.storage, &fee_config)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "update_fee_config")
+        .add_attribute("sender", info.sender)
+        .add_attribute("fee_rate", fee_config.fee_rate.to_string())
+        .add_attribute("fee_recipient", fee_config.fee_recipient.to_string())
+        .add_attribute("enabled", fee_config.enabled.to_string()))
+}
+
 fn validate_address_is_whitelisted(
     deps: &DepsMut<NeutronQuery>,
     address: Addr,
@@ -321,7 +533,54 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         QueryMsg::DeployedAmount {} => to_json_binary(&query_deployed_amount(&deps)?),
         QueryMsg::Whitelist {} => to_json_binary(&query_whitelist(&deps)?),
         QueryMsg::Subvaults {} => to_json_binary(&query_subvaults(&deps)?),
+        QueryMsg::FeeConfig {} => to_json_binary(&query_fee_config(&deps)?),
+        QueryMsg::FeeAccrualInfo {} => to_json_binary(&query_fee_accrual_info(&deps, &env)?),
     }
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(
+    deps: DepsMut<NeutronQuery>,
+    env: Env,
+    msg: MigrateMsg,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    // Initialize fee config if not already present
+    if FEE_CONFIG.may_load(deps.storage)?.is_none() {
+        let fee_config = match msg.fee_config {
+            Some(init) => {
+                if init.fee_rate > Decimal::one() {
+                    return Err(ContractError::InvalidFeeRate);
+                }
+                let fee_recipient = deps.api.addr_validate(&init.fee_recipient)?;
+                FeeConfig {
+                    fee_rate: init.fee_rate,
+                    fee_recipient,
+                    enabled: init.enabled,
+                }
+            }
+            None => {
+                // Default: fees disabled
+                FeeConfig {
+                    fee_rate: Decimal::zero(),
+                    fee_recipient: Addr::unchecked(""),
+                    enabled: false,
+                }
+            }
+        };
+
+        FEE_CONFIG.save(deps.storage, &fee_config)?;
+
+        // Set high-water mark to current share price
+        let pool_info = query_pool_info(&deps.as_ref(), &env)?;
+        let current_share_price = if pool_info.total_shares_issued.is_zero() {
+            Decimal::one()
+        } else {
+            Decimal::from_ratio(pool_info.total_pool_value, pool_info.total_shares_issued)
+        };
+        LAST_ACCRUAL_SHARE_PRICE.save(deps.storage, &current_share_price)?;
+    }
+
+    Ok(Response::new().add_attribute("action", "migrate"))
 }
 
 fn query_config(deps: &Deps<NeutronQuery>) -> StdResult<ConfigResponse> {
@@ -388,6 +647,52 @@ fn query_subvaults(deps: &Deps<NeutronQuery>) -> StdResult<SubvaultsResponse> {
             .keys(deps.storage, None, None, Order::Ascending)
             .filter_map(|w| w.ok())
             .collect(),
+    })
+}
+
+fn query_fee_config(deps: &Deps<NeutronQuery>) -> StdResult<FeeConfigResponse> {
+    let fee_config = load_fee_config(deps.storage)?;
+    Ok(FeeConfigResponse {
+        fee_rate: fee_config.fee_rate,
+        fee_recipient: fee_config.fee_recipient,
+        enabled: fee_config.enabled,
+    })
+}
+
+fn query_fee_accrual_info(
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
+) -> StdResult<FeeAccrualInfoResponse> {
+    let fee_config = load_fee_config(deps.storage)?;
+    let last_accrual_share_price = LAST_ACCRUAL_SHARE_PRICE.load(deps.storage)?;
+    let pool_info = query_pool_info(deps, env)?;
+
+    // Calculate current share price (handle zero shares case)
+    let current_share_price = if pool_info.total_shares_issued.is_zero() {
+        Decimal::one()
+    } else {
+        Decimal::from_ratio(pool_info.total_pool_value, pool_info.total_shares_issued)
+    };
+
+    // Calculate pending yield and fee
+    let (pending_yield, pending_fee) = if current_share_price > last_accrual_share_price {
+        let yield_per_share = current_share_price - last_accrual_share_price;
+        let total_shares_decimal = Decimal::from_ratio(pool_info.total_shares_issued, 1u128);
+        let total_yield = yield_per_share * total_shares_decimal;
+        let fee_amount = total_yield * fee_config.fee_rate;
+        (
+            Uint128::new(total_yield.to_uint_floor().u128()),
+            Uint128::new(fee_amount.to_uint_floor().u128()),
+        )
+    } else {
+        (Uint128::zero(), Uint128::zero())
+    };
+
+    Ok(FeeAccrualInfoResponse {
+        last_accrual_share_price,
+        current_share_price,
+        pending_yield,
+        pending_fee,
     })
 }
 
