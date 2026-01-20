@@ -168,6 +168,14 @@ After modifying contract messages:
 2. TypeScript types are auto-generated in `ts_types/` directory
 3. CW Orchestrator interfaces in `packages/interface/` may need manual updates
 
+## Artifact Compilation
+After modifying any contract code (even queries, though not including tests), before committing:
+1. Run `make compile` to regenerate artifacts
+2. Artifacts are auto-generated in `artifacts`, including their checksums
+
+Note that for `make compile` to work, Docker has to be running.
+If `make compile` fails with a message about Docker not running, ask the user to start it.
+
 ## Development Notes
 
 - The repo uses Rust 2021 edition with cosmwasm-std 2.1.2
