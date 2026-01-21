@@ -13,7 +13,6 @@ export interface InstantiateMsg {
   whitelist: string[];
 }
 export interface FeeConfigInit {
-  enabled: boolean;
   fee_rate: Decimal;
   fee_recipient: string;
 }
@@ -50,7 +49,6 @@ export type ExecuteMsg = {
   accrue_fees: {};
 } | {
   update_fee_config: {
-    enabled?: boolean | null;
     fee_rate?: Decimal | null;
     fee_recipient?: string | null;
   };
@@ -82,13 +80,12 @@ export interface Config {
 }
 export interface FeeAccrualInfoResponse {
   current_share_price: Decimal;
-  last_accrual_share_price: Decimal;
+  high_water_mark_price: Decimal;
   pending_fee: Uint128;
   pending_yield: Uint128;
 }
 export type Addr = string;
 export interface FeeConfigResponse {
-  enabled: boolean;
   fee_rate: Decimal;
   fee_recipient: Addr;
 }

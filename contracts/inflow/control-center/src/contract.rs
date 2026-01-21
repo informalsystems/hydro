@@ -20,8 +20,8 @@ use crate::{
     error::{new_generic_error, ContractError},
     msg::{InstantiateMsg, MigrateMsg},
     state::{
-        load_config, load_fee_config, CONFIG, DEPLOYED_AMOUNT, FEE_CONFIG,
-        LAST_ACCRUAL_SHARE_PRICE, SUBVAULTS, WHITELIST,
+        load_config, load_fee_config, CONFIG, DEPLOYED_AMOUNT, FEE_CONFIG, HIGH_WATER_MARK_PRICE,
+        SUBVAULTS, WHITELIST,
     },
 };
 
@@ -75,6 +75,7 @@ pub fn instantiate(
     }
 
     // Initialize fee config
+    // Fees are enabled when fee_rate > 0
     let fee_config = match msg.fee_config {
         Some(init) => {
             // Validate fee_rate (0-100%)
@@ -85,15 +86,13 @@ pub fn instantiate(
             FeeConfig {
                 fee_rate: init.fee_rate,
                 fee_recipient,
-                enabled: init.enabled,
             }
         }
         None => {
-            // Default: fees disabled with placeholder recipient
+            // Default: fees disabled (fee_rate = 0)
             FeeConfig {
                 fee_rate: Decimal::zero(),
                 fee_recipient: Addr::unchecked(""),
-                enabled: false,
             }
         }
     };
@@ -102,7 +101,9 @@ pub fn instantiate(
 
     // Initialize high-water mark to 1.0
     // This will be updated on first accrual if shares exist
-    LAST_ACCRUAL_SHARE_PRICE.save(deps.storage, &Decimal::one())?;
+    HIGH_WATER_MARK_PRICE.save(deps.storage, &Decimal::one())?;
+
+    let fee_enabled = !fee_config.fee_rate.is_zero();
 
     Ok(Response::new()
         .add_attribute("action", "initialisation")
@@ -123,7 +124,7 @@ pub fn instantiate(
                 .collect::<Vec<String>>()
                 .join(", "),
         )
-        .add_attribute("fee_enabled", fee_config.enabled.to_string()))
+        .add_attribute("fee_enabled", fee_enabled.to_string()))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -151,8 +152,7 @@ pub fn execute(
         ExecuteMsg::UpdateFeeConfig {
             fee_rate,
             fee_recipient,
-            enabled,
-        } => update_fee_config(deps, info, fee_rate, fee_recipient, enabled),
+        } => update_fee_config(deps, info, fee_rate, fee_recipient),
     }
 }
 
@@ -349,17 +349,19 @@ fn remove_subvault(
 
 /// Accrues performance fees based on yield since last accrual.
 /// This is a permissionless operation - anyone can call it.
+/// Fees are only accrued if fee_rate > 0.
 fn accrue_fees(
     deps: DepsMut<NeutronQuery>,
     env: Env,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     let fee_config = load_fee_config(deps.storage)?;
 
-    if !fee_config.enabled {
+    // Fees are disabled when fee_rate is zero
+    if fee_config.fee_rate.is_zero() {
         return Err(ContractError::FeeAccrualDisabled);
     }
 
-    let last_accrual_price = LAST_ACCRUAL_SHARE_PRICE.load(deps.storage)?;
+    let high_water_mark_price = HIGH_WATER_MARK_PRICE.load(deps.storage)?;
 
     // Get current pool state
     let pool_info = query_pool_info(&deps.as_ref(), &env)?;
@@ -373,39 +375,31 @@ fn accrue_fees(
         Decimal::from_ratio(pool_info.total_pool_value, pool_info.total_shares_issued);
 
     // High-water mark check: only charge fees on gains above the last accrual price
-    if current_share_price <= last_accrual_price {
+    if current_share_price <= high_water_mark_price {
         return Ok(Response::new()
             .add_attribute("action", "accrue_fees")
             .add_attribute("result", "below_high_water_mark")
             .add_attribute("current_share_price", current_share_price.to_string())
-            .add_attribute("last_accrual_share_price", last_accrual_price.to_string()));
+            .add_attribute("high_water_mark_price", high_water_mark_price.to_string()));
     }
 
     // Calculate fee
-    // yield_per_share is a Decimal
-    let yield_per_share = current_share_price - last_accrual_price;
+    let yield_per_share: Decimal = current_share_price - high_water_mark_price;
     // Convert total_shares to Decimal for multiplication
     let total_shares_decimal = Decimal::from_ratio(pool_info.total_shares_issued, 1u128);
     // total_yield is in base token units (as Decimal)
     let total_yield = yield_per_share * total_shares_decimal;
-    // fee_amount is the fee portion of the yield (as Decimal)
     let fee_amount = total_yield * fee_config.fee_rate;
-    // shares_to_mint = fee_amount / current_share_price (as Decimal)
     let shares_to_mint = fee_amount / current_share_price;
 
     // Update high-water mark
-    LAST_ACCRUAL_SHARE_PRICE.save(deps.storage, &current_share_price)?;
+    HIGH_WATER_MARK_PRICE.save(deps.storage, &current_share_price)?;
 
-    // Handle zero fee rate or dust case
+    // Handle dust case
     if shares_to_mint.is_zero() {
-        let result = if fee_config.fee_rate.is_zero() {
-            "zero_fee_rate"
-        } else {
-            "dust_yield"
-        };
         return Ok(Response::new()
             .add_attribute("action", "accrue_fees")
-            .add_attribute("result", result)
+            .add_attribute("result", "dust_yield")
             .add_attribute("current_share_price", current_share_price.to_string()));
     }
 
@@ -475,12 +469,12 @@ fn accrue_fees(
 }
 
 /// Updates the fee configuration. Only whitelisted addresses can call this.
+/// Set fee_rate to 0 to disable fee accrual.
 fn update_fee_config(
     deps: DepsMut<NeutronQuery>,
     info: MessageInfo,
     fee_rate: Option<Decimal>,
     fee_recipient: Option<String>,
-    enabled: Option<bool>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
 
@@ -490,6 +484,10 @@ fn update_fee_config(
         if rate > Decimal::one() {
             return Err(ContractError::InvalidFeeRate);
         }
+        // If setting a non-zero rate, ensure we have a valid recipient
+        if !rate.is_zero() && fee_config.fee_recipient.as_str().is_empty() {
+            return Err(ContractError::FeeRecipientNotSet);
+        }
         fee_config.fee_rate = rate;
     }
 
@@ -497,22 +495,16 @@ fn update_fee_config(
         fee_config.fee_recipient = deps.api.addr_validate(&recipient)?;
     }
 
-    if let Some(enabled) = enabled {
-        // If enabling, ensure we have a valid recipient
-        if enabled && fee_config.fee_recipient.as_str().is_empty() {
-            return Err(ContractError::FeeRecipientNotSet);
-        }
-        fee_config.enabled = enabled;
-    }
-
     FEE_CONFIG.save(deps.storage, &fee_config)?;
+
+    let fee_enabled = !fee_config.fee_rate.is_zero();
 
     Ok(Response::new()
         .add_attribute("action", "update_fee_config")
         .add_attribute("sender", info.sender)
         .add_attribute("fee_rate", fee_config.fee_rate.to_string())
         .add_attribute("fee_recipient", fee_config.fee_recipient.to_string())
-        .add_attribute("enabled", fee_config.enabled.to_string()))
+        .add_attribute("fee_enabled", fee_enabled.to_string()))
 }
 
 fn validate_address_is_whitelisted(
@@ -545,6 +537,7 @@ pub fn migrate(
     msg: MigrateMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     // Initialize fee config if not already present
+    // Fees are enabled when fee_rate > 0
     if FEE_CONFIG.may_load(deps.storage)?.is_none() {
         let fee_config = match msg.fee_config {
             Some(init) => {
@@ -555,15 +548,13 @@ pub fn migrate(
                 FeeConfig {
                     fee_rate: init.fee_rate,
                     fee_recipient,
-                    enabled: init.enabled,
                 }
             }
             None => {
-                // Default: fees disabled
+                // Default: fees disabled (fee_rate = 0)
                 FeeConfig {
                     fee_rate: Decimal::zero(),
                     fee_recipient: Addr::unchecked(""),
-                    enabled: false,
                 }
             }
         };
@@ -577,7 +568,7 @@ pub fn migrate(
         } else {
             Decimal::from_ratio(pool_info.total_pool_value, pool_info.total_shares_issued)
         };
-        LAST_ACCRUAL_SHARE_PRICE.save(deps.storage, &current_share_price)?;
+        HIGH_WATER_MARK_PRICE.save(deps.storage, &current_share_price)?;
     }
 
     Ok(Response::new().add_attribute("action", "migrate"))
@@ -655,7 +646,6 @@ fn query_fee_config(deps: &Deps<NeutronQuery>) -> StdResult<FeeConfigResponse> {
     Ok(FeeConfigResponse {
         fee_rate: fee_config.fee_rate,
         fee_recipient: fee_config.fee_recipient,
-        enabled: fee_config.enabled,
     })
 }
 
@@ -664,7 +654,7 @@ fn query_fee_accrual_info(
     env: &Env,
 ) -> StdResult<FeeAccrualInfoResponse> {
     let fee_config = load_fee_config(deps.storage)?;
-    let last_accrual_share_price = LAST_ACCRUAL_SHARE_PRICE.load(deps.storage)?;
+    let high_water_mark_price = HIGH_WATER_MARK_PRICE.load(deps.storage)?;
     let pool_info = query_pool_info(deps, env)?;
 
     // Calculate current share price (handle zero shares case)
@@ -675,8 +665,8 @@ fn query_fee_accrual_info(
     };
 
     // Calculate pending yield and fee
-    let (pending_yield, pending_fee) = if current_share_price > last_accrual_share_price {
-        let yield_per_share = current_share_price - last_accrual_share_price;
+    let (pending_yield, pending_fee) = if current_share_price > high_water_mark_price {
+        let yield_per_share = current_share_price - high_water_mark_price;
         let total_shares_decimal = Decimal::from_ratio(pool_info.total_shares_issued, 1u128);
         let total_yield = yield_per_share * total_shares_decimal;
         let fee_amount = total_yield * fee_config.fee_rate;
@@ -689,7 +679,7 @@ fn query_fee_accrual_info(
     };
 
     Ok(FeeAccrualInfoResponse {
-        last_accrual_share_price,
+        high_water_mark_price,
         current_share_price,
         pending_yield,
         pending_fee,

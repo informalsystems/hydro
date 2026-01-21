@@ -13,25 +13,23 @@ pub struct UpdateConfigData {
 }
 
 /// Configuration for performance fee tracking, used during instantiation or migration.
+/// Fees are enabled when fee_rate > 0 and disabled when fee_rate = 0.
 #[cw_serde]
 pub struct FeeConfigInit {
-    /// Fee rate as a decimal (e.g., 0.2 for 20%)
+    /// Fee rate as a decimal (e.g., 0.2 for 20%). Set to 0 to disable fees.
     pub fee_rate: Decimal,
     /// Address where fee shares are minted to
     pub fee_recipient: String,
-    /// Whether fee accrual is enabled
-    pub enabled: bool,
 }
 
-/// Stored fee configuration
+/// Stored fee configuration.
+/// Fees are enabled when fee_rate > 0 and disabled when fee_rate = 0.
 #[cw_serde]
 pub struct FeeConfig {
-    /// Fee rate as a decimal (e.g., 0.2 for 20%)
+    /// Fee rate as a decimal (e.g., 0.2 for 20%). Set to 0 to disable fees.
     pub fee_rate: Decimal,
     /// Address where fee shares are minted to
     pub fee_recipient: Addr,
-    /// Whether fee accrual is enabled
-    pub enabled: bool,
 }
 
 #[cw_serde]
@@ -73,10 +71,10 @@ pub enum ExecuteMsg {
     AccrueFees {},
 
     /// Updates the fee configuration. Only whitelisted addresses can call this.
+    /// Set fee_rate to 0 to disable fee accrual.
     UpdateFeeConfig {
         fee_rate: Option<Decimal>,
         fee_recipient: Option<String>,
-        enabled: Option<bool>,
     },
 }
 
@@ -132,12 +130,11 @@ pub struct SubvaultsResponse {
 pub struct FeeConfigResponse {
     pub fee_rate: Decimal,
     pub fee_recipient: Addr,
-    pub enabled: bool,
 }
 
 #[cw_serde]
 pub struct FeeAccrualInfoResponse {
-    pub last_accrual_share_price: Decimal,
+    pub high_water_mark_price: Decimal,
     pub current_share_price: Decimal,
     /// Pending yield amount (in base tokens) since last accrual
     pub pending_yield: Uint128,

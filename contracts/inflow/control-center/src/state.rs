@@ -26,7 +26,7 @@ pub const FEE_CONFIG: Item<FeeConfig> = Item::new("fee_config");
 
 /// High-water mark: the share price at the last fee accrual.
 /// Fees are only charged when the current share price exceeds this value.
-pub const LAST_ACCRUAL_SHARE_PRICE: Item<Decimal> = Item::new("last_accrual_share_price");
+pub const HIGH_WATER_MARK_PRICE: Item<Decimal> = Item::new("high_water_mark_price");
 
 pub fn load_config(storage: &dyn Storage) -> StdResult<Config> {
     CONFIG.load(storage)

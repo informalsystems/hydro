@@ -175,7 +175,7 @@
       "additionalProperties": false
     },
     {
-      "description": "Updates the fee configuration. Only whitelisted addresses can call this.",
+      "description": "Updates the fee configuration. Only whitelisted addresses can call this. Set fee_rate to 0 to disable fee accrual.",
       "type": "object",
       "required": [
         "update_fee_config"
@@ -184,12 +184,6 @@
         "update_fee_config": {
           "type": "object",
           "properties": {
-            "enabled": {
-              "type": [
-                "boolean",
-                "null"
-              ]
-            },
             "fee_rate": {
               "anyOf": [
                 {

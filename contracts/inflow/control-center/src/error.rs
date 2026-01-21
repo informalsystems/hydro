@@ -29,13 +29,13 @@ pub enum ContractError {
     #[error("Invalid fee rate: must be between 0 and 1")]
     InvalidFeeRate,
 
-    #[error("Fee accrual is disabled")]
+    #[error("Fee accrual is disabled (fee_rate is zero)")]
     FeeAccrualDisabled,
 
     #[error("No shares have been issued yet")]
     NoSharesIssued,
 
-    #[error("Fee recipient must be set before enabling fee accrual")]
+    #[error("Fee recipient must be set before setting a non-zero fee rate")]
     FeeRecipientNotSet,
 }
 

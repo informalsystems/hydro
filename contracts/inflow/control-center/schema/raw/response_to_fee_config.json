@@ -3,14 +3,10 @@
   "title": "FeeConfigResponse",
   "type": "object",
   "required": [
-    "enabled",
     "fee_rate",
     "fee_recipient"
   ],
   "properties": {
-    "enabled": {
-      "type": "boolean"
-    },
     "fee_rate": {
       "$ref": "#/definitions/Decimal"
     },

@@ -53,20 +53,15 @@
         "type": "string"
       },
       "FeeConfigInit": {
-        "description": "Configuration for performance fee tracking, used during instantiation or migration.",
+        "description": "Configuration for performance fee tracking, used during instantiation or migration. Fees are enabled when fee_rate > 0 and disabled when fee_rate = 0.",
         "type": "object",
         "required": [
-          "enabled",
           "fee_rate",
           "fee_recipient"
         ],
         "properties": {
-          "enabled": {
-            "description": "Whether fee accrual is enabled",
-            "type": "boolean"
-          },
           "fee_rate": {
-            "description": "Fee rate as a decimal (e.g., 0.2 for 20%)",
+            "description": "Fee rate as a decimal (e.g., 0.2 for 20%). Set to 0 to disable fees.",
             "allOf": [
               {
                 "$ref": "#/definitions/Decimal"
@@ -263,7 +258,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Updates the fee configuration. Only whitelisted addresses can call this.",
+        "description": "Updates the fee configuration. Only whitelisted addresses can call this. Set fee_rate to 0 to disable fee accrual.",
         "type": "object",
         "required": [
           "update_fee_config"
@@ -272,12 +267,6 @@
           "update_fee_config": {
             "type": "object",
             "properties": {
-              "enabled": {
-                "type": [
-                  "boolean",
-                  "null"
-                ]
-              },
               "fee_rate": {
                 "anyOf": [
                   {
@@ -486,7 +475,7 @@
       "type": "object",
       "required": [
         "current_share_price",
-        "last_accrual_share_price",
+        "high_water_mark_price",
         "pending_fee",
         "pending_yield"
       ],
@@ -494,7 +483,7 @@
         "current_share_price": {
           "$ref": "#/definitions/Decimal"
         },
-        "last_accrual_share_price": {
+        "high_water_mark_price": {
           "$ref": "#/definitions/Decimal"
         },
         "pending_fee": {
@@ -531,14 +520,10 @@
       "title": "FeeConfigResponse",
       "type": "object",
       "required": [
-        "enabled",
         "fee_rate",
         "fee_recipient"
       ],
       "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
         "fee_rate": {
           "$ref": "#/definitions/Decimal"
         },

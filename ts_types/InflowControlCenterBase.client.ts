@@ -109,11 +109,9 @@ export interface InflowControlCenterBaseInterface extends InflowControlCenterBas
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   accrueFees: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   updateFeeConfig: ({
-    enabled,
     feeRate,
     feeRecipient
   }: {
-    enabled?: boolean;
     feeRate?: Decimal;
     feeRecipient?: string;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
@@ -223,17 +221,14 @@ export class InflowControlCenterBaseClient extends InflowControlCenterBaseQueryC
     }, fee, memo, _funds);
   };
   updateFeeConfig = async ({
-    enabled,
     feeRate,
     feeRecipient
   }: {
-    enabled?: boolean;
     feeRate?: Decimal;
     feeRecipient?: string;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       update_fee_config: {
-        enabled,
         fee_rate: feeRate,
         fee_recipient: feeRecipient
       }

@@ -17,7 +17,7 @@ use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 use crate::{
     contract::{execute, instantiate, query},
     msg::InstantiateMsg,
-    state::{FEE_CONFIG, LAST_ACCRUAL_SHARE_PRICE},
+    state::{FEE_CONFIG, HIGH_WATER_MARK_PRICE},
 };
 
 const WHITELIST: &str = "whitelist1";
@@ -129,7 +129,6 @@ fn test_instantiate_with_fee_config() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
@@ -141,11 +140,10 @@ fn test_instantiate_with_fee_config() {
     let fee_config = FEE_CONFIG.load(&deps.storage).unwrap();
     assert_eq!(fee_config.fee_rate, Decimal::percent(20));
     assert_eq!(fee_config.fee_recipient, treasury_addr);
-    assert!(fee_config.enabled);
 
     // Verify high-water mark was initialized
-    let last_accrual_price = LAST_ACCRUAL_SHARE_PRICE.load(&deps.storage).unwrap();
-    assert_eq!(last_accrual_price, Decimal::one());
+    let high_water_mark_price = HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap();
+    assert_eq!(high_water_mark_price, Decimal::one());
 }
 
 #[test]
@@ -160,14 +158,13 @@ fn test_instantiate_without_fee_config() {
     let res = instantiate(deps.as_mut(), env.clone(), info, instantiate_msg);
     assert!(res.is_ok());
 
-    // Verify fee config was stored with defaults
+    // Verify fee config was stored with defaults (fee_rate = 0 means disabled)
     let fee_config = FEE_CONFIG.load(&deps.storage).unwrap();
     assert_eq!(fee_config.fee_rate, Decimal::zero());
-    assert!(!fee_config.enabled);
 
     // Verify high-water mark was initialized
-    let last_accrual_price = LAST_ACCRUAL_SHARE_PRICE.load(&deps.storage).unwrap();
-    assert_eq!(last_accrual_price, Decimal::one());
+    let high_water_mark_price = HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap();
+    assert_eq!(high_water_mark_price, Decimal::one());
 }
 
 #[test]
@@ -185,7 +182,6 @@ fn test_instantiate_invalid_fee_rate() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(150), // Invalid: > 100%
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
@@ -214,7 +210,6 @@ fn test_update_fee_config_partial() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
@@ -230,7 +225,6 @@ fn test_update_fee_config_partial() {
         ExecuteMsg::UpdateFeeConfig {
             fee_rate: Some(Decimal::percent(15)),
             fee_recipient: None,
-            enabled: None,
         },
     );
     assert!(res.is_ok());
@@ -239,7 +233,6 @@ fn test_update_fee_config_partial() {
     let fee_config = FEE_CONFIG.load(&deps.storage).unwrap();
     assert_eq!(fee_config.fee_rate, Decimal::percent(15));
     assert_eq!(fee_config.fee_recipient, treasury_addr); // Unchanged
-    assert!(fee_config.enabled); // Unchanged
 }
 
 #[test]
@@ -256,7 +249,6 @@ fn test_update_fee_config_unauthorized() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
@@ -272,7 +264,6 @@ fn test_update_fee_config_unauthorized() {
         ExecuteMsg::UpdateFeeConfig {
             fee_rate: Some(Decimal::percent(10)),
             fee_recipient: None,
-            enabled: None,
         },
     );
     assert!(res.is_err());
@@ -293,7 +284,6 @@ fn test_update_fee_config_invalid_rate() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
@@ -309,7 +299,6 @@ fn test_update_fee_config_invalid_rate() {
         ExecuteMsg::UpdateFeeConfig {
             fee_rate: Some(Decimal::percent(150)), // Invalid
             fee_recipient: None,
-            enabled: None,
         },
     );
     assert!(res.is_err());
@@ -317,28 +306,27 @@ fn test_update_fee_config_invalid_rate() {
 }
 
 #[test]
-fn test_update_fee_config_enable_without_recipient() {
+fn test_update_fee_config_nonzero_rate_without_recipient() {
     let (mut deps, env) = (mock_dependencies(), mock_env());
 
     let whitelist_addr = deps.api.addr_make(WHITELIST);
 
-    // Instantiate without fee config (recipient is empty)
+    // Instantiate without fee config (recipient is empty, fee_rate is 0)
     let instantiate_msg =
         get_instantiate_msg(DEFAULT_DEPOSIT_CAP, whitelist_addr.clone(), vec![], None);
 
     let info = get_message_info(&deps.api, "creator", &[]);
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    // Try to enable fees without setting a recipient first
+    // Try to set a non-zero fee rate without setting a recipient first
     let info = get_message_info(&deps.api, WHITELIST, &[]);
     let res = execute(
         deps.as_mut(),
         env.clone(),
         info,
         ExecuteMsg::UpdateFeeConfig {
-            fee_rate: None,
+            fee_rate: Some(Decimal::percent(20)),
             fee_recipient: None,
-            enabled: Some(true),
         },
     );
     assert!(res.is_err());
@@ -363,7 +351,6 @@ fn test_update_fee_config_change_recipient() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
             fee_recipient: old_treasury.to_string(),
-            enabled: true,
         }),
     );
 
@@ -379,7 +366,6 @@ fn test_update_fee_config_change_recipient() {
         ExecuteMsg::UpdateFeeConfig {
             fee_rate: None,
             fee_recipient: Some(new_treasury.to_string()),
-            enabled: None,
         },
     );
     assert!(res.is_ok());
@@ -390,7 +376,7 @@ fn test_update_fee_config_change_recipient() {
 }
 
 #[test]
-fn test_update_fee_config_disable() {
+fn test_update_fee_config_disable_by_zero_rate() {
     let (mut deps, env) = (mock_dependencies(), mock_env());
 
     let whitelist_addr = deps.api.addr_make(WHITELIST);
@@ -403,30 +389,28 @@ fn test_update_fee_config_disable() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
     let info = get_message_info(&deps.api, "creator", &[]);
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    // Disable fees
+    // Disable fees by setting fee_rate to 0
     let info = get_message_info(&deps.api, WHITELIST, &[]);
     let res = execute(
         deps.as_mut(),
         env.clone(),
         info,
         ExecuteMsg::UpdateFeeConfig {
-            fee_rate: None,
+            fee_rate: Some(Decimal::zero()),
             fee_recipient: None,
-            enabled: Some(false),
         },
     );
     assert!(res.is_ok());
 
-    // Verify fees are disabled
+    // Verify fees are disabled (fee_rate = 0)
     let fee_config = FEE_CONFIG.load(&deps.storage).unwrap();
-    assert!(!fee_config.enabled);
+    assert_eq!(fee_config.fee_rate, Decimal::zero());
 }
 
 // ============================================================================
@@ -447,7 +431,6 @@ fn test_query_fee_config() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
@@ -460,7 +443,6 @@ fn test_query_fee_config() {
 
     assert_eq!(fee_config.fee_rate, Decimal::percent(20));
     assert_eq!(fee_config.fee_recipient, treasury_addr);
-    assert!(fee_config.enabled);
 }
 
 #[test]
@@ -477,7 +459,6 @@ fn test_query_fee_accrual_info_no_subvaults() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
@@ -488,7 +469,7 @@ fn test_query_fee_accrual_info_no_subvaults() {
     let query_res = query(deps.as_ref(), env.clone(), QueryMsg::FeeAccrualInfo {}).unwrap();
     let info: FeeAccrualInfoResponse = from_json(query_res).unwrap();
 
-    assert_eq!(info.last_accrual_share_price, Decimal::one());
+    assert_eq!(info.high_water_mark_price, Decimal::one());
     assert_eq!(info.current_share_price, Decimal::one()); // No shares, defaults to 1
     assert_eq!(info.pending_yield, Uint128::zero());
     assert_eq!(info.pending_fee, Uint128::zero());
@@ -535,7 +516,6 @@ fn test_accrue_fees_no_shares() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
@@ -568,7 +548,6 @@ fn test_accrue_fees_below_high_water_mark() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
@@ -609,7 +588,6 @@ fn test_accrue_fees_basic_yield() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
@@ -657,8 +635,11 @@ fn test_accrue_fees_basic_yield() {
     assert!(!response.messages.is_empty());
 
     // Verify high-water mark was updated
-    let last_accrual_price = LAST_ACCRUAL_SHARE_PRICE.load(&deps.storage).unwrap();
-    assert_eq!(last_accrual_price, Decimal::from_ratio(1100u128, 1000u128));
+    let high_water_mark_price = HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap();
+    assert_eq!(
+        high_water_mark_price,
+        Decimal::from_ratio(1100u128, 1000u128)
+    );
 }
 
 #[test]
@@ -676,7 +657,6 @@ fn test_accrue_fees_permissionless() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
@@ -715,21 +695,21 @@ fn test_accrue_fees_permissionless() {
 }
 
 #[test]
-fn test_accrue_fees_zero_fee_rate() {
+fn test_accrue_fees_zero_fee_rate_is_disabled() {
     let (mut deps, env) = (mock_dependencies(), mock_env());
 
     let whitelist_addr = deps.api.addr_make(WHITELIST);
     let treasury_addr = deps.api.addr_make(TREASURY);
     let subvault1_addr = deps.api.addr_make(SUBVAULT1);
 
+    // Instantiate with fee_rate=0, which means fees are disabled
     let instantiate_msg = get_instantiate_msg(
         DEFAULT_DEPOSIT_CAP,
         whitelist_addr,
         vec![subvault1_addr.clone()],
         Some(FeeConfigInit {
-            fee_rate: Decimal::zero(), // 0% fee rate
+            fee_rate: Decimal::zero(), // 0% fee rate means disabled
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
@@ -759,25 +739,15 @@ fn test_accrue_fees_zero_fee_rate() {
         }
     });
 
-    // Accrue fees with 0% rate
+    // Try to accrue fees - should fail because fee_rate=0 means disabled
     let info = get_message_info(&deps.api, USER1, &[]);
     let res = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::AccrueFees {});
 
-    assert!(res.is_ok());
-    let response = res.unwrap();
-
-    // Should return "zero_fee_rate" result
-    assert!(response
-        .attributes
-        .iter()
-        .any(|a| a.key == "result" && a.value == "zero_fee_rate"));
-
-    // No mint messages should be generated
-    assert!(response.messages.is_empty());
-
-    // High-water mark should still be updated
-    let last_accrual_price = LAST_ACCRUAL_SHARE_PRICE.load(&deps.storage).unwrap();
-    assert_eq!(last_accrual_price, Decimal::from_ratio(1100u128, 1000u128));
+    assert!(res.is_err());
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .contains("Fee accrual is disabled"));
 }
 
 #[test]
@@ -796,7 +766,6 @@ fn test_accrue_fees_proportional_two_vaults() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
@@ -876,7 +845,6 @@ fn test_high_water_mark_consecutive_accruals() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
@@ -923,7 +891,7 @@ fn test_high_water_mark_consecutive_accruals() {
         .iter()
         .any(|a| a.key == "result" && a.value == "fees_accrued"));
     assert_eq!(
-        LAST_ACCRUAL_SHARE_PRICE.load(&deps.storage).unwrap(),
+        HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
         Decimal::from_ratio(1050u128, 1000u128)
     );
 
@@ -934,7 +902,7 @@ fn test_high_water_mark_consecutive_accruals() {
         .iter()
         .any(|a| a.key == "result" && a.value == "fees_accrued"));
     assert_eq!(
-        LAST_ACCRUAL_SHARE_PRICE.load(&deps.storage).unwrap(),
+        HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
         Decimal::from_ratio(1100u128, 1000u128)
     );
 
@@ -945,7 +913,7 @@ fn test_high_water_mark_consecutive_accruals() {
         .iter()
         .any(|a| a.key == "result" && a.value == "fees_accrued"));
     assert_eq!(
-        LAST_ACCRUAL_SHARE_PRICE.load(&deps.storage).unwrap(),
+        HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
         Decimal::from_ratio(1150u128, 1000u128)
     );
 }
@@ -965,7 +933,6 @@ fn test_high_water_mark_recovery_from_loss() {
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
             fee_recipient: treasury_addr.to_string(),
-            enabled: true,
         }),
     );
 
@@ -1012,7 +979,7 @@ fn test_high_water_mark_recovery_from_loss() {
         .iter()
         .any(|a| a.key == "result" && a.value == "fees_accrued"));
     assert_eq!(
-        LAST_ACCRUAL_SHARE_PRICE.load(&deps.storage).unwrap(),
+        HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
         Decimal::from_ratio(1200u128, 1000u128)
     );
 
@@ -1024,7 +991,7 @@ fn test_high_water_mark_recovery_from_loss() {
         .any(|a| a.key == "result" && a.value == "below_high_water_mark"));
     // hwm should remain at 1.2
     assert_eq!(
-        LAST_ACCRUAL_SHARE_PRICE.load(&deps.storage).unwrap(),
+        HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
         Decimal::from_ratio(1200u128, 1000u128)
     );
 
@@ -1036,7 +1003,7 @@ fn test_high_water_mark_recovery_from_loss() {
         .any(|a| a.key == "result" && a.value == "below_high_water_mark"));
     // hwm should remain at 1.2
     assert_eq!(
-        LAST_ACCRUAL_SHARE_PRICE.load(&deps.storage).unwrap(),
+        HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
         Decimal::from_ratio(1200u128, 1000u128)
     );
 
@@ -1047,7 +1014,7 @@ fn test_high_water_mark_recovery_from_loss() {
         .iter()
         .any(|a| a.key == "result" && a.value == "fees_accrued"));
     assert_eq!(
-        LAST_ACCRUAL_SHARE_PRICE.load(&deps.storage).unwrap(),
+        HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
         Decimal::from_ratio(1300u128, 1000u128)
     );
 }

@@ -33,15 +33,15 @@ Use high-water mark logic to track share price appreciation since the last fee a
 This means we only charge fees on new yield generated since the last accrual, and not on the entire share price.
 Losses do not reduce the high-water mark, so fees are only charged on net new gains.
 
-1. Track `last_accrual_share_price` in the ControlCenter state
+1. Track `high_water_share_ratio` in the ControlCenter state
 2. On fee accrual (triggered via permissionless `AccrueFees`):
-   - If `current_share_ratio > last_accrual_share_price`:
-     - `yield_per_share = current_share_ratio - last_accrual_share_price`
+   - If `current_share_ratio > high_water_share_ratio`:
+     - `yield_per_share = current_share_ratio - high_water_share_ratio`
      - `total_yield = yield_per_share × total_shares`
      - `fee_amount = total_yield × fee_rate`
      - `shares_to_mint = fee_amount / current_share_ratio`
      - Mint `shares_to_mint` to rebate contract
-   - Update `last_accrual_share_price = current_share_ratio`
+     - Update `high_water_share_ratio = current_share_ratio`
 
 `current_share_ratio` is the ratio between total pool value and total shares.
 
@@ -60,7 +60,7 @@ When shares are minted to the rebate contract, store them. There is an endpoint 
 * For each subvault denom:
   * `denom_shares_to_distribute` = shares of this denom held by rebate contract
   * `total_denom_shares` = total supply of this denom, minus the shares held by this rebate contract (since they were just newly minted)
-  * For each user:
+  * For each user with rebates:
     * `user_denom_shares` = shares of this denom held by user
     * `user_ownership_fraction = user_denom_shares / total_denom_shares`
     * `user_rebate_shares = denom_shares_to_distribute x user_ownership_fraction x rebate_rate`

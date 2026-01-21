@@ -49,20 +49,15 @@
       "type": "string"
     },
     "FeeConfigInit": {
-      "description": "Configuration for performance fee tracking, used during instantiation or migration.",
+      "description": "Configuration for performance fee tracking, used during instantiation or migration. Fees are enabled when fee_rate > 0 and disabled when fee_rate = 0.",
       "type": "object",
       "required": [
-        "enabled",
         "fee_rate",
         "fee_recipient"
       ],
       "properties": {
-        "enabled": {
-          "description": "Whether fee accrual is enabled",
-          "type": "boolean"
-        },
         "fee_rate": {
-          "description": "Fee rate as a decimal (e.g., 0.2 for 20%)",
+          "description": "Fee rate as a decimal (e.g., 0.2 for 20%). Set to 0 to disable fees.",
           "allOf": [
             {
               "$ref": "#/definitions/Decimal"
