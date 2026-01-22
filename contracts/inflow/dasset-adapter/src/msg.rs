@@ -46,8 +46,23 @@ pub enum DAssetAdapterMsg {
 }
 
 #[cw_serde]
+pub struct ConfigResponse {
+    pub admins: Vec<String>,
+    pub executors: Vec<String>,
+    pub drop_staking_core: String,
+    pub drop_voucher: String,
+    pub drop_withdrawal_manager: String,
+    pub vault_contract: String,
+    pub liquid_asset_denom: String,
+    pub base_asset_denom: String,
+}
+
+#[cw_serde]
 #[derive(QueryResponses)]
 pub enum QueryMsg {
     #[returns(cosmwasm_std::Binary)]
     StandardQuery(AdapterInterfaceQueryMsg),
+
+    #[returns(ConfigResponse)]
+    Config {},
 }

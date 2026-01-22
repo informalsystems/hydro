@@ -15,6 +15,12 @@ pub enum ContractError {
     #[error("No dAsset funds available to unbond")]
     NoFundsToUnbond {},
 
+    #[error("Withdrawal failed: {reason}")]
+    WithdrawalFailed { reason: String },
+
+    #[error("No base asset funds received from withdrawal")]
+    NoFundsReceived {},
+
     #[error("At least one executor should be set")]
     AtLeastOneExecutor {},
 

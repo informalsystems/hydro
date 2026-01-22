@@ -1,13 +1,13 @@
 use cosmwasm_std::{
-    entry_point, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Reply, ReplyOn,
-    Response, StdError, SubMsg,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
+    Reply, ReplyOn, Response, StdError, SubMsg, SubMsgResult,
 };
 use cw2::set_contract_version;
 
 use crate::{
     drop,
     error::ContractError,
-    msg::{DAssetAdapterMsg, ExecuteMsg, InstantiateMsg, QueryMsg},
+    msg::{ConfigResponse, DAssetAdapterMsg, ExecuteMsg, InstantiateMsg, QueryMsg},
     state::{Config, ADMINS, CONFIG, EXECUTORS},
 };
 
@@ -62,6 +62,17 @@ pub fn instantiate(
     Ok(Response::new().add_attribute("action", "instantiate"))
 }
 
+/// NOTE: This adapter does not implement the standard AdapterInterfaceMsg
+/// because it handles Drop Protocol's asynchronous unbonding flow:
+///
+/// 1. Receives dAsset tokens (from any source)
+/// 2. Executor calls Unbond() to initiate unbonding
+/// 3. Drop Protocol returns NFT voucher with token_id
+/// 4. After the unbonding period, executor calls Withdraw(token_id)
+/// 5. Redeemed base assets are forwarded to the vault
+///
+/// This flow is incompatible with the synchronous deposit/withdraw pattern
+/// of standard adapters, and does not require depositor tracking.
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut,
@@ -71,7 +82,7 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::StandardAction(_) => Err(ContractError::Std(StdError::generic_err(
-            "StandardAction not supported directly",
+            "StandardAction not supported - use CustomAction for dAsset redemption flow",
         ))),
 
         ExecuteMsg::CustomAction(custom_msg) => {
@@ -151,7 +162,11 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
         )));
     }
 
-    on_withdraw_reply(deps, env)
+    // Verify the withdrawal was successful
+    match reply.result {
+        SubMsgResult::Ok(_) => on_withdraw_reply(deps, env),
+        SubMsgResult::Err(err) => Err(ContractError::WithdrawalFailed { reason: err }),
+    }
 }
 
 fn on_withdraw_reply(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
@@ -162,9 +177,7 @@ fn on_withdraw_reply(deps: DepsMut, env: Env) -> Result<Response, ContractError>
         .query_balance(env.contract.address, config.base_asset_denom.clone())?;
 
     if base_balance.amount.is_zero() {
-        return Ok(Response::new()
-            .add_attribute("action", "withdraw_reply")
-            .add_attribute("forwarded", "0"));
+        return Err(ContractError::NoFundsReceived {});
     }
 
     Ok(Response::new()
@@ -221,10 +234,30 @@ fn dispatch_admin_execute(deps: DepsMut, msg: DAssetAdapterMsg) -> Result<Respon
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(_deps: Deps, _env: Env, _msg: QueryMsg) -> Result<Binary, ContractError> {
-    Err(ContractError::Std(StdError::generic_err(
-        "No queries supported",
-    )))
+pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> Result<Binary, ContractError> {
+    match msg {
+        QueryMsg::Config {} => to_json_binary(&query_config(deps)?).map_err(ContractError::Std),
+        QueryMsg::StandardQuery(_) => Err(ContractError::Std(StdError::generic_err(
+            "Standard queries not supported - use Config query",
+        ))),
+    }
+}
+
+fn query_config(deps: Deps) -> Result<ConfigResponse, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+    let admins = ADMINS.load(deps.storage)?;
+    let executors = EXECUTORS.load(deps.storage)?;
+
+    Ok(ConfigResponse {
+        admins: admins.iter().map(|a| a.to_string()).collect(),
+        executors: executors.iter().map(|a| a.to_string()).collect(),
+        drop_staking_core: config.drop_staking_core.to_string(),
+        drop_voucher: config.drop_voucher.to_string(),
+        drop_withdrawal_manager: config.drop_withdrawal_manager.to_string(),
+        vault_contract: config.vault_contract.to_string(),
+        liquid_asset_denom: config.liquid_asset_denom,
+        base_asset_denom: config.base_asset_denom,
+    })
 }
 
 fn validate_executor(deps: &DepsMut, info: &MessageInfo) -> Result<(), ContractError> {

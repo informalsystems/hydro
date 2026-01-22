@@ -358,6 +358,19 @@
           }
         },
         "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "config"
+        ],
+        "properties": {
+          "config": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
       }
     ],
     "definitions": {
@@ -567,6 +580,54 @@
   "migrate": null,
   "sudo": null,
   "responses": {
+    "config": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ConfigResponse",
+      "type": "object",
+      "required": [
+        "admins",
+        "base_asset_denom",
+        "drop_staking_core",
+        "drop_voucher",
+        "drop_withdrawal_manager",
+        "executors",
+        "liquid_asset_denom",
+        "vault_contract"
+      ],
+      "properties": {
+        "admins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "base_asset_denom": {
+          "type": "string"
+        },
+        "drop_staking_core": {
+          "type": "string"
+        },
+        "drop_voucher": {
+          "type": "string"
+        },
+        "drop_withdrawal_manager": {
+          "type": "string"
+        },
+        "executors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "liquid_asset_denom": {
+          "type": "string"
+        },
+        "vault_contract": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "standard_query": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Binary",

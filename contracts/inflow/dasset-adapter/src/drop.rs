@@ -15,6 +15,11 @@ pub enum VoucherExecuteMsg {
     },
 }
 
+#[cw_serde]
+pub enum WithdrawMsg {
+    Withdraw {},
+}
+
 pub fn unbond_msg(drop_staking_core: Addr, funds: Vec<Coin>) -> StdResult<WasmMsg> {
     Ok(WasmMsg::Execute {
         contract_addr: drop_staking_core.to_string(),
@@ -28,11 +33,12 @@ pub fn withdraw_voucher_msg(
     withdrawal_manager: Addr,
     token_id: String,
 ) -> StdResult<WasmMsg> {
+    let withdraw_msg = to_json_binary(&WithdrawMsg::Withdraw {})?;
+
     let msg = VoucherExecuteMsg::SendNft {
         contract: withdrawal_manager.to_string(),
         token_id,
-        // base64({"withdraw":{}})
-        msg: "eyJ3aXRoZHJhdyI6e319".to_string(),
+        msg: withdraw_msg.to_base64(),
     };
 
     Ok(WasmMsg::Execute {
