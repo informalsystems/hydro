@@ -2,7 +2,7 @@
 mod tests {
     use crate::contract::{execute, instantiate, reply};
     use crate::error::ContractError;
-    use crate::msg::{DatomAdapterMsg, ExecuteMsg, InstantiateMsg};
+    use crate::msg::{DAssetAdapterMsg, ExecuteMsg, InstantiateMsg};
     use crate::state::{CONFIG, EXECUTORS};
     use cosmwasm_std::testing::{
         mock_dependencies, mock_env, MockApi, MockQuerier, MockStorage, MOCK_CONTRACT_ADDR,
@@ -39,8 +39,8 @@ mod tests {
             drop_voucher: api.addr_make("voucher").to_string(),
             drop_withdrawal_manager: api.addr_make("withdraw_manager").to_string(),
             vault_contract: api.addr_make("vault").to_string(),
-            datom_denom: "datom".to_string(),
-            atom_denom: "uatom".to_string(),
+            liquid_asset_denom: "datom".to_string(),
+            base_asset_denom: "uatom".to_string(),
         }
     }
 
@@ -60,7 +60,7 @@ mod tests {
         assert_eq!(executors.len(), 1);
 
         let config = CONFIG.load(deps.as_ref().storage).unwrap();
-        assert_eq!(config.atom_denom, "uatom");
+        assert_eq!(config.base_asset_denom, "uatom");
     }
 
     // --------------------------------------------------
@@ -83,7 +83,7 @@ mod tests {
             deps.as_mut(),
             env,
             get_message_info(&api, RANDOM, &[]),
-            ExecuteMsg::CustomAction(DatomAdapterMsg::Unbond {}),
+            ExecuteMsg::CustomAction(DAssetAdapterMsg::Unbond {}),
         )
         .unwrap_err();
 
@@ -121,7 +121,7 @@ mod tests {
             deps.as_mut(),
             env,
             get_message_info(&api, EXECUTOR, &[]),
-            ExecuteMsg::CustomAction(DatomAdapterMsg::Unbond {}),
+            ExecuteMsg::CustomAction(DAssetAdapterMsg::Unbond {}),
         )
         .unwrap();
 
@@ -157,7 +157,7 @@ mod tests {
             deps.as_mut(),
             env.clone(),
             get_message_info(&api, EXECUTOR, &[]),
-            ExecuteMsg::CustomAction(DatomAdapterMsg::Withdraw {
+            ExecuteMsg::CustomAction(DAssetAdapterMsg::Withdraw {
                 token_id: "1".to_string(),
             }),
         )

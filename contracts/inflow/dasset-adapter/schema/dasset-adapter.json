@@ -1,5 +1,5 @@
 {
-  "contract_name": "datom-adapter",
+  "contract_name": "dasset-adapter",
   "contract_version": "3.6.6",
   "idl_version": "1.0.0",
   "instantiate": {
@@ -8,12 +8,12 @@
     "type": "object",
     "required": [
       "admins",
-      "atom_denom",
-      "datom_denom",
+      "base_asset_denom",
       "drop_staking_core",
       "drop_voucher",
       "drop_withdrawal_manager",
       "executors",
+      "liquid_asset_denom",
       "vault_contract"
     ],
     "properties": {
@@ -23,10 +23,7 @@
           "type": "string"
         }
       },
-      "atom_denom": {
-        "type": "string"
-      },
-      "datom_denom": {
+      "base_asset_denom": {
         "type": "string"
       },
       "drop_staking_core": {
@@ -43,6 +40,9 @@
         "items": {
           "type": "string"
         }
+      },
+      "liquid_asset_denom": {
+        "type": "string"
       },
       "vault_contract": {
         "type": "string"
@@ -68,14 +68,14 @@
         "additionalProperties": false
       },
       {
-        "description": "Datom-specific logic",
+        "description": "DAsset-specific logic",
         "type": "object",
         "required": [
           "custom_action"
         ],
         "properties": {
           "custom_action": {
-            "$ref": "#/definitions/DatomAdapterMsg"
+            "$ref": "#/definitions/DAssetAdapterMsg"
           }
         },
         "additionalProperties": false
@@ -232,7 +232,7 @@
         },
         "additionalProperties": false
       },
-      "DatomAdapterMsg": {
+      "DAssetAdapterMsg": {
         "oneOf": [
           {
             "description": "executor-only",

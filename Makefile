@@ -50,7 +50,7 @@ schema:
 	cd contracts/inflow/user-registry && cargo run --bin inflow_user_registry_schema
 	cd contracts/inflow/mars-adapter && cargo run --bin inflow_mars_adapter_schema
 	cd contracts/inflow/ibc-adapter && cargo run --bin inflow_ibc_adapter_schema
-	cd contracts/inflow/datom-adapter && cargo run --bin inflow_datom_adapter_schema
+	cd contracts/inflow/dasset-adapter && cargo run --bin inflow_dasset_adapter_schema
 
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/hydro/schema NAME=HydroBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/tribute/schema NAME=TributeBase
@@ -66,6 +66,7 @@ schema:
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/user-registry/schema NAME=InflowUserRegistryBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/mars-adapter/schema NAME=InflowMarsAdapterBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/ibc-adapter/schema NAME=InflowIBCAdapterBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/dasset-adapter/schema NAME=InflowDAssetAdapterBase
 
 ts-codegen-inner:
 	npx @cosmwasm/ts-codegen@1.7.2 generate \

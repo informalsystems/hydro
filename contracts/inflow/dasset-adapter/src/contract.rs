@@ -7,7 +7,7 @@ use cw2::set_contract_version;
 use crate::{
     drop,
     error::ContractError,
-    msg::{DatomAdapterMsg, ExecuteMsg, InstantiateMsg, QueryMsg},
+    msg::{DAssetAdapterMsg, ExecuteMsg, InstantiateMsg, QueryMsg},
     state::{Config, ADMINS, CONFIG, EXECUTORS},
 };
 
@@ -53,8 +53,8 @@ pub fn instantiate(
         drop_voucher: deps.api.addr_validate(&msg.drop_voucher)?,
         drop_withdrawal_manager: deps.api.addr_validate(&msg.drop_withdrawal_manager)?,
         vault_contract: deps.api.addr_validate(&msg.vault_contract)?,
-        datom_denom: msg.datom_denom,
-        atom_denom: msg.atom_denom,
+        liquid_asset_denom: msg.liquid_asset_denom,
+        base_asset_denom: msg.base_asset_denom,
     };
 
     CONFIG.save(deps.storage, &config)?;
@@ -84,20 +84,20 @@ fn dispatch_custom_execute(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    msg: DatomAdapterMsg,
+    msg: DAssetAdapterMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        DatomAdapterMsg::Unbond {} => {
+        DAssetAdapterMsg::Unbond {} => {
             validate_executor(&deps, &info)?;
             execute_unbond(deps, env)
         }
 
-        DatomAdapterMsg::Withdraw { token_id } => {
+        DAssetAdapterMsg::Withdraw { token_id } => {
             validate_executor(&deps, &info)?;
             execute_withdraw(deps, token_id)
         }
 
-        DatomAdapterMsg::UpdateConfig { .. } | DatomAdapterMsg::UpdateExecutors { .. } => {
+        DAssetAdapterMsg::UpdateConfig { .. } | DAssetAdapterMsg::UpdateExecutors { .. } => {
             validate_admin(&deps, &info)?;
             dispatch_admin_execute(deps, msg)
         }
@@ -109,7 +109,7 @@ fn execute_unbond(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
 
     let balance = deps
         .querier
-        .query_balance(env.contract.address, config.datom_denom.clone())?;
+        .query_balance(env.contract.address, config.liquid_asset_denom.clone())?;
 
     if balance.amount.is_zero() {
         return Err(ContractError::NoFundsToUnbond {});
@@ -157,11 +157,11 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
 fn on_withdraw_reply(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
 
-    let atom_balance = deps
+    let base_balance = deps
         .querier
-        .query_balance(env.contract.address, config.atom_denom.clone())?;
+        .query_balance(env.contract.address, config.base_asset_denom.clone())?;
 
-    if atom_balance.amount.is_zero() {
+    if base_balance.amount.is_zero() {
         return Ok(Response::new()
             .add_attribute("action", "withdraw_reply")
             .add_attribute("forwarded", "0"));
@@ -171,19 +171,19 @@ fn on_withdraw_reply(deps: DepsMut, env: Env) -> Result<Response, ContractError>
         .add_message(BankMsg::Send {
             to_address: config.vault_contract.to_string(),
             amount: vec![Coin {
-                denom: config.atom_denom,
-                amount: atom_balance.amount,
+                denom: config.base_asset_denom,
+                amount: base_balance.amount,
             }],
         })
         .add_attribute("action", "withdraw_reply")
-        .add_attribute("forwarded", atom_balance.amount.to_string()))
+        .add_attribute("forwarded", base_balance.amount.to_string()))
 }
 
-fn dispatch_admin_execute(deps: DepsMut, msg: DatomAdapterMsg) -> Result<Response, ContractError> {
+fn dispatch_admin_execute(deps: DepsMut, msg: DAssetAdapterMsg) -> Result<Response, ContractError> {
     let mut config = CONFIG.load(deps.storage)?;
 
     match msg {
-        DatomAdapterMsg::UpdateConfig {
+        DAssetAdapterMsg::UpdateConfig {
             drop_staking_core,
             drop_voucher,
             drop_withdrawal_manager,
@@ -206,7 +206,7 @@ fn dispatch_admin_execute(deps: DepsMut, msg: DatomAdapterMsg) -> Result<Respons
             Ok(Response::new().add_attribute("action", "update_config"))
         }
 
-        DatomAdapterMsg::UpdateExecutors { executors } => {
+        DAssetAdapterMsg::UpdateExecutors { executors } => {
             let execs: Vec<Addr> = executors
                 .into_iter()
                 .map(|a| deps.api.addr_validate(&a))

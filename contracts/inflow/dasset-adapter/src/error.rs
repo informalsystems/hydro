@@ -12,7 +12,7 @@ pub enum ContractError {
     #[error("Unauthorized")]
     UnauthorizedAdmin {},
 
-    #[error("No dATOM funds available to unbond")]
+    #[error("No dAsset funds available to unbond")]
     NoFundsToUnbond {},
 
     #[error("At least one executor should be set")]

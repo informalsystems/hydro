@@ -1,5 +1,5 @@
 [package]
-name = "datom-adapter"              
+name = "dasset-adapter"
 version = { workspace = true }
 edition = { workspace = true }
 

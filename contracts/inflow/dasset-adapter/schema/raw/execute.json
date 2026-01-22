@@ -16,14 +16,14 @@
       "additionalProperties": false
     },
     {
-      "description": "Datom-specific logic",
+      "description": "DAsset-specific logic",
       "type": "object",
       "required": [
         "custom_action"
       ],
       "properties": {
         "custom_action": {
-          "$ref": "#/definitions/DatomAdapterMsg"
+          "$ref": "#/definitions/DAssetAdapterMsg"
         }
       },
       "additionalProperties": false
@@ -180,7 +180,7 @@
       },
       "additionalProperties": false
     },
-    "DatomAdapterMsg": {
+    "DAssetAdapterMsg": {
       "oneOf": [
         {
           "description": "executor-only",

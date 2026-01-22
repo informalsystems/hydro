@@ -1,5 +1,5 @@
 use cosmwasm_schema::write_api;
-use datom_adapter::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use dasset_adapter::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
 
 fn main() {
     write_api! {

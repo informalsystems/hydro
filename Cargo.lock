@@ -1391,7 +1391,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "datom-adapter"
+name = "dasset-adapter"
 version = "3.6.6"
 dependencies = [
  "cosmwasm-schema 2.2.2",

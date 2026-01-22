@@ -8,11 +8,11 @@ pub struct Config {
     pub drop_voucher: Addr,
     pub drop_withdrawal_manager: Addr,
 
-    /// Vault that ultimately receives ATOM
+    /// Vault that ultimately receives the base asset
     pub vault_contract: Addr,
 
-    pub datom_denom: String,
-    pub atom_denom: String,
+    pub liquid_asset_denom: String,
+    pub base_asset_denom: String,
 }
 
 pub const ADMINS: Item<Vec<Addr>> = Item::new("admins");

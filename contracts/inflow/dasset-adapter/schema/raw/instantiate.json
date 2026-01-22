@@ -4,12 +4,12 @@
   "type": "object",
   "required": [
     "admins",
-    "atom_denom",
-    "datom_denom",
+    "base_asset_denom",
     "drop_staking_core",
     "drop_voucher",
     "drop_withdrawal_manager",
     "executors",
+    "liquid_asset_denom",
     "vault_contract"
   ],
   "properties": {
@@ -19,10 +19,7 @@
         "type": "string"
       }
     },
-    "atom_denom": {
-      "type": "string"
-    },
-    "datom_denom": {
+    "base_asset_denom": {
       "type": "string"
     },
     "drop_staking_core": {
@@ -39,6 +36,9 @@
       "items": {
         "type": "string"
       }
+    },
+    "liquid_asset_denom": {
+      "type": "string"
     },
     "vault_contract": {
       "type": "string"

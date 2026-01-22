@@ -12,8 +12,8 @@ pub struct InstantiateMsg {
 
     pub vault_contract: String,
 
-    pub datom_denom: String,
-    pub atom_denom: String,
+    pub liquid_asset_denom: String,
+    pub base_asset_denom: String,
 }
 
 #[cw_serde]
@@ -21,12 +21,12 @@ pub enum ExecuteMsg {
     /// Adapter interface entrypoint
     StandardAction(AdapterInterfaceMsg),
 
-    /// Datom-specific logic
-    CustomAction(DatomAdapterMsg),
+    /// DAsset-specific logic
+    CustomAction(DAssetAdapterMsg),
 }
 
 #[cw_serde]
-pub enum DatomAdapterMsg {
+pub enum DAssetAdapterMsg {
     /// executor-only
     Unbond {},
 
