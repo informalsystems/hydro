@@ -73,7 +73,10 @@ pub struct SwapOperation {
     pub denom_out: String,
     /// Pool identifier
     pub pool: String,
-    /// Optional interface specification
+    /// Optional interface specification returned by Coinhall API.
+    /// Not generated internally; passed through when present in API responses.
+    /// See: https://github.com/skip-mev/skip-go-cosmwasm-contracts/pull/108#issuecomment-2099460954
+    /// And: https://github.com/skip-mev/skip-go-cosmwasm-contracts/blob/main/contracts/adapters/swap/hallswap/src/contract.rs#L364-L367
     #[serde(skip_serializing_if = "Option::is_none")]
     pub interface: Option<Binary>,
 }

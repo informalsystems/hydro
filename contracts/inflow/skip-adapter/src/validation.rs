@@ -119,8 +119,13 @@ pub fn validate_route_config(route: &UnifiedRoute) -> Result<(), ContractError> 
             });
         }
 
-        // Validate each hop has channel and receiver
+        // Validate each hop has chain_id, channel and receiver
         for (idx, hop) in route.forward_path.iter().enumerate() {
+            if hop.chain_id.is_empty() {
+                return Err(ContractError::InvalidForwardPath {
+                    reason: format!("Forward hop {} has empty chain_id", idx),
+                });
+            }
             if hop.channel.is_empty() {
                 return Err(ContractError::InvalidForwardPath {
                     reason: format!("Forward hop {} has empty channel", idx),

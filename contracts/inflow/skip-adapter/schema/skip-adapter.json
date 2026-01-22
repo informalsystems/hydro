@@ -126,7 +126,7 @@
             "type": "string"
           },
           "interface": {
-            "description": "Optional interface specification",
+            "description": "Optional interface specification returned by Coinhall API. Not generated internally; passed through when present in API responses. See: https://github.com/skip-mev/skip-go-cosmwasm-contracts/pull/108#issuecomment-2099460954 And: https://github.com/skip-mev/skip-go-cosmwasm-contracts/blob/main/contracts/adapters/swap/hallswap/src/contract.rs#L364-L367",
             "anyOf": [
               {
                 "$ref": "#/definitions/Binary"
@@ -649,7 +649,7 @@
             "type": "string"
           },
           "interface": {
-            "description": "Optional interface specification",
+            "description": "Optional interface specification returned by Coinhall API. Not generated internally; passed through when present in API responses. See: https://github.com/skip-mev/skip-go-cosmwasm-contracts/pull/108#issuecomment-2099460954 And: https://github.com/skip-mev/skip-go-cosmwasm-contracts/blob/main/contracts/adapters/swap/hallswap/src/contract.rs#L364-L367",
             "anyOf": [
               {
                 "$ref": "#/definitions/Binary"
