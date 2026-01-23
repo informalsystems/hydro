@@ -10,7 +10,7 @@ Date: January 23rd, 2025
 - Add a Forwarder contract that allows bridging of USDC tokens from EVM-compatible blockchains to Neutron. ([\#359](https://github.com/informalsystems/hydro/pull/359))
 - Add the skip swap adapter that can be triggered to request token swaps on local or remote chains via IBC + PFM + Hooks, using Skip swap contracts. ([\#361](https://github.com/informalsystems/hydro/pull/361))
 - Add `ControlCenterPoolInfo` query to the Inflow vault contract that returns the pool info from the Control Center contract. ([\#363](https://github.com/informalsystems/hydro/pull/363))
-- Clean-up validators info from the LSM token info provider store in case of validator unboning. ([\#370](https://github.com/informalsystems/hydro/pull/370))
+- Clean-up validators info from the LSM token info provider store in case of validator unbonding. ([\#370](https://github.com/informalsystems/hydro/pull/370))
 - Added `AllAvailableConversionFunds` query that returns all conversion fund denoms with their amounts and base token equivalents for a given round, with pagination support via `start_after` and `limit` parameters
   ([\#374](https://github.com/informalsystems/hydro/pull/374))
 
