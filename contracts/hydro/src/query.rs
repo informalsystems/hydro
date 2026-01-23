@@ -247,6 +247,15 @@ pub enum QueryMsg {
     #[returns(Uint128)]
     AvailableConversionFunds { token_denom: String },
 
+    /// Returns all available conversion funds with their amounts and base token equivalents for the current round.
+    /// The total_base_token_equivalent is the sum of all funds converted to base token using their ratios.
+    /// Supports pagination via start_after (denom to start after) and limit (max items to return).
+    #[returns(AllAvailableConversionFundsResponse)]
+    AllAvailableConversionFunds {
+        start_after: Option<String>,
+        limit: Option<u32>,
+    },
+
     /// Given a lock id and a resulting token denom, returns the number of tokens of a resulting denom
     /// that a given lockup would hold after conversion.
     #[returns(Uint128)]
@@ -570,4 +579,29 @@ pub struct LockupVotingMetrics {
 #[cw_serde]
 pub struct LockupVotingMetricsResponse {
     pub lockups: Vec<LockupVotingMetrics>,
+}
+
+/// Information about available conversion funds for a single token denom.
+#[cw_serde]
+pub struct ConversionFundInfo {
+    /// The token denomination (e.g., "ibc/...", "statom", etc.)
+    pub denom: String,
+    /// The raw amount of tokens available for conversion
+    pub amount: Uint128,
+    /// The ratio of this token to base token for the given round.
+    /// Will be Decimal::zero() if the token info provider doesn't recognize the denom.
+    pub ratio: Decimal,
+    /// The base token equivalent of the amount (amount * ratio), truncated to nearest integer.
+    /// Will be Uint128::zero() if ratio is zero.
+    pub base_token_equivalent: Uint128,
+}
+
+#[cw_serde]
+pub struct AllAvailableConversionFundsResponse {
+    /// List of conversion funds with their base token equivalents (paginated)
+    pub funds: Vec<ConversionFundInfo>,
+    /// Total base token equivalent for the funds returned in this page (sum of base_token_equivalent values)
+    pub total_base_token_equivalent: Uint128,
+    /// Indicates if there are more funds after this page. Use the last denom as start_after for the next page.
+    pub has_more: bool,
 }

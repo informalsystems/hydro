@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Timestamp, Uint64, Binary, Decimal, Uint128, TokenInfoProviderInstantiateMsg, InstantiateMsg, CollectionInfo, InstantiateContractMsg, TrancheInfo, ExecuteMsg, Expiration, LockTokensProof, SignatureInfo, ProposalToLockups, UpdateConfigData, Coin, TokenGroupRatioChange, QueryMsg, Addr, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponse, LockupWithPerTrancheInfo, LockEntryWithPower, LockEntryV2, PerTrancheLockupInfo, RoundWithBid, OperatorsResponse, TokensResponse, AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, ApprovalResponse, ApprovalsResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExpiredUserLockupsResponse, GatekeeperResponse, LiquidityDeploymentResponse, LiquidityDeployment, LockVotesHistoryResponse, LockVotesHistoryEntry, LockupVotingMetricsResponse, LockupVotingMetrics, LockupsPendingSlashesResponse, NumTokensResponse, ParentLockIdsResponse, ProposalResponse, Proposal, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, DtokenAmountsResponse, DtokenAmountResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSM, TokenInfoProviderBase, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotedLocksResponse, VotedLockInfo, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistResponse, WhitelistAdminsResponse } from "./HydroBase.types";
+import { Timestamp, Uint64, Binary, Decimal, Uint128, TokenInfoProviderInstantiateMsg, InstantiateMsg, CollectionInfo, InstantiateContractMsg, TrancheInfo, ExecuteMsg, Expiration, LockTokensProof, SignatureInfo, ProposalToLockups, UpdateConfigData, Coin, TokenGroupRatioChange, QueryMsg, AllAvailableConversionFundsResponse, ConversionFundInfo, Addr, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponse, LockupWithPerTrancheInfo, LockEntryWithPower, LockEntryV2, PerTrancheLockupInfo, RoundWithBid, OperatorsResponse, TokensResponse, AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, ApprovalResponse, ApprovalsResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExpiredUserLockupsResponse, GatekeeperResponse, LiquidityDeploymentResponse, LiquidityDeployment, LockVotesHistoryResponse, LockVotesHistoryEntry, LockupVotingMetricsResponse, LockupVotingMetrics, LockupsPendingSlashesResponse, NumTokensResponse, ParentLockIdsResponse, ProposalResponse, Proposal, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, DtokenAmountsResponse, DtokenAmountResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSM, TokenInfoProviderBase, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotedLocksResponse, VotedLockInfo, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistResponse, WhitelistAdminsResponse } from "./HydroBase.types";
 export interface HydroBaseReadOnlyInterface {
   contractAddress: string;
   constants: () => Promise<ConstantsResponse>;
@@ -288,6 +288,13 @@ export interface HydroBaseReadOnlyInterface {
   }: {
     tokenDenom: string;
   }) => Promise<Uint128>;
+  allAvailableConversionFunds: ({
+    limit,
+    startAfter
+  }: {
+    limit?: number;
+    startAfter?: string;
+  }) => Promise<AllAvailableConversionFundsResponse>;
   convertedTokenNum: ({
     lockId,
     tokenDenom,
@@ -349,6 +356,7 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     this.parentLockIds = this.parentLockIds.bind(this);
     this.lockupVotingMetrics = this.lockupVotingMetrics.bind(this);
     this.availableConversionFunds = this.availableConversionFunds.bind(this);
+    this.allAvailableConversionFunds = this.allAvailableConversionFunds.bind(this);
     this.convertedTokenNum = this.convertedTokenNum.bind(this);
   }
   constants = async (): Promise<ConstantsResponse> => {
@@ -924,6 +932,20 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     return this.client.queryContractSmart(this.contractAddress, {
       available_conversion_funds: {
         token_denom: tokenDenom
+      }
+    });
+  };
+  allAvailableConversionFunds = async ({
+    limit,
+    startAfter
+  }: {
+    limit?: number;
+    startAfter?: string;
+  }): Promise<AllAvailableConversionFundsResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      all_available_conversion_funds: {
+        limit,
+        start_after: startAfter
       }
     });
   };

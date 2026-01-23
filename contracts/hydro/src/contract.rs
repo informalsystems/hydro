@@ -11,8 +11,10 @@ use cosmwasm_std::{
     MessageInfo, Order, Reply, Response, StdError, StdResult, Storage, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
+use cw_storage_plus::Bound;
 use interface::drop_puppeteer::{DelegationsResponse, PuppeteerQueryMsg, QueryExtMsg};
 use interface::hydro::{CurrentRoundResponse, TokenGroupRatioChange};
+use interface::utils::{DEFAULT_PAGINATION_LIMIT, MAX_PAGINATION_LIMIT};
 
 use crate::cw721;
 use crate::error::{new_generic_error, ContractError};
@@ -27,8 +29,9 @@ use crate::msg::{
     UpdateConfigData,
 };
 use crate::query::{
-    AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse,
-    CanLockDenomResponse, ConstantsResponse, DtokenAmountResponse, DtokenAmountsResponse,
+    AllAvailableConversionFundsResponse, AllUserLockupsResponse,
+    AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, CanLockDenomResponse,
+    ConstantsResponse, ConversionFundInfo, DtokenAmountResponse, DtokenAmountsResponse,
     ExpiredUserLockupsResponse, GatekeeperResponse, LiquidityDeploymentResponse,
     LockEntryWithPower, LockVotesHistoryEntry, LockVotesHistoryResponse, LockupVotingMetrics,
     LockupVotingMetricsResponse, LockupWithPerTrancheInfo, LockupsPendingSlashesResponse,
@@ -3220,6 +3223,9 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, ContractErro
         QueryMsg::AvailableConversionFunds { token_denom } => {
             to_json_binary(&query_available_conversion_funds(deps, token_denom)?)
         }
+        QueryMsg::AllAvailableConversionFunds { start_after, limit } => to_json_binary(
+            &query_all_available_conversion_funds(deps, &env, start_after, limit)?,
+        ),
         QueryMsg::ConvertedTokenNum {
             lock_id,
             token_denom,
@@ -4131,6 +4137,71 @@ pub fn query_available_conversion_funds(deps: Deps, token_denom: String) -> StdR
     Ok(AVAILABLE_CONVERSION_FUNDS
         .may_load(deps.storage, token_denom)?
         .unwrap_or_default())
+}
+
+pub fn query_all_available_conversion_funds(
+    deps: Deps,
+    env: &Env,
+    start_after: Option<String>,
+    limit: Option<u32>,
+) -> Result<AllAvailableConversionFundsResponse, ContractError> {
+    let constants = load_current_constants(&deps, env)?;
+    let round_id = compute_current_round_id(env, &constants)?;
+
+    let mut token_manager = TokenManager::new(&deps);
+    let mut funds: Vec<ConversionFundInfo> = vec![];
+    let mut total_base_token_equivalent = Uint128::zero();
+
+    // Apply pagination limits
+    let limit = limit
+        .unwrap_or(DEFAULT_PAGINATION_LIMIT)
+        .min(MAX_PAGINATION_LIMIT) as usize;
+
+    // Set up the range bounds based on start_after
+    let min_bound = start_after.as_ref().map(|s| Bound::exclusive(s.as_str()));
+
+    // Request one more than the limit to determine if there are more results
+    for item in AVAILABLE_CONVERSION_FUNDS
+        .range(deps.storage, min_bound, None, Order::Ascending)
+        .take(limit + 1)
+    {
+        let (denom, amount) = item?;
+
+        // Get ratio (returns zero if denom not recognized)
+        let ratio = token_manager.get_token_denom_ratio(&deps, round_id, denom.clone());
+
+        // Calculate base token equivalent
+        let base_token_equivalent = amount.mul_floor(ratio);
+
+        total_base_token_equivalent =
+            total_base_token_equivalent.checked_add(base_token_equivalent)?;
+
+        funds.push(ConversionFundInfo {
+            denom,
+            amount,
+            ratio,
+            base_token_equivalent,
+        });
+    }
+
+    // Check if there are more results beyond the requested limit
+    let has_more = funds.len() > limit;
+    if has_more {
+        // Remove the extra item we used to check for more results
+        let removed = funds.pop();
+        // Subtract its base_token_equivalent from the total
+        if let Some(removed_fund) = removed {
+            total_base_token_equivalent = total_base_token_equivalent
+                .checked_sub(removed_fund.base_token_equivalent)
+                .unwrap_or_default();
+        }
+    }
+
+    Ok(AllAvailableConversionFundsResponse {
+        funds,
+        total_base_token_equivalent,
+        has_more,
+    })
 }
 
 pub fn query_converted_token_num(

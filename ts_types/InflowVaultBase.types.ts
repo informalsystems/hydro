@@ -151,6 +151,8 @@ export type QueryMsg = {
 } | {
   whitelist: {};
 } | {
+  control_center_pool_info: {};
+} | {
   list_adapters: {};
 } | {
   adapter_info: {
@@ -179,17 +181,17 @@ export interface Config {
   token_info_provider_contract?: Addr | null;
   vault_shares_denom: string;
 }
-export interface FundedWithdrawalRequestsResponse {
-  withdrawal_ids: number[];
-}
-export interface AdaptersListResponse {
-  adapters: [string, AdapterInfo][];
-}
 export interface PoolInfoResponse {
   adapter_deposits_base_tokens: Uint128;
   balance_base_tokens: Uint128;
   shares_issued: Uint128;
   withdrawal_queue_base_tokens: Uint128;
+}
+export interface FundedWithdrawalRequestsResponse {
+  withdrawal_ids: number[];
+}
+export interface AdaptersListResponse {
+  adapters: [string, AdapterInfo][];
 }
 export type Timestamp = Uint64;
 export type Uint64 = string;

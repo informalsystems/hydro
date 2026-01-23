@@ -1,0 +1,1133 @@
+{
+  "contract_name": "skip-adapter",
+  "contract_version": "3.6.7",
+  "idl_version": "1.0.0",
+  "instantiate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "InstantiateMsg",
+    "description": "Message for instantiating the Skip adapter contract",
+    "type": "object",
+    "required": [
+      "admins",
+      "default_timeout_nanos",
+      "executors",
+      "ibc_adapter",
+      "initial_depositors",
+      "initial_routes",
+      "max_slippage_bps",
+      "skip_contracts"
+    ],
+    "properties": {
+      "admins": {
+        "description": "The config admins who can update config and manage routes/executors",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "default_timeout_nanos": {
+        "description": "Default timeout in nanoseconds (e.g., 1800000000000 for 30 minutes)",
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "executors": {
+        "description": "Initial executors who can call ExecuteSwap (can be empty array)",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "ibc_adapter": {
+        "description": "IBC adapter contract address on Neutron",
+        "type": "string"
+      },
+      "initial_depositors": {
+        "description": "Initial depositor addresses to register during instantiation (can be empty array)",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "initial_routes": {
+        "description": "Initial route configurations to register (can be empty array)",
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/definitions/UnifiedRoute"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "max_slippage_bps": {
+        "description": "Maximum allowed slippage in basis points (e.g., 100 = 1%)",
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "skip_contracts": {
+        "description": "Skip contract addresses by chain (e.g., {\"neutron\": \"neutron1...\", \"osmosis\": \"osmo1...\"})",
+        "type": "object",
+        "additionalProperties": false
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "Binary": {
+        "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
+        "type": "string"
+      },
+      "PathHop": {
+        "description": "A single hop in an IBC path (used for both forward and return paths) Used for multi-chain transfers (e.g., Neutron → Cosmos → Osmosis or Osmosis → Stride → Neutron)",
+        "type": "object",
+        "required": [
+          "chain_id",
+          "channel",
+          "receiver"
+        ],
+        "properties": {
+          "chain_id": {
+            "description": "Chain ID of the destination for this hop (e.g., \"cosmoshub-4\", \"osmosis-1\")",
+            "type": "string"
+          },
+          "channel": {
+            "description": "IBC channel to use for this hop",
+            "type": "string"
+          },
+          "receiver": {
+            "description": "Receiver address on the next chain (intermediary or final)",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SwapOperation": {
+        "description": "A single swap operation (hop in the swap path) Matches Skip Protocol's SwapOperation schema",
+        "type": "object",
+        "required": [
+          "denom_in",
+          "denom_out",
+          "pool"
+        ],
+        "properties": {
+          "denom_in": {
+            "description": "Input denom for this hop",
+            "type": "string"
+          },
+          "denom_out": {
+            "description": "Output denom for this hop",
+            "type": "string"
+          },
+          "interface": {
+            "description": "Optional interface specification returned by Coinhall API. Not generated internally; passed through when present in API responses. See: https://github.com/skip-mev/skip-go-cosmwasm-contracts/pull/108#issuecomment-2099460954 And: https://github.com/skip-mev/skip-go-cosmwasm-contracts/blob/main/contracts/adapters/swap/hallswap/src/contract.rs#L364-L367",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/Binary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pool": {
+            "description": "Pool identifier",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SwapVenue": {
+        "description": "Swap venue - where the swap executes",
+        "oneOf": [
+          {
+            "description": "Swap on Neutron (Astroport via Skip)",
+            "type": "string",
+            "enum": [
+              "neutron_astroport"
+            ]
+          },
+          {
+            "description": "Swap on Osmosis (via PFM + wasm hook)",
+            "type": "string",
+            "enum": [
+              "osmosis"
+            ]
+          }
+        ]
+      },
+      "UnifiedRoute": {
+        "description": "Unified route configuration - works for both Neutron and Osmosis swaps",
+        "type": "object",
+        "required": [
+          "denom_in",
+          "denom_out",
+          "enabled",
+          "forward_path",
+          "operations",
+          "return_path",
+          "swap_venue_name",
+          "venue"
+        ],
+        "properties": {
+          "denom_in": {
+            "description": "Input token denom on Neutron (what the adapter holds)",
+            "type": "string"
+          },
+          "denom_out": {
+            "description": "Output token denom on Neutron (what we expect back)",
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Whether route is enabled",
+            "type": "boolean"
+          },
+          "forward_path": {
+            "description": "For Osmosis routes: forward path from Neutron to Osmosis Empty for Neutron routes Example: [Neutron → Cosmos Hub → Osmosis]",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/PathHop"
+            }
+          },
+          "operations": {
+            "description": "Swap operations (multi-hop path) Denoms are AS THEY APPEAR ON THE SWAP VENUE (Neutron or Osmosis)",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/SwapOperation"
+            }
+          },
+          "recover_address": {
+            "description": "Recovery address on the swap venue (for Osmosis: osmo1..., for Neutron: not needed)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "return_path": {
+            "description": "For Osmosis routes: return path back to Neutron Empty for Neutron routes Example: [Osmosis → Stride → Neutron]",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/PathHop"
+            }
+          },
+          "swap_venue_name": {
+            "description": "Swap venue name (e.g., \"neutron-astroport\", \"osmosis-poolmanager\")",
+            "type": "string"
+          },
+          "venue": {
+            "description": "Where the swap executes",
+            "allOf": [
+              {
+                "$ref": "#/definitions/SwapVenue"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "execute": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExecuteMsg",
+    "description": "Top-level execute message wrapper for Skip adapter",
+    "oneOf": [
+      {
+        "description": "Standard adapter interface messages (deposit, withdraw, manage depositors)",
+        "type": "object",
+        "required": [
+          "standard_action"
+        ],
+        "properties": {
+          "standard_action": {
+            "$ref": "#/definitions/AdapterInterfaceMsg"
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Skip adapter-specific custom messages",
+        "type": "object",
+        "required": [
+          "custom_action"
+        ],
+        "properties": {
+          "custom_action": {
+            "$ref": "#/definitions/SkipAdapterMsg"
+          }
+        },
+        "additionalProperties": false
+      }
+    ],
+    "definitions": {
+      "AdapterInterfaceMsg": {
+        "description": "Standard execute messages that all protocol adapters must implement",
+        "oneOf": [
+          {
+            "description": "Deposit tokens into the protocol Only callable by whitelisted depositors The coin is sent in info.funds",
+            "type": "object",
+            "required": [
+              "deposit"
+            ],
+            "properties": {
+              "deposit": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Withdraw tokens from the protocol Only callable by whitelisted depositors The execution MUST fail if insufficient funds are available",
+            "type": "object",
+            "required": [
+              "withdraw"
+            ],
+            "properties": {
+              "withdraw": {
+                "type": "object",
+                "required": [
+                  "coin"
+                ],
+                "properties": {
+                  "coin": {
+                    "description": "Coin (denom + amount) to withdraw",
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/Coin"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Register new depositor address (admin only)",
+            "type": "object",
+            "required": [
+              "register_depositor"
+            ],
+            "properties": {
+              "register_depositor": {
+                "type": "object",
+                "required": [
+                  "depositor_address"
+                ],
+                "properties": {
+                  "depositor_address": {
+                    "description": "New depositor address to register",
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "description": "Optional adapter-specific metadata (e.g., capabilities) Serialized as Binary for flexibility",
+                    "anyOf": [
+                      {
+                        "$ref": "#/definitions/Binary"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Unregister depositor address (admin only)",
+            "type": "object",
+            "required": [
+              "unregister_depositor"
+            ],
+            "properties": {
+              "unregister_depositor": {
+                "type": "object",
+                "required": [
+                  "depositor_address"
+                ],
+                "properties": {
+                  "depositor_address": {
+                    "description": "Depositor address to unregister. The account should not have any funds deployed.",
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Toggle depositor address as enabled/disabled (admin only)",
+            "type": "object",
+            "required": [
+              "set_depositor_enabled"
+            ],
+            "properties": {
+              "set_depositor_enabled": {
+                "type": "object",
+                "required": [
+                  "depositor_address",
+                  "enabled"
+                ],
+                "properties": {
+                  "depositor_address": {
+                    "description": "Depositor address to enable or disable",
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "Binary": {
+        "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
+        "type": "string"
+      },
+      "Coin": {
+        "type": "object",
+        "required": [
+          "amount",
+          "denom"
+        ],
+        "properties": {
+          "amount": {
+            "$ref": "#/definitions/Uint128"
+          },
+          "denom": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PathHop": {
+        "description": "A single hop in an IBC path (used for both forward and return paths) Used for multi-chain transfers (e.g., Neutron → Cosmos → Osmosis or Osmosis → Stride → Neutron)",
+        "type": "object",
+        "required": [
+          "chain_id",
+          "channel",
+          "receiver"
+        ],
+        "properties": {
+          "chain_id": {
+            "description": "Chain ID of the destination for this hop (e.g., \"cosmoshub-4\", \"osmosis-1\")",
+            "type": "string"
+          },
+          "channel": {
+            "description": "IBC channel to use for this hop",
+            "type": "string"
+          },
+          "receiver": {
+            "description": "Receiver address on the next chain (intermediary or final)",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SkipAdapterMsg": {
+        "description": "Skip adapter-specific execute messages",
+        "oneOf": [
+          {
+            "description": "Execute a swap (admin or executor only) Works for both Neutron and Osmosis venues - dispatches based on route config",
+            "type": "object",
+            "required": [
+              "execute_swap"
+            ],
+            "properties": {
+              "execute_swap": {
+                "type": "object",
+                "required": [
+                  "params"
+                ],
+                "properties": {
+                  "params": {
+                    "$ref": "#/definitions/SwapParams"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Register a new route (admin only)",
+            "type": "object",
+            "required": [
+              "register_route"
+            ],
+            "properties": {
+              "register_route": {
+                "type": "object",
+                "required": [
+                  "route",
+                  "route_id"
+                ],
+                "properties": {
+                  "route": {
+                    "$ref": "#/definitions/UnifiedRoute"
+                  },
+                  "route_id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Unregister a swap route (admin only)",
+            "type": "object",
+            "required": [
+              "unregister_route"
+            ],
+            "properties": {
+              "unregister_route": {
+                "type": "object",
+                "required": [
+                  "route_id"
+                ],
+                "properties": {
+                  "route_id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Enable/disable a specific route (admin only)",
+            "type": "object",
+            "required": [
+              "set_route_enabled"
+            ],
+            "properties": {
+              "set_route_enabled": {
+                "type": "object",
+                "required": [
+                  "enabled",
+                  "route_id"
+                ],
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "route_id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Add a new executor (admin only)",
+            "type": "object",
+            "required": [
+              "add_executor"
+            ],
+            "properties": {
+              "add_executor": {
+                "type": "object",
+                "required": [
+                  "executor_address"
+                ],
+                "properties": {
+                  "executor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Remove an executor (admin only)",
+            "type": "object",
+            "required": [
+              "remove_executor"
+            ],
+            "properties": {
+              "remove_executor": {
+                "type": "object",
+                "required": [
+                  "executor_address"
+                ],
+                "properties": {
+                  "executor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Update contract configuration (admin only)",
+            "type": "object",
+            "required": [
+              "update_config"
+            ],
+            "properties": {
+              "update_config": {
+                "type": "object",
+                "properties": {
+                  "default_timeout_nanos": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0.0
+                  },
+                  "ibc_adapter": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "max_slippage_bps": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0.0
+                  },
+                  "skip_contracts": {
+                    "description": "Skip contract addresses to add/update by chain (merges with existing)",
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "SwapOperation": {
+        "description": "A single swap operation (hop in the swap path) Matches Skip Protocol's SwapOperation schema",
+        "type": "object",
+        "required": [
+          "denom_in",
+          "denom_out",
+          "pool"
+        ],
+        "properties": {
+          "denom_in": {
+            "description": "Input denom for this hop",
+            "type": "string"
+          },
+          "denom_out": {
+            "description": "Output denom for this hop",
+            "type": "string"
+          },
+          "interface": {
+            "description": "Optional interface specification returned by Coinhall API. Not generated internally; passed through when present in API responses. See: https://github.com/skip-mev/skip-go-cosmwasm-contracts/pull/108#issuecomment-2099460954 And: https://github.com/skip-mev/skip-go-cosmwasm-contracts/blob/main/contracts/adapters/swap/hallswap/src/contract.rs#L364-L367",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/Binary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pool": {
+            "description": "Pool identifier",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SwapParams": {
+        "description": "Simplified swap parameters - unified for both Neutron and Osmosis",
+        "type": "object",
+        "required": [
+          "amount_in",
+          "min_amount_out",
+          "route_id"
+        ],
+        "properties": {
+          "amount_in": {
+            "description": "Amount to swap",
+            "allOf": [
+              {
+                "$ref": "#/definitions/Uint128"
+              }
+            ]
+          },
+          "min_amount_out": {
+            "description": "Minimum output (slippage protection)",
+            "allOf": [
+              {
+                "$ref": "#/definitions/Uint128"
+              }
+            ]
+          },
+          "route_id": {
+            "description": "Route ID (must be registered)",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SwapVenue": {
+        "description": "Swap venue - where the swap executes",
+        "oneOf": [
+          {
+            "description": "Swap on Neutron (Astroport via Skip)",
+            "type": "string",
+            "enum": [
+              "neutron_astroport"
+            ]
+          },
+          {
+            "description": "Swap on Osmosis (via PFM + wasm hook)",
+            "type": "string",
+            "enum": [
+              "osmosis"
+            ]
+          }
+        ]
+      },
+      "Uint128": {
+        "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+        "type": "string"
+      },
+      "UnifiedRoute": {
+        "description": "Unified route configuration - works for both Neutron and Osmosis swaps",
+        "type": "object",
+        "required": [
+          "denom_in",
+          "denom_out",
+          "enabled",
+          "forward_path",
+          "operations",
+          "return_path",
+          "swap_venue_name",
+          "venue"
+        ],
+        "properties": {
+          "denom_in": {
+            "description": "Input token denom on Neutron (what the adapter holds)",
+            "type": "string"
+          },
+          "denom_out": {
+            "description": "Output token denom on Neutron (what we expect back)",
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Whether route is enabled",
+            "type": "boolean"
+          },
+          "forward_path": {
+            "description": "For Osmosis routes: forward path from Neutron to Osmosis Empty for Neutron routes Example: [Neutron → Cosmos Hub → Osmosis]",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/PathHop"
+            }
+          },
+          "operations": {
+            "description": "Swap operations (multi-hop path) Denoms are AS THEY APPEAR ON THE SWAP VENUE (Neutron or Osmosis)",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/SwapOperation"
+            }
+          },
+          "recover_address": {
+            "description": "Recovery address on the swap venue (for Osmosis: osmo1..., for Neutron: not needed)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "return_path": {
+            "description": "For Osmosis routes: return path back to Neutron Empty for Neutron routes Example: [Osmosis → Stride → Neutron]",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/PathHop"
+            }
+          },
+          "swap_venue_name": {
+            "description": "Swap venue name (e.g., \"neutron-astroport\", \"osmosis-poolmanager\")",
+            "type": "string"
+          },
+          "venue": {
+            "description": "Where the swap executes",
+            "allOf": [
+              {
+                "$ref": "#/definitions/SwapVenue"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "query": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "QueryMsg",
+    "description": "Top-level query message wrapper for Skip adapter",
+    "oneOf": [
+      {
+        "description": "Standard adapter interface queries",
+        "type": "object",
+        "required": [
+          "standard_query"
+        ],
+        "properties": {
+          "standard_query": {
+            "$ref": "#/definitions/AdapterInterfaceQueryMsg"
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Skip adapter-specific custom queries",
+        "type": "object",
+        "required": [
+          "custom_query"
+        ],
+        "properties": {
+          "custom_query": {
+            "$ref": "#/definitions/SkipAdapterQueryMsg"
+          }
+        },
+        "additionalProperties": false
+      }
+    ],
+    "definitions": {
+      "AdapterInterfaceQueryMsg": {
+        "description": "Standard query messages that all protocol adapters should support Note: QueryResponses derive is handled by each adapter's QueryMsg wrapper",
+        "oneOf": [
+          {
+            "description": "Returns the maximum amount that can be deposited Accounts for protocol deposit caps and other limitations",
+            "type": "object",
+            "required": [
+              "available_for_deposit"
+            ],
+            "properties": {
+              "available_for_deposit": {
+                "type": "object",
+                "required": [
+                  "denom",
+                  "depositor_address"
+                ],
+                "properties": {
+                  "denom": {
+                    "type": "string"
+                  },
+                  "depositor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns the amount available for immediate withdrawal for a specific denom",
+            "type": "object",
+            "required": [
+              "available_for_withdraw"
+            ],
+            "properties": {
+              "available_for_withdraw": {
+                "type": "object",
+                "required": [
+                  "denom",
+                  "depositor_address"
+                ],
+                "properties": {
+                  "denom": {
+                    "type": "string"
+                  },
+                  "depositor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns estimated blocks/time required for withdrawal Returns 0 for instant withdrawals (like Mars lending)",
+            "type": "object",
+            "required": [
+              "time_to_withdraw"
+            ],
+            "properties": {
+              "time_to_withdraw": {
+                "type": "object",
+                "required": [
+                  "coin",
+                  "depositor_address"
+                ],
+                "properties": {
+                  "coin": {
+                    "$ref": "#/definitions/Coin"
+                  },
+                  "depositor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns adapter configuration (adapter-specific response type)",
+            "type": "object",
+            "required": [
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns total positions across all depositors for all denoms",
+            "type": "object",
+            "required": [
+              "all_positions"
+            ],
+            "properties": {
+              "all_positions": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns list of registered depositors with their enabled status Optionally filter by enabled status (Some(true), Some(false), or None for all)",
+            "type": "object",
+            "required": [
+              "registered_depositors"
+            ],
+            "properties": {
+              "registered_depositors": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns the current position for a specific depositor and denom When working with Inflow vaults, the position should not be included in the \"deployed\" amount as it will be included, together with the balance, in the total pool value calculation",
+            "type": "object",
+            "required": [
+              "depositor_position"
+            ],
+            "properties": {
+              "depositor_position": {
+                "type": "object",
+                "required": [
+                  "denom",
+                  "depositor_address"
+                ],
+                "properties": {
+                  "denom": {
+                    "type": "string"
+                  },
+                  "depositor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns all positions for a specific depositor across all denoms",
+            "type": "object",
+            "required": [
+              "depositor_positions"
+            ],
+            "properties": {
+              "depositor_positions": {
+                "type": "object",
+                "required": [
+                  "depositor_address"
+                ],
+                "properties": {
+                  "depositor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "Coin": {
+        "type": "object",
+        "required": [
+          "amount",
+          "denom"
+        ],
+        "properties": {
+          "amount": {
+            "$ref": "#/definitions/Uint128"
+          },
+          "denom": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SkipAdapterQueryMsg": {
+        "description": "Skip adapter-specific query messages",
+        "oneOf": [
+          {
+            "description": "Get a specific route by ID",
+            "type": "object",
+            "required": [
+              "route"
+            ],
+            "properties": {
+              "route": {
+                "type": "object",
+                "required": [
+                  "route_id"
+                ],
+                "properties": {
+                  "route_id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Get all registered routes (with optional venue filter)",
+            "type": "object",
+            "required": [
+              "all_routes"
+            ],
+            "properties": {
+              "all_routes": {
+                "type": "object",
+                "properties": {
+                  "venue": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/definitions/SwapVenue"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Get list of executors",
+            "type": "object",
+            "required": [
+              "executors"
+            ],
+            "properties": {
+              "executors": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "SwapVenue": {
+        "description": "Swap venue - where the swap executes",
+        "oneOf": [
+          {
+            "description": "Swap on Neutron (Astroport via Skip)",
+            "type": "string",
+            "enum": [
+              "neutron_astroport"
+            ]
+          },
+          {
+            "description": "Swap on Osmosis (via PFM + wasm hook)",
+            "type": "string",
+            "enum": [
+              "osmosis"
+            ]
+          }
+        ]
+      },
+      "Uint128": {
+        "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+        "type": "string"
+      }
+    }
+  },
+  "migrate": null,
+  "sudo": null,
+  "responses": {
+    "custom_query": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Binary",
+      "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
+      "type": "string"
+    },
+    "standard_query": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Binary",
+      "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
+      "type": "string"
+    }
+  }
+}
