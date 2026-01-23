@@ -14,7 +14,7 @@ import (
 func (db *DB) CreateUser(ctx context.Context, email string) error {
 	query := `
 		INSERT INTO users (email)
-		VALUES ($1, NOW())
+		VALUES ($1)
 		ON CONFLICT (email) DO NOTHING
 	`
 	_, err := db.ExecContext(ctx, query, email)
@@ -85,7 +85,7 @@ func (db *DB) GetContractsByUser(ctx context.Context, userEmail string) ([]model
 func (db *DB) UpdateContractDeployed(ctx context.Context, id int64, txHash string) error {
 	query := `
 		UPDATE contracts
-		SET deployed = true, deployed = true = NOW()
+		SET deployed = true, deploy_tx_hash = $1, deployed_at = NOW()
 		WHERE id = $2
 	`
 	_, err := db.ExecContext(ctx, query, txHash, id)
@@ -186,7 +186,7 @@ func (db *DB) GetProcessesByStatus(ctx context.Context, status models.ProcessSta
 func (db *DB) UpdateProcessStatus(ctx context.Context, id int64, status models.ProcessStatus) error {
 	query := `
 		UPDATE processes
-		SET status = $1 = NOW()
+		SET status = $1, updated_at = NOW()
 		WHERE id = $2
 	`
 	_, err := db.ExecContext(ctx, query, status, id)
@@ -197,7 +197,7 @@ func (db *DB) UpdateProcessStatus(ctx context.Context, id int64, status models.P
 func (db *DB) UpdateProcessBridgeTx(ctx context.Context, id int64, status models.ProcessStatus, txHash string) error {
 	query := `
 		UPDATE processes
-		SET status = $1, bridge_tx_hash = $2 = NOW()
+		SET status = $1, bridge_tx_hash = $2, updated_at = NOW()
 		WHERE id = $3
 	`
 	_, err := db.ExecContext(ctx, query, status, txHash, id)
@@ -208,7 +208,7 @@ func (db *DB) UpdateProcessBridgeTx(ctx context.Context, id int64, status models
 func (db *DB) UpdateProcessDepositTx(ctx context.Context, id int64, status models.ProcessStatus, txHash string) error {
 	query := `
 		UPDATE processes
-		SET status = $1, deposit_tx_hash = $2 = NOW()
+		SET status = $1, deposit_tx_hash = $2, updated_at = NOW()
 		WHERE id = $3
 	`
 	_, err := db.ExecContext(ctx, query, status, txHash, id)
@@ -219,7 +219,7 @@ func (db *DB) UpdateProcessDepositTx(ctx context.Context, id int64, status model
 func (db *DB) UpdateProcessError(ctx context.Context, id int64, errorMsg string) error {
 	query := `
 		UPDATE processes
-		SET error_message = $1, retry_count = retry_count + 1 = NOW()
+		SET error_message = $1, retry_count = retry_count + 1, updated_at = NOW()
 		WHERE id = $2
 	`
 	_, err := db.ExecContext(ctx, query, errorMsg, id)
@@ -230,7 +230,7 @@ func (db *DB) UpdateProcessError(ctx context.Context, id int64, errorMsg string)
 func (db *DB) UpdateProcessAmount(ctx context.Context, id int64, amountUSDC int64) error {
 	query := `
 		UPDATE processes
-		SET amount_usdc = $1 = NOW()
+		SET amount_usdc = $1, updated_at = NOW()
 		WHERE id = $2
 	`
 	_, err := db.ExecContext(ctx, query, amountUSDC, id)

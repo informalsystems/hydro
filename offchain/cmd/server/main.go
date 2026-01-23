@@ -2,14 +2,18 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"hydro/offchain/internal/api"
 	"hydro/offchain/internal/config"
 	"hydro/offchain/internal/database"
+	"hydro/offchain/internal/service"
 
 	"go.uber.org/zap"
 )
@@ -66,38 +70,70 @@ func main() {
 
 	logger.Info("Database health check passed")
 
-	// TODO: Initialize API server (Phase 2)
+	// Initialize services (Phase 2)
+	contractService := service.NewContractService(db, cfg, logger)
+	feeService := service.NewFeeService(cfg, logger)
+
+	logger.Info("Services initialized")
+
+	// Initialize API handlers (Phase 2)
+	apiHandler := api.NewHandler(db, contractService, feeService, logger)
+	router := api.SetupRouter(apiHandler, logger)
+
+	// Create HTTP server
+	serverAddr := fmt.Sprintf(":%d", cfg.Server.Port)
+	httpServer := &http.Server{
+		Addr:         serverAddr,
+		Handler:      router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Start HTTP server in goroutine
+	serverErrors := make(chan error, 1)
+	go func() {
+		logger.Info("Starting HTTP server",
+			zap.String("addr", serverAddr))
+		serverErrors <- httpServer.ListenAndServe()
+	}()
+
 	// TODO: Initialize blockchain clients (Phase 3)
 	// TODO: Initialize workers (Phase 4)
 
 	logger.Info("Service initialized successfully",
 		zap.String("status", "ready"),
-		zap.String("phase", "foundation_complete"))
+		zap.String("phase", "api_layer_complete"),
+		zap.Int("port", cfg.Server.Port))
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-	logger.Info("Service is running. Press Ctrl+C to stop.")
-
-	// Wait for interrupt signal
-	<-quit
+	// Wait for interrupt signal or server error
+	select {
+	case err := <-serverErrors:
+		logger.Fatal("HTTP server error", zap.Error(err))
+	case sig := <-quit:
+		logger.Info("Received shutdown signal", zap.String("signal", sig.String()))
+	}
 
 	logger.Info("Shutting down service...")
 
-	// Cleanup
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	// Shutdown HTTP server
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
 
-	// TODO: Shutdown API server (Phase 2)
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		logger.Error("HTTP server shutdown error", zap.Error(err))
+		httpServer.Close()
+	} else {
+		logger.Info("HTTP server stopped gracefully")
+	}
+
 	// TODO: Shutdown workers (Phase 4)
 
-	select {
-	case <-ctx.Done():
-		logger.Warn("Shutdown timeout exceeded")
-	default:
-		logger.Info("Service stopped successfully")
-	}
+	logger.Info("Service stopped successfully")
 }
 
 func initLogger() (*zap.Logger, error) {
