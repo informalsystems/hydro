@@ -1,1 +1,0 @@
-- Clean-up validators info from the LSM token info provider store in case of validator unboning. ([\#370](https://github.com/informalsystems/hydro/pull/370))
