@@ -29,6 +29,8 @@ tools/build/*
 # log files from deployments
 *_res.json
 *_tx.json
+scripts/*.json
+scripts/skip-adapter/*.json
 
 .seed
 
@@ -37,4 +39,3 @@ node_modules/
 
 contracts/liquid-collateral/package.json
 contracts/liquid-collateral/package-lock.json
-

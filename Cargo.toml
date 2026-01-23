@@ -11,6 +11,9 @@ members = [
     "contracts/gatekeeper",
     "contracts/inflow/vault",
     "contracts/inflow/control-center",
+    "contracts/inflow/mars-adapter",
+    "contracts/inflow/ibc-adapter",
+    "contracts/inflow/skip-adapter",
     "contracts/inflow/proxy",
     "contracts/inflow/user-registry",
     "packages/cw-orch-interface",
@@ -21,7 +24,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "3.6.6"
+version = "3.6.7"
 edition = "2021"
 
 [profile.release]

@@ -21,7 +21,7 @@ pub fn migrate(
 ) -> Result<Response<NeutronMsg>, ContractError> {
     check_contract_version(deps.storage)?;
 
-    // No state migrations needed from v3.6.5 to v3.6.6
+    // No state migrations needed from v3.6.6 to v3.6.7
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 

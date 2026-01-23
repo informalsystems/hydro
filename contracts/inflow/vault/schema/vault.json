@@ -1,6 +1,6 @@
 {
   "contract_name": "vault",
-  "contract_version": "3.6.6",
+  "contract_version": "3.6.7",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -254,6 +254,19 @@
       {
         "type": "object",
         "required": [
+          "deposit_from_deployment"
+        ],
+        "properties": {
+          "deposit_from_deployment": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
           "set_token_info_provider_contract"
         ],
         "properties": {
@@ -334,9 +347,269 @@
           }
         },
         "additionalProperties": false
+      },
+      {
+        "description": "Register a new adapter for protocol integrations",
+        "type": "object",
+        "required": [
+          "register_adapter"
+        ],
+        "properties": {
+          "register_adapter": {
+            "type": "object",
+            "required": [
+              "address",
+              "allocation_mode",
+              "deployment_tracking",
+              "name"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "allocation_mode": {
+                "description": "Controls whether adapter participates in automated allocation",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/AllocationMode"
+                  }
+                ]
+              },
+              "deployment_tracking": {
+                "description": "Controls whether operations update Control Center's deployed amount",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/DeploymentTracking"
+                  }
+                ]
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Unregister an existing adapter",
+        "type": "object",
+        "required": [
+          "unregister_adapter"
+        ],
+        "properties": {
+          "unregister_adapter": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Set adapter's allocation mode (whitelisted only)",
+        "type": "object",
+        "required": [
+          "set_adapter_allocation_mode"
+        ],
+        "properties": {
+          "set_adapter_allocation_mode": {
+            "type": "object",
+            "required": [
+              "allocation_mode",
+              "name"
+            ],
+            "properties": {
+              "allocation_mode": {
+                "$ref": "#/definitions/AllocationMode"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Set adapter's deployment tracking mode (whitelisted only)",
+        "type": "object",
+        "required": [
+          "set_adapter_deployment_tracking"
+        ],
+        "properties": {
+          "set_adapter_deployment_tracking": {
+            "type": "object",
+            "required": [
+              "deployment_tracking",
+              "name"
+            ],
+            "properties": {
+              "deployment_tracking": {
+                "$ref": "#/definitions/DeploymentTracking"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Withdraw funds from an adapter to the vault contract (whitelisted only) Funds stay in contract until withdraw_for_deployment is called",
+        "type": "object",
+        "required": [
+          "withdraw_from_adapter"
+        ],
+        "properties": {
+          "withdraw_from_adapter": {
+            "type": "object",
+            "required": [
+              "adapter_name",
+              "amount"
+            ],
+            "properties": {
+              "adapter_name": {
+                "type": "string"
+              },
+              "amount": {
+                "$ref": "#/definitions/Uint128"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Deposit funds from vault contract balance to an adapter (whitelisted only) Used for manual rebalancing between adapters",
+        "type": "object",
+        "required": [
+          "deposit_to_adapter"
+        ],
+        "properties": {
+          "deposit_to_adapter": {
+            "type": "object",
+            "required": [
+              "adapter_name",
+              "amount"
+            ],
+            "properties": {
+              "adapter_name": {
+                "type": "string"
+              },
+              "amount": {
+                "$ref": "#/definitions/Uint128"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Move funds between adapters (whitelisted only) Allows transferring non-deposit_denom tokens For deposit_denom: behaves like WithdrawFromAdapter + DepositToAdapter For non-deposit_denom: requires same DeploymentTracking type",
+        "type": "object",
+        "required": [
+          "move_adapter_funds"
+        ],
+        "properties": {
+          "move_adapter_funds": {
+            "type": "object",
+            "required": [
+              "coin",
+              "from_adapter",
+              "to_adapter"
+            ],
+            "properties": {
+              "coin": {
+                "$ref": "#/definitions/Coin"
+              },
+              "from_adapter": {
+                "type": "string"
+              },
+              "to_adapter": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
       }
     ],
     "definitions": {
+      "AllocationMode": {
+        "description": "Controls whether an adapter participates in automated allocation",
+        "oneOf": [
+          {
+            "description": "Adapter is included in automated deposit/withdrawal allocation via calculate_venues_allocation",
+            "type": "string",
+            "enum": [
+              "automated"
+            ]
+          },
+          {
+            "description": "Adapter is only accessible via manual DepositToAdapter/WithdrawFromAdapter operations",
+            "type": "string",
+            "enum": [
+              "manual"
+            ]
+          }
+        ]
+      },
+      "Coin": {
+        "type": "object",
+        "required": [
+          "amount",
+          "denom"
+        ],
+        "properties": {
+          "amount": {
+            "$ref": "#/definitions/Uint128"
+          },
+          "denom": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DeploymentTracking": {
+        "description": "Controls whether adapter operations update the Control Center's deployed amount\n\n# Race Condition Warnings\n\n## Automated + Tracked (DANGEROUS) Using `Tracked` with `AllocationMode::Automated` creates a race condition: 1. Automated deposits/withdrawals update deployed amount without admin knowledge 2. If a manual `SubmitDeployedAmount` call is in progress, it may overwrite with stale data 3. Result: Deployed amount becomes inaccurate\n\n**Recommendation**: Use `NotTracked` for automated adapters unless absolutely necessary.\n\n## Manual + Tracked When using `Tracked` with `AllocationMode::Manual`: - Ensure no `SubmitDeployedAmount` proposal is pending before manual operations - After manual deposit/withdraw, re-snapshot deployed amount if a proposal was in flight - Otherwise, the proposal will overwrite the auto-updated value with stale data",
+        "oneOf": [
+          {
+            "description": "Deposits/withdrawals update Control Center's deployed amount WARNING: See race condition notes above",
+            "type": "string",
+            "enum": [
+              "tracked"
+            ]
+          },
+          {
+            "description": "Position is queryable but not included in deployed amount RECOMMENDED for automated adapters",
+            "type": "string",
+            "enum": [
+              "not_tracked"
+            ]
+          }
+        ]
+      },
       "Uint128": {
         "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
         "type": "string"
@@ -578,6 +851,56 @@
           }
         },
         "additionalProperties": false
+      },
+      {
+        "description": "Returns the pool info of the Control Center contract.",
+        "type": "object",
+        "required": [
+          "control_center_pool_info"
+        ],
+        "properties": {
+          "control_center_pool_info": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Returns a list of all registered adapters",
+        "type": "object",
+        "required": [
+          "list_adapters"
+        ],
+        "properties": {
+          "list_adapters": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Returns information about a specific adapter",
+        "type": "object",
+        "required": [
+          "adapter_info"
+        ],
+        "properties": {
+          "adapter_info": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
       }
     ],
     "definitions": {
@@ -597,6 +920,112 @@
   "migrate": null,
   "sudo": null,
   "responses": {
+    "adapter_info": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "AdapterInfoResponse",
+      "type": "object",
+      "required": [
+        "info"
+      ],
+      "properties": {
+        "info": {
+          "$ref": "#/definitions/AdapterInfo"
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "AdapterInfo": {
+          "description": "Information about a registered adapter",
+          "type": "object",
+          "required": [
+            "address",
+            "allocation_mode",
+            "deployment_tracking",
+            "name"
+          ],
+          "properties": {
+            "address": {
+              "description": "Contract address of the adapter",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Addr"
+                }
+              ]
+            },
+            "allocation_mode": {
+              "description": "Controls whether adapter participates in automated deposit/withdrawal allocation. When Manual, the adapter is skipped by calculate_venues_allocation. Admin operations (DepositToAdapter, WithdrawFromAdapter) work regardless of this setting.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AllocationMode"
+                }
+              ]
+            },
+            "deployment_tracking": {
+              "description": "Controls whether deposits/withdrawals to/from this adapter update Control Center's deployed amount. When Tracked, operations call AddToDeployedAmount/SubFromDeployedAmount. When NotTracked, position is queryable via DepositorPosition but not in deployed amount.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DeploymentTracking"
+                }
+              ]
+            },
+            "description": {
+              "description": "Optional description of the adapter and what protocol it integrates with",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "description": "Human-readable name for display purposes",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "Addr": {
+          "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
+          "type": "string"
+        },
+        "AllocationMode": {
+          "description": "Controls whether an adapter participates in automated allocation",
+          "oneOf": [
+            {
+              "description": "Adapter is included in automated deposit/withdrawal allocation via calculate_venues_allocation",
+              "type": "string",
+              "enum": [
+                "automated"
+              ]
+            },
+            {
+              "description": "Adapter is only accessible via manual DepositToAdapter/WithdrawFromAdapter operations",
+              "type": "string",
+              "enum": [
+                "manual"
+              ]
+            }
+          ]
+        },
+        "DeploymentTracking": {
+          "description": "Controls whether adapter operations update the Control Center's deployed amount\n\n# Race Condition Warnings\n\n## Automated + Tracked (DANGEROUS) Using `Tracked` with `AllocationMode::Automated` creates a race condition: 1. Automated deposits/withdrawals update deployed amount without admin knowledge 2. If a manual `SubmitDeployedAmount` call is in progress, it may overwrite with stale data 3. Result: Deployed amount becomes inaccurate\n\n**Recommendation**: Use `NotTracked` for automated adapters unless absolutely necessary.\n\n## Manual + Tracked When using `Tracked` with `AllocationMode::Manual`: - Ensure no `SubmitDeployedAmount` proposal is pending before manual operations - After manual deposit/withdraw, re-snapshot deployed amount if a proposal was in flight - Otherwise, the proposal will overwrite the auto-updated value with stale data",
+          "oneOf": [
+            {
+              "description": "Deposits/withdrawals update Control Center's deployed amount WARNING: See race condition notes above",
+              "type": "string",
+              "enum": [
+                "tracked"
+              ]
+            },
+            {
+              "description": "Position is queryable but not included in deployed amount RECOMMENDED for automated adapters",
+              "type": "string",
+              "enum": [
+                "not_tracked"
+              ]
+            }
+          ]
+        }
+      }
+    },
     "amount_to_fund_pending_withdrawals": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Uint128",
@@ -674,6 +1103,30 @@
         }
       }
     },
+    "control_center_pool_info": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PoolInfoResponse",
+      "type": "object",
+      "required": [
+        "total_pool_value",
+        "total_shares_issued"
+      ],
+      "properties": {
+        "total_pool_value": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "total_shares_issued": {
+          "$ref": "#/definitions/Uint128"
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        }
+      }
+    },
     "funded_withdrawal_requests": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "FundedWithdrawalRequestsResponse",
@@ -693,16 +1146,139 @@
       },
       "additionalProperties": false
     },
+    "list_adapters": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "AdaptersListResponse",
+      "type": "object",
+      "required": [
+        "adapters"
+      ],
+      "properties": {
+        "adapters": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/definitions/AdapterInfo"
+              }
+            ],
+            "maxItems": 2,
+            "minItems": 2
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "AdapterInfo": {
+          "description": "Information about a registered adapter",
+          "type": "object",
+          "required": [
+            "address",
+            "allocation_mode",
+            "deployment_tracking",
+            "name"
+          ],
+          "properties": {
+            "address": {
+              "description": "Contract address of the adapter",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Addr"
+                }
+              ]
+            },
+            "allocation_mode": {
+              "description": "Controls whether adapter participates in automated deposit/withdrawal allocation. When Manual, the adapter is skipped by calculate_venues_allocation. Admin operations (DepositToAdapter, WithdrawFromAdapter) work regardless of this setting.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AllocationMode"
+                }
+              ]
+            },
+            "deployment_tracking": {
+              "description": "Controls whether deposits/withdrawals to/from this adapter update Control Center's deployed amount. When Tracked, operations call AddToDeployedAmount/SubFromDeployedAmount. When NotTracked, position is queryable via DepositorPosition but not in deployed amount.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DeploymentTracking"
+                }
+              ]
+            },
+            "description": {
+              "description": "Optional description of the adapter and what protocol it integrates with",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "description": "Human-readable name for display purposes",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "Addr": {
+          "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
+          "type": "string"
+        },
+        "AllocationMode": {
+          "description": "Controls whether an adapter participates in automated allocation",
+          "oneOf": [
+            {
+              "description": "Adapter is included in automated deposit/withdrawal allocation via calculate_venues_allocation",
+              "type": "string",
+              "enum": [
+                "automated"
+              ]
+            },
+            {
+              "description": "Adapter is only accessible via manual DepositToAdapter/WithdrawFromAdapter operations",
+              "type": "string",
+              "enum": [
+                "manual"
+              ]
+            }
+          ]
+        },
+        "DeploymentTracking": {
+          "description": "Controls whether adapter operations update the Control Center's deployed amount\n\n# Race Condition Warnings\n\n## Automated + Tracked (DANGEROUS) Using `Tracked` with `AllocationMode::Automated` creates a race condition: 1. Automated deposits/withdrawals update deployed amount without admin knowledge 2. If a manual `SubmitDeployedAmount` call is in progress, it may overwrite with stale data 3. Result: Deployed amount becomes inaccurate\n\n**Recommendation**: Use `NotTracked` for automated adapters unless absolutely necessary.\n\n## Manual + Tracked When using `Tracked` with `AllocationMode::Manual`: - Ensure no `SubmitDeployedAmount` proposal is pending before manual operations - After manual deposit/withdraw, re-snapshot deployed amount if a proposal was in flight - Otherwise, the proposal will overwrite the auto-updated value with stale data",
+          "oneOf": [
+            {
+              "description": "Deposits/withdrawals update Control Center's deployed amount WARNING: See race condition notes above",
+              "type": "string",
+              "enum": [
+                "tracked"
+              ]
+            },
+            {
+              "description": "Position is queryable but not included in deployed amount RECOMMENDED for automated adapters",
+              "type": "string",
+              "enum": [
+                "not_tracked"
+              ]
+            }
+          ]
+        }
+      }
+    },
     "pool_info": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "PoolInfoResponse",
       "type": "object",
       "required": [
+        "adapter_deposits_base_tokens",
         "balance_base_tokens",
         "shares_issued",
         "withdrawal_queue_base_tokens"
       ],
       "properties": {
+        "adapter_deposits_base_tokens": {
+          "$ref": "#/definitions/Uint128"
+        },
         "balance_base_tokens": {
           "$ref": "#/definitions/Uint128"
         },

@@ -965,7 +965,7 @@ fn build_keys(private_key_bytes: &[u8]) -> (SigningKey, Vec<u8>) {
 fn public_key_to_address(pubkey: &[u8], hrp: &str) -> String {
     let sha256 = Sha256::digest(pubkey);
     let ripemd = Ripemd160::digest(sha256);
-    encode::<Bech32>(Hrp::parse_unchecked(hrp), ripemd.as_slice()).unwrap()
+    encode::<Bech32>(Hrp::parse_unchecked(hrp), ripemd.as_ref()).unwrap()
 }
 
 fn sign_message(priv_key: &SigningKey, pub_key: &[u8], address_to_sign: &str) -> SignatureInfo {
@@ -977,7 +977,7 @@ fn sign_message(priv_key: &SigningKey, pub_key: &[u8], address_to_sign: &str) ->
 
     // Hash the message and sign it
     let hash = Sha256::digest(&claim_msg_json);
-    let signature: Signature = priv_key.sign(hash.as_slice());
+    let signature: Signature = priv_key.sign(hash.as_ref());
 
     // Construct CosmosSignature
     let cosmos_sig = CosmosSignature {

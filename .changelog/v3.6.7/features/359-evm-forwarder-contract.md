@@ -1,0 +1,1 @@
+- Add a Forwarder contract that allows bridging of USDC tokens from EVM-compatible blockchains to Neutron. ([\#359](https://github.com/informalsystems/hydro/pull/359))

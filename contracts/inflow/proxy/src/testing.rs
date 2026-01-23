@@ -10,7 +10,9 @@ use cosmwasm_std::{
     testing::{mock_dependencies, mock_env, MockApi},
     Addr, BankMsg, Coin, CosmosMsg, Uint128, WasmMsg,
 };
-use interface::inflow::{Config as InflowConfig, ExecuteMsg as InflowExecuteMsg};
+#[cfg(feature = "cosmwasm_compat")]
+use interface::compat::Uint256TestingExt;
+use interface::inflow_vault::{Config as InflowConfig, ExecuteMsg as InflowExecuteMsg};
 use test_utils::{
     testing_mocks::{setup_contract_smart_query_mock, MockWasmQuerier},
     utils::get_message_info,

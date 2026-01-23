@@ -219,6 +219,56 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Returns the pool info of the Control Center contract.",
+      "type": "object",
+      "required": [
+        "control_center_pool_info"
+      ],
+      "properties": {
+        "control_center_pool_info": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Returns a list of all registered adapters",
+      "type": "object",
+      "required": [
+        "list_adapters"
+      ],
+      "properties": {
+        "list_adapters": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Returns information about a specific adapter",
+      "type": "object",
+      "required": [
+        "adapter_info"
+      ],
+      "properties": {
+        "adapter_info": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {

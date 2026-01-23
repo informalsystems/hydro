@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "description": "Message for instantiating the Mars adapter contract",
+  "type": "object",
+  "required": [
+    "admins",
+    "initial_depositors",
+    "mars_credit_manager",
+    "mars_params",
+    "mars_red_bank",
+    "supported_denoms"
+  ],
+  "properties": {
+    "admins": {
+      "description": "The admins who can update the config",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "initial_depositors": {
+      "description": "Initial depositor addresses to whitelist during instantiation (can be empty array)",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "mars_credit_manager": {
+      "description": "Mars credit manager contract address",
+      "type": "string"
+    },
+    "mars_params": {
+      "description": "Mars params contract address",
+      "type": "string"
+    },
+    "mars_red_bank": {
+      "description": "Mars red bank contract address",
+      "type": "string"
+    },
+    "supported_denoms": {
+      "description": "List of supported token denoms (e.g., USDC IBC denom)",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}
