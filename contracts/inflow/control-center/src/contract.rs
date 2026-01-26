@@ -392,17 +392,11 @@ fn accrue_fees(
     let fee_amount = total_yield * fee_config.fee_rate;
     let shares_to_mint = fee_amount / current_share_price;
 
-    // Handle dust case - check BEFORE updating high water mark so dust can accumulate
-    if shares_to_mint.is_zero() {
-        return Ok(Response::new()
-            .add_attribute("action", "accrue_fees")
-            .add_attribute("result", "dust_yield")
-            .add_attribute("current_share_price", current_share_price.to_string()));
-    }
-
     // Convert shares_to_mint from Decimal to Uint128
     let shares_to_mint_uint = Uint128::new(shares_to_mint.to_uint_floor().u128());
 
+    // Handle dust case: if the floored value is zero, return early without updating
+    // the high water mark so dust can accumulate across multiple accrual calls
     if shares_to_mint_uint.is_zero() {
         return Ok(Response::new()
             .add_attribute("action", "accrue_fees")
