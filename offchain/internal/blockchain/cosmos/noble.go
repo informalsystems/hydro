@@ -2,6 +2,7 @@ package cosmos
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/btcsuite/btcutil/bech32"
 )
+
+// NobleAddressPrefix is the bech32 prefix for Noble addresses
+const NobleAddressPrefix = "noble"
 
 // NobleClient handles queries to the Noble blockchain via REST API
 type NobleClient struct {
@@ -168,4 +172,71 @@ func (n *NobleClient) Close() error {
 	// HTTP client doesn't require explicit closing
 	// Connections are managed automatically by the transport
 	return nil
+}
+
+// ComputeNobleForwardingAddress computes the deterministic Noble forwarding account address
+// that will forward tokens to the given destination address via the specified IBC channel.
+//
+// Noble forwarding accounts are derived using:
+// address = sha256("forwarding" | channel | recipient)[:20]
+//
+// Parameters:
+//   - channel: IBC channel ID (e.g., "channel-18" for Noble -> Neutron)
+//   - recipient: Destination address on the target chain (e.g., Neutron proxy address)
+//
+// Returns the bech32-encoded Noble address (noble1...)
+func ComputeNobleForwardingAddress(channel string, recipient string) (string, error) {
+	if channel == "" {
+		return "", fmt.Errorf("channel cannot be empty")
+	}
+	if recipient == "" {
+		return "", fmt.Errorf("recipient cannot be empty")
+	}
+
+	// Build the preimage: "forwarding" + channel + recipient
+	preimage := append([]byte("forwarding"), []byte(channel)...)
+	preimage = append(preimage, []byte(recipient)...)
+
+	// Hash and take first 20 bytes
+	hash := sha256.Sum256(preimage)
+	addressBytes := hash[:20]
+
+	// Convert to bech32
+	conv, err := bech32.ConvertBits(addressBytes, 8, 5, true)
+	if err != nil {
+		return "", fmt.Errorf("failed to convert bits for bech32: %w", err)
+	}
+
+	address, err := bech32.Encode(NobleAddressPrefix, conv)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode bech32 address: %w", err)
+	}
+
+	return address, nil
+}
+
+// ComputeNobleForwardingAddressForProxy computes the Noble forwarding address
+// that forwards to a user's Neutron proxy contract.
+//
+// This is a convenience function that combines proxy address computation
+// with Noble forwarding address computation.
+func ComputeNobleForwardingAddressForProxy(
+	proxyCodeID uint64,
+	operatorAddress string,
+	userEmail string,
+	nobleChannel string,
+) (string, error) {
+	// First compute the Neutron proxy address
+	proxyAddress, err := ComputeProxyAddress(proxyCodeID, operatorAddress, userEmail)
+	if err != nil {
+		return "", fmt.Errorf("failed to compute proxy address: %w", err)
+	}
+
+	// Then compute the Noble forwarding address that forwards to this proxy
+	forwardingAddress, err := ComputeNobleForwardingAddress(nobleChannel, proxyAddress)
+	if err != nil {
+		return "", fmt.Errorf("failed to compute forwarding address: %w", err)
+	}
+
+	return forwardingAddress, nil
 }

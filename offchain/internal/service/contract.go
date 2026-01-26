@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"go.uber.org/zap"
 
@@ -96,18 +98,14 @@ func (s *ContractService) getOrCreateForwarderAddress(ctx context.Context, email
 		return "", fmt.Errorf("chain %s not configured", chainID)
 	}
 
-	// Parse operator address
-	operatorAddress := common.HexToAddress(chainCfg.OperatorAddress)
-
-	// Parse forwarder bytecode (remove 0x prefix if present)
-	bytecodeHex := strings.TrimPrefix(chainCfg.ForwarderBytecode, "0x")
-	initCode, err := hex.DecodeString(bytecodeHex)
+	// Build full init code (bytecode + constructor args)
+	initCode, err := s.buildForwarderInitCode(email, chainID, chainCfg)
 	if err != nil {
-		return "", fmt.Errorf("failed to decode forwarder bytecode: %w", err)
+		return "", fmt.Errorf("failed to build init code: %w", err)
 	}
 
-	// Compute CREATE2 address
-	forwarderAddress, err := evm.ComputeForwarderAddress(operatorAddress, email, chainID, initCode)
+	// Compute CREATE2 address using Arachnid's factory
+	forwarderAddress, err := evm.ComputeForwarderAddress(email, chainID, initCode)
 	if err != nil {
 		return "", fmt.Errorf("failed to compute forwarder address: %w", err)
 	}
@@ -222,4 +220,72 @@ func (s *ContractService) IsProxyDeployed(ctx context.Context, email string) (bo
 		return false, nil
 	}
 	return contract.Deployed, nil
+}
+
+// buildForwarderInitCode builds the complete init code (bytecode + constructor args) for a forwarder
+func (s *ContractService) buildForwarderInitCode(email, chainID string, chainCfg config.ChainConfig) ([]byte, error) {
+	// Parse forwarder bytecode
+	bytecodeHex := strings.TrimPrefix(chainCfg.ForwarderBytecode, "0x")
+	bytecode, err := hex.DecodeString(bytecodeHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode forwarder bytecode: %w", err)
+	}
+
+	// Parse forwarder ABI to encode constructor args
+	parsedABI, err := abi.JSON(strings.NewReader(evm.ForwarderABI))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse forwarder ABI: %w", err)
+	}
+
+	// Parse destination caller (bytes32)
+	destCallerHex := strings.TrimPrefix(chainCfg.DestinationCaller, "0x")
+	if len(destCallerHex) != 64 {
+		return nil, fmt.Errorf("invalid destination caller length: %d", len(destCallerHex))
+	}
+	destCallerBytes, err := hex.DecodeString(destCallerHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode destination caller: %w", err)
+	}
+	var destCaller [32]byte
+	copy(destCaller[:], destCallerBytes)
+
+	// Compute recipient (Noble forwarding account for this user's proxy)
+	// The recipient is NOT the Neutron proxy directly - it's the Noble forwarding account
+	// that auto-forwards to the proxy via IBC.
+	// Flow: EVM Forwarder -> CCTP -> Noble forwarding account -> IBC -> Neutron proxy
+	nobleForwardingAddr, err := cosmos.ComputeNobleForwardingAddressForProxy(
+		s.cfg.Neutron.ProxyCodeID,
+		s.cfg.Operator.NeutronAddress,
+		email,
+		s.cfg.Neutron.NobleChannel,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute Noble forwarding address: %w", err)
+	}
+
+	// Convert Noble address to bytes32 for EVM contract
+	recipient, err := cosmos.ConvertToBytes32(nobleForwardingAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert Noble address to bytes32: %w", err)
+	}
+
+	// Encode constructor arguments
+	constructorArgs, err := parsedABI.Constructor.Inputs.Pack(
+		common.HexToAddress(chainCfg.CCTPContractAddress),  // _cctpContract
+		chainCfg.DestinationDomain,                         // _destinationDomain
+		common.HexToAddress(chainCfg.USDCContractAddress),  // _tokenToBridge
+		recipient,                                           // _recipient
+		destCaller,                                          // _destinationCaller
+		common.HexToAddress(chainCfg.OperatorAddress),      // _operator
+		common.HexToAddress(s.cfg.Operator.AdminAddress),   // _admin
+		big.NewInt(int64(chainCfg.OperationalFeeBps)),      // _operationalFeeBps
+		big.NewInt(chainCfg.MinOperationalFee),             // _minOperationalFee
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode constructor args: %w", err)
+	}
+
+	// Full init code = bytecode + constructor args
+	initCode := append(bytecode, constructorArgs...)
+	return initCode, nil
 }

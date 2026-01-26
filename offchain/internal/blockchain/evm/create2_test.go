@@ -8,59 +8,45 @@ import (
 
 func TestComputeForwarderAddress(t *testing.T) {
 	tests := []struct {
-		name            string
-		deployerAddress string
-		userEmail       string
-		chainID         string
-		initCode        []byte
-		wantErr         bool
+		name      string
+		userEmail string
+		chainID   string
+		initCode  []byte
+		wantErr   bool
 	}{
 		{
-			name:            "valid inputs",
-			deployerAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-			userEmail:       "alice@example.com",
-			chainID:         "1",
-			initCode:        []byte{0x60, 0x80, 0x60, 0x40}, // Simple bytecode
-			wantErr:         false,
+			name:      "valid inputs",
+			userEmail: "alice@example.com",
+			chainID:   "1",
+			initCode:  []byte{0x60, 0x80, 0x60, 0x40}, // Simple bytecode
+			wantErr:   false,
 		},
 		{
-			name:            "empty deployer address",
-			deployerAddress: "0x0000000000000000000000000000000000000000",
-			userEmail:       "alice@example.com",
-			chainID:         "1",
-			initCode:        []byte{0x60, 0x80},
-			wantErr:         true,
+			name:      "empty user email",
+			userEmail: "",
+			chainID:   "1",
+			initCode:  []byte{0x60, 0x80},
+			wantErr:   true,
 		},
 		{
-			name:            "empty user email",
-			deployerAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-			userEmail:       "",
-			chainID:         "1",
-			initCode:        []byte{0x60, 0x80},
-			wantErr:         true,
+			name:      "empty chain ID",
+			userEmail: "alice@example.com",
+			chainID:   "",
+			initCode:  []byte{0x60, 0x80},
+			wantErr:   true,
 		},
 		{
-			name:            "empty chain ID",
-			deployerAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-			userEmail:       "alice@example.com",
-			chainID:         "",
-			initCode:        []byte{0x60, 0x80},
-			wantErr:         true,
-		},
-		{
-			name:            "empty init code",
-			deployerAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-			userEmail:       "alice@example.com",
-			chainID:         "1",
-			initCode:        []byte{},
-			wantErr:         true,
+			name:      "empty init code",
+			userEmail: "alice@example.com",
+			chainID:   "1",
+			initCode:  []byte{},
+			wantErr:   true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			deployer := common.HexToAddress(tt.deployerAddress)
-			addr, err := ComputeForwarderAddress(deployer, tt.userEmail, tt.chainID, tt.initCode)
+			addr, err := ComputeForwarderAddress(tt.userEmail, tt.chainID, tt.initCode)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ComputeForwarderAddress() error = %v, wantErr %v", err, tt.wantErr)
@@ -75,14 +61,13 @@ func TestComputeForwarderAddress(t *testing.T) {
 }
 
 func TestComputeForwarderAddressDeterministic(t *testing.T) {
-	deployer := common.HexToAddress("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb")
 	userEmail := "alice@example.com"
 	chainID := "1"
 	initCode := []byte{0x60, 0x80, 0x60, 0x40, 0x52}
 
 	// Compute address twice
-	addr1, err1 := ComputeForwarderAddress(deployer, userEmail, chainID, initCode)
-	addr2, err2 := ComputeForwarderAddress(deployer, userEmail, chainID, initCode)
+	addr1, err1 := ComputeForwarderAddress(userEmail, chainID, initCode)
+	addr2, err2 := ComputeForwarderAddress(userEmail, chainID, initCode)
 
 	if err1 != nil || err2 != nil {
 		t.Fatalf("ComputeForwarderAddress() failed: err1=%v, err2=%v", err1, err2)
@@ -95,12 +80,11 @@ func TestComputeForwarderAddressDeterministic(t *testing.T) {
 }
 
 func TestComputeForwarderAddressDifferentUsers(t *testing.T) {
-	deployer := common.HexToAddress("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb")
 	chainID := "1"
 	initCode := []byte{0x60, 0x80, 0x60, 0x40, 0x52}
 
-	addr1, err1 := ComputeForwarderAddress(deployer, "alice@example.com", chainID, initCode)
-	addr2, err2 := ComputeForwarderAddress(deployer, "bob@example.com", chainID, initCode)
+	addr1, err1 := ComputeForwarderAddress("alice@example.com", chainID, initCode)
+	addr2, err2 := ComputeForwarderAddress("bob@example.com", chainID, initCode)
 
 	if err1 != nil || err2 != nil {
 		t.Fatalf("ComputeForwarderAddress() failed: err1=%v, err2=%v", err1, err2)
@@ -113,12 +97,11 @@ func TestComputeForwarderAddressDifferentUsers(t *testing.T) {
 }
 
 func TestComputeForwarderAddressDifferentChains(t *testing.T) {
-	deployer := common.HexToAddress("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb")
 	userEmail := "alice@example.com"
 	initCode := []byte{0x60, 0x80, 0x60, 0x40, 0x52}
 
-	addr1, err1 := ComputeForwarderAddress(deployer, userEmail, "1", initCode)      // Ethereum
-	addr2, err2 := ComputeForwarderAddress(deployer, userEmail, "8453", initCode)   // Base
+	addr1, err1 := ComputeForwarderAddress(userEmail, "1", initCode)    // Ethereum
+	addr2, err2 := ComputeForwarderAddress(userEmail, "8453", initCode) // Base
 
 	if err1 != nil || err2 != nil {
 		t.Fatalf("ComputeForwarderAddress() failed: err1=%v, err2=%v", err1, err2)
@@ -148,19 +131,18 @@ func TestGenerateSalt(t *testing.T) {
 }
 
 func TestVerifyForwarderAddress(t *testing.T) {
-	deployer := common.HexToAddress("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb")
 	userEmail := "alice@example.com"
 	chainID := "1"
 	initCode := []byte{0x60, 0x80, 0x60, 0x40, 0x52}
 
 	// Compute the expected address
-	expectedAddr, err := ComputeForwarderAddress(deployer, userEmail, chainID, initCode)
+	expectedAddr, err := ComputeForwarderAddress(userEmail, chainID, initCode)
 	if err != nil {
 		t.Fatalf("ComputeForwarderAddress() failed: %v", err)
 	}
 
 	// Verify with correct address
-	valid, err := VerifyForwarderAddress(expectedAddr, deployer, userEmail, chainID, initCode)
+	valid, err := VerifyForwarderAddress(expectedAddr, userEmail, chainID, initCode)
 	if err != nil {
 		t.Fatalf("VerifyForwarderAddress() failed: %v", err)
 	}
@@ -170,7 +152,7 @@ func TestVerifyForwarderAddress(t *testing.T) {
 
 	// Verify with wrong address
 	wrongAddr := common.HexToAddress("0x0000000000000000000000000000000000000001")
-	valid, err = VerifyForwarderAddress(wrongAddr, deployer, userEmail, chainID, initCode)
+	valid, err = VerifyForwarderAddress(wrongAddr, userEmail, chainID, initCode)
 	if err != nil {
 		t.Fatalf("VerifyForwarderAddress() failed: %v", err)
 	}

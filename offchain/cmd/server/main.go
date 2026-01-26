@@ -98,7 +98,6 @@ func main() {
 		serverErrors <- httpServer.ListenAndServe()
 	}()
 
-	// TODO: Initialize blockchain clients (Phase 3)
 	// TODO: Initialize workers (Phase 4)
 
 	logger.Info("Service initialized successfully",

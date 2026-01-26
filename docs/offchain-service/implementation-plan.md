@@ -557,57 +557,60 @@ CMD ["/server"]
 
 ## Implementation Roadmap (Simplified)
 
-### Phase 1: Foundation (Week 1)
+### Phase 1: Foundation (Week 1) ✅ COMPLETED
 **Goal**: Basic structure, database, CREATE2
 
-- [ ] Initialize Go module: `go mod init hydro/offchain`
-- [ ] Create folder structure
-- [ ] Implement `internal/config/config.go` - load from env vars
-- [ ] Implement `internal/database/migrations/001_schema.sql` - users, contracts, processes tables
-- [ ] Implement `internal/database/db.go` - PostgreSQL connection
-- [ ] Implement `internal/database/queries.go` - basic CRUD operations
-- [ ] Implement `internal/models/models.go` - User, Contract, Process structs
-- [ ] Implement `internal/blockchain/evm/create2.go` - CREATE2 address computation
-- [ ] Write unit tests for CREATE2 with known test vectors
+- [x] Initialize Go module: `go mod init hydro/offchain`
+- [x] Create folder structure
+- [x] Implement `internal/config/config.go` - load from env vars
+- [x] Implement `internal/database/migrations/001_schema.sql` - users, contracts, processes tables
+- [x] Implement `internal/database/db.go` - PostgreSQL connection
+- [x] Implement `internal/database/queries.go` - basic CRUD operations
+- [x] Implement `internal/models/models.go` - User, Contract, Process structs
+- [x] Implement `internal/blockchain/evm/create2.go` - CREATE2 address computation
+- [x] Implement `internal/blockchain/cosmos/instantiate2.go` - Neutron instantiate2 address computation
+- [x] Write unit tests for CREATE2 with known test vectors
 - [ ] Create `deployments/docker-compose.yml` for local dev
 
 **Deliverable**: Can start service, connect to database, compute CREATE2 addresses
 
-### Phase 2: API Layer (Week 1-2)
+### Phase 2: API Layer (Week 1-2) ✅ COMPLETED
 **Goal**: REST API for contract addresses and fee calculation
 
-- [ ] Implement `internal/api/router.go` - HTTP router with gorilla/mux
-- [ ] Implement `internal/api/types.go` - request/response structs
-- [ ] Implement `internal/service/contract.go` - contract address logic
-- [ ] Implement `internal/service/fees.go` - fee calculation logic
-- [ ] Implement `internal/api/handlers.go`:
-  - [ ] `POST /api/v1/contracts/addresses` - get/create addresses
-  - [ ] `POST /api/v1/fees/calculate` - calculate bridge fees
-  - [ ] `GET /api/v1/processes/status/:processId` - get process status
-  - [ ] `GET /api/v1/processes/user/:email` - list user processes
-  - [ ] `GET /health` - health check
+- [x] Implement `internal/api/router.go` - HTTP router with gorilla/mux
+- [x] Implement `internal/api/types.go` - request/response structs
+- [x] Implement `internal/service/contract.go` - contract address logic
+- [x] Implement `internal/service/fees.go` - fee calculation logic
+- [x] Implement `internal/api/handlers.go`:
+  - [x] `POST /api/v1/contracts/addresses` - get/create addresses
+  - [x] `POST /api/v1/fees/calculate` - calculate bridge fees
+  - [x] `GET /api/v1/processes/status/:processId` - get process status
+  - [x] `GET /api/v1/processes/user/:email` - list user processes
+  - [x] `GET /health` - health check
 - [ ] Test endpoints with curl/Postman
 
 **Deliverable**: Can call API to get contract addresses and calculate fees
 
-### Phase 3: Blockchain Clients (Week 2-3)
+### Phase 3: Blockchain Clients (Week 2-3) ✅ COMPLETED
 **Goal**: Interact with EVM and Cosmos chains
 
-- [ ] Implement `internal/blockchain/evm/client.go`:
-  - [ ] Connect to EVM RPC
-  - [ ] Get USDC balance
-  - [ ] Deploy forwarder contract
-  - [ ] Call `bridge()` function
-- [ ] Implement `internal/blockchain/evm/forwarder.go`:
-  - [ ] Generate ABI bindings for CCTPUSDCForwarder
-  - [ ] Wrapper functions for contract calls
-- [ ] Implement `internal/blockchain/cosmos/client.go`:
-  - [ ] Connect to Neutron RPC/gRPC
-  - [ ] Get USDC balance (IBC denom)
-  - [ ] Query transaction status
-- [ ] Implement `internal/blockchain/cosmos/proxy.go`:
-  - [ ] Instantiate proxy contract
-  - [ ] Call `ForwardToInflow` execute message
+- [x] Implement `internal/blockchain/evm/client.go`:
+  - [x] Connect to EVM RPC
+  - [x] Get USDC balance
+  - [x] Deploy forwarder contract
+  - [x] Call `bridge()` function
+- [x] Implement `internal/blockchain/evm/forwarder.go`:
+  - [x] Generate ABI bindings for CCTPUSDCForwarder
+  - [x] Wrapper functions for contract calls
+- [x] Implement `internal/blockchain/cosmos/client.go`:
+  - [x] Connect to Neutron RPC/REST
+  - [x] Get USDC balance (IBC denom)
+  - [x] Query transaction status
+  - [x] Sign and broadcast transactions using cosmos-sdk tx builder
+- [x] Implement `internal/blockchain/cosmos/proxy.go`:
+  - [x] Instantiate proxy contract (instantiate2)
+  - [x] Call `ForwardToInflow` execute message
+  - [x] Query proxy config and state
 - [ ] Test with testnet (Sepolia, Neutron testnet)
 
 **Deliverable**: Can deploy contracts and call functions on testnet
@@ -834,21 +837,38 @@ CCTP_DESTINATION_CALLER=0x...  # Skip relayer
 - [contracts/inflow/proxy/src/contract.rs](contracts/inflow/proxy/src/contract.rs)
 - [contracts/inflow/vault/src/contract.rs](contracts/inflow/vault/src/contract.rs)
 
-**New Service Files (To Create):**
-- `offchain/cmd/server/main.go` - Entry point
-- `offchain/internal/config/config.go` - Configuration
+**Service Files - Phase 1 (Foundation) ✅:**
+- `offchain/cmd/server/main.go` - Entry point with HTTP server
+- `offchain/internal/config/config.go` - Configuration from env vars
 - `offchain/internal/database/migrations/001_schema.sql` - Database schema
+- `offchain/internal/database/db.go` - PostgreSQL connection
 - `offchain/internal/database/queries.go` - Database operations
 - `offchain/internal/models/models.go` - Data models
-- `offchain/internal/blockchain/evm/create2.go` - CREATE2 computation
-- `offchain/internal/blockchain/evm/client.go` - EVM client
-- `offchain/internal/blockchain/cosmos/client.go` - Cosmos client
+
+**Service Files - Phase 2 (API Layer) ✅:**
+- `offchain/internal/api/types.go` - Request/response types
+- `offchain/internal/api/handlers.go` - HTTP handlers
+- `offchain/internal/api/router.go` - HTTP router with middleware
 - `offchain/internal/service/contract.go` - Contract address service
+- `offchain/internal/service/fees.go` - Fee calculation service
+
+**Service Files - Phase 3 (Blockchain Clients) ✅:**
+- `offchain/internal/blockchain/evm/create2.go` - CREATE2 address computation
+- `offchain/internal/blockchain/evm/client.go` - EVM client (balance, deploy, tx)
+- `offchain/internal/blockchain/evm/forwarder.go` - Forwarder contract ABI bindings
+- `offchain/internal/blockchain/cosmos/instantiate2.go` - Neutron instantiate2 computation
+- `offchain/internal/blockchain/cosmos/client.go` - Cosmos client (tx builder, queries)
+- `offchain/internal/blockchain/cosmos/proxy.go` - Proxy contract interactions
+- `offchain/internal/blockchain/cosmos/noble.go` - Noble forwarding address computation
+
+**Service Files - Phase 4 (Workers) - TODO:**
 - `offchain/internal/service/process.go` - Process service
 - `offchain/internal/worker/monitor.go` - Balance monitoring
 - `offchain/internal/worker/executor.go` - Process execution
-- `offchain/internal/api/handlers.go` - HTTP handlers
+
+**Deployment Files - TODO:**
 - `offchain/deployments/docker-compose.yml` - Local development setup
+- `offchain/deployments/Dockerfile` - Container image
 
 ---
 
