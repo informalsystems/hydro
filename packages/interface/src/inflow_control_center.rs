@@ -141,3 +141,19 @@ pub struct FeeAccrualInfoResponse {
     /// Pending fee amount (in base tokens) based on current yield
     pub pending_fee: Uint128,
 }
+
+/// Per-vault information about fee shares minted
+#[cw_serde]
+pub struct VaultFeeSharesMinted {
+    pub vault: Addr,
+    pub shares_minted: Uint128,
+}
+
+/// Response data from the AccrueFees execute message
+#[cw_serde]
+pub struct AccrueFeesResponse {
+    /// Total shares minted across all vaults
+    pub total_shares_minted: Uint128,
+    /// Per-vault breakdown of shares minted
+    pub vaults: Vec<VaultFeeSharesMinted>,
+}

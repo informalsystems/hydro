@@ -1293,3 +1293,174 @@ fn test_reenable_fees_resets_high_water_mark() {
         "Should not charge fees on yield that occurred while fees were disabled"
     );
 }
+
+/// Tests that proportional fee distribution correctly handles rounding remainders
+/// when the last subvault in the iteration order has zero shares.
+///
+/// Bug scenario (before fix):
+/// - 3 subvaults: A (33 shares), B (67 shares), C (0 shares)
+/// - shares_to_mint = 10
+/// - Vault A gets: 10 * 33/100 = 3 (rounds down)
+/// - Vault B gets: 10 * 67/100 = 6 (rounds down)
+/// - Vault C is skipped (0 shares) via continue BEFORE remainder logic runs
+/// - Total minted: 9, but should be 10 -> 1 share lost!
+///
+/// The remainder logic at line 431-433 gives the remainder to the "last vault",
+/// but if that vault has 0 shares, it's skipped before the remainder calculation.
+#[test]
+fn test_accrue_fees_remainder_when_last_vault_has_zero_shares() {
+    let (mut deps, env) = (mock_dependencies(), mock_env());
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST);
+    let treasury_addr = deps.api.addr_make(TREASURY);
+
+    // Use names that will sort alphabetically such that the zero-shares vault
+    // comes LAST in ascending order. MockApi.addr_make creates deterministic
+    // addresses, so we use prefixes to control the sort order.
+    // "aaa_vault" < "bbb_vault" < "zzz_vault" in ascending order
+    let subvault_first_addr = deps.api.addr_make("aaa_vault"); // Will be first
+    let subvault_second_addr = deps.api.addr_make("bbb_vault"); // Will be second
+    let subvault_last_addr = deps.api.addr_make("zzz_vault"); // Will be LAST (has 0 shares)
+
+    let instantiate_msg = get_instantiate_msg(
+        DEFAULT_DEPOSIT_CAP,
+        whitelist_addr,
+        vec![
+            subvault_first_addr.clone(),
+            subvault_second_addr.clone(),
+            subvault_last_addr.clone(),
+        ],
+        Some(FeeConfigInit {
+            fee_rate: Decimal::percent(20),
+            fee_recipient: treasury_addr.to_string(),
+        }),
+    );
+
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Setup mock with three vaults where the LAST vault (in sorted order) has ZERO shares:
+    // Use numbers that create a clear rounding remainder.
+    //
+    // First vault: 333 shares (33.3%), balance 366 (to maintain ~1.1 price)
+    // Second vault: 667 shares (66.7%), balance 734 (to maintain ~1.1 price)
+    // Last vault: 0 shares (0%), balance 0
+    // Total: 1000 shares, 1100 balance (10% yield from price 1.0 -> 1.1)
+    //
+    // Calculation:
+    //   yield_per_share = 1.1 - 1.0 = 0.1
+    //   total_yield = 0.1 * 1000 = 100
+    //   fee_amount = 100 * 0.2 = 20
+    //   shares_to_mint = 20 / 1.1 ≈ 18.18 -> 18 shares (floor)
+    //
+    // Without the bug (correct behavior):
+    //   First vault: 18 * 333/1000 = 5.994 -> 5 (rounds down)
+    //   Second vault: remainder = 18 - 5 = 13 (should get remainder)
+    //   Total: 5 + 13 = 18
+    //
+    // With the bug (last vault has 0 shares):
+    //   First vault: 18 * 333/1000 = 5.994 -> 5 (rounds down)
+    //   Second vault: 18 * 667/1000 = 12.006 -> 12 (rounds down, NOT getting remainder!)
+    //   Last vault: skipped (0 shares) - remainder logic never runs
+    //   Total: 5 + 12 = 17, but should be 18 -> 1 share lost!
+    let vault_first_shares = Uint128::new(333);
+    let vault_first_balance = Uint128::new(366); // ~333 * 1.1
+    let vault_second_shares = Uint128::new(667);
+    let vault_second_balance = Uint128::new(734); // ~667 * 1.1
+    let vault_last_shares = Uint128::zero(); // Last vault has ZERO shares
+    let vault_last_balance = Uint128::zero();
+
+    deps.querier.update_wasm({
+        let subvault_first = subvault_first_addr.to_string();
+        let subvault_second = subvault_second_addr.to_string();
+        let subvault_last = subvault_last_addr.to_string();
+        move |query| match query {
+            WasmQuery::Smart { contract_addr, .. } => {
+                let response = if contract_addr == &subvault_first {
+                    to_json_binary(&VaultPoolInfoResponse {
+                        shares_issued: vault_first_shares,
+                        balance_base_tokens: vault_first_balance,
+                        adapter_deposits_base_tokens: Uint128::zero(),
+                        withdrawal_queue_base_tokens: Uint128::zero(),
+                    })
+                } else if contract_addr == &subvault_second {
+                    to_json_binary(&VaultPoolInfoResponse {
+                        shares_issued: vault_second_shares,
+                        balance_base_tokens: vault_second_balance,
+                        adapter_deposits_base_tokens: Uint128::zero(),
+                        withdrawal_queue_base_tokens: Uint128::zero(),
+                    })
+                } else if contract_addr == &subvault_last {
+                    to_json_binary(&VaultPoolInfoResponse {
+                        shares_issued: vault_last_shares,
+                        balance_base_tokens: vault_last_balance,
+                        adapter_deposits_base_tokens: Uint128::zero(),
+                        withdrawal_queue_base_tokens: Uint128::zero(),
+                    })
+                } else {
+                    return SystemResult::Err(SystemError::NoSuchContract {
+                        addr: contract_addr.clone(),
+                    });
+                };
+                SystemResult::Ok(ContractResult::Ok(response.unwrap()))
+            }
+            _ => SystemResult::Err(SystemError::UnsupportedRequest {
+                kind: "only smart queries supported".to_string(),
+            }),
+        }
+    });
+
+    // Accrue fees
+    let info = get_message_info(&deps.api, USER1, &[]);
+    let res = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::AccrueFees {});
+
+    assert!(res.is_ok());
+    let response = res.unwrap();
+
+    // Verify fees were accrued
+    assert!(
+        response
+            .attributes
+            .iter()
+            .any(|a| a.key == "result" && a.value == "fees_accrued"),
+        "Expected fees_accrued result"
+    );
+
+    // Should have exactly 2 mint messages (only for vaults with non-zero shares)
+    assert_eq!(
+        response.messages.len(),
+        2,
+        "Expected 2 mint messages (one per vault with shares)"
+    );
+
+    // Extract the shares_minted attribute to verify the total
+    let shares_minted_attr = response
+        .attributes
+        .iter()
+        .find(|a| a.key == "shares_minted")
+        .expect("Should have shares_minted attribute");
+    let total_shares_to_mint: Uint128 = shares_minted_attr.value.parse().unwrap();
+
+    // Now parse the mint messages to get the actual amounts minted
+    let mut total_actually_minted = Uint128::zero();
+    for msg in &response.messages {
+        if let cosmwasm_std::CosmosMsg::Wasm(cosmwasm_std::WasmMsg::Execute { msg, .. }) = &msg.msg
+        {
+            // Parse the MintFeeShares message to extract the amount
+            let mint_msg: interface::inflow_vault::ExecuteMsg = from_json(msg).unwrap();
+            if let interface::inflow_vault::ExecuteMsg::MintFeeShares { amount, .. } = mint_msg {
+                total_actually_minted = total_actually_minted.checked_add(amount).unwrap();
+            }
+        }
+    }
+
+    // CRITICAL CHECK: The total actually minted should equal the intended shares_to_mint
+    // The bug causes total_actually_minted < total_shares_to_mint because the remainder
+    // is lost when the last vault has zero shares
+    assert_eq!(
+        total_actually_minted, total_shares_to_mint,
+        "Rounding remainder lost! Expected to mint {} shares but only {} were distributed. \
+        The remainder was lost because the last vault has zero shares.",
+        total_shares_to_mint, total_actually_minted
+    );
+}
