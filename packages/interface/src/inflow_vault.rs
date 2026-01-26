@@ -181,6 +181,12 @@ pub enum ExecuteMsg {
         to_adapter: String,
         coin: Coin,
     },
+
+    /// Mints fee shares to a recipient. Only callable by the control center.
+    MintFeeShares {
+        amount: Uint128,
+        recipient: String,
+    },
 }
 
 #[cw_serde]

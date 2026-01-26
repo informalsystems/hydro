@@ -50,6 +50,7 @@ fn get_default_instantiate_msg(
             .iter()
             .map(|subvault_addr| subvault_addr.to_string())
             .collect(),
+        fee_config: None, // Fees disabled by default in tests
     }
 }
 

@@ -310,6 +310,13 @@ export interface InflowVaultBaseInterface extends InflowVaultBaseReadOnlyInterfa
     fromAdapter: string;
     toAdapter: string;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  mintFeeShares: ({
+    amount,
+    recipient
+  }: {
+    amount: Uint128;
+    recipient: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements InflowVaultBaseInterface {
   client: SigningCosmWasmClient;
@@ -338,6 +345,7 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
     this.withdrawFromAdapter = this.withdrawFromAdapter.bind(this);
     this.depositToAdapter = this.depositToAdapter.bind(this);
     this.moveAdapterFunds = this.moveAdapterFunds.bind(this);
+    this.mintFeeShares = this.mintFeeShares.bind(this);
   }
   deposit = async ({
     onBehalfOf
@@ -558,6 +566,20 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
         coin,
         from_adapter: fromAdapter,
         to_adapter: toAdapter
+      }
+    }, fee, memo, _funds);
+  };
+  mintFeeShares = async ({
+    amount,
+    recipient
+  }: {
+    amount: Uint128;
+    recipient: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      mint_fee_shares: {
+        amount,
+        recipient
       }
     }, fee, memo, _funds);
   };

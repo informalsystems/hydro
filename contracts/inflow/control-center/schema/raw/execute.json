@@ -159,9 +159,59 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Accrues performance fees based on yield since last accrual. This is a permissionless operation - anyone can call it.",
+      "type": "object",
+      "required": [
+        "accrue_fees"
+      ],
+      "properties": {
+        "accrue_fees": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Updates the fee configuration. Only whitelisted addresses can call this. Set fee_rate to 0 to disable fee accrual.",
+      "type": "object",
+      "required": [
+        "update_fee_config"
+      ],
+      "properties": {
+        "update_fee_config": {
+          "type": "object",
+          "properties": {
+            "fee_rate": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Decimal"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "fee_recipient": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {
+    "Decimal": {
+      "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
+      "type": "string"
+    },
     "DeploymentDirection": {
       "type": "string",
       "enum": [

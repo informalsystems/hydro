@@ -5,10 +5,16 @@
 */
 
 export type Uint128 = string;
+export type Decimal = string;
 export interface InstantiateMsg {
   deposit_cap: Uint128;
+  fee_config?: FeeConfigInit | null;
   subvaults: string[];
   whitelist: string[];
+}
+export interface FeeConfigInit {
+  fee_rate: Decimal;
+  fee_recipient: string;
 }
 export type ExecuteMsg = {
   submit_deployed_amount: {
@@ -39,6 +45,13 @@ export type ExecuteMsg = {
   remove_subvault: {
     address: string;
   };
+} | {
+  accrue_fees: {};
+} | {
+  update_fee_config: {
+    fee_rate?: Decimal | null;
+    fee_recipient?: string | null;
+  };
 };
 export type DeploymentDirection = "add" | "subtract";
 export interface UpdateConfigData {
@@ -54,6 +67,10 @@ export type QueryMsg = {
   whitelist: {};
 } | {
   subvaults: {};
+} | {
+  fee_config: {};
+} | {
+  fee_accrual_info: {};
 };
 export interface ConfigResponse {
   config: Config;
@@ -61,11 +78,21 @@ export interface ConfigResponse {
 export interface Config {
   deposit_cap: Uint128;
 }
+export interface FeeAccrualInfoResponse {
+  current_share_price: Decimal;
+  high_water_mark_price: Decimal;
+  pending_fee: Uint128;
+  pending_yield: Uint128;
+}
+export type Addr = string;
+export interface FeeConfigResponse {
+  fee_rate: Decimal;
+  fee_recipient: Addr;
+}
 export interface PoolInfoResponse {
   total_pool_value: Uint128;
   total_shares_issued: Uint128;
 }
-export type Addr = string;
 export interface SubvaultsResponse {
   subvaults: Addr[];
 }
