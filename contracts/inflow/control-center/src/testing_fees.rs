@@ -1018,3 +1018,129 @@ fn test_high_water_mark_recovery_from_loss() {
         Decimal::from_ratio(1300u128, 1000u128)
     );
 }
+
+/// Tests that when fees are re-enabled after being disabled, the high-water mark
+/// is reset to the current share price, so fees are NOT charged on yield that
+/// occurred while fees were disabled.
+#[test]
+fn test_reenable_fees_resets_high_water_mark() {
+    let (mut deps, env) = (mock_dependencies(), mock_env());
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST);
+    let treasury_addr = deps.api.addr_make(TREASURY);
+    let subvault1_addr = deps.api.addr_make(SUBVAULT1);
+
+    // Step 1: Instantiate with fees enabled at 20%
+    let instantiate_msg = get_instantiate_msg(
+        DEFAULT_DEPOSIT_CAP,
+        whitelist_addr.clone(),
+        vec![subvault1_addr.clone()],
+        Some(FeeConfigInit {
+            fee_rate: Decimal::percent(20),
+            fee_recipient: treasury_addr.to_string(),
+        }),
+    );
+
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Verify initial high-water mark is 1.0
+    assert_eq!(
+        HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
+        Decimal::one()
+    );
+
+    // Helper to set up mock querier with specific shares and balance
+    let setup_vault_state =
+        |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+         shares: u128,
+         balance: u128| {
+            let subvault_addr = deps.api.addr_make(SUBVAULT1).to_string();
+            deps.querier.update_wasm({
+                let addr = subvault_addr.clone();
+                move |query| match query {
+                    WasmQuery::Smart { contract_addr, .. } if contract_addr == &addr => {
+                        let response = to_json_binary(&VaultPoolInfoResponse {
+                            shares_issued: Uint128::new(shares),
+                            balance_base_tokens: Uint128::new(balance),
+                            adapter_deposits_base_tokens: Uint128::zero(),
+                            withdrawal_queue_base_tokens: Uint128::zero(),
+                        })
+                        .unwrap();
+                        SystemResult::Ok(ContractResult::Ok(response))
+                    }
+                    _ => SystemResult::Err(SystemError::NoSuchContract {
+                        addr: "unknown".to_string(),
+                    }),
+                }
+            });
+        };
+
+    // Step 2: Accrue fees with 10% yield (price 1.0 -> 1.1)
+    // This sets high-water mark to 1.1
+    setup_vault_state(&mut deps, 1000, 1100);
+    let info = get_message_info(&deps.api, USER1, &[]);
+    let res = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::AccrueFees {});
+    assert!(res.is_ok());
+    assert!(res
+        .unwrap()
+        .attributes
+        .iter()
+        .any(|a| a.key == "result" && a.value == "fees_accrued"));
+    assert_eq!(
+        HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
+        Decimal::from_ratio(1100u128, 1000u128) // 1.1
+    );
+
+    // Step 3: Disable fees by setting fee_rate to 0
+    let info = get_message_info(&deps.api, WHITELIST, &[]);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::UpdateFeeConfig {
+            fee_rate: Some(Decimal::zero()),
+            fee_recipient: None,
+        },
+    );
+    assert!(res.is_ok());
+
+    // Step 4: Simulate yield while fees are disabled (price goes from 1.1 to 1.5)
+    // This yield should NOT be subject to fees when fees are re-enabled
+    setup_vault_state(&mut deps, 1000, 1500);
+
+    // Step 5: Re-enable fees at 20%
+    let info = get_message_info(&deps.api, WHITELIST, &[]);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::UpdateFeeConfig {
+            fee_rate: Some(Decimal::percent(20)),
+            fee_recipient: None, // Keep existing recipient
+        },
+    );
+    assert!(res.is_ok());
+
+    // CRITICAL CHECK: After re-enabling fees, the high-water mark should be reset
+    // to the current share price (1.5), NOT remain at the old value (1.1)
+    let high_water_mark = HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap();
+    assert_eq!(
+        high_water_mark,
+        Decimal::from_ratio(1500u128, 1000u128), // Should be 1.5
+        "High-water mark should be reset to current price when fees are re-enabled"
+    );
+
+    // Step 6: Accrue fees - should report "below_high_water_mark" since there's
+    // no NEW yield since fees were re-enabled
+    let info = get_message_info(&deps.api, USER1, &[]);
+    let res = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::AccrueFees {});
+    assert!(res.is_ok());
+    assert!(
+        res.unwrap()
+            .attributes
+            .iter()
+            .any(|a| a.key == "result" && a.value == "below_high_water_mark"),
+        "Should not charge fees on yield that occurred while fees were disabled"
+    );
+}

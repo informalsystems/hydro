@@ -152,7 +152,7 @@ pub fn execute(
         ExecuteMsg::UpdateFeeConfig {
             fee_rate,
             fee_recipient,
-        } => update_fee_config(deps, info, fee_rate, fee_recipient),
+        } => update_fee_config(deps, env, info, fee_rate, fee_recipient),
     }
 }
 
@@ -470,8 +470,12 @@ fn accrue_fees(
 
 /// Updates the fee configuration. Only whitelisted addresses can call this.
 /// Set fee_rate to 0 to disable fee accrual.
+/// When re-enabling fees (transitioning from rate=0 to rate>0), the high-water
+/// mark is reset to the current share price to avoid charging fees on yield
+/// that occurred while fees were disabled.
 fn update_fee_config(
     deps: DepsMut<NeutronQuery>,
+    env: Env,
     info: MessageInfo,
     fee_rate: Option<Decimal>,
     fee_recipient: Option<String>,
@@ -488,6 +492,20 @@ fn update_fee_config(
         if !rate.is_zero() && fee_config.fee_recipient.as_str().is_empty() {
             return Err(ContractError::FeeRecipientNotSet);
         }
+
+        // If enabling fees (transitioning from zero to non-zero rate),
+        // reset high-water mark to current share price to avoid charging
+        // fees on yield that occurred while fees were disabled
+        if fee_config.fee_rate.is_zero() && !rate.is_zero() {
+            let pool_info = query_pool_info(&deps.as_ref(), &env)?;
+            let current_share_price = if pool_info.total_shares_issued.is_zero() {
+                Decimal::one()
+            } else {
+                Decimal::from_ratio(pool_info.total_pool_value, pool_info.total_shares_issued)
+            };
+            HIGH_WATER_MARK_PRICE.save(deps.storage, &current_share_price)?;
+        }
+
         fee_config.fee_rate = rate;
     }
 
