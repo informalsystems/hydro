@@ -1019,6 +1019,155 @@ fn test_high_water_mark_recovery_from_loss() {
     );
 }
 
+/// Tests that dust yield does NOT update the high-water mark.
+/// When yield is too small to mint any shares, the high-water mark should remain unchanged
+/// so that dust yield accumulates over multiple accrual calls until it's large enough.
+///
+/// Bug scenario (before fix):
+/// 1. Small yield occurs -> shares_to_mint = 0.5 (dust)
+/// 2. High-water mark updated to current price (BUG!)
+/// 3. Next small yield: calculated from new HWM, dust again
+/// 4. Dust yields are lost forever, never accumulated
+///
+/// Correct behavior (after fix):
+/// 1. Small yield occurs -> shares_to_mint = 0.5 (dust)
+/// 2. High-water mark stays at old price (correct!)
+/// 3. Next small yield: calculated from old HWM, accumulates
+/// 4. Eventually combined yield is enough to mint shares
+#[test]
+fn test_dust_yield_does_not_update_high_water_mark() {
+    let (mut deps, env) = (mock_dependencies(), mock_env());
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST);
+    let treasury_addr = deps.api.addr_make(TREASURY);
+    let subvault1_addr = deps.api.addr_make(SUBVAULT1);
+
+    let instantiate_msg = get_instantiate_msg(
+        DEFAULT_DEPOSIT_CAP,
+        whitelist_addr,
+        vec![subvault1_addr.clone()],
+        Some(FeeConfigInit {
+            fee_rate: Decimal::percent(20),
+            fee_recipient: treasury_addr.to_string(),
+        }),
+    );
+
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Verify initial high-water mark is 1.0
+    let initial_hwm = HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap();
+    assert_eq!(initial_hwm, Decimal::one());
+
+    // Helper to set up mock querier
+    let setup_vault_state =
+        |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+         shares: u128,
+         balance: u128| {
+            let subvault_addr = deps.api.addr_make(SUBVAULT1).to_string();
+            deps.querier.update_wasm({
+                let addr = subvault_addr.clone();
+                move |query| match query {
+                    WasmQuery::Smart { contract_addr, .. } if contract_addr == &addr => {
+                        let response = to_json_binary(&VaultPoolInfoResponse {
+                            shares_issued: Uint128::new(shares),
+                            balance_base_tokens: Uint128::new(balance),
+                            adapter_deposits_base_tokens: Uint128::zero(),
+                            withdrawal_queue_base_tokens: Uint128::zero(),
+                        })
+                        .unwrap();
+                        SystemResult::Ok(ContractResult::Ok(response))
+                    }
+                    _ => SystemResult::Err(SystemError::NoSuchContract {
+                        addr: "unknown".to_string(),
+                    }),
+                }
+            });
+        };
+
+    // Step 1: Set up a scenario with tiny yield that results in dust
+    // With 1000 shares at price 1.0, if balance = 1001:
+    //   yield_per_share = 1001/1000 - 1.0 = 0.001
+    //   total_yield = 0.001 * 1000 = 1
+    //   fee_amount = 1 * 0.2 = 0.2
+    //   shares_to_mint = 0.2 / 1.001 ≈ 0.1998 (dust!)
+    setup_vault_state(&mut deps, 1000, 1001);
+
+    let info = get_message_info(&deps.api, USER1, &[]);
+    let res = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::AccrueFees {});
+    assert!(res.is_ok());
+
+    let response = res.unwrap();
+    // Verify it was recognized as dust yield
+    assert!(
+        response
+            .attributes
+            .iter()
+            .any(|a| a.key == "result" && a.value == "dust_yield"),
+        "Expected dust_yield result, got: {:?}",
+        response.attributes
+    );
+
+    // CRITICAL CHECK: High-water mark should NOT have been updated
+    // The bug causes it to update to 1.001, losing the dust yield
+    let hwm_after_dust = HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap();
+    assert_eq!(
+        hwm_after_dust, initial_hwm,
+        "High-water mark should NOT be updated on dust yield! \
+        Expected: {}, Got: {}. The dust yield was lost.",
+        initial_hwm, hwm_after_dust
+    );
+
+    // Step 2: Add more small yield (now balance = 1005)
+    // If HWM stayed at 1.0:
+    //   yield_per_share = 1005/1000 - 1.0 = 0.005
+    //   total_yield = 0.005 * 1000 = 5
+    //   fee_amount = 5 * 0.2 = 1
+    //   shares_to_mint = 1 / 1.005 ≈ 0.995 (still dust but closer)
+    setup_vault_state(&mut deps, 1000, 1005);
+
+    let info = get_message_info(&deps.api, USER1, &[]);
+    let res = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::AccrueFees {});
+    assert!(res.is_ok());
+
+    // Still dust (0.995 shares), so HWM should still be unchanged
+    let hwm_after_second_dust = HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap();
+    assert_eq!(
+        hwm_after_second_dust, initial_hwm,
+        "High-water mark should still NOT be updated after second dust yield"
+    );
+
+    // Step 3: Add enough yield to finally mint shares (balance = 1020)
+    // If HWM stayed at 1.0:
+    //   yield_per_share = 1020/1000 - 1.0 = 0.02
+    //   total_yield = 0.02 * 1000 = 20
+    //   fee_amount = 20 * 0.2 = 4
+    //   shares_to_mint = 4 / 1.02 ≈ 3.92 -> 3 shares (enough!)
+    setup_vault_state(&mut deps, 1000, 1020);
+
+    let info = get_message_info(&deps.api, USER1, &[]);
+    let res = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::AccrueFees {});
+    assert!(res.is_ok());
+
+    let response = res.unwrap();
+    // Now it should accrue fees
+    assert!(
+        response
+            .attributes
+            .iter()
+            .any(|a| a.key == "result" && a.value == "fees_accrued"),
+        "Expected fees_accrued when yield is large enough"
+    );
+
+    // NOW the high-water mark should be updated to 1.02
+    let hwm_after_accrual = HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap();
+    assert_eq!(
+        hwm_after_accrual,
+        Decimal::from_ratio(1020u128, 1000u128),
+        "High-water mark should be updated after successful fee accrual"
+    );
+}
+
 /// Tests that when fees are re-enabled after being disabled, the high-water mark
 /// is reset to the current share price, so fees are NOT charged on yield that
 /// occurred while fees were disabled.

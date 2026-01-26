@@ -392,10 +392,7 @@ fn accrue_fees(
     let fee_amount = total_yield * fee_config.fee_rate;
     let shares_to_mint = fee_amount / current_share_price;
 
-    // Update high-water mark
-    HIGH_WATER_MARK_PRICE.save(deps.storage, &current_share_price)?;
-
-    // Handle dust case
+    // Handle dust case - check BEFORE updating high water mark so dust can accumulate
     if shares_to_mint.is_zero() {
         return Ok(Response::new()
             .add_attribute("action", "accrue_fees")
@@ -412,6 +409,10 @@ fn accrue_fees(
             .add_attribute("result", "dust_yield")
             .add_attribute("current_share_price", current_share_price.to_string()));
     }
+
+    // Update high-water mark only after confirming we will mint shares
+    // This ensures dust yield accumulates across multiple accrual calls
+    HIGH_WATER_MARK_PRICE.save(deps.storage, &current_share_price)?;
 
     // Get all subvaults and their share counts
     let subvaults: Vec<Addr> = SUBVAULTS
