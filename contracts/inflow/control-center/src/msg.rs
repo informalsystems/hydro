@@ -13,10 +13,3 @@ pub struct InstantiateMsg {
     /// Optional fee configuration. If None, fees are disabled by default.
     pub fee_config: Option<FeeConfigInit>,
 }
-
-#[cw_serde]
-pub struct MigrateMsg {
-    /// Fee configuration to initialize during migration.
-    /// If None and FEE_CONFIG doesn't exist, fees are disabled by default.
-    pub fee_config: Option<FeeConfigInit>,
-}

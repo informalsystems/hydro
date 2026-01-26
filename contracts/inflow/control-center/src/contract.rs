@@ -5,9 +5,9 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 use interface::{
     inflow_control_center::{
-        Config, ConfigResponse, DeploymentDirection, ExecuteMsg, FeeAccrualInfoResponse, FeeConfig,
-        FeeConfigResponse, PoolInfoResponse, QueryMsg, SubvaultsResponse, UpdateConfigData,
-        WhitelistResponse,
+        AccrueFeesResponse, Config, ConfigResponse, DeploymentDirection, ExecuteMsg,
+        FeeAccrualInfoResponse, FeeConfig, FeeConfigResponse, PoolInfoResponse, QueryMsg,
+        SubvaultsResponse, UpdateConfigData, VaultFeeSharesMinted, WhitelistResponse,
     },
     inflow_vault::{
         ExecuteMsg as VaultExecuteMsg, PoolInfoResponse as VaultPoolInfoResponse,
@@ -18,7 +18,7 @@ use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 use crate::{
     error::{new_generic_error, ContractError},
-    msg::{InstantiateMsg, MigrateMsg},
+    msg::InstantiateMsg,
     state::{
         load_config, load_fee_config, CONFIG, DEPLOYED_AMOUNT, FEE_CONFIG, HIGH_WATER_MARK_PRICE,
         SUBVAULTS, WHITELIST,
@@ -408,32 +408,36 @@ fn accrue_fees(
     // This ensures dust yield accumulates across multiple accrual calls
     HIGH_WATER_MARK_PRICE.save(deps.storage, &current_share_price)?;
 
-    // Get all subvaults and their share counts
+    // Get all subvaults with non-zero shares
     let subvaults: Vec<Addr> = SUBVAULTS
         .keys(deps.storage, None, None, Order::Ascending)
         .filter_map(|v| v.ok())
         .collect();
 
-    // Calculate proportional minting for each subvault
-    let mut msgs: Vec<WasmMsg> = vec![];
-    let mut total_minted = Uint128::zero();
-
-    for (i, subvault) in subvaults.iter().enumerate() {
+    // Collect vault info for vaults with non-zero shares
+    let mut vaults_with_shares: Vec<(Addr, Uint128)> = vec![];
+    for subvault in subvaults {
         let vault_info: VaultPoolInfoResponse = deps
             .querier
             .query_wasm_smart(subvault.to_string(), &VaultQueryMsg::PoolInfo {})?;
 
-        if vault_info.shares_issued.is_zero() {
-            continue;
+        if !vault_info.shares_issued.is_zero() {
+            vaults_with_shares.push((subvault, vault_info.shares_issued));
         }
+    }
 
+    // Calculate proportional minting for each subvault with shares
+    let mut msgs: Vec<WasmMsg> = vec![];
+    let mut total_minted = Uint128::zero();
+    let mut vault_mints: Vec<VaultFeeSharesMinted> = vec![];
+
+    for (i, (subvault, shares_issued)) in vaults_with_shares.iter().enumerate() {
         // Calculate this vault's share of the fee shares to mint
-        let vault_mint_amount = if i == subvaults.len() - 1 {
-            // Last vault gets the remainder to handle rounding
+        let vault_mint_amount = if i == vaults_with_shares.len() - 1 {
+            // Last vault with shares gets the remainder to handle rounding
             shares_to_mint_uint.checked_sub(total_minted)?
         } else {
-            shares_to_mint_uint
-                .multiply_ratio(vault_info.shares_issued, pool_info.total_shares_issued)
+            shares_to_mint_uint.multiply_ratio(*shares_issued, pool_info.total_shares_issued)
         };
 
         if vault_mint_amount.is_zero() {
@@ -441,6 +445,11 @@ fn accrue_fees(
         }
 
         total_minted = total_minted.checked_add(vault_mint_amount)?;
+
+        vault_mints.push(VaultFeeSharesMinted {
+            vault: subvault.clone(),
+            shares_minted: vault_mint_amount,
+        });
 
         let mint_msg = WasmMsg::Execute {
             contract_addr: subvault.to_string(),
@@ -453,8 +462,14 @@ fn accrue_fees(
         msgs.push(mint_msg);
     }
 
+    let response_data = AccrueFeesResponse {
+        total_shares_minted: shares_to_mint_uint,
+        vaults: vault_mints,
+    };
+
     Ok(Response::new()
         .add_messages(msgs)
+        .set_data(to_json_binary(&response_data)?)
         .add_attribute("action", "accrue_fees")
         .add_attribute("result", "fees_accrued")
         .add_attribute("yield", total_yield.to_string())
@@ -543,57 +558,13 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
     }
 }
 
-#[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(
-    deps: DepsMut<NeutronQuery>,
-    env: Env,
-    msg: MigrateMsg,
-) -> Result<Response<NeutronMsg>, ContractError> {
-    // Initialize fee config if not already present
-    // Fees are enabled when fee_rate > 0
-    if FEE_CONFIG.may_load(deps.storage)?.is_none() {
-        let fee_config = match msg.fee_config {
-            Some(init) => {
-                if init.fee_rate > Decimal::one() {
-                    return Err(ContractError::InvalidFeeRate);
-                }
-                let fee_recipient = deps.api.addr_validate(&init.fee_recipient)?;
-                FeeConfig {
-                    fee_rate: init.fee_rate,
-                    fee_recipient,
-                }
-            }
-            None => {
-                // Default: fees disabled (fee_rate = 0)
-                FeeConfig {
-                    fee_rate: Decimal::zero(),
-                    fee_recipient: Addr::unchecked(""),
-                }
-            }
-        };
-
-        FEE_CONFIG.save(deps.storage, &fee_config)?;
-
-        // Set high-water mark to current share price
-        let pool_info = query_pool_info(&deps.as_ref(), &env)?;
-        let current_share_price = if pool_info.total_shares_issued.is_zero() {
-            Decimal::one()
-        } else {
-            Decimal::from_ratio(pool_info.total_pool_value, pool_info.total_shares_issued)
-        };
-        HIGH_WATER_MARK_PRICE.save(deps.storage, &current_share_price)?;
-    }
-
-    Ok(Response::new().add_attribute("action", "migrate"))
-}
-
 fn query_config(deps: &Deps<NeutronQuery>) -> StdResult<ConfigResponse> {
     Ok(ConfigResponse {
         config: load_config(deps.storage)?,
     })
 }
 
-fn query_pool_info(deps: &Deps<NeutronQuery>, _env: &Env) -> StdResult<PoolInfoResponse> {
+pub fn query_pool_info(deps: &Deps<NeutronQuery>, _env: &Env) -> StdResult<PoolInfoResponse> {
     let sub_vaults = SUBVAULTS
         .keys(deps.storage, None, None, Order::Ascending)
         .filter_map(|v| v.ok())
