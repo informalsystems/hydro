@@ -1,0 +1,30 @@
+[package]
+name = "skip-adapter"
+version = { workspace = true }
+edition = { workspace = true }
+authors = ["arlai-mk"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+library = []
+
+[dependencies]
+cosmwasm-std = { workspace = true }
+cosmwasm-schema = { workspace = true }
+cw-storage-plus = { workspace = true }
+cw2 = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+neutron-sdk = { workspace = true }
+neutron-std = { workspace = true }
+interface = { path = "../../../packages/interface" }
+ibc-adapter = { path = "../ibc-adapter" }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+cw-multi-test = "2.0"
