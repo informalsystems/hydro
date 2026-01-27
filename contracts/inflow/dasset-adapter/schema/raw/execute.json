@@ -3,7 +3,7 @@
   "title": "ExecuteMsg",
   "oneOf": [
     {
-      "description": "Adapter interface entrypoint",
+      "description": "Adapter interface entrypoint (Deposit, Withdraw, depositor management)",
       "type": "object",
       "required": [
         "standard_action"
@@ -183,33 +183,31 @@
     "DAssetAdapterMsg": {
       "oneOf": [
         {
-          "description": "executor-only",
+          "description": "Executor-only: Initiate unbonding of dAsset tokens",
           "type": "object",
           "required": [
-            "unbond"
+            "unbond_in_drop"
           ],
           "properties": {
-            "unbond": {
-              "type": "object",
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "description": "executor-only",
-          "type": "object",
-          "required": [
-            "withdraw"
-          ],
-          "properties": {
-            "withdraw": {
+            "unbond_in_drop": {
               "type": "object",
               "required": [
-                "token_id"
+                "symbol"
               ],
               "properties": {
-                "token_id": {
+                "amount": {
+                  "description": "Amount to unbond. None = unbond all available balance",
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/Uint128"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "symbol": {
+                  "description": "Token symbol (e.g., \"datom\") to look up Drop contracts",
                   "type": "string"
                 }
               },
@@ -219,38 +217,26 @@
           "additionalProperties": false
         },
         {
-          "description": "admin-only",
+          "description": "Executor-only: Withdraw base asset from Drop Protocol using NFT voucher",
           "type": "object",
           "required": [
-            "update_config"
+            "withdraw_from_drop"
           ],
           "properties": {
-            "update_config": {
+            "withdraw_from_drop": {
               "type": "object",
+              "required": [
+                "symbol",
+                "token_id"
+              ],
               "properties": {
-                "drop_staking_core": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                "symbol": {
+                  "description": "Token symbol (e.g., \"datom\") to look up Drop contracts",
+                  "type": "string"
                 },
-                "drop_voucher": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "drop_withdrawal_manager": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "vault_contract": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                "token_id": {
+                  "description": "NFT voucher token ID from unbonding",
+                  "type": "string"
                 }
               },
               "additionalProperties": false
@@ -259,23 +245,135 @@
           "additionalProperties": false
         },
         {
-          "description": "admin-only",
+          "description": "Admin-only: Register a new dAsset token with its Drop Protocol contracts",
           "type": "object",
           "required": [
-            "update_executors"
+            "register_token"
           ],
           "properties": {
-            "update_executors": {
+            "register_token": {
               "type": "object",
               "required": [
-                "executors"
+                "base_asset_denom",
+                "denom",
+                "drop_staking_core",
+                "drop_voucher",
+                "drop_withdrawal_manager",
+                "symbol"
               ],
               "properties": {
-                "executors": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
+                "base_asset_denom": {
+                  "description": "Output denom, e.g., \"ibc/.../uatom\"",
+                  "type": "string"
+                },
+                "denom": {
+                  "description": "Full denom, e.g., \"factory/.../dATOM\"",
+                  "type": "string"
+                },
+                "drop_staking_core": {
+                  "type": "string"
+                },
+                "drop_voucher": {
+                  "type": "string"
+                },
+                "drop_withdrawal_manager": {
+                  "type": "string"
+                },
+                "symbol": {
+                  "description": "Human-readable key, e.g., \"datom\"",
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Admin-only: Unregister a dAsset token",
+          "type": "object",
+          "required": [
+            "unregister_token"
+          ],
+          "properties": {
+            "unregister_token": {
+              "type": "object",
+              "required": [
+                "symbol"
+              ],
+              "properties": {
+                "symbol": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Admin-only: Enable or disable a registered token",
+          "type": "object",
+          "required": [
+            "set_token_enabled"
+          ],
+          "properties": {
+            "set_token_enabled": {
+              "type": "object",
+              "required": [
+                "enabled",
+                "symbol"
+              ],
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "symbol": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Admin-only: Add a single executor",
+          "type": "object",
+          "required": [
+            "add_executor"
+          ],
+          "properties": {
+            "add_executor": {
+              "type": "object",
+              "required": [
+                "executor_address"
+              ],
+              "properties": {
+                "executor_address": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Admin-only: Remove a single executor",
+          "type": "object",
+          "required": [
+            "remove_executor"
+          ],
+          "properties": {
+            "remove_executor": {
+              "type": "object",
+              "required": [
+                "executor_address"
+              ],
+              "properties": {
+                "executor_address": {
+                  "type": "string"
                 }
               },
               "additionalProperties": false

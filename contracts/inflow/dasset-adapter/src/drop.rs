@@ -7,7 +7,7 @@ pub enum DropStakingExecuteMsg {
 }
 
 #[cw_serde]
-pub enum VoucherExecuteMsg {
+pub enum DropVoucherExecuteMsg {
     SendNft {
         contract: String,
         token_id: String,
@@ -35,7 +35,7 @@ pub fn withdraw_voucher_msg(
 ) -> StdResult<WasmMsg> {
     let withdraw_msg = to_json_binary(&WithdrawMsg::Withdraw {})?;
 
-    let msg = VoucherExecuteMsg::SendNft {
+    let msg = DropVoucherExecuteMsg::SendNft {
         contract: withdrawal_manager.to_string(),
         token_id,
         msg: withdraw_msg.to_base64(),

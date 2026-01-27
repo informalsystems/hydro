@@ -3,46 +3,76 @@
   "title": "InstantiateMsg",
   "type": "object",
   "required": [
-    "admins",
-    "base_asset_denom",
-    "drop_staking_core",
-    "drop_voucher",
-    "drop_withdrawal_manager",
-    "executors",
-    "liquid_asset_denom",
-    "vault_contract"
+    "initial_admins",
+    "initial_depositors",
+    "initial_executors"
   ],
   "properties": {
-    "admins": {
+    "initial_admins": {
       "type": "array",
       "items": {
         "type": "string"
       }
     },
-    "base_asset_denom": {
-      "type": "string"
-    },
-    "drop_staking_core": {
-      "type": "string"
-    },
-    "drop_voucher": {
-      "type": "string"
-    },
-    "drop_withdrawal_manager": {
-      "type": "string"
-    },
-    "executors": {
+    "initial_depositors": {
+      "description": "Initial depositors (e.g., vault addresses)",
       "type": "array",
       "items": {
         "type": "string"
       }
     },
-    "liquid_asset_denom": {
-      "type": "string"
+    "initial_executors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     },
-    "vault_contract": {
-      "type": "string"
+    "initial_tokens": {
+      "description": "Optional initial tokens to register",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/TokenRegistration"
+      }
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "definitions": {
+    "TokenRegistration": {
+      "description": "Token registration info used during instantiation",
+      "type": "object",
+      "required": [
+        "base_asset_denom",
+        "denom",
+        "drop_staking_core",
+        "drop_voucher",
+        "drop_withdrawal_manager",
+        "symbol"
+      ],
+      "properties": {
+        "base_asset_denom": {
+          "description": "Output denom, e.g., \"ibc/.../uatom\"",
+          "type": "string"
+        },
+        "denom": {
+          "description": "Full denom, e.g., \"factory/.../dATOM\"",
+          "type": "string"
+        },
+        "drop_staking_core": {
+          "type": "string"
+        },
+        "drop_voucher": {
+          "type": "string"
+        },
+        "drop_withdrawal_manager": {
+          "type": "string"
+        },
+        "symbol": {
+          "description": "Human-readable key, e.g., \"datom\", \"dntrn\"",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
 }
