@@ -263,3 +263,49 @@ func (db *DB) GenerateProcessID(ctx context.Context, userEmail, chainID string) 
 	}
 	return fmt.Sprintf("%s_%s_%03d", userEmail, chainID, seq+1), nil
 }
+
+// GetAllForwarderContracts retrieves all forwarder contracts for a specific chain
+func (db *DB) GetAllForwarderContracts(ctx context.Context, chainID string) ([]models.Contract, error) {
+	var contracts []models.Contract
+	query := `
+		SELECT id, user_email, chain_id, contract_type, address, deployed,
+		       deploy_tx_hash, deployed_at
+		FROM contracts
+		WHERE chain_id = $1 AND contract_type = $2
+		ORDER BY created_at ASC
+	`
+	err := db.SelectContext(ctx, &contracts, query, chainID, models.ContractTypeForwarder)
+	return contracts, err
+}
+
+// HasActiveProcess checks if there's an active (non-terminal) process for a forwarder address
+func (db *DB) HasActiveProcess(ctx context.Context, forwarderAddress string) (bool, error) {
+	var count int
+	query := `
+		SELECT COUNT(*)
+		FROM processes
+		WHERE forwarder_address = $1
+		  AND status NOT IN ($2, $3)
+	`
+	err := db.QueryRowContext(ctx, query, forwarderAddress, models.ProcessStatusDepositDone, models.ProcessStatusFailed).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// GetProxyAddressForUser retrieves the proxy address for a user
+func (db *DB) GetProxyAddressForUser(ctx context.Context, userEmail string) (string, error) {
+	var address string
+	query := `
+		SELECT address
+		FROM contracts
+		WHERE user_email = $1 AND contract_type = $2
+		LIMIT 1
+	`
+	err := db.QueryRowContext(ctx, query, userEmail, models.ContractTypeProxy).Scan(&address)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return address, err
+}

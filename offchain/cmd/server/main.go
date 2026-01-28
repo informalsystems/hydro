@@ -14,6 +14,7 @@ import (
 	"hydro/offchain/internal/config"
 	"hydro/offchain/internal/database"
 	"hydro/offchain/internal/service"
+	"hydro/offchain/internal/worker"
 
 	"go.uber.org/zap"
 )
@@ -98,11 +99,19 @@ func main() {
 		serverErrors <- httpServer.ListenAndServe()
 	}()
 
-	// TODO: Initialize workers (Phase 4)
+	// Initialize workers (Phase 4)
+	workerManager, err := worker.NewWorkerManager(db, cfg, contractService, feeService, logger)
+	if err != nil {
+		logger.Fatal("Failed to initialize worker manager", zap.Error(err))
+	}
+
+	// Start workers
+	workerManager.Start()
+	logger.Info("Workers started")
 
 	logger.Info("Service initialized successfully",
 		zap.String("status", "ready"),
-		zap.String("phase", "api_layer_complete"),
+		zap.String("phase", "workers_complete"),
 		zap.Int("port", cfg.Server.Port))
 
 	// Graceful shutdown
@@ -123,14 +132,17 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
+	// Shutdown workers first
+	if err := workerManager.Shutdown(10 * time.Second); err != nil {
+		logger.Error("Worker shutdown error", zap.Error(err))
+	}
+
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("HTTP server shutdown error", zap.Error(err))
 		httpServer.Close()
 	} else {
 		logger.Info("HTTP server stopped gracefully")
 	}
-
-	// TODO: Shutdown workers (Phase 4)
 
 	logger.Info("Service stopped successfully")
 }

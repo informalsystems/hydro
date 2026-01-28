@@ -101,6 +101,7 @@ offchain/
 │   │   ├── process.go                       # Process orchestration
 │   │   └── fees.go                          # Fee calculation
 │   └── worker/
+│       ├── manager.go                       # Worker lifecycle management
 │       ├── monitor.go                       # Balance monitoring (polling)
 │       └── executor.go                      # Process state machine
 ├── deployments/
@@ -221,6 +222,95 @@ Error state: FAILED (with error_message)
    - Process complete
 
 **Simplification**: Collapse intermediate states (no separate states for CCTP completion, IBC transfer, etc.)
+
+### Complete Deposit Flow
+
+The following diagram shows the complete end-to-end flow from when a user sends USDC to their forwarder address until the deposit is completed:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              DEPOSIT FLOW                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+1. USER ACTION
+   ┌──────────────────┐
+   │ User sends USDC  │
+   │ to forwarder     │
+   │ address on EVM   │
+   └────────┬─────────┘
+            │
+            ▼
+2. MONITOR: detectNewDeposits() [every 30s]
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │ For each chain:                                                       │
+   │   1. Get ALL forwarder contracts from DB                              │
+   │   2. For each forwarder:                                              │
+   │      - Check if active process exists → skip if yes                   │
+   │      - Check forwarder balance on EVM                                 │
+   │      - If balance > 0:                                                │
+   │          → Get proxy address for user                                 │
+   │          → Create new Process (status: PENDING_FUNDS)                 │
+   └────────┬─────────────────────────────────────────────────────────────┘
+            │
+            ▼
+3. MONITOR: checkPendingFunds() [every 30s]
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │ For each PENDING_FUNDS process:                                       │
+   │   1. Check forwarder balance on EVM                                   │
+   │   2. If balance >= minDepositAmount:                                  │
+   │      → Update process amount                                          │
+   │      → Send process to Executor via channel                           │
+   └────────┬─────────────────────────────────────────────────────────────┘
+            │
+            ▼
+4. EXECUTOR: executeBridge()
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │ 1. Deploy forwarder contract if not deployed                          │
+   │ 2. Deploy proxy contract if not deployed                              │
+   │ 3. Calculate bridge fee                                               │
+   │ 4. Call forwarder.bridge() on EVM                                     │
+   │    → Funds: EVM → CCTP → Noble → IBC → Neutron                        │
+   │ 5. Update process status → TRANSFER_IN_PROGRESS                       │
+   └────────┬─────────────────────────────────────────────────────────────┘
+            │
+            ▼
+5. MONITOR: checkTransferInProgress() [every 30s]
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │ For each TRANSFER_IN_PROGRESS process:                                │
+   │   1. Check proxy balance on Neutron                                   │
+   │   2. If balance > 0 (funds arrived):                                  │
+   │      → Send process to Executor via channel                           │
+   └────────┬─────────────────────────────────────────────────────────────┘
+            │
+            ▼
+6. EXECUTOR: executeDeposit()
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │ 1. Call proxy.ForwardToInflow() on Neutron                            │
+   │    → Deposits USDC into Inflow vault                                  │
+   │    → Shares minted to proxy contract                                  │
+   │ 2. Update process status → DEPOSIT_IN_PROGRESS                        │
+   └────────┬─────────────────────────────────────────────────────────────┘
+            │
+            ▼
+7. MONITOR: checkDepositInProgress() [every 30s]
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │ For each DEPOSIT_IN_PROGRESS process:                                 │
+   │   1. Check deposit tx confirmation on Neutron                         │
+   │   2. If confirmed:                                                    │
+   │      → Update process status → DEPOSIT_DONE                           │
+   └────────┬─────────────────────────────────────────────────────────────┘
+            │
+            ▼
+   ┌──────────────────┐
+   │ DEPOSIT COMPLETE │
+   │ Shares in proxy  │
+   └──────────────────┘
+
+ERROR HANDLING:
+- On error: increment retry_count, log error
+- If retry_count < 3: exponential backoff (5s, 10s, 20s), process retried on next poll
+- If retry_count >= 3: mark process as FAILED
+```
 
 ### 4. REST API Endpoints (Minimal)
 
@@ -615,24 +705,30 @@ CMD ["/server"]
 
 **Deliverable**: Can deploy contracts and call functions on testnet
 
-### Phase 4: Workers (Week 3-4)
+### Phase 4: Workers (Week 3-4) ✅ COMPLETED
 **Goal**: Background processing for deposits
 
-- [ ] Implement `internal/worker/monitor.go`:
-  - [ ] Poll forwarder contracts for balances
-  - [ ] Detect when balance >= min deposit threshold
-  - [ ] Trigger executor
-- [ ] Implement `internal/worker/executor.go`:
-  - [ ] Handle PENDING_FUNDS (deploy contracts, call bridge)
-  - [ ] Handle TRANSFER_IN_PROGRESS (poll proxy balance)
-  - [ ] Handle DEPOSIT_IN_PROGRESS (check deposit tx)
-- [ ] Implement `internal/service/process.go`:
-  - [ ] Create process when user sends funds
-  - [ ] Update process status
-  - [ ] Query process by ID or user email
-- [ ] Update `cmd/server/main.go`:
-  - [ ] Start workers in goroutines
-  - [ ] Graceful shutdown
+- [x] Implement `internal/worker/manager.go`:
+  - [x] Initialize all blockchain clients (EVM and Cosmos)
+  - [x] Manage worker lifecycle (start, shutdown)
+  - [x] Graceful shutdown with context cancellation
+- [x] Implement `internal/worker/monitor.go`:
+  - [x] Poll forwarder contracts for balances
+  - [x] Detect new deposits on forwarder addresses (scan ALL forwarders)
+  - [x] Detect when balance >= min deposit threshold
+  - [x] Send ready processes to executor via channel
+- [x] Implement `internal/worker/executor.go`:
+  - [x] Handle PENDING_FUNDS (deploy contracts, call bridge)
+  - [x] Handle TRANSFER_IN_PROGRESS (poll proxy balance)
+  - [x] Handle DEPOSIT_IN_PROGRESS (check deposit tx)
+  - [x] Error handling with exponential backoff (max 3 retries)
+- [x] Implement `internal/service/process.go`:
+  - [x] Create process when funds detected
+  - [x] Update process status
+  - [x] Query process by ID or user email
+- [x] Update `cmd/server/main.go`:
+  - [x] Start workers in goroutines
+  - [x] Graceful shutdown
 - [ ] Test end-to-end on testnet
 
 **Deliverable**: Can process deposits end-to-end automatically
@@ -861,10 +957,11 @@ CCTP_DESTINATION_CALLER=0x...  # Skip relayer
 - `offchain/internal/blockchain/cosmos/proxy.go` - Proxy contract interactions
 - `offchain/internal/blockchain/cosmos/noble.go` - Noble forwarding address computation
 
-**Service Files - Phase 4 (Workers) - TODO:**
-- `offchain/internal/service/process.go` - Process service
-- `offchain/internal/worker/monitor.go` - Balance monitoring
-- `offchain/internal/worker/executor.go` - Process execution
+**Service Files - Phase 4 (Workers) ✅:**
+- `offchain/internal/service/process.go` - Process lifecycle service
+- `offchain/internal/worker/manager.go` - Worker lifecycle management, holds blockchain clients
+- `offchain/internal/worker/monitor.go` - Balance monitoring (polling every 30s)
+- `offchain/internal/worker/executor.go` - State machine for process execution
 
 **Deployment Files - TODO:**
 - `offchain/deployments/docker-compose.yml` - Local development setup
@@ -881,12 +978,15 @@ This simplified plan focuses on **core functionality only**:
 - ✅ Execute bridge transactions
 - ✅ Track deposits through 4-state pipeline
 - ✅ REST API for status queries
+- ✅ Background workers for automatic deposit processing
+- ✅ Error handling with exponential backoff retries
+
+**Current Status**: Phases 1-4 completed. Ready for testnet testing.
 
 **Deferred for later:**
 - Address signing/verification
 - Event-driven monitoring
 - Prometheus metrics
-- Sophisticated retry logic
 - Withdrawal functionality
 - Admin dashboard
 
