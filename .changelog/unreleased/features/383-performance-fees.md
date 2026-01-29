@@ -1,1 +1,1 @@
-- Add performance fee system to the Inflow subsystem with high-water mark logic. Fees are calculated on yield above the previous share price and minted proportionally to each subvault's share of the pool. ([\#383](https://github.com/informalsystems/hydro/pull/383))
+- Add performance fee system to the Inflow subsystem with high-water mark logic. Fees are calculated on yield above the high-water mark share price and minted proportionally to each subvault's share of the pool. ([\#383](https://github.com/informalsystems/hydro/pull/383))
