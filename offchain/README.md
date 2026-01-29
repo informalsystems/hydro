@@ -87,14 +87,31 @@ make docker-down            # Stop services
 make docker-logs            # View logs
 ```
 
+## Background Workers
+
+The service runs two background workers:
+
+### Monitor
+- Polls every 30 seconds
+- Scans all forwarder addresses for new deposits
+- Checks process states and triggers transitions
+- Detects when funds arrive at proxy on Neutron
+
+### Executor
+- Handles state transitions triggered by monitor
+- Deploys contracts when needed (forwarder on EVM, proxy on Neutron)
+- Calls `bridge()` on forwarder
+- Calls `ForwardToInflow` on proxy
+- Implements exponential backoff retry (max 3 retries)
+
 ## Process Flow
 
 1. User calls `/contracts/addresses` to get forwarder address
 2. User sends USDC to forwarder address from CEX
-3. Service monitors balance and deploys contracts when sufficient
-4. Service calls `bridge()` to initiate CCTP transfer
-5. Service monitors proxy on Neutron for funds arrival
-6. Service calls `ForwardToInflow` to deposit into vault
+3. Monitor detects deposit, creates Process record
+4. When balance >= minDeposit, Executor deploys contracts and calls `bridge()`
+5. Monitor watches proxy balance on Neutron
+6. When funds arrive, Executor calls `ForwardToInflow` on proxy
 7. Vault shares minted to proxy contract
 
 ## Status States
