@@ -1471,3 +1471,78 @@ fn test_accrue_fees_remainder_when_last_vault_has_zero_shares() {
         total_shares_to_mint, total_actually_minted
     );
 }
+
+/// Tests that SubmitDeployedAmount succeeds when fee collection is disabled.
+/// This verifies that the internal fee accrual call doesn't cause an error
+/// when fees are disabled.
+#[test]
+fn test_submit_deployed_amount_with_fees_disabled() {
+    let (mut deps, env) = (mock_dependencies(), mock_env());
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST);
+    let subvault1_addr = deps.api.addr_make(SUBVAULT1);
+
+    // Instantiate with fees disabled (no fee_config)
+    let instantiate_msg = get_instantiate_msg(
+        DEFAULT_DEPOSIT_CAP,
+        whitelist_addr.clone(),
+        vec![subvault1_addr.clone()],
+        None, // fees disabled
+    );
+
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Setup mock with some shares and yield
+    let vault_shares = Uint128::new(1000);
+    let vault_balance = Uint128::new(1100);
+
+    deps.querier.update_wasm({
+        let subvault_addr = subvault1_addr.to_string();
+        move |query| match query {
+            WasmQuery::Smart { contract_addr, .. } if contract_addr == &subvault_addr => {
+                let response = to_json_binary(&VaultPoolInfoResponse {
+                    shares_issued: vault_shares,
+                    balance_base_tokens: vault_balance,
+                    adapter_deposits_base_tokens: Uint128::zero(),
+                    withdrawal_queue_base_tokens: Uint128::zero(),
+                })
+                .unwrap();
+                SystemResult::Ok(ContractResult::Ok(response))
+            }
+            _ => SystemResult::Err(SystemError::NoSuchContract {
+                addr: "unknown".to_string(),
+            }),
+        }
+    });
+
+    // Submit deployed amount - should succeed even with fees disabled
+    let info = get_message_info(&deps.api, WHITELIST, &[]);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::SubmitDeployedAmount {
+            amount: Uint128::new(500),
+        },
+    );
+
+    assert!(res.is_ok());
+    let response = res.unwrap();
+
+    // Verify the action completed successfully
+    assert!(response
+        .attributes
+        .iter()
+        .any(|attr| attr.key == "action" && attr.value == "submit_deployed_amount"));
+    assert!(response
+        .attributes
+        .iter()
+        .any(|attr| attr.key == "amount" && attr.value == "500"));
+
+    // Verify no fees were accrued (fees_accrued attribute should not be present)
+    assert!(!response
+        .attributes
+        .iter()
+        .any(|attr| attr.key == "fees_accrued"));
+}
