@@ -491,15 +491,16 @@ fn test_accrue_fees_disabled() {
     let info = get_message_info(&deps.api, "creator", &[]);
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    // Try to accrue fees
+    // Try to accrue fees - should succeed even when disabled (just a no-op)
     let info = get_message_info(&deps.api, USER1, &[]); // Anyone can call AccrueFees
     let res = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::AccrueFees {});
 
-    assert!(res.is_err());
-    assert!(res
-        .unwrap_err()
-        .to_string()
-        .contains("Fee accrual is disabled"));
+    assert!(res.is_ok());
+    let response = res.unwrap();
+    assert!(response
+        .attributes
+        .iter()
+        .any(|attr| attr.key == "result" && attr.value == "fees_disabled"));
 }
 
 #[test]
@@ -739,15 +740,21 @@ fn test_accrue_fees_zero_fee_rate_is_disabled() {
         }
     });
 
-    // Try to accrue fees - should fail because fee_rate=0 means disabled
+    // Try to accrue fees - should succeed (no-op when disabled) but still update HWM
     let info = get_message_info(&deps.api, USER1, &[]);
     let res = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::AccrueFees {});
 
-    assert!(res.is_err());
-    assert!(res
-        .unwrap_err()
-        .to_string()
-        .contains("Fee accrual is disabled"));
+    assert!(res.is_ok());
+    let response = res.unwrap();
+    assert!(response
+        .attributes
+        .iter()
+        .any(|attr| attr.key == "result" && attr.value == "fees_disabled"));
+    // Verify high water mark was updated (share price = 1100/1000 = 1.1)
+    assert!(response
+        .attributes
+        .iter()
+        .any(|attr| attr.key == "high_water_mark_updated" && attr.value == "true"));
 }
 
 #[test]

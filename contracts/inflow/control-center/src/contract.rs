@@ -382,7 +382,9 @@ enum AccrueFeesResult {
         current_share_price: Decimal,
     },
     /// Fees are disabled (fee_rate is zero)
-    Disabled,
+    Disabled {
+        current_share_price: Option<Decimal>,
+    },
     /// No shares have been issued yet
     NoShares,
     /// Current share price is at or below the high-water mark
@@ -402,23 +404,33 @@ fn try_accrue_fees_internal(
 ) -> Result<AccrueFeesResult, ContractError> {
     let fee_config = load_fee_config(deps.storage)?;
 
-    // Fees are disabled when fee_rate is zero
-    if fee_config.fee_rate.is_zero() {
-        return Ok(AccrueFeesResult::Disabled);
-    }
-
-    let high_water_mark_price = HIGH_WATER_MARK_PRICE.load(deps.storage)?;
-
     // Get current pool state
     let pool_info = query_pool_info(&deps.as_ref(), env)?;
 
-    if pool_info.total_shares_issued.is_zero() {
-        return Ok(AccrueFeesResult::NoShares);
+    // Calculate current share price (None if no shares exist)
+    let current_share_price = if pool_info.total_shares_issued.is_zero() {
+        None
+    } else {
+        Some(Decimal::from_ratio(
+            pool_info.total_pool_value,
+            pool_info.total_shares_issued,
+        ))
+    };
+
+    // Fees are disabled when fee_rate is zero - return early without error
+    if fee_config.fee_rate.is_zero() {
+        return Ok(AccrueFeesResult::Disabled {
+            current_share_price,
+        });
     }
 
-    // Calculate current share price
-    let current_share_price =
-        Decimal::from_ratio(pool_info.total_pool_value, pool_info.total_shares_issued);
+    // From here on, fees are enabled, so we need shares to calculate fees
+    let current_share_price = match current_share_price {
+        Some(price) => price,
+        None => return Ok(AccrueFeesResult::NoShares),
+    };
+
+    let high_water_mark_price = HIGH_WATER_MARK_PRICE.load(deps.storage)?;
 
     // High-water mark check: only charge fees on gains above the last accrual price
     if current_share_price <= high_water_mark_price {
@@ -539,7 +551,25 @@ fn accrue_fees(
     env: Env,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     match try_accrue_fees_internal(&mut deps, &env)? {
-        AccrueFeesResult::Disabled => Err(ContractError::FeeAccrualDisabled),
+        AccrueFeesResult::Disabled {
+            current_share_price,
+        } => {
+            // When fees are disabled, just update the high water mark if current price is higher
+            let mut response = Response::new()
+                .add_attribute("action", "accrue_fees")
+                .add_attribute("result", "fees_disabled");
+
+            if let Some(price) = current_share_price {
+                let high_water_mark_price = HIGH_WATER_MARK_PRICE.load(deps.storage)?;
+                if price > high_water_mark_price {
+                    HIGH_WATER_MARK_PRICE.save(deps.storage, &price)?;
+                    response = response.add_attribute("high_water_mark_updated", "true");
+                }
+                response = response.add_attribute("current_share_price", price.to_string());
+            }
+
+            Ok(response)
+        }
         AccrueFeesResult::NoShares => Err(ContractError::NoSharesIssued),
         AccrueFeesResult::BelowHighWaterMark {
             current_share_price,
