@@ -157,16 +157,40 @@ pub fn execute(
 }
 
 fn submit_deployed_amount(
-    deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut<NeutronQuery>,
     env: Env,
     info: MessageInfo,
     amount: Uint128,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
 
+    // Try to accrue fees before updating the deployed amount.
+    // This ensures fees are calculated at the correct share price before the value changes.
+    // We silently ignore cases where fees cannot be accrued (disabled, no shares, below HWM, dust).
+    let mut response = Response::new();
+    if let AccrueFeesResult::Accrued {
+        msgs,
+        response_data,
+        total_yield,
+        fee_amount,
+        current_share_price,
+    } = try_accrue_fees_internal(&mut deps, &env)?
+    {
+        response = response
+            .add_messages(msgs)
+            .add_attribute("fees_accrued", "true")
+            .add_attribute("fee_yield", total_yield.to_string())
+            .add_attribute("fee_amount", fee_amount.to_string())
+            .add_attribute(
+                "fee_shares_minted",
+                response_data.total_shares_minted.to_string(),
+            )
+            .add_attribute("fee_share_price", current_share_price.to_string());
+    }
+
     DEPLOYED_AMOUNT.save(deps.storage, &amount, env.block.height)?;
 
-    Ok(Response::new()
+    Ok(response
         .add_attribute("action", "submit_deployed_amount")
         .add_attribute("sender", info.sender)
         .add_attribute("amount", amount))
@@ -347,27 +371,49 @@ fn remove_subvault(
         .add_attribute("subvault_address", subvault_address))
 }
 
-/// Accrues performance fees based on yield since last accrual.
-/// This is a permissionless operation - anyone can call it.
-/// Fees are only accrued if fee_rate > 0.
-fn accrue_fees(
-    deps: DepsMut<NeutronQuery>,
-    env: Env,
-) -> Result<Response<NeutronMsg>, ContractError> {
+/// Result of attempting to accrue fees internally.
+enum AccrueFeesResult {
+    /// Fees were successfully accrued
+    Accrued {
+        msgs: Vec<WasmMsg>,
+        response_data: AccrueFeesResponse,
+        total_yield: Decimal,
+        fee_amount: Decimal,
+        current_share_price: Decimal,
+    },
+    /// Fees are disabled (fee_rate is zero)
+    Disabled,
+    /// No shares have been issued yet
+    NoShares,
+    /// Current share price is at or below the high-water mark
+    BelowHighWaterMark {
+        current_share_price: Decimal,
+        high_water_mark_price: Decimal,
+    },
+    /// Yield is too small to mint any shares (dust)
+    DustYield { current_share_price: Decimal },
+}
+
+/// Internal helper to accrue fees. Returns the result without building a Response,
+/// allowing callers to handle the result appropriately.
+fn try_accrue_fees_internal(
+    deps: &mut DepsMut<NeutronQuery>,
+    env: &Env,
+) -> Result<AccrueFeesResult, ContractError> {
     let fee_config = load_fee_config(deps.storage)?;
 
     // Fees are disabled when fee_rate is zero
     if fee_config.fee_rate.is_zero() {
-        return Err(ContractError::FeeAccrualDisabled);
+        return Ok(AccrueFeesResult::Disabled);
     }
 
     let high_water_mark_price = HIGH_WATER_MARK_PRICE.load(deps.storage)?;
 
     // Get current pool state
-    let pool_info = query_pool_info(&deps.as_ref(), &env)?;
+    let pool_info = query_pool_info(&deps.as_ref(), env)?;
 
     if pool_info.total_shares_issued.is_zero() {
-        return Err(ContractError::NoSharesIssued);
+        return Ok(AccrueFeesResult::NoShares);
     }
 
     // Calculate current share price
@@ -376,11 +422,10 @@ fn accrue_fees(
 
     // High-water mark check: only charge fees on gains above the last accrual price
     if current_share_price <= high_water_mark_price {
-        return Ok(Response::new()
-            .add_attribute("action", "accrue_fees")
-            .add_attribute("result", "below_high_water_mark")
-            .add_attribute("current_share_price", current_share_price.to_string())
-            .add_attribute("high_water_mark_price", high_water_mark_price.to_string()));
+        return Ok(AccrueFeesResult::BelowHighWaterMark {
+            current_share_price,
+            high_water_mark_price,
+        });
     }
 
     // Calculate fee
@@ -398,10 +443,9 @@ fn accrue_fees(
     // Handle dust case: if the floored value is zero, return early without updating
     // the high water mark so dust can accumulate across multiple accrual calls
     if shares_to_mint_uint.is_zero() {
-        return Ok(Response::new()
-            .add_attribute("action", "accrue_fees")
-            .add_attribute("result", "dust_yield")
-            .add_attribute("current_share_price", current_share_price.to_string()));
+        return Ok(AccrueFeesResult::DustYield {
+            current_share_price,
+        });
     }
 
     // Update high-water mark only after confirming we will mint shares
@@ -414,16 +458,27 @@ fn accrue_fees(
         .filter_map(|v| v.ok())
         .collect();
 
-    // Collect vault info for vaults with non-zero shares
+    // Collect vault info for vaults with non-zero shares and track total for invariant check
     let mut vaults_with_shares: Vec<(Addr, Uint128)> = vec![];
+    let mut sum_of_vault_shares = Uint128::zero();
     for subvault in subvaults {
         let vault_info: VaultPoolInfoResponse = deps
             .querier
             .query_wasm_smart(subvault.to_string(), &VaultQueryMsg::PoolInfo {})?;
 
+        sum_of_vault_shares = sum_of_vault_shares.checked_add(vault_info.shares_issued)?;
         if !vault_info.shares_issued.is_zero() {
             vaults_with_shares.push((subvault, vault_info.shares_issued));
         }
+    }
+
+    // Invariant check: ensure pool_info.total_shares_issued equals sum of individual vault shares.
+    // This is assumed by the remainder logic below.
+    if sum_of_vault_shares != pool_info.total_shares_issued {
+        return Err(new_generic_error(format!(
+            "shares invariant violated: pool total {} != sum of vaults {}",
+            pool_info.total_shares_issued, sum_of_vault_shares
+        )));
     }
 
     // Calculate proportional minting for each subvault with shares
@@ -467,15 +522,58 @@ fn accrue_fees(
         vaults: vault_mints,
     };
 
-    Ok(Response::new()
-        .add_messages(msgs)
-        .set_data(to_json_binary(&response_data)?)
-        .add_attribute("action", "accrue_fees")
-        .add_attribute("result", "fees_accrued")
-        .add_attribute("yield", total_yield.to_string())
-        .add_attribute("fee_amount", fee_amount.to_string())
-        .add_attribute("shares_minted", shares_to_mint_uint.to_string())
-        .add_attribute("current_share_price", current_share_price.to_string()))
+    Ok(AccrueFeesResult::Accrued {
+        msgs,
+        response_data,
+        total_yield,
+        fee_amount,
+        current_share_price,
+    })
+}
+
+/// Accrues performance fees based on yield since last accrual.
+/// This is a permissionless operation - anyone can call it.
+/// Fees are only accrued if fee_rate > 0.
+fn accrue_fees(
+    mut deps: DepsMut<NeutronQuery>,
+    env: Env,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    match try_accrue_fees_internal(&mut deps, &env)? {
+        AccrueFeesResult::Disabled => Err(ContractError::FeeAccrualDisabled),
+        AccrueFeesResult::NoShares => Err(ContractError::NoSharesIssued),
+        AccrueFeesResult::BelowHighWaterMark {
+            current_share_price,
+            high_water_mark_price,
+        } => Ok(Response::new()
+            .add_attribute("action", "accrue_fees")
+            .add_attribute("result", "below_high_water_mark")
+            .add_attribute("current_share_price", current_share_price.to_string())
+            .add_attribute("high_water_mark_price", high_water_mark_price.to_string())),
+        AccrueFeesResult::DustYield {
+            current_share_price,
+        } => Ok(Response::new()
+            .add_attribute("action", "accrue_fees")
+            .add_attribute("result", "dust_yield")
+            .add_attribute("current_share_price", current_share_price.to_string())),
+        AccrueFeesResult::Accrued {
+            msgs,
+            response_data,
+            total_yield,
+            fee_amount,
+            current_share_price,
+        } => Ok(Response::new()
+            .add_messages(msgs)
+            .set_data(to_json_binary(&response_data)?)
+            .add_attribute("action", "accrue_fees")
+            .add_attribute("result", "fees_accrued")
+            .add_attribute("yield", total_yield.to_string())
+            .add_attribute("fee_amount", fee_amount.to_string())
+            .add_attribute(
+                "shares_minted",
+                response_data.total_shares_minted.to_string(),
+            )
+            .add_attribute("current_share_price", current_share_price.to_string())),
+    }
 }
 
 /// Updates the fee configuration. Only whitelisted addresses can call this.
@@ -499,21 +597,27 @@ fn update_fee_config(
             return Err(ContractError::InvalidFeeRate);
         }
         // If setting a non-zero rate, ensure we have a valid recipient
-        if !rate.is_zero() && fee_config.fee_recipient.as_str().is_empty() {
+        // (either from this update or from existing config)
+        let has_valid_recipient = fee_recipient.as_ref().is_some_and(|r| !r.is_empty())
+            || !fee_config.fee_recipient.as_str().is_empty();
+        if !rate.is_zero() && !has_valid_recipient {
             return Err(ContractError::FeeRecipientNotSet);
         }
 
         // If enabling fees (transitioning from zero to non-zero rate),
-        // reset high-water mark to current share price to avoid charging
-        // fees on yield that occurred while fees were disabled
+        // set high-water mark to max(existing HWM, current share price).
+        // This avoids charging fees on yield that occurred while fees were disabled,
+        // while preserving the actual high-water mark if the price has dropped.
         if fee_config.fee_rate.is_zero() && !rate.is_zero() {
+            let existing_hwm = HIGH_WATER_MARK_PRICE.load(deps.storage)?;
             let pool_info = query_pool_info(&deps.as_ref(), &env)?;
             let current_share_price = if pool_info.total_shares_issued.is_zero() {
                 Decimal::one()
             } else {
                 Decimal::from_ratio(pool_info.total_pool_value, pool_info.total_shares_issued)
             };
-            HIGH_WATER_MARK_PRICE.save(deps.storage, &current_share_price)?;
+            let new_hwm = existing_hwm.max(current_share_price);
+            HIGH_WATER_MARK_PRICE.save(deps.storage, &new_hwm)?;
         }
 
         fee_config.fee_rate = rate;

@@ -1510,7 +1510,7 @@ fn move_adapter_funds(
 /// Mints fee shares to a recipient. Only callable by the control center.
 fn mint_fee_shares(
     deps: DepsMut<NeutronQuery>,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     config: &Config,
     amount: Uint128,
@@ -1530,20 +1530,14 @@ fn mint_fee_shares(
     let recipient_addr = deps.api.addr_validate(&recipient)?;
 
     // Mint shares using token factory
-    let mint_msg = neutron_sdk::proto_types::osmosis::tokenfactory::v1beta1::MsgMint {
-        sender: env.contract.address.to_string(),
-        amount: Some(cosmos_sdk_proto::cosmos::base::v1beta1::Coin {
-            denom: config.vault_shares_denom.clone(),
-            amount: amount.to_string(),
-        }),
-        mint_to_address: recipient_addr.to_string(),
-    };
+    let mint_msg = NeutronMsg::submit_mint_tokens(
+        &config.vault_shares_denom,
+        amount,
+        recipient_addr.to_string(),
+    );
 
     Ok(Response::new()
-        .add_message(CosmosMsg::Any(AnyMsg {
-            type_url: "/osmosis.tokenfactory.v1beta1.MsgMint".to_string(),
-            value: mint_msg.encode_to_vec().into(),
-        }))
+        .add_message(CosmosMsg::Custom(mint_msg))
         .add_attribute("action", "mint_fee_shares")
         .add_attribute("amount", amount)
         .add_attribute("recipient", recipient_addr))

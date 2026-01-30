@@ -24,7 +24,7 @@ pub const DEPLOYED_AMOUNT: SnapshotItem<Uint128> = SnapshotItem::new(
 /// Fee configuration for performance fee tracking
 pub const FEE_CONFIG: Item<FeeConfig> = Item::new("fee_config");
 
-/// High-water mark: the share price at the last fee accrual.
+/// High-water mark: the highest share price (base tokens per share) at which fees were accrued.
 /// Fees are only charged when the current share price exceeds this value.
 pub const HIGH_WATER_MARK_PRICE: Item<Decimal> = Item::new("high_water_mark_price");
 
