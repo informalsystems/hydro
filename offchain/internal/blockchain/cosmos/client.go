@@ -106,10 +106,11 @@ func NewClient(cfg *config.NeutronConfig, operatorMnemonic string, logger *zap.L
 	}
 	operatorAddr := sdk.AccAddress(pubKey.Address())
 
-	// Derive REST endpoint from RPC endpoint (common pattern)
-	restEndpoint := strings.Replace(cfg.RPCEndpoint, ":26657", ":1317", 1)
-	if cfg.GRPCEndpoint != "" {
-		restEndpoint = strings.Replace(cfg.GRPCEndpoint, ":9090", ":1317", 1)
+	// Use configured REST endpoint, or derive from RPC endpoint as fallback
+	restEndpoint := cfg.RESTEndpoint
+	if restEndpoint == "" {
+		// Fallback: derive from RPC endpoint (works for standard Cosmos port layouts)
+		restEndpoint = strings.Replace(cfg.RPCEndpoint, ":26657", ":1317", 1)
 	}
 
 	logger.Info("Cosmos client initialized",
@@ -589,4 +590,59 @@ func (c *Client) GetTxStatus(ctx context.Context, txHash string) (bool, error) {
 	}
 
 	return result.TxResult.Code == 0, nil
+}
+
+// CodeInfo contains information about a stored wasm code
+type CodeInfo struct {
+	CodeID   uint64
+	Creator  string
+	Checksum []byte // SHA256 hash of the wasm bytecode
+}
+
+// GetCodeInfo queries code information including the checksum from the chain
+func (c *Client) GetCodeInfo(ctx context.Context, codeID uint64) (*CodeInfo, error) {
+	url := fmt.Sprintf("%s/cosmwasm/wasm/v1/code/%d", c.restEndpoint, codeID)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query code info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("code info query failed: %s", string(body))
+	}
+
+	var result struct {
+		CodeInfo struct {
+			CodeID   string `json:"code_id"`
+			Creator  string `json:"creator"`
+			Checksum string `json:"data_hash"` // Base64 or hex encoded checksum
+		} `json:"code_info"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode code info response: %w", err)
+	}
+
+	// Decode checksum (try hex first, then base64)
+	var checksum []byte
+	checksum, err = hex.DecodeString(result.CodeInfo.Checksum)
+	if err != nil {
+		// Try base64
+		checksum, err = base64.StdEncoding.DecodeString(result.CodeInfo.Checksum)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode checksum: %w", err)
+		}
+	}
+
+	var parsedCodeID uint64
+	fmt.Sscanf(result.CodeInfo.CodeID, "%d", &parsedCodeID)
+
+	return &CodeInfo{
+		CodeID:   parsedCodeID,
+		Creator:  result.CodeInfo.Creator,
+		Checksum: checksum,
+	}, nil
 }

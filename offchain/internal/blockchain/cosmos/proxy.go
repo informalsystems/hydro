@@ -15,9 +15,10 @@ import (
 
 // Proxy provides methods to interact with the Inflow Proxy contract on Neutron
 type Proxy struct {
-	client *Client
-	cfg    *config.NeutronConfig
-	logger *zap.Logger
+	client       *Client
+	cfg          *config.NeutronConfig
+	logger       *zap.Logger
+	codeChecksum []byte // Cached code checksum for instantiate2 address computation
 }
 
 // NewProxy creates a new Proxy instance
@@ -27,6 +28,46 @@ func NewProxy(client *Client, cfg *config.NeutronConfig, logger *zap.Logger) *Pr
 		cfg:    cfg,
 		logger: logger,
 	}
+}
+
+// Initialize fetches and caches the code checksum from the chain.
+// This must be called before using address computation methods.
+func (p *Proxy) Initialize(ctx context.Context) error {
+	if p.cfg.ProxyCodeID == 0 {
+		return fmt.Errorf("proxy code ID not configured")
+	}
+
+	codeInfo, err := p.client.GetCodeInfo(ctx, p.cfg.ProxyCodeID)
+	if err != nil {
+		return fmt.Errorf("failed to get code info: %w", err)
+	}
+
+	p.codeChecksum = codeInfo.Checksum
+	p.logger.Info("Proxy initialized with code checksum",
+		zap.Uint64("code_id", p.cfg.ProxyCodeID),
+		zap.Int("checksum_len", len(p.codeChecksum)))
+
+	return nil
+}
+
+// GetCodeChecksum returns the cached code checksum
+func (p *Proxy) GetCodeChecksum() []byte {
+	return p.codeChecksum
+}
+
+// ComputeProxyAddressForUser computes the deterministic proxy address for a user
+func (p *Proxy) ComputeProxyAddressForUser(userEmail string) (string, error) {
+	if len(p.codeChecksum) == 0 {
+		return "", fmt.Errorf("proxy not initialized - call Initialize() first")
+	}
+
+	salt := GenerateProxySalt(userEmail)
+	return ComputeProxyAddress(
+		p.codeChecksum,
+		p.client.OperatorAddress().String(),
+		salt[:],
+		nil, // No msg for FixMsg=false
+	)
 }
 
 // ==================== Message Types ====================
@@ -281,10 +322,16 @@ func (p *Proxy) IsProxyDeployed(ctx context.Context, proxyAddress string) (bool,
 
 // VerifyProxyAddress verifies that a proxy address matches the expected instantiate2 address
 func (p *Proxy) VerifyProxyAddress(expectedAddress string, userEmail string) (bool, error) {
+	if len(p.codeChecksum) == 0 {
+		return false, fmt.Errorf("proxy not initialized - call Initialize() first")
+	}
+
+	salt := GenerateProxySalt(userEmail)
 	return VerifyProxyAddress(
 		expectedAddress,
-		p.cfg.ProxyCodeID,
+		p.codeChecksum,
 		p.client.OperatorAddress().String(),
-		userEmail,
+		salt[:],
+		nil, // No msg for FixMsg=false
 	)
 }

@@ -20,18 +20,40 @@ import (
 
 // ContractService handles contract address computation and management
 type ContractService struct {
-	db     *database.DB
-	cfg    *config.Config
-	logger *zap.Logger
+	db                *database.DB
+	cfg               *config.Config
+	logger            *zap.Logger
+	proxyCodeChecksum []byte // Cached code checksum for instantiate2 address computation
+	nobleClient       *cosmos.NobleClient
 }
 
 // NewContractService creates a new contract service
-func NewContractService(db *database.DB, cfg *config.Config, logger *zap.Logger) *ContractService {
-	return &ContractService{
-		db:     db,
-		cfg:    cfg,
-		logger: logger,
+func NewContractService(db *database.DB, cfg *config.Config, logger *zap.Logger) (*ContractService, error) {
+	// Initialize Noble client for forwarding address queries (uses RPC for ABCI queries)
+	nobleClient, err := cosmos.NewNobleClient(cfg.Neutron.NobleRPCEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Noble client: %w", err)
 	}
+
+	return &ContractService{
+		db:          db,
+		cfg:         cfg,
+		logger:      logger,
+		nobleClient: nobleClient,
+	}, nil
+}
+
+// SetProxyCodeChecksum sets the cached proxy code checksum.
+// This should be called during initialization after querying the chain.
+func (s *ContractService) SetProxyCodeChecksum(checksum []byte) {
+	s.proxyCodeChecksum = checksum
+	s.logger.Info("Proxy code checksum set",
+		zap.Int("checksum_len", len(checksum)))
+}
+
+// GetProxyCodeChecksum returns the cached proxy code checksum
+func (s *ContractService) GetProxyCodeChecksum() []byte {
+	return s.proxyCodeChecksum
 }
 
 // GetOrCreateContractAddresses gets or creates contract addresses for a user on specified chains
@@ -145,11 +167,20 @@ func (s *ContractService) getOrCreateProxyAddress(ctx context.Context, email str
 		return existingContract.Address, nil
 	}
 
+	// Ensure code checksum is available
+	if len(s.proxyCodeChecksum) == 0 {
+		return "", fmt.Errorf("proxy code checksum not initialized - call SetProxyCodeChecksum first")
+	}
+
+	// Generate salt from user email
+	salt := cosmos.GenerateProxySalt(email)
+
 	// Compute instantiate2 address
 	proxyAddress, err := cosmos.ComputeProxyAddress(
-		s.cfg.Neutron.ProxyCodeID,
+		s.proxyCodeChecksum,
 		s.cfg.Operator.NeutronAddress,
-		email,
+		salt[:],
+		nil, // No msg for FixMsg=false
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to compute proxy address: %w", err)
@@ -249,18 +280,30 @@ func (s *ContractService) buildForwarderInitCode(email, chainID string, chainCfg
 	var destCaller [32]byte
 	copy(destCaller[:], destCallerBytes)
 
-	// Compute recipient (Noble forwarding account for this user's proxy)
-	// The recipient is NOT the Neutron proxy directly - it's the Noble forwarding account
-	// that auto-forwards to the proxy via IBC.
-	// Flow: EVM Forwarder -> CCTP -> Noble forwarding account -> IBC -> Neutron proxy
-	nobleForwardingAddr, err := cosmos.ComputeNobleForwardingAddressForProxy(
-		s.cfg.Neutron.ProxyCodeID,
+	// Ensure code checksum is available
+	if len(s.proxyCodeChecksum) == 0 {
+		return nil, fmt.Errorf("proxy code checksum not initialized - call SetProxyCodeChecksum first")
+	}
+
+	// Compute the proxy address first
+	salt := cosmos.GenerateProxySalt(email)
+	proxyAddress, err := cosmos.ComputeProxyAddress(
+		s.proxyCodeChecksum,
 		s.cfg.Operator.NeutronAddress,
-		email,
-		s.cfg.Neutron.NobleChannel,
+		salt[:],
+		nil,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compute Noble forwarding address: %w", err)
+		return nil, fmt.Errorf("failed to compute proxy address: %w", err)
+	}
+
+	// Query Noble for the forwarding address (instead of computing it locally)
+	// The recipient is the Noble forwarding account that auto-forwards to the proxy via IBC.
+	// Flow: EVM Forwarder -> CCTP -> Noble forwarding account -> IBC -> Neutron proxy
+	ctx := context.Background()
+	nobleForwardingAddr, err := s.nobleClient.QueryForwardingAddress(ctx, s.cfg.Neutron.NobleChannel, proxyAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query Noble forwarding address: %w", err)
 	}
 
 	// Convert Noble address to bytes32 for EVM contract

@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS contracts (
     contract_type VARCHAR(20) NOT NULL,               -- "forwarder" or "proxy"
     address VARCHAR(66) NOT NULL,                     -- Precomputed CREATE2 address
     deployed BOOLEAN NOT NULL DEFAULT FALSE,          -- Has contract been deployed?
+    deploy_tx_hash VARCHAR(66),                       -- Transaction hash of deployment
+    deployed_at TIMESTAMP,                            -- When contract was deployed
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),      -- When record was created
     UNIQUE(user_email, chain_id, contract_type)
 );
 
@@ -34,7 +37,11 @@ CREATE TABLE IF NOT EXISTS processes (
 
     -- Error tracking (simplified)
     error_message TEXT,
-    retry_count INT NOT NULL DEFAULT 0
+    retry_count INT NOT NULL DEFAULT 0,
+
+    -- Timestamps
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 -- Indices for performance

@@ -72,7 +72,10 @@ func main() {
 	logger.Info("Database health check passed")
 
 	// Initialize services (Phase 2)
-	contractService := service.NewContractService(db, cfg, logger)
+	contractService, err := service.NewContractService(db, cfg, logger)
+	if err != nil {
+		logger.Fatal("Failed to initialize contract service", zap.Error(err))
+	}
 	feeService := service.NewFeeService(cfg, logger)
 
 	logger.Info("Services initialized")

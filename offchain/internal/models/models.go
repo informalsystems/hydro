@@ -32,6 +32,8 @@ type Contract struct {
 	ContractType ContractType `db:"contract_type"`
 	Address      string       `db:"address"`
 	Deployed     bool         `db:"deployed"`
+	DeployTxHash *string      `db:"deploy_tx_hash"`
+	DeployedAt   *string      `db:"deployed_at"`
 }
 
 // Process represents a deposit operation

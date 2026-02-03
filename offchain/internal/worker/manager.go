@@ -37,6 +37,7 @@ type WorkerManager struct {
 	forwarders   map[string]*evm.Forwarder // chainID -> forwarder
 	cosmosClient *cosmos.Client
 	proxy        *cosmos.Proxy
+	nobleClient  *cosmos.NobleClient
 
 	// Services
 	processService  *service.ProcessService
@@ -108,6 +109,29 @@ func NewWorkerManager(
 	// Create proxy handler
 	proxy := cosmos.NewProxy(cosmosClient, &cfg.Neutron, logger)
 
+	// Initialize proxy to fetch code checksum from chain
+	if err := proxy.Initialize(context.Background()); err != nil {
+		// Close clients
+		for _, c := range evmClients {
+			c.Close()
+		}
+		cosmosClient.Close()
+		return nil, fmt.Errorf("failed to initialize proxy: %w", err)
+	}
+
+	// Initialize Noble client for forwarding address queries (uses RPC for ABCI queries)
+	nobleClient, err := cosmos.NewNobleClient(cfg.Neutron.NobleRPCEndpoint)
+	if err != nil {
+		for _, c := range evmClients {
+			c.Close()
+		}
+		cosmosClient.Close()
+		return nil, fmt.Errorf("failed to create Noble client: %w", err)
+	}
+
+	// Share code checksum with contract service
+	contractService.SetProxyCodeChecksum(proxy.GetCodeChecksum())
+
 	// Create process service
 	processService := service.NewProcessService(db, cfg, logger)
 
@@ -122,6 +146,7 @@ func NewWorkerManager(
 		forwarders:      forwarders,
 		cosmosClient:    cosmosClient,
 		proxy:           proxy,
+		nobleClient:     nobleClient,
 		processService:  processService,
 		feeService:      feeService,
 		contractService: contractService,

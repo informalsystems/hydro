@@ -187,12 +187,38 @@ func (e *Executor) deployForwarder(ctx context.Context, proc *models.Process, ch
 
 	forwarder := e.manager.forwarders[chainID]
 
+	// Get code checksum from proxy
+	codeChecksum := e.manager.proxy.GetCodeChecksum()
+	if len(codeChecksum) == 0 {
+		return fmt.Errorf("proxy code checksum not initialized")
+	}
+
+	// Create a function that queries Noble for the forwarding address
+	// instead of computing it locally
+	queryNobleForwardingAddr := func(codeChecksum []byte, operatorAddr, email, channel string) (string, error) {
+		// First compute the proxy address
+		salt := cosmos.GenerateProxySalt(email)
+		proxyAddress, err := cosmos.ComputeProxyAddress(codeChecksum, operatorAddr, salt[:], nil)
+		if err != nil {
+			return "", fmt.Errorf("failed to compute proxy address: %w", err)
+		}
+
+		// Then query Noble for the forwarding address
+		nobleAddr, err := e.manager.nobleClient.QueryForwardingAddress(ctx, channel, proxyAddress)
+		if err != nil {
+			return "", fmt.Errorf("failed to query Noble forwarding address: %w", err)
+		}
+
+		return nobleAddr, nil
+	}
+
 	constructorParams, err := evm.CreateConstructorParamsForUser(
 		chainCfg,
 		&e.manager.cfg.Neutron,
 		&e.manager.cfg.Operator,
 		proc.UserEmail,
-		cosmos.ComputeNobleForwardingAddressForProxy,
+		codeChecksum,
+		queryNobleForwardingAddr,
 		cosmos.ConvertToBytes32,
 	)
 	if err != nil {

@@ -2,35 +2,34 @@ package cosmos
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
+	"os"
 	"testing"
+	"time"
 )
 
 func TestNewNobleClient(t *testing.T) {
 	tests := []struct {
 		name        string
-		apiEndpoint string
+		rpcEndpoint string
 		wantErr     bool
 		errMsg      string
 	}{
 		{
 			name:        "valid endpoint",
-			apiEndpoint: "https://noble-api.polkachu.com",
+			rpcEndpoint: "https://noble-rpc.polkachu.com",
 			wantErr:     false,
 		},
 		{
 			name:        "empty endpoint",
-			apiEndpoint: "",
+			rpcEndpoint: "",
 			wantErr:     true,
-			errMsg:      "Noble API endpoint cannot be empty",
+			errMsg:      "Noble RPC endpoint cannot be empty",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client, err := NewNobleClient(tt.apiEndpoint)
+			client, err := NewNobleClient(tt.rpcEndpoint)
 
 			if tt.wantErr {
 				if err == nil {
@@ -55,31 +54,37 @@ func TestNewNobleClient(t *testing.T) {
 	}
 }
 
+// TestQueryForwardingAddressIntegration tests against the real Noble RPC endpoint.
+// Run with: go test -v -run TestQueryForwardingAddressIntegration -integration
+func TestQueryForwardingAddressIntegration(t *testing.T) {
+	if os.Getenv("INTEGRATION_TEST") == "" {
+		t.Skip("Skipping integration test. Set INTEGRATION_TEST=1 to run.")
+	}
+
+	client, err := NewNobleClient("https://noble-rpc.polkachu.com")
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Test with a known proxy address
+	proxyAddress := "neutron1lx6fsftukg6xs80vrdxrjmcupslf0qjg8explknna2p4fe85pzrsc2dz50"
+	expectedForwardingAddr := "noble1xh5ntwqcsjfhcw7rj0hrtpw0xne9tdeykjzwyf"
+
+	forwardingAddr, err := client.QueryForwardingAddress(ctx, "channel-18", proxyAddress)
+	if err != nil {
+		t.Fatalf("QueryForwardingAddress() error: %v", err)
+	}
+
+	if forwardingAddr != expectedForwardingAddr {
+		t.Errorf("QueryForwardingAddress() = %v, want %v", forwardingAddr, expectedForwardingAddr)
+	}
+}
+
 func TestQueryForwardingAddress(t *testing.T) {
-	// Create test server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify request path
-		expectedPath := "/forwarding/v1/address/channel-18/neutron1test"
-		if r.URL.Path != expectedPath {
-			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
-		}
-
-		// Verify method
-		if r.Method != "GET" {
-			t.Errorf("Expected GET method, got %s", r.Method)
-		}
-
-		// Return mock response
-		response := map[string]string{
-			"address": "noble1mockforwardingaddress",
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-	}))
-	defer server.Close()
-
-	// Create client with test server URL
-	client, err := NewNobleClient(server.URL)
+	client, err := NewNobleClient("https://noble-rpc.polkachu.com")
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -88,16 +93,8 @@ func TestQueryForwardingAddress(t *testing.T) {
 		name      string
 		channel   string
 		recipient string
-		want      string
 		wantErr   bool
 	}{
-		{
-			name:      "valid query",
-			channel:   "channel-18",
-			recipient: "neutron1test",
-			want:      "noble1mockforwardingaddress",
-			wantErr:   false,
-		},
 		{
 			name:      "empty channel",
 			channel:   "",
@@ -115,17 +112,33 @@ func TestQueryForwardingAddress(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			got, err := client.QueryForwardingAddress(ctx, tt.channel, tt.recipient)
+			_, err := client.QueryForwardingAddress(ctx, tt.channel, tt.recipient)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("QueryForwardingAddress() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-
-			if !tt.wantErr && got != tt.want {
-				t.Errorf("QueryForwardingAddress() = %v, want %v", got, tt.want)
-			}
 		})
+	}
+}
+
+func TestProtobufEncoding(t *testing.T) {
+	// Test the protobuf encoding for QueryAddressRequest
+	channel := "channel-18"
+	recipient := "neutron1test"
+
+	encoded := encodeQueryAddressRequest(channel, recipient)
+
+	// Verify the encoded bytes are not empty
+	if len(encoded) == 0 {
+		t.Error("encodeQueryAddressRequest() returned empty bytes")
+	}
+
+	// The encoding should contain both strings
+	// Field 1 (channel): tag 0x0a, length, data
+	// Field 2 (recipient): tag 0x12, length, data
+	if encoded[0] != 0x0a {
+		t.Errorf("Expected first field tag 0x0a, got 0x%02x", encoded[0])
 	}
 }
 

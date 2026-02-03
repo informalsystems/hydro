@@ -227,13 +227,19 @@ func (c *Client) SignAndSendTransaction(
 	}
 
 	// Estimate gas
-	gasLimit, err := c.ethClient.EstimateGas(ctx, ethereum.CallMsg{
+	callMsg := ethereum.CallMsg{
 		From:  c.fromAddress,
 		To:    &to,
 		Data:  data,
 		Value: value,
-	})
+	}
+	gasLimit, err := c.ethClient.EstimateGas(ctx, callMsg)
 	if err != nil {
+		// Try to get revert reason via eth_call
+		_, callErr := c.ethClient.CallContract(ctx, callMsg, nil)
+		if callErr != nil {
+			return common.Hash{}, fmt.Errorf("failed to estimate gas: %w (call error: %v)", err, callErr)
+		}
 		return common.Hash{}, fmt.Errorf("failed to estimate gas: %w", err)
 	}
 

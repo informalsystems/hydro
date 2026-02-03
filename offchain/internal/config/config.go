@@ -51,10 +51,12 @@ type ChainConfig struct {
 type NeutronConfig struct {
 	RPCEndpoint       string
 	GRPCEndpoint      string
+	RESTEndpoint      string   // REST/LCD API endpoint for queries
 	ControlCenters    []string // Control center contract addresses
 	Admins            []string // Admin addresses for proxy contracts
 	ProxyCodeID       uint64   // Code ID of stored proxy contract
-	NobleAPIEndpoint  string   // Noble REST API endpoint for forwarding queries
+	NobleAPIEndpoint  string   // Noble REST API endpoint for forwarding queries (deprecated, use NobleRPCEndpoint)
+	NobleRPCEndpoint  string   // Noble RPC endpoint for ABCI queries
 	NobleChannel      string   // IBC channel between Noble and Neutron (e.g., "channel-18")
 }
 
@@ -176,10 +178,12 @@ func loadNeutronConfig(cfg *Config) error {
 	cfg.Neutron = NeutronConfig{
 		RPCEndpoint:      rpc,
 		GRPCEndpoint:     getEnv("NEUTRON_GRPC_ENDPOINT", ""),
+		RESTEndpoint:     getEnv("NEUTRON_REST_ENDPOINT", ""),
 		ControlCenters:   controlCenters,
 		Admins:           admins,
 		ProxyCodeID:      uint64(getEnvInt("NEUTRON_PROXY_CODE_ID", 0)),
 		NobleAPIEndpoint: getEnv("NOBLE_API_ENDPOINT", ""),
+		NobleRPCEndpoint: getEnv("NOBLE_RPC_ENDPOINT", "https://noble-rpc.polkachu.com"),
 		NobleChannel:     getEnv("NOBLE_NEUTRON_CHANNEL", "channel-18"),
 	}
 

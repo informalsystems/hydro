@@ -270,9 +270,12 @@ type ForwarderConstructorParams struct {
 //
 // Parameters:
 //   - chainCfg: EVM chain configuration
-//   - neutronCfg: Neutron configuration (for proxy code ID and Noble channel)
+//   - neutronCfg: Neutron configuration (for Noble channel)
 //   - operatorCfg: Operator configuration
 //   - userEmail: User's email (for computing proxy and forwarding addresses)
+//   - codeChecksum: SHA256 checksum of the proxy contract wasm bytecode (32 bytes)
+//   - computeNobleForwardingAddr: Function to compute Noble forwarding address
+//   - convertToBytes32: Function to convert bech32 address to bytes32
 //
 // Returns ForwarderConstructorParams with all fields populated including Recipient.
 func CreateConstructorParamsForUser(
@@ -280,7 +283,8 @@ func CreateConstructorParamsForUser(
 	neutronCfg *config.NeutronConfig,
 	operatorCfg *config.OperatorConfig,
 	userEmail string,
-	computeNobleForwardingAddr func(proxyCodeID uint64, operatorAddr, email, channel string) (string, error),
+	codeChecksum []byte,
+	computeNobleForwardingAddr func(codeChecksum []byte, operatorAddr, email, channel string) (string, error),
 	convertToBytes32 func(nobleAddr string) ([32]byte, error),
 ) (ForwarderConstructorParams, error) {
 	// Parse destination caller (bytes32 hex string)
@@ -297,7 +301,7 @@ func CreateConstructorParamsForUser(
 
 	// Compute Noble forwarding address for this user
 	nobleForwardingAddr, err := computeNobleForwardingAddr(
-		neutronCfg.ProxyCodeID,
+		codeChecksum,
 		operatorCfg.NeutronAddress,
 		userEmail,
 		neutronCfg.NobleChannel,
@@ -331,7 +335,15 @@ func (f *Forwarder) DeployForwarderCREATE2(ctx context.Context, userEmail string
 	f.logger.Info("Deploying forwarder via CREATE2",
 		zap.String("user_email", userEmail),
 		zap.String("chain_id", chainID),
-		zap.String("operator", constructorParams.Operator.Hex()))
+		zap.String("cctp_contract", constructorParams.CCTPContract.Hex()),
+		zap.Uint32("dest_domain", constructorParams.DestinationDomain),
+		zap.String("token", constructorParams.TokenToBridge.Hex()),
+		zap.String("recipient", hex.EncodeToString(constructorParams.Recipient[:])),
+		zap.String("dest_caller", hex.EncodeToString(constructorParams.DestinationCaller[:])),
+		zap.String("operator", constructorParams.Operator.Hex()),
+		zap.String("admin", constructorParams.Admin.Hex()),
+		zap.String("fee_bps", constructorParams.OperationalFeeBps.String()),
+		zap.String("min_fee", constructorParams.MinOperationalFee.String()))
 
 	// Get bytecode from config
 	bytecodeHex := strings.TrimPrefix(f.chainConfig.ForwarderBytecode, "0x")
@@ -358,6 +370,11 @@ func (f *Forwarder) DeployForwarderCREATE2(ctx context.Context, userEmail string
 
 	// Complete init code = bytecode + constructor args
 	initCode := append(bytecode, constructorArgs...)
+
+	f.logger.Debug("CREATE2 deployment data",
+		zap.Int("bytecode_len", len(bytecode)),
+		zap.Int("constructor_args_len", len(constructorArgs)),
+		zap.Int("init_code_len", len(initCode)))
 
 	// Generate salt
 	salt := GenerateSalt(userEmail, chainID)

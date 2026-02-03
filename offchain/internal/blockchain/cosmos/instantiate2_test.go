@@ -1,77 +1,95 @@
 package cosmos
 
 import (
+	"crypto/sha256"
 	"testing"
 
 	"github.com/btcsuite/btcutil/bech32"
 )
 
+// generateTestChecksum creates a deterministic test checksum from a string
+func generateTestChecksum(input string) []byte {
+	hash := sha256.Sum256([]byte(input))
+	return hash[:]
+}
+
 func TestComputeProxyAddress(t *testing.T) {
+	testChecksum := generateTestChecksum("test-wasm-bytecode")
+	testSalt := GenerateProxySalt("alice@example.com")
+
 	tests := []struct {
 		name           string
-		codeID         uint64
+		codeChecksum   []byte
 		creatorAddress string
-		userEmail      string
+		salt           []byte
+		msg            []byte
 		wantErr        bool
 		errMsg         string
 	}{
 		{
 			name:           "valid inputs",
-			codeID:         123,
+			codeChecksum:   testChecksum,
 			creatorAddress: "neutron1m0z0kk0qqug74n9u9ul23e28x5fszr62y9w9dk",
-			userEmail:      "alice@example.com",
+			salt:           testSalt[:],
+			msg:            nil,
 			wantErr:        false,
 		},
 		{
-			name:           "different code ID",
-			codeID:         456,
+			name:           "different checksum",
+			codeChecksum:   generateTestChecksum("different-bytecode"),
 			creatorAddress: "neutron1m0z0kk0qqug74n9u9ul23e28x5fszr62y9w9dk",
-			userEmail:      "alice@example.com",
+			salt:           testSalt[:],
+			msg:            nil,
 			wantErr:        false,
 		},
 		{
-			name:           "different user",
-			codeID:         123,
+			name:           "different salt",
+			codeChecksum:   testChecksum,
 			creatorAddress: "neutron1m0z0kk0qqug74n9u9ul23e28x5fszr62y9w9dk",
-			userEmail:      "bob@example.com",
+			salt:           func() []byte { s := GenerateProxySalt("bob@example.com"); return s[:] }(),
+			msg:            nil,
 			wantErr:        false,
 		},
 		{
-			name:           "zero code ID",
-			codeID:         0,
+			name:           "invalid checksum length",
+			codeChecksum:   []byte{1, 2, 3}, // Not 32 bytes
 			creatorAddress: "neutron1m0z0kk0qqug74n9u9ul23e28x5fszr62y9w9dk",
-			userEmail:      "alice@example.com",
+			salt:           testSalt[:],
+			msg:            nil,
 			wantErr:        true,
-			errMsg:         "code ID cannot be zero",
+			errMsg:         "code checksum must be 32 bytes, got 3",
 		},
 		{
 			name:           "empty creator address",
-			codeID:         123,
+			codeChecksum:   testChecksum,
 			creatorAddress: "",
-			userEmail:      "alice@example.com",
+			salt:           testSalt[:],
+			msg:            nil,
 			wantErr:        true,
 			errMsg:         "creator address cannot be empty",
 		},
 		{
-			name:           "empty user email",
-			codeID:         123,
+			name:           "empty salt",
+			codeChecksum:   testChecksum,
 			creatorAddress: "neutron1m0z0kk0qqug74n9u9ul23e28x5fszr62y9w9dk",
-			userEmail:      "",
+			salt:           nil,
+			msg:            nil,
 			wantErr:        true,
-			errMsg:         "user email cannot be empty",
+			errMsg:         "salt cannot be empty",
 		},
 		{
 			name:           "invalid bech32 address",
-			codeID:         123,
+			codeChecksum:   testChecksum,
 			creatorAddress: "invalid_address",
-			userEmail:      "alice@example.com",
+			salt:           testSalt[:],
+			msg:            nil,
 			wantErr:        true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			addr, err := ComputeProxyAddress(tt.codeID, tt.creatorAddress, tt.userEmail)
+			addr, err := ComputeProxyAddress(tt.codeChecksum, tt.creatorAddress, tt.salt, tt.msg)
 
 			if tt.wantErr {
 				if err == nil {
@@ -100,8 +118,7 @@ func TestComputeProxyAddress(t *testing.T) {
 				t.Errorf("ComputeProxyAddress() prefix = %v, want neutron", prefix)
 			}
 
-			// Verify address is 20 bytes (standard Cosmos address length)
-			// After bech32 decoding and bit conversion
+			// Verify address is 32 bytes (CosmWasm contract address length)
 			_, data5bit, err := bech32.Decode(addr)
 			if err != nil {
 				t.Errorf("Failed to decode returned address: %v", err)
@@ -114,8 +131,8 @@ func TestComputeProxyAddress(t *testing.T) {
 				return
 			}
 
-			if len(data8bit) != 20 {
-				t.Errorf("ComputeProxyAddress() address length = %v bytes, want 20 bytes", len(data8bit))
+			if len(data8bit) != 32 {
+				t.Errorf("ComputeProxyAddress() address length = %v bytes, want 32 bytes", len(data8bit))
 			}
 		})
 	}
@@ -123,16 +140,16 @@ func TestComputeProxyAddress(t *testing.T) {
 
 func TestComputeProxyAddressDeterministic(t *testing.T) {
 	// Same inputs should always produce same output
-	codeID := uint64(123)
+	codeChecksum := generateTestChecksum("test-bytecode")
 	creatorAddress := "neutron1m0z0kk0qqug74n9u9ul23e28x5fszr62y9w9dk"
-	userEmail := "alice@example.com"
+	salt := GenerateProxySalt("alice@example.com")
 
-	addr1, err := ComputeProxyAddress(codeID, creatorAddress, userEmail)
+	addr1, err := ComputeProxyAddress(codeChecksum, creatorAddress, salt[:], nil)
 	if err != nil {
 		t.Fatalf("ComputeProxyAddress() error = %v", err)
 	}
 
-	addr2, err := ComputeProxyAddress(codeID, creatorAddress, userEmail)
+	addr2, err := ComputeProxyAddress(codeChecksum, creatorAddress, salt[:], nil)
 	if err != nil {
 		t.Fatalf("ComputeProxyAddress() error = %v", err)
 	}
@@ -144,31 +161,38 @@ func TestComputeProxyAddressDeterministic(t *testing.T) {
 
 func TestComputeProxyAddressUniqueness(t *testing.T) {
 	creatorAddress := "neutron1m0z0kk0qqug74n9u9ul23e28x5fszr62y9w9dk"
-	userEmail := "alice@example.com"
+	salt := GenerateProxySalt("alice@example.com")
 
-	// Different code IDs should produce different addresses
-	addr1, err := ComputeProxyAddress(123, creatorAddress, userEmail)
+	// Different checksums should produce different addresses
+	addr1, err := ComputeProxyAddress(generateTestChecksum("bytecode-1"), creatorAddress, salt[:], nil)
 	if err != nil {
 		t.Fatalf("ComputeProxyAddress() error = %v", err)
 	}
 
-	addr2, err := ComputeProxyAddress(456, creatorAddress, userEmail)
+	addr2, err := ComputeProxyAddress(generateTestChecksum("bytecode-2"), creatorAddress, salt[:], nil)
 	if err != nil {
 		t.Fatalf("ComputeProxyAddress() error = %v", err)
 	}
 
 	if addr1 == addr2 {
-		t.Errorf("ComputeProxyAddress() same address for different code IDs")
+		t.Errorf("ComputeProxyAddress() same address for different checksums")
 	}
 
-	// Different users should produce different addresses
-	addr3, err := ComputeProxyAddress(123, creatorAddress, "bob@example.com")
+	// Different salts should produce different addresses
+	checksum := generateTestChecksum("same-bytecode")
+	bobSalt := GenerateProxySalt("bob@example.com")
+	addr3, err := ComputeProxyAddress(checksum, creatorAddress, bobSalt[:], nil)
 	if err != nil {
 		t.Fatalf("ComputeProxyAddress() error = %v", err)
 	}
 
-	if addr1 == addr3 {
-		t.Errorf("ComputeProxyAddress() same address for different users")
+	addr4, err := ComputeProxyAddress(checksum, creatorAddress, salt[:], nil)
+	if err != nil {
+		t.Fatalf("ComputeProxyAddress() error = %v", err)
+	}
+
+	if addr3 == addr4 {
+		t.Errorf("ComputeProxyAddress() same address for different salts")
 	}
 }
 
@@ -218,12 +242,12 @@ func TestGenerateProxySaltUniqueness(t *testing.T) {
 }
 
 func TestVerifyProxyAddress(t *testing.T) {
-	codeID := uint64(123)
+	codeChecksum := generateTestChecksum("test-bytecode")
 	creatorAddress := "neutron1m0z0kk0qqug74n9u9ul23e28x5fszr62y9w9dk"
-	userEmail := "alice@example.com"
+	salt := GenerateProxySalt("alice@example.com")
 
 	// Compute expected address
-	expectedAddr, err := ComputeProxyAddress(codeID, creatorAddress, userEmail)
+	expectedAddr, err := ComputeProxyAddress(codeChecksum, creatorAddress, salt[:], nil)
 	if err != nil {
 		t.Fatalf("ComputeProxyAddress() error = %v", err)
 	}
@@ -231,36 +255,40 @@ func TestVerifyProxyAddress(t *testing.T) {
 	tests := []struct {
 		name            string
 		expectedAddress string
-		codeID          uint64
+		codeChecksum    []byte
 		creatorAddress  string
-		userEmail       string
+		salt            []byte
+		msg             []byte
 		want            bool
 		wantErr         bool
 	}{
 		{
 			name:            "matching address",
 			expectedAddress: expectedAddr,
-			codeID:          codeID,
+			codeChecksum:    codeChecksum,
 			creatorAddress:  creatorAddress,
-			userEmail:       userEmail,
+			salt:            salt[:],
+			msg:             nil,
 			want:            true,
 			wantErr:         false,
 		},
 		{
 			name:            "wrong address",
-			expectedAddress: "neutron1qqqqqqqqqqqqqqqqqqqqqqqqqqqqq4sphkm",
-			codeID:          codeID,
+			expectedAddress: "neutron1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqnrql4e",
+			codeChecksum:    codeChecksum,
 			creatorAddress:  creatorAddress,
-			userEmail:       userEmail,
+			salt:            salt[:],
+			msg:             nil,
 			want:            false,
 			wantErr:         false,
 		},
 		{
 			name:            "invalid inputs",
 			expectedAddress: expectedAddr,
-			codeID:          0,
+			codeChecksum:    []byte{1, 2, 3}, // Invalid length
 			creatorAddress:  creatorAddress,
-			userEmail:       userEmail,
+			salt:            salt[:],
+			msg:             nil,
 			want:            false,
 			wantErr:         true,
 		},
@@ -268,7 +296,7 @@ func TestVerifyProxyAddress(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := VerifyProxyAddress(tt.expectedAddress, tt.codeID, tt.creatorAddress, tt.userEmail)
+			got, err := VerifyProxyAddress(tt.expectedAddress, tt.codeChecksum, tt.creatorAddress, tt.salt, tt.msg)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("VerifyProxyAddress() error = %v, wantErr %v", err, tt.wantErr)

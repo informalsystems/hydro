@@ -958,7 +958,7 @@ CCTP_DESTINATION_CALLER=0x...  # Skip relayer
 - `offchain/internal/blockchain/cosmos/instantiate2.go` - Neutron instantiate2 computation
 - `offchain/internal/blockchain/cosmos/client.go` - Cosmos client (tx builder, queries)
 - `offchain/internal/blockchain/cosmos/proxy.go` - Proxy contract interactions
-- `offchain/internal/blockchain/cosmos/noble.go` - Noble forwarding address computation
+- `offchain/internal/blockchain/cosmos/noble.go` - Noble forwarding address queries via RPC (ABCI query)
 
 **Service Files - Phase 4 (Workers) ✅:**
 - `offchain/internal/service/process.go` - Process lifecycle service
