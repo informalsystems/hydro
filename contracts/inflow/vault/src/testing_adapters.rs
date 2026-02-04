@@ -30,11 +30,20 @@ const CONTROL_CENTER: &str = "control_center";
 const TOKEN_INFO_PROVIDER: &str = "token_info_provider";
 const DEFAULT_DEPOSIT_CAP: Uint128 = Uint128::new(10_000_000);
 
+/// Minimum initial deposit required for instantiation (matches contract constant)
+const MINIMUM_INITIAL_DEPOSIT: u128 = 1_000_000;
+
+/// Helper to get the initial deposit funds required for instantiation
+fn get_initial_deposit_funds(denom: &str) -> Vec<cosmwasm_std::Coin> {
+    vec![cosmwasm_std::Coin::new(MINIMUM_INITIAL_DEPOSIT, denom)]
+}
+
 fn get_default_instantiate_msg(
+    api: &cosmwasm_std::testing::MockApi,
     deposit_denom: &str,
     whitelist_addr: Addr,
     control_center_contract: Addr,
-    token_info_provider_contract: Addr,
+    _token_info_provider_contract: Addr,
 ) -> InstantiateMsg {
     InstantiateMsg {
         deposit_denom: deposit_denom.to_string(),
@@ -50,8 +59,10 @@ fn get_default_instantiate_msg(
             uri_hash: None,
         },
         control_center_contract: control_center_contract.to_string(),
-        token_info_provider_contract: Some(token_info_provider_contract.to_string()),
+        // Set to None to avoid needing token info provider mocks during instantiate
+        token_info_provider_contract: None,
         max_withdrawals_per_user: 10,
+        initial_shares_recipient: api.addr_make("initial_shares_recipient").to_string(),
     }
 }
 
@@ -67,12 +78,17 @@ fn register_adapter_success() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register adapter from whitelisted address
@@ -127,12 +143,17 @@ fn register_adapter_unauthorized() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Try to register adapter from non-whitelisted address
@@ -166,12 +187,17 @@ fn register_adapter_duplicate_name() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register adapter
@@ -213,22 +239,48 @@ fn register_adapter_duplicate_name() {
 
 #[test]
 fn unregister_adapter_success() {
-    let mut deps = mock_dependencies();
-    let env = mock_env();
+    let deps = mock_dependencies();
 
+    let vault_contract_addr = deps.api.addr_make("inflow");
     let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
     let adapter_addr = deps.api.addr_make(ADAPTER_ADDR);
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
     let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
 
+    // Set up adapter mock with zero position
+    let mut adapter_configs = HashMap::new();
+    adapter_configs.insert(
+        adapter_addr.clone(),
+        MockAdapterConfig::new(0, 0, 0), // current_deposit = 0
+    );
+
+    let control_center_config =
+        ControlCenterMockConfig::new(control_center_contract_addr.clone(), 0, 0);
+    let token_info_provider_config = TokenInfoProviderMockConfig::new(
+        token_info_provider_contract_addr.clone(),
+        DEPOSIT_DENOM.to_string(),
+    );
+    let (mut deps, _wasm_querier) = mock_dependencies_with_adapters(
+        adapter_configs,
+        control_center_config,
+        token_info_provider_config,
+    );
+    let mut env = mock_env();
+    env.contract.address = vault_contract_addr;
+
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register adapter
@@ -250,7 +302,7 @@ fn unregister_adapter_success() {
     // Verify adapter exists
     assert!(ADAPTERS.has(&deps.storage, "mars_adapter".to_string()));
 
-    // Unregister adapter
+    // Unregister adapter (should succeed since position is zero)
     let res = execute(
         deps.as_mut(),
         env,
@@ -271,6 +323,93 @@ fn unregister_adapter_success() {
 }
 
 #[test]
+fn unregister_adapter_fails_with_non_zero_position() {
+    let deps = mock_dependencies();
+
+    let vault_contract_addr = deps.api.addr_make("inflow");
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let adapter_addr = deps.api.addr_make(ADAPTER_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    // Set up adapter mock with non-zero position
+    let mut adapter_configs = HashMap::new();
+    adapter_configs.insert(
+        adapter_addr.clone(),
+        MockAdapterConfig::new(0, 0, 1000), // current_deposit = 1000 (non-zero)
+    );
+
+    let control_center_config =
+        ControlCenterMockConfig::new(control_center_contract_addr.clone(), 0, 0);
+    let token_info_provider_config = TokenInfoProviderMockConfig::new(
+        token_info_provider_contract_addr.clone(),
+        DEPOSIT_DENOM.to_string(),
+    );
+    let (mut deps, _wasm_querier) = mock_dependencies_with_adapters(
+        adapter_configs,
+        control_center_config,
+        token_info_provider_config,
+    );
+    let mut env = mock_env();
+    env.contract.address = vault_contract_addr;
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register adapter
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter_addr.to_string(),
+            description: None,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    // Verify adapter exists
+    assert!(ADAPTERS.has(&deps.storage, "mars_adapter".to_string()));
+
+    // Try to unregister adapter (should fail since position is non-zero)
+    let err = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::UnregisterAdapter {
+            name: "mars_adapter".to_string(),
+        },
+    )
+    .unwrap_err();
+
+    // Verify error message
+    assert!(
+        err.to_string().contains("non-zero position"),
+        "Expected error about non-zero position, got: {}",
+        err
+    );
+
+    // Verify adapter was NOT removed
+    assert!(ADAPTERS.has(&deps.storage, "mars_adapter".to_string()));
+}
+
+#[test]
 fn unregister_adapter_not_found() {
     let mut deps = mock_dependencies();
     let env = mock_env();
@@ -281,12 +420,17 @@ fn unregister_adapter_not_found() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Try to unregister non-existent adapter
@@ -318,12 +462,17 @@ fn unregister_adapter_unauthorized() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register adapter
@@ -369,12 +518,17 @@ fn toggle_adapter_success() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register adapter (auto_allocation = true by default)
@@ -452,6 +606,303 @@ fn toggle_adapter_success() {
 }
 
 #[test]
+fn set_deployment_tracking_syncs_deployed_amount_on_toggle() {
+    let deps = mock_dependencies();
+
+    let vault_contract_addr = deps.api.addr_make("inflow");
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let adapter_addr = deps.api.addr_make(ADAPTER_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    // Set up adapter mock with non-zero position (1000 tokens)
+    let mut adapter_configs = HashMap::new();
+    adapter_configs.insert(
+        adapter_addr.clone(),
+        MockAdapterConfig::new(10000, 10000, 1000), // current_deposit = 1000
+    );
+
+    let control_center_config =
+        ControlCenterMockConfig::new(control_center_contract_addr.clone(), 0, 0);
+    let token_info_provider_config = TokenInfoProviderMockConfig::new(
+        token_info_provider_contract_addr.clone(),
+        DEPOSIT_DENOM.to_string(),
+    );
+    let (mut deps, _wasm_querier) = mock_dependencies_with_adapters(
+        adapter_configs,
+        control_center_config,
+        token_info_provider_config,
+    );
+    let mut env = mock_env();
+    env.contract.address = vault_contract_addr;
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register adapter with Tracked deployment
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter_addr.to_string(),
+            description: None,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::Tracked,
+        },
+    )
+    .unwrap();
+
+    // Toggle from Tracked -> NotTracked: Should send Subtract message
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::SetAdapterDeploymentTracking {
+            name: "mars_adapter".to_string(),
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    // Verify response has UpdateDeployedAmount message
+    assert_eq!(res.messages.len(), 1);
+    match &res.messages[0].msg {
+        CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr,
+            msg: _,
+            funds: _,
+        }) => {
+            assert_eq!(contract_addr, &control_center_contract_addr.to_string());
+        }
+        _ => panic!("Expected WasmMsg::Execute for UpdateDeployedAmount"),
+    }
+
+    // Verify synced_amount attribute
+    let synced_amount_attr = res
+        .attributes
+        .iter()
+        .find(|a| a.key == "synced_amount")
+        .unwrap();
+    assert_eq!(synced_amount_attr.value, "1000");
+
+    // Toggle from NotTracked -> Tracked: Should send Add message
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::SetAdapterDeploymentTracking {
+            name: "mars_adapter".to_string(),
+            deployment_tracking: DeploymentTracking::Tracked,
+        },
+    )
+    .unwrap();
+
+    // Verify response has UpdateDeployedAmount message
+    assert_eq!(res.messages.len(), 1);
+
+    // Verify deployment tracking was updated
+    let adapter_info = ADAPTERS
+        .load(&deps.storage, "mars_adapter".to_string())
+        .unwrap();
+    assert!(matches!(
+        adapter_info.deployment_tracking,
+        DeploymentTracking::Tracked
+    ));
+}
+
+#[test]
+fn set_deployment_tracking_same_mode_is_noop() {
+    let deps = mock_dependencies();
+
+    let vault_contract_addr = deps.api.addr_make("inflow");
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let adapter_addr = deps.api.addr_make(ADAPTER_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    // Set up adapter mock with non-zero position
+    let mut adapter_configs = HashMap::new();
+    adapter_configs.insert(
+        adapter_addr.clone(),
+        MockAdapterConfig::new(10000, 10000, 1000),
+    );
+
+    let control_center_config =
+        ControlCenterMockConfig::new(control_center_contract_addr.clone(), 0, 0);
+    let token_info_provider_config = TokenInfoProviderMockConfig::new(
+        token_info_provider_contract_addr.clone(),
+        DEPOSIT_DENOM.to_string(),
+    );
+    let (mut deps, _wasm_querier) = mock_dependencies_with_adapters(
+        adapter_configs,
+        control_center_config,
+        token_info_provider_config,
+    );
+    let mut env = mock_env();
+    env.contract.address = vault_contract_addr;
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register adapter with Tracked deployment
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter_addr.to_string(),
+            description: None,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::Tracked,
+        },
+    )
+    .unwrap();
+
+    // Toggle to the same mode (Tracked -> Tracked): Should be no-op
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::SetAdapterDeploymentTracking {
+            name: "mars_adapter".to_string(),
+            deployment_tracking: DeploymentTracking::Tracked,
+        },
+    )
+    .unwrap();
+
+    // Verify no messages sent (no-op)
+    assert_eq!(res.messages.len(), 0);
+
+    // Verify "no_change" result attribute
+    let result_attr = res.attributes.iter().find(|a| a.key == "result").unwrap();
+    assert_eq!(result_attr.value, "no_change");
+}
+
+#[test]
+fn set_deployment_tracking_zero_position_no_message() {
+    let deps = mock_dependencies();
+
+    let vault_contract_addr = deps.api.addr_make("inflow");
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let adapter_addr = deps.api.addr_make(ADAPTER_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    // Set up adapter mock with ZERO position
+    let mut adapter_configs = HashMap::new();
+    adapter_configs.insert(
+        adapter_addr.clone(),
+        MockAdapterConfig::new(10000, 10000, 0), // current_deposit = 0
+    );
+
+    let control_center_config =
+        ControlCenterMockConfig::new(control_center_contract_addr.clone(), 0, 0);
+    let token_info_provider_config = TokenInfoProviderMockConfig::new(
+        token_info_provider_contract_addr.clone(),
+        DEPOSIT_DENOM.to_string(),
+    );
+    let (mut deps, _wasm_querier) = mock_dependencies_with_adapters(
+        adapter_configs,
+        control_center_config,
+        token_info_provider_config,
+    );
+    let mut env = mock_env();
+    env.contract.address = vault_contract_addr;
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register adapter with Tracked deployment
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter_addr.to_string(),
+            description: None,
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::Tracked,
+        },
+    )
+    .unwrap();
+
+    // Toggle from Tracked -> NotTracked with zero position: Should not send message
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::SetAdapterDeploymentTracking {
+            name: "mars_adapter".to_string(),
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    // Verify no messages sent (position is zero)
+    assert_eq!(res.messages.len(), 0);
+
+    // Verify synced_amount is 0
+    let synced_amount_attr = res
+        .attributes
+        .iter()
+        .find(|a| a.key == "synced_amount")
+        .unwrap();
+    assert_eq!(synced_amount_attr.value, "0");
+
+    // Verify deployment tracking was still updated
+    let adapter_info = ADAPTERS
+        .load(&deps.storage, "mars_adapter".to_string())
+        .unwrap();
+    assert!(matches!(
+        adapter_info.deployment_tracking,
+        DeploymentTracking::NotTracked
+    ));
+}
+
+#[test]
 fn set_adapter_allocation_mode_not_found() {
     let mut deps = mock_dependencies();
     let env = mock_env();
@@ -462,12 +913,17 @@ fn set_adapter_allocation_mode_not_found() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Try to set allocation mode for non-existent adapter
@@ -500,12 +956,17 @@ fn set_adapter_allocation_mode_unauthorized() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register adapter
@@ -553,12 +1014,17 @@ fn register_multiple_adapters() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register first adapter
@@ -621,12 +1087,17 @@ fn query_list_adapters_empty() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Query adapters (should be empty)
@@ -649,12 +1120,17 @@ fn query_list_adapters_with_adapters() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register two adapters
@@ -720,12 +1196,17 @@ fn query_adapter_info_success() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register adapter
@@ -775,12 +1256,17 @@ fn query_adapter_info_not_found() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Query non-existent adapter
@@ -942,12 +1428,17 @@ fn test_deposit_with_single_adapter_auto_allocation() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     setup_contract_with_vault_denom(&mut deps, &vault_contract_addr);
@@ -1051,12 +1542,17 @@ fn test_deposit_with_single_adapter_no_auto_allocation() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     setup_contract_with_vault_denom(&mut deps, &vault_contract_addr);
@@ -1148,12 +1644,17 @@ fn test_deposit_no_adapters_stays_in_contract() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     setup_contract_with_vault_denom(&mut deps, &vault_contract_addr);
@@ -1233,12 +1734,17 @@ fn test_deposit_with_failing_adapter_stays_in_contract() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     setup_contract_with_vault_denom(&mut deps, &vault_contract_addr);
@@ -1338,12 +1844,17 @@ fn test_deposit_skips_failing_adapter() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     setup_contract_with_vault_denom(&mut deps, &vault_contract_addr);
@@ -1432,6 +1943,23 @@ fn test_deposit_skips_failing_adapter() {
 
     // Verify attributes
     assert_eq!(res.attributes[0].value, "deposit");
+
+    // Verify failed_adapter_queries attribute is present and contains the failing adapter name
+    let failed_adapters_attr = res
+        .attributes
+        .iter()
+        .find(|a| a.key == "failed_adapter_queries");
+    assert!(
+        failed_adapters_attr.is_some(),
+        "Expected failed_adapter_queries attribute to be present"
+    );
+    assert!(
+        failed_adapters_attr
+            .unwrap()
+            .value
+            .contains("failing_adapter"),
+        "Expected failing adapter name in the attribute value"
+    );
 }
 
 // ============================================================================
@@ -1475,12 +2003,17 @@ fn test_withdraw_all_or_nothing_can_fulfill() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     setup_contract_with_vault_denom(&mut deps, &vault_contract_addr);
@@ -1683,12 +2216,17 @@ fn test_withdraw_all_or_nothing_cannot_fulfill() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     setup_contract_with_vault_denom(&mut deps, &vault_contract_addr);
@@ -1837,12 +2375,17 @@ fn test_withdraw_from_adapter_success() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register adapter
@@ -1918,12 +2461,17 @@ fn test_withdraw_from_adapter_unauthorized() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register adapter
@@ -1969,12 +2517,17 @@ fn test_withdraw_from_adapter_not_found() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Try to withdraw from non-existent adapter
@@ -2007,12 +2560,17 @@ fn test_deposit_to_adapter_success() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register adapter
@@ -2101,12 +2659,17 @@ fn test_deposit_to_adapter_insufficient_balance() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register adapter
@@ -2161,12 +2724,17 @@ fn test_deposit_to_adapter_not_whitelisted() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register adapter
@@ -2212,12 +2780,17 @@ fn test_deposit_to_adapter_adapter_not_found() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Try to deposit to non-existent adapter
@@ -2250,12 +2823,17 @@ fn test_deposit_to_adapter_works_regardless_of_allocation_flag() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register adapter with auto_allocation = false
@@ -2320,12 +2898,17 @@ fn test_move_adapter_funds_deposit_denom_success() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register two adapters
@@ -2452,12 +3035,17 @@ fn test_move_adapter_funds_non_deposit_denom_matching_tracking() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register two adapters with SAME DeploymentTracking (NotTracked)
@@ -2571,12 +3159,17 @@ fn test_move_adapter_funds_non_deposit_denom_tracking_mismatch() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register two adapters with DIFFERENT DeploymentTracking
@@ -2647,12 +3240,17 @@ fn test_move_adapter_funds_unauthorized() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register adapters
@@ -2719,12 +3317,17 @@ fn test_move_adapter_funds_zero_amount() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register adapters
@@ -2788,12 +3391,17 @@ fn test_move_adapter_funds_from_adapter_not_found() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register only destination adapter
@@ -2845,12 +3453,17 @@ fn test_move_adapter_funds_to_adapter_not_found() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register only source adapter
@@ -2906,12 +3519,17 @@ fn test_move_adapter_funds_deposit_denom_with_tracked_deployment() {
 
     // Instantiate contract
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Register two adapters with Tracked deployment
