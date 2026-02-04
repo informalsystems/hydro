@@ -1334,6 +1334,386 @@ fn cancel_withdrawal_test() {
     );
 }
 
+/// Test that when the pool gains value (ratio improves) after a withdrawal request,
+/// cancelling the withdrawal mints back FEWER shares than originally burned.
+/// This is because the min() logic caps at the calculated shares (which is less than burned).
+#[test]
+fn cancel_withdrawal_pool_gains_value_test() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let user1_addr = deps.api.addr_make(USER1);
+
+    env.contract.address = vault_contract_addr.clone();
+
+    let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let vault_shares_denom_str: String =
+        format!("factory/{vault_contract_addr}/hydro_inflow_udatom");
+
+    set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
+
+    // Setup initial mocks
+    let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_control_center_mock(
+            control_center_contract_addr.clone(),
+            DEFAULT_DEPOSIT_CAP,
+            Uint128::zero(),
+            Uint128::zero(),
+        ),
+        setup_token_info_provider_mock(
+            token_info_provider_contract_addr.clone(),
+            DEPOSIT_DENOM.to_string(),
+            DATOM_DEFAULT_RATIO,
+        ),
+    ]));
+
+    let querier_for_deps = wasm_querier.clone();
+    deps.querier
+        .update_wasm(move |q| querier_for_deps.handler(q));
+
+    // Enable token info provider
+    set_token_info_provider(
+        &mut deps,
+        &env,
+        WHITELIST_ADDR,
+        token_info_provider_contract_addr,
+    );
+
+    // User1 deposits 1000 tokens → gets 1200 shares (1000 * 1.2 ratio)
+    let user1_deposit = Uint128::new(1000);
+    let user1_shares = Uint128::new(1200);
+
+    let mut total_pool_value = 1200u128;
+    let total_shares_issued_before = 0u128;
+    let mut total_shares_issued_after = 1200u128;
+
+    execute_deposit(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        &vault_contract_addr,
+        USER1,
+        &vault_shares_denom_str,
+        user1_deposit,
+        user1_shares,
+        user1_shares,
+        user1_deposit,
+        total_pool_value,
+        total_shares_issued_before,
+        total_shares_issued_after,
+    );
+
+    // User2 deposits 1000 tokens → gets 1200 shares
+    let user2_deposit = Uint128::new(1000);
+    let user2_shares = Uint128::new(1200);
+
+    total_pool_value = 2400;
+    total_shares_issued_after = 2400;
+
+    execute_deposit(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        &vault_contract_addr,
+        USER2,
+        &vault_shares_denom_str,
+        user2_deposit,
+        user2_shares,
+        user2_shares,
+        user2_deposit,
+        total_pool_value,
+        1200,
+        total_shares_issued_after,
+    );
+
+    // Whitelisted address withdraws all tokens for deployment (so User1 enters queue)
+    execute_withdraw_for_deployment(
+        &mut deps,
+        &env,
+        vault_contract_addr.as_ref(),
+        WHITELIST_ADDR,
+        user1_deposit + user2_deposit,
+        Uint128::zero(),
+    );
+
+    // User1 creates withdrawal request for all 1200 shares
+    // Burns 1200 shares, withdrawal amount = 1000 tokens (1200 base)
+    total_pool_value = 1200; // Only user2's shares value remains
+    total_shares_issued_after = 1200;
+
+    execute_withdraw(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        vault_contract_addr.as_ref(),
+        USER1,
+        None,
+        &vault_shares_denom_str,
+        user1_shares,
+        false,
+        Uint128::zero(),
+        Uint128::zero(),
+        Uint128::zero(),
+        total_pool_value,
+        total_shares_issued_after,
+    );
+
+    verify_user_withdrawal_requests(
+        &deps,
+        &user1_addr,
+        vec![(user1_shares, user1_deposit, false)],
+    );
+
+    // Simulate pool gaining value (50% gain): total_pool_value = 1800, total_shares = 1200
+    // New ratio: 1800/1200 = 1.5 (1 share = 1.5 base tokens)
+    // When cancelling:
+    // - shares_burned = 1200
+    // - amount_to_withdraw_base_tokens = 1200
+    // - After adding back: total_pool_value = 1800 + 1200 = 3000
+    // - calculate_shares = 1200 * 1200 / (3000 - 1200) = 1200 * 1200 / 1800 = 800
+    // - min(1200, 800) = 800
+    let pool_value_after_gain = 1800u128;
+    let expected_shares_minted = Uint128::new(800);
+
+    // Update mock BEFORE cancel to simulate pool having gained value
+    update_contract_mock(
+        &mut deps,
+        &wasm_querier,
+        setup_default_control_center_mock(
+            Uint128::new(pool_value_after_gain),
+            Uint128::new(1200),
+        ),
+    );
+
+    // After cancel: pool value includes the cancelled amount, shares include minted shares
+    let total_pool_value_after_cancel = pool_value_after_gain + 1200; // 3000
+    let total_shares_after_cancel = 1200 + expected_shares_minted.u128(); // 2000
+
+    execute_cancel_withdrawal(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        USER1,
+        vec![0u64],
+        &vault_shares_denom_str,
+        Some((expected_shares_minted, expected_shares_minted)),
+        total_pool_value_after_cancel,
+        total_shares_after_cancel,
+    );
+
+    // Verify user got 800 shares, not 1200 (their original burned amount)
+    // This confirms the min() logic is working - user can't profit from ratio improvement
+    verify_user_withdrawal_requests(&deps, &user1_addr, vec![]);
+}
+
+/// Test that when the pool loses value (ratio decreases) after a withdrawal request,
+/// cancelling the withdrawal mints back the SAME number of shares as originally burned.
+/// This is because the min() logic caps at shares_burned (which is less than calculated).
+/// Without the min(), user would get MORE shares and profit from the loss.
+#[test]
+fn cancel_withdrawal_pool_loses_value_test() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let user1_addr = deps.api.addr_make(USER1);
+
+    env.contract.address = vault_contract_addr.clone();
+
+    let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let vault_shares_denom_str: String =
+        format!("factory/{vault_contract_addr}/hydro_inflow_udatom");
+
+    set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
+
+    // Setup initial mocks
+    let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_control_center_mock(
+            control_center_contract_addr.clone(),
+            DEFAULT_DEPOSIT_CAP,
+            Uint128::zero(),
+            Uint128::zero(),
+        ),
+        setup_token_info_provider_mock(
+            token_info_provider_contract_addr.clone(),
+            DEPOSIT_DENOM.to_string(),
+            DATOM_DEFAULT_RATIO,
+        ),
+    ]));
+
+    let querier_for_deps = wasm_querier.clone();
+    deps.querier
+        .update_wasm(move |q| querier_for_deps.handler(q));
+
+    // Enable token info provider
+    set_token_info_provider(
+        &mut deps,
+        &env,
+        WHITELIST_ADDR,
+        token_info_provider_contract_addr,
+    );
+
+    // User1 deposits 1000 tokens → gets 1200 shares (1000 * 1.2 ratio)
+    let user1_deposit = Uint128::new(1000);
+    let user1_shares = Uint128::new(1200);
+
+    let mut total_pool_value = 1200u128;
+    let total_shares_issued_before = 0u128;
+    let mut total_shares_issued_after = 1200u128;
+
+    execute_deposit(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        &vault_contract_addr,
+        USER1,
+        &vault_shares_denom_str,
+        user1_deposit,
+        user1_shares,
+        user1_shares,
+        user1_deposit,
+        total_pool_value,
+        total_shares_issued_before,
+        total_shares_issued_after,
+    );
+
+    // User2 deposits 1000 tokens → gets 1200 shares
+    let user2_deposit = Uint128::new(1000);
+    let user2_shares = Uint128::new(1200);
+
+    total_pool_value = 2400;
+    total_shares_issued_after = 2400;
+
+    execute_deposit(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        &vault_contract_addr,
+        USER2,
+        &vault_shares_denom_str,
+        user2_deposit,
+        user2_shares,
+        user2_shares,
+        user2_deposit,
+        total_pool_value,
+        1200,
+        total_shares_issued_after,
+    );
+
+    // Whitelisted address withdraws all tokens for deployment (so User1 enters queue)
+    execute_withdraw_for_deployment(
+        &mut deps,
+        &env,
+        vault_contract_addr.as_ref(),
+        WHITELIST_ADDR,
+        user1_deposit + user2_deposit,
+        Uint128::zero(),
+    );
+
+    // User1 creates withdrawal request for all 1200 shares
+    // Burns 1200 shares, withdrawal amount = 1000 tokens (1200 base)
+    total_pool_value = 1200; // Only user2's shares value remains
+    total_shares_issued_after = 1200;
+
+    execute_withdraw(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        vault_contract_addr.as_ref(),
+        USER1,
+        None,
+        &vault_shares_denom_str,
+        user1_shares,
+        false,
+        Uint128::zero(),
+        Uint128::zero(),
+        Uint128::zero(),
+        total_pool_value,
+        total_shares_issued_after,
+    );
+
+    verify_user_withdrawal_requests(
+        &deps,
+        &user1_addr,
+        vec![(user1_shares, user1_deposit, false)],
+    );
+
+    // Simulate pool losing value (50% loss): total_pool_value = 600, total_shares = 1200
+    // New ratio: 600/1200 = 0.5 (1 share = 0.5 base tokens)
+    // When cancelling:
+    // - shares_burned = 1200
+    // - amount_to_withdraw_base_tokens = 1200
+    // - After adding back: total_pool_value = 600 + 1200 = 1800
+    // - calculate_shares = 1200 * 1200 / (1800 - 1200) = 1200 * 1200 / 600 = 2400
+    // - min(1200, 2400) = 1200
+    // Without min(), user would get 2400 shares (exploiting the loss to get more shares)
+    let pool_value_after_loss = 600u128;
+    let expected_shares_minted = Uint128::new(1200); // Capped at original burned amount
+
+    // Update mock BEFORE cancel to simulate pool having lost value
+    update_contract_mock(
+        &mut deps,
+        &wasm_querier,
+        setup_default_control_center_mock(
+            Uint128::new(pool_value_after_loss),
+            Uint128::new(1200),
+        ),
+    );
+
+    // After cancel: pool value includes the cancelled amount, shares include minted shares
+    let total_pool_value_after_cancel = pool_value_after_loss + 1200; // 1800
+    let total_shares_after_cancel = 1200 + expected_shares_minted.u128(); // 2400
+
+    execute_cancel_withdrawal(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        USER1,
+        vec![0u64],
+        &vault_shares_denom_str,
+        Some((expected_shares_minted, expected_shares_minted)),
+        total_pool_value_after_cancel,
+        total_shares_after_cancel,
+    );
+
+    // Verify user got 1200 shares (their original burned amount), not 2400
+    // This confirms the min() logic prevents users from "hedging" against ratio decrease
+    verify_user_withdrawal_requests(&deps, &user1_addr, vec![]);
+}
+
 #[test]
 fn fulfill_pending_withdrawals_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());

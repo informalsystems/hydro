@@ -1,4 +1,5 @@
 use std::{
+    cmp::min,
     collections::{HashMap, HashSet},
     env, vec,
 };
@@ -747,11 +748,16 @@ fn cancel_withdrawal(
     let total_pool_value = total_pool_value.checked_add(amount_to_withdraw_base_tokens)?;
 
     // Calculate how many vault shares should be minted back to the user
-    let shares_to_mint = calculate_number_of_shares_to_mint(
-        amount_to_withdraw_base_tokens,
-        total_pool_value,
-        total_shares_issued,
-    )?;
+    // Take the minimum of the shares they burned and the shares they would receive if they deposited the withdrawal amount right now
+    // This is safe against attempts by users to "hedge" against a ratio decrease by creating and cancelling withdrawals
+    let shares_to_mint = min(
+        shares_burned,
+        calculate_number_of_shares_to_mint(
+            amount_to_withdraw_base_tokens,
+            total_pool_value,
+            total_shares_issued,
+        )?,
+    );
 
     // Prevent minting zero shares
     if shares_to_mint.is_zero() {
