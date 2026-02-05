@@ -1496,10 +1496,7 @@ fn cancel_withdrawal_pool_gains_value_test() {
     update_contract_mock(
         &mut deps,
         &wasm_querier,
-        setup_default_control_center_mock(
-            Uint128::new(pool_value_after_gain),
-            Uint128::new(1200),
-        ),
+        setup_default_control_center_mock(Uint128::new(pool_value_after_gain), Uint128::new(1200)),
     );
 
     // After cancel: pool value includes the cancelled amount, shares include minted shares
@@ -1687,10 +1684,7 @@ fn cancel_withdrawal_pool_loses_value_test() {
     update_contract_mock(
         &mut deps,
         &wasm_querier,
-        setup_default_control_center_mock(
-            Uint128::new(pool_value_after_loss),
-            Uint128::new(1200),
-        ),
+        setup_default_control_center_mock(Uint128::new(pool_value_after_loss), Uint128::new(1200)),
     );
 
     // After cancel: pool value includes the cancelled amount, shares include minted shares
