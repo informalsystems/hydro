@@ -109,7 +109,7 @@ Returns the maximum amount that can be deposited.
 - MUST return conservative estimates (never over-report)
 - MUST account for protocol deposit caps and other limitations
 - If deposits are temporarily disabled, MUST return zero
-- If unable to determine availability, SHOULD return error
+- If unable to determine availability, MUST return error
 
 #### AvailableForWithdraw
 Returns the amount available for immediate withdrawal.
@@ -136,7 +136,7 @@ Returns the amount available for immediate withdrawal.
 **Contract:**
 - MUST return the actual withdrawable amount
 - MUST account for any lockups, unbonding periods, or liquidity constraints
-- If unable to determine availability, SHOULD return error
+- If unable to determine availability, MUST return error
 
 #### TimeToWithdraw
 Returns estimated blocks/time required for withdrawal.
