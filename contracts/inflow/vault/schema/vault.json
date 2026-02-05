@@ -9,6 +9,7 @@
     "required": [
       "control_center_contract",
       "deposit_denom",
+      "initial_shares_recipient",
       "max_withdrawals_per_user",
       "subdenom",
       "token_metadata",
@@ -21,6 +22,10 @@
       },
       "deposit_denom": {
         "description": "The denom of the token that can be deposited into the vault.",
+        "type": "string"
+      },
+      "initial_shares_recipient": {
+        "description": "Address to receive the pre-minted shares. This address will receive shares to prevent share price manipulation attacks. The instantiator must send deposit tokens that convert to at least 1,000,000 base tokens using the token_info_provider ratio.",
         "type": "string"
       },
       "max_withdrawals_per_user": {

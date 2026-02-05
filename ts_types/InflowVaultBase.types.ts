@@ -7,6 +7,7 @@
 export interface InstantiateMsg {
   control_center_contract: string;
   deposit_denom: string;
+  initial_shares_recipient: string;
   max_withdrawals_per_user: number;
   subdenom: string;
   token_info_provider_contract?: string | null;
