@@ -114,9 +114,9 @@ pub fn instantiate(
     // Validate minimum shares threshold
     if initial_shares_to_mint < Uint128::new(MINIMUM_INITIAL_SHARES) {
         return Err(new_generic_error(format!(
-            "insufficient collateral: sent {} deposit tokens ({} base tokens), \
-             need at least {} base tokens to mint minimum {} shares",
-            initial_deposit, initial_shares_to_mint, MINIMUM_INITIAL_SHARES, MINIMUM_INITIAL_SHARES
+            "insufficient collateral: deposit of {} tokens would mint {} shares, \
+             but minimum {} shares are required",
+            initial_deposit, initial_shares_to_mint, MINIMUM_INITIAL_SHARES
         )));
     }
 
