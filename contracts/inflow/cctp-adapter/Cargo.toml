@@ -1,0 +1,28 @@
+[package]
+name = "cctp-adapter"
+version = { workspace = true }
+edition = { workspace = true }
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+library = []
+
+[dependencies]
+cosmwasm-std = { workspace = true }
+cosmwasm-schema = { workspace = true }
+cw-storage-plus = { workspace = true }
+cw2 = { workspace = true }
+cw-utils = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+schemars = { workspace = true }
+neutron-sdk = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+bech32 = { workspace = true }
+interface = { path = "../../../packages/interface" }
+
+[dev-dependencies]
+cw-multi-test = "2.0"
