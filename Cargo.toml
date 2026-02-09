@@ -15,6 +15,7 @@ members = [
     "contracts/inflow/ibc-adapter",
     "contracts/inflow/skip-adapter",
     "contracts/inflow/proxy",
+    "contracts/inflow/cctp-adapter",
     "contracts/inflow/user-registry",
     "packages/cw-orch-interface",
     "packages/interface",
