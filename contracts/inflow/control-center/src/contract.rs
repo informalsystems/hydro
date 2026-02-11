@@ -447,10 +447,8 @@ fn try_accrue_fees_internal(
     // total_yield is in base token units (as Decimal)
     let total_yield = yield_per_share * total_shares_decimal;
     let fee_amount = total_yield * fee_config.fee_rate;
-    let shares_to_mint = fee_amount / current_share_price;
-
-    // Convert shares_to_mint from Decimal to Uint128
-    let shares_to_mint_uint = Uint128::new(shares_to_mint.to_uint_floor().u128());
+    let shares_to_mint_uint =
+        Uint128::new((fee_amount / current_share_price).to_uint_floor().u128());
 
     // Handle dust case: if the floored value is zero, return early without updating
     // the high water mark so dust can accumulate across multiple accrual calls
