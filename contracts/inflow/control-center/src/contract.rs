@@ -447,14 +447,11 @@ fn try_accrue_fees_internal(
     // total_yield is in base token units (as Decimal)
     let total_yield = yield_per_share.checked_mul(total_shares_decimal)?;
     let fee_amount = total_yield.checked_mul(fee_config.fee_rate)?;
-    let shares_to_mint = fee_amount.checked_div(current_share_price)?;
-
-    // Convert shares_to_mint from Decimal to Uint128
-    let shares_to_mint_uint = Uint128::new(shares_to_mint.to_uint_floor().u128());
+    let shares_to_mint = fee_amount.checked_div(current_share_price)?.to_uint_floor();
 
     // Handle dust case: if the floored value is zero, return early without updating
     // the high water mark so dust can accumulate across multiple accrual calls
-    if shares_to_mint_uint.is_zero() {
+    if shares_to_mint.is_zero() {
         return Ok(AccrueFeesResult::DustYield {
             current_share_price,
         });
@@ -502,9 +499,9 @@ fn try_accrue_fees_internal(
         // Calculate this vault's share of the fee shares to mint
         let vault_mint_amount = if i == vaults_with_shares.len() - 1 {
             // Last vault with shares gets the remainder to handle rounding
-            shares_to_mint_uint.checked_sub(total_minted)?
+            shares_to_mint.checked_sub(total_minted)?
         } else {
-            shares_to_mint_uint.multiply_ratio(*shares_issued, pool_info.total_shares_issued)
+            shares_to_mint.multiply_ratio(*shares_issued, pool_info.total_shares_issued)
         };
 
         if vault_mint_amount.is_zero() {
@@ -530,7 +527,7 @@ fn try_accrue_fees_internal(
     }
 
     let response_data = AccrueFeesResponse {
-        total_shares_minted: shares_to_mint_uint,
+        total_shares_minted: shares_to_mint,
         vaults: vault_mints,
     };
 
