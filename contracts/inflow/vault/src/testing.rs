@@ -3706,7 +3706,7 @@ fn deposit_from_deployment_test() {
 }
 
 #[test]
-fn instantiate_fails_with_zero_max_withdrawals_per_user() {
+fn instantiate_succeeds_with_zero_max_withdrawals_per_user() {
     let (mut deps, env) = (mock_dependencies(), mock_env());
 
     let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
@@ -3720,7 +3720,7 @@ fn instantiate_fails_with_zero_max_withdrawals_per_user() {
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    // Set max_withdrawals_per_user to 0
+    // Set max_withdrawals_per_user to 0 to freeze withdrawals
     instantiate_msg.max_withdrawals_per_user = 0;
 
     let info = get_message_info(
@@ -3730,18 +3730,14 @@ fn instantiate_fails_with_zero_max_withdrawals_per_user() {
     );
     let result = instantiate(deps.as_mut(), env.clone(), info, instantiate_msg);
 
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(
-        err.to_string()
-            .contains("max_withdrawals_per_user must be at least 1"),
-        "Expected error about max_withdrawals_per_user, got: {}",
-        err
-    );
+    assert!(result.is_ok());
+
+    let config = CONFIG.load(&deps.storage).unwrap();
+    assert_eq!(config.max_withdrawals_per_user, 0);
 }
 
 #[test]
-fn update_config_fails_with_zero_max_withdrawals_per_user() {
+fn update_config_succeeds_with_zero_max_withdrawals_per_user() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 
     let vault_contract_addr = deps.api.addr_make(INFLOW);
@@ -3766,7 +3762,7 @@ fn update_config_fails_with_zero_max_withdrawals_per_user() {
     );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    // Try to update config with max_withdrawals_per_user = 0
+    // Update config with max_withdrawals_per_user = 0 to freeze withdrawals
     let whitelisted_addr_info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
     let result = execute(
         deps.as_mut(),
@@ -3779,14 +3775,10 @@ fn update_config_fails_with_zero_max_withdrawals_per_user() {
         },
     );
 
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(
-        err.to_string()
-            .contains("max_withdrawals_per_user must be at least 1"),
-        "Expected error about max_withdrawals_per_user, got: {}",
-        err
-    );
+    assert!(result.is_ok());
+
+    let config = CONFIG.load(&deps.storage).unwrap();
+    assert_eq!(config.max_withdrawals_per_user, 0);
 }
 
 #[test]
@@ -3815,7 +3807,7 @@ fn update_config_succeeds_with_valid_max_withdrawals_per_user() {
     );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
-    // Update config with valid max_withdrawals_per_user = 1 (minimum allowed)
+    // Update config with valid max_withdrawals_per_user = 1
     let whitelisted_addr_info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
     let result = execute(
         deps.as_mut(),

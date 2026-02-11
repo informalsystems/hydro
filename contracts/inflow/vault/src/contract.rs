@@ -76,13 +76,6 @@ pub fn instantiate(
         Some(address) => Some(deps.api.addr_validate(&address)?),
     };
 
-    // Validate max_withdrawals_per_user to prevent withdrawal freeze
-    if msg.max_withdrawals_per_user < 1 {
-        return Err(new_generic_error(
-            "max_withdrawals_per_user must be at least 1",
-        ));
-    }
-
     // Validate initial_shares_recipient
     let initial_shares_recipient = deps.api.addr_validate(&msg.initial_shares_recipient)?;
 
@@ -1814,13 +1807,6 @@ fn update_config(
         .add_attribute("sender", info.sender);
 
     if let Some(max_withdrawals_per_user) = config_update.max_withdrawals_per_user {
-        // Validate: must be at least 1 to prevent withdrawal freeze
-        if max_withdrawals_per_user < 1 {
-            return Err(new_generic_error(
-                "max_withdrawals_per_user must be at least 1",
-            ));
-        }
-
         current_config.max_withdrawals_per_user = max_withdrawals_per_user;
 
         response = response.add_attribute(

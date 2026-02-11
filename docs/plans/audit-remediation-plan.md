@@ -584,62 +584,18 @@ if shares_to_mint.is_zero() {
 
 **Problem:** Setting `max_withdrawals_per_user = 0` effectively freezes withdrawals.
 
-**Solution:** Validate that `max_withdrawals_per_user >= 1`.
+**Solution:** Allow `max_withdrawals_per_user = 0`. Freezing withdrawals is a legitimate operational need (e.g. during market turbulence), so no minimum value is enforced. The withdrawal limit check (`current_withdrawals.len() > max_withdrawals_per_user`) naturally blocks all new withdrawals when the value is 0.
 
 ### Implementation Details
 
-#### 6.1 Modify `update_config()` function
+#### 6.1 No validation needed in `update_config()` or `instantiate()`
 
-Location: Lines 1594-1619
+The original audit finding suggested rejecting values below 1. After review, we decided that allowing 0 is intentional — operators may need to temporarily freeze withdrawals. No `< 1` validation is added.
 
-```rust
-fn update_config(
-    deps: DepsMut<NeutronQuery>,
-    info: MessageInfo,
-    mut current_config: Config,
-    config_update: UpdateConfigData,
-) -> Result<Response<NeutronMsg>, ContractError> {
-    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+#### 6.2 Update tests
 
-    let mut response = Response::new()
-        .add_attribute("action", "update_config")
-        .add_attribute("sender", info.sender);
-
-    if let Some(max_withdrawals_per_user) = config_update.max_withdrawals_per_user {
-        // Validate: must be at least 1
-        if max_withdrawals_per_user < 1 {
-            return Err(new_generic_error(
-                "max_withdrawals_per_user must be at least 1"
-            ));
-        }
-
-        current_config.max_withdrawals_per_user = max_withdrawals_per_user;
-        response = response.add_attribute(
-            "max_withdrawals_per_user",
-            max_withdrawals_per_user.to_string(),
-        );
-    }
-
-    CONFIG.save(deps.storage, &current_config)?;
-
-    Ok(response)
-}
-```
-
-#### 6.2 Also validate in `instantiate()`
-
-```rust
-if msg.max_withdrawals_per_user < 1 {
-    return Err(new_generic_error(
-        "max_withdrawals_per_user must be at least 1"
-    ));
-}
-```
-
-#### 6.3 Update tests
-
-- Add test: update_config with max_withdrawals_per_user = 0 fails
-- Add test: instantiate with max_withdrawals_per_user = 0 fails
+- Add test: instantiate with max_withdrawals_per_user = 0 succeeds
+- Add test: update_config with max_withdrawals_per_user = 0 succeeds
 
 ---
 
