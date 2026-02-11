@@ -178,6 +178,10 @@ This is important to ensure that the binaries are consistent with the code.
 Note that for `make compile` to work, Docker has to be running.
 If `make compile` fails with a message about Docker not running, ask the user to start it.
 
+## Code Style
+
+- Avoid redundant type conversions. For example, don't write `Uint128::new(x.to_uint_floor().u128())` — `.to_uint_floor()` already returns `Uint128`. Similarly, don't introduce intermediate variables just to convert between types when method chaining is clearer.
+
 ## Development Notes
 
 - The repo uses Rust 2021 edition with cosmwasm-std 2.1.2
