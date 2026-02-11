@@ -445,9 +445,9 @@ fn try_accrue_fees_internal(
     // Convert total_shares to Decimal for multiplication
     let total_shares_decimal = Decimal::from_ratio(pool_info.total_shares_issued, 1u128);
     // total_yield is in base token units (as Decimal)
-    let total_yield = yield_per_share * total_shares_decimal;
-    let fee_amount = total_yield * fee_config.fee_rate;
-    let shares_to_mint = fee_amount / current_share_price;
+    let total_yield = yield_per_share.checked_mul(total_shares_decimal)?;
+    let fee_amount = total_yield.checked_mul(fee_config.fee_rate)?;
+    let shares_to_mint = fee_amount.checked_div(current_share_price)?;
 
     // Convert shares_to_mint from Decimal to Uint128
     let shares_to_mint_uint = Uint128::new(shares_to_mint.to_uint_floor().u128());
@@ -786,8 +786,8 @@ fn query_fee_accrual_info(
     let (pending_yield, pending_fee) = if current_share_price > high_water_mark_price {
         let yield_per_share = current_share_price - high_water_mark_price;
         let total_shares_decimal = Decimal::from_ratio(pool_info.total_shares_issued, 1u128);
-        let total_yield = yield_per_share * total_shares_decimal;
-        let fee_amount = total_yield * fee_config.fee_rate;
+        let total_yield = yield_per_share.checked_mul(total_shares_decimal)?;
+        let fee_amount = total_yield.checked_mul(fee_config.fee_rate)?;
         (
             Uint128::new(total_yield.to_uint_floor().u128()),
             Uint128::new(fee_amount.to_uint_floor().u128()),
