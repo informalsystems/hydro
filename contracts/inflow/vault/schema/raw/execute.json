@@ -442,6 +442,32 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Mints fee shares to a recipient. Only callable by the control center.",
+      "type": "object",
+      "required": [
+        "mint_fee_shares"
+      ],
+      "properties": {
+        "mint_fee_shares": {
+          "type": "object",
+          "required": [
+            "amount",
+            "recipient"
+          ],
+          "properties": {
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "recipient": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {

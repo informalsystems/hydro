@@ -1,6 +1,6 @@
-use cosmwasm_std::{Addr, StdResult, Storage, Uint128};
+use cosmwasm_std::{Addr, Decimal, StdResult, Storage, Uint128};
 use cw_storage_plus::{Item, Map, SnapshotItem, Strategy};
-use interface::inflow_control_center::Config;
+use interface::inflow_control_center::{Config, FeeConfig};
 
 /// Configuration of the Control Center smart contract
 pub const CONFIG: Item<Config> = Item::new("config");
@@ -21,6 +21,17 @@ pub const DEPLOYED_AMOUNT: SnapshotItem<Uint128> = SnapshotItem::new(
     Strategy::EveryBlock,
 );
 
+/// Fee configuration for performance fee tracking
+pub const FEE_CONFIG: Item<FeeConfig> = Item::new("fee_config");
+
+/// High-water mark: the highest share price (base tokens per share) at which fees were accrued.
+/// Fees are only charged when the current share price exceeds this value.
+pub const HIGH_WATER_MARK_PRICE: Item<Decimal> = Item::new("high_water_mark_price");
+
 pub fn load_config(storage: &dyn Storage) -> StdResult<Config> {
     CONFIG.load(storage)
+}
+
+pub fn load_fee_config(storage: &dyn Storage) -> StdResult<FeeConfig> {
+    FEE_CONFIG.load(storage)
 }

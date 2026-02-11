@@ -6,3 +6,5 @@ pub mod state;
 
 #[cfg(test)]
 mod testing;
+#[cfg(test)]
+mod testing_fees;

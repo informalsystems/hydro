@@ -1,5 +1,6 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::Uint128;
+use interface::inflow_control_center::FeeConfigInit;
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -9,4 +10,6 @@ pub struct InstantiateMsg {
     pub whitelist: Vec<String>,
     /// Initial sub-vault smart contracts to be managed by the Control Center.
     pub subvaults: Vec<String>,
+    /// Optional fee configuration. If None, fees are disabled by default.
+    pub fee_config: Option<FeeConfigInit>,
 }
