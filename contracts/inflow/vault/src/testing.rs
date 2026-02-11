@@ -53,12 +53,18 @@ pub fn get_message_info(api: &MockApi, sender: &str, funds: &[Coin]) -> MessageI
     }
 }
 
+/// Minimum initial deposit required for tests (1,000,000 tokens for 1:1 ratio)
+const MINIMUM_INITIAL_DEPOSIT: u128 = 1_000_000;
+/// Default address for initial shares recipient in tests
+const INITIAL_SHARES_RECIPIENT: &str = "initial_shares_recipient";
+
 // Assuming dATOM as a deposit token
 fn get_default_instantiate_msg(
+    api: &MockApi,
     deposit_denom: &str,
     whitelist_addr: Addr,
     control_center_contract: Addr,
-    token_info_provider_contract: Addr,
+    _token_info_provider_contract: Addr,
 ) -> InstantiateMsg {
     InstantiateMsg {
         deposit_denom: deposit_denom.to_string(),
@@ -74,9 +80,38 @@ fn get_default_instantiate_msg(
             uri_hash: None,
         },
         control_center_contract: control_center_contract.to_string(),
-        token_info_provider_contract: Some(token_info_provider_contract.to_string()),
+        // Set to None to avoid needing token info provider query during instantiate
+        // Tests that need the token info provider should set up mocks before instantiate
+        token_info_provider_contract: None,
         max_withdrawals_per_user: 10,
+        initial_shares_recipient: api.addr_make(INITIAL_SHARES_RECIPIENT).to_string(),
     }
+}
+
+/// Helper to get funds for instantiation (minimum required for pre-mint)
+fn get_initial_deposit_funds(denom: &str) -> Vec<Coin> {
+    vec![Coin::new(MINIMUM_INITIAL_DEPOSIT, denom.to_string())]
+}
+
+/// Helper to set the token info provider contract after instantiation.
+/// This is needed because we instantiate with token_info_provider_contract: None
+/// to avoid needing mocks during instantiate, then set it afterward.
+fn set_token_info_provider(
+    deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier, NeutronQuery>,
+    env: &Env,
+    whitelist_addr: &str,
+    token_info_provider_contract: Addr,
+) {
+    let info = get_message_info(&deps.api, whitelist_addr, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::SetTokenInfoProviderContract {
+            address: Some(token_info_provider_contract.to_string()),
+        },
+    )
+    .unwrap();
 }
 
 fn set_vault_shares_denom(
@@ -107,13 +142,18 @@ fn deposit_withdrawal_for_deployment_test() {
     env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
 
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     let vault_shares_denom_str: String =
@@ -130,7 +170,7 @@ fn deposit_withdrawal_for_deployment_test() {
             Uint128::zero(),
         ),
         setup_token_info_provider_mock(
-            token_info_provider_contract_addr,
+            token_info_provider_contract_addr.clone(),
             DEPOSIT_DENOM.to_string(),
             DATOM_DEFAULT_RATIO,
         ),
@@ -139,6 +179,14 @@ fn deposit_withdrawal_for_deployment_test() {
     let querier_for_deps = wasm_querier.clone();
     deps.querier
         .update_wasm(move |q| querier_for_deps.handler(q));
+
+    // Enable token info provider now that mocks are set up
+    set_token_info_provider(
+        &mut deps,
+        &env,
+        WHITELIST_ADDR,
+        token_info_provider_contract_addr,
+    );
 
     let user1_deposit1 = Uint128::new(1000);
     let user1_expected_shares1 = Uint128::new(1200);
@@ -339,12 +387,17 @@ fn deposit_mints_shares_for_on_behalf_recipient() {
     env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr,
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     let vault_shares_denom_str = format!("factory/{vault_contract_addr}/hydro_inflow_uatom");
@@ -407,12 +460,17 @@ fn withdraw_pays_on_behalf_recipient() {
     env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr,
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     let vault_shares_denom_str = format!("factory/{vault_contract_addr}/hydro_inflow_uatom");
@@ -498,12 +556,17 @@ fn withdraw_queue_uses_on_behalf_withdrawer() {
     env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr,
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     let vault_shares_denom_str = format!("factory/{vault_contract_addr}/hydro_inflow_uatom");
@@ -601,13 +664,18 @@ fn withdrawal_test() {
     env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
 
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     let vault_shares_denom_str: String =
@@ -624,7 +692,7 @@ fn withdrawal_test() {
             Uint128::zero(),
         ),
         setup_token_info_provider_mock(
-            token_info_provider_contract_addr,
+            token_info_provider_contract_addr.clone(),
             DEPOSIT_DENOM.to_string(),
             DATOM_DEFAULT_RATIO,
         ),
@@ -633,6 +701,14 @@ fn withdrawal_test() {
     let querier_for_deps = wasm_querier.clone();
     deps.querier
         .update_wasm(move |q| querier_for_deps.handler(q));
+
+    // Enable token info provider now that mocks are set up
+    set_token_info_provider(
+        &mut deps,
+        &env,
+        WHITELIST_ADDR,
+        token_info_provider_contract_addr,
+    );
 
     let mut total_pool_value = 1200;
 
@@ -953,13 +1029,18 @@ fn cancel_withdrawal_test() {
     env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
 
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     let vault_shares_denom_str: String =
@@ -976,7 +1057,7 @@ fn cancel_withdrawal_test() {
             Uint128::zero(),
         ),
         setup_token_info_provider_mock(
-            token_info_provider_contract_addr,
+            token_info_provider_contract_addr.clone(),
             DEPOSIT_DENOM.to_string(),
             DATOM_DEFAULT_RATIO,
         ),
@@ -985,6 +1066,14 @@ fn cancel_withdrawal_test() {
     let querier_for_deps = wasm_querier.clone();
     deps.querier
         .update_wasm(move |q| querier_for_deps.handler(q));
+
+    // Enable token info provider now that mocks are set up
+    set_token_info_provider(
+        &mut deps,
+        &env,
+        WHITELIST_ADDR,
+        token_info_provider_contract_addr,
+    );
 
     let user1_deposit1 = Uint128::new(1000);
     let user1_deposit_shares1 = Uint128::new(1200);
@@ -1245,6 +1334,380 @@ fn cancel_withdrawal_test() {
     );
 }
 
+/// Test that when the pool gains value (ratio improves) after a withdrawal request,
+/// cancelling the withdrawal mints back FEWER shares than originally burned.
+/// This is because the min() logic caps at the calculated shares (which is less than burned).
+#[test]
+fn cancel_withdrawal_pool_gains_value_test() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let user1_addr = deps.api.addr_make(USER1);
+
+    env.contract.address = vault_contract_addr.clone();
+
+    let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let vault_shares_denom_str: String =
+        format!("factory/{vault_contract_addr}/hydro_inflow_udatom");
+
+    set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
+
+    // Setup initial mocks
+    let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_control_center_mock(
+            control_center_contract_addr.clone(),
+            DEFAULT_DEPOSIT_CAP,
+            Uint128::zero(),
+            Uint128::zero(),
+        ),
+        setup_token_info_provider_mock(
+            token_info_provider_contract_addr.clone(),
+            DEPOSIT_DENOM.to_string(),
+            DATOM_DEFAULT_RATIO,
+        ),
+    ]));
+
+    let querier_for_deps = wasm_querier.clone();
+    deps.querier
+        .update_wasm(move |q| querier_for_deps.handler(q));
+
+    // Enable token info provider
+    set_token_info_provider(
+        &mut deps,
+        &env,
+        WHITELIST_ADDR,
+        token_info_provider_contract_addr,
+    );
+
+    // User1 deposits 1000 tokens → gets 1200 shares (1000 * 1.2 ratio)
+    let user1_deposit = Uint128::new(1000);
+    let user1_shares = Uint128::new(1200);
+
+    let mut total_pool_value = 1200u128;
+    let total_shares_issued_before = 0u128;
+    let mut total_shares_issued_after = 1200u128;
+
+    execute_deposit(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        &vault_contract_addr,
+        USER1,
+        &vault_shares_denom_str,
+        user1_deposit,
+        user1_shares,
+        user1_shares,
+        user1_deposit,
+        total_pool_value,
+        total_shares_issued_before,
+        total_shares_issued_after,
+    );
+
+    // User2 deposits 1000 tokens → gets 1200 shares
+    let user2_deposit = Uint128::new(1000);
+    let user2_shares = Uint128::new(1200);
+
+    total_pool_value = 2400;
+    total_shares_issued_after = 2400;
+
+    execute_deposit(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        &vault_contract_addr,
+        USER2,
+        &vault_shares_denom_str,
+        user2_deposit,
+        user2_shares,
+        user2_shares,
+        user2_deposit,
+        total_pool_value,
+        1200,
+        total_shares_issued_after,
+    );
+
+    // Whitelisted address withdraws all tokens for deployment (so User1 enters queue)
+    execute_withdraw_for_deployment(
+        &mut deps,
+        &env,
+        vault_contract_addr.as_ref(),
+        WHITELIST_ADDR,
+        user1_deposit + user2_deposit,
+        Uint128::zero(),
+    );
+
+    // User1 creates withdrawal request for all 1200 shares
+    // Burns 1200 shares, withdrawal amount = 1000 tokens (1200 base)
+    total_pool_value = 1200; // Only user2's shares value remains
+    total_shares_issued_after = 1200;
+
+    execute_withdraw(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        vault_contract_addr.as_ref(),
+        USER1,
+        None,
+        &vault_shares_denom_str,
+        user1_shares,
+        false,
+        Uint128::zero(),
+        Uint128::zero(),
+        Uint128::zero(),
+        total_pool_value,
+        total_shares_issued_after,
+    );
+
+    verify_user_withdrawal_requests(
+        &deps,
+        &user1_addr,
+        vec![(user1_shares, user1_deposit, false)],
+    );
+
+    // Simulate pool gaining value (50% gain): total_pool_value = 1800, total_shares = 1200
+    // New ratio: 1800/1200 = 1.5 (1 share = 1.5 base tokens)
+    // When cancelling:
+    // - shares_burned = 1200
+    // - amount_to_withdraw_base_tokens = 1200
+    // - After adding back: total_pool_value = 1800 + 1200 = 3000
+    // - calculate_shares = 1200 * 1200 / (3000 - 1200) = 1200 * 1200 / 1800 = 800
+    // - min(1200, 800) = 800
+    let pool_value_after_gain = 1800u128;
+    let expected_shares_minted = Uint128::new(800);
+
+    // Update mock BEFORE cancel to simulate pool having gained value
+    update_contract_mock(
+        &mut deps,
+        &wasm_querier,
+        setup_default_control_center_mock(Uint128::new(pool_value_after_gain), Uint128::new(1200)),
+    );
+
+    // After cancel: pool value includes the cancelled amount, shares include minted shares
+    let total_pool_value_after_cancel = pool_value_after_gain + 1200; // 3000
+    let total_shares_after_cancel = 1200 + expected_shares_minted.u128(); // 2000
+
+    execute_cancel_withdrawal(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        USER1,
+        vec![0u64],
+        &vault_shares_denom_str,
+        Some((expected_shares_minted, expected_shares_minted)),
+        total_pool_value_after_cancel,
+        total_shares_after_cancel,
+    );
+
+    // Verify user got 800 shares, not 1200 (their original burned amount)
+    // This confirms the min() logic is working - user can't profit from ratio improvement
+    verify_user_withdrawal_requests(&deps, &user1_addr, vec![]);
+}
+
+/// Test that when the pool loses value (ratio decreases) after a withdrawal request,
+/// cancelling the withdrawal mints back the SAME number of shares as originally burned.
+/// This is because the min() logic caps at shares_burned (which is less than calculated).
+/// Without the min(), user would get MORE shares and profit from the loss.
+#[test]
+fn cancel_withdrawal_pool_loses_value_test() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let user1_addr = deps.api.addr_make(USER1);
+
+    env.contract.address = vault_contract_addr.clone();
+
+    let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let vault_shares_denom_str: String =
+        format!("factory/{vault_contract_addr}/hydro_inflow_udatom");
+
+    set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
+
+    // Setup initial mocks
+    let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_control_center_mock(
+            control_center_contract_addr.clone(),
+            DEFAULT_DEPOSIT_CAP,
+            Uint128::zero(),
+            Uint128::zero(),
+        ),
+        setup_token_info_provider_mock(
+            token_info_provider_contract_addr.clone(),
+            DEPOSIT_DENOM.to_string(),
+            DATOM_DEFAULT_RATIO,
+        ),
+    ]));
+
+    let querier_for_deps = wasm_querier.clone();
+    deps.querier
+        .update_wasm(move |q| querier_for_deps.handler(q));
+
+    // Enable token info provider
+    set_token_info_provider(
+        &mut deps,
+        &env,
+        WHITELIST_ADDR,
+        token_info_provider_contract_addr,
+    );
+
+    // User1 deposits 1000 tokens → gets 1200 shares (1000 * 1.2 ratio)
+    let user1_deposit = Uint128::new(1000);
+    let user1_shares = Uint128::new(1200);
+
+    let mut total_pool_value = 1200u128;
+    let total_shares_issued_before = 0u128;
+    let mut total_shares_issued_after = 1200u128;
+
+    execute_deposit(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        &vault_contract_addr,
+        USER1,
+        &vault_shares_denom_str,
+        user1_deposit,
+        user1_shares,
+        user1_shares,
+        user1_deposit,
+        total_pool_value,
+        total_shares_issued_before,
+        total_shares_issued_after,
+    );
+
+    // User2 deposits 1000 tokens → gets 1200 shares
+    let user2_deposit = Uint128::new(1000);
+    let user2_shares = Uint128::new(1200);
+
+    total_pool_value = 2400;
+    total_shares_issued_after = 2400;
+
+    execute_deposit(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        &vault_contract_addr,
+        USER2,
+        &vault_shares_denom_str,
+        user2_deposit,
+        user2_shares,
+        user2_shares,
+        user2_deposit,
+        total_pool_value,
+        1200,
+        total_shares_issued_after,
+    );
+
+    // Whitelisted address withdraws all tokens for deployment (so User1 enters queue)
+    execute_withdraw_for_deployment(
+        &mut deps,
+        &env,
+        vault_contract_addr.as_ref(),
+        WHITELIST_ADDR,
+        user1_deposit + user2_deposit,
+        Uint128::zero(),
+    );
+
+    // User1 creates withdrawal request for all 1200 shares
+    // Burns 1200 shares, withdrawal amount = 1000 tokens (1200 base)
+    total_pool_value = 1200; // Only user2's shares value remains
+    total_shares_issued_after = 1200;
+
+    execute_withdraw(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        vault_contract_addr.as_ref(),
+        USER1,
+        None,
+        &vault_shares_denom_str,
+        user1_shares,
+        false,
+        Uint128::zero(),
+        Uint128::zero(),
+        Uint128::zero(),
+        total_pool_value,
+        total_shares_issued_after,
+    );
+
+    verify_user_withdrawal_requests(
+        &deps,
+        &user1_addr,
+        vec![(user1_shares, user1_deposit, false)],
+    );
+
+    // Simulate pool losing value (50% loss): total_pool_value = 600, total_shares = 1200
+    // New ratio: 600/1200 = 0.5 (1 share = 0.5 base tokens)
+    // When cancelling:
+    // - shares_burned = 1200
+    // - amount_to_withdraw_base_tokens = 1200
+    // - After adding back: total_pool_value = 600 + 1200 = 1800
+    // - calculate_shares = 1200 * 1200 / (1800 - 1200) = 1200 * 1200 / 600 = 2400
+    // - min(1200, 2400) = 1200
+    // Without min(), user would get 2400 shares (exploiting the loss to get more shares)
+    let pool_value_after_loss = 600u128;
+    let expected_shares_minted = Uint128::new(1200); // Capped at original burned amount
+
+    // Update mock BEFORE cancel to simulate pool having lost value
+    update_contract_mock(
+        &mut deps,
+        &wasm_querier,
+        setup_default_control_center_mock(Uint128::new(pool_value_after_loss), Uint128::new(1200)),
+    );
+
+    // After cancel: pool value includes the cancelled amount, shares include minted shares
+    let total_pool_value_after_cancel = pool_value_after_loss + 1200; // 1800
+    let total_shares_after_cancel = 1200 + expected_shares_minted.u128(); // 2400
+
+    execute_cancel_withdrawal(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        USER1,
+        vec![0u64],
+        &vault_shares_denom_str,
+        Some((expected_shares_minted, expected_shares_minted)),
+        total_pool_value_after_cancel,
+        total_shares_after_cancel,
+    );
+
+    // Verify user got 1200 shares (their original burned amount), not 2400
+    // This confirms the min() logic prevents users from "hedging" against ratio decrease
+    verify_user_withdrawal_requests(&deps, &user1_addr, vec![]);
+}
+
 #[test]
 fn fulfill_pending_withdrawals_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
@@ -1259,13 +1722,18 @@ fn fulfill_pending_withdrawals_test() {
     env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
 
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
 
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
@@ -1283,7 +1751,7 @@ fn fulfill_pending_withdrawals_test() {
             Uint128::zero(),
         ),
         setup_token_info_provider_mock(
-            token_info_provider_contract_addr,
+            token_info_provider_contract_addr.clone(),
             DEPOSIT_DENOM.to_string(),
             DATOM_DEFAULT_RATIO,
         ),
@@ -1292,6 +1760,14 @@ fn fulfill_pending_withdrawals_test() {
     let querier_for_deps = wasm_querier.clone();
     deps.querier
         .update_wasm(move |q| querier_for_deps.handler(q));
+
+    // Enable token info provider now that mocks are set up
+    set_token_info_provider(
+        &mut deps,
+        &env,
+        WHITELIST_ADDR,
+        token_info_provider_contract_addr,
+    );
 
     let mut total_pool_value = 0;
     let mut total_shares_issued_before = 0;
@@ -1608,13 +2084,18 @@ fn claim_unbonded_withdrawals_test() {
     env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
 
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
 
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
@@ -1632,7 +2113,7 @@ fn claim_unbonded_withdrawals_test() {
             Uint128::zero(),
         ),
         setup_token_info_provider_mock(
-            token_info_provider_contract_addr,
+            token_info_provider_contract_addr.clone(),
             DEPOSIT_DENOM.to_string(),
             DATOM_DEFAULT_RATIO,
         ),
@@ -1641,6 +2122,14 @@ fn claim_unbonded_withdrawals_test() {
     let querier_for_deps = wasm_querier.clone();
     deps.querier
         .update_wasm(move |q| querier_for_deps.handler(q));
+
+    // Enable token info provider now that mocks are set up
+    set_token_info_provider(
+        &mut deps,
+        &env,
+        WHITELIST_ADDR,
+        token_info_provider_contract_addr,
+    );
 
     let mut total_pool_value = 0;
     let mut total_shares_issued_before = 0;
@@ -1919,13 +2408,18 @@ fn whitelist_add_remove_test() {
     env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         user1_address.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
 
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Have a non-whitelisted address try to add new address to the whitelist
@@ -2030,13 +2524,18 @@ fn reporting_balance_queries_test() {
     env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
 
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     let vault_shares_denom_str: String =
@@ -2053,7 +2552,7 @@ fn reporting_balance_queries_test() {
             Uint128::zero(),
         ),
         setup_token_info_provider_mock(
-            token_info_provider_contract_addr,
+            token_info_provider_contract_addr.clone(),
             DEPOSIT_DENOM.to_string(),
             DATOM_DEFAULT_RATIO,
         ),
@@ -2062,6 +2561,14 @@ fn reporting_balance_queries_test() {
     let querier_for_deps = wasm_querier.clone();
     deps.querier
         .update_wasm(move |q| querier_for_deps.handler(q));
+
+    // Enable token info provider now that mocks are set up
+    set_token_info_provider(
+        &mut deps,
+        &env,
+        WHITELIST_ADDR,
+        token_info_provider_contract_addr,
+    );
 
     let user1_deposit1 = Uint128::new(500_000);
     let user1_deposit1_base_tokens = Uint128::new(600_000);
@@ -2138,13 +2645,18 @@ fn withdrawal_with_config_update_test() {
     env.contract.address = vault_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
 
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
 
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg.clone()).unwrap();
 
@@ -2162,7 +2674,7 @@ fn withdrawal_with_config_update_test() {
             Uint128::zero(),
         ),
         setup_token_info_provider_mock(
-            token_info_provider_contract_addr,
+            token_info_provider_contract_addr.clone(),
             DEPOSIT_DENOM.to_string(),
             DATOM_DEFAULT_RATIO,
         ),
@@ -2171,6 +2683,14 @@ fn withdrawal_with_config_update_test() {
     let querier_for_deps = wasm_querier.clone();
     deps.querier
         .update_wasm(move |q| querier_for_deps.handler(q));
+
+    // Enable token info provider now that mocks are set up
+    set_token_info_provider(
+        &mut deps,
+        &env,
+        WHITELIST_ADDR,
+        token_info_provider_contract_addr,
+    );
 
     let mut total_pool_value = 12000;
     let total_shares_issued_before = 0;
@@ -2885,13 +3405,18 @@ fn control_center_pool_info_query_test() {
     env.contract.address = inflow_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
 
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Set up control center mock with specific pool values
@@ -2940,13 +3465,18 @@ fn deposit_from_deployment_test() {
     env.contract.address = inflow_contract_addr.clone();
 
     let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
         DEPOSIT_DENOM,
         whitelist_addr.clone(),
         control_center_contract_addr.clone(),
         token_info_provider_contract_addr.clone(),
     );
 
-    let info = get_message_info(&deps.api, "creator", &[]);
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     let vault_shares_denom_str: String =
@@ -2963,7 +3493,7 @@ fn deposit_from_deployment_test() {
             Uint128::zero(),
         ),
         setup_token_info_provider_mock(
-            token_info_provider_contract_addr,
+            token_info_provider_contract_addr.clone(),
             DEPOSIT_DENOM.to_string(),
             DATOM_DEFAULT_RATIO,
         ),
@@ -2972,6 +3502,14 @@ fn deposit_from_deployment_test() {
     let querier_for_deps = wasm_querier.clone();
     deps.querier
         .update_wasm(move |q| querier_for_deps.handler(q));
+
+    // Enable token info provider now that mocks are set up
+    set_token_info_provider(
+        &mut deps,
+        &env,
+        WHITELIST_ADDR,
+        token_info_provider_contract_addr,
+    );
 
     let user1_deposit = Uint128::new(10000);
     let user1_expected_shares = Uint128::new(12000); // 10000 * 1.2
@@ -3165,4 +3703,204 @@ fn deposit_from_deployment_test() {
         QueryMsg::AvailableForDeployment {},
     );
     assert!(balance_query.is_ok());
+}
+
+#[test]
+fn instantiate_succeeds_with_zero_max_withdrawals_per_user() {
+    let (mut deps, env) = (mock_dependencies(), mock_env());
+
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+
+    let mut instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    // Set max_withdrawals_per_user to 0 to freeze withdrawals
+    instantiate_msg.max_withdrawals_per_user = 0;
+
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
+    let result = instantiate(deps.as_mut(), env.clone(), info, instantiate_msg);
+
+    assert!(result.is_ok());
+
+    let config = CONFIG.load(&deps.storage).unwrap();
+    assert_eq!(config.max_withdrawals_per_user, 0);
+}
+
+#[test]
+fn update_config_succeeds_with_zero_max_withdrawals_per_user() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+
+    env.contract.address = vault_contract_addr.clone();
+
+    let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Update config with max_withdrawals_per_user = 0 to freeze withdrawals
+    let whitelisted_addr_info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    let result = execute(
+        deps.as_mut(),
+        env.clone(),
+        whitelisted_addr_info.clone(),
+        ExecuteMsg::UpdateConfig {
+            config: UpdateConfigData {
+                max_withdrawals_per_user: Some(0),
+            },
+        },
+    );
+
+    assert!(result.is_ok());
+
+    let config = CONFIG.load(&deps.storage).unwrap();
+    assert_eq!(config.max_withdrawals_per_user, 0);
+}
+
+#[test]
+fn update_config_succeeds_with_valid_max_withdrawals_per_user() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+
+    env.contract.address = vault_contract_addr.clone();
+
+    let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Update config with valid max_withdrawals_per_user = 1
+    let whitelisted_addr_info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    let result = execute(
+        deps.as_mut(),
+        env.clone(),
+        whitelisted_addr_info.clone(),
+        ExecuteMsg::UpdateConfig {
+            config: UpdateConfigData {
+                max_withdrawals_per_user: Some(1),
+            },
+        },
+    );
+
+    assert!(result.is_ok());
+
+    // Verify the config was updated
+    let config = CONFIG.load(&deps.storage).unwrap();
+    assert_eq!(config.max_withdrawals_per_user, 1);
+}
+
+#[test]
+fn deposit_fails_when_would_mint_zero_shares() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+
+    env.contract.address = vault_contract_addr.clone();
+
+    let instantiate_msg = get_default_instantiate_msg(
+        &deps.api,
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+
+    let info = get_message_info(
+        &deps.api,
+        "creator",
+        &get_initial_deposit_funds(DEPOSIT_DENOM),
+    );
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let vault_shares_denom_str: String =
+        format!("factory/{vault_contract_addr}/hydro_inflow_udatom");
+
+    set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
+
+    // Setup mocks with a large pool value to cause zero shares for tiny deposit
+    // The deposit of 1 token will be converted to ~1.2 base tokens with the default ratio (1.2)
+    // With total_pool_value = 10002 and total_shares_issued = 100:
+    // deposit_token_current_balance = 10002 - 1 = 10001
+    // shares_to_mint = 1 * 100 / 10001 = 0 (rounds down)
+    let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_control_center_mock(
+            control_center_contract_addr.clone(),
+            DEFAULT_DEPOSIT_CAP,
+            Uint128::new(10002), // total_pool_value (includes deposit)
+            Uint128::new(100),   // total_shares_issued
+        ),
+        setup_token_info_provider_mock(
+            token_info_provider_contract_addr,
+            DEPOSIT_DENOM.to_string(),
+            Decimal::one(), // Use 1:1 ratio for simplicity in this test
+        ),
+    ]));
+
+    let querier_for_deps = wasm_querier.clone();
+    deps.querier
+        .update_wasm(move |q| querier_for_deps.handler(q));
+
+    // Try to deposit 1 token - this should fail because it would mint zero shares
+    let user_info = get_message_info(
+        &deps.api,
+        USER1,
+        &[Coin::new(1u128, DEPOSIT_DENOM.to_string())],
+    );
+
+    let result = execute(
+        deps.as_mut(),
+        env.clone(),
+        user_info,
+        ExecuteMsg::Deposit { on_behalf_of: None },
+    );
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("deposit amount too small: would mint zero shares"),
+        "Expected error about zero shares, got: {}",
+        err
+    );
 }

@@ -1,4 +1,5 @@
 use std::{
+    cmp::min,
     collections::{HashMap, HashSet},
     env, vec,
 };
@@ -57,6 +58,9 @@ pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const UNUSED_MSG_ID: u64 = 0;
 
+/// Minimum number of shares required at instantiation to prevent share price manipulation
+const MINIMUM_INITIAL_SHARES: u128 = 1_000_000;
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut<NeutronQuery>,
@@ -71,6 +75,43 @@ pub fn instantiate(
         None => None,
         Some(address) => Some(deps.api.addr_validate(&address)?),
     };
+
+    // Validate initial_shares_recipient
+    let initial_shares_recipient = deps.api.addr_validate(&msg.initial_shares_recipient)?;
+
+    // Require initial deposit funds to be sent
+    let initial_deposit = cw_utils::must_pay(&info, &msg.deposit_denom)?;
+
+    // Convert deposit tokens to base tokens using token info provider ratio
+    let initial_shares_to_mint = match &token_info_provider_contract {
+        Some(provider) => {
+            // Query the token info provider for the ratio
+            let ratio: Decimal = deps.querier.query_wasm_smart(
+                provider.to_string(),
+                &TokenInfoProviderQueryMsg::RatioToBaseToken {
+                    denom: msg.deposit_denom.clone(),
+                },
+            )?;
+            // deposit_tokens * ratio = base_tokens = shares_to_mint
+            initial_deposit
+                .checked_multiply_ratio(ratio.atomics(), Decimal::one().atomics())
+                .map_err(|e| new_generic_error(format!("overflow computing initial shares: {e}")))?
+        }
+        None => {
+            // No token info provider means deposit token IS the base token (1:1)
+            // shares_to_mint = deposit_amount
+            initial_deposit
+        }
+    };
+
+    // Validate minimum shares threshold
+    if initial_shares_to_mint < Uint128::new(MINIMUM_INITIAL_SHARES) {
+        return Err(new_generic_error(format!(
+            "insufficient collateral: deposit of {} tokens would mint {} shares, \
+             but minimum {} shares are required",
+            initial_deposit, initial_shares_to_mint, MINIMUM_INITIAL_SHARES
+        )));
+    }
 
     CONFIG.save(
         deps.storage,
@@ -119,6 +160,8 @@ pub fn instantiate(
     .with_payload(to_json_vec(&ReplyPayload::CreateDenom {
         subdenom: msg.subdenom.clone(),
         metadata: msg.token_metadata,
+        initial_shares_recipient: initial_shares_recipient.to_string(),
+        initial_shares_amount: initial_shares_to_mint,
     })?);
 
     Ok(Response::new()
@@ -145,7 +188,9 @@ pub fn instantiate(
         .add_attribute(
             "max_withdrawals_per_user",
             msg.max_withdrawals_per_user.to_string(),
-        ))
+        )
+        .add_attribute("initial_shares_minted", initial_shares_to_mint)
+        .add_attribute("initial_shares_recipient", initial_shares_recipient))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -198,7 +243,9 @@ pub fn execute(
             allocation_mode,
             deployment_tracking,
         ),
-        ExecuteMsg::UnregisterAdapter { name } => unregister_adapter(deps, info, name),
+        ExecuteMsg::UnregisterAdapter { name } => {
+            unregister_adapter(deps, env, info, &config, name)
+        }
         ExecuteMsg::SetAdapterAllocationMode {
             name,
             allocation_mode,
@@ -206,7 +253,7 @@ pub fn execute(
         ExecuteMsg::SetAdapterDeploymentTracking {
             name,
             deployment_tracking,
-        } => set_adapter_deployment_tracking(deps, info, name, deployment_tracking),
+        } => set_adapter_deployment_tracking(deps, env, info, &config, name, deployment_tracking),
         ExecuteMsg::WithdrawFromAdapter {
             adapter_name,
             amount,
@@ -256,10 +303,17 @@ fn deposit(
         total_shares_issued,
     )?;
 
+    // Prevent minting zero shares
+    if vault_shares_to_mint.is_zero() {
+        return Err(new_generic_error(
+            "deposit amount too small: would mint zero shares",
+        ));
+    }
+
     let mut messages = vec![];
 
     // Determine where to deploy funds
-    let allocations = calculate_venues_allocation(
+    let allocation_result = calculate_venues_allocation(
         &deps.as_ref(),
         &env,
         deposit_amount,
@@ -271,7 +325,7 @@ fn deposit(
     let mut total_tracked_amount = Uint128::zero();
 
     // If allocations exist, send funds to adapters
-    for (adapter_name, amount) in allocations {
+    for (adapter_name, amount) in allocation_result.allocations {
         // Should never happen, calculate_venues_allocation already retrieves adapters from ADAPTERS
         let adapter_info = ADAPTERS
             .may_load(deps.storage, adapter_name.clone())?
@@ -330,13 +384,23 @@ fn deposit(
 
     messages.push(CosmosMsg::Custom(mint_vault_shares_msg));
 
-    Ok(Response::new()
+    let mut response = Response::new()
         .add_messages(messages)
         .add_attribute("action", "deposit")
         .add_attribute("sender", info.sender)
         .add_attribute("recipient", recipient.to_string())
         .add_attribute("deposit_amount", deposit_amount)
-        .add_attribute("vault_shares_minted", vault_shares_to_mint))
+        .add_attribute("vault_shares_minted", vault_shares_to_mint);
+
+    // Add failed adapter queries attribute if any adapters failed
+    if !allocation_result.failed_adapters.is_empty() {
+        response = response.add_attribute(
+            "failed_adapter_queries",
+            allocation_result.failed_adapters.join(","),
+        );
+    }
+
+    Ok(response)
 }
 
 // User initiates withdrawal request by sending a certain number of vault shares tokens to the contract
@@ -393,7 +457,7 @@ fn withdraw(
 
     // Calculate how much adapters can provide (without withdrawing yet)
     let remaining_after_contract = amount_to_withdraw.saturating_sub(available_contract_balance);
-    let adapter_allocations = if remaining_after_contract > Uint128::zero() {
+    let allocation_result = if remaining_after_contract > Uint128::zero() {
         calculate_venues_allocation(
             &deps.as_ref(),
             &env,
@@ -402,10 +466,25 @@ fn withdraw(
             false, // is_deposit = false
         )?
     } else {
-        vec![]
+        AllocationResult {
+            allocations: vec![],
+            failed_adapters: vec![],
+        }
     };
 
-    let total_from_adapters: Uint128 = adapter_allocations.iter().map(|(_, amt)| *amt).sum();
+    // Add failed adapter queries attribute if any adapters failed
+    if !allocation_result.failed_adapters.is_empty() {
+        response = response.add_attribute(
+            "failed_adapter_queries",
+            allocation_result.failed_adapters.join(","),
+        );
+    }
+
+    let total_from_adapters: Uint128 = allocation_result
+        .allocations
+        .iter()
+        .map(|(_, amt)| *amt)
+        .sum();
     let total_available = available_contract_balance.checked_add(total_from_adapters)?;
 
     // Determine if we can fulfill entirely - all or nothing
@@ -413,11 +492,11 @@ fn withdraw(
 
     // === STEP 2: If we can fulfill entirely, withdraw from adapters ===
     let mut messages = vec![];
-    if can_fulfill_entirely && !adapter_allocations.is_empty() {
+    if can_fulfill_entirely && !allocation_result.allocations.is_empty() {
         // Track total amount withdrawn from tracked adapters for single deployed amount update
         let mut total_tracked_amount = Uint128::zero();
 
-        for (adapter_name, amount) in adapter_allocations {
+        for (adapter_name, amount) in allocation_result.allocations {
             // Should always succeed, as calculate_venues_allocation already retrieves adapters from ADAPTERS
             let adapter_info = ADAPTERS
                 .may_load(deps.storage, adapter_name.clone())?
@@ -662,11 +741,23 @@ fn cancel_withdrawal(
     let total_pool_value = total_pool_value.checked_add(amount_to_withdraw_base_tokens)?;
 
     // Calculate how many vault shares should be minted back to the user
-    let shares_to_mint = calculate_number_of_shares_to_mint(
-        amount_to_withdraw_base_tokens,
-        total_pool_value,
-        total_shares_issued,
-    )?;
+    // Take the minimum of the shares they burned and the shares they would receive if they deposited the withdrawal amount right now
+    // This is safe against attempts by users to "hedge" against a ratio decrease by creating and cancelling withdrawals
+    let shares_to_mint = min(
+        shares_burned,
+        calculate_number_of_shares_to_mint(
+            amount_to_withdraw_base_tokens,
+            total_pool_value,
+            total_shares_issued,
+        )?,
+    );
+
+    // Prevent minting zero shares
+    if shares_to_mint.is_zero() {
+        return Err(new_generic_error(
+            "cannot cancel withdrawal: would mint zero shares",
+        ));
+    }
 
     // Mint the vault shares tokens
     let mint_vault_shares_msg =
@@ -1079,6 +1170,34 @@ fn remove_from_whitelist(
         .add_attribute("removed_whitelist_address", whitelist_address))
 }
 
+/// Query position for a single adapter
+fn query_single_adapter_position(
+    deps: &Deps<NeutronQuery>,
+    env: &Env,
+    adapter_info: &AdapterInfo,
+    deposit_denom: &str,
+) -> Result<Uint128, ContractError> {
+    let query_msg = AdapterInterfaceQueryMsg::DepositorPosition {
+        depositor_address: env.contract.address.to_string(),
+        denom: deposit_denom.to_string(),
+    };
+
+    let result: Result<DepositorPositionResponse, _> = deps.querier.query_wasm_smart(
+        adapter_info.address.to_string(),
+        &AdapterInterfaceQuery {
+            standard_query: &query_msg,
+        },
+    );
+
+    match result {
+        Ok(response) => Ok(response.amount),
+        Err(e) => Err(new_generic_error(format!(
+            "failed to query adapter position: {}",
+            e
+        ))),
+    }
+}
+
 fn validate_address_is_whitelisted(
     deps: &DepsMut<NeutronQuery>,
     address: Addr,
@@ -1166,7 +1285,9 @@ fn register_adapter(
 
 fn unregister_adapter(
     deps: DepsMut<NeutronQuery>,
+    env: Env,
     info: MessageInfo,
+    config: &Config,
     name: String,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     // Validate caller is whitelisted
@@ -1176,6 +1297,17 @@ fn unregister_adapter(
     let adapter_info = ADAPTERS
         .may_load(deps.storage, name.clone())?
         .ok_or_else(|| ContractError::AdapterNotFound { name: name.clone() })?;
+
+    // Query adapter position - must be zero to unregister
+    let adapter_position =
+        query_single_adapter_position(&deps.as_ref(), &env, &adapter_info, &config.deposit_denom)?;
+
+    if !adapter_position.is_zero() {
+        return Err(new_generic_error(format!(
+            "cannot unregister adapter '{}' with non-zero position: {}",
+            name, adapter_position
+        )));
+    }
 
     // Remove adapter from ADAPTERS map
     ADAPTERS.remove(deps.storage, name.clone());
@@ -1224,7 +1356,9 @@ fn set_adapter_allocation_mode(
 /// See `DeploymentTracking` enum documentation for details.
 fn set_adapter_deployment_tracking(
     deps: DepsMut<NeutronQuery>,
+    env: Env,
     info: MessageInfo,
+    config: &Config,
     name: String,
     deployment_tracking: DeploymentTracking,
 ) -> Result<Response<NeutronMsg>, ContractError> {
@@ -1236,6 +1370,53 @@ fn set_adapter_deployment_tracking(
         .may_load(deps.storage, name.clone())?
         .ok_or_else(|| ContractError::AdapterNotFound { name: name.clone() })?;
 
+    let old_tracking = adapter_info.deployment_tracking.clone();
+
+    // Only proceed if tracking mode is actually changing
+    if old_tracking == deployment_tracking {
+        return Ok(Response::new()
+            .add_attribute("action", "set_adapter_deployment_tracking")
+            .add_attribute("sender", info.sender)
+            .add_attribute("adapter_name", name)
+            .add_attribute("result", "no_change"));
+    }
+
+    // Query current adapter position to sync DEPLOYED_AMOUNT
+    let adapter_position =
+        query_single_adapter_position(&deps.as_ref(), &env, &adapter_info, &config.deposit_denom)?;
+
+    let mut messages = vec![];
+
+    // If position is non-zero, update DEPLOYED_AMOUNT based on tracking direction change
+    if !adapter_position.is_zero() {
+        // Convert to base tokens for the deployed amount update
+        let adapter_position_base_tokens =
+            convert_deposit_token_into_base_token(&deps.as_ref(), config, adapter_position)?;
+
+        match (&old_tracking, &deployment_tracking) {
+            // Tracked -> NotTracked: Subtract from DEPLOYED_AMOUNT
+            (DeploymentTracking::Tracked, DeploymentTracking::NotTracked) => {
+                let update_msg = build_update_deployed_amount_msg(
+                    adapter_position_base_tokens,
+                    DeploymentDirection::Subtract,
+                    config,
+                )?;
+                messages.push(update_msg);
+            }
+            // NotTracked -> Tracked: Add to DEPLOYED_AMOUNT
+            (DeploymentTracking::NotTracked, DeploymentTracking::Tracked) => {
+                let update_msg = build_update_deployed_amount_msg(
+                    adapter_position_base_tokens,
+                    DeploymentDirection::Add,
+                    config,
+                )?;
+                messages.push(update_msg);
+            }
+            // Same tracking mode - shouldn't reach here due to early return above
+            _ => {}
+        }
+    }
+
     // Update deployment tracking
     adapter_info.deployment_tracking = deployment_tracking.clone();
 
@@ -1243,10 +1424,12 @@ fn set_adapter_deployment_tracking(
     ADAPTERS.save(deps.storage, name.clone(), &adapter_info)?;
 
     Ok(Response::new()
+        .add_messages(messages)
         .add_attribute("action", "set_adapter_deployment_tracking")
         .add_attribute("sender", info.sender)
         .add_attribute("adapter_name", name)
-        .add_attribute("deployment_tracking", format!("{:?}", deployment_tracking)))
+        .add_attribute("deployment_tracking", format!("{:?}", deployment_tracking))
+        .add_attribute("synced_amount", adapter_position))
 }
 
 /// Withdraws funds from an adapter to the vault contract.
@@ -1521,15 +1704,21 @@ fn move_adapter_funds(
 /// * `is_deposit` - Whether this is a deposit (true) or withdrawal (false)
 ///
 /// # Returns
-/// * `Ok(vec![])` - Empty vector means keep funds in contract
-/// * `Ok(vec![(adapter_name, amount), ...])` - List of adapters with amounts to allocate
+/// * `Ok(AllocationResult)` - Contains allocations and any failed adapter queries
+struct AllocationResult {
+    /// List of adapters with amounts to allocate
+    allocations: Vec<(String, Uint128)>,
+    /// Names of adapters whose queries failed
+    failed_adapters: Vec<String>,
+}
+
 fn calculate_venues_allocation(
     deps: &Deps<NeutronQuery>,
     env: &Env,
     amount: Uint128,
     denom: String,
     is_deposit: bool,
-) -> Result<Vec<(String, Uint128)>, ContractError> {
+) -> Result<AllocationResult, ContractError> {
     let inflow_address = env.contract.address.to_string();
 
     // Get list of adapters with automated allocation (sorted by name for deterministic ordering)
@@ -1545,10 +1734,14 @@ fn calculate_venues_allocation(
 
     if automated_adapters.is_empty() {
         // No adapters available for automated allocation - funds stay in contract
-        return Ok(vec![]);
+        return Ok(AllocationResult {
+            allocations: vec![],
+            failed_adapters: vec![],
+        });
     }
 
     let mut allocations: Vec<(String, Uint128)> = Vec::new();
+    let mut failed_adapters: Vec<String> = Vec::new();
     let mut remaining = amount;
 
     for (adapter_name, adapter_info) in automated_adapters {
@@ -1569,7 +1762,7 @@ fn calculate_venues_allocation(
             }
         };
 
-        // Query the adapter - if it fails, skip to next adapter
+        // Query the adapter - if it fails, track and skip to next adapter
         let available_result: Result<AvailableAmountResponse, _> = deps.querier.query_wasm_smart(
             adapter_info.address.to_string(),
             &AdapterInterfaceQuery {
@@ -1577,18 +1770,27 @@ fn calculate_venues_allocation(
             },
         );
 
-        if let Ok(available_response) = available_result {
-            if available_response.amount > Uint128::zero() {
+        match available_result {
+            Ok(available_response) if available_response.amount > Uint128::zero() => {
                 // Allocate the minimum of available and remaining
                 let to_allocate = available_response.amount.min(remaining);
                 allocations.push((adapter_name, to_allocate));
                 remaining = remaining.checked_sub(to_allocate)?;
             }
+            Ok(_) => {
+                // Zero capacity - legitimate, no action needed
+            }
+            Err(_) => {
+                // Query failed - track for visibility
+                failed_adapters.push(adapter_name);
+            }
         }
-        // If query fails or amount is zero, skip to next adapter
     }
 
-    Ok(allocations)
+    Ok(AllocationResult {
+        allocations,
+        failed_adapters,
+    })
 }
 
 fn update_config(
@@ -1975,7 +2177,12 @@ pub fn reply(
     let reply_paylod = from_json::<ReplyPayload>(&msg.payload)?;
 
     match reply_paylod {
-        ReplyPayload::CreateDenom { subdenom, metadata } => {
+        ReplyPayload::CreateDenom {
+            subdenom,
+            metadata,
+            initial_shares_recipient,
+            initial_shares_amount,
+        } => {
             // Full denom name, e.g. "factory/{inflow_contract_address}/hydro_inflow_atom"
             let full_denom = query_full_denom(deps.as_ref(), &env.contract.address, subdenom)?;
 
@@ -1985,16 +2192,26 @@ pub fn reply(
                 Ok(config)
             })?;
 
-            let msg = create_set_denom_metadata_msg(
+            let metadata_msg = create_set_denom_metadata_msg(
                 env.contract.address.into_string(),
                 full_denom.denom.clone(),
                 metadata,
             );
 
+            // Mint initial shares to the recipient
+            let mint_msg = NeutronMsg::submit_mint_tokens(
+                full_denom.denom.clone(),
+                initial_shares_amount,
+                initial_shares_recipient.clone(),
+            );
+
             Ok(Response::new()
-                .add_message(msg)
+                .add_message(metadata_msg)
+                .add_message(mint_msg)
                 .add_attribute("action", "reply_create_denom")
-                .add_attribute("full_denom", full_denom.denom))
+                .add_attribute("full_denom", full_denom.denom)
+                .add_attribute("initial_shares_minted", initial_shares_amount)
+                .add_attribute("initial_shares_recipient", initial_shares_recipient))
         }
     }
 }

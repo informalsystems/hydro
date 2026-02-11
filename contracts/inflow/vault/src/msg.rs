@@ -1,4 +1,5 @@
 use cosmwasm_schema::cw_serde;
+use cosmwasm_std::Uint128;
 use serde::{Deserialize, Serialize};
 
 #[cw_serde]
@@ -20,6 +21,11 @@ pub struct InstantiateMsg {
     pub whitelist: Vec<String>,
     /// Maximum number of pending withdrawals per single user.
     pub max_withdrawals_per_user: u64,
+    /// Address to receive the pre-minted shares. This address will receive
+    /// shares to prevent share price manipulation attacks.
+    /// The instantiator must send deposit tokens that convert to at least
+    /// 1,000,000 base tokens using the token_info_provider ratio.
+    pub initial_shares_recipient: String,
 }
 
 #[cw_serde]
@@ -47,5 +53,9 @@ pub enum ReplyPayload {
     CreateDenom {
         subdenom: String,
         metadata: DenomMetadata,
+        /// Address to receive the pre-minted shares
+        initial_shares_recipient: String,
+        /// The amount of shares to mint (equals base token value of initial deposit)
+        initial_shares_amount: Uint128,
     },
 }
