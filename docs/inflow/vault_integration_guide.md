@@ -343,19 +343,6 @@ Returns `total_pool_value` and `total_shares_issued` across all sub-vaults, whic
 Share price = `total_pool_value / total_shares_issued` (in micro-units, so the ratio is the human-readable price).
 
 ```json
-{ "config": {} }
-```
-Returns an object with a `config` field containing the configuration:
-```json
-{
-  "config": {
-    "deposit_cap": "1000000000000"
-  }
-}
-```
-The `deposit_cap` is in micro-units (see [Token Decimals](#token-decimals)).
-
-```json
 { "subvaults": {} }
 ```
 Returns the list of registered sub-vault addresses.
