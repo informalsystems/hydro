@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TokenConfigResponse",
+  "type": "object",
+  "required": [
+    "base_asset_denom",
+    "denom",
+    "drop_staking_core",
+    "drop_voucher",
+    "drop_withdrawal_manager",
+    "enabled",
+    "symbol"
+  ],
+  "properties": {
+    "base_asset_denom": {
+      "type": "string"
+    },
+    "denom": {
+      "type": "string"
+    },
+    "drop_staking_core": {
+      "type": "string"
+    },
+    "drop_voucher": {
+      "type": "string"
+    },
+    "drop_withdrawal_manager": {
+      "type": "string"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "symbol": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}
