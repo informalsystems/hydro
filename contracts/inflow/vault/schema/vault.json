@@ -1,6 +1,6 @@
 {
   "contract_name": "vault",
-  "contract_version": "3.6.7",
+  "contract_version": "3.6.8",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -546,6 +546,32 @@
                 "type": "string"
               },
               "to_adapter": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Mints fee shares to a recipient. Only callable by the control center.",
+        "type": "object",
+        "required": [
+          "mint_fee_shares"
+        ],
+        "properties": {
+          "mint_fee_shares": {
+            "type": "object",
+            "required": [
+              "amount",
+              "recipient"
+            ],
+            "properties": {
+              "amount": {
+                "$ref": "#/definitions/Uint128"
+              },
+              "recipient": {
                 "type": "string"
               }
             },

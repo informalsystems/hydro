@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## v3.6.8
+
+Date: February 24th, 2026
+
+### FEATURES
+
+- Add performance fee system to the Inflow subsystem with high-water mark logic. Fees are calculated on yield above the high-water mark share price and minted proportionally to each subvault's share of the pool. ([\#383](https://github.com/informalsystems/hydro/pull/383))
+
 ## v3.6.7
 
 Date: January 23rd, 2025
