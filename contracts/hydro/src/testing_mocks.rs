@@ -7,16 +7,13 @@ use cosmwasm_std::{
     SystemError, SystemResult, WasmQuery,
 };
 use cosmwasm_std::{ContractResult, Empty};
-use ibc_proto::ibc::apps::transfer::v1::{
-    DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
-};
 use interface::{
     lsm::ValidatorInfo,
     token_info_provider::{DenomInfoResponse, TokenInfoProviderQueryMsg, ValidatorsInfoResponse},
 };
 use prost::Message;
 
-use crate::lsm_integration::DENOM_TRACE_GRPC;
+use crate::lsm_integration::{DenomHop, IbcDenom, QueryDenomRequest, QueryDenomResponse, DENOM_GRPC};
 
 pub type GrpcQueryFunc = dyn Fn(GrpcQuery) -> QuerierResult;
 pub type WasmQueryFunc = Box<dyn Fn(&WasmQuery) -> QuerierResult>;
@@ -97,11 +94,11 @@ pub fn denom_trace_grpc_query_mock(
     in_out_denom_map: HashMap<String, String>,
 ) -> Box<GrpcQueryFunc> {
     Box::new(move |query: GrpcQuery| {
-        if query.path != DENOM_TRACE_GRPC {
+        if query.path != DENOM_GRPC {
             panic!("unexpected gRPC query path");
         }
 
-        let request = QueryDenomTraceRequest::decode(query.data.as_slice()).unwrap();
+        let request = QueryDenomRequest::decode(query.data.as_slice()).unwrap();
         let resolved_denom = match in_out_denom_map.get(request.hash.as_str()) {
             Some(denom) => denom.clone(),
             _ => {
@@ -115,11 +112,28 @@ pub fn denom_trace_grpc_query_mock(
             }
         };
 
+        // Reconstruct the trace hops from the slash-separated path string.
+        // e.g. "transfer/channel-1" -> [{port_id: "transfer", channel_id: "channel-1"}]
+        let parts: Vec<&str> = denom_trace_path.split('/').collect();
+        let trace = parts
+            .chunks(2)
+            .filter_map(|chunk| {
+                if chunk.len() == 2 {
+                    Some(DenomHop {
+                        port_id: chunk[0].to_string(),
+                        channel_id: chunk[1].to_string(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         system_result_ok_from(
-            QueryDenomTraceResponse {
-                denom_trace: Some(DenomTrace {
-                    path: denom_trace_path.clone(),
-                    base_denom: resolved_denom,
+            QueryDenomResponse {
+                denom: Some(IbcDenom {
+                    base: resolved_denom,
+                    trace,
                 }),
             }
             .encode_to_vec(),
@@ -132,8 +146,8 @@ pub fn grpc_query_diff_paths_mock(
 ) -> Box<GrpcQueryFunc> {
     Box::new(move |query: GrpcQuery| {
         match query.path.as_str() {
-            DENOM_TRACE_GRPC => {
-                let request = QueryDenomTraceRequest::decode(query.data.as_slice()).unwrap();
+            DENOM_GRPC => {
+                let request = QueryDenomRequest::decode(query.data.as_slice()).unwrap();
                 // Find the trace path and denom for the given hash
                 let (trace_path, denom) = in_out_denom_map
                     .iter()
@@ -144,15 +158,31 @@ pub fn grpc_query_diff_paths_mock(
                     .unwrap_or_else(|| {
                         panic!(
                             "unexpected input token hash '{}' for path {}",
-                            request.hash, DENOM_TRACE_GRPC
+                            request.hash, DENOM_GRPC
                         )
                     });
 
+                // Reconstruct trace hops from the slash-separated path string.
+                let parts: Vec<&str> = trace_path.split('/').collect();
+                let trace = parts
+                    .chunks(2)
+                    .filter_map(|chunk| {
+                        if chunk.len() == 2 {
+                            Some(DenomHop {
+                                port_id: chunk[0].to_string(),
+                                channel_id: chunk[1].to_string(),
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
                 system_result_ok_from(
-                    QueryDenomTraceResponse {
-                        denom_trace: Some(DenomTrace {
-                            path: trace_path,
-                            base_denom: denom,
+                    QueryDenomResponse {
+                        denom: Some(IbcDenom {
+                            base: denom,
+                            trace,
                         }),
                     }
                     .encode_to_vec(),
