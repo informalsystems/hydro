@@ -24,7 +24,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "3.6.8"
+version = "3.6.9"
 edition = "2021"
 
 [profile.release]
