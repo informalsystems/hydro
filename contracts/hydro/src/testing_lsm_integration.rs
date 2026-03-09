@@ -1,12 +1,12 @@
 use std::{collections::HashMap, str::FromStr};
 
-use cosmos_sdk_proto::prost::Message;
+use prost::Message;
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
     BankMsg, Coin, CosmosMsg, Decimal, Env, OwnedDeps, StdError, SystemError, SystemResult,
     Timestamp, Uint128,
 };
-use ibc_proto::ibc::apps::transfer::v1::QueryDenomTraceResponse;
+use ibc_proto::ibc::apps::transfer::v1::QueryDenomResponse;
 use interface::hydro::TokenGroupRatioChange;
 
 use crate::{
@@ -83,7 +83,7 @@ fn test_validate_denom() {
             denom: IBC_DENOM_1.to_string(),
             expected_result: Err(StdError::generic_err("Failed to obtain IBC denom trace")),
             setup: Box::new(|_deps, _env| { }),
-            grpc_query: Box::new(|_query| { system_result_ok_from(QueryDenomTraceResponse { denom_trace: None }.encode_to_vec()) }),
+            grpc_query: Box::new(|_query| { system_result_ok_from(QueryDenomResponse { denom: None }.encode_to_vec()) }),
         },
         TestCase {
             description: "IBC denom received over multiple hops".to_string(),
