@@ -3031,3 +3031,110 @@ fn test_move_adapter_funds_deposit_denom_with_tracked_deployment() {
     assert_eq!(res.attributes[2].value, "mars_adapter");
     assert_eq!(res.attributes[3].value, "osmosis_adapter");
 }
+
+// Regression test: previously move_adapter_funds would check the vault balance during message
+// building and fail with InsufficientBalance, even though the funds are held in the source
+// adapter and will only arrive in the vault once the withdraw message executes on-chain.
+#[test]
+fn test_move_adapter_funds_succeeds_with_zero_vault_balance() {
+    let mut deps = mock_dependencies();
+    let mut env = mock_env();
+
+    let vault_contract_addr = deps.api.addr_make("vault");
+    env.contract.address = vault_contract_addr.clone();
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let adapter1_addr = deps.api.addr_make("adapter1");
+    let adapter2_addr = deps.api.addr_make("adapter2");
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+
+    // Instantiate contract
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // Register two adapters
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "ibc_adapter".to_string(),
+            address: adapter1_addr.to_string(),
+            description: None,
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        ExecuteMsg::RegisterAdapter {
+            name: "skip_adapter".to_string(),
+            address: adapter2_addr.to_string(),
+            description: None,
+            allocation_mode: AllocationMode::Manual,
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    // Vault balance is zero — all funds are in the source adapter.
+    // This must not prevent the move from building its messages successfully.
+
+    let res = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::MoveAdapterFunds {
+            from_adapter: "ibc_adapter".to_string(),
+            to_adapter: "skip_adapter".to_string(),
+            coin: Coin {
+                denom: DEPOSIT_DENOM.to_string(),
+                amount: Uint128::new(2_500_000_000),
+            },
+        },
+    )
+    .unwrap();
+
+    // Two messages: withdraw from ibc_adapter, then deposit to skip_adapter
+    assert_eq!(res.messages.len(), 2);
+
+    // First message: withdraw from source adapter (no funds attached)
+    match &res.messages[0].msg {
+        CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr,
+            funds,
+            ..
+        }) => {
+            assert_eq!(contract_addr, &adapter1_addr.to_string());
+            assert!(funds.is_empty());
+        }
+        _ => panic!("Expected WasmMsg::Execute for withdraw"),
+    }
+
+    // Second message: deposit to destination adapter (funds attached)
+    match &res.messages[1].msg {
+        CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr,
+            funds,
+            ..
+        }) => {
+            assert_eq!(contract_addr, &adapter2_addr.to_string());
+            assert_eq!(funds.len(), 1);
+            assert_eq!(funds[0].denom, DEPOSIT_DENOM);
+            assert_eq!(funds[0].amount, Uint128::new(2_500_000_000));
+        }
+        _ => panic!("Expected WasmMsg::Execute for deposit"),
+    }
+}
