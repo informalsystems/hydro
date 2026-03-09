@@ -13,7 +13,9 @@ pub const COSMOS_VALIDATOR_PREFIX: &str = "cosmosvaloper";
 pub const COSMOS_VALIDATOR_ADDR_LENGTH: usize = 52; // e.g. cosmosvaloper15w6ra6m68c63t0sv2hzmkngwr9t88e23r8vtg5
 
 // Proto types for the ibc-go v10 Denom query endpoint.
-// These types are not yet available in the ibc-proto crate.
+// These types are not yet available in a published version of the ibc-proto crate that is
+// compatible with our prost 0.12 dependency. Once ibc-proto publishes a compatible release
+// these definitions can be replaced with the upstream types.
 #[derive(Clone, PartialEq, Message)]
 pub(crate) struct QueryDenomRequest {
     #[prost(string, tag = "1")]
