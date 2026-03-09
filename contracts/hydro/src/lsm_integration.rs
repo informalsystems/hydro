@@ -1,6 +1,8 @@
 use cosmwasm_std::{Binary, Deps, StdError, StdResult};
 
-use ibc_proto::ibc::apps::transfer::v1::DenomTrace;
+use ibc_proto::ibc::apps::transfer::v1::{
+    DenomTrace, QueryDenomRequest, QueryDenomResponse,
+};
 
 use prost::Message;
 
@@ -11,36 +13,6 @@ pub const DENOM_GRPC: &str = "/ibc.applications.transfer.v1.Query/Denom";
 pub const TRANSFER_PORT: &str = "transfer";
 pub const COSMOS_VALIDATOR_PREFIX: &str = "cosmosvaloper";
 pub const COSMOS_VALIDATOR_ADDR_LENGTH: usize = 52; // e.g. cosmosvaloper15w6ra6m68c63t0sv2hzmkngwr9t88e23r8vtg5
-
-// Proto types for the ibc-go v10 Denom query endpoint.
-// These types are not yet available in the ibc-proto crate.
-#[derive(Clone, PartialEq, Message)]
-pub(crate) struct QueryDenomRequest {
-    #[prost(string, tag = "1")]
-    pub hash: String,
-}
-
-#[derive(Clone, PartialEq, Message)]
-pub(crate) struct DenomHop {
-    #[prost(string, tag = "1")]
-    pub port_id: String,
-    #[prost(string, tag = "2")]
-    pub channel_id: String,
-}
-
-#[derive(Clone, PartialEq, Message)]
-pub(crate) struct IbcDenom {
-    #[prost(string, tag = "1")]
-    pub base: String,
-    #[prost(message, repeated, tag = "3")]
-    pub trace: Vec<DenomHop>,
-}
-
-#[derive(Clone, PartialEq, Message)]
-pub(crate) struct QueryDenomResponse {
-    #[prost(message, optional, tag = "1")]
-    pub denom: Option<IbcDenom>,
-}
 
 pub fn resolve_validator_from_denom(
     deps: &Deps,

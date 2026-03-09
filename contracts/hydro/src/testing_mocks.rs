@@ -13,7 +13,8 @@ use interface::{
 };
 use prost::Message;
 
-use crate::lsm_integration::{DenomHop, IbcDenom, QueryDenomRequest, QueryDenomResponse, DENOM_GRPC};
+use crate::lsm_integration::DENOM_GRPC;
+use ibc_proto::ibc::apps::transfer::v1::{Denom as IbcDenom, Hop as DenomHop, QueryDenomRequest, QueryDenomResponse};
 
 pub type GrpcQueryFunc = dyn Fn(GrpcQuery) -> QuerierResult;
 pub type WasmQueryFunc = Box<dyn Fn(&WasmQuery) -> QuerierResult>;
