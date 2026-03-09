@@ -1,8 +1,6 @@
 use cosmwasm_std::{Binary, Deps, StdError, StdResult};
 
-use ibc_proto::ibc::apps::transfer::v1::{
-    DenomTrace, QueryDenomRequest, QueryDenomResponse,
-};
+use ibc_proto::ibc::apps::transfer::v1::{DenomTrace, QueryDenomRequest, QueryDenomResponse};
 
 use prost::Message;
 

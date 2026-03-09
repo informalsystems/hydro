@@ -14,7 +14,9 @@ use interface::{
 use prost::Message;
 
 use crate::lsm_integration::DENOM_GRPC;
-use ibc_proto::ibc::apps::transfer::v1::{Denom as IbcDenom, Hop as DenomHop, QueryDenomRequest, QueryDenomResponse};
+use ibc_proto::ibc::apps::transfer::v1::{
+    Denom as IbcDenom, Hop as DenomHop, QueryDenomRequest, QueryDenomResponse,
+};
 
 pub type GrpcQueryFunc = dyn Fn(GrpcQuery) -> QuerierResult;
 pub type WasmQueryFunc = Box<dyn Fn(&WasmQuery) -> QuerierResult>;
@@ -181,10 +183,7 @@ pub fn grpc_query_diff_paths_mock(
 
                 system_result_ok_from(
                     QueryDenomResponse {
-                        denom: Some(IbcDenom {
-                            base: denom,
-                            trace,
-                        }),
+                        denom: Some(IbcDenom { base: denom, trace }),
                     }
                     .encode_to_vec(),
                 )

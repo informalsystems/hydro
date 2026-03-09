@@ -1,6 +1,5 @@
 use std::{collections::HashMap, str::FromStr};
 
-use prost::Message;
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
     BankMsg, Coin, CosmosMsg, Decimal, Env, OwnedDeps, StdError, SystemError, SystemResult,
@@ -8,6 +7,7 @@ use cosmwasm_std::{
 };
 use ibc_proto::ibc::apps::transfer::v1::QueryDenomResponse;
 use interface::hydro::TokenGroupRatioChange;
+use prost::Message;
 
 use crate::{
     contract::{
