@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## v3.6.9
+
+Date: March 9th, 2026
+
+### BUG FIXES
+
+- Fix LSM denom resolution broken by Neutron v10 upgrade: replace the removed
+  `DenomTrace` gRPC endpoint with the new `Denom` endpoint introduced in ibc-go v10.
+  ([\#398](https://github.com/informalsystems/hydro/pull/398))
+
 ## v3.6.8
 
 Date: February 24th, 2026
