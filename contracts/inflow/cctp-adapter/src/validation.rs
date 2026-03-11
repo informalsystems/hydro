@@ -54,24 +54,6 @@ pub fn validate_executor_caller(
     Ok(())
 }
 
-/// Validates that the caller is either a config admin OR an executor
-#[allow(dead_code)]
-pub fn validate_admin_or_executor(
-    deps: &DepsMut<NeutronQuery>,
-    info: &MessageInfo,
-) -> Result<(), ContractError> {
-    let admins = ADMINS.load(deps.storage)?;
-    if admins.contains(&info.sender) {
-        return Ok(());
-    }
-
-    if EXECUTORS.has(deps.storage, info.sender.clone()) {
-        return Ok(());
-    }
-
-    Err(ContractError::Unauthorized {})
-}
-
 /// Helper function to get depositor from storage (used in queries)
 pub fn get_depositor(deps: Deps<NeutronQuery>, depositor_address: String) -> StdResult<Depositor> {
     let addr = deps.api.addr_validate(&depositor_address)?;
@@ -146,16 +128,15 @@ impl ChainConfig {
         // Check that both noble_receiver and noble_fee_recipient are valid noble addresses
         match bech32::decode(&self.bridging_config.noble_receiver) {
             Err(_) => {
-                return Err(ContractError::InvalidChainConfig {
-                    reason: format!(
-                        "invalid noble_receiver address: {}",
-                        self.bridging_config.noble_receiver
-                    ),
+                return Err(ContractError::InvalidNobleAddress {
+                    address: self.bridging_config.noble_receiver.clone(),
+                    reason: "invalid bech32 address".to_string(),
                 });
             }
             Ok((prefix, _)) => {
                 if prefix.as_str() != NOBLE_HRP {
-                    return Err(ContractError::InvalidChainConfig {
+                    return Err(ContractError::InvalidNobleAddress {
+                        address: self.bridging_config.noble_receiver.clone(),
                         reason: format!(
                             "noble_receiver must have '{}' prefix, got '{}'",
                             NOBLE_HRP, prefix
@@ -167,16 +148,15 @@ impl ChainConfig {
 
         match bech32::decode(&self.bridging_config.noble_fee_recipient) {
             Err(_) => {
-                return Err(ContractError::InvalidChainConfig {
-                    reason: format!(
-                        "invalid noble_fee_recipient address: {}",
-                        self.bridging_config.noble_fee_recipient
-                    ),
+                return Err(ContractError::InvalidNobleAddress {
+                    address: self.bridging_config.noble_fee_recipient.clone(),
+                    reason: "invalid bech32 address".to_string(),
                 });
             }
             Ok((prefix, _)) => {
                 if prefix.as_str() != NOBLE_HRP {
-                    return Err(ContractError::InvalidChainConfig {
+                    return Err(ContractError::InvalidNobleAddress {
+                        address: self.bridging_config.noble_fee_recipient.clone(),
                         reason: format!(
                             "noble_fee_recipient must have '{}' prefix, got '{}'",
                             NOBLE_HRP, prefix

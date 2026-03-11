@@ -16,7 +16,7 @@ use crate::msg::{
     CctpAdapterMsg, CctpAdapterQueryMsg, ChainConfigResponse, ConfigResponse,
     DepositorCapabilitiesResponse, DepositorPositionResponse, DepositorPositionsResponse,
     ExecuteMsg, ExecutorInfo, ExecutorsResponse, InstantiateMsg, QueryMsg, RegisteredDepositorInfo,
-    RegisteredDepositorsResponse, TimeEstimateResponse,
+    RegisteredDepositorsResponse, TimeEstimateResponse, UpdateConfigData,
 };
 use crate::noble::construct_noble_cctp_memo;
 use crate::state::{
@@ -46,7 +46,7 @@ pub fn instantiate(
         return Err(ContractError::AtLeastOneAdmin {});
     }
 
-    // Validate and deduplicate admins
+    // Validate admins
     let validated_admins = msg
         .admins
         .iter()
@@ -60,18 +60,20 @@ pub fn instantiate(
 
     ADMINS.save(deps.storage, &unique_admins)?;
 
-    // Validate and store executors
-    for initial_executor in msg.initial_executors {
-        let addr = deps.api.addr_validate(&initial_executor.address)?;
+    // Validate executors
+    let validated_executors = msg
+        .initial_executors
+        .iter()
+        .map(|e| deps.api.addr_validate(&e.address))
+        .collect::<StdResult<Vec<_>>>()?;
 
-        // Check for duplicate
-        if EXECUTORS.has(deps.storage, addr.clone()) {
-            return Err(ContractError::ExecutorAlreadyExists {
-                executor: addr.to_string(),
-            });
-        }
+    // Deduplicate executors
+    let mut unique_executors = validated_executors;
+    unique_executors.sort();
+    unique_executors.dedup();
 
-        EXECUTORS.save(deps.storage, addr, &())?;
+    for executor in unique_executors {
+        EXECUTORS.save(deps.storage, executor, &())?;
     }
 
     // Register initial depositors
@@ -209,6 +211,7 @@ fn dispatch_execute_custom(
     msg: CctpAdapterMsg,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     match msg {
+        CctpAdapterMsg::UpdateConfig { update } => execute_update_config(deps, info, update),
         CctpAdapterMsg::TransferFunds {
             amount,
             instructions,
@@ -488,6 +491,64 @@ fn execute_transfer_funds(
             "noble_receiver",
             chain_config.bridging_config.noble_receiver,
         ))
+}
+
+fn execute_update_config(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    update: UpdateConfigData,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    validate_admin_caller(&deps.as_ref(), &info)?;
+
+    let mut config = CONFIG.load(deps.storage)?;
+
+    let mut response = Response::new()
+        .add_attribute("action", "update_config")
+        .add_attribute("sender", info.sender);
+
+    if let Some(denom) = update.denom {
+        if denom.trim().is_empty() {
+            return Err(StdError::generic_err("Denom cannot be empty").into());
+        }
+
+        response = response
+            .add_attribute("old_denom", config.denom.clone())
+            .add_attribute("new_denom", denom.clone());
+
+        config.denom = denom;
+    }
+
+    if let Some(noble_transfer_channel_id) = update.noble_transfer_channel_id {
+        response = response
+            .add_attribute(
+                "old_noble_transfer_channel_id",
+                config.noble_transfer_channel_id.clone(),
+            )
+            .add_attribute(
+                "new_noble_transfer_channel_id",
+                noble_transfer_channel_id.clone(),
+            );
+
+        config.noble_transfer_channel_id = noble_transfer_channel_id;
+    }
+
+    if let Some(ibc_default_timeout_seconds) = update.ibc_default_timeout_seconds {
+        response = response
+            .add_attribute(
+                "old_ibc_default_timeout_seconds",
+                config.ibc_default_timeout_seconds.to_string(),
+            )
+            .add_attribute(
+                "new_ibc_default_timeout_seconds",
+                ibc_default_timeout_seconds.to_string(),
+            );
+
+        config.ibc_default_timeout_seconds = ibc_default_timeout_seconds;
+    }
+
+    CONFIG.save(deps.storage, &config)?;
+
+    Ok(response)
 }
 
 fn execute_add_executor(

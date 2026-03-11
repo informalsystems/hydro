@@ -65,9 +65,20 @@ pub enum ExecuteMsg {
     CustomAction(CctpAdapterMsg),
 }
 
+/// Data for updating the contract config.
+#[cw_serde]
+pub struct UpdateConfigData {
+    pub denom: Option<String>,
+    pub noble_transfer_channel_id: Option<String>,
+    pub ibc_default_timeout_seconds: Option<u64>,
+}
+
 /// CCTP adapter-specific execute messages (placeholder for future custom actions)
 #[cw_serde]
 pub enum CctpAdapterMsg {
+    /// Update contract configuration (admin only)
+    UpdateConfig { update: UpdateConfigData },
+
     /// Add a new executor (config admin only)
     AddExecutor { executor_address: String },
 
