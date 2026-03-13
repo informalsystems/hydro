@@ -66,18 +66,9 @@ pub const WHITELISTED_DEPOSITORS: Map<Addr, Depositor> = Map::new("whitelisted_d
 /// Maps chain_id to chain configuration. Allows support for multiple EVM chains.
 pub const CHAIN_REGISTRY: Map<String, ChainConfig> = Map::new("chain_registry");
 
-/// Maps (chain_id, hex_evm_address) to destination address info
-pub const ALLOWED_DESTINATION_ADDRESSES: Map<(String, String), DestinationAddress> =
+/// Maps (chain_id, hex_evm_address) to empty tuple (just tracks existence of allowed addresses)
+pub const ALLOWED_DESTINATION_ADDRESSES: Map<(String, String), ()> =
     Map::new("allowed_destination_addresses");
-
-/// Destination address information for EVM chains
-#[cw_serde]
-pub struct DestinationAddress {
-    /// EVM address
-    pub address: String,
-    /// Optional protocol identifier (e.g. "uniswap-v3", "aave-v3", etc.)
-    pub protocol: String,
-}
 
 /// Instructions for CCTP transfer via Noble to EVM chain
 #[cw_serde]

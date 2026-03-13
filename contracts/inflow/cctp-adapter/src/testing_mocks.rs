@@ -8,7 +8,7 @@ use neutron_sdk::query::min_ibc_fee::MinIbcFeeResponse;
 
 use crate::contract::instantiate;
 use crate::msg::{InitialChainConfig, InitialDepositor, InitialExecutor, InstantiateMsg};
-use crate::state::{BridgingConfig, ChainConfig, DestinationAddress};
+use crate::state::{BridgingConfig, ChainConfig};
 
 /// Creates mock dependencies with custom Neutron query handler
 pub fn mock_dependencies(
@@ -83,13 +83,6 @@ pub fn create_test_chain_config(chain_id: &str) -> ChainConfig {
     }
 }
 
-pub fn create_test_destination_address(address: &str, protocol: &str) -> DestinationAddress {
-    DestinationAddress {
-        address: address.to_string(),
-        protocol: protocol.to_string(),
-    }
-}
-
 /// Setup contract with depositors and executors
 pub fn setup_contract_with_defaults() -> (
     OwnedDeps<MockStorage, MockApi, MockQuerier<NeutronQuery>, NeutronQuery>,
@@ -150,10 +143,9 @@ pub fn setup_contract_with_chain() -> (
         }],
         initial_chains: vec![InitialChainConfig {
             chain_config,
-            initial_allowed_destination_addresses: vec![create_test_destination_address(
-                "0xabcd1234abcd1234abcd1234abcd1234abcd1234",
-                "uniswap-v3",
-            )],
+            initial_allowed_destination_addresses: vec![
+                "0xabcd1234abcd1234abcd1234abcd1234abcd1234".to_string(),
+            ],
         }],
         initial_executors: vec![InitialExecutor {
             address: test_data.executor.to_string(),

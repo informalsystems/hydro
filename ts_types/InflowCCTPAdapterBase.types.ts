@@ -15,7 +15,7 @@ export interface InstantiateMsg {
 }
 export interface InitialChainConfig {
   chain_config: ChainConfig;
-  initial_allowed_destination_addresses: DestinationAddress[];
+  initial_allowed_destination_addresses: string[];
 }
 export interface ChainConfig {
   bridging_config: BridgingConfig;
@@ -26,10 +26,6 @@ export interface BridgingConfig {
   evm_destination_caller: string;
   noble_fee_recipient: string;
   noble_receiver: string;
-}
-export interface DestinationAddress {
-  address: string;
-  protocol: string;
 }
 export interface InitialDepositor {
   address: string;
@@ -105,7 +101,6 @@ export type CctpAdapterMsg = {
   add_allowed_destination_address: {
     address: string;
     chain_id: string;
-    protocol: string;
   };
 } | {
   remove_allowed_destination_address: {

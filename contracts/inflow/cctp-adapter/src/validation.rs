@@ -3,7 +3,7 @@ use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::error::ContractError;
 use crate::state::{
-    ChainConfig, Depositor, DestinationAddress, ADMINS, ALLOWED_DESTINATION_ADDRESSES, EXECUTORS,
+    ChainConfig, Depositor, ADMINS, ALLOWED_DESTINATION_ADDRESSES, EXECUTORS,
     WHITELISTED_DEPOSITORS,
 };
 
@@ -93,12 +93,13 @@ pub fn normalize_evm_address(address: &str) -> Result<String, ContractError> {
     Ok(hex_str.to_lowercase())
 }
 
-/// Get destination address from storage, normalizing the address first
+/// Get destination address from storage, normalizing the address first.
+/// Returns the normalized address string if it exists in the allowlist.
 pub fn get_destination_address(
     deps: &Deps<NeutronQuery>,
     chain_id: &str,
     address: &str,
-) -> Result<DestinationAddress, ContractError> {
+) -> Result<String, ContractError> {
     let normalized_address = normalize_evm_address(address)?;
 
     ALLOWED_DESTINATION_ADDRESSES
@@ -108,8 +109,10 @@ pub fn get_destination_address(
         )?
         .ok_or(ContractError::DestinationAddressNotAllowed {
             chain_id: chain_id.to_string(),
-            address: normalized_address,
-        })
+            address: normalized_address.clone(),
+        })?;
+
+    Ok(normalized_address)
 }
 
 impl ChainConfig {

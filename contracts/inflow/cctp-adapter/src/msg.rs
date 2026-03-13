@@ -1,9 +1,7 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::Uint128;
 
-use crate::state::{
-    ChainConfig, Config, DepositorCapabilities, DestinationAddress, TransferFundsInstructions,
-};
+use crate::state::{ChainConfig, Config, DepositorCapabilities, TransferFundsInstructions};
 
 // Re-export adapter interface types and response types
 pub use interface::inflow_adapter::{
@@ -33,8 +31,8 @@ pub struct InitialExecutor {
 pub struct InitialChainConfig {
     /// Chain configuration (stored in CHAIN_REGISTRY)
     pub chain_config: ChainConfig,
-    /// Initial allowed destination addresses for this chain
-    pub initial_allowed_destination_addresses: Vec<DestinationAddress>,
+    /// Initial allowed destination addresses for this chain (EVM addresses)
+    pub initial_allowed_destination_addresses: Vec<String>,
 }
 
 /// Message for instantiating the CCTP adapter contract
@@ -101,11 +99,7 @@ pub enum CctpAdapterMsg {
     UnregisterChain { chain_id: String },
 
     /// Add an allowed destination address for a chain (config admin only)
-    AddAllowedDestinationAddress {
-        chain_id: String,
-        address: String,
-        protocol: String,
-    },
+    AddAllowedDestinationAddress { chain_id: String, address: String },
 
     /// Remove an allowed destination address for a chain (config admin only)
     RemoveAllowedDestinationAddress { chain_id: String, address: String },
@@ -196,7 +190,7 @@ pub struct DepositorCapabilitiesResponse {
 
 #[cw_serde]
 pub struct AllowedDestinationAddressesResponse {
-    pub addresses: Vec<DestinationAddress>,
+    pub addresses: Vec<String>,
 }
 
 #[cw_serde]

@@ -20,9 +20,8 @@ use crate::msg::{
 };
 use crate::noble::construct_noble_cctp_memo;
 use crate::state::{
-    ChainConfig, Config, Depositor, DepositorCapabilities, DestinationAddress,
-    TransferFundsInstructions, ADMINS, ALLOWED_DESTINATION_ADDRESSES, CHAIN_REGISTRY, CONFIG,
-    EXECUTORS, WHITELISTED_DEPOSITORS,
+    ChainConfig, Config, Depositor, DepositorCapabilities, TransferFundsInstructions, ADMINS,
+    ALLOWED_DESTINATION_ADDRESSES, CHAIN_REGISTRY, CONFIG, EXECUTORS, WHITELISTED_DEPOSITORS,
 };
 use crate::validation::{
     get_depositor, get_destination_address, normalize_evm_address, validate_admin_caller,
@@ -118,7 +117,7 @@ pub fn instantiate(
         // Register destination addresses for this chain
         for dest_addr in initial_chain.initial_allowed_destination_addresses {
             // Normalize and validate address
-            let normalized_address = normalize_evm_address(&dest_addr.address)?;
+            let normalized_address = normalize_evm_address(&dest_addr)?;
 
             // Check for duplicate
             let key = (chain_id.clone(), normalized_address.clone());
@@ -129,12 +128,7 @@ pub fn instantiate(
                 });
             }
 
-            // Save allowed destination address in normalized form
-            let normalized_dest_addr = DestinationAddress {
-                address: normalized_address,
-                protocol: dest_addr.protocol,
-            };
-            ALLOWED_DESTINATION_ADDRESSES.save(deps.storage, key, &normalized_dest_addr)?;
+            ALLOWED_DESTINATION_ADDRESSES.save(deps.storage, key, &())?;
         }
     }
 
@@ -235,11 +229,9 @@ fn dispatch_execute_custom(
         CctpAdapterMsg::UnregisterChain { chain_id } => {
             execute_unregister_chain(deps, info, chain_id)
         }
-        CctpAdapterMsg::AddAllowedDestinationAddress {
-            chain_id,
-            address,
-            protocol,
-        } => execute_add_allowed_destination_address(deps, info, chain_id, address, protocol),
+        CctpAdapterMsg::AddAllowedDestinationAddress { chain_id, address } => {
+            execute_add_allowed_destination_address(deps, info, chain_id, address)
+        }
         CctpAdapterMsg::RemoveAllowedDestinationAddress { chain_id, address } => {
             execute_remove_allowed_destination_address(deps, info, chain_id, address)
         }
@@ -455,7 +447,7 @@ fn execute_transfer_funds(
     // Construct Noble CCTP memo with fee and forwarding info
     let memo = construct_noble_cctp_memo(
         &chain_config.bridging_config,
-        &destination_address.address,
+        &destination_address,
         bridging_fee_amount,
     )?;
 
@@ -485,8 +477,7 @@ fn execute_transfer_funds(
         .add_attribute("bridging_fee", bridging_fee_amount)
         .add_attribute("total_transfer", total_transfer_amount.to_string())
         .add_attribute("chain_id", instructions.chain_id)
-        .add_attribute("destination_address", destination_address.address)
-        .add_attribute("protocol", destination_address.protocol)
+        .add_attribute("destination_address", destination_address)
         .add_attribute(
             "noble_receiver",
             chain_config.bridging_config.noble_receiver,
@@ -752,7 +743,6 @@ fn execute_add_allowed_destination_address(
     info: MessageInfo,
     chain_id: String,
     address: String,
-    protocol: String,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     // Validate admin caller
     validate_admin_caller(&deps.as_ref(), &info)?;
@@ -776,19 +766,13 @@ fn execute_add_allowed_destination_address(
         });
     }
 
-    // Save destination address
-    let dest_addr = DestinationAddress {
-        address: normalized_address.clone(),
-        protocol: protocol.clone(),
-    };
-    ALLOWED_DESTINATION_ADDRESSES.save(deps.storage, key, &dest_addr)?;
+    ALLOWED_DESTINATION_ADDRESSES.save(deps.storage, key, &())?;
 
     Ok(Response::new()
         .add_attribute("action", "add_allowed_destination_address")
         .add_attribute("sender", info.sender)
         .add_attribute("chain_id", chain_id)
-        .add_attribute("address", normalized_address)
-        .add_attribute("protocol", protocol))
+        .add_attribute("address", normalized_address))
 }
 
 fn execute_remove_allowed_destination_address(
@@ -1046,11 +1030,11 @@ fn query_allowed_destination_addresses(
         None => None,
     };
 
-    let addresses: Vec<DestinationAddress> = ALLOWED_DESTINATION_ADDRESSES
+    let addresses: Vec<String> = ALLOWED_DESTINATION_ADDRESSES
         .prefix(chain_id)
         .range(deps.storage, start_bound, None, Order::Ascending)
         .take(limit)
-        .map(|item| item.map(|(_, dest_addr)| dest_addr))
+        .map(|item| item.map(|(addr, _)| addr))
         .collect::<StdResult<Vec<_>>>()?;
 
     Ok(AllowedDestinationAddressesResponse { addresses })

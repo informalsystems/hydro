@@ -130,25 +130,6 @@
         },
         "additionalProperties": false
       },
-      "DestinationAddress": {
-        "description": "Destination address information for EVM chains",
-        "type": "object",
-        "required": [
-          "address",
-          "protocol"
-        ],
-        "properties": {
-          "address": {
-            "description": "EVM address",
-            "type": "string"
-          },
-          "protocol": {
-            "description": "Optional protocol identifier (e.g. \"uniswap-v3\", \"aave-v3\", etc.)",
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
       "InitialChainConfig": {
         "description": "Initial chain configuration with allowed destination addresses",
         "type": "object",
@@ -166,10 +147,10 @@
             ]
           },
           "initial_allowed_destination_addresses": {
-            "description": "Initial allowed destination addresses for this chain",
+            "description": "Initial allowed destination addresses for this chain (EVM addresses)",
             "type": "array",
             "items": {
-              "$ref": "#/definitions/DestinationAddress"
+              "type": "string"
             }
           }
         },
@@ -604,17 +585,13 @@
                 "type": "object",
                 "required": [
                   "address",
-                  "chain_id",
-                  "protocol"
+                  "chain_id"
                 ],
                 "properties": {
                   "address": {
                     "type": "string"
                   },
                   "chain_id": {
-                    "type": "string"
-                  },
-                  "protocol": {
                     "type": "string"
                   }
                 },

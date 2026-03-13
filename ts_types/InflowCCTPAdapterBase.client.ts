@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { InstantiateMsg, InitialChainConfig, ChainConfig, BridgingConfig, DestinationAddress, InitialDepositor, DepositorCapabilities, InitialExecutor, ExecuteMsg, AdapterInterfaceMsg, Uint128, Binary, CctpAdapterMsg, Coin, UpdateConfigData, TransferFundsInstructions, QueryMsg, AdapterInterfaceQueryMsg, CctpAdapterQueryMsg } from "./InflowCCTPAdapterBase.types";
+import { InstantiateMsg, InitialChainConfig, ChainConfig, BridgingConfig, InitialDepositor, DepositorCapabilities, InitialExecutor, ExecuteMsg, AdapterInterfaceMsg, Uint128, Binary, CctpAdapterMsg, Coin, UpdateConfigData, TransferFundsInstructions, QueryMsg, AdapterInterfaceQueryMsg, CctpAdapterQueryMsg } from "./InflowCCTPAdapterBase.types";
 export interface InflowCCTPAdapterBaseReadOnlyInterface {
   contractAddress: string;
   standardQuery: (adapterInterfaceQueryMsg: AdapterInterfaceQueryMsg) => Promise<Binary>;

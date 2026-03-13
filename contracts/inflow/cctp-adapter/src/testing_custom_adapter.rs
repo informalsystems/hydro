@@ -546,7 +546,6 @@ mod custom_adapter_tests {
         let msg = ExecuteMsg::CustomAction(CctpAdapterMsg::AddAllowedDestinationAddress {
             chain_id: "ethereum".to_string(),
             address: "0x1234567890123456789012345678901234567890".to_string(),
-            protocol: "aave-v3".to_string(),
         });
 
         let res = execute(deps.as_mut(), env, info, msg).unwrap();
@@ -567,7 +566,6 @@ mod custom_adapter_tests {
         let msg = ExecuteMsg::CustomAction(CctpAdapterMsg::AddAllowedDestinationAddress {
             chain_id: "ethereum".to_string(),
             address: "0xDACDBEEA12345678901234567890123456789012".to_string(), // Mixed case
-            protocol: "compound-v3".to_string(),
         });
 
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
@@ -591,16 +589,14 @@ mod custom_adapter_tests {
         let found = addresses
             .addresses
             .iter()
-            .find(|a| a.address == "dacdbeea12345678901234567890123456789012");
+            .find(|a| *a == "dacdbeea12345678901234567890123456789012");
         assert!(found.is_some());
-        assert_eq!(found.unwrap().protocol, "compound-v3");
 
         // Now try to add the same address as lowercase - should fail with duplicate error
         let msg_lowercase =
             ExecuteMsg::CustomAction(CctpAdapterMsg::AddAllowedDestinationAddress {
                 chain_id: "ethereum".to_string(),
                 address: "0xdacdbeea12345678901234567890123456789012".to_string(), // All lowercase
-                protocol: "aave-v3".to_string(),
             });
 
         let err = execute(deps.as_mut(), env, info, msg_lowercase).unwrap_err();
@@ -624,7 +620,6 @@ mod custom_adapter_tests {
         let msg = ExecuteMsg::CustomAction(CctpAdapterMsg::AddAllowedDestinationAddress {
             chain_id: "ethereum".to_string(),
             address: "0x1234567890123456789012345678901234567890".to_string(),
-            protocol: "aave-v3".to_string(),
         });
 
         let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
@@ -644,7 +639,6 @@ mod custom_adapter_tests {
         let msg = ExecuteMsg::CustomAction(CctpAdapterMsg::AddAllowedDestinationAddress {
             chain_id: "ethereum".to_string(),
             address: "0xabcd1234abcd1234abcd1234abcd1234abcd1234".to_string(),
-            protocol: "uniswap-v3".to_string(),
         });
 
         let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
@@ -668,7 +662,6 @@ mod custom_adapter_tests {
         let msg = ExecuteMsg::CustomAction(CctpAdapterMsg::AddAllowedDestinationAddress {
             chain_id: "ethereum".to_string(),
             address: "0xAbCd1234AbCd1234AbCd1234AbCd1234AbCd1234".to_string(), // Mixed case
-            protocol: "aave-v3".to_string(),
         });
 
         let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
@@ -737,10 +730,9 @@ mod custom_adapter_tests {
 
         assert_eq!(addresses.addresses.len(), 1);
         assert_eq!(
-            addresses.addresses[0].address,
+            addresses.addresses[0],
             "abcd1234abcd1234abcd1234abcd1234abcd1234"
         );
-        assert_eq!(addresses.addresses[0].protocol, "uniswap-v3");
     }
 
     // ============================================================================

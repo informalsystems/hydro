@@ -386,17 +386,13 @@
               "type": "object",
               "required": [
                 "address",
-                "chain_id",
-                "protocol"
+                "chain_id"
               ],
               "properties": {
                 "address": {
                   "type": "string"
                 },
                 "chain_id": {
-                  "type": "string"
-                },
-                "protocol": {
                   "type": "string"
                 }
               },
