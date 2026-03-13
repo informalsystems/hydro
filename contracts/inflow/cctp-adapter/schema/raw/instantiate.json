@@ -1,0 +1,195 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "description": "Message for instantiating the CCTP adapter contract",
+  "type": "object",
+  "required": [
+    "admins",
+    "denom",
+    "ibc_default_timeout_seconds",
+    "initial_chains",
+    "initial_depositors",
+    "initial_executors",
+    "noble_transfer_channel_id"
+  ],
+  "properties": {
+    "admins": {
+      "description": "The config admins who can update the config and manage chains/depositors/executors",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "denom": {
+      "description": "The single token denom this adapter handles (i.e. the USDC token denom)",
+      "type": "string"
+    },
+    "ibc_default_timeout_seconds": {
+      "description": "Default IBC timeout in seconds for Noble transfers",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "initial_chains": {
+      "description": "Initial chain configurations with allowed destination addresses (can be empty array)",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/InitialChainConfig"
+      }
+    },
+    "initial_depositors": {
+      "description": "Initial depositors to register during instantiation (can be empty array)",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/InitialDepositor"
+      }
+    },
+    "initial_executors": {
+      "description": "Initial executors who can perform operations (can be empty array)",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/InitialExecutor"
+      }
+    },
+    "noble_transfer_channel_id": {
+      "description": "IBC transfer channel ID from Neutron to Noble",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "BridgingConfig": {
+      "description": "Bridging configuration for CCTP",
+      "type": "object",
+      "required": [
+        "destination_domain",
+        "evm_destination_caller",
+        "noble_fee_recipient",
+        "noble_receiver"
+      ],
+      "properties": {
+        "destination_domain": {
+          "description": "CCTP destination domain identifier. See the full list here: https://developers.circle.com/cctp/v1/supported-domains",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "evm_destination_caller": {
+          "description": "EVM destination caller address (i.e. Skip's relayer address on destination EVM chain)",
+          "type": "string"
+        },
+        "noble_fee_recipient": {
+          "description": "Noble fee recipient address (i.e. Skip's relayer address on Noble)",
+          "type": "string"
+        },
+        "noble_receiver": {
+          "description": "Noble receiver address for CCTP transfers (i.e. Noble Orbiter module address)",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ChainConfig": {
+      "description": "Chain configuration for EVM chains",
+      "type": "object",
+      "required": [
+        "bridging_config",
+        "chain_id"
+      ],
+      "properties": {
+        "bridging_config": {
+          "description": "Bridging configuration for this chain",
+          "allOf": [
+            {
+              "$ref": "#/definitions/BridgingConfig"
+            }
+          ]
+        },
+        "chain_id": {
+          "description": "Chain ID; Our internal identifier for the destination EVM chain. Not used for CCTP bridging.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "DepositorCapabilities": {
+      "description": "Depositor capabilities for the CCTP adapter",
+      "type": "object",
+      "required": [
+        "can_withdraw"
+      ],
+      "properties": {
+        "can_withdraw": {
+          "description": "Whether this depositor can withdraw funds",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "InitialChainConfig": {
+      "description": "Initial chain configuration with allowed destination addresses",
+      "type": "object",
+      "required": [
+        "chain_config",
+        "initial_allowed_destination_addresses"
+      ],
+      "properties": {
+        "chain_config": {
+          "description": "Chain configuration (stored in CHAIN_REGISTRY)",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ChainConfig"
+            }
+          ]
+        },
+        "initial_allowed_destination_addresses": {
+          "description": "Initial allowed destination addresses for this chain (EVM addresses)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "InitialDepositor": {
+      "description": "Initial depositor configuration for instantiation",
+      "type": "object",
+      "required": [
+        "address"
+      ],
+      "properties": {
+        "address": {
+          "description": "Depositor address to register",
+          "type": "string"
+        },
+        "capabilities": {
+          "description": "Optional capabilities for this depositor (typed, not Binary) If not provided, defaults to { can_withdraw: true }",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DepositorCapabilities"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "InitialExecutor": {
+      "description": "Initial executor configuration for instantiation",
+      "type": "object",
+      "required": [
+        "address"
+      ],
+      "properties": {
+        "address": {
+          "description": "Executor address to register",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
