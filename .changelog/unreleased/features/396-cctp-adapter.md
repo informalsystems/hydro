@@ -1,0 +1,1 @@
+- Add the CCTP adapter that can be triggered to request bridging of USDC tokens from the adapter smart contract to an arbitrary EVM chain supported by the CCTP protocol. ([\#396](https://github.com/informalsystems/hydro/pull/396))
