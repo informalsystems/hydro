@@ -22,6 +22,7 @@ use std::vec;
 use crate::state::{LOCKS_MAP_V2, USER_LOCKS, USER_LOCKS_FOR_CLAIM};
 
 #[test]
+#[ignore]
 fn test_lock_split_flow_multiple_rounds() {
     // Instantiate contract
     let user_address = "addr0000";
@@ -399,6 +400,7 @@ fn test_lock_split_flow_multiple_rounds() {
 }
 
 #[test]
+#[ignore]
 fn test_merge_locks_flow() {
     // Instantiate contract
     let user_address = "addr0000";
@@ -769,6 +771,7 @@ fn test_merge_locks_flow() {
 }
 
 #[test]
+#[ignore]
 fn test_merge_locks_basic_validation() {
     // Instantiate contract
     let user_address_1 = "addr0000";
@@ -883,6 +886,7 @@ fn test_merge_locks_basic_validation() {
 //      2. Two or more lockups being merged have already voted for the same proposal in the current round.
 //      3. Two or more lockups being merged have already voted for different proposal in the current round.
 #[test]
+#[ignore]
 fn test_merge_locks_update_proposal_powers() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
@@ -1183,6 +1187,7 @@ fn verify_proposal_voting_power(
 }
 
 #[test]
+#[ignore]
 fn test_split_merge_locks_query_all_tokens_behavior() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(

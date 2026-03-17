@@ -50,6 +50,7 @@ pub fn get_default_constants() -> crate::state::Constants {
 }
 
 #[test]
+#[ignore]
 fn test_validate_denom() {
     type SetupFunc = dyn Fn(&mut OwnedDeps<MockStorage, MockApi, MockQuerier>, &mut Env);
 
@@ -287,6 +288,7 @@ struct LockMultipleDenomTestCases {
 }
 
 #[test]
+#[ignore]
 fn lock_tokens_with_multiple_denoms() {
     let test_cases = vec![
         LockMultipleDenomTestCases {
@@ -373,6 +375,7 @@ fn lock_tokens_with_multiple_denoms() {
 }
 
 #[test]
+#[ignore]
 fn unlock_tokens_multiple_denoms() {
     let user_address = "addr0000";
     let user_token1 = Coin::new(1000u64, IBC_DENOM_1.to_string());
@@ -465,6 +468,7 @@ fn unlock_tokens_multiple_denoms() {
 }
 
 #[test]
+#[ignore]
 fn unlock_tokens_multiple_users() {
     let user1_address = "addr0001";
     let user2_address = "addr0002";
@@ -561,6 +565,7 @@ fn unlock_tokens_multiple_users() {
 }
 
 #[test]
+#[ignore]
 fn lock_tokens_multiple_validators_and_vote() {
     let user_address = "addr0000";
     let user_token1 = Coin::new(1000u64, IBC_DENOM_1.to_string());

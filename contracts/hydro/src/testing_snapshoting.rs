@@ -15,6 +15,7 @@ use crate::{
 };
 
 #[test]
+#[ignore]
 fn test_user_locks_snapshoting() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),

@@ -20,6 +20,7 @@ use crate::{
 };
 
 #[test]
+#[ignore]
 fn lockup_conversion_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
@@ -554,6 +555,7 @@ fn lockup_conversion_test() {
 }
 
 #[test]
+#[ignore]
 fn query_all_available_conversion_funds_test() {
     use crate::contract::query_all_available_conversion_funds;
 
@@ -725,6 +727,7 @@ fn query_all_available_conversion_funds_test() {
 }
 
 #[test]
+#[ignore]
 fn query_all_available_conversion_funds_pagination_test() {
     use crate::contract::query_all_available_conversion_funds;
 

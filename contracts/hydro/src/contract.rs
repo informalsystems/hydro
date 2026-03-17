@@ -18,9 +18,7 @@ use interface::utils::{DEFAULT_PAGINATION_LIMIT, MAX_PAGINATION_LIMIT};
 
 use crate::cw721;
 use crate::error::{new_generic_error, ContractError};
-use crate::gatekeeper::{
-    build_gatekeeper_lock_tokens_msg, build_init_gatekeeper_msg, gatekeeper_handle_submsg_reply,
-};
+use crate::gatekeeper::{build_init_gatekeeper_msg, gatekeeper_handle_submsg_reply};
 use crate::governance::{query_total_power_at_height, query_voting_power_at_height};
 use crate::lsm_integration::{query_ibc_denom_trace, TRANSFER_PORT};
 use crate::msg::{
@@ -70,7 +68,7 @@ use crate::utils::{
     get_user_claimable_locks, increase_available_conversion_funds,
     load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
     scale_lockup_power, to_lockup_with_power, to_lockup_with_tranche_infos,
-    update_locked_tokens_info, validate_locked_tokens_caps, verify_historical_data_availability,
+    verify_historical_data_availability,
 };
 use crate::vote::{
     process_unvotes, process_votes, validate_proposals_and_locks_for_voting, ProcessUnvotesResult,
@@ -464,154 +462,16 @@ fn set_gatekeeper(
 //     Update total round power
 //     Create entry in LocksMap
 pub fn lock_tokens(
-    mut deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    constants: &Constants,
-    lock_duration: u64,
-    proof: Option<LockTokensProof>,
+    _deps: DepsMut,
+    _env: Env,
+    _info: MessageInfo,
+    _constants: &Constants,
+    _lock_duration: u64,
+    _proof: Option<LockTokensProof>,
 ) -> Result<Response, ContractError> {
-    validate_lock_duration(
-        &constants.round_lock_power_schedule,
-        constants.lock_epoch_length,
-        lock_duration,
-    )?;
-
-    let current_round = compute_current_round_id(&env, constants)?;
-
-    if info.funds.len() != 1 {
-        return Err(ContractError::Std(StdError::generic_err(
-            "Must provide exactly one coin to lock",
-        )));
-    }
-
-    let funds = info.funds[0].clone();
-
-    let mut token_manager = TokenManager::new(&deps.as_ref());
-    let token_group_id = token_manager
-        .validate_denom(&deps.as_ref(), current_round, funds.denom)
-        .map_err(|err| new_generic_error(format!("validating denom: {err}")))?;
-
-    let total_locked_tokens = LOCKED_TOKENS.load(deps.storage)?;
-    let amount_to_lock = info.funds[0].amount.u128();
-    let locking_info = validate_locked_tokens_caps(
-        &deps,
-        constants,
-        current_round,
-        &info.sender,
-        total_locked_tokens,
-        amount_to_lock,
-    )?;
-
-    // validate that the user does not have too many locks
-    if get_lock_count(&deps.as_ref(), info.sender.clone()) >= MAX_LOCK_ENTRIES {
-        return Err(ContractError::Std(StdError::generic_err(format!(
-            "User has too many locks, only {MAX_LOCK_ENTRIES} locks allowed"
-        ))));
-    }
-
-    let lock_id = get_next_lock_id(deps.storage)?;
-    let lock_entry = LockEntryV2 {
-        lock_id,
-        owner: info.sender.clone(),
-        funds: info.funds[0].clone(),
-        lock_start: env.block.time,
-        lock_end: env.block.time.plus_nanos(lock_duration),
-    };
-    let lock_end = lock_entry.lock_end.nanos();
-    LOCKS_MAP_V2.save(deps.storage, lock_id, &lock_entry, env.block.height)?;
-
-    // Add to TOKEN_IDS if it's a NFT (non-LSM lockup)
-    cw721::maybe_add_token_id(&mut deps, &lock_entry)?;
-
-    USER_LOCKS.update(
-        deps.storage,
-        info.sender.clone(),
-        env.block.height,
-        |current_locks| -> Result<Vec<u64>, StdError> {
-            match current_locks {
-                None => Ok(vec![lock_id]),
-                Some(mut current_locks) => {
-                    current_locks.push(lock_id);
-                    Ok(current_locks)
-                }
-            }
-        },
-    )?;
-
-    // Update USER_LOCKS_FOR_CLAIM to include this new lock for tribute claiming
-    USER_LOCKS_FOR_CLAIM.update(
-        deps.storage,
-        info.sender.clone(),
-        |current_claim_locks| -> Result<Vec<u64>, StdError> {
-            match current_claim_locks {
-                None => Ok(vec![lock_id]),
-                Some(mut current_claim_locks) => {
-                    current_claim_locks.push(lock_id);
-                    Ok(current_claim_locks)
-                }
-            }
-        },
-    )?;
-
-    update_locked_tokens_info(
-        &mut deps,
-        current_round,
-        &info.sender,
-        total_locked_tokens,
-        &locking_info,
-    )?;
-
-    // Prepare a message that will be sent to the Gatekeeper to validate if the user has
-    // the right to lock the specifed number of tokens, per currently active criteria.
-    // The ReplyOn is set to Never, so if this message fails then the changes we made
-    // during this lock_tokens processing will be reverted as well. We also don't need to
-    // wait for the result of execution, since the Gatekeeper will accept this SubMsg only
-    // if user is eligible to lock the entire amount provided, and provides valid proofs.
-    let mut submsgs = vec![];
-    if let Some(gatekeeper_msg) =
-        build_gatekeeper_lock_tokens_msg(&deps, &info.sender, &locking_info, &proof)?
-    {
-        submsgs.push(gatekeeper_msg);
-    }
-
-    // If user already voted for some proposals in the current round, update the voting power on those proposals.
-    update_voting_power_on_proposals(
-        &mut deps,
-        constants,
-        &mut token_manager,
-        current_round,
-        None,
-        lock_entry.clone(),
-        token_group_id.clone(),
-    )?;
-
-    // Calculate and update the total voting power info for current and all
-    // future rounds in which the user will have voting power greater than 0
-    let last_round_with_power = compute_round_id_for_timestamp(constants, lock_end)? - 1;
-
-    update_total_time_weighted_shares(
-        &mut deps,
-        env.block.height,
-        constants,
-        &mut token_manager,
-        current_round,
-        current_round,
-        last_round_with_power,
-        lock_end,
-        token_group_id,
-        lock_entry.funds.amount,
-        |_, _, _| Uint128::zero(),
-    )?;
-
-    Ok(Response::new()
-        .add_submessages(submsgs)
-        .add_attribute("action", "lock_tokens")
-        .add_attribute("sender", info.sender)
-        .add_attribute("lock_id", lock_entry.lock_id.to_string())
-        .add_attribute("locked_tokens", info.funds[0].clone().to_string())
-        .add_attribute("lock_start", lock_entry.lock_start.to_string())
-        .add_attribute("lock_end", lock_entry.lock_end.to_string()))
+    Err(ContractError::Std(StdError::generic_err(
+        "No new lockups are allowed",
+    )))
 }
 
 // Extends the lock duration of the guiven lock entries to be current_block_time + lock_duration,
@@ -1585,9 +1445,6 @@ fn unlock_tokens(
     let mut unlocks: HashMap<String, Uint128> = HashMap::new();
     let mut slashes: HashMap<String, Uint128> = HashMap::new();
 
-    let current_round_id = compute_current_round_id(&env, constants)?;
-    let locks = get_lockups_allowed_to_unlock(&deps, &env, current_round_id, &locks)?;
-
     for (lock_id, lock_entry) in locks {
         let amount_to_slash = LOCKS_PENDING_SLASHES
             .may_load(deps.storage, lock_id)?
@@ -1696,39 +1553,6 @@ fn unlock_tokens(
         .add_attribute("unlocked_lock_ids", unlocked_lock_ids.join(", "))
         .add_attribute("unlocked_tokens", unlocked_tokens_attr)
         .add_attribute("slashed_tokens", slashed_tokens_attr))
-}
-
-fn get_lockups_allowed_to_unlock(
-    deps: &DepsMut,
-    env: &Env,
-    current_round_id: u64,
-    locks: &[(u64, LockEntryV2)],
-) -> Result<Vec<(u64, LockEntryV2)>, ContractError> {
-    let tranche_ids = TRANCHE_MAP
-        .keys(deps.storage, None, None, Order::Ascending)
-        .collect::<StdResult<Vec<u64>>>()?;
-
-    let mut filtered_locks = vec![];
-
-    for lock_entry in locks {
-        if lock_entry.1.lock_end >= env.block.time {
-            continue;
-        }
-
-        for tranche_id in &tranche_ids {
-            if let Some(voting_allowed_round) =
-                VOTING_ALLOWED_ROUND.may_load(deps.storage, (*tranche_id, lock_entry.1.lock_id))?
-            {
-                if voting_allowed_round >= current_round_id {
-                    continue;
-                }
-            }
-        }
-
-        filtered_locks.push((lock_entry.0, lock_entry.1.clone()));
-    }
-
-    Ok(filtered_locks)
 }
 
 // Creates a new proposal in the store.

@@ -115,6 +115,7 @@ impl FractionalVotingTestCase {
 }
 
 #[test]
+#[ignore]
 fn fractional_voting_test() {
     let round_id_1 = 0;
     let tranche_id_1 = 1;

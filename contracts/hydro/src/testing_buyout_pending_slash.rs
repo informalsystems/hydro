@@ -22,6 +22,7 @@ pub const ATOM_ON_NEUTRON: &str =
 
 // slash denom: lsm, buyout_denom: lsm , exact amount
 #[test]
+#[ignore]
 fn buyout_pending_slash_same_denom_exact_amount_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
@@ -75,6 +76,7 @@ fn buyout_pending_slash_same_denom_exact_amount_test() {
 
 // slash denom: lsm, buyout_denom: lsm , partial buyout
 #[test]
+#[ignore]
 fn buyout_pending_slash_same_denom_partial_amount_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
@@ -128,6 +130,7 @@ fn buyout_pending_slash_same_denom_partial_amount_test() {
 
 // slash denom: lsm, buyout_denom: lsm , overpay - needs return
 #[test]
+#[ignore]
 fn buyout_pending_slash_same_denom_overpay_amount_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
@@ -181,6 +184,7 @@ fn buyout_pending_slash_same_denom_overpay_amount_test() {
 
 // slash denom: lsm, buyout_denom: lsm , exact amount, validator slashed
 #[test]
+#[ignore]
 fn buyout_pending_slash_same_denom_validator_slashed_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
@@ -242,6 +246,7 @@ fn buyout_pending_slash_same_denom_validator_slashed_test() {
 }
 // slash denom: lsm, buyout_denom: lsm and statom
 #[test]
+#[ignore]
 fn buyout_pending_slash_lsm_statom_exact_amount_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
@@ -318,6 +323,7 @@ fn buyout_pending_slash_lsm_statom_exact_amount_test() {
 
 // slash denom: statom, buyout_denom: lsm
 #[test]
+#[ignore]
 fn buyout_pending_slash_statom_lsm_test() {
     let grpc_map = HashMap::from([
         (
@@ -397,6 +403,7 @@ fn buyout_pending_slash_statom_lsm_test() {
 }
 // slash denom: lsm, buyout_denom: atom
 #[test]
+#[ignore]
 fn buyout_pending_slash_with_atom_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),

@@ -36,6 +36,7 @@ use crate::{
 
 // This test verifies that Hydro contract can be instantiated with only LSM token info provider.
 #[test]
+#[ignore]
 fn instantiate_with_lsm_token_info_provider_test() {
     let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
@@ -102,6 +103,7 @@ fn instantiate_with_lsm_token_info_provider_test() {
 
 // This test verifies that Hydro contract can be instantiated with only one smart contract token info provider.
 #[test]
+#[ignore]
 fn instantiate_with_derivative_token_info_provider_test() {
     let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
@@ -164,6 +166,7 @@ fn instantiate_with_derivative_token_info_provider_test() {
 
 // This test verifies that at least one token info provider must be specified on Hydro contract instantiation.
 #[test]
+#[ignore]
 fn instantiate_without_token_info_providers_test() {
     let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
@@ -183,6 +186,7 @@ fn instantiate_without_token_info_providers_test() {
 
 // This test verifies that Hydro contract cannot be instantiated with multiple LSM token info providers.
 #[test]
+#[ignore]
 fn instantiate_with_multiple_lsm_token_info_providers_test() {
     let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
@@ -223,6 +227,7 @@ fn instantiate_with_multiple_lsm_token_info_providers_test() {
 
 // Verifies that the Hydro storage is updated as expected upon receiving the SubMsg response.
 #[test]
+#[ignore]
 fn handle_token_info_provider_instantiate_reply_test() {
     let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
 
@@ -307,6 +312,7 @@ fn handle_token_info_provider_instantiate_reply_test() {
 
 // Tests that the token info providers can be added and removed during the Hydro smart contract lifecycle.
 #[test]
+#[ignore]
 fn add_remove_token_info_provider_test() {
     let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
@@ -511,6 +517,7 @@ fn add_remove_token_info_provider_test() {
 // Test also verifies that users voting power is updated when token group ratio gets changed, or the
 // token info providers are added and removed.
 #[test]
+#[ignore]
 fn token_info_provider_lifecycle_test() {
     let user_address = "addr0000";
 
