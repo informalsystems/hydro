@@ -611,7 +611,7 @@ checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 
 [[package]]
 name = "control-center"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cosmos-sdk-proto 0.20.0",
  "cosmwasm-schema 2.2.2",
@@ -1160,7 +1160,7 @@ dependencies = [
 
 [[package]]
 name = "cw-orch-interface"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cw-orch",
  "hydro",
@@ -1344,7 +1344,7 @@ dependencies = [
 
 [[package]]
 name = "d-token-info-provider"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cosmwasm-schema 2.2.2",
  "cosmwasm-std 2.2.2",
@@ -1385,7 +1385,7 @@ dependencies = [
 
 [[package]]
 name = "dao-voting-adapter"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cosmwasm-schema 1.5.11",
  "cosmwasm-std 1.5.11",
@@ -1809,7 +1809,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeeper"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "bech32 0.11.0",
  "cosmwasm-schema 2.2.2",
@@ -2081,7 +2081,7 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hydro"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "bech32 0.11.0",
  "cosmos-sdk-proto 0.20.0",
@@ -2260,7 +2260,7 @@ dependencies = [
 
 [[package]]
 name = "ibc-adapter"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cosmwasm-schema 2.2.2",
  "cosmwasm-std 2.2.2",
@@ -2431,7 +2431,7 @@ dependencies = [
 
 [[package]]
 name = "interface"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cosmwasm-schema 2.2.2",
  "cosmwasm-std 2.2.2",
@@ -2572,7 +2572,7 @@ checksum = "df1d3c3b53da64cf5760482273a98e575c651a67eec7f77df96b5b642de8f039"
 
 [[package]]
 name = "liquid-collateral"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "anyhow",
  "bigdecimal",
@@ -2616,7 +2616,7 @@ checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
 
 [[package]]
 name = "lsm-token-info-provider"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "bech32 0.11.0",
  "cosmos-sdk-proto 0.20.0",
@@ -2637,7 +2637,7 @@ dependencies = [
 
 [[package]]
 name = "marketplace"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cosmwasm-schema 2.2.2",
  "cosmwasm-std 2.2.2",
@@ -2653,7 +2653,7 @@ dependencies = [
 
 [[package]]
 name = "mars-adapter"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cosmwasm-schema 2.2.2",
  "cosmwasm-std 2.2.2",
@@ -3324,7 +3324,7 @@ dependencies = [
 
 [[package]]
 name = "proxy"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cosmwasm-schema 2.2.2",
  "cosmwasm-std 2.2.2",
@@ -4107,7 +4107,7 @@ checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
 
 [[package]]
 name = "skip-adapter"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cosmwasm-schema 2.2.2",
  "cosmwasm-std 2.2.2",
@@ -4180,7 +4180,7 @@ dependencies = [
 
 [[package]]
 name = "st-token-info-provider"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cosmwasm-schema 2.2.2",
  "cosmwasm-std 2.2.2",
@@ -4560,7 +4560,7 @@ dependencies = [
 
 [[package]]
 name = "test-e2e"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cosmwasm-std 2.2.2",
  "cw-orch",
@@ -4587,7 +4587,7 @@ dependencies = [
 
 [[package]]
 name = "test-utils"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cosmwasm-std 2.2.2",
 ]
@@ -4943,7 +4943,7 @@ dependencies = [
 
 [[package]]
 name = "tribute"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cosmwasm-schema 2.2.2",
  "cosmwasm-std 2.2.2",
@@ -5014,7 +5014,7 @@ dependencies = [
 
 [[package]]
 name = "user-registry"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cosmwasm-schema 2.2.2",
  "cosmwasm-std 2.2.2",
@@ -5045,7 +5045,7 @@ dependencies = [
 
 [[package]]
 name = "vault"
-version = "3.6.9"
+version = "3.6.10"
 dependencies = [
  "cosmos-sdk-proto 0.20.0",
  "cosmwasm-schema 2.2.2",

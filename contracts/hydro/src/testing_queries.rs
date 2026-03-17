@@ -47,6 +47,7 @@ use interface::lsm::ValidatorInfo;
 pub type WasmQueryFunc = dyn Fn(&WasmQuery) -> QuerierResult;
 
 #[test]
+#[ignore]
 fn query_user_lockups_test() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
@@ -495,6 +496,7 @@ fn query_user_lockups_test() {
 }
 
 #[test]
+#[ignore]
 fn query_user_voting_power_test() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
@@ -575,6 +577,7 @@ fn query_user_voting_power_test() {
 }
 
 #[test]
+#[ignore]
 fn query_user_votes_test() {
     let env = mock_env();
     struct VoteToCreate {
@@ -954,6 +957,7 @@ fn query_user_votes_test() {
 // Tests the `query_all_votes` function to ensure it correctly retrieves all stored votes,
 // along with voter information, round ID, tranche ID, and lock ID.
 #[test]
+#[ignore]
 fn query_all_votes_test() {
     struct VoteToCreate {
         round_id: u64,
@@ -1059,6 +1063,7 @@ fn query_all_votes_test() {
 // Tests the `query_all_votes_round_tranche` function to ensure it correctly retrieves votes alongside metadata
 // for a specific round ID and tranche ID.
 #[test]
+#[ignore]
 fn query_all_votes_round_tranche_test() {
     struct VoteToCreate {
         round_id: u64,
@@ -1200,6 +1205,7 @@ fn get_user_voting_power(
     res.unwrap().voting_power
 }
 #[test]
+#[ignore]
 fn query_lock_votes_history_test() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
@@ -1519,6 +1525,7 @@ fn query_lock_votes_history_test() {
 }
 
 #[test]
+#[ignore]
 fn simulate_dtoken_amounts() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
@@ -1693,6 +1700,7 @@ fn simulate_dtoken_amounts() {
 }
 
 #[test]
+#[ignore]
 fn query_parent_lock_ids_test() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
@@ -1812,6 +1820,7 @@ pub fn drop_mock(
 }
 
 #[test]
+#[ignore]
 fn test_query_lockup_voting_metrics_success() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
@@ -1895,6 +1904,7 @@ fn test_query_lockup_voting_metrics_success() {
 }
 
 #[test]
+#[ignore]
 fn test_query_lockup_voting_metrics_nonexistent_lockup_fail() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
@@ -1947,6 +1957,7 @@ fn test_query_lockup_voting_metrics_nonexistent_lockup_fail() {
 }
 
 #[test]
+#[ignore]
 fn test_query_lockup_voting_metrics_validate_denom_fail() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(

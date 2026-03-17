@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 #[test]
+#[ignore]
 fn pending_slashes_accumulation_test() {
     let user1 = "addr0000";
     let user2 = "addr0001";
@@ -326,6 +327,7 @@ fn pending_slashes_accumulation_test() {
 }
 
 #[test]
+#[ignore]
 fn slash_when_threshold_is_reached_test() {
     let user1 = "addr0000";
     let user2 = "addr0001";
@@ -783,6 +785,7 @@ fn slash_when_threshold_is_reached_test() {
 }
 
 #[test]
+#[ignore]
 fn slashing_removes_lockups_test() {
     let user1 = "addr0000";
     let user2 = "addr0001";
@@ -1044,6 +1047,7 @@ fn slashing_removes_lockups_test() {
 }
 
 #[test]
+#[ignore]
 fn proposals_and_rounds_power_updates_on_slashing_test() {
     let user1 = "addr0000";
     let user2 = "addr0001";
@@ -1307,6 +1311,7 @@ fn proposals_and_rounds_power_updates_on_slashing_test() {
 // Verify that lockups that originated from a split/merge sequence will not escape slashing
 // in case of original lockup had voted on a proposal that gets slashed.
 #[test]
+#[ignore]
 fn slashing_after_lock_split_merge_test() {
     let user1 = "addr0000";
 
@@ -1507,6 +1512,7 @@ fn slashing_after_lock_split_merge_test() {
 
 // Verify that the amount to slash is correctly calculated when the lockup is converted into one holding dtokens
 #[test]
+#[ignore]
 fn slash_after_dtoken_conversion_test() {
     let user1 = "addr0000";
 

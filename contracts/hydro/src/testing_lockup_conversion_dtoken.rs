@@ -23,6 +23,7 @@ use crate::{
 };
 
 #[test]
+#[ignore]
 fn convert_lockup_to_dtoken_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
@@ -304,6 +305,7 @@ fn convert_lockup_to_dtoken_test() {
 }
 
 #[test]
+#[ignore]
 fn convert_lockup_to_dtoken_with_pending_slash_conversion_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),

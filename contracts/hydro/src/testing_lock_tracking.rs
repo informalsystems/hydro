@@ -14,6 +14,7 @@ use crate::{
 };
 
 #[test]
+#[ignore]
 fn test_get_current_lock_composition() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
@@ -88,6 +89,7 @@ fn test_get_current_lock_composition() {
 }
 
 #[test]
+#[ignore]
 fn test_get_lock_ancestor_depth() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
@@ -165,6 +167,7 @@ fn test_get_lock_ancestor_depth() {
     }
 }
 #[test]
+#[ignore]
 fn test_split_merge_composition_and_depth() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(

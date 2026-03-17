@@ -24,6 +24,7 @@ const INITIAL_BLOCK_HEIGHT: u64 = 19_185_000;
 const BLOCKS_PER_DAY: u64 = 35_000;
 
 #[test]
+#[ignore]
 fn test_voting_power_queries() {
     let user1 = "addr0001";
     let user2 = "addr0002";

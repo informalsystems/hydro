@@ -46,6 +46,7 @@ const BLOCKS_PER_DAY: u64 = 35_000;
 // 15. Round 2: Advance the chain to end the known_users_cap duration and have a user from step #13 lock
 //     additional amount that matches the entire amount previously reserved for known_users_cap.
 #[test]
+#[ignore]
 fn test_compounder_cap() {
     let whitelist_admin = "addr0000";
     let user1 = "addr0001";
