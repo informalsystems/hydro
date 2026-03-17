@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## v3.6.10-neutron
+
+Date: March 17th, 2026
+
+### FEATURES
+
+- Allow users to unlock Hydro lockups on Neutron outpost even if they haven't expired yet.
+  ([\#402](https://github.com/informalsystems/hydro/pull/402))
+
 ## v3.6.9
 
 Date: March 9th, 2026
