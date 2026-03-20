@@ -15,6 +15,10 @@ import (
 	"hydro/offchain/internal/models"
 )
 
+// TODO: make this value configurable?
+// Smart relay fee estimate (CCTP relayer fee); equivalent to 0.1 USDC
+const DefaultSmartRelayFee int64 = 20_000
+
 // Executor handles state transitions for deposit processes
 type Executor struct {
 	manager *WorkerManager
@@ -128,33 +132,34 @@ func (e *Executor) executeBridge(ctx context.Context, proc *models.Process) erro
 	if proc.AmountUSDC == nil {
 		return fmt.Errorf("process has no amount set")
 	}
-	amount := *proc.AmountUSDC
 
-	feeCalc, err := e.manager.feeService.CalculateBridgeFee(chainID, amount)
+	// `operational_fee` amount will be deducted from the `transfer_amount` by the smart contract
+	transferAmount := *proc.AmountUSDC - DefaultSmartRelayFee
+	if transferAmount <= 0 {
+		return fmt.Errorf("insufficient funds after smart relaying fees are deducted: amount=%d, smart_relay_fee=%d", *proc.AmountUSDC, DefaultSmartRelayFee)
+	}
+
+	feeCalc, err := e.manager.feeService.CalculateBridgeFee(chainID, transferAmount)
 	if err != nil {
 		return fmt.Errorf("failed to calculate fees: %w", err)
 	}
 
-	// Smart relay fee estimate (CCTP relayer fee)
-	smartRelayFee := int64(100000) // 0.1 USDC as relay fee estimate
-
-	transferAmount := amount - feeCalc.BridgeFeeUSDC - smartRelayFee
-	if transferAmount <= 0 {
-		return fmt.Errorf("insufficient funds after fees: amount=%d, fee=%d, relay=%d",
-			amount, feeCalc.BridgeFeeUSDC, smartRelayFee)
+	if transferAmount <= feeCalc.BridgeFeeUSDC {
+		return fmt.Errorf("insufficient funds after operational fees are deducted: amount=%d, operational_fee=%d",
+			transferAmount, feeCalc.BridgeFeeUSDC)
 	}
 
 	// 4. Call bridge on forwarder
 	bridgeParams := evm.BridgeParams{
 		TransferAmount:          big.NewInt(transferAmount),
-		SmartRelayFeeAmount:     big.NewInt(smartRelayFee),
+		SmartRelayFeeAmount:     big.NewInt(DefaultSmartRelayFee),
 		OperationalFeeRecipient: common.HexToAddress(e.manager.cfg.Operator.FeeRecipient),
 	}
 
 	e.logger.Info("Calling bridge",
 		zap.String("process_id", proc.ProcessID),
 		zap.Int64("transfer_amount", transferAmount),
-		zap.Int64("relay_fee", smartRelayFee),
+		zap.Int64("relay_fee", DefaultSmartRelayFee),
 		zap.Int64("operational_fee", feeCalc.BridgeFeeUSDC))
 
 	bridgeCtx, cancel := context.WithTimeout(ctx, BridgeTimeout)
