@@ -1,0 +1,1 @@
+- Add claim contract for weight-based fund distribution with multi-denom support and expiry-based sweep of unclaimed funds.
