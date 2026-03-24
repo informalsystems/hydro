@@ -46,7 +46,7 @@ func (s *FeeService) CalculateBridgeFee(chainID string, amountUSDC int64) (*FeeC
 
 	// Calculate operational fee: amount * bps / 10000
 	// Example: 100 USDC * 50 bps / 10000 = 0.5 USDC
-	fee := (amountUSDC * int64(chainCfg.OperationalFeeBps)) / 10000
+	fee := (amountUSDC * chainCfg.OperationalFeeBps) / 10000
 
 	// Apply minimum fee if calculated fee is below minimum
 	if fee < chainCfg.MinOperationalFee {

@@ -1,9 +1,19 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
+
+	"crypto/ecdsa"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
+	"hydro/offchain/internal/database"
+	"hydro/offchain/internal/models"
 )
 
 // Config holds all configuration for the service
@@ -32,19 +42,20 @@ type DatabaseConfig struct {
 
 // ChainConfig holds configuration for an EVM chain
 type ChainConfig struct {
-	ChainID              string
-	Name                 string
-	Type                 string // "evm"
-	RPCEndpoint          string
-	USDCContractAddress  string // USDC ERC20 contract address
-	CCTPContractAddress  string // Skip's CCTP contract address
-	OperatorAddress      string // Operator address on this chain
-	OperationalFeeBps    uint16 // e.g., 50 = 0.5%
-	MinOperationalFee    int64  // e.g., 1000000 = 1 USDC (6 decimals)
-	MinDepositAmount     int64  // e.g., 10000000 = 10 USDC
-	ForwarderBytecode    string // Hex-encoded bytecode with constructor args
-	DestinationDomain    uint32 // CCTP destination domain (Noble = 4)
-	DestinationCaller    string // Skip relayer address (as hex bytes32)
+	ChainID                string
+	Name                   string
+	Type                   string // "evm"
+	RPCEndpoint            string
+	USDCContractAddress    string // USDC ERC20 contract address
+	CCTPContractAddress    string // Skip's CCTP contract address
+	OperationalFeeBps      int64  // e.g., 50 = 0.5%
+	MinOperationalFee      int64  // e.g., 1000000 = 1 USDC (6 decimals)
+	MinDepositAmount       int64  // e.g., 10000000 = 10 USDC
+	ForwarderBytecode      string
+	DestinationDomain      uint32
+	DestinationCaller      string
+	ForwarderContractAdmin string
+	FeeRecipient           string // Where operational fees are sent (EVM address)
 }
 
 // NeutronConfig holds Neutron-specific configuration
@@ -63,16 +74,25 @@ type NeutronConfig struct {
 
 // OperatorConfig holds operator wallet configuration
 type OperatorConfig struct {
-	EVMPrivateKey   string // For signing EVM transactions
-	NeutronMnemonic string // For signing Neutron transactions
-	NeutronAddress  string // Operator's Neutron address
-	NobleMnemonic   string // For signing Noble transactions
-	FeeRecipient    string // Where operational fees are sent (EVM address)
-	AdminAddress    string // Admin address for emergency functions
+	EVMAccountInfo  EVMAccountInfo // For signing EVM transactions
+	NeutronMnemonic string         // For signing Neutron transactions
+	NobleMnemonic   string         // For signing Noble transactions
+	NeutronAddress  string         // Operator's Neutron address
+}
+
+type EVMAccountInfo struct {
+	PrivateKey *ecdsa.PrivateKey
+	PublicKey  *ecdsa.PublicKey
+	Address    *common.Address
 }
 
 // LoadConfig loads configuration from environment variables
 func LoadConfig() (*Config, error) {
+	evmAccountInfo, err := parseEVMAccountInfo(getEnv("OPERATOR_EVM_PRIVATE_KEY", ""))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse EVM private key: %w", err)
+	}
+
 	cfg := &Config{
 		Server: ServerConfig{
 			Port: getEnvInt("SERVER_PORT", 8080),
@@ -86,19 +106,12 @@ func LoadConfig() (*Config, error) {
 			SSLMode:  getEnv("DB_SSL_MODE", "disable"),
 		},
 		Operator: OperatorConfig{
-			EVMPrivateKey:   getEnv("OPERATOR_EVM_PRIVATE_KEY", ""),
+			EVMAccountInfo:  *evmAccountInfo,
 			NeutronMnemonic: getEnv("OPERATOR_NEUTRON_MNEMONIC", ""),
 			NeutronAddress:  getEnv("OPERATOR_NEUTRON_ADDRESS", ""),
 			NobleMnemonic:   getEnv("OPERATOR_NOBLE_MNEMONIC", ""),
-			FeeRecipient:    getEnv("OPERATOR_FEE_RECIPIENT", ""),
-			AdminAddress:    getEnv("OPERATOR_ADMIN_ADDRESS", ""),
 		},
 		Chains: make(map[string]ChainConfig),
-	}
-
-	// Load chain configurations
-	if err := loadChainConfigs(cfg); err != nil {
-		return nil, err
 	}
 
 	// Load Neutron configuration
@@ -114,47 +127,68 @@ func LoadConfig() (*Config, error) {
 	return cfg, nil
 }
 
-// loadChainConfigs loads configuration for all supported chains
-func loadChainConfigs(cfg *Config) error {
-	// Ethereum
-	if rpc := getEnv("ETH_RPC_ENDPOINT", ""); rpc != "" {
-		cfg.Chains["1"] = ChainConfig{
-			ChainID:              "1",
-			Name:                 "Ethereum",
-			Type:                 "evm",
-			RPCEndpoint:          rpc,
-			USDCContractAddress:  getEnv("ETH_USDC_ADDRESS", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
-			CCTPContractAddress:  getEnv("ETH_CCTP_CONTRACT", ""),
-			OperatorAddress:      getEnv("ETH_OPERATOR_ADDRESS", ""),
-			OperationalFeeBps:    uint16(getEnvInt("ETH_OPERATIONAL_FEE_BPS", 50)),
-			MinOperationalFee:    int64(getEnvInt("ETH_MIN_OPERATIONAL_FEE", 1000000)),
-			MinDepositAmount:     int64(getEnvInt("ETH_MIN_DEPOSIT", 50000000)),
-			ForwarderBytecode:    getEnv("ETH_FORWARDER_BYTECODE", ""),
-			DestinationDomain:    uint32(getEnvInt("CCTP_DESTINATION_DOMAIN", 4)),
-			DestinationCaller:    getEnv("CCTP_DESTINATION_CALLER", ""),
-		}
+func parseEVMAccountInfo(privateKeyHex string) (*EVMAccountInfo, error) {
+	// Parse private key (remove 0x prefix if present)
+	privateKeyHex = strings.TrimPrefix(privateKeyHex, "0x")
+	privateKey, err := crypto.HexToECDSA(privateKeyHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse private key: %w", err)
 	}
 
-	// Base
-	if rpc := getEnv("BASE_RPC_ENDPOINT", ""); rpc != "" {
-		cfg.Chains["8453"] = ChainConfig{
-			ChainID:              "8453",
-			Name:                 "Base",
-			Type:                 "evm",
-			RPCEndpoint:          rpc,
-			USDCContractAddress:  getEnv("BASE_USDC_ADDRESS", "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"),
-			CCTPContractAddress:  getEnv("BASE_CCTP_CONTRACT", ""),
-			OperatorAddress:      getEnv("BASE_OPERATOR_ADDRESS", ""),
-			OperationalFeeBps:    uint16(getEnvInt("BASE_OPERATIONAL_FEE_BPS", 50)),
-			MinOperationalFee:    int64(getEnvInt("BASE_MIN_OPERATIONAL_FEE", 1000000)),
-			MinDepositAmount:     int64(getEnvInt("BASE_MIN_DEPOSIT", 10000000)),
-			ForwarderBytecode:    getEnv("BASE_FORWARDER_BYTECODE", ""),
-			DestinationDomain:    uint32(getEnvInt("CCTP_DESTINATION_DOMAIN", 4)),
-			DestinationCaller:    getEnv("CCTP_DESTINATION_CALLER", ""),
-		}
+	// Get public key and address
+	publicKey := privateKey.Public()
+	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("failed to cast public key to ECDSA")
+	}
+
+	address := crypto.PubkeyToAddress(*publicKeyECDSA)
+
+	return &EVMAccountInfo{
+		PrivateKey: privateKey,
+		PublicKey:  publicKeyECDSA,
+		Address:    &address,
+	}, nil
+}
+
+// LoadChainConfigs loads chain configurations from the database and populates cfg.Chains.
+// EVM-wide env vars (EVM_FORWARDER_BYTECODE, CCTP_DESTINATION_DOMAIN, CCTP_DESTINATION_CALLER)
+// are applied to all chains since they can't be stored in the database yet.
+func (cfg *Config) LoadChainConfigs(db *database.DB) error {
+	rows, err := db.GetAllChains(context.Background())
+	if err != nil {
+		return fmt.Errorf("failed to query chains from database: %w", err)
+	}
+
+	forwarderBytecode := getEnv("EVM_FORWARDER_BYTECODE", "")
+	destinationDomain := uint32(getEnvInt("CCTP_DESTINATION_DOMAIN", 4))
+	destinationCaller := getEnv("CCTP_DESTINATION_CALLER", "")
+
+	for _, row := range rows {
+		chainCfg := chainConfigFromRow(row, forwarderBytecode, destinationDomain, destinationCaller)
+		cfg.Chains[row.ChainID] = chainCfg
 	}
 
 	return nil
+}
+
+func chainConfigFromRow(row models.Chain, forwarderBytecode string, destinationDomain uint32, destinationCaller string) ChainConfig {
+	return ChainConfig{
+		ChainID:                row.ChainID,
+		Name:                   row.Name,
+		Type:                   row.Type,
+		RPCEndpoint:            row.RPCEndpoint,
+		USDCContractAddress:    row.USDCContractAddress,
+		CCTPContractAddress:    row.CCTPContractAddress,
+		OperationalFeeBps:      row.OperationalFeeBps,
+		MinOperationalFee:      row.MinOperationalFee,
+		MinDepositAmount:       row.MinDepositAmount,
+		ForwarderContractAdmin: row.ForwarderContractAdmin,
+		FeeRecipient:           row.FeeRecipient,
+		ForwarderBytecode:      forwarderBytecode,
+		DestinationDomain:      destinationDomain,
+		DestinationCaller:      destinationCaller,
+	}
 }
 
 // loadNeutronConfig loads Neutron-specific configuration
@@ -202,14 +236,6 @@ func (c *Config) Validate() error {
 
 	if c.Database.Host == "" {
 		return fmt.Errorf("database host is required")
-	}
-
-	if c.Operator.EVMPrivateKey == "" {
-		return fmt.Errorf("operator EVM private key is required")
-	}
-
-	if len(c.Chains) == 0 {
-		return fmt.Errorf("at least one chain must be configured")
 	}
 
 	return nil

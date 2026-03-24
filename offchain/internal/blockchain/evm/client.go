@@ -5,14 +5,12 @@ import (
 	"crypto/ecdsa"
 	"fmt"
 	"math/big"
-	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"go.uber.org/zap"
 
@@ -29,38 +27,23 @@ type Client struct {
 }
 
 // NewClient creates a new EVM client for the specified chain
-func NewClient(chainCfg *config.ChainConfig, operatorPrivateKey string, logger *zap.Logger) (*Client, error) {
+func NewClient(chainCfg *config.ChainConfig, evmAccountInfo config.EVMAccountInfo, logger *zap.Logger) (*Client, error) {
 	// Connect to RPC endpoint
 	ethClient, err := ethclient.Dial(chainCfg.RPCEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to RPC endpoint %s: %w", chainCfg.RPCEndpoint, err)
 	}
 
-	// Parse private key (remove 0x prefix if present)
-	privateKeyHex := strings.TrimPrefix(operatorPrivateKey, "0x")
-	privateKey, err := crypto.HexToECDSA(privateKeyHex)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %w", err)
-	}
-
-	// Get public key and address
-	publicKey := privateKey.Public()
-	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
-	if !ok {
-		return nil, fmt.Errorf("failed to cast public key to ECDSA")
-	}
-	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
-
 	logger.Info("EVM client initialized",
 		zap.String("chain_id", chainCfg.ChainID),
 		zap.String("chain_name", chainCfg.Name),
-		zap.String("operator_address", fromAddress.Hex()))
+		zap.String("operator_address", evmAccountInfo.Address.Hex()))
 
 	return &Client{
 		ethClient:   ethClient,
 		chainConfig: chainCfg,
-		privateKey:  privateKey,
-		fromAddress: fromAddress,
+		privateKey:  evmAccountInfo.PrivateKey,
+		fromAddress: *evmAccountInfo.Address,
 		logger:      logger,
 	}, nil
 }

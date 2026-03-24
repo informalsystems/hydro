@@ -314,15 +314,15 @@ func (s *ContractService) buildForwarderInitCode(email, chainID string, chainCfg
 
 	// Encode constructor arguments
 	constructorArgs, err := parsedABI.Constructor.Inputs.Pack(
-		common.HexToAddress(chainCfg.CCTPContractAddress),  // _cctpContract
-		chainCfg.DestinationDomain,                         // _destinationDomain
-		common.HexToAddress(chainCfg.USDCContractAddress),  // _tokenToBridge
-		recipient,                                           // _recipient
-		destCaller,                                          // _destinationCaller
-		common.HexToAddress(chainCfg.OperatorAddress),      // _operator
-		common.HexToAddress(s.cfg.Operator.AdminAddress),   // _admin
-		big.NewInt(int64(chainCfg.OperationalFeeBps)),      // _operationalFeeBps
-		big.NewInt(chainCfg.MinOperationalFee),             // _minOperationalFee
+		common.HexToAddress(chainCfg.CCTPContractAddress), // _cctpContract
+		chainCfg.DestinationDomain,                        // _destinationDomain
+		common.HexToAddress(chainCfg.USDCContractAddress), // _tokenToBridge
+		recipient,                             // _recipient
+		destCaller,                            // _destinationCaller
+		s.cfg.Operator.EVMAccountInfo.Address, // _operator
+		common.HexToAddress(chainCfg.ForwarderContractAdmin), // _admin
+		big.NewInt(chainCfg.OperationalFeeBps),               // _operationalFeeBps
+		big.NewInt(chainCfg.MinOperationalFee),               // _minOperationalFee
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode constructor args: %w", err)

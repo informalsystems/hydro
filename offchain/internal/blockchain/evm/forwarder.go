@@ -148,9 +148,9 @@ func NewForwarder(client *Client, chainConfig *config.ChainConfig, logger *zap.L
 
 // BridgeParams holds parameters for the bridge function call
 type BridgeParams struct {
-	TransferAmount            *big.Int       // Amount to transfer (before operational fee deduction)
-	SmartRelayFeeAmount       *big.Int       // Fee for CCTP relayer
-	OperationalFeeRecipient   common.Address // Where operational fees are sent
+	TransferAmount          *big.Int       // Amount to transfer (before operational fee deduction)
+	SmartRelayFeeAmount     *big.Int       // Fee for CCTP relayer
+	OperationalFeeRecipient common.Address // Where operational fees are sent
 }
 
 // Bridge calls the bridge() function on the forwarder contract
@@ -254,15 +254,15 @@ func (f *Forwarder) GetOperator(ctx context.Context, forwarderAddress common.Add
 
 // ForwarderConstructorParams holds the constructor parameters for deploying a forwarder
 type ForwarderConstructorParams struct {
-	CCTPContract        common.Address // Skip's CCTP contract address
-	DestinationDomain   uint32         // CCTP destination domain (Noble = 4)
-	TokenToBridge       common.Address // USDC address on this chain
-	Recipient           [32]byte       // Noble forwarding account (bytes32)
-	DestinationCaller   [32]byte       // Skip relayer address (bytes32)
-	Operator            common.Address // Operator address
-	Admin               common.Address // Admin address
-	OperationalFeeBps   *big.Int       // Fee in basis points
-	MinOperationalFee   *big.Int       // Minimum fee
+	CCTPContract      common.Address // Skip's CCTP contract address
+	DestinationDomain uint32         // CCTP destination domain (Noble = 4)
+	TokenToBridge     common.Address // USDC address on this chain
+	Recipient         [32]byte       // Noble forwarding account (bytes32)
+	DestinationCaller [32]byte       // Skip relayer address (bytes32)
+	Operator          common.Address // Operator address
+	Admin             common.Address // Admin address
+	OperationalFeeBps *big.Int       // Fee in basis points
+	MinOperationalFee *big.Int       // Minimum fee
 }
 
 // CreateConstructorParamsForUser creates complete constructor params including the recipient
@@ -317,15 +317,15 @@ func CreateConstructorParamsForUser(
 	}
 
 	return ForwarderConstructorParams{
-		CCTPContract:        common.HexToAddress(chainCfg.CCTPContractAddress),
-		DestinationDomain:   chainCfg.DestinationDomain,
-		TokenToBridge:       common.HexToAddress(chainCfg.USDCContractAddress),
-		Recipient:           recipient,
-		DestinationCaller:   destCaller,
-		Operator:            common.HexToAddress(chainCfg.OperatorAddress),
-		Admin:               common.HexToAddress(operatorCfg.AdminAddress),
-		OperationalFeeBps:   big.NewInt(int64(chainCfg.OperationalFeeBps)),
-		MinOperationalFee:   big.NewInt(chainCfg.MinOperationalFee),
+		CCTPContract:      common.HexToAddress(chainCfg.CCTPContractAddress),
+		DestinationDomain: chainCfg.DestinationDomain,
+		TokenToBridge:     common.HexToAddress(chainCfg.USDCContractAddress),
+		Recipient:         recipient,
+		DestinationCaller: destCaller,
+		Operator:          *operatorCfg.EVMAccountInfo.Address,
+		Admin:             common.HexToAddress(chainCfg.ForwarderContractAdmin),
+		OperationalFeeBps: big.NewInt(chainCfg.OperationalFeeBps),
+		MinOperationalFee: big.NewInt(chainCfg.MinOperationalFee),
 	}, nil
 }
 

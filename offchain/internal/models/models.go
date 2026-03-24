@@ -4,11 +4,11 @@ package models
 type ProcessStatus string
 
 const (
-	ProcessStatusPendingFunds      ProcessStatus = "PENDING_FUNDS"
+	ProcessStatusPendingFunds       ProcessStatus = "PENDING_FUNDS"
 	ProcessStatusTransferInProgress ProcessStatus = "TRANSFER_IN_PROGRESS"
-	ProcessStatusDepositInProgress ProcessStatus = "DEPOSIT_IN_PROGRESS"
-	ProcessStatusDepositDone       ProcessStatus = "DEPOSIT_DONE"
-	ProcessStatusFailed            ProcessStatus = "FAILED"
+	ProcessStatusDepositInProgress  ProcessStatus = "DEPOSIT_IN_PROGRESS"
+	ProcessStatusDepositDone        ProcessStatus = "DEPOSIT_DONE"
+	ProcessStatusFailed             ProcessStatus = "FAILED"
 )
 
 // ContractType represents the type of contract
@@ -50,4 +50,19 @@ type Process struct {
 	DepositTxHash    *string       `db:"deposit_tx_hash"`
 	ErrorMessage     *string       `db:"error_message"`
 	RetryCount       int           `db:"retry_count"`
+}
+
+// Chain represents a supported chain and its configuration
+type Chain struct {
+	ChainID                string `db:"chain_id"`
+	Name                   string `db:"name"`
+	Type                   string `db:"type"`
+	RPCEndpoint            string `db:"rpc_endpoint"`
+	USDCContractAddress    string `db:"usdc_contract_address"`
+	CCTPContractAddress    string `db:"cctp_contract_address"`
+	OperationalFeeBps      int64  `db:"operational_fee_bps"`
+	MinOperationalFee      int64  `db:"min_operational_fee"`
+	MinDepositAmount       int64  `db:"min_deposit_amount"`
+	ForwarderContractAdmin string `db:"forwarder_contract_admin"`
+	FeeRecipient           string `db:"fee_recipient"`
 }

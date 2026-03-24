@@ -309,3 +309,15 @@ func (db *DB) GetProxyAddressForUser(ctx context.Context, userEmail string) (str
 	}
 	return address, err
 }
+
+// GetAllChains retrieves all chain configurations from the database
+func (db *DB) GetAllChains(ctx context.Context) ([]models.Chain, error) {
+	var chains []models.Chain
+	query := `
+		SELECT chain_id, name, type, rpc_endpoint, usdc_contract_address, cctp_contract_address,
+		       operational_fee_bps, min_operational_fee, min_deposit_amount, forwarder_contract_admin, fee_recipient
+		FROM chains
+	`
+	err := db.SelectContext(ctx, &chains, query)
+	return chains, err
+}

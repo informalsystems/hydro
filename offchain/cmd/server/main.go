@@ -37,8 +37,7 @@ func main() {
 
 	logger.Info("Configuration loaded",
 		zap.Int("server_port", cfg.Server.Port),
-		zap.String("db_host", cfg.Database.Host),
-		zap.Int("num_chains", len(cfg.Chains)))
+		zap.String("db_host", cfg.Database.Host))
 
 	// Connect to database
 	db, err := database.Connect(database.Config{
@@ -70,6 +69,12 @@ func main() {
 	}
 
 	logger.Info("Database health check passed")
+
+	// Load chain configurations from the database
+	if err := cfg.LoadChainConfigs(db); err != nil {
+		logger.Fatal("Failed to load chain configs from database", zap.Error(err))
+	}
+	logger.Info("Chain configs loaded", zap.Int("num_chains", len(cfg.Chains)))
 
 	// Initialize services (Phase 2)
 	contractService, err := service.NewContractService(db, cfg, logger)

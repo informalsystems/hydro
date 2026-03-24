@@ -74,7 +74,7 @@ func NewWorkerManager(
 	for chainID, chainCfg := range cfg.Chains {
 		chainCfgCopy := chainCfg // Create copy for pointer
 
-		client, err := evm.NewClient(&chainCfgCopy, cfg.Operator.EVMPrivateKey, logger)
+		client, err := evm.NewClient(&chainCfgCopy, cfg.Operator.EVMAccountInfo, logger)
 		if err != nil {
 			// Close already-created clients
 			for _, c := range evmClients {

@@ -153,7 +153,7 @@ func (e *Executor) executeBridge(ctx context.Context, proc *models.Process) erro
 	bridgeParams := evm.BridgeParams{
 		TransferAmount:          big.NewInt(transferAmount),
 		SmartRelayFeeAmount:     big.NewInt(DefaultSmartRelayFee),
-		OperationalFeeRecipient: common.HexToAddress(e.manager.cfg.Operator.FeeRecipient),
+		OperationalFeeRecipient: common.HexToAddress(chainCfg.FeeRecipient),
 	}
 
 	e.logger.Info("Calling bridge",
