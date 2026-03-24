@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"cosmossdk.io/math"
+	"github.com/btcsuite/btcutil/bech32"
+	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -25,49 +27,83 @@ import (
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	"go.uber.org/zap"
 
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
-
-	"hydro/offchain/internal/config"
 )
 
 const (
 	// Neutron chain configuration
 	NeutronBech32Prefix = "neutron"
 	NeutronCoinType     = 118
-	DefaultGasLimit     = 500000
+	DefaultGasLimit     = 2_200_000 // TODO: simulate TX instead of hardcoding gas limit
 	DefaultGasAdjust    = 1.5
 	DefaultFeeDenom     = "untrn"
-	DefaultGasPrice     = 0.025
+	DefaultGasPrice     = 0.053
 )
 
-// Client wraps Cosmos SDK client functionality for interacting with Neutron
-type Client struct {
-	rpcClient    *rpchttp.HTTP
-	restEndpoint string
-	cdc          codec.Codec
-	interfaceReg codectypes.InterfaceRegistry
-	txConfig     client.TxConfig
-	keyring      keyring.Keyring
-	operatorAddr sdk.AccAddress
-	pubKey       cryptotypes.PubKey
-	chainID      string
-	cfg          *config.NeutronConfig
-	logger       *zap.Logger
+// CosmosChainSpecifics holds chain-specific constants used when creating a Cosmos client
+type CosmosChainSpecifics struct {
+	Bech32Prefix       string
+	CoinType           uint32
+	FeeDenom           string
+	GasPrice           float64
+	GasLimit           uint64 // TODO: replace with dynamic gas estimation in the future
+	RegisterInterfaces func(codectypes.InterfaceRegistry)
 }
 
-// NewClient creates a new Cosmos client for Neutron
-func NewClient(cfg *config.NeutronConfig, operatorMnemonic string, logger *zap.Logger) (*Client, error) {
-	// Set Bech32 prefix for Neutron
-	sdkConfig := sdk.GetConfig()
-	sdkConfig.SetBech32PrefixForAccount(NeutronBech32Prefix, NeutronBech32Prefix+"pub")
-	sdkConfig.SetBech32PrefixForValidator(NeutronBech32Prefix+"valoper", NeutronBech32Prefix+"valoperpub")
-	sdkConfig.SetBech32PrefixForConsensusNode(NeutronBech32Prefix+"valcons", NeutronBech32Prefix+"valconspub")
+// CosmosClientEndpoints holds RPC/REST endpoint configuration
+type CosmosClientEndpoints struct {
+	// CometBFT RPC endpoint for transactions and ABCI queries
+	RPCEndpoint string
+	// API endpoint for module specific queries
+	RESTEndpoint string
+}
 
+// NeutronChainSpecifics holds chain-specific constants for Neutron
+var NeutronChainSpecifics = CosmosChainSpecifics{
+	Bech32Prefix: NeutronBech32Prefix,
+	CoinType:     NeutronCoinType,
+	FeeDenom:     DefaultFeeDenom,
+	GasPrice:     DefaultGasPrice,
+	GasLimit:     DefaultGasLimit,
+	RegisterInterfaces: func(reg codectypes.InterfaceRegistry) {
+		wasmtypes.RegisterInterfaces(reg)
+	},
+}
+
+// NobleChainSpecifics holds chain-specific constants for Noble
+var NobleChainSpecifics = CosmosChainSpecifics{
+	Bech32Prefix: NobleAddressPrefix,
+	CoinType:     118,
+	FeeDenom:     "uusdc",
+	GasPrice:     0.1,
+	GasLimit:     DefaultGasLimit,
+	RegisterInterfaces: func(reg codectypes.InterfaceRegistry) {
+		reg.RegisterImplementations((*sdk.Msg)(nil), &MsgRegisterAccount{})
+	},
+}
+
+// Client wraps Cosmos SDK client functionality for interacting with a Cosmos chain
+type Client struct {
+	rpcClient      *rpchttp.HTTP
+	restEndpoint   string
+	cdc            codec.Codec
+	interfaceReg   codectypes.InterfaceRegistry
+	txConfig       client.TxConfig
+	keyring        keyring.Keyring
+	operatorAddr   sdk.AccAddress
+	pubKey         cryptotypes.PubKey
+	chainID        string
+	bech32Prefix   string
+	chainSpecifics CosmosChainSpecifics
+	logger         *zap.Logger
+}
+
+// NewClient creates a new Cosmos client for the given chain
+func NewClient(endpoints CosmosClientEndpoints, chainSpecifics CosmosChainSpecifics, mnemonic string, logger *zap.Logger) (*Client, error) {
 	// Create RPC client
-	rpcClient, err := rpchttp.New(cfg.RPCEndpoint, "/websocket")
+	rpcClient, err := rpchttp.New(endpoints.RPCEndpoint, "/websocket")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RPC client: %w", err)
 	}
@@ -84,7 +120,7 @@ func NewClient(cfg *config.NeutronConfig, operatorMnemonic string, logger *zap.L
 	cryptocodec.RegisterInterfaces(interfaceRegistry)
 	authtypes.RegisterInterfaces(interfaceRegistry)
 	banktypes.RegisterInterfaces(interfaceRegistry)
-	wasmtypes.RegisterInterfaces(interfaceRegistry)
+	chainSpecifics.RegisterInterfaces(interfaceRegistry)
 	cdc := codec.NewProtoCodec(interfaceRegistry)
 
 	// Create tx config
@@ -94,8 +130,8 @@ func NewClient(cfg *config.NeutronConfig, operatorMnemonic string, logger *zap.L
 	kr := keyring.NewInMemory(cdc)
 
 	// Derive key from mnemonic
-	hdPath := hd.CreateHDPath(NeutronCoinType, 0, 0).String()
-	record, err := kr.NewAccount("operator", operatorMnemonic, "", hdPath, hd.Secp256k1)
+	hdPath := hd.CreateHDPath(chainSpecifics.CoinType, 0, 0).String()
+	record, err := kr.NewAccount("operator", mnemonic, "", hdPath, hd.Secp256k1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create key from mnemonic: %w", err)
 	}
@@ -107,30 +143,53 @@ func NewClient(cfg *config.NeutronConfig, operatorMnemonic string, logger *zap.L
 	operatorAddr := sdk.AccAddress(pubKey.Address())
 
 	// Use configured REST endpoint, or derive from RPC endpoint as fallback
-	restEndpoint := cfg.RESTEndpoint
+	restEndpoint := endpoints.RESTEndpoint
 	if restEndpoint == "" {
-		// Fallback: derive from RPC endpoint (works for standard Cosmos port layouts)
-		restEndpoint = strings.Replace(cfg.RPCEndpoint, ":26657", ":1317", 1)
+		restEndpoint = strings.Replace(endpoints.RPCEndpoint, ":26657", ":1317", 1)
+	}
+
+	// Compute the bech32-encoded operator address for logging
+	conv, err := bech32.ConvertBits(operatorAddr.Bytes(), 8, 5, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert operator address bits: %w", err)
+	}
+	operatorAddrStr, err := bech32.Encode(chainSpecifics.Bech32Prefix, conv)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode operator address: %w", err)
 	}
 
 	logger.Info("Cosmos client initialized",
 		zap.String("chain_id", chainID),
-		zap.String("rpc_endpoint", cfg.RPCEndpoint),
-		zap.String("operator_address", operatorAddr.String()))
+		zap.String("rpc_endpoint", endpoints.RPCEndpoint),
+		zap.String("operator_address", operatorAddrStr))
 
 	return &Client{
-		rpcClient:    rpcClient,
-		restEndpoint: restEndpoint,
-		cdc:          cdc,
-		interfaceReg: interfaceRegistry,
-		txConfig:     txConfig,
-		keyring:      kr,
-		operatorAddr: operatorAddr,
-		pubKey:       pubKey,
-		chainID:      chainID,
-		cfg:          cfg,
-		logger:       logger,
+		rpcClient:      rpcClient,
+		restEndpoint:   restEndpoint,
+		cdc:            cdc,
+		interfaceReg:   interfaceRegistry,
+		txConfig:       txConfig,
+		keyring:        kr,
+		operatorAddr:   operatorAddr,
+		pubKey:         pubKey,
+		chainID:        chainID,
+		bech32Prefix:   chainSpecifics.Bech32Prefix,
+		chainSpecifics: chainSpecifics,
+		logger:         logger,
 	}, nil
+}
+
+// operatorAddressString returns the bech32-encoded operator address using the client's chain prefix
+func (c *Client) operatorAddressString() string {
+	conv, err := bech32.ConvertBits(c.operatorAddr.Bytes(), 8, 5, true)
+	if err != nil {
+		panic(fmt.Errorf("failed to convert operator address bits: %w", err))
+	}
+	addr, err := bech32.Encode(c.bech32Prefix, conv)
+	if err != nil {
+		panic(fmt.Errorf("failed to encode operator address: %w", err))
+	}
+	return addr
 }
 
 // Close closes the RPC client connection
@@ -138,9 +197,9 @@ func (c *Client) Close() error {
 	return c.rpcClient.Stop()
 }
 
-// OperatorAddress returns the operator's address
-func (c *Client) OperatorAddress() sdk.AccAddress {
-	return c.operatorAddr
+// OperatorAddress returns the bech32-encoded operator address for this client's chain
+func (c *Client) OperatorAddress() string {
+	return c.operatorAddressString()
 }
 
 // ChainID returns the chain ID
@@ -276,7 +335,7 @@ func (c *Client) ExecuteContract(
 	}
 
 	msg := &wasmtypes.MsgExecuteContract{
-		Sender:   c.operatorAddr.String(),
+		Sender:   c.operatorAddressString(),
 		Contract: contractAddr,
 		Msg:      executeMsgBytes,
 		Funds:    funds,
@@ -300,8 +359,8 @@ func (c *Client) InstantiateContract2(
 	}
 
 	msg := &wasmtypes.MsgInstantiateContract2{
-		Sender: c.operatorAddr.String(),
-		Admin:  c.operatorAddr.String(),
+		Sender: c.operatorAddressString(),
+		Admin:  c.operatorAddressString(),
 		CodeID: codeID,
 		Label:  label,
 		Msg:    instantiateMsgBytes,
@@ -332,7 +391,7 @@ func (c *Client) InstantiateContract2(
 // SignAndBroadcast signs and broadcasts a transaction using cosmos-sdk tx builder
 func (c *Client) SignAndBroadcast(ctx context.Context, msgs ...sdk.Msg) (string, error) {
 	// Get account info
-	accountNum, sequence, err := c.GetAccountInfo(ctx, c.operatorAddr.String())
+	accountNum, sequence, err := c.GetAccountInfo(ctx, c.operatorAddressString())
 	if err != nil {
 		return "", fmt.Errorf("failed to get account info: %w", err)
 	}
@@ -346,9 +405,9 @@ func (c *Client) SignAndBroadcast(ctx context.Context, msgs ...sdk.Msg) (string,
 	}
 
 	// Set gas limit and fees
-	txBuilder.SetGasLimit(DefaultGasLimit)
-	feeAmount := int64(float64(DefaultGasLimit) * DefaultGasPrice)
-	txBuilder.SetFeeAmount(sdk.NewCoins(sdk.NewCoin(DefaultFeeDenom, math.NewInt(feeAmount))))
+	txBuilder.SetGasLimit(c.chainSpecifics.GasLimit)
+	feeAmount := int64(float64(c.chainSpecifics.GasLimit) * c.chainSpecifics.GasPrice)
+	txBuilder.SetFeeAmount(sdk.NewCoins(sdk.NewCoin(c.chainSpecifics.FeeDenom, math.NewInt(feeAmount))))
 
 	// Set empty memo
 	txBuilder.SetMemo("")
@@ -431,7 +490,7 @@ func (c *Client) SignAndBroadcast(ctx context.Context, msgs ...sdk.Msg) (string,
 // SignAndBroadcastWithGas signs and broadcasts a transaction with custom gas limit
 func (c *Client) SignAndBroadcastWithGas(ctx context.Context, gasLimit uint64, msgs ...sdk.Msg) (string, error) {
 	// Get account info
-	accountNum, sequence, err := c.GetAccountInfo(ctx, c.operatorAddr.String())
+	accountNum, sequence, err := c.GetAccountInfo(ctx, c.operatorAddressString())
 	if err != nil {
 		return "", fmt.Errorf("failed to get account info: %w", err)
 	}
@@ -444,8 +503,8 @@ func (c *Client) SignAndBroadcastWithGas(ctx context.Context, gasLimit uint64, m
 	}
 
 	txBuilder.SetGasLimit(gasLimit)
-	feeAmount := int64(float64(gasLimit) * DefaultGasPrice)
-	txBuilder.SetFeeAmount(sdk.NewCoins(sdk.NewCoin(DefaultFeeDenom, math.NewInt(feeAmount))))
+	feeAmount := int64(float64(gasLimit) * c.chainSpecifics.GasPrice)
+	txBuilder.SetFeeAmount(sdk.NewCoins(sdk.NewCoin(c.chainSpecifics.FeeDenom, math.NewInt(feeAmount))))
 	txBuilder.SetMemo("")
 
 	// Create and set signature

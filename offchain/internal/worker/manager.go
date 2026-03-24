@@ -24,6 +24,8 @@ const (
 	DepositTimeout      = 2 * time.Minute
 	DeploymentTimeout   = 3 * time.Minute
 	MonitorTimeout      = 30 * time.Second
+
+	NobleTxBlockInclusionTimeout = 20 * time.Second
 )
 
 // WorkerManager orchestrates background workers for deposit processing
@@ -33,11 +35,12 @@ type WorkerManager struct {
 	logger *zap.Logger
 
 	// Blockchain clients
-	evmClients   map[string]*evm.Client    // chainID -> client
-	forwarders   map[string]*evm.Forwarder // chainID -> forwarder
-	cosmosClient *cosmos.Client
-	proxy        *cosmos.Proxy
-	nobleClient  *cosmos.NobleClient
+	evmClients        map[string]*evm.Client    // chainID -> client
+	forwarders        map[string]*evm.Forwarder // chainID -> forwarder
+	cosmosClient      *cosmos.Client
+	proxy             *cosmos.Proxy
+	nobleClient       *cosmos.NobleClient
+	nobleCosmosClient *cosmos.Client // for signing Noble TXs
 
 	// Services
 	processService  *service.ProcessService
@@ -96,8 +99,12 @@ func NewWorkerManager(
 			zap.String("chain_name", chainCfg.Name))
 	}
 
-	// Initialize Cosmos client
-	cosmosClient, err := cosmos.NewClient(&cfg.Neutron, cfg.Operator.NeutronMnemonic, logger)
+	// Initialize Neutron Cosmos client
+	neutronEndpoints := cosmos.CosmosClientEndpoints{
+		RPCEndpoint:  cfg.Neutron.RPCEndpoint,
+		RESTEndpoint: cfg.Neutron.RESTEndpoint,
+	}
+	cosmosClient, err := cosmos.NewClient(neutronEndpoints, cosmos.NeutronChainSpecifics, cfg.Operator.NeutronMnemonic, logger)
 	if err != nil {
 		// Close EVM clients
 		for _, c := range evmClients {
@@ -129,6 +136,21 @@ func NewWorkerManager(
 		return nil, fmt.Errorf("failed to create Noble client: %w", err)
 	}
 
+	// Initialize Noble Cosmos client for signing and broadcasting Noble TXs
+	nobleEndpoints := cosmos.CosmosClientEndpoints{
+		RPCEndpoint:  cfg.Neutron.NobleRPCEndpoint,
+		RESTEndpoint: cfg.Neutron.NobleRESTEndpoint,
+	}
+	nobleCosmosClient, err := cosmos.NewClient(nobleEndpoints, cosmos.NobleChainSpecifics, cfg.Operator.NobleMnemonic, logger)
+	if err != nil {
+		for _, c := range evmClients {
+			c.Close()
+		}
+		cosmosClient.Close()
+		nobleClient.Close()
+		return nil, fmt.Errorf("failed to create Noble Cosmos client: %w", err)
+	}
+
 	// Share code checksum with contract service
 	contractService.SetProxyCodeChecksum(proxy.GetCodeChecksum())
 
@@ -139,19 +161,20 @@ func NewWorkerManager(
 	ctx, cancel := context.WithCancel(context.Background())
 
 	wm := &WorkerManager{
-		db:              db,
-		cfg:             cfg,
-		logger:          logger,
-		evmClients:      evmClients,
-		forwarders:      forwarders,
-		cosmosClient:    cosmosClient,
-		proxy:           proxy,
-		nobleClient:     nobleClient,
-		processService:  processService,
-		feeService:      feeService,
-		contractService: contractService,
-		ctx:             ctx,
-		cancel:          cancel,
+		db:                db,
+		cfg:               cfg,
+		logger:            logger,
+		evmClients:        evmClients,
+		forwarders:        forwarders,
+		cosmosClient:      cosmosClient,
+		proxy:             proxy,
+		nobleClient:       nobleClient,
+		nobleCosmosClient: nobleCosmosClient,
+		processService:    processService,
+		feeService:        feeService,
+		contractService:   contractService,
+		ctx:               ctx,
+		cancel:            cancel,
 	}
 
 	// Create monitor and executor
@@ -213,6 +236,10 @@ func (wm *WorkerManager) Shutdown(timeout time.Duration) error {
 
 	if err := wm.cosmosClient.Close(); err != nil {
 		wm.logger.Error("Error closing Cosmos client", zap.Error(err))
+	}
+
+	if err := wm.nobleCosmosClient.Close(); err != nil {
+		wm.logger.Error("Error closing Noble Cosmos client", zap.Error(err))
 	}
 
 	wm.logger.Info("Worker manager shutdown complete")

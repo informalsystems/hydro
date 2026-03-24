@@ -64,7 +64,7 @@ func (p *Proxy) ComputeProxyAddressForUser(userEmail string) (string, error) {
 	salt := GenerateProxySalt(userEmail)
 	return ComputeProxyAddress(
 		p.codeChecksum,
-		p.client.OperatorAddress().String(),
+		p.client.OperatorAddress(),
 		salt[:],
 		nil, // No msg for FixMsg=false
 	)
@@ -330,7 +330,7 @@ func (p *Proxy) VerifyProxyAddress(expectedAddress string, userEmail string) (bo
 	return VerifyProxyAddress(
 		expectedAddress,
 		p.codeChecksum,
-		p.client.OperatorAddress().String(),
+		p.client.OperatorAddress(),
 		salt[:],
 		nil, // No msg for FixMsg=false
 	)

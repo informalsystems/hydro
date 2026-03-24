@@ -57,16 +57,18 @@ type NeutronConfig struct {
 	ProxyCodeID       uint64   // Code ID of stored proxy contract
 	NobleAPIEndpoint  string   // Noble REST API endpoint for forwarding queries (deprecated, use NobleRPCEndpoint)
 	NobleRPCEndpoint  string   // Noble RPC endpoint for ABCI queries
+	NobleRESTEndpoint string   // Noble REST/LCD endpoint for account info queries when signing TXs
 	NobleChannel      string   // IBC channel between Noble and Neutron (e.g., "channel-18")
 }
 
 // OperatorConfig holds operator wallet configuration
 type OperatorConfig struct {
-	EVMPrivateKey    string // For signing EVM transactions
-	NeutronMnemonic  string // For signing Neutron transactions
-	NeutronAddress   string // Operator's Neutron address
-	FeeRecipient     string // Where operational fees are sent (EVM address)
-	AdminAddress     string // Admin address for emergency functions
+	EVMPrivateKey   string // For signing EVM transactions
+	NeutronMnemonic string // For signing Neutron transactions
+	NeutronAddress  string // Operator's Neutron address
+	NobleMnemonic   string // For signing Noble transactions
+	FeeRecipient    string // Where operational fees are sent (EVM address)
+	AdminAddress    string // Admin address for emergency functions
 }
 
 // LoadConfig loads configuration from environment variables
@@ -87,6 +89,7 @@ func LoadConfig() (*Config, error) {
 			EVMPrivateKey:   getEnv("OPERATOR_EVM_PRIVATE_KEY", ""),
 			NeutronMnemonic: getEnv("OPERATOR_NEUTRON_MNEMONIC", ""),
 			NeutronAddress:  getEnv("OPERATOR_NEUTRON_ADDRESS", ""),
+			NobleMnemonic:   getEnv("OPERATOR_NOBLE_MNEMONIC", ""),
 			FeeRecipient:    getEnv("OPERATOR_FEE_RECIPIENT", ""),
 			AdminAddress:    getEnv("OPERATOR_ADMIN_ADDRESS", ""),
 		},
@@ -176,15 +179,16 @@ func loadNeutronConfig(cfg *Config) error {
 	}
 
 	cfg.Neutron = NeutronConfig{
-		RPCEndpoint:      rpc,
-		GRPCEndpoint:     getEnv("NEUTRON_GRPC_ENDPOINT", ""),
-		RESTEndpoint:     getEnv("NEUTRON_REST_ENDPOINT", ""),
-		ControlCenters:   controlCenters,
-		Admins:           admins,
-		ProxyCodeID:      uint64(getEnvInt("NEUTRON_PROXY_CODE_ID", 0)),
-		NobleAPIEndpoint: getEnv("NOBLE_API_ENDPOINT", ""),
-		NobleRPCEndpoint: getEnv("NOBLE_RPC_ENDPOINT", "https://noble-rpc.polkachu.com"),
-		NobleChannel:     getEnv("NOBLE_NEUTRON_CHANNEL", "channel-18"),
+		RPCEndpoint:       rpc,
+		GRPCEndpoint:      getEnv("NEUTRON_GRPC_ENDPOINT", ""),
+		RESTEndpoint:      getEnv("NEUTRON_REST_ENDPOINT", ""),
+		ControlCenters:    controlCenters,
+		Admins:            admins,
+		ProxyCodeID:       uint64(getEnvInt("NEUTRON_PROXY_CODE_ID", 0)),
+		NobleAPIEndpoint:  getEnv("NOBLE_API_ENDPOINT", ""),
+		NobleRPCEndpoint:  getEnv("NOBLE_RPC_ENDPOINT", "https://noble-rpc.polkachu.com"),
+		NobleRESTEndpoint: getEnv("NOBLE_REST_ENDPOINT", ""),
+		NobleChannel:      getEnv("NOBLE_NEUTRON_CHANNEL", "channel-18"),
 	}
 
 	return nil

@@ -15,9 +15,9 @@ import (
 	"hydro/offchain/internal/models"
 )
 
-// TODO: make this value configurable?
-// Smart relay fee estimate (CCTP relayer fee); equivalent to 0.1 USDC
-const DefaultSmartRelayFee int64 = 20_000
+// Smart relay fee estimate (CCTP relayer fee); equivalent to 0.04 USDC
+// Skip charges 0.02 USDC, so we double the amount to be safe.
+const DefaultSmartRelayFee int64 = 40_000
 
 // Executor handles state transitions for deposit processes
 type Executor struct {
@@ -306,6 +306,11 @@ func (e *Executor) executeDeposit(ctx context.Context, proc *models.Process) err
 
 	txHash, err := e.manager.proxy.ForwardToInflowAndWait(depositCtx, proc.ProxyAddress, DepositTimeout)
 	if err != nil {
+		// Revert process back to TRANSFER_IN_PROGRESS so it can be retried
+		if update_err := e.manager.db.UpdateProcessStatus(ctx, proc.ID, models.ProcessStatusTransferInProgress); update_err != nil {
+			e.logger.Error("Failed to revert process status after deposit failure", zap.Error(update_err))
+		}
+
 		return fmt.Errorf("ForwardToInflow failed: %w", err)
 	}
 

@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"go.uber.org/zap"
 
+	"hydro/offchain/internal/blockchain/cosmos"
 	"hydro/offchain/internal/models"
 )
 
@@ -285,6 +286,11 @@ func (m *Monitor) checkTransferInProgress(ctx context.Context) {
 		default:
 		}
 
+		// Check if the Forwarding Account has been created on Noble. If yes- no action needed since tokens
+		// will be automatically forwarded to the Neutron proxy. If not- submit TX on Noble to create the
+		// forwarding account. This has to be done only once per receiving Proxy contract.
+		m.ensureNobleForwardingAccount(ctx, proc)
+
 		// Check proxy balance on Neutron
 		balance, err := m.manager.proxy.GetProxyUSDCBalance(ctx, proc.ProxyAddress)
 		if err != nil {
@@ -363,4 +369,79 @@ func (m *Monitor) checkDepositInProgress(ctx context.Context) {
 				zap.String("tx_hash", *proc.DepositTxHash))
 		}
 	}
+}
+
+// ensureNobleForwardingAccount() checks whether a Noble ForwardingAccount is registered
+// for the Neutron proxy contract address, and registers one if funds are present but
+// the account type is different from ForwardingAccount.
+func (m *Monitor) ensureNobleForwardingAccount(ctx context.Context, proc *models.Process) {
+	// 1. Compute the Noble forwarding address for this proxy
+	nobleAddress, err := m.manager.nobleClient.QueryForwardingAddress(
+		ctx, m.manager.cfg.Neutron.NobleChannel, proc.ProxyAddress)
+	if err != nil {
+		m.logger.Error("Failed to query Noble forwarding address",
+			zap.String("process_id", proc.ProcessID),
+			zap.String("proxy_address", proc.ProxyAddress),
+			zap.Error(err))
+		return
+	}
+
+	// 2. Check account type on Noble. If the tokens didn't arrive yet, this query will return an error.
+	accountType, err := m.manager.nobleClient.QueryAccountType(ctx, nobleAddress)
+	if err != nil {
+		m.logger.Debug("Failed to query Noble account type, account doesn't exist yet",
+			zap.String("noble_address", nobleAddress),
+			zap.Error(err))
+		return
+	}
+
+	// 3. If already a ForwardingAccount, nothing to do
+	if accountType == cosmos.ForwardingAccountTypeURL {
+		m.logger.Debug("Noble forwarding account already registered",
+			zap.String("noble_address", nobleAddress))
+		return
+	}
+
+	// 4. Check uusdc balance — only register if account isn't registered and funds are already present
+	usdcBalance, err := m.manager.nobleClient.QueryUSDCBalance(ctx, nobleAddress)
+	if err != nil {
+		m.logger.Debug("Failed to query Noble USDC balance",
+			zap.String("noble_address", nobleAddress),
+			zap.Error(err))
+		return
+	}
+
+	if !usdcBalance.IsPositive() {
+		// No funds yet — the forwarding account will be registered once funds arrive
+		return
+	}
+
+	// 5. Register the forwarding account on Noble
+	msg := &cosmos.MsgRegisterAccount{
+		Signer:    m.manager.nobleCosmosClient.OperatorAddress(),
+		Channel:   m.manager.cfg.Neutron.NobleChannel,
+		Recipient: proc.ProxyAddress,
+	}
+
+	txHash, err := m.manager.nobleCosmosClient.SignAndBroadcast(ctx, msg)
+	if err != nil {
+		m.logger.Error("Failed to register Noble forwarding account",
+			zap.String("process_id", proc.ProcessID),
+			zap.String("noble_address", nobleAddress),
+			zap.Error(err))
+		return
+	}
+
+	if err := m.manager.nobleCosmosClient.WaitForTx(ctx, txHash, NobleTxBlockInclusionTimeout); err != nil {
+		m.logger.Error("Register Noble forwarding account transaction not confirmed",
+			zap.String("process_id", proc.ProcessID),
+			zap.String("noble_address", nobleAddress),
+			zap.Error(err))
+		return
+	}
+
+	m.logger.Info("Noble forwarding account registered",
+		zap.String("process_id", proc.ProcessID),
+		zap.String("noble_address", nobleAddress),
+		zap.String("tx_hash", txHash))
 }
