@@ -118,11 +118,7 @@ fn execute_create_distribution(
         .add_attribute("total_weight", total_weight.to_string()))
 }
 
-fn execute_claim(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-) -> Result<Response, ContractError> {
+fn execute_claim(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
     let user = info.sender.clone();
 
     // Collect all claim entries for this user

@@ -21,9 +21,7 @@ pub enum ExecuteMsg {
     Claim {},
     /// Sweep unclaimed funds from an expired distribution to the treasury.
     /// Anyone can call this.
-    SweepExpired {
-        distribution_id: u64,
-    },
+    SweepExpired { distribution_id: u64 },
     /// Admin-only: update config fields.
     UpdateConfig {
         admin: Option<String>,

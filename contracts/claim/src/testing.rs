@@ -67,7 +67,10 @@ fn test_create_distribution() {
 
     let info = message_info(&admin, &[coin(1000, "uatom"), coin(500, "uusdc")]);
     let res = execute(deps.as_mut(), env.clone(), info, msg).unwrap();
-    assert!(res.attributes.iter().any(|a| a.key == "distribution_id" && a.value == "0"));
+    assert!(res
+        .attributes
+        .iter()
+        .any(|a| a.key == "distribution_id" && a.value == "0"));
 
     // Query distribution
     let res: DistributionResponse = cosmwasm_std::from_json(
@@ -179,12 +182,10 @@ fn test_claim_multi_denom() {
 
     let expiry = Timestamp::from_seconds(env.block.time.seconds() + 3600);
     let create_msg = ExecuteMsg::CreateDistribution {
-        claims: vec![
-            ClaimEntry {
-                address: alice.to_string(),
-                weight: Uint128::new(1),
-            },
-        ],
+        claims: vec![ClaimEntry {
+            address: alice.to_string(),
+            weight: Uint128::new(1),
+        }],
         expiry,
     };
     let info = message_info(&admin, &[coin(100, "uatom"), coin(200, "uusdc")]);
@@ -268,9 +269,7 @@ fn test_sweep_expired() {
         deps.as_mut(),
         env.clone(),
         info,
-        ExecuteMsg::SweepExpired {
-            distribution_id: 0,
-        },
+        ExecuteMsg::SweepExpired { distribution_id: 0 },
     )
     .unwrap();
 
@@ -288,9 +287,7 @@ fn test_sweep_expired() {
         deps.as_mut(),
         env,
         info,
-        ExecuteMsg::SweepExpired {
-            distribution_id: 0,
-        },
+        ExecuteMsg::SweepExpired { distribution_id: 0 },
     )
     .unwrap_err();
     assert_eq!(err, ContractError::DistributionAlreadySwept { id: 0 });
@@ -319,9 +316,7 @@ fn test_sweep_not_expired() {
         deps.as_mut(),
         env,
         info,
-        ExecuteMsg::SweepExpired {
-            distribution_id: 0,
-        },
+        ExecuteMsg::SweepExpired { distribution_id: 0 },
     )
     .unwrap_err();
     assert_eq!(err, ContractError::DistributionNotExpired { id: 0 });
