@@ -1,1 +1,1 @@
-- Add claim contract for weight-based fund distribution with multi-denom support and expiry-based sweep of unclaimed funds.
+- Add claim contract for weight-based fund distribution with multi-denom support and expiry-based sweep of unclaimed funds. ([\#405](https://github.com/informalsystems/hydro/pull/405))
