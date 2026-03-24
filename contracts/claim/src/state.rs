@@ -11,6 +11,9 @@ pub const DISTRIBUTIONS: Map<u64, Distribution> = Map::new("distributions");
 /// key(user_address, distribution_id) -> weight
 pub const CLAIMS: Map<(Addr, u64), Uint128> = Map::new("claims");
 
+/// key(user_address, distribution_id) -> ClaimRecord
+pub const CLAIM_HISTORY: Map<(Addr, u64), ClaimRecord> = Map::new("claim_history");
+
 #[cw_serde]
 pub struct Config {
     pub admin: Addr,
@@ -24,4 +27,11 @@ pub struct Distribution {
     pub remaining_funds: Vec<Coin>,
     pub total_weight: Uint128,
     pub expiry: Timestamp,
+}
+
+#[cw_serde]
+pub struct ClaimRecord {
+    pub distribution_id: u64,
+    pub funds_claimed: Vec<Coin>,
+    pub claimed_at: Timestamp,
 }

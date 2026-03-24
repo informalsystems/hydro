@@ -5,13 +5,18 @@ use cosmwasm_std::{
     Response, StdResult, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
+use cw_storage_plus::Bound;
 
 use crate::error::ContractError;
 use crate::msg::{ClaimEntry, ExecuteMsg, InstantiateMsg};
 use crate::query::{
-    ConfigResponse, DistributionResponse, PendingClaimInfo, PendingClaimsResponse, QueryMsg,
+    ClaimHistoryResponse, ConfigResponse, DistributionResponse, PendingClaimInfo,
+    PendingClaimsResponse, QueryMsg,
 };
-use crate::state::{Config, Distribution, CLAIMS, CONFIG, DISTRIBUTIONS, NEXT_DISTRIBUTION_ID};
+use crate::state::{
+    ClaimRecord, Config, Distribution, CLAIMS, CLAIM_HISTORY, CONFIG, DISTRIBUTIONS,
+    NEXT_DISTRIBUTION_ID,
+};
 
 pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
 pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -143,6 +148,7 @@ fn execute_claim(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
         }
 
         // Compute share per denom
+        let mut dist_funds_claimed: Vec<Coin> = vec![];
         for orig_coin in &dist.original_funds {
             let share = orig_coin.amount.multiply_ratio(*weight, dist.total_weight);
 
@@ -170,11 +176,25 @@ fn execute_claim(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
 
             // Accumulate for sending
             add_coin(&mut total_to_send, &orig_coin.denom, actual);
+            add_coin(&mut dist_funds_claimed, &orig_coin.denom, actual);
         }
 
         dist.remaining_funds.retain(|c| !c.amount.is_zero());
         DISTRIBUTIONS.save(deps.storage, *dist_id, &dist)?;
         CLAIMS.remove(deps.storage, (user.clone(), *dist_id));
+
+        // Record claim history
+        if !dist_funds_claimed.is_empty() {
+            CLAIM_HISTORY.save(
+                deps.storage,
+                (user.clone(), *dist_id),
+                &ClaimRecord {
+                    distribution_id: *dist_id,
+                    funds_claimed: dist_funds_claimed,
+                    claimed_at: env.block.time,
+                },
+            )?;
+        }
     }
 
     if total_to_send.is_empty() {
@@ -294,6 +314,11 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::Config {} => to_json_binary(&query_config(deps)?),
         QueryMsg::Distribution { id } => to_json_binary(&query_distribution(deps, id)?),
         QueryMsg::PendingClaims { user } => to_json_binary(&query_pending_claims(deps, env, user)?),
+        QueryMsg::ClaimHistory {
+            user,
+            start_after,
+            limit,
+        } => to_json_binary(&query_claim_history(deps, user, start_after, limit)?),
     }
 }
 
@@ -331,4 +356,29 @@ fn query_pending_claims(deps: Deps, env: Env, user: String) -> StdResult<Pending
     }
 
     Ok(PendingClaimsResponse { claims })
+}
+
+const DEFAULT_LIMIT: u32 = 30;
+const MAX_LIMIT: u32 = 100;
+
+fn query_claim_history(
+    deps: Deps,
+    user: String,
+    start_after: Option<u64>,
+    limit: Option<u32>,
+) -> StdResult<ClaimHistoryResponse> {
+    let user_addr = deps.api.addr_validate(&user)?;
+    let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+    let min_bound = start_after.map(Bound::exclusive);
+
+    let claims: Vec<ClaimRecord> = CLAIM_HISTORY
+        .prefix(user_addr)
+        .range(deps.storage, min_bound, None, Order::Ascending)
+        .take(limit)
+        .collect::<StdResult<Vec<_>>>()?
+        .into_iter()
+        .map(|(_, record)| record)
+        .collect();
+
+    Ok(ClaimHistoryResponse { claims })
 }

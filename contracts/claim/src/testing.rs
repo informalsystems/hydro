@@ -4,7 +4,9 @@ use cosmwasm_std::{coin, coins, Timestamp, Uint128};
 use crate::contract::{execute, instantiate, query};
 use crate::error::ContractError;
 use crate::msg::{ClaimEntry, ExecuteMsg, InstantiateMsg};
-use crate::query::{ConfigResponse, DistributionResponse, PendingClaimsResponse, QueryMsg};
+use crate::query::{
+    ClaimHistoryResponse, ConfigResponse, DistributionResponse, PendingClaimsResponse, QueryMsg,
+};
 
 fn setup_contract() -> (
     cosmwasm_std::OwnedDeps<
@@ -550,4 +552,161 @@ fn test_expired_claims_cleaned_up_on_claim() {
     let info = message_info(&alice, &[]);
     let err = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::Claim {}).unwrap_err();
     assert_eq!(err, ContractError::NoPendingClaims);
+}
+
+#[test]
+fn test_claim_history_recorded() {
+    let (mut deps, env) = setup_contract();
+    let admin = deps.api.addr_make("admin");
+    let alice = deps.api.addr_make("alice");
+    let bob = deps.api.addr_make("bob");
+
+    let expiry = Timestamp::from_seconds(env.block.time.seconds() + 3600);
+
+    // Create two distributions
+    let info = message_info(&admin, &coins(1000, "uatom"));
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::CreateDistribution {
+            claims: vec![
+                ClaimEntry {
+                    address: alice.to_string(),
+                    weight: Uint128::new(1),
+                },
+                ClaimEntry {
+                    address: bob.to_string(),
+                    weight: Uint128::new(1),
+                },
+            ],
+            expiry,
+        },
+    )
+    .unwrap();
+
+    let info = message_info(&admin, &[coin(500, "uusdc")]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::CreateDistribution {
+            claims: vec![ClaimEntry {
+                address: alice.to_string(),
+                weight: Uint128::new(1),
+            }],
+            expiry,
+        },
+    )
+    .unwrap();
+
+    // Alice claims all
+    let info = message_info(&alice, &[]);
+    execute(deps.as_mut(), env.clone(), info, ExecuteMsg::Claim {}).unwrap();
+
+    // Query claim history
+    let res: ClaimHistoryResponse = cosmwasm_std::from_json(
+        query(
+            deps.as_ref(),
+            env.clone(),
+            QueryMsg::ClaimHistory {
+                user: alice.to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(res.claims.len(), 2);
+    assert_eq!(res.claims[0].distribution_id, 0);
+    assert_eq!(res.claims[0].funds_claimed, coins(500, "uatom"));
+    assert_eq!(res.claims[0].claimed_at, env.block.time);
+    assert_eq!(res.claims[1].distribution_id, 1);
+    assert_eq!(res.claims[1].funds_claimed, coins(500, "uusdc"));
+}
+
+#[test]
+fn test_claim_history_pagination() {
+    let (mut deps, env) = setup_contract();
+    let admin = deps.api.addr_make("admin");
+    let alice = deps.api.addr_make("alice");
+
+    let expiry = Timestamp::from_seconds(env.block.time.seconds() + 3600);
+
+    // Create 5 distributions for alice
+    for _ in 0..5 {
+        let info = message_info(&admin, &coins(100, "uatom"));
+        execute(
+            deps.as_mut(),
+            env.clone(),
+            info,
+            ExecuteMsg::CreateDistribution {
+                claims: vec![ClaimEntry {
+                    address: alice.to_string(),
+                    weight: Uint128::new(1),
+                }],
+                expiry,
+            },
+        )
+        .unwrap();
+    }
+
+    // Alice claims all
+    let info = message_info(&alice, &[]);
+    execute(deps.as_mut(), env.clone(), info, ExecuteMsg::Claim {}).unwrap();
+
+    // Page 1: limit 2
+    let res: ClaimHistoryResponse = cosmwasm_std::from_json(
+        query(
+            deps.as_ref(),
+            env.clone(),
+            QueryMsg::ClaimHistory {
+                user: alice.to_string(),
+                start_after: None,
+                limit: Some(2),
+            },
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(res.claims.len(), 2);
+    assert_eq!(res.claims[0].distribution_id, 0);
+    assert_eq!(res.claims[1].distribution_id, 1);
+
+    // Page 2: start_after last id from page 1
+    let res: ClaimHistoryResponse = cosmwasm_std::from_json(
+        query(
+            deps.as_ref(),
+            env.clone(),
+            QueryMsg::ClaimHistory {
+                user: alice.to_string(),
+                start_after: Some(1),
+                limit: Some(2),
+            },
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(res.claims.len(), 2);
+    assert_eq!(res.claims[0].distribution_id, 2);
+    assert_eq!(res.claims[1].distribution_id, 3);
+
+    // Page 3: only 1 remaining
+    let res: ClaimHistoryResponse = cosmwasm_std::from_json(
+        query(
+            deps.as_ref(),
+            env,
+            QueryMsg::ClaimHistory {
+                user: alice.to_string(),
+                start_after: Some(3),
+                limit: Some(2),
+            },
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(res.claims.len(), 1);
+    assert_eq!(res.claims[0].distribution_id, 4);
 }
