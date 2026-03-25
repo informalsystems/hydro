@@ -1,6 +1,7 @@
 package cosmos
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/hex"
@@ -33,13 +34,17 @@ import (
 )
 
 const (
-	// Neutron chain configuration
+	DefaultGasLimit      = 2_200_000
+	DefaultGasAdjustment = 1.5
+	StandardCoinType     = 118
+
 	NeutronBech32Prefix = "neutron"
-	NeutronCoinType     = 118
-	DefaultGasLimit     = 2_200_000 // TODO: simulate TX instead of hardcoding gas limit
-	DefaultGasAdjust    = 1.5
-	DefaultFeeDenom     = "untrn"
-	DefaultGasPrice     = 0.053
+	NeutronFeeDenom     = "untrn"
+	NeutronGasPrice     = 0.053
+
+	NobleBech32Prefix = "noble"
+	NobleFeeDenom     = "uusdc"
+	NobleGasPrice     = 0.1
 )
 
 // CosmosChainSpecifics holds chain-specific constants used when creating a Cosmos client
@@ -48,7 +53,6 @@ type CosmosChainSpecifics struct {
 	CoinType           uint32
 	FeeDenom           string
 	GasPrice           float64
-	GasLimit           uint64 // TODO: replace with dynamic gas estimation in the future
 	RegisterInterfaces func(codectypes.InterfaceRegistry)
 }
 
@@ -63,10 +67,9 @@ type CosmosClientEndpoints struct {
 // NeutronChainSpecifics holds chain-specific constants for Neutron
 var NeutronChainSpecifics = CosmosChainSpecifics{
 	Bech32Prefix: NeutronBech32Prefix,
-	CoinType:     NeutronCoinType,
-	FeeDenom:     DefaultFeeDenom,
-	GasPrice:     DefaultGasPrice,
-	GasLimit:     DefaultGasLimit,
+	CoinType:     StandardCoinType,
+	FeeDenom:     NeutronFeeDenom,
+	GasPrice:     NeutronGasPrice,
 	RegisterInterfaces: func(reg codectypes.InterfaceRegistry) {
 		wasmtypes.RegisterInterfaces(reg)
 	},
@@ -74,11 +77,10 @@ var NeutronChainSpecifics = CosmosChainSpecifics{
 
 // NobleChainSpecifics holds chain-specific constants for Noble
 var NobleChainSpecifics = CosmosChainSpecifics{
-	Bech32Prefix: NobleAddressPrefix,
-	CoinType:     118,
-	FeeDenom:     "uusdc",
-	GasPrice:     0.1,
-	GasLimit:     DefaultGasLimit,
+	Bech32Prefix: NobleBech32Prefix,
+	CoinType:     StandardCoinType,
+	FeeDenom:     NobleFeeDenom,
+	GasPrice:     NobleGasPrice,
 	RegisterInterfaces: func(reg codectypes.InterfaceRegistry) {
 		reg.RegisterImplementations((*sdk.Msg)(nil), &MsgRegisterAccount{})
 	},
@@ -388,6 +390,78 @@ func (c *Client) InstantiateContract2(
 	return txHash, contractAddr, nil
 }
 
+// simulateGas simulates a transaction and returns the adjusted gas limit (gas_used * DefaultGasAdjust).
+func (c *Client) simulateGas(ctx context.Context, msgs ...sdk.Msg) (uint64, error) {
+	_, sequence, err := c.GetAccountInfo(ctx, c.operatorAddressString())
+	if err != nil {
+		return 0, fmt.Errorf("failed to get account info for simulation: %w", err)
+	}
+
+	txBuilder := c.txConfig.NewTxBuilder()
+	if err := txBuilder.SetMsgs(msgs...); err != nil {
+		return 0, fmt.Errorf("failed to set messages for simulation: %w", err)
+	}
+
+	// The simulate endpoint requires a non-zero gas limit and a signature placeholder
+	// with the signer's public key; the signature bytes can be nil.
+	txBuilder.SetGasLimit(DefaultGasLimit)
+	sigV2 := signing.SignatureV2{
+		PubKey: c.pubKey,
+		Data: &signing.SingleSignatureData{
+			SignMode:  signing.SignMode_SIGN_MODE_DIRECT,
+			Signature: nil,
+		},
+		Sequence: sequence,
+	}
+	if err := txBuilder.SetSignatures(sigV2); err != nil {
+		return 0, fmt.Errorf("failed to set signature placeholder for simulation: %w", err)
+	}
+
+	txBytes, err := c.txConfig.TxEncoder()(txBuilder.GetTx())
+	if err != nil {
+		return 0, fmt.Errorf("failed to encode tx for simulation: %w", err)
+	}
+
+	reqBody, err := json.Marshal(map[string]string{
+		"tx_bytes": base64.StdEncoding.EncodeToString(txBytes),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal simulate request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/cosmos/tx/v1beta1/simulate", c.restEndpoint)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(reqBody)) //nolint:noctx
+	if err != nil {
+		return 0, fmt.Errorf("failed to call simulate endpoint: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read simulate response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("simulate endpoint returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var simResp struct {
+		GasInfo struct {
+			GasUsed string `json:"gas_used"`
+		} `json:"gas_info"`
+	}
+	if err := json.Unmarshal(body, &simResp); err != nil {
+		return 0, fmt.Errorf("failed to parse simulate response: %w", err)
+	}
+
+	var gasUsed uint64
+	if _, err := fmt.Sscanf(simResp.GasInfo.GasUsed, "%d", &gasUsed); err != nil {
+		return 0, fmt.Errorf("failed to parse gas_used %q: %w", simResp.GasInfo.GasUsed, err)
+	}
+
+	return gasUsed, nil
+}
+
 // SignAndBroadcast signs and broadcasts a transaction using cosmos-sdk tx builder
 func (c *Client) SignAndBroadcast(ctx context.Context, msgs ...sdk.Msg) (string, error) {
 	// Get account info
@@ -404,9 +478,17 @@ func (c *Client) SignAndBroadcast(ctx context.Context, msgs ...sdk.Msg) (string,
 		return "", fmt.Errorf("failed to set messages: %w", err)
 	}
 
-	// Set gas limit and fees
-	txBuilder.SetGasLimit(c.chainSpecifics.GasLimit)
-	feeAmount := int64(float64(c.chainSpecifics.GasLimit) * c.chainSpecifics.GasPrice)
+	// Simulate the transaction to get expected gas usage
+	gasLimit, err := c.simulateGas(ctx, msgs...)
+	if err != nil {
+		return "", fmt.Errorf("failed to simulate transaction: %w", err)
+	}
+
+	// Set gas limit- adjust it with a multiplier to ensure sufficient gas is provided
+	txBuilder.SetGasLimit(uint64(float64(gasLimit) * DefaultGasAdjustment))
+
+	// Set fees- add 1 to ensure fee is sufficient after rounding
+	feeAmount := int64(float64(gasLimit)*c.chainSpecifics.GasPrice) + 1
 	txBuilder.SetFeeAmount(sdk.NewCoins(sdk.NewCoin(c.chainSpecifics.FeeDenom, math.NewInt(feeAmount))))
 
 	// Set empty memo

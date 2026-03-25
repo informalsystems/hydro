@@ -107,9 +107,6 @@ func encodeMsgRegisterAccountBytes(signer, recipient, channel, fallback string) 
 	return buf.Bytes()
 }
 
-// NobleAddressPrefix is the bech32 prefix for Noble addresses
-const NobleAddressPrefix = "noble"
-
 // NobleClient handles queries to the Noble blockchain via RPC
 type NobleClient struct {
 	rpcEndpoint string
@@ -758,7 +755,7 @@ func ComputeNobleForwardingAddress(channel string, recipient string) (string, er
 		return "", fmt.Errorf("failed to convert bits for bech32: %w", err)
 	}
 
-	address, err := bech32.Encode(NobleAddressPrefix, conv)
+	address, err := bech32.Encode(NobleBech32Prefix, conv)
 	if err != nil {
 		return "", fmt.Errorf("failed to encode bech32 address: %w", err)
 	}
