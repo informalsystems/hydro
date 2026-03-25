@@ -193,22 +193,22 @@ func (db *DB) UpdateProcessStatus(ctx context.Context, id int64, status models.P
 	return err
 }
 
-// UpdateProcessBridgeTx updates the bridge transaction hash
+// UpdateProcessBridgeTx updates the process status and bridge transaction hash and clears any previous error
 func (db *DB) UpdateProcessBridgeTx(ctx context.Context, id int64, status models.ProcessStatus, txHash string) error {
 	query := `
 		UPDATE processes
-		SET status = $1, bridge_tx_hash = $2, updated_at = NOW()
+		SET status = $1, bridge_tx_hash = $2, error_message = '', updated_at = NOW()
 		WHERE id = $3
 	`
 	_, err := db.ExecContext(ctx, query, status, txHash, id)
 	return err
 }
 
-// UpdateProcessDepositTx updates the deposit transaction hash
+// UpdateProcessDepositTx updates the process status and deposit transaction hash and clears any previous error
 func (db *DB) UpdateProcessDepositTx(ctx context.Context, id int64, status models.ProcessStatus, txHash string) error {
 	query := `
 		UPDATE processes
-		SET status = $1, deposit_tx_hash = $2, updated_at = NOW()
+		SET status = $1, deposit_tx_hash = $2, error_message = '', updated_at = NOW()
 		WHERE id = $3
 	`
 	_, err := db.ExecContext(ctx, query, status, txHash, id)

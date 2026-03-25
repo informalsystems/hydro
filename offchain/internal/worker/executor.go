@@ -308,7 +308,7 @@ func (e *Executor) executeDeposit(ctx context.Context, proc *models.Process) err
 	if err != nil {
 		// Revert process back to TRANSFER_IN_PROGRESS so it can be retried
 		if update_err := e.manager.db.UpdateProcessStatus(ctx, proc.ID, models.ProcessStatusTransferInProgress); update_err != nil {
-			e.logger.Error("Failed to revert process status after deposit failure", zap.Error(update_err))
+			e.logger.Error("Failed to revert process status after Inflow deposit failure", zap.Error(update_err))
 		}
 
 		return fmt.Errorf("ForwardToInflow failed: %w", err)
