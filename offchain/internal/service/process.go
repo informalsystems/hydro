@@ -138,64 +138,6 @@ func (s *ProcessService) UpdateStatus(ctx context.Context, id int64, status mode
 	return nil
 }
 
-// RecordBridgeTx records the bridge transaction hash and updates status
-func (s *ProcessService) RecordBridgeTx(ctx context.Context, id int64, txHash string) error {
-	if err := s.db.UpdateProcessBridgeTx(ctx, id, models.ProcessStatusTransferInProgress, txHash); err != nil {
-		return fmt.Errorf("failed to record bridge tx: %w", err)
-	}
-
-	s.logger.Info("Bridge transaction recorded",
-		zap.Int64("id", id),
-		zap.String("tx_hash", txHash))
-
-	return nil
-}
-
-// RecordDepositTx records the deposit transaction hash and updates status
-func (s *ProcessService) RecordDepositTx(ctx context.Context, id int64, txHash string) error {
-	if err := s.db.UpdateProcessDepositTx(ctx, id, models.ProcessStatusDepositDone, txHash); err != nil {
-		return fmt.Errorf("failed to record deposit tx: %w", err)
-	}
-
-	s.logger.Info("Deposit transaction recorded",
-		zap.Int64("id", id),
-		zap.String("tx_hash", txHash))
-
-	return nil
-}
-
-// RecordError records an error and increments the retry count
-func (s *ProcessService) RecordError(ctx context.Context, id int64, errorMsg string) error {
-	if err := s.db.UpdateProcessError(ctx, id, errorMsg); err != nil {
-		return fmt.Errorf("failed to record error: %w", err)
-	}
-
-	s.logger.Warn("Process error recorded",
-		zap.Int64("id", id),
-		zap.String("error", errorMsg))
-
-	return nil
-}
-
-// MarkFailed marks a process as permanently failed
-func (s *ProcessService) MarkFailed(ctx context.Context, id int64, reason string) error {
-	// Record the error first
-	if err := s.db.UpdateProcessError(ctx, id, reason); err != nil {
-		return fmt.Errorf("failed to record error: %w", err)
-	}
-
-	// Update status to FAILED
-	if err := s.db.UpdateProcessStatus(ctx, id, models.ProcessStatusFailed); err != nil {
-		return fmt.Errorf("failed to mark as failed: %w", err)
-	}
-
-	s.logger.Error("Process marked as failed",
-		zap.Int64("id", id),
-		zap.String("reason", reason))
-
-	return nil
-}
-
 // UpdateAmount updates the USDC amount for a process
 func (s *ProcessService) UpdateAmount(ctx context.Context, id int64, amountUSDC int64) error {
 	if err := s.db.UpdateProcessAmount(ctx, id, amountUSDC); err != nil {
