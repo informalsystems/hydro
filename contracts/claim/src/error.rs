@@ -18,8 +18,8 @@ pub enum ContractError {
     #[error("Distribution {id} has not expired yet")]
     DistributionNotExpired { id: u64 },
 
-    #[error("Distribution {id} has already been swept")]
-    DistributionAlreadySwept { id: u64 },
+    #[error("Distribution {id} has no funds to sweep")]
+    NoFundsToSweep { id: u64 },
 
     #[error("No pending claims for sender")]
     NoPendingClaims,

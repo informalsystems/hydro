@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use cosmwasm_std::{
-    entry_point, to_json_binary, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Order,
-    Response, StdResult, Timestamp, Uint128,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
+    Order, Response, StdResult, Timestamp, Uint128,
 };
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
@@ -87,14 +87,15 @@ fn execute_create_distribution(
     }
 
     // Accumulate weights per address to handle duplicates correctly
-    let mut weight_by_addr: HashMap<String, Uint128> = HashMap::new();
+    let mut weight_by_addr: HashMap<Addr, Uint128> = HashMap::new();
+    let mut total_weight = Uint128::zero();
     for claim in &claims {
         let addr = deps.api.addr_validate(&claim.address)?;
-        let entry = weight_by_addr.entry(addr.to_string()).or_default();
+        let entry = weight_by_addr.entry(addr).or_default();
         *entry += claim.weight;
+        total_weight += claim.weight;
     }
 
-    let total_weight: Uint128 = weight_by_addr.values().copied().sum();
     if total_weight.is_zero() {
         return Err(ContractError::ZeroTotalWeight);
     }
@@ -105,22 +106,31 @@ fn execute_create_distribution(
     let distribution = Distribution {
         id,
         original_funds: info.funds.clone(),
-        remaining_funds: info.funds,
+        remaining_funds: info.funds.clone(),
         total_weight,
         expiry,
     };
 
     DISTRIBUTIONS.save(deps.storage, id, &distribution)?;
 
-    for (addr_str, weight) in &weight_by_addr {
-        let addr = deps.api.addr_validate(addr_str)?;
-        CLAIMS.save(deps.storage, (addr, id), weight)?;
+    for (addr, weight) in &weight_by_addr {
+        if !weight.is_zero() {
+            CLAIMS.save(deps.storage, (addr.clone(), id), weight)?;
+        }
     }
+
+    let funds_str = info
+        .funds
+        .iter()
+        .map(|c| format!("{}{}", c.amount, c.denom))
+        .collect::<Vec<_>>()
+        .join(",");
 
     Ok(Response::new()
         .add_attribute("action", "create_distribution")
         .add_attribute("distribution_id", id.to_string())
-        .add_attribute("total_weight", total_weight.to_string()))
+        .add_attribute("total_weight", total_weight.to_string())
+        .add_attribute("funds", funds_str))
 }
 
 fn execute_claim(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
@@ -183,33 +193,30 @@ fn execute_claim(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response,
         DISTRIBUTIONS.save(deps.storage, *dist_id, &dist)?;
         CLAIMS.remove(deps.storage, (user.clone(), *dist_id));
 
-        // Record claim history
-        if !dist_funds_claimed.is_empty() {
-            CLAIM_HISTORY.save(
-                deps.storage,
-                (user.clone(), *dist_id),
-                &ClaimRecord {
-                    distribution_id: *dist_id,
-                    funds_claimed: dist_funds_claimed,
-                    claimed_at: env.block.time,
-                },
-            )?;
-        }
+        // Record claim history (even for 0 funds, to leave a trace)
+        CLAIM_HISTORY.save(
+            deps.storage,
+            (user.clone(), *dist_id),
+            &ClaimRecord {
+                distribution_id: *dist_id,
+                funds_claimed: dist_funds_claimed,
+                claimed_at: env.block.time,
+            },
+        )?;
     }
 
-    if total_to_send.is_empty() {
-        return Err(ContractError::NoPendingClaims);
-    }
-
-    let send_msg = BankMsg::Send {
-        to_address: user.to_string(),
-        amount: total_to_send,
-    };
-
-    Ok(Response::new()
-        .add_message(send_msg)
+    let mut resp = Response::new()
         .add_attribute("action", "claim")
-        .add_attribute("user", user.to_string()))
+        .add_attribute("user", user.to_string());
+
+    if !total_to_send.is_empty() {
+        resp = resp.add_message(BankMsg::Send {
+            to_address: user.to_string(),
+            amount: total_to_send,
+        });
+    }
+
+    Ok(resp)
 }
 
 fn execute_sweep_expired(
@@ -231,7 +238,7 @@ fn execute_sweep_expired(
     }
 
     if dist.remaining_funds.is_empty() {
-        return Err(ContractError::DistributionAlreadySwept {
+        return Err(ContractError::NoFundsToSweep {
             id: distribution_id,
         });
     }
@@ -241,6 +248,12 @@ fn execute_sweep_expired(
     dist.remaining_funds = vec![];
     DISTRIBUTIONS.save(deps.storage, distribution_id, &dist)?;
 
+    let swept_str = to_send
+        .iter()
+        .map(|c| format!("{}{}", c.amount, c.denom))
+        .collect::<Vec<_>>()
+        .join(",");
+
     let send_msg = BankMsg::Send {
         to_address: config.treasury.to_string(),
         amount: to_send,
@@ -249,7 +262,8 @@ fn execute_sweep_expired(
     Ok(Response::new()
         .add_message(send_msg)
         .add_attribute("action", "sweep_expired")
-        .add_attribute("distribution_id", distribution_id.to_string()))
+        .add_attribute("distribution_id", distribution_id.to_string())
+        .add_attribute("swept_funds", swept_str))
 }
 
 fn execute_update_config(

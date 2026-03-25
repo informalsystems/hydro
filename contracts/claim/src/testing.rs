@@ -226,7 +226,12 @@ fn test_claim_expired_distribution_skipped() {
     // Advance time past expiry
     env.block.time = Timestamp::from_seconds(env.block.time.seconds() + 200);
 
-    // Alice tries to claim - distribution expired, so nothing to claim
+    // Alice claims - distribution expired, cleanup happens, returns Ok with no BankMsg
+    let info = message_info(&alice, &[]);
+    let res = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::Claim {}).unwrap();
+    assert!(res.messages.is_empty());
+
+    // Alice claims again: truly no pending claims now
     let info = message_info(&alice, &[]);
     let err = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::Claim {}).unwrap_err();
     assert_eq!(err, ContractError::NoPendingClaims);
@@ -292,7 +297,7 @@ fn test_sweep_expired() {
         ExecuteMsg::SweepExpired { distribution_id: 0 },
     )
     .unwrap_err();
-    assert_eq!(err, ContractError::DistributionAlreadySwept { id: 0 });
+    assert_eq!(err, ContractError::NoFundsToSweep { id: 0 });
 }
 
 #[test]
