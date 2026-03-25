@@ -17,6 +17,7 @@ members = [
     "contracts/inflow/proxy",
     "contracts/inflow/cctp-adapter",
     "contracts/inflow/user-registry",
+    "contracts/claim",
     "packages/cw-orch-interface",
     "packages/interface",
     "packages/test-utils",

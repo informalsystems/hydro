@@ -1,0 +1,24 @@
+[package]
+name = "claim"
+version = { workspace = true }
+edition = { workspace = true }
+
+exclude = [
+  "contract.wasm",
+  "hash.txt",
+]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+library = []
+
+[dependencies]
+cosmwasm-std = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+cw-storage-plus = { workspace = true }
+cw2 = { workspace = true }
+cosmwasm-schema = { workspace = true }
