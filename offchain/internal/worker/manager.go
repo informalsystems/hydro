@@ -101,10 +101,10 @@ func NewWorkerManager(
 
 	// Initialize Neutron Cosmos client
 	neutronEndpoints := cosmos.CosmosClientEndpoints{
-		RPCEndpoint:  cfg.Neutron.RPCEndpoint,
-		RESTEndpoint: cfg.Neutron.RESTEndpoint,
+		RPCEndpoint:  cfg.CosmosChains.NeutronRPCEndpoint,
+		RESTEndpoint: cfg.CosmosChains.NeutronRESTEndpoint,
 	}
-	cosmosClient, err := cosmos.NewClient(neutronEndpoints, cosmos.NeutronChainSpecifics, cfg.Operator.NeutronMnemonic, logger)
+	cosmosClient, err := cosmos.NewClient(neutronEndpoints, cosmos.NeutronChainSpecifics, cfg.Operator.NeutronAccountInfo.Mnemonic, logger)
 	if err != nil {
 		// Close EVM clients
 		for _, c := range evmClients {
@@ -114,7 +114,7 @@ func NewWorkerManager(
 	}
 
 	// Create proxy handler
-	proxy := cosmos.NewProxy(cosmosClient, &cfg.Neutron, logger)
+	proxy := cosmos.NewProxy(cosmosClient, &cfg.CosmosChains, logger)
 
 	// Initialize proxy to fetch code checksum from chain
 	if err := proxy.Initialize(context.Background()); err != nil {
@@ -127,7 +127,7 @@ func NewWorkerManager(
 	}
 
 	// Initialize Noble client for forwarding address queries (uses RPC for ABCI queries)
-	nobleClient, err := cosmos.NewNobleClient(cfg.Neutron.NobleRPCEndpoint)
+	nobleClient, err := cosmos.NewNobleClient(cfg.CosmosChains.NobleRPCEndpoint)
 	if err != nil {
 		for _, c := range evmClients {
 			c.Close()
@@ -138,10 +138,10 @@ func NewWorkerManager(
 
 	// Initialize Noble Cosmos client for signing and broadcasting Noble TXs
 	nobleEndpoints := cosmos.CosmosClientEndpoints{
-		RPCEndpoint:  cfg.Neutron.NobleRPCEndpoint,
-		RESTEndpoint: cfg.Neutron.NobleRESTEndpoint,
+		RPCEndpoint:  cfg.CosmosChains.NobleRPCEndpoint,
+		RESTEndpoint: cfg.CosmosChains.NobleRESTEndpoint,
 	}
-	nobleCosmosClient, err := cosmos.NewClient(nobleEndpoints, cosmos.NobleChainSpecifics, cfg.Operator.NobleMnemonic, logger)
+	nobleCosmosClient, err := cosmos.NewClient(nobleEndpoints, cosmos.NobleChainSpecifics, cfg.Operator.NobleAccountInfo.Mnemonic, logger)
 	if err != nil {
 		for _, c := range evmClients {
 			c.Close()

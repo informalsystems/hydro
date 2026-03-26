@@ -30,7 +30,7 @@ type ContractService struct {
 // NewContractService creates a new contract service
 func NewContractService(db *database.DB, cfg *config.Config, logger *zap.Logger) (*ContractService, error) {
 	// Initialize Noble client for forwarding address queries (uses RPC for ABCI queries)
-	nobleClient, err := cosmos.NewNobleClient(cfg.Neutron.NobleRPCEndpoint)
+	nobleClient, err := cosmos.NewNobleClient(cfg.CosmosChains.NobleRPCEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Noble client: %w", err)
 	}
@@ -178,7 +178,7 @@ func (s *ContractService) getOrCreateProxyAddress(ctx context.Context, email str
 	// Compute instantiate2 address
 	proxyAddress, err := cosmos.ComputeProxyAddress(
 		s.proxyCodeChecksum,
-		s.cfg.Operator.NeutronAddress,
+		s.cfg.Operator.NeutronAccountInfo.Address,
 		salt[:],
 		nil, // No msg for FixMsg=false
 	)
@@ -289,7 +289,7 @@ func (s *ContractService) buildForwarderInitCode(email, chainID string, chainCfg
 	salt := cosmos.GenerateProxySalt(email)
 	proxyAddress, err := cosmos.ComputeProxyAddress(
 		s.proxyCodeChecksum,
-		s.cfg.Operator.NeutronAddress,
+		s.cfg.Operator.NeutronAccountInfo.Address,
 		salt[:],
 		nil,
 	)
@@ -301,7 +301,7 @@ func (s *ContractService) buildForwarderInitCode(email, chainID string, chainCfg
 	// The recipient is the Noble forwarding account that auto-forwards to the proxy via IBC.
 	// Flow: EVM Forwarder -> CCTP -> Noble forwarding account -> IBC -> Neutron proxy
 	ctx := context.Background()
-	nobleForwardingAddr, err := s.nobleClient.QueryForwardingAddress(ctx, s.cfg.Neutron.NobleChannel, proxyAddress)
+	nobleForwardingAddr, err := s.nobleClient.QueryForwardingAddress(ctx, s.cfg.CosmosChains.NobleNeutronChannel, proxyAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query Noble forwarding address: %w", err)
 	}

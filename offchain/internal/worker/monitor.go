@@ -377,7 +377,7 @@ func (m *Monitor) checkDepositInProgress(ctx context.Context) {
 func (m *Monitor) ensureNobleForwardingAccount(ctx context.Context, proc *models.Process) {
 	// 1. Compute the Noble forwarding address for this proxy
 	nobleAddress, err := m.manager.nobleClient.QueryForwardingAddress(
-		ctx, m.manager.cfg.Neutron.NobleChannel, proc.ProxyAddress)
+		ctx, m.manager.cfg.CosmosChains.NobleNeutronChannel, proc.ProxyAddress)
 	if err != nil {
 		m.logger.Error("Failed to query Noble forwarding address",
 			zap.String("process_id", proc.ProcessID),
@@ -419,7 +419,7 @@ func (m *Monitor) ensureNobleForwardingAccount(ctx context.Context, proc *models
 	// 5. Register the forwarding account on Noble
 	msg := &cosmos.MsgRegisterAccount{
 		Signer:    m.manager.nobleCosmosClient.OperatorAddress(),
-		Channel:   m.manager.cfg.Neutron.NobleChannel,
+		Channel:   m.manager.cfg.CosmosChains.NobleNeutronChannel,
 		Recipient: proc.ProxyAddress,
 	}
 

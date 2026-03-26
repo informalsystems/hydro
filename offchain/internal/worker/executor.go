@@ -219,7 +219,7 @@ func (e *Executor) deployForwarder(ctx context.Context, proc *models.Process, ch
 
 	constructorParams, err := evm.CreateConstructorParamsForUser(
 		chainCfg,
-		&e.manager.cfg.Neutron,
+		&e.manager.cfg.CosmosChains,
 		&e.manager.cfg.Operator,
 		proc.UserEmail,
 		codeChecksum,

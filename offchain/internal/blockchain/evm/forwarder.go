@@ -270,7 +270,7 @@ type ForwarderConstructorParams struct {
 //
 // Parameters:
 //   - chainCfg: EVM chain configuration
-//   - neutronCfg: Neutron configuration (for Noble channel)
+//   - cosmosChainsCfg: Cosmos chains configuration (for Noble channel)
 //   - operatorCfg: Operator configuration
 //   - userEmail: User's email (for computing proxy and forwarding addresses)
 //   - codeChecksum: SHA256 checksum of the proxy contract wasm bytecode (32 bytes)
@@ -280,7 +280,7 @@ type ForwarderConstructorParams struct {
 // Returns ForwarderConstructorParams with all fields populated including Recipient.
 func CreateConstructorParamsForUser(
 	chainCfg *config.ChainConfig,
-	neutronCfg *config.NeutronConfig,
+	cosmosChainsCfg *config.CosmosChainsConfig,
 	operatorCfg *config.OperatorConfig,
 	userEmail string,
 	codeChecksum []byte,
@@ -302,9 +302,9 @@ func CreateConstructorParamsForUser(
 	// Compute Noble forwarding address for this user
 	nobleForwardingAddr, err := computeNobleForwardingAddr(
 		codeChecksum,
-		operatorCfg.NeutronAddress,
+		operatorCfg.NeutronAccountInfo.Address,
 		userEmail,
-		neutronCfg.NobleChannel,
+		cosmosChainsCfg.NobleNeutronChannel,
 	)
 	if err != nil {
 		return ForwarderConstructorParams{}, fmt.Errorf("failed to compute Noble forwarding address: %w", err)

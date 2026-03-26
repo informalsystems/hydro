@@ -9,6 +9,9 @@ import (
 
 	"crypto/ecdsa"
 
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	"github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/go-bip39"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
@@ -18,11 +21,11 @@ import (
 
 // Config holds all configuration for the service
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Chains   map[string]ChainConfig
-	Neutron  NeutronConfig
-	Operator OperatorConfig
+	Server       ServerConfig
+	Database     DatabaseConfig
+	Chains       map[string]ChainConfig
+	CosmosChains CosmosChainsConfig
+	Operator     OperatorConfig
 }
 
 // ServerConfig holds HTTP server configuration
@@ -58,26 +61,23 @@ type ChainConfig struct {
 	FeeRecipient           string // Where operational fees are sent (EVM address)
 }
 
-// NeutronConfig holds Neutron-specific configuration
-type NeutronConfig struct {
-	RPCEndpoint       string
-	GRPCEndpoint      string
-	RESTEndpoint      string   // REST/LCD API endpoint for queries
-	ControlCenters    []string // Control center contract addresses
-	Admins            []string // Admin addresses for proxy contracts
-	ProxyCodeID       uint64   // Code ID of stored proxy contract
-	NobleAPIEndpoint  string   // Noble REST API endpoint for forwarding queries (deprecated, use NobleRPCEndpoint)
-	NobleRPCEndpoint  string   // Noble RPC endpoint for ABCI queries
-	NobleRESTEndpoint string   // Noble REST/LCD endpoint for account info queries when signing TXs
-	NobleChannel      string   // IBC channel between Noble and Neutron (e.g., "channel-18")
+// CosmosChainsConfig holds Cosmos chains configuration
+type CosmosChainsConfig struct {
+	NeutronRPCEndpoint  string   // CometBFT RPC endpoint for signing and broadcasting transactions
+	NeutronRESTEndpoint string   // API REST endpoint for querying SDK modules
+	ControlCenters      []string // Inflow Control Center contract addresses on Neutron
+	Admins              []string // Addresses to be used as admins of Proxy contracts on Neutron
+	ProxyCodeID         uint64   // Code ID of stored Proxy contract code on Neutron
+	NobleRPCEndpoint    string   // CometBFT RPC endpoint for signing and broadcasting transactions
+	NobleRESTEndpoint   string   // API REST endpoint for querying SDK modules
+	NobleNeutronChannel string   // IBC channel between Noble and Neutron (on mainnet: "channel-18")
 }
 
 // OperatorConfig holds operator wallet configuration
 type OperatorConfig struct {
-	EVMAccountInfo  EVMAccountInfo // For signing EVM transactions
-	NeutronMnemonic string         // For signing Neutron transactions
-	NobleMnemonic   string         // For signing Noble transactions
-	NeutronAddress  string         // Operator's Neutron address
+	EVMAccountInfo     EVMAccountInfo    // For signing EVM transactions
+	NeutronAccountInfo CosmosAccountInfo // For signing Neutron transactions
+	NobleAccountInfo   CosmosAccountInfo // For signing Noble transactions
 }
 
 type EVMAccountInfo struct {
@@ -86,11 +86,26 @@ type EVMAccountInfo struct {
 	Address    *common.Address
 }
 
+type CosmosAccountInfo struct {
+	Mnemonic string
+	Address  string
+}
+
 // LoadConfig loads configuration from environment variables
 func LoadConfig() (*Config, error) {
-	evmAccountInfo, err := parseEVMAccountInfo(getEnv("OPERATOR_EVM_PRIVATE_KEY", ""))
+	operatorEVMAccountInfo, err := parseEVMAccountInfo(getEnv("OPERATOR_EVM_PRIVATE_KEY", ""))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse EVM private key: %w", err)
+	}
+
+	operatorNeutronAccountInfo, err := parseCosmosAccountInfo(getEnv("OPERATOR_NEUTRON_MNEMONIC", ""), "neutron")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Neutron mnemonic: %w", err)
+	}
+
+	operatorNobleAccountInfo, err := parseCosmosAccountInfo(getEnv("OPERATOR_NOBLE_MNEMONIC", ""), "noble")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Noble mnemonic: %w", err)
 	}
 
 	cfg := &Config{
@@ -106,16 +121,15 @@ func LoadConfig() (*Config, error) {
 			SSLMode:  getEnv("DB_SSL_MODE", "disable"),
 		},
 		Operator: OperatorConfig{
-			EVMAccountInfo:  *evmAccountInfo,
-			NeutronMnemonic: getEnv("OPERATOR_NEUTRON_MNEMONIC", ""),
-			NeutronAddress:  getEnv("OPERATOR_NEUTRON_ADDRESS", ""),
-			NobleMnemonic:   getEnv("OPERATOR_NOBLE_MNEMONIC", ""),
+			EVMAccountInfo:     *operatorEVMAccountInfo,
+			NeutronAccountInfo: *operatorNeutronAccountInfo,
+			NobleAccountInfo:   *operatorNobleAccountInfo,
 		},
 		Chains: make(map[string]ChainConfig),
 	}
 
-	// Load Neutron configuration
-	if err := loadNeutronConfig(cfg); err != nil {
+	// Load Cosmos chains configuration
+	if err := loadCosmosChainsConfig(cfg); err != nil {
 		return nil, err
 	}
 
@@ -148,6 +162,42 @@ func parseEVMAccountInfo(privateKeyHex string) (*EVMAccountInfo, error) {
 		PrivateKey: privateKey,
 		PublicKey:  publicKeyECDSA,
 		Address:    &address,
+	}, nil
+}
+
+func parseCosmosAccountInfo(mnemonic string, prefix string) (*CosmosAccountInfo, error) {
+	// Validate mnemonic
+	if !bip39.IsMnemonicValid(mnemonic) {
+		return nil, fmt.Errorf("invalid mnemonic: %s", mnemonic)
+	}
+
+	// Cosmos derivation path: m/44'/118'/0'/0/0
+	hdPath := hd.CreateHDPath(118, 0, 0).String()
+
+	// Derive private key from mnemonic
+	derivedPriv, err := hd.Secp256k1.Derive()(mnemonic, "", hdPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive private key: %w", err)
+	}
+
+	// Generate private key
+	privKey := hd.Secp256k1.Generate()(derivedPriv)
+
+	// Get public key
+	pubKey := privKey.PubKey()
+
+	// Convert to address bytes
+	addr := types.AccAddress(pubKey.Address())
+
+	// Convert to bech32 with custom prefix
+	bech32Addr, err := types.Bech32ifyAddressBytes(prefix, addr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode address: %w", err)
+	}
+
+	return &CosmosAccountInfo{
+		Mnemonic: mnemonic,
+		Address:  bech32Addr,
 	}, nil
 }
 
@@ -191,8 +241,8 @@ func chainConfigFromRow(row models.Chain, forwarderBytecode string, destinationD
 	}
 }
 
-// loadNeutronConfig loads Neutron-specific configuration
-func loadNeutronConfig(cfg *Config) error {
+// loadCosmosChainsConfig loads Neutron and Noble chains configurations
+func loadCosmosChainsConfig(cfg *Config) error {
 	rpc := getEnv("NEUTRON_RPC_ENDPOINT", "")
 	if rpc == "" {
 		return fmt.Errorf("NEUTRON_RPC_ENDPOINT is required")
@@ -212,17 +262,15 @@ func loadNeutronConfig(cfg *Config) error {
 		return fmt.Errorf("NEUTRON_ADMINS is required")
 	}
 
-	cfg.Neutron = NeutronConfig{
-		RPCEndpoint:       rpc,
-		GRPCEndpoint:      getEnv("NEUTRON_GRPC_ENDPOINT", ""),
-		RESTEndpoint:      getEnv("NEUTRON_REST_ENDPOINT", ""),
-		ControlCenters:    controlCenters,
-		Admins:            admins,
-		ProxyCodeID:       uint64(getEnvInt("NEUTRON_PROXY_CODE_ID", 0)),
-		NobleAPIEndpoint:  getEnv("NOBLE_API_ENDPOINT", ""),
-		NobleRPCEndpoint:  getEnv("NOBLE_RPC_ENDPOINT", "https://noble-rpc.polkachu.com"),
-		NobleRESTEndpoint: getEnv("NOBLE_REST_ENDPOINT", ""),
-		NobleChannel:      getEnv("NOBLE_NEUTRON_CHANNEL", "channel-18"),
+	cfg.CosmosChains = CosmosChainsConfig{
+		NeutronRPCEndpoint:  rpc,
+		NeutronRESTEndpoint: getEnv("NEUTRON_REST_ENDPOINT", ""),
+		ControlCenters:      controlCenters,
+		Admins:              admins,
+		ProxyCodeID:         uint64(getEnvInt("NEUTRON_PROXY_CODE_ID", 0)),
+		NobleRPCEndpoint:    getEnv("NOBLE_RPC_ENDPOINT", "https://noble-rpc.polkachu.com"),
+		NobleRESTEndpoint:   getEnv("NOBLE_REST_ENDPOINT", ""),
+		NobleNeutronChannel: getEnv("NOBLE_NEUTRON_CHANNEL", "channel-18"),
 	}
 
 	return nil

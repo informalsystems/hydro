@@ -16,13 +16,13 @@ import (
 // Proxy provides methods to interact with the Inflow Proxy contract on Neutron
 type Proxy struct {
 	client       *Client
-	cfg          *config.NeutronConfig
+	cfg          *config.CosmosChainsConfig
 	logger       *zap.Logger
 	codeChecksum []byte // Cached code checksum for instantiate2 address computation
 }
 
 // NewProxy creates a new Proxy instance
-func NewProxy(client *Client, cfg *config.NeutronConfig, logger *zap.Logger) *Proxy {
+func NewProxy(client *Client, cfg *config.CosmosChainsConfig, logger *zap.Logger) *Proxy {
 	return &Proxy{
 		client: client,
 		cfg:    cfg,
