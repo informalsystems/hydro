@@ -1,5 +1,7 @@
 .PHONY: help build run test clean docker-up docker-down migrate
 
+DB_UPGRADE_SCRIPT ?= [UPGRADE_SCRIPT_NAME].sql
+
 help: ## Show this help message
 	@echo 'Usage: make [target]'
 	@echo ''
@@ -21,21 +23,26 @@ test-create2: ## Run CREATE2 tests only
 clean: ## Clean build artifacts
 	rm -rf bin/
 
-docker-up: ## Start docker-compose services
-	docker-compose -f deployments/docker-compose.yml up -d
+docker-up: ## Start docker compose services
+	docker compose -f deployments/docker-compose.yml up -d
 
-docker-down: ## Stop docker-compose services
-	docker-compose -f deployments/docker-compose.yml down
+docker-down: ## Stop docker compose services
+	docker compose -f deployments/docker-compose.yml down
 
-docker-logs: ## View docker-compose logs
-	docker-compose -f deployments/docker-compose.yml logs -f
+docker-logs: ## View docker compose logs
+	docker compose -f deployments/docker-compose.yml logs -f
 
-migrate: ## Run database migrations
+db-init: ## Run database init script
+	@echo "Running DB init script..."
+	@PGPASSWORD=postgres psql -h localhost -U postgres -d inflow_service -f internal/database/scripts/master.sql
+
+db-migrate: ## Run database migrations
 	@echo "Running migrations..."
-	@PGPASSWORD=postgres psql -h localhost -U postgres -d inflow_service -f internal/database/migrations/001_schema.sql
+	@PGPASSWORD=postgres psql -h localhost -U postgres -d inflow_service -f internal/database/scripts/${DB_UPGRADE_SCRIPT}
+	@echo "Done..."
 
-migrate-docker: ## Run migrations on docker postgres
-	docker-compose -f deployments/docker-compose.yml exec postgres psql -U postgres -d inflow_service -f /migrations/001_schema.sql
+db-migrate-docker: ## Run migrations on docker postgres
+	docker compose -f deployments/docker-compose.yml exec postgres psql -U postgres -d inflow_service -f /scripts/${DB_UPGRADE_SCRIPT}
 
 deps: ## Download dependencies
 	go mod download

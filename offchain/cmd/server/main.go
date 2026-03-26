@@ -55,14 +55,6 @@ func main() {
 
 	logger.Info("Database connected successfully")
 
-	// Run migrations
-	migrationPath := "internal/database/migrations/001_schema.sql"
-	if err := database.RunMigrations(db, migrationPath); err != nil {
-		logger.Warn("Failed to run migrations (may already be applied)", zap.Error(err))
-	} else {
-		logger.Info("Database migrations applied successfully")
-	}
-
 	// Test database connection with a simple query
 	if err := db.Ping(); err != nil {
 		logger.Fatal("Failed to ping database", zap.Error(err))
