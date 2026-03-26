@@ -93,32 +93,75 @@ type CosmosAccountInfo struct {
 
 // LoadConfig loads configuration from environment variables
 func LoadConfig() (*Config, error) {
-	operatorEVMAccountInfo, err := parseEVMAccountInfo(getEnv("OPERATOR_EVM_PRIVATE_KEY", ""))
+	operatorEVMPrivateKey, err := getEnvString("OPERATOR_EVM_PRIVATE_KEY")
+	if err != nil {
+		return nil, err
+	}
+
+	operatorEVMAccountInfo, err := parseEVMAccountInfo(operatorEVMPrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse EVM private key: %w", err)
 	}
 
-	operatorNeutronAccountInfo, err := parseCosmosAccountInfo(getEnv("OPERATOR_NEUTRON_MNEMONIC", ""), "neutron")
+	operatorNeutronMnemonic, err := getEnvString("OPERATOR_NEUTRON_MNEMONIC")
+	if err != nil {
+		return nil, err
+	}
+	operatorNeutronAccountInfo, err := parseCosmosAccountInfo(operatorNeutronMnemonic, "neutron")
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse Neutron mnemonic: %w", err)
 	}
 
-	operatorNobleAccountInfo, err := parseCosmosAccountInfo(getEnv("OPERATOR_NOBLE_MNEMONIC", ""), "noble")
+	operatorNobleMnemonic, err := getEnvString("OPERATOR_NOBLE_MNEMONIC")
+	if err != nil {
+		return nil, err
+	}
+	operatorNobleAccountInfo, err := parseCosmosAccountInfo(operatorNobleMnemonic, "noble")
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse Noble mnemonic: %w", err)
 	}
 
+	serverPort, err := getEnvInt("SERVER_PORT")
+	if err != nil {
+		return nil, err
+	}
+
+	dbHost, err := getEnvString("DB_HOST")
+	if err != nil {
+		return nil, err
+	}
+	dbPort, err := getEnvInt("DB_PORT")
+	if err != nil {
+		return nil, err
+	}
+	dbUser, err := getEnvString("DB_USER")
+	if err != nil {
+		return nil, err
+	}
+	dbPassword, err := getEnvString("DB_PASSWORD")
+	if err != nil {
+		return nil, err
+	}
+	dbName, err := getEnvString("DB_NAME")
+	if err != nil {
+		return nil, err
+	}
+	dbSSLMode, err := getEnvString("DB_SSL_MODE")
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
 		Server: ServerConfig{
-			Port: getEnvInt("SERVER_PORT", 8080),
+			Port: serverPort,
 		},
 		Database: DatabaseConfig{
-			Host:     getEnv("DB_HOST", "localhost"),
-			Port:     getEnvInt("DB_PORT", 5432),
-			User:     getEnv("DB_USER", "postgres"),
-			Password: getEnv("DB_PASSWORD", "postgres"),
-			DBName:   getEnv("DB_NAME", "inflow_service"),
-			SSLMode:  getEnv("DB_SSL_MODE", "disable"),
+			Host:     dbHost,
+			Port:     dbPort,
+			User:     dbUser,
+			Password: dbPassword,
+			DBName:   dbName,
+			SSLMode:  dbSSLMode,
 		},
 		Operator: OperatorConfig{
 			EVMAccountInfo:     *operatorEVMAccountInfo,
@@ -210,9 +253,19 @@ func (cfg *Config) LoadChainConfigs(db *database.DB) error {
 		return fmt.Errorf("failed to query chains from database: %w", err)
 	}
 
-	forwarderBytecode := getEnv("EVM_FORWARDER_BYTECODE", "")
-	destinationDomain := uint32(getEnvInt("CCTP_DESTINATION_DOMAIN", 4))
-	destinationCaller := getEnv("CCTP_DESTINATION_CALLER", "")
+	forwarderBytecode, err := getEnvString("EVM_FORWARDER_BYTECODE")
+	if err != nil {
+		return err
+	}
+	destinationDomainInt, err := getEnvInt("CCTP_DESTINATION_DOMAIN")
+	if err != nil {
+		return err
+	}
+	destinationDomain := uint32(destinationDomainInt)
+	destinationCaller, err := getEnvString("CCTP_DESTINATION_CALLER")
+	if err != nil {
+		return err
+	}
 
 	for _, row := range rows {
 		chainCfg := chainConfigFromRow(row, forwarderBytecode, destinationDomain, destinationCaller)
@@ -243,34 +296,66 @@ func chainConfigFromRow(row models.Chain, forwarderBytecode string, destinationD
 
 // loadCosmosChainsConfig loads Neutron and Noble chains configurations
 func loadCosmosChainsConfig(cfg *Config) error {
-	rpc := getEnv("NEUTRON_RPC_ENDPOINT", "")
-	if rpc == "" {
-		return fmt.Errorf("NEUTRON_RPC_ENDPOINT is required")
+	neutronRPCEndpoint, err := getEnvString("NEUTRON_RPC_ENDPOINT")
+	if err != nil {
+		return err
 	}
 
 	// Parse control centers (comma-separated)
-	controlCentersStr := getEnv("NEUTRON_CONTROL_CENTERS", "")
+	controlCentersStr, err := getEnvString("NEUTRON_CONTROL_CENTERS")
+	if err != nil {
+		return err
+	}
+
 	controlCenters := splitAndTrim(controlCentersStr, ",")
 	if len(controlCenters) == 0 {
 		return fmt.Errorf("NEUTRON_CONTROL_CENTERS is required")
 	}
 
 	// Parse admins (comma-separated)
-	adminsStr := getEnv("NEUTRON_ADMINS", "")
+	adminsStr, err := getEnvString("NEUTRON_ADMINS")
+	if err != nil {
+		return err
+	}
 	admins := splitAndTrim(adminsStr, ",")
 	if len(admins) == 0 {
 		return fmt.Errorf("NEUTRON_ADMINS is required")
 	}
 
+	proxyCodeID, err := getEnvInt("NEUTRON_PROXY_CODE_ID")
+	if err != nil {
+		return err
+	}
+
+	neutronRESTEndpoint, err := getEnvString("NEUTRON_REST_ENDPOINT")
+	if err != nil {
+		return err
+	}
+
+	nobleRPCEndpoint, err := getEnvString("NOBLE_RPC_ENDPOINT")
+	if err != nil {
+		return err
+	}
+
+	nobleRESTEndpoint, err := getEnvString("NOBLE_REST_ENDPOINT")
+	if err != nil {
+		return err
+	}
+
+	nobleNeutronChannel, err := getEnvString("NOBLE_NEUTRON_CHANNEL")
+	if err != nil {
+		return err
+	}
+
 	cfg.CosmosChains = CosmosChainsConfig{
-		NeutronRPCEndpoint:  rpc,
-		NeutronRESTEndpoint: getEnv("NEUTRON_REST_ENDPOINT", ""),
+		NeutronRPCEndpoint:  neutronRPCEndpoint,
+		NeutronRESTEndpoint: neutronRESTEndpoint,
 		ControlCenters:      controlCenters,
 		Admins:              admins,
-		ProxyCodeID:         uint64(getEnvInt("NEUTRON_PROXY_CODE_ID", 0)),
-		NobleRPCEndpoint:    getEnv("NOBLE_RPC_ENDPOINT", "https://noble-rpc.polkachu.com"),
-		NobleRESTEndpoint:   getEnv("NOBLE_REST_ENDPOINT", ""),
-		NobleNeutronChannel: getEnv("NOBLE_NEUTRON_CHANNEL", "channel-18"),
+		ProxyCodeID:         uint64(proxyCodeID),
+		NobleRPCEndpoint:    nobleRPCEndpoint,
+		NobleRESTEndpoint:   nobleRESTEndpoint,
+		NobleNeutronChannel: nobleNeutronChannel,
 	}
 
 	return nil
@@ -291,20 +376,20 @@ func (c *Config) Validate() error {
 
 // Helper functions
 
-func getEnv(key, defaultValue string) string {
+func getEnvString(key string) (string, error) {
 	if value := os.Getenv(key); value != "" {
-		return value
+		return value, nil
 	}
-	return defaultValue
+	return "", fmt.Errorf("environment variable %s is required", key)
 }
 
-func getEnvInt(key string, defaultValue int) int {
+func getEnvInt(key string) (int, error) {
 	if value := os.Getenv(key); value != "" {
 		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
+			return intValue, nil
 		}
 	}
-	return defaultValue
+	return 0, fmt.Errorf("environment variable %s is required", key)
 }
 
 // splitAndTrim splits a comma-separated string and trims whitespace
