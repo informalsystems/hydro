@@ -13,18 +13,20 @@ Backend service for managing USDC deposits from CEX users into Hydro Inflow vaul
 
 1. **Start database:**
 ```bash
+# Edit ./internal/database/scripts/master.sql to configure supported EVM chains (See "Database CHAINS Table Entries Configuration Reference" section below)
+
 make docker-up
 ```
 
-2. **Run migrations:**
+2. **Initialize database:**
 ```bash
-make migrate
+make db-init
 ```
 
 3. **Configure environment:**
 ```bash
 cp deployments/.env.example deployments/.env
-# Edit deployments/.env with your configuration (see Configuration section below)
+# Edit deployments/.env with your configuration (see "Environment Variables Configuration Reference" section below)
 ```
 
 4. **Run service:**
@@ -39,11 +41,13 @@ source deployments/.env && go run cmd/server/main.go
 ### Step 1: Setup Database
 
 ```bash
-# Start PostgreSQL with Docker
-docker-compose -f deployments/docker-compose.yml up -d postgres
+# Edit ./internal/database/scripts/master.sql to configure supported EVM chains
 
-# Run migrations
-make migrate
+# Start PostgreSQL with Docker
+docker compose -f deployments/docker-compose.yml up -d postgres
+
+# Create database
+make db-init
 ```
 
 ### Step 2: Configure Environment
@@ -59,21 +63,21 @@ DB_USER=postgres
 DB_PASSWORD=postgres
 DB_NAME=inflow_service
 
-# Ethereum RPC (use public endpoint for testing)
-ETH_RPC_ENDPOINT=https://ethereum-rpc.publicnode.com
-
-# Your operator wallet (MUST have ETH for gas and be same address used for CCTP relay)
-OPERATOR_EVM_PRIVATE_KEY=0x...your_private_key...
-ETH_OPERATOR_ADDRESS=0x...your_operator_address...
-
-# Neutron configuration (use mainnet for real testing)
+# Neutron configuration
 NEUTRON_RPC_ENDPOINT=https://rpc-kralum.neutron-1.neutron.org:443
-OPERATOR_NEUTRON_MNEMONIC="your 24 word mnemonic..."
-OPERATOR_NEUTRON_ADDRESS=neutron1...your_address...
+NEUTRON_REST_ENDPOINT=https://neutron-rest.publicnode.com
+NEUTRON_ADMINS=PROXY_CONTRACTS_ADMINS
 
-# Fee recipient (where operational fees go)
-OPERATOR_FEE_RECIPIENT=0x...your_fee_address...
-OPERATOR_ADMIN_ADDRESS=0x...your_admin_address...
+# Noble configuration
+NOBLE_RPC_ENDPOINT=https://noble-rpc.polkachu.com
+NOBLE_REST_ENDPOINT=https://noble-api.polkachu.com
+
+# Your EVM operator wallet (MUST have ETH for gas on all supported EVM chains)
+OPERATOR_EVM_PRIVATE_KEY=0x...your_private_key...
+# Your Neutron operator wallet mnemonic
+OPERATOR_NEUTRON_MNEMONIC="your 24 word mnemonic..."
+# Your Noble operator wallet mnemonic
+OPERATOR_NOBLE_MNEMONIC="your 24 word mnemonic..."
 ```
 
 ### Step 3: Start the Service
@@ -162,6 +166,9 @@ curl http://localhost:8080/api/v1/processes/user/myemail@example.com
 # Connect to database
 PGPASSWORD=postgres psql -h localhost -U postgres -d inflow_service
 
+# View supported EVM chains
+SELECT * FROM chains;
+
 # View users
 SELECT * FROM users;
 
@@ -208,35 +215,36 @@ offchain/
 └── Makefile                 # Build automation
 ```
 
-## Configuration Reference
-
-### Required Variables
+## Environment Variables Configuration Reference
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `ETH_RPC_ENDPOINT` | Ethereum RPC URL | `https://ethereum-rpc.publicnode.com` |
-| `ETH_CCTP_CONTRACT` | Skip CCTP bridge contract | `0xBC8552339dA68EB65C8b88B414B5854E0E366cFc` |
-| `ETH_OPERATOR_ADDRESS` | Operator wallet address | `0x...` |
+| `SERVER_PORT` | `8080` | HTTP server port |
 | `ETH_FORWARDER_BYTECODE` | Compiled forwarder init code | `0x6101a0...` |
 | `NEUTRON_RPC_ENDPOINT` | Neutron RPC URL | `https://rpc-kralum.neutron-1.neutron.org:443` |
 | `NEUTRON_CONTROL_CENTERS` | Inflow control center addresses | `neutron1...,neutron1...` |
 | `NEUTRON_ADMINS` | Proxy admin addresses | `neutron1...` |
 | `NEUTRON_PROXY_CODE_ID` | Deployed proxy contract code ID | `5081` |
 | `NOBLE_RPC_ENDPOINT` | Noble RPC for forwarding queries | `https://noble-rpc.polkachu.com` |
+| `NOBLE_NEUTRON_CHANNEL` | `channel-18` | IBC transfer channel from Noble to Neutron |
 | `CCTP_DESTINATION_DOMAIN` | Noble CCTP domain | `4` |
-| `CCTP_DESTINATION_CALLER` | Skip relayer address (bytes32) | `000000...` |
+| `CCTP_DESTINATION_CALLER` | Skip relayer address (bytes32) | `000000000000000000000000691cf4641d5608f085b2c1921172120bb603d074` |
 | `OPERATOR_EVM_PRIVATE_KEY` | Operator EVM private key | `0x...` |
 | `OPERATOR_NEUTRON_MNEMONIC` | Operator Neutron mnemonic | `word1 word2...` |
+| `OPERATOR_NOBLE_MNEMONIC` | Operator Noble mnemonic | `word1 word2...` |
 
-### Optional Variables
+## Database CHAINS Table Entries Configuration Reference
 
-| Variable | Default | Description |
+| Column | Description | Example |
 |----------|---------|-------------|
-| `SERVER_PORT` | `8080` | HTTP server port |
-| `ETH_OPERATIONAL_FEE_BPS` | `50` | Fee in basis points (50 = 0.5%) |
-| `ETH_MIN_OPERATIONAL_FEE` | `10` | Minimum fee in USDC base units |
-| `ETH_MIN_DEPOSIT` | `50000` | Minimum deposit in USDC base units |
-| `NOBLE_NEUTRON_CHANNEL` | `channel-18` | IBC channel Noble→Neutron |
+| `rpc_endpoint` | EVM chain node RPC URL | `https://ethereum-rpc.publicnode.com` |
+| `usdc_contract_address` | USDC EVM contract address | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` |
+| `cctp_contract_address` | Skip CCTP bridge contract address | `0xBC8552339dA68EB65C8b88B414B5854E0E366cFc` |
+| `operational_fee_bps` | `50` | Operational fee for each transfer from EVM chain, expressed in basis points (1% = 100 bps) |
+| `min_operational_fee` | `10000` | Minimum operational fee charged, for small transfers; expressed in uUSDC (1 USDC = 1,000,000 uUSDC) |
+| `min_deposit_amount` | `50000` | Minimum deposit amount; If less than this value is sent to the Forwarder contract, transfer will not be performed; expressed in uUSDC |
+| `forwarder_contract_admin` | Address allowed to pause Forwarder contract in case of emergency | `0x5FD9c2335B1247566f53f6304873dC3046Ef907a` |
+| `fee_recipient` | Operational fee recipient on EVM chain | `0x5FD9c2335B1247566f53f6304873dC3046Ef907a` |
 
 ## Development
 
@@ -271,7 +279,8 @@ The service runs two background workers:
 ### Monitor (every 30s)
 - Scans all forwarder addresses for new deposits
 - Checks process states and triggers transitions
-- Detects when funds arrive at proxy on Neutron
+- Detects when funds arrive at Noble
+- Registers Forwarding Account on Noble, which in turn sends tokens to proxy on Neutron via IBC
 
 ### Executor
 - Handles state transitions triggered by monitor
@@ -284,13 +293,13 @@ The service runs two background workers:
 
 ### Process stuck in TRANSFER_IN_PROGRESS
 
-The bridge process takes 5-15 minutes. If stuck longer:
+The bridge process takes 15-20 minutes. If stuck longer:
 1. Check the bridge tx on Etherscan
 2. Verify CCTP attestation at https://iris-api.circle.com/attestations/{txHash}
 3. Check Noble explorer for IBC transfer
 4. Manually update or delete the process if needed
 
-### Noble forwarding address mismatch
+### Querying of Noble forwarding address
 
 The service queries Noble RPC for the correct forwarding address. Verify with:
 ```bash
@@ -301,8 +310,8 @@ nobled q forwarding address channel-18 <neutron_proxy_address> --node https://no
 
 Ensure the forwarder has enough USDC to cover:
 - Transfer amount
-- Operational fee (0.5% or min fee)
-- Smart relay fee (100,000 = 0.1 USDC)
+- Operational fee (0.5% or min fee; configured in the database)
+- Smart relay fee (40,000 = 0.04 USDC)
 
 ## License
 
