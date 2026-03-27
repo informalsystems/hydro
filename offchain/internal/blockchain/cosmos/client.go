@@ -479,16 +479,17 @@ func (c *Client) SignAndBroadcast(ctx context.Context, msgs ...sdk.Msg) (string,
 	}
 
 	// Simulate the transaction to get expected gas usage
-	gasLimit, err := c.simulateGas(ctx, msgs...)
+	estimatedGas, err := c.simulateGas(ctx, msgs...)
 	if err != nil {
 		return "", fmt.Errorf("failed to simulate transaction: %w", err)
 	}
 
 	// Set gas limit- adjust it with a multiplier to ensure sufficient gas is provided
-	txBuilder.SetGasLimit(uint64(float64(gasLimit) * DefaultGasAdjustment))
+	adjustedGasLimit := uint64(float64(estimatedGas) * DefaultGasAdjustment)
+	txBuilder.SetGasLimit(adjustedGasLimit)
 
 	// Set fees- add 1 to ensure fee is sufficient after rounding
-	feeAmount := int64(float64(gasLimit)*c.chainSpecifics.GasPrice) + 1
+	feeAmount := int64(float64(adjustedGasLimit)*c.chainSpecifics.GasPrice) + 1
 	txBuilder.SetFeeAmount(sdk.NewCoins(sdk.NewCoin(c.chainSpecifics.FeeDenom, math.NewInt(feeAmount))))
 
 	// Set empty memo

@@ -152,14 +152,11 @@ func (p *Proxy) InstantiateProxy(ctx context.Context, userEmail string) (string,
 		ControlCenters: p.cfg.ControlCenters,
 	}
 
-	// Create label
-	label := fmt.Sprintf("inflow-proxy-%s", userEmail)
-
 	// Instantiate contract with deterministic address
 	txHash, contractAddr, err := p.client.InstantiateContract2(
 		ctx,
 		p.cfg.ProxyCodeID,
-		label,
+		"inflow-proxy",
 		instantiateMsg,
 		salt[:],
 		nil, // No funds
