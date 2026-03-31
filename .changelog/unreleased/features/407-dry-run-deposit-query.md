@@ -1,1 +1,1 @@
-- Add "dry run deposit" query to the inflow vault contract that calculates how many shares would be minted for a given deposit amount without executing the deposit. ([\#407](https://github.com/informalsystems/hydro/issues/407))
+- Add "dry run deposit" query to the inflow vault contract that calculates how many shares would be minted for a given deposit amount without executing the deposit. ([\#408](https://github.com/informalsystems/hydro/pull/408))
