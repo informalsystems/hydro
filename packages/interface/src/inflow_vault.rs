@@ -258,6 +258,11 @@ pub enum QueryMsg {
     /// Returns information about a specific adapter
     #[returns(AdapterInfoResponse)]
     AdapterInfo { name: String },
+
+    /// Simulates a deposit and returns the number of vault shares that would be
+    /// minted for the given amount of the deposit token, without executing it.
+    #[returns(Uint128)]
+    DryRunDeposit { amount: Uint128 },
 }
 
 #[cw_serde]
