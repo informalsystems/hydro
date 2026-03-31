@@ -1822,6 +1822,8 @@ fn query_user_shares_equivalent_value(
 
 /// Simulates a deposit and returns the number of vault shares that would be
 /// minted for the given amount of the deposit token, without executing it.
+/// Note: this does not enforce the deposit cap. It will return a share amount
+/// even if the deposit would be rejected due to the cap being reached.
 fn query_dry_run_deposit(deps: &Deps<NeutronQuery>, amount: Uint128) -> StdResult<Uint128> {
     let config = load_config(deps.storage)?;
     let pool_info = get_control_center_pool_info(deps, &config.control_center_contract)?;

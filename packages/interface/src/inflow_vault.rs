@@ -261,6 +261,8 @@ pub enum QueryMsg {
 
     /// Simulates a deposit and returns the number of vault shares that would be
     /// minted for the given amount of the deposit token, without executing it.
+    /// Note: this query does not enforce the deposit cap. It will return a share
+    /// amount even if the deposit would be rejected due to the cap being reached.
     #[returns(Uint128)]
     DryRunDeposit { amount: Uint128 },
 }
