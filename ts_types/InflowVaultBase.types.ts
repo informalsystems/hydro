@@ -163,6 +163,10 @@ export type QueryMsg = {
   adapter_info: {
     name: string;
   };
+} | {
+  dry_run_deposit: {
+    amount: Uint128;
+  };
 };
 export type Order = "ascending" | "descending";
 export type Addr = string;

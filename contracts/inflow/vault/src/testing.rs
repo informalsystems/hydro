@@ -2126,6 +2126,110 @@ fn reporting_balance_queries_test() {
 }
 
 #[test]
+fn dry_run_deposit_query_test() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+
+    env.contract.address = vault_contract_addr.clone();
+
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let vault_shares_denom_str: String =
+        format!("factory/{vault_contract_addr}/hydro_inflow_udatom");
+
+    set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
+
+    // Case 1: Empty pool (no existing shares) → 1:1 ratio in base tokens
+    // With dATOM ratio of 1.2, depositing 500_000 deposit tokens = 600_000 base tokens = 600_000 shares
+    let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_control_center_mock(
+            control_center_contract_addr.clone(),
+            DEFAULT_DEPOSIT_CAP,
+            Uint128::zero(),
+            Uint128::zero(),
+        ),
+        setup_token_info_provider_mock(
+            token_info_provider_contract_addr.clone(),
+            DEPOSIT_DENOM.to_string(),
+            DATOM_DEFAULT_RATIO,
+        ),
+    ]));
+
+    let querier_for_deps = wasm_querier.clone();
+    deps.querier
+        .update_wasm(move |q| querier_for_deps.handler(q));
+
+    let deposit_amount = Uint128::new(500_000);
+    let query_msg = QueryMsg::DryRunDeposit {
+        amount: deposit_amount,
+    };
+    let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(query_res.is_ok());
+
+    let shares: Uint128 = from_json(query_res.unwrap()).unwrap();
+    // 500_000 * 1.2 ratio = 600_000 base tokens = 600_000 shares (1:1 on empty pool)
+    assert_eq!(shares, Uint128::new(600_000));
+
+    // Case 2: Pool already has 600_000 base token value and 600_000 shares.
+    // Depositing another 500_000 deposit tokens (= 600_000 base) should mint 600_000 shares
+    // since the pool ratio is 1:1.
+    update_contract_mock(
+        &mut deps,
+        &wasm_querier,
+        setup_default_control_center_mock(Uint128::new(600_000), Uint128::new(600_000)),
+    );
+
+    let query_msg = QueryMsg::DryRunDeposit {
+        amount: deposit_amount,
+    };
+    let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(query_res.is_ok());
+
+    let shares: Uint128 = from_json(query_res.unwrap()).unwrap();
+    assert_eq!(shares, Uint128::new(600_000));
+
+    // Case 3: Pool value has grown (e.g. yield). Pool has 1_200_000 base value but still 600_000 shares.
+    // Depositing 500_000 deposit tokens (= 600_000 base) should mint 300_000 shares
+    // (600_000 * 600_000 / 1_200_000 = 300_000)
+    update_contract_mock(
+        &mut deps,
+        &wasm_querier,
+        setup_default_control_center_mock(Uint128::new(1_200_000), Uint128::new(600_000)),
+    );
+
+    let query_msg = QueryMsg::DryRunDeposit {
+        amount: deposit_amount,
+    };
+    let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(query_res.is_ok());
+
+    let shares: Uint128 = from_json(query_res.unwrap()).unwrap();
+    assert_eq!(shares, Uint128::new(300_000));
+
+    // Case 4: Zero amount deposit should return zero shares
+    let query_msg = QueryMsg::DryRunDeposit {
+        amount: Uint128::zero(),
+    };
+    let query_res = query(deps.as_ref(), env, query_msg);
+    assert!(query_res.is_ok());
+
+    let shares: Uint128 = from_json(query_res.unwrap()).unwrap();
+    assert_eq!(shares, Uint128::zero());
+}
+
+#[test]
 fn withdrawal_with_config_update_test() {
     let (mut deps, mut env) = (mock_dependencies(), mock_env());
 

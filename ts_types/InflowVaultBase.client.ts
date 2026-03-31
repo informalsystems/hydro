@@ -57,6 +57,11 @@ export interface InflowVaultBaseReadOnlyInterface {
   }: {
     name: string;
   }) => Promise<AdapterInfoResponse>;
+  dryRunDeposit: ({
+    amount
+  }: {
+    amount: Uint128;
+  }) => Promise<Uint128>;
 }
 export class InflowVaultBaseQueryClient implements InflowVaultBaseReadOnlyInterface {
   client: CosmWasmClient;
@@ -78,6 +83,7 @@ export class InflowVaultBaseQueryClient implements InflowVaultBaseReadOnlyInterf
     this.controlCenterPoolInfo = this.controlCenterPoolInfo.bind(this);
     this.listAdapters = this.listAdapters.bind(this);
     this.adapterInfo = this.adapterInfo.bind(this);
+    this.dryRunDeposit = this.dryRunDeposit.bind(this);
   }
   config = async (): Promise<ConfigResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -197,6 +203,17 @@ export class InflowVaultBaseQueryClient implements InflowVaultBaseReadOnlyInterf
     return this.client.queryContractSmart(this.contractAddress, {
       adapter_info: {
         name
+      }
+    });
+  };
+  dryRunDeposit = async ({
+    amount
+  }: {
+    amount: Uint128;
+  }): Promise<Uint128> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      dry_run_deposit: {
+        amount
       }
     });
   };

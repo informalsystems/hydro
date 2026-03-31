@@ -269,6 +269,28 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Simulates a deposit and returns the number of vault shares that would be minted for the given amount of the deposit token, without executing it.",
+      "type": "object",
+      "required": [
+        "dry_run_deposit"
+      ],
+      "properties": {
+        "dry_run_deposit": {
+          "type": "object",
+          "required": [
+            "amount"
+          ],
+          "properties": {
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {

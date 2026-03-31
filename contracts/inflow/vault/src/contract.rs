@@ -1770,6 +1770,9 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
         }
         QueryMsg::ListAdapters {} => to_json_binary(&query_list_adapters(&deps)?),
         QueryMsg::AdapterInfo { name } => to_json_binary(&query_adapter_info(&deps, name)?),
+        QueryMsg::DryRunDeposit { amount } => {
+            to_json_binary(&query_dry_run_deposit(&deps, amount)?)
+        }
     }
 }
 
@@ -1815,6 +1818,32 @@ fn query_user_shares_equivalent_value(
         .amount;
 
     query_shares_equivalent_value(deps, &config, shares_balance)
+}
+
+/// Simulates a deposit and returns the number of vault shares that would be
+/// minted for the given amount of the deposit token, without executing it.
+/// Note: this does not enforce the deposit cap. It will return a share amount
+/// even if the deposit would be rejected due to the cap being reached.
+fn query_dry_run_deposit(deps: &Deps<NeutronQuery>, amount: Uint128) -> StdResult<Uint128> {
+    let config = load_config(deps.storage)?;
+    let pool_info = get_control_center_pool_info(deps, &config.control_center_contract)?;
+
+    let deposit_amount_base_tokens = convert_deposit_token_into_base_token(deps, &config, amount)?;
+
+    // In a real deposit, total_pool_value already includes the deposited tokens (they are sent
+    // before execute runs). Here no tokens have been sent, so we add the deposit amount to
+    // total_pool_value to match what calculate_number_of_shares_to_mint expects.
+    let total_pool_value_with_deposit = pool_info
+        .total_pool_value
+        .checked_add(deposit_amount_base_tokens)
+        .map_err(|e| StdError::generic_err(format!("overflow error: {e}")))?;
+
+    calculate_number_of_shares_to_mint(
+        deposit_amount_base_tokens,
+        total_pool_value_with_deposit,
+        pool_info.total_shares_issued,
+    )
+    .map_err(|e| StdError::generic_err(e.to_string()))
 }
 
 pub fn query_available_for_deployment(deps: &Deps<NeutronQuery>, env: &Env) -> StdResult<Uint128> {
