@@ -15,7 +15,9 @@ members = [
     "contracts/inflow/ibc-adapter",
     "contracts/inflow/skip-adapter",
     "contracts/inflow/proxy",
+    "contracts/inflow/cctp-adapter",
     "contracts/inflow/user-registry",
+    "contracts/claim",
     "packages/cw-orch-interface",
     "packages/interface",
     "packages/test-utils",
@@ -24,7 +26,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "3.6.9"
+version = "3.6.10"
 edition = "2021"
 
 [profile.release]
