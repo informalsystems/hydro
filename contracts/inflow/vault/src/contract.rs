@@ -214,7 +214,7 @@ pub fn execute(
         ExecuteMsg::DepositToAdapter {
             adapter_name,
             amount,
-        } => deposit_to_adapter(deps, env, info, &config, adapter_name, amount),
+        } => deposit_to_adapter(deps, env, info, &config, adapter_name, amount, false),
         ExecuteMsg::MoveAdapterFunds {
             from_adapter,
             to_adapter,
@@ -1328,6 +1328,7 @@ fn deposit_to_adapter(
     config: &Config,
     adapter_name: String,
     amount: Uint128,
+    skip_vault_balance_check: bool,
 ) -> Result<Response<NeutronMsg>, ContractError> {
     // Validate caller is whitelisted
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
@@ -1339,16 +1340,19 @@ fn deposit_to_adapter(
             name: adapter_name.clone(),
         })?;
 
-    // Check vault has sufficient balance
-    let vault_balance = deps
-        .querier
-        .query_balance(&env.contract.address, &config.deposit_denom)?;
+    // Check vault has sufficient balance (skipped when moving between adapters,
+    // since the funds will arrive from the source adapter before this executes)
+    if !skip_vault_balance_check {
+        let vault_balance = deps
+            .querier
+            .query_balance(&env.contract.address, &config.deposit_denom)?;
 
-    if vault_balance.amount < amount {
-        return Err(ContractError::InsufficientBalance {
-            available: vault_balance.amount,
-            required: amount,
-        });
+        if vault_balance.amount < amount {
+            return Err(ContractError::InsufficientBalance {
+                available: vault_balance.amount,
+                required: amount,
+            });
+        }
     }
 
     let mut messages = vec![];
@@ -1424,7 +1428,9 @@ fn move_adapter_funds(
             coin.amount,
         )?;
 
-        // Deposit to destination adapter (handles DeploymentTracking automatically)
+        // Deposit to destination adapter (handles DeploymentTracking automatically).
+        // Skip the vault balance check: funds are still in the source adapter during
+        // message building and will arrive before the deposit message executes on-chain.
         let deposit_response = deposit_to_adapter(
             deps,
             env,
@@ -1432,6 +1438,7 @@ fn move_adapter_funds(
             config,
             to_adapter.clone(),
             coin.amount,
+            true,
         )?;
 
         // Combine messages and attributes from both operations
