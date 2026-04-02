@@ -49,7 +49,7 @@
         jq
     
     # Set the desired version of neutrond
-    ARG NEUTROND_VERSION="v5.0.2"
+    ARG NEUTROND_VERSION="v10.1.0"
     ARG NEUTROND_BINARY="neutrond-linux-amd64"
     ARG NEUTROND_DOWNLOAD_URL="https://github.com/neutron-org/neutron/releases/download/${NEUTROND_VERSION}/${NEUTROND_BINARY}"
     
