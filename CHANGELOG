@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## v3.6.10
+
+Date: April 2nd, 2026
+
+### FEATURES
+
+- Add the CCTP adapter that can be triggered to request bridging of USDC tokens from the adapter smart contract to an arbitrary EVM chain supported by the CCTP protocol. ([\#396](https://github.com/informalsystems/hydro/pull/396))
+- Add claim contract for weight-based fund distribution with multi-denom support and expiry-based sweep of unclaimed funds. ([\#405](https://github.com/informalsystems/hydro/pull/405))
+- Add "dry run deposit" query to the inflow vault contract that calculates how many shares would be minted for a given deposit amount without executing the deposit. ([\#408](https://github.com/informalsystems/hydro/pull/408))
+
 ## v3.6.9
 
 Date: March 9th, 2026
@@ -373,11 +383,11 @@ Date: November 18th, 2024
 
 ### FEATURES
 
-- Add a minimum liquidity request value to proposals.
-  ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Adjusts tributes to only be claimable if their proposal received a non-zero fund deployment.
   ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Allow whitelist admins to register performed liquidity deployments in the Hydro contract.
+  ([\#164](https://github.com/informalsystems/hydro/pull/164))
+- Add a minimum liquidity request value to proposals.
   ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Allow bids to set a custom duration they would like to receive liquidity for.
   ([\#165](https://github.com/informalsystems/hydro/pull/165))
