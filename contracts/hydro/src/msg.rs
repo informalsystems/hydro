@@ -166,6 +166,12 @@ pub enum ExecuteMsg {
     RemoveAccountFromWhitelist {
         address: String,
     },
+    AddWhitelistAdmin {
+        address: String,
+    },
+    RemoveWhitelistAdmin {
+        address: String,
+    },
     UpdateConfig {
         config: UpdateConfigData,
     },

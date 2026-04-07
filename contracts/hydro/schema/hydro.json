@@ -626,6 +626,48 @@
       {
         "type": "object",
         "required": [
+          "add_whitelist_admin"
+        ],
+        "properties": {
+          "add_whitelist_admin": {
+            "type": "object",
+            "required": [
+              "address"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "remove_whitelist_admin"
+        ],
+        "properties": {
+          "remove_whitelist_admin": {
+            "type": "object",
+            "required": [
+              "address"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
           "update_config"
         ],
         "properties": {

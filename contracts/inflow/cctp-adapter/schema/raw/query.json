@@ -209,6 +209,20 @@
             }
           },
           "additionalProperties": false
+        },
+        {
+          "description": "Returns list of admins",
+          "type": "object",
+          "required": [
+            "admins"
+          ],
+          "properties": {
+            "admins": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
         }
       ]
     },
@@ -259,20 +273,6 @@
           ],
           "properties": {
             "executors": {
-              "type": "object",
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "description": "Get list of all admins",
-          "type": "object",
-          "required": [
-            "admins"
-          ],
-          "properties": {
-            "admins": {
               "type": "object",
               "additionalProperties": false
             }

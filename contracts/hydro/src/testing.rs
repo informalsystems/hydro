@@ -14,6 +14,7 @@ use crate::state::{
     VOTE_MAP_V2,
 };
 
+use crate::error::ContractError;
 use crate::testing_mocks::{
     contract_info_mock, denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock,
     token_info_providers_mock, MockQuerier, MockWasmQuerier, RoundsValidators, WasmQueryFunc,
@@ -77,6 +78,7 @@ pub const THREE_MONTHS_IN_NANO_SECONDS: u64 = 3 * ONE_MONTH_IN_NANO_SECONDS;
 
 pub const DERIVATIVE_TOKEN_PROVIDER_ADDR: &str = "derivative_token_info_provider";
 pub const LSM_TOKEN_PROVIDER_ADDR: &str = "lsm_token_info_provider";
+pub const DEFAULT_WHITELIST_ADMIN: &str = "admin";
 
 pub fn get_default_power_schedule_vec() -> Vec<(u64, Decimal)> {
     vec![
@@ -129,6 +131,7 @@ pub fn build_reply_msg(payload: Binary, encoded_msg_data: Vec<u8>) -> Reply {
 
 pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
     let user_address = get_address_as_str(mock_api, "addr0000");
+    let whitelist_admin_address = get_address_as_str(mock_api, DEFAULT_WHITELIST_ADMIN);
     let slashed_tokens_receiver_address = get_address_as_str(mock_api, "addr0000");
 
     InstantiateMsg {
@@ -141,7 +144,7 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         first_round_start: mock_env().block.time,
         max_locked_tokens: Uint128::new(1000000),
         initial_whitelist: vec![user_address.clone()],
-        whitelist_admins: vec![],
+        whitelist_admins: vec![whitelist_admin_address],
         max_deployment_duration: 12,
         round_lock_power_schedule: get_default_power_schedule_vec(),
         token_info_providers: vec![get_default_lsm_token_info_provider_init_msg()],
@@ -3779,4 +3782,183 @@ fn test_set_gatekeeper() {
             }
         }
     }
+}
+
+// ============================================================================
+// WHITELIST ADMIN MANAGEMENT TESTS
+// ============================================================================
+
+#[test]
+fn test_add_whitelist_admin_success() {
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    let info = get_message_info(&deps.api, "addr0000", &[]);
+    let msg = get_default_instantiate_msg(&deps.api);
+    instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
+
+    let existing_admin = get_address_as_str(&deps.api, DEFAULT_WHITELIST_ADMIN);
+    let new_admin = get_address_as_str(&deps.api, "new_admin");
+    let info = get_message_info(&deps.api, DEFAULT_WHITELIST_ADMIN, &[]);
+    let msg = ExecuteMsg::AddWhitelistAdmin {
+        address: new_admin.clone(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info, msg).unwrap();
+    assert_eq!(res.attributes[0].value, "add_whitelist_admin");
+
+    let admins = query_whitelist_admins(deps.as_ref()).unwrap().admins;
+    assert!(admins.iter().any(|a| a.as_str() == new_admin));
+    assert!(admins.iter().any(|a| a.as_str() == existing_admin));
+}
+
+#[test]
+fn test_add_whitelist_admin_unauthorized() {
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    let info = get_message_info(&deps.api, "addr0000", &[]);
+    let msg = get_default_instantiate_msg(&deps.api);
+    instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
+
+    let new_admin = get_address_as_str(&deps.api, "new_admin");
+    let info = get_message_info(&deps.api, "non_admin", &[]);
+    let msg = ExecuteMsg::AddWhitelistAdmin { address: new_admin };
+    let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+    assert!(matches!(err, ContractError::Unauthorized));
+}
+
+#[test]
+fn test_add_whitelist_admin_duplicate() {
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    let info = get_message_info(&deps.api, "addr0000", &[]);
+    let msg = get_default_instantiate_msg(&deps.api);
+    instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
+
+    let existing_admin = get_address_as_str(&deps.api, DEFAULT_WHITELIST_ADMIN);
+    let info = get_message_info(&deps.api, DEFAULT_WHITELIST_ADMIN, &[]);
+    let msg = ExecuteMsg::AddWhitelistAdmin {
+        address: existing_admin,
+    };
+    let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+    assert!(matches!(err, ContractError::Std(_)));
+    assert!(err
+        .to_string()
+        .contains("Address is already a whitelist admin"));
+}
+
+#[test]
+fn test_remove_whitelist_admin_success() {
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    let info = get_message_info(&deps.api, "addr0000", &[]);
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    let admin2 = get_address_as_str(&deps.api, "admin2");
+    msg.whitelist_admins.push(admin2.clone());
+    instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
+
+    let admin1 = get_address_as_str(&deps.api, DEFAULT_WHITELIST_ADMIN);
+    let info = get_message_info(&deps.api, DEFAULT_WHITELIST_ADMIN, &[]);
+    let msg = ExecuteMsg::RemoveWhitelistAdmin {
+        address: admin2.clone(),
+    };
+    let res = execute(deps.as_mut(), env.clone(), info, msg).unwrap();
+    assert_eq!(res.attributes[0].value, "remove_whitelist_admin");
+
+    let admins = query_whitelist_admins(deps.as_ref()).unwrap().admins;
+    assert_eq!(admins.len(), 1);
+    assert_eq!(admins[0].as_str(), admin1);
+}
+
+#[test]
+fn test_remove_whitelist_admin_unauthorized() {
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    let info = get_message_info(&deps.api, "addr0000", &[]);
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    let admin2 = get_address_as_str(&deps.api, "admin2");
+    msg.whitelist_admins.push(admin2.clone());
+    instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
+
+    let info = get_message_info(&deps.api, "non_admin", &[]);
+    let msg = ExecuteMsg::RemoveWhitelistAdmin { address: admin2 };
+    let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+    assert!(matches!(err, ContractError::Unauthorized));
+}
+
+#[test]
+fn test_remove_whitelist_admin_not_found() {
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    let info = get_message_info(&deps.api, "addr0000", &[]);
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    let admin2 = get_address_as_str(&deps.api, "admin2");
+    msg.whitelist_admins.push(admin2);
+    instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
+
+    let non_existent = get_address_as_str(&deps.api, "non_existent");
+    let info = get_message_info(&deps.api, DEFAULT_WHITELIST_ADMIN, &[]);
+    let msg = ExecuteMsg::RemoveWhitelistAdmin {
+        address: non_existent,
+    };
+    let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+    assert!(matches!(err, ContractError::Std(_)));
+    assert!(err.to_string().contains("Address is not a whitelist admin"));
+}
+
+#[test]
+fn test_remove_last_whitelist_admin_fails() {
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    let info = get_message_info(&deps.api, "addr0000", &[]);
+    let msg = get_default_instantiate_msg(&deps.api);
+    instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
+
+    let admin = get_address_as_str(&deps.api, DEFAULT_WHITELIST_ADMIN);
+    let info = get_message_info(&deps.api, DEFAULT_WHITELIST_ADMIN, &[]);
+    let msg = ExecuteMsg::RemoveWhitelistAdmin { address: admin };
+    let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+    assert!(matches!(err, ContractError::Std(_)));
+    assert!(err
+        .to_string()
+        .contains("Cannot remove the last whitelist admin"));
+}
+
+#[test]
+fn test_new_admin_can_perform_admin_actions() {
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    let info = get_message_info(&deps.api, "addr0000", &[]);
+    let msg = get_default_instantiate_msg(&deps.api);
+    instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
+
+    let new_admin = get_address_as_str(&deps.api, "new_admin");
+    let info = get_message_info(&deps.api, DEFAULT_WHITELIST_ADMIN, &[]);
+    let add_msg = ExecuteMsg::AddWhitelistAdmin {
+        address: new_admin.clone(),
+    };
+    execute(deps.as_mut(), env.clone(), info, add_msg).unwrap();
+
+    // New admin can add someone to the proposal whitelist
+    let new_proposer = get_address_as_str(&deps.api, "new_proposer");
+    let info = get_message_info(&deps.api, "new_admin", &[]);
+    let whitelist_msg = ExecuteMsg::AddAccountToWhitelist {
+        address: new_proposer.clone(),
+    };
+    let res = execute(deps.as_mut(), env, info, whitelist_msg).unwrap();
+    assert_eq!(res.attributes[0].value, "add_to_whitelist");
+}
+
+#[test]
+fn test_removed_admin_loses_access() {
+    let (mut deps, env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
+    let info = get_message_info(&deps.api, "addr0000", &[]);
+    let mut msg = get_default_instantiate_msg(&deps.api);
+    let admin2 = get_address_as_str(&deps.api, "admin2");
+    msg.whitelist_admins.push(admin2.clone());
+    instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
+
+    // admin2 removes itself
+    let info = get_message_info(&deps.api, "admin2", &[]);
+    let remove_msg = ExecuteMsg::RemoveWhitelistAdmin {
+        address: admin2.clone(),
+    };
+    execute(deps.as_mut(), env.clone(), info, remove_msg).unwrap();
+
+    // admin2 can no longer add to whitelist
+    let some_addr = get_address_as_str(&deps.api, "some_addr");
+    let info = get_message_info(&deps.api, "admin2", &[]);
+    let try_add = ExecuteMsg::AddWhitelistAdmin { address: some_addr };
+    let err = execute(deps.as_mut(), env, info, try_add).unwrap_err();
+    assert!(matches!(err, ContractError::Unauthorized));
 }

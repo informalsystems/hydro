@@ -40,6 +40,12 @@ pub enum AdapterInterfaceMsg {
         depositor_address: String,
         enabled: bool,
     },
+
+    /// Add a new admin (admin only)
+    AddAdmin { admin_address: String },
+
+    /// Remove an admin (admin only)
+    RemoveAdmin { admin_address: String },
 }
 
 /// Standard query messages that all protocol adapters should support
@@ -86,6 +92,9 @@ pub enum AdapterInterfaceQueryMsg {
 
     /// Returns all positions for a specific depositor across all denoms
     DepositorPositions { depositor_address: String },
+
+    /// Returns list of admins
+    Admins {},
 }
 
 // Response Types
@@ -125,6 +134,11 @@ pub struct RegisteredDepositorInfo {
 #[cw_serde]
 pub struct RegisteredDepositorsResponse {
     pub depositors: Vec<RegisteredDepositorInfo>,
+}
+
+#[cw_serde]
+pub struct AdminsResponse {
+    pub admins: Vec<String>,
 }
 
 // ========== SERIALIZATION HELPERS FOR CALLING ADAPTERS ==========

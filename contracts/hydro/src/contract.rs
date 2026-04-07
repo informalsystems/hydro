@@ -284,6 +284,10 @@ pub fn execute(
         ExecuteMsg::RemoveAccountFromWhitelist { address } => {
             remove_from_whitelist(deps, env, info, address)
         }
+        ExecuteMsg::AddWhitelistAdmin { address } => add_whitelist_admin(deps, env, info, address),
+        ExecuteMsg::RemoveWhitelistAdmin { address } => {
+            remove_whitelist_admin(deps, env, info, address)
+        }
         ExecuteMsg::UpdateConfig { config } => update_config(deps, env, info, config),
         ExecuteMsg::DeleteConfigs { timestamps } => delete_configs(deps, &env, info, timestamps),
         ExecuteMsg::Pause {} => pause_contract(deps, &env, info),
@@ -2010,6 +2014,66 @@ fn remove_from_whitelist(
         .add_attribute("action", "remove_from_whitelist")
         .add_attribute("sender", info.sender)
         .add_attribute("removed_whitelist_address", whitelist_account_addr))
+}
+
+// Adds a new address to the whitelist admins.
+fn add_whitelist_admin(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    address: String,
+) -> Result<Response, ContractError> {
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    let mut whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
+    let new_admin_addr = deps.api.addr_validate(&address)?;
+
+    if whitelist_admins.contains(&new_admin_addr) {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Address is already a whitelist admin",
+        )));
+    }
+
+    whitelist_admins.push(new_admin_addr.clone());
+    WHITELIST_ADMINS.save(deps.storage, &whitelist_admins)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "add_whitelist_admin")
+        .add_attribute("sender", info.sender)
+        .add_attribute("added_admin", new_admin_addr))
+}
+
+// Removes an address from the whitelist admins.
+fn remove_whitelist_admin(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    address: String,
+) -> Result<Response, ContractError> {
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    let mut whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
+    let admin_addr = deps.api.addr_validate(&address)?;
+
+    if !whitelist_admins.contains(&admin_addr) {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Address is not a whitelist admin",
+        )));
+    }
+
+    if whitelist_admins.len() <= 1 {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Cannot remove the last whitelist admin",
+        )));
+    }
+
+    whitelist_admins.retain(|a| a != admin_addr);
+    WHITELIST_ADMINS.save(deps.storage, &whitelist_admins)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "remove_whitelist_admin")
+        .add_attribute("sender", info.sender)
+        .add_attribute("removed_admin", admin_addr))
 }
 
 fn update_config(

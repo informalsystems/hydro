@@ -63,6 +63,14 @@ export type AdapterInterfaceMsg = {
     depositor_address: string;
     enabled: boolean;
   };
+} | {
+  add_admin: {
+    admin_address: string;
+  };
+} | {
+  remove_admin: {
+    admin_address: string;
+  };
 };
 export type Uint128 = string;
 export type SkipAdapterMsg = {
@@ -145,6 +153,8 @@ export type AdapterInterfaceQueryMsg = {
   depositor_positions: {
     depositor_address: string;
   };
+} | {
+  admins: {};
 };
 export type SkipAdapterQueryMsg = {
   route: {

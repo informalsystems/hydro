@@ -209,6 +209,20 @@
             }
           },
           "additionalProperties": false
+        },
+        {
+          "description": "Returns list of admins",
+          "type": "object",
+          "required": [
+            "admins"
+          ],
+          "properties": {
+            "admins": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
         }
       ]
     },

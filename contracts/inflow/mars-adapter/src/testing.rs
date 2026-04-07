@@ -12,9 +12,9 @@ use crate::mars::{
     MarsCreditManagerQueryMsg, MarsParamsQueryMsg, PositionsResponse, TotalDepositResponse,
 };
 use crate::msg::{
-    AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AllPositionsResponse, AvailableAmountResponse,
-    DepositorPositionResponse, DepositorPositionsResponse, ExecuteMsg, InstantiateMsg,
-    MarsAdapterMsg, MarsConfigResponse, QueryMsg, RegisteredDepositorsResponse,
+    AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AdminsResponse, AllPositionsResponse,
+    AvailableAmountResponse, DepositorPositionResponse, DepositorPositionsResponse, ExecuteMsg,
+    InstantiateMsg, MarsAdapterMsg, MarsConfigResponse, QueryMsg, RegisteredDepositorsResponse,
     TimeEstimateResponse,
 };
 use crate::state::{Depositor, ADMINS, CONFIG, WHITELISTED_DEPOSITORS};
@@ -2217,4 +2217,206 @@ fn query_depositor_position_isolation_between_depositors() {
     .unwrap();
     let response2: DepositorPositionResponse = from_json(&res2).unwrap();
     assert_eq!(response2.amount, Uint128::new(300));
+}
+
+// ============================================================================
+// ADMIN MANAGEMENT TESTS
+// ============================================================================
+
+#[test]
+fn test_add_admin_success() {
+    let mut deps = mock_dependencies();
+    let test_data = setup_contract(&mut deps, "account1");
+    let env = mock_env();
+
+    let admin2 = deps.api.addr_make("admin2");
+    let info = MessageInfo {
+        sender: test_data.admin.clone(),
+        funds: vec![],
+    };
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::AddAdmin {
+        admin_address: admin2.to_string(),
+    });
+    let res = execute(deps.as_mut(), env.clone(), info, msg).unwrap();
+    assert_eq!(res.attributes[0].value, "add_admin");
+    assert_eq!(res.attributes[2].value, admin2.to_string());
+
+    let query_msg = QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::Admins {});
+    let res = query(deps.as_ref(), env, query_msg).unwrap();
+    let admins: AdminsResponse = from_json(&res).unwrap();
+    assert_eq!(admins.admins.len(), 2);
+}
+
+#[test]
+fn test_add_admin_unauthorized() {
+    let mut deps = mock_dependencies();
+    setup_contract(&mut deps, "account1");
+    let env = mock_env();
+
+    let non_admin = deps.api.addr_make("non_admin");
+    let admin2 = deps.api.addr_make("admin2");
+    let info = MessageInfo {
+        sender: non_admin,
+        funds: vec![],
+    };
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::AddAdmin {
+        admin_address: admin2.to_string(),
+    });
+    let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+    assert_eq!(err, ContractError::UnauthorizedAdmin {});
+}
+
+#[test]
+fn test_add_admin_duplicate() {
+    let mut deps = mock_dependencies();
+    let test_data = setup_contract(&mut deps, "account1");
+    let env = mock_env();
+
+    let info = MessageInfo {
+        sender: test_data.admin.clone(),
+        funds: vec![],
+    };
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::AddAdmin {
+        admin_address: test_data.admin.to_string(),
+    });
+    let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+    assert!(matches!(err, ContractError::AdminAlreadyExists { .. }));
+}
+
+#[test]
+fn test_remove_admin_success() {
+    let mut deps = mock_dependencies();
+    let test_data = setup_contract(&mut deps, "account1");
+    let env = mock_env();
+
+    let admin2 = deps.api.addr_make("admin2");
+    let info = MessageInfo {
+        sender: test_data.admin.clone(),
+        funds: vec![],
+    };
+    let add_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::AddAdmin {
+        admin_address: admin2.to_string(),
+    });
+    execute(deps.as_mut(), env.clone(), info, add_msg).unwrap();
+
+    let info = MessageInfo {
+        sender: test_data.admin.clone(),
+        funds: vec![],
+    };
+    let remove_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::RemoveAdmin {
+        admin_address: test_data.admin.to_string(),
+    });
+    let res = execute(deps.as_mut(), env.clone(), info, remove_msg).unwrap();
+    assert_eq!(res.attributes[0].value, "remove_admin");
+
+    let query_msg = QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::Admins {});
+    let res = query(deps.as_ref(), env, query_msg).unwrap();
+    let admins: AdminsResponse = from_json(&res).unwrap();
+    assert_eq!(admins.admins.len(), 1);
+    assert_eq!(admins.admins[0], admin2.to_string());
+}
+
+#[test]
+fn test_remove_admin_unauthorized() {
+    let mut deps = mock_dependencies();
+    let test_data = setup_contract(&mut deps, "account1");
+    let env = mock_env();
+
+    let non_admin = deps.api.addr_make("non_admin");
+    let info = MessageInfo {
+        sender: non_admin,
+        funds: vec![],
+    };
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::RemoveAdmin {
+        admin_address: test_data.admin.to_string(),
+    });
+    let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+    assert_eq!(err, ContractError::UnauthorizedAdmin {});
+}
+
+#[test]
+fn test_remove_admin_not_found() {
+    let mut deps = mock_dependencies();
+    let test_data = setup_contract(&mut deps, "account1");
+    let env = mock_env();
+
+    let non_admin = deps.api.addr_make("non_admin");
+    let info = MessageInfo {
+        sender: test_data.admin.clone(),
+        funds: vec![],
+    };
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::RemoveAdmin {
+        admin_address: non_admin.to_string(),
+    });
+    let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+    assert!(matches!(err, ContractError::AdminNotFound { .. }));
+}
+
+#[test]
+fn test_remove_last_admin_fails() {
+    let mut deps = mock_dependencies();
+    let test_data = setup_contract(&mut deps, "account1");
+    let env = mock_env();
+
+    let info = MessageInfo {
+        sender: test_data.admin.clone(),
+        funds: vec![],
+    };
+    let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::RemoveAdmin {
+        admin_address: test_data.admin.to_string(),
+    });
+    let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+    assert_eq!(err, ContractError::CannotRemoveLastAdmin {});
+}
+
+#[test]
+fn test_admin_self_removal() {
+    let mut deps = mock_dependencies();
+    let test_data = setup_contract(&mut deps, "account1");
+    let env = mock_env();
+
+    let admin2 = deps.api.addr_make("admin2");
+    let info = MessageInfo {
+        sender: test_data.admin.clone(),
+        funds: vec![],
+    };
+    let add_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::AddAdmin {
+        admin_address: admin2.to_string(),
+    });
+    execute(deps.as_mut(), env.clone(), info, add_msg).unwrap();
+
+    let info = MessageInfo {
+        sender: test_data.admin.clone(),
+        funds: vec![],
+    };
+    let remove_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::RemoveAdmin {
+        admin_address: test_data.admin.to_string(),
+    });
+    let res = execute(deps.as_mut(), env.clone(), info, remove_msg).unwrap();
+    assert_eq!(res.attributes[0].value, "remove_admin");
+
+    let new_admin = deps.api.addr_make("new_admin");
+    let info = MessageInfo {
+        sender: test_data.admin.clone(),
+        funds: vec![],
+    };
+    let try_add_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::AddAdmin {
+        admin_address: new_admin.to_string(),
+    });
+    let err = execute(deps.as_mut(), env, info, try_add_msg).unwrap_err();
+    assert_eq!(err, ContractError::UnauthorizedAdmin {});
+}
+
+#[test]
+fn test_query_admins() {
+    let mut deps = mock_dependencies();
+    let test_data = setup_contract(&mut deps, "account1");
+    let env = mock_env();
+
+    let query_msg = QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::Admins {});
+    let res = query(deps.as_ref(), env, query_msg).unwrap();
+    let admins: AdminsResponse = from_json(&res).unwrap();
+
+    assert_eq!(admins.admins.len(), 1);
+    assert_eq!(admins.admins[0], test_data.admin.to_string());
 }
