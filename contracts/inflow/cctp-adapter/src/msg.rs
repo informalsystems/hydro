@@ -5,9 +5,9 @@ use crate::state::{ChainConfig, Config, DepositorCapabilities, TransferFundsInst
 
 // Re-export adapter interface types and response types
 pub use interface::inflow_adapter::{
-    AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AllPositionsResponse, AvailableAmountResponse,
-    DepositorPositionResponse, DepositorPositionsResponse, RegisteredDepositorInfo,
-    RegisteredDepositorsResponse, TimeEstimateResponse,
+    AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AdminsResponse, AllPositionsResponse,
+    AvailableAmountResponse, DepositorPositionResponse, DepositorPositionsResponse,
+    RegisteredDepositorInfo, RegisteredDepositorsResponse, TimeEstimateResponse,
 };
 /// Initial depositor configuration for instantiation
 #[cw_serde]
@@ -83,12 +83,6 @@ pub enum CctpAdapterMsg {
     /// Remove an executor (config admin only)
     RemoveExecutor { executor_address: String },
 
-    /// Add a new admin (admin only)
-    AddAdmin { admin_address: String },
-
-    /// Remove an admin (admin only)
-    RemoveAdmin { admin_address: String },
-
     /// Register or update chain configuration (config admin only)
     RegisterChain { chain_config: ChainConfig },
 
@@ -139,10 +133,6 @@ pub enum CctpAdapterQueryMsg {
     #[returns(ExecutorsResponse)]
     Executors {},
 
-    /// Get list of all admins
-    #[returns(AdminsResponse)]
-    Admins {},
-
     /// Get depositor capabilities
     #[returns(DepositorCapabilitiesResponse)]
     DepositorCapabilities { depositor_address: String },
@@ -191,9 +181,4 @@ pub struct DepositorCapabilitiesResponse {
 #[cw_serde]
 pub struct AllowedDestinationAddressesResponse {
     pub addresses: Vec<String>,
-}
-
-#[cw_serde]
-pub struct AdminsResponse {
-    pub admins: Vec<String>,
 }

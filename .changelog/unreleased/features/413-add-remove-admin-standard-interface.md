@@ -1,0 +1,1 @@
+- Add `AddAdmin`/`RemoveAdmin` execute messages and `Admins` query to the standard adapter interface, implemented across all inflow adapters (CCTP, IBC, Skip, Mars). Add `AddWhitelistAdmin`/`RemoveWhitelistAdmin` to the Hydro contract. ([\#413](https://github.com/informalsystems/hydro/pull/413))

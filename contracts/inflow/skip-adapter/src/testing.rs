@@ -510,6 +510,199 @@ mod contract_tests {
         assert_eq!(routes.routes.len(), 1);
         assert_eq!(routes.routes[0].1.venue, SwapVenue::NeutronAstroport);
     }
+
+    // ============================================================================
+    // ADMIN MANAGEMENT TESTS
+    // ============================================================================
+
+    #[test]
+    fn test_add_admin_success() {
+        let (mut deps, test_data) = setup_contract_with_depositor();
+        let env = mock_env();
+
+        let admin2 = deps.api.addr_make("admin2");
+        let info = MessageInfo {
+            sender: test_data.admin.clone(),
+            funds: vec![],
+        };
+        let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::AddAdmin {
+            admin_address: admin2.to_string(),
+        });
+        let res = execute(deps.as_mut(), env.clone(), info, msg).unwrap();
+        assert_eq!(res.attributes[0].value, "add_admin");
+        assert_eq!(res.attributes[2].value, admin2.to_string());
+
+        let query_msg = QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::Admins {});
+        let res = query(deps.as_ref(), env, query_msg).unwrap();
+        let admins: AdminsResponse = cosmwasm_std::from_json(&res).unwrap();
+        assert_eq!(admins.admins.len(), 2);
+    }
+
+    #[test]
+    fn test_add_admin_unauthorized() {
+        let (mut deps, _) = setup_contract_with_depositor();
+        let env = mock_env();
+
+        let non_admin = deps.api.addr_make("non_admin");
+        let admin2 = deps.api.addr_make("admin2");
+        let info = MessageInfo {
+            sender: non_admin,
+            funds: vec![],
+        };
+        let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::AddAdmin {
+            admin_address: admin2.to_string(),
+        });
+        let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+        assert_eq!(err, ContractError::UnauthorizedAdmin {});
+    }
+
+    #[test]
+    fn test_add_admin_duplicate() {
+        let (mut deps, test_data) = setup_contract_with_depositor();
+        let env = mock_env();
+
+        let info = MessageInfo {
+            sender: test_data.admin.clone(),
+            funds: vec![],
+        };
+        let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::AddAdmin {
+            admin_address: test_data.admin.to_string(),
+        });
+        let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+        assert!(matches!(err, ContractError::AdminAlreadyExists { .. }));
+    }
+
+    #[test]
+    fn test_remove_admin_success() {
+        let (mut deps, test_data) = setup_contract_with_depositor();
+        let env = mock_env();
+
+        let admin2 = deps.api.addr_make("admin2");
+        let info = MessageInfo {
+            sender: test_data.admin.clone(),
+            funds: vec![],
+        };
+        let add_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::AddAdmin {
+            admin_address: admin2.to_string(),
+        });
+        execute(deps.as_mut(), env.clone(), info, add_msg).unwrap();
+
+        let info = MessageInfo {
+            sender: test_data.admin.clone(),
+            funds: vec![],
+        };
+        let remove_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::RemoveAdmin {
+            admin_address: test_data.admin.to_string(),
+        });
+        let res = execute(deps.as_mut(), env.clone(), info, remove_msg).unwrap();
+        assert_eq!(res.attributes[0].value, "remove_admin");
+
+        let query_msg = QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::Admins {});
+        let res = query(deps.as_ref(), env, query_msg).unwrap();
+        let admins: AdminsResponse = cosmwasm_std::from_json(&res).unwrap();
+        assert_eq!(admins.admins.len(), 1);
+        assert_eq!(admins.admins[0], admin2.to_string());
+    }
+
+    #[test]
+    fn test_remove_admin_unauthorized() {
+        let (mut deps, test_data) = setup_contract_with_depositor();
+        let env = mock_env();
+
+        let non_admin = deps.api.addr_make("non_admin");
+        let info = MessageInfo {
+            sender: non_admin,
+            funds: vec![],
+        };
+        let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::RemoveAdmin {
+            admin_address: test_data.admin.to_string(),
+        });
+        let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+        assert_eq!(err, ContractError::UnauthorizedAdmin {});
+    }
+
+    #[test]
+    fn test_remove_admin_not_found() {
+        let (mut deps, test_data) = setup_contract_with_depositor();
+        let env = mock_env();
+
+        let non_admin = deps.api.addr_make("non_admin");
+        let info = MessageInfo {
+            sender: test_data.admin.clone(),
+            funds: vec![],
+        };
+        let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::RemoveAdmin {
+            admin_address: non_admin.to_string(),
+        });
+        let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+        assert!(matches!(err, ContractError::AdminNotFound { .. }));
+    }
+
+    #[test]
+    fn test_remove_last_admin_fails() {
+        let (mut deps, test_data) = setup_contract_with_depositor();
+        let env = mock_env();
+
+        let info = MessageInfo {
+            sender: test_data.admin.clone(),
+            funds: vec![],
+        };
+        let msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::RemoveAdmin {
+            admin_address: test_data.admin.to_string(),
+        });
+        let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+        assert_eq!(err, ContractError::CannotRemoveLastAdmin {});
+    }
+
+    #[test]
+    fn test_admin_self_removal() {
+        let (mut deps, test_data) = setup_contract_with_depositor();
+        let env = mock_env();
+
+        let admin2 = deps.api.addr_make("admin2");
+        let info = MessageInfo {
+            sender: test_data.admin.clone(),
+            funds: vec![],
+        };
+        let add_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::AddAdmin {
+            admin_address: admin2.to_string(),
+        });
+        execute(deps.as_mut(), env.clone(), info, add_msg).unwrap();
+
+        let info = MessageInfo {
+            sender: test_data.admin.clone(),
+            funds: vec![],
+        };
+        let remove_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::RemoveAdmin {
+            admin_address: test_data.admin.to_string(),
+        });
+        let res = execute(deps.as_mut(), env.clone(), info, remove_msg).unwrap();
+        assert_eq!(res.attributes[0].value, "remove_admin");
+
+        let new_admin = deps.api.addr_make("new_admin");
+        let info = MessageInfo {
+            sender: test_data.admin.clone(),
+            funds: vec![],
+        };
+        let try_add_msg = ExecuteMsg::StandardAction(AdapterInterfaceMsg::AddAdmin {
+            admin_address: new_admin.to_string(),
+        });
+        let err = execute(deps.as_mut(), env, info, try_add_msg).unwrap_err();
+        assert_eq!(err, ContractError::UnauthorizedAdmin {});
+    }
+
+    #[test]
+    fn test_query_admins() {
+        let (deps, test_data) = setup_contract_with_depositor();
+        let env = mock_env();
+
+        let query_msg = QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::Admins {});
+        let res = query(deps.as_ref(), env, query_msg).unwrap();
+        let admins: AdminsResponse = cosmwasm_std::from_json(&res).unwrap();
+
+        assert_eq!(admins.admins.len(), 1);
+        assert_eq!(admins.admins[0], test_data.admin.to_string());
+    }
 }
 
 #[cfg(test)]

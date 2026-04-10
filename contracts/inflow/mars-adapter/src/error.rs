@@ -38,4 +38,13 @@ pub enum ContractError {
 
     #[error("Mars protocol error: {msg}")]
     MarsProtocolError { msg: String },
+
+    #[error("Admin already exists: {admin}")]
+    AdminAlreadyExists { admin: String },
+
+    #[error("Admin not found: {admin}")]
+    AdminNotFound { admin: String },
+
+    #[error("Cannot remove the last admin")]
+    CannotRemoveLastAdmin {},
 }

@@ -1040,6 +1040,16 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   }: {
     address: string;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  addWhitelistAdmin: ({
+    address
+  }: {
+    address: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  removeWhitelistAdmin: ({
+    address
+  }: {
+    address: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   updateConfig: ({
     config
   }: {
@@ -1235,6 +1245,8 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.unvote = this.unvote.bind(this);
     this.addAccountToWhitelist = this.addAccountToWhitelist.bind(this);
     this.removeAccountFromWhitelist = this.removeAccountFromWhitelist.bind(this);
+    this.addWhitelistAdmin = this.addWhitelistAdmin.bind(this);
+    this.removeWhitelistAdmin = this.removeWhitelistAdmin.bind(this);
     this.updateConfig = this.updateConfig.bind(this);
     this.deleteConfigs = this.deleteConfigs.bind(this);
     this.pause = this.pause.bind(this);
@@ -1397,6 +1409,28 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       remove_account_from_whitelist: {
+        address
+      }
+    }, fee, memo, _funds);
+  };
+  addWhitelistAdmin = async ({
+    address
+  }: {
+    address: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      add_whitelist_admin: {
+        address
+      }
+    }, fee, memo, _funds);
+  };
+  removeWhitelistAdmin = async ({
+    address
+  }: {
+    address: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      remove_whitelist_admin: {
         address
       }
     }, fee, memo, _funds);

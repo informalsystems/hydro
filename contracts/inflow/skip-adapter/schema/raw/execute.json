@@ -158,6 +158,50 @@
             }
           },
           "additionalProperties": false
+        },
+        {
+          "description": "Add a new admin (admin only)",
+          "type": "object",
+          "required": [
+            "add_admin"
+          ],
+          "properties": {
+            "add_admin": {
+              "type": "object",
+              "required": [
+                "admin_address"
+              ],
+              "properties": {
+                "admin_address": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Remove an admin (admin only)",
+          "type": "object",
+          "required": [
+            "remove_admin"
+          ],
+          "properties": {
+            "remove_admin": {
+              "type": "object",
+              "required": [
+                "admin_address"
+              ],
+              "properties": {
+                "admin_address": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
         }
       ]
     },

@@ -62,6 +62,14 @@ export type AdapterInterfaceMsg = {
     depositor_address: string;
     enabled: boolean;
   };
+} | {
+  add_admin: {
+    admin_address: string;
+  };
+} | {
+  remove_admin: {
+    admin_address: string;
+  };
 };
 export type Uint128 = string;
 export type Binary = string;
@@ -76,14 +84,6 @@ export type CctpAdapterMsg = {
 } | {
   remove_executor: {
     executor_address: string;
-  };
-} | {
-  add_admin: {
-    admin_address: string;
-  };
-} | {
-  remove_admin: {
-    admin_address: string;
   };
 } | {
   register_chain: {
@@ -163,6 +163,8 @@ export type AdapterInterfaceQueryMsg = {
   depositor_positions: {
     depositor_address: string;
   };
+} | {
+  admins: {};
 };
 export type CctpAdapterQueryMsg = {
   chain_config: {
@@ -172,8 +174,6 @@ export type CctpAdapterQueryMsg = {
   all_chains: {};
 } | {
   executors: {};
-} | {
-  admins: {};
 } | {
   depositor_capabilities: {
     depositor_address: string;

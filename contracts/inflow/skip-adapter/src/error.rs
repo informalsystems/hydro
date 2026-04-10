@@ -54,6 +54,15 @@ pub enum ContractError {
     #[error("Executor not found: {executor}")]
     ExecutorNotFound { executor: String },
 
+    #[error("Admin already exists: {admin}")]
+    AdminAlreadyExists { admin: String },
+
+    #[error("Admin not found: {admin}")]
+    AdminNotFound { admin: String },
+
+    #[error("Cannot remove the last admin")]
+    CannotRemoveLastAdmin {},
+
     #[error("Invalid slippage: {bps} basis points exceeds maximum of {max_bps} (10%)")]
     InvalidSlippage { bps: u64, max_bps: u64 },
 }

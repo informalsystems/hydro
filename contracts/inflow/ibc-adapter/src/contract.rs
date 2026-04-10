@@ -9,10 +9,10 @@ use neutron_sdk::bindings::query::NeutronQuery;
 use crate::error::ContractError;
 use crate::ibc::{calculate_timeout, create_ibc_transfer_msg};
 use crate::msg::{
-    AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AllChainsResponse, AllPositionsResponse,
-    AllTokensResponse, AvailableAmountResponse, ChainConfigResponse, DepositorCapabilitiesResponse,
-    DepositorPositionResponse, DepositorPositionsResponse, ExecuteMsg,
-    ExecutorCapabilitiesResponse, ExecutorInfo, ExecutorsResponse, IbcAdapterMsg,
+    AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AdminsResponse, AllChainsResponse,
+    AllPositionsResponse, AllTokensResponse, AvailableAmountResponse, ChainConfigResponse,
+    DepositorCapabilitiesResponse, DepositorPositionResponse, DepositorPositionsResponse,
+    ExecuteMsg, ExecutorCapabilitiesResponse, ExecutorInfo, ExecutorsResponse, IbcAdapterMsg,
     IbcAdapterQueryMsg, IbcConfigResponse, InstantiateMsg, QueryMsg, RegisteredDepositorInfo,
     RegisteredDepositorsResponse, TimeEstimateResponse, TokenConfigResponse,
 };
@@ -182,6 +182,12 @@ fn dispatch_execute_standard(
             depositor_address,
             enabled,
         } => execute_set_depositor_enabled(deps, info, depositor_address, enabled),
+        AdapterInterfaceMsg::AddAdmin { admin_address } => {
+            execute_add_admin(deps, info, admin_address)
+        }
+        AdapterInterfaceMsg::RemoveAdmin { admin_address } => {
+            execute_remove_admin(deps, info, admin_address)
+        }
     }
 }
 
@@ -527,6 +533,60 @@ fn execute_set_depositor_enabled(
         .add_attribute("enabled", enabled.to_string()))
 }
 
+fn execute_add_admin(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    admin_address: String,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    validate_admin_caller(&deps.as_ref(), &info)?;
+
+    let admin_addr = deps.api.addr_validate(&admin_address)?;
+    let mut admins = ADMINS.load(deps.storage)?;
+
+    if admins.contains(&admin_addr) {
+        return Err(ContractError::AdminAlreadyExists {
+            admin: admin_address,
+        });
+    }
+
+    admins.push(admin_addr.clone());
+    ADMINS.save(deps.storage, &admins)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "add_admin")
+        .add_attribute("sender", info.sender)
+        .add_attribute("admin", admin_addr))
+}
+
+fn execute_remove_admin(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+    admin_address: String,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    validate_admin_caller(&deps.as_ref(), &info)?;
+
+    let admin_addr = deps.api.addr_validate(&admin_address)?;
+    let mut admins = ADMINS.load(deps.storage)?;
+
+    if !admins.contains(&admin_addr) {
+        return Err(ContractError::AdminNotFound {
+            admin: admin_address,
+        });
+    }
+
+    if admins.len() <= 1 {
+        return Err(ContractError::CannotRemoveLastAdmin {});
+    }
+
+    admins.retain(|a| a != admin_addr);
+    ADMINS.save(deps.storage, &admins)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "remove_admin")
+        .add_attribute("sender", info.sender)
+        .add_attribute("admin", admin_addr))
+}
+
 // ========== QUERY ==========
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -568,6 +628,7 @@ fn dispatch_query_standard(
         AdapterInterfaceQueryMsg::RegisteredDepositors { enabled } => {
             to_json_binary(&query_registered_depositors(deps, enabled)?)
         }
+        AdapterInterfaceQueryMsg::Admins {} => to_json_binary(&query_admins(deps)?),
     }
 }
 
@@ -673,6 +734,13 @@ fn query_registered_depositors(
         .collect();
 
     Ok(RegisteredDepositorsResponse { depositors })
+}
+
+fn query_admins(deps: Deps<NeutronQuery>) -> StdResult<AdminsResponse> {
+    let admins = ADMINS.load(deps.storage)?;
+    Ok(AdminsResponse {
+        admins: admins.into_iter().map(|a| a.to_string()).collect(),
+    })
 }
 
 // ========== IBC ADAPTER CUSTOM EXECUTE HANDLERS ==========

@@ -7,9 +7,9 @@ use crate::state::{SwapVenue, UnifiedRoute};
 
 // Re-export adapter interface types
 pub use interface::inflow_adapter::{
-    AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AllPositionsResponse, AvailableAmountResponse,
-    DepositorPositionResponse, DepositorPositionsResponse, RegisteredDepositorInfo,
-    RegisteredDepositorsResponse, TimeEstimateResponse,
+    AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AdminsResponse, AllPositionsResponse,
+    AvailableAmountResponse, DepositorPositionResponse, DepositorPositionsResponse,
+    RegisteredDepositorInfo, RegisteredDepositorsResponse, TimeEstimateResponse,
 };
 
 // Re-export SwapOperation from state for convenience
