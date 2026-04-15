@@ -10,13 +10,13 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS contracts (
     id BIGSERIAL PRIMARY KEY,
     user_email VARCHAR(255) NOT NULL REFERENCES users(email) ON DELETE CASCADE,
-    chain_id VARCHAR(50) NOT NULL,                    -- e.g., "1" (Ethereum), "8453" (Base)
-    contract_type VARCHAR(20) NOT NULL,               -- "forwarder" or "proxy"
-    address VARCHAR(66) NOT NULL,                     -- Precomputed CREATE2 address
-    deployed BOOLEAN NOT NULL DEFAULT FALSE,          -- Has contract been deployed?
-    deploy_tx_hash VARCHAR(66),                       -- Transaction hash of deployment
-    deployed_at TIMESTAMP,                            -- When contract was deployed
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),      -- When record was created
+    chain_id VARCHAR(50) NOT NULL REFERENCES chains(chain_id),          -- e.g., "1" (Ethereum), "8453" (Base)
+    contract_type VARCHAR(20) NOT NULL,                                 -- "forwarder" or "proxy"
+    address VARCHAR(66) NOT NULL,                                       -- Precomputed CREATE2 address
+    deployed BOOLEAN NOT NULL DEFAULT FALSE,                            -- Has contract been deployed?
+    deploy_tx_hash VARCHAR(66),                                         -- Transaction hash of deployment
+    deployed_at TIMESTAMP,                                              -- When contract was deployed
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),                        -- When record was created
     UNIQUE(user_email, chain_id, contract_type)
 );
 
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS processes (
     id BIGSERIAL PRIMARY KEY,
     process_id VARCHAR(200) NOT NULL UNIQUE,          -- e.g., "alice@example.com_1_001"
     user_email VARCHAR(255) NOT NULL REFERENCES users(email),
-    chain_id VARCHAR(50) NOT NULL,
+    chain_id VARCHAR(50) NOT NULL REFERENCES chains(chain_id),
     forwarder_address VARCHAR(66) NOT NULL,           -- Denormalized for convenience
     proxy_address VARCHAR(66) NOT NULL,               -- Denormalized for convenience
     status VARCHAR(30) NOT NULL,                      -- PENDING_FUNDS, TRANSFER_IN_PROGRESS, etc.
