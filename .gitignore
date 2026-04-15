@@ -33,6 +33,9 @@ scripts/deploy-config.json
 
 .seed
 
+# ignore wallet-less service .env file
+offchain/deployments/.env
+
 # Node modules
 node_modules/
 
