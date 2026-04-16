@@ -16,9 +16,9 @@ use crate::msg::{
 use crate::state::{Config, Depositor, ADMINS, CONFIG, PENDING_DEPOSITORS, WHITELISTED_DEPOSITORS};
 
 /// Contract name that is used for migration
-const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
+pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
 /// Contract version that is used for migration
-const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Reply ID for CreateCreditAccount submessage
 const REPLY_CREATE_CREDIT_ACCOUNT_ID: u64 = 1;

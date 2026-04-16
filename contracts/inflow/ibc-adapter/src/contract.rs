@@ -27,8 +27,8 @@ use crate::validation::{
     validate_recipient_for_chain,
 };
 
-const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
-const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
+pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // ========== INSTANTIATE ==========
 

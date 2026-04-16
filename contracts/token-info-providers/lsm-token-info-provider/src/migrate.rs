@@ -19,7 +19,7 @@ pub fn migrate(
 ) -> Result<Response, ContractError> {
     check_contract_version(deps.storage)?;
 
-    // No state migrations needed from v3.6.9 to v3.6.10
+    // No state migrations needed from v3.6.10 to v3.6.11
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 

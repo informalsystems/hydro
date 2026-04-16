@@ -27,8 +27,8 @@ use crate::validation::{
     validate_route_config,
 };
 
-const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
-const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
+pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const MAX_SLIPPAGE_BPS: u64 = 1000; // 10%
 
 // ========== INSTANTIATE ==========
