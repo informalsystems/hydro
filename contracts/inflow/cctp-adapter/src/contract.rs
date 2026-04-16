@@ -28,8 +28,8 @@ use crate::validation::{
     validate_depositor_caller, validate_executor_caller,
 };
 
-const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
-const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
+pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -194,6 +194,12 @@ fn dispatch_execute_standard(
             depositor_address,
             enabled,
         } => execute_set_depositor_enabled(deps, info, depositor_address, enabled),
+        AdapterInterfaceMsg::AddAdmin { admin_address } => {
+            execute_add_admin(deps, info, admin_address)
+        }
+        AdapterInterfaceMsg::RemoveAdmin { admin_address } => {
+            execute_remove_admin(deps, info, admin_address)
+        }
     }
 }
 
@@ -215,10 +221,6 @@ fn dispatch_execute_custom(
         }
         CctpAdapterMsg::RemoveExecutor { executor_address } => {
             execute_remove_executor(deps, info, executor_address)
-        }
-        CctpAdapterMsg::AddAdmin { admin_address } => execute_add_admin(deps, info, admin_address),
-        CctpAdapterMsg::RemoveAdmin { admin_address } => {
-            execute_remove_admin(deps, info, admin_address)
         }
         CctpAdapterMsg::RegisterChain { chain_config } => {
             execute_register_chain(deps, info, chain_config)
@@ -845,6 +847,7 @@ fn dispatch_query_standard(
         AdapterInterfaceQueryMsg::RegisteredDepositors { enabled } => {
             to_json_binary(&query_registered_depositors(deps, enabled)?)
         }
+        AdapterInterfaceQueryMsg::Admins {} => to_json_binary(&query_admins(deps)?),
     }
 }
 
@@ -856,7 +859,6 @@ fn dispatch_query_custom(deps: Deps<NeutronQuery>, msg: CctpAdapterQueryMsg) -> 
         }
         CctpAdapterQueryMsg::AllChains {} => to_json_binary(&query_all_chains(deps)?),
         CctpAdapterQueryMsg::Executors {} => to_json_binary(&query_executors(deps)?),
-        CctpAdapterQueryMsg::Admins {} => to_json_binary(&query_admins(deps)?),
         CctpAdapterQueryMsg::DepositorCapabilities { depositor_address } => {
             to_json_binary(&query_depositor_capabilities(deps, depositor_address)?)
         }

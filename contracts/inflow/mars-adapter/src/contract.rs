@@ -8,17 +8,17 @@ use std::collections::HashMap;
 use crate::error::ContractError;
 use crate::mars;
 use crate::msg::{
-    AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AllPositionsResponse, AvailableAmountResponse,
-    DepositorPositionResponse, DepositorPositionsResponse, ExecuteMsg, InstantiateMsg,
-    MarsAdapterMsg, MarsAdapterQueryMsg, MarsConfigResponse, QueryMsg, RegisteredDepositorInfo,
-    RegisteredDepositorsResponse, TimeEstimateResponse,
+    AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AdminsResponse, AllPositionsResponse,
+    AvailableAmountResponse, DepositorPositionResponse, DepositorPositionsResponse, ExecuteMsg,
+    InstantiateMsg, MarsAdapterMsg, MarsAdapterQueryMsg, MarsConfigResponse, QueryMsg,
+    RegisteredDepositorInfo, RegisteredDepositorsResponse, TimeEstimateResponse,
 };
 use crate::state::{Config, Depositor, ADMINS, CONFIG, PENDING_DEPOSITORS, WHITELISTED_DEPOSITORS};
 
 /// Contract name that is used for migration
-const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
+pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
 /// Contract version that is used for migration
-const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Reply ID for CreateCreditAccount submessage
 const REPLY_CREATE_CREDIT_ACCOUNT_ID: u64 = 1;
@@ -159,6 +159,12 @@ fn dispatch_execute_interface(
             depositor_address,
             enabled,
         } => execute_set_depositor_enabled(deps, env, info, depositor_address, enabled),
+        AdapterInterfaceMsg::AddAdmin { admin_address } => {
+            execute_add_admin(deps, info, admin_address)
+        }
+        AdapterInterfaceMsg::RemoveAdmin { admin_address } => {
+            execute_remove_admin(deps, info, admin_address)
+        }
     }
 }
 
@@ -444,6 +450,60 @@ fn execute_set_depositor_enabled(
         .add_attribute("enabled", enabled.to_string()))
 }
 
+fn execute_add_admin(
+    deps: DepsMut,
+    info: MessageInfo,
+    admin_address: String,
+) -> Result<Response, ContractError> {
+    validate_admin_caller(&deps, &info)?;
+
+    let admin_addr = deps.api.addr_validate(&admin_address)?;
+    let mut admins = ADMINS.load(deps.storage)?;
+
+    if admins.contains(&admin_addr) {
+        return Err(ContractError::AdminAlreadyExists {
+            admin: admin_address,
+        });
+    }
+
+    admins.push(admin_addr.clone());
+    ADMINS.save(deps.storage, &admins)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "add_admin")
+        .add_attribute("sender", info.sender)
+        .add_attribute("admin", admin_addr))
+}
+
+fn execute_remove_admin(
+    deps: DepsMut,
+    info: MessageInfo,
+    admin_address: String,
+) -> Result<Response, ContractError> {
+    validate_admin_caller(&deps, &info)?;
+
+    let admin_addr = deps.api.addr_validate(&admin_address)?;
+    let mut admins = ADMINS.load(deps.storage)?;
+
+    if !admins.contains(&admin_addr) {
+        return Err(ContractError::AdminNotFound {
+            admin: admin_address,
+        });
+    }
+
+    if admins.len() <= 1 {
+        return Err(ContractError::CannotRemoveLastAdmin {});
+    }
+
+    admins.retain(|a| a != admin_addr);
+    ADMINS.save(deps.storage, &admins)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "remove_admin")
+        .add_attribute("sender", info.sender)
+        .add_attribute("admin", admin_addr))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
@@ -487,6 +547,7 @@ fn dispatch_query_interface(deps: Deps, msg: AdapterInterfaceQueryMsg) -> StdRes
         AdapterInterfaceQueryMsg::DepositorPositions { depositor_address } => {
             to_json_binary(&query_depositor_positions(deps, depositor_address)?)
         }
+        AdapterInterfaceQueryMsg::Admins {} => to_json_binary(&query_admins(deps)?),
     }
 }
 
@@ -702,6 +763,13 @@ fn query_depositor_positions(
 
     Ok(DepositorPositionsResponse {
         positions: positions.lends,
+    })
+}
+
+fn query_admins(deps: Deps) -> StdResult<AdminsResponse> {
+    let admins = ADMINS.load(deps.storage)?;
+    Ok(AdminsResponse {
+        admins: admins.into_iter().map(|a| a.to_string()).collect(),
     })
 }
 

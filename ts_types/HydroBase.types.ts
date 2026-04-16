@@ -114,6 +114,14 @@ export type ExecuteMsg = {
     address: string;
   };
 } | {
+  add_whitelist_admin: {
+    address: string;
+  };
+} | {
+  remove_whitelist_admin: {
+    address: string;
+  };
+} | {
   update_config: {
     config: UpdateConfigData;
   };

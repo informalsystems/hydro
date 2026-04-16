@@ -1,6 +1,6 @@
 {
   "contract_name": "hydro",
-  "contract_version": "3.6.10",
+  "contract_version": "3.6.11",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -609,6 +609,48 @@
         ],
         "properties": {
           "remove_account_from_whitelist": {
+            "type": "object",
+            "required": [
+              "address"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "add_whitelist_admin"
+        ],
+        "properties": {
+          "add_whitelist_admin": {
+            "type": "object",
+            "required": [
+              "address"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "remove_whitelist_admin"
+        ],
+        "properties": {
+          "remove_whitelist_admin": {
             "type": "object",
             "required": [
               "address"

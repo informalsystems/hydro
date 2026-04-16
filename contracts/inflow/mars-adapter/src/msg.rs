@@ -2,9 +2,9 @@ use cosmwasm_schema::{cw_serde, QueryResponses};
 
 // Re-export adapter interface types and response types
 pub use interface::inflow_adapter::{
-    AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AllPositionsResponse, AvailableAmountResponse,
-    DepositorPositionResponse, DepositorPositionsResponse, RegisteredDepositorInfo,
-    RegisteredDepositorsResponse, TimeEstimateResponse,
+    AdapterInterfaceMsg, AdapterInterfaceQueryMsg, AdminsResponse, AllPositionsResponse,
+    AvailableAmountResponse, DepositorPositionResponse, DepositorPositionsResponse,
+    RegisteredDepositorInfo, RegisteredDepositorsResponse, TimeEstimateResponse,
 };
 
 /// Message for instantiating the Mars adapter contract

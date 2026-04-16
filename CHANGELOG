@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## v3.6.11
+
+Date: April 16th, 2026
+
+### BUG FIXES
+
+- Fix `MoveAdapterFunds` failing with `InsufficientBalance` when moving the vault's deposit denom between adapters.
+  ([\#395](https://github.com/informalsystems/hydro/pull/395))
+
+### FEATURES
+
+- Add `AddAdmin`/`RemoveAdmin` execute messages and `Admins` query to the standard adapter interface, implemented across all inflow adapters (CCTP, IBC, Skip, Mars). Add `AddWhitelistAdmin`/`RemoveWhitelistAdmin` to the Hydro contract. ([\#413](https://github.com/informalsystems/hydro/pull/413))
+
 ## v3.6.10
 
 Date: April 2nd, 2026
@@ -383,11 +396,11 @@ Date: November 18th, 2024
 
 ### FEATURES
 
+- Add a minimum liquidity request value to proposals.
+  ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Adjusts tributes to only be claimable if their proposal received a non-zero fund deployment.
   ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Allow whitelist admins to register performed liquidity deployments in the Hydro contract.
-  ([\#164](https://github.com/informalsystems/hydro/pull/164))
-- Add a minimum liquidity request value to proposals.
   ([\#164](https://github.com/informalsystems/hydro/pull/164))
 - Allow bids to set a custom duration they would like to receive liquidity for.
   ([\#165](https://github.com/informalsystems/hydro/pull/165))
