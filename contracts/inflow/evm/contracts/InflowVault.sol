@@ -35,10 +35,12 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     error AdapterAlreadyExists(string name);
     error AdapterNotFound(string name);
     error ZeroAmount();
+    error ZeroAddress();
     error DepositCapReached();
     error MaxWithdrawalsReached();
     error NothingFundedYet();
     error NotWhitelisted();
+    error AlreadyWhitelisted();
     error WhitelistCannotBeEmpty();
 
     // EVENTS
@@ -169,7 +171,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         uint256 feeRate_,
         address feeRecipient_
     ) ERC4626(asset_) ERC20(name_, symbol_) {
-        require(initialWhitelist.length > 0, "InflowVault: empty whitelist");
+        if (initialWhitelist.length == 0) revert WhitelistCannotBeEmpty();
         if (feeRate_ > WAD) revert InvalidFeeRate();
         if (feeRate_ > 0 && feeRecipient_ == address(0)) revert FeeRecipientNotSet();
 
@@ -181,7 +183,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
 
         for (uint256 i = 0; i < initialWhitelist.length; i++) {
             address addr = initialWhitelist[i];
-            require(addr != address(0), "InflowVault: zero address in whitelist");
+            if (addr == address(0)) revert ZeroAddress();
             if (!whitelist[addr]) {
                 whitelist[addr] = true;
                 _whitelistCount++;
@@ -595,7 +597,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         bool tracked,
         string calldata description
     ) external onlyWhitelisted {
-        require(addr != address(0), "InflowVault: zero adapter address");
+        if (addr == address(0)) revert ZeroAddress();
         bytes32 key = keccak256(bytes(name));
         if (adapters[key].addr != address(0)) revert AdapterAlreadyExists(name);
 
@@ -702,8 +704,8 @@ contract InflowVault is ERC4626, ReentrancyGuard {
 
     /// @notice Whitelisted only. Adds `addr` to the whitelist.
     function addToWhitelist(address addr) external onlyWhitelisted {
-        require(addr != address(0), "InflowVault: zero address");
-        require(!whitelist[addr], "InflowVault: already whitelisted");
+        if (addr == address(0)) revert ZeroAddress();
+        if (whitelist[addr]) revert AlreadyWhitelisted();
         whitelist[addr] = true;
         _whitelistCount++;
         emit WhitelistAdded(addr);
