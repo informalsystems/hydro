@@ -8,6 +8,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {InflowAdapterLib} from "./InflowAdapterLib.sol";
+import {InflowWithdrawalQueueLib} from "./InflowWithdrawalQueueLib.sol";
 
 /// @title InflowVault
 /// @notice ERC-4626 tokenised vault with adapter-based deployment, a two-phase withdrawal
@@ -26,6 +27,7 @@ import {InflowAdapterLib} from "./InflowAdapterLib.sol";
 contract InflowVault is ERC4626, ReentrancyGuard {
     using Math for uint256;
     using InflowAdapterLib for InflowAdapterLib.AdapterStorage;
+    using InflowWithdrawalQueueLib for InflowWithdrawalQueueLib.QueueStorage;
 
     // ERRORS
 
@@ -36,8 +38,6 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     error ZeroAmount();
     error ZeroAddress();
     error DepositCapReached();
-    error MaxWithdrawalsReached();
-    error NothingFundedYet();
     error NotWhitelisted();
     error AlreadyWhitelisted();
     error WhitelistCannotBeEmpty();
@@ -71,32 +71,17 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         uint256 shares,
         uint256 assets
     );
+    // WithdrawalFunded, WithdrawalClaimed, WithdrawalCancelled are emitted by
+    // InflowWithdrawalQueueLib (DELEGATECALL context = vault address). They are re-declared
+    // here so they appear in the vault's ABI and clients can decode them without the library ABI.
     event WithdrawalFunded(uint256 indexed id);
     event WithdrawalClaimed(uint256 indexed id, address indexed receiver, uint256 assets);
-    /// @notice Emitted once per cancelled withdrawal ID. The shares re-minted to the owner
-    /// after a batch cancellation are reported by the ERC-20 Transfer event from _mint.
+    /// @notice The shares re-minted to the owner after a batch cancellation are reported by
+    /// the ERC-20 Transfer event from _mint.
     event WithdrawalCancelled(uint256 indexed id, address indexed owner);
 
     event WithdrawForDeployment(address indexed caller, uint256 requested, uint256 withdrawn);
     event DepositFromDeployment(address indexed caller, uint256 amount);
-
-    // TYPES
-
-    struct WithdrawalEntry {
-        uint256 id;
-        uint256 initiatedAt;   // block.timestamp at queue time
-        address owner;         // shares owner — validated on cancellation
-        address receiver;      // receives assets on claim
-        uint256 sharesBurned;
-        uint256 amountToReceive;
-        bool isFunded;
-    }
-
-    struct WithdrawalQueueInfo {
-        uint256 totalSharesBurned;
-        uint256 totalWithdrawalAmount;
-        uint256 nonFundedWithdrawalAmount;
-    }
 
     // CONSTANTS
 
@@ -125,14 +110,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     InflowAdapterLib.AdapterStorage internal _adapterStorage;
 
     // Withdrawal queue
-    mapping(uint256 => WithdrawalEntry) public withdrawalRequests;
-    mapping(address => uint256[]) private _userWithdrawalIds;
-
-    uint256 public nextWithdrawalId;
-    uint256 public lastFundedWithdrawalId;
-    bool public anyWithdrawalFunded;
-
-    WithdrawalQueueInfo public withdrawalQueueInfo;
+    InflowWithdrawalQueueLib.QueueStorage internal _queueStorage;
 
     // MODIFIERS
 
@@ -197,7 +175,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     function totalAssets() public view override returns (uint256) {
         uint256 balance = IERC20(asset()).balanceOf(address(this));
         uint256 adapterPositions = _adapterStorage.queryUntrackedPositions(asset());
-        uint256 pendingWithdrawals = withdrawalQueueInfo.totalWithdrawalAmount;
+        uint256 pendingWithdrawals = _queueStorage.info.totalWithdrawalAmount;
         uint256 gross = balance + adapterPositions + deployedAmount;
         return gross > pendingWithdrawals ? gross - pendingWithdrawals : 0;
     }
@@ -290,8 +268,8 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         _burn(owner, shares);
 
         // Free balance = vault balance minus the reserve already allocated to funded-but-unclaimed withdrawals.
-        uint256 fundedReserve = withdrawalQueueInfo.totalWithdrawalAmount
-            - withdrawalQueueInfo.nonFundedWithdrawalAmount;
+        uint256 fundedReserve = _queueStorage.info.totalWithdrawalAmount
+            - _queueStorage.info.nonFundedWithdrawalAmount;
         uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
         uint256 freeBalance = vaultBalance > fundedReserve ? vaultBalance - fundedReserve : 0;
 
@@ -311,24 +289,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
             emit Withdraw(caller, receiver, owner, assets, shares);
         } else {
             // Queued withdrawal
-            uint256 id = nextWithdrawalId++;
-            withdrawalRequests[id] = WithdrawalEntry({
-                id: id,
-                initiatedAt: block.timestamp,
-                owner: owner,
-                receiver: receiver,
-                sharesBurned: shares,
-                amountToReceive: assets,
-                isFunded: false
-            });
-            _userWithdrawalIds[owner].push(id);
-            if (_userWithdrawalIds[owner].length > maxWithdrawalsPerUser)
-                revert MaxWithdrawalsReached();
-
-            withdrawalQueueInfo.totalSharesBurned += shares;
-            withdrawalQueueInfo.totalWithdrawalAmount += assets;
-            withdrawalQueueInfo.nonFundedWithdrawalAmount += assets;
-
+            uint256 id = _queueStorage.enqueue(owner, receiver, shares, assets, maxWithdrawalsPerUser);
             emit WithdrawalQueued(id, owner, receiver, shares, assets);
         }
     }
@@ -428,7 +389,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         if (amount == 0) revert ZeroAmount();
         uint256 requested = amount;
         uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
-        uint256 reserved = withdrawalQueueInfo.totalWithdrawalAmount;
+        uint256 reserved = _queueStorage.info.totalWithdrawalAmount;
         uint256 available = vaultBalance > reserved ? vaultBalance - reserved : 0;
         if (available == 0) revert ZeroAmount();
         if (amount > available) amount = available;
@@ -452,76 +413,14 @@ contract InflowVault is ERC4626, ReentrancyGuard {
 
     /// @notice Permissionless. Scans the withdrawal queue FIFO, marking entries as funded
     /// when the vault's free balance covers them. Processes at most `limit` entries.
-    /// Free balance excludes funds already reserved for previously funded-but-unclaimed entries.
     function fulfillPendingWithdrawals(uint256 limit) external nonReentrant {
-        if (limit == 0) return;
-
-        uint256 start = anyWithdrawalFunded ? lastFundedWithdrawalId + 1 : 0;
-        uint256 end = nextWithdrawalId;
-        if (start >= end) return;
-
-        uint256 fundedReserve = withdrawalQueueInfo.totalWithdrawalAmount
-            - withdrawalQueueInfo.nonFundedWithdrawalAmount;
-        uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
-        uint256 freeBalance = vaultBalance > fundedReserve ? vaultBalance - fundedReserve : 0;
-
-        uint256 processed;
-        uint256 highestFunded;
-        bool anyFunded;
-        uint256 totalAmountFunded;
-
-        for (uint256 id = start; id < end && processed < limit; id++) {
-            WithdrawalEntry storage entry = withdrawalRequests[id];
-            if (entry.initiatedAt == 0) continue;             // entry doesn't exist since it was cancelled
-            if (entry.isFunded) continue;                     // already funded (should not occur past start)
-            if (entry.amountToReceive > freeBalance) break;   // FIFO: stop at first unaffordable
-
-            entry.isFunded = true;
-            freeBalance -= entry.amountToReceive;
-            totalAmountFunded += entry.amountToReceive;
-            highestFunded = id;
-            anyFunded = true;
-            processed++;
-            emit WithdrawalFunded(id);
-        }
-
-        if (anyFunded) {
-            withdrawalQueueInfo.nonFundedWithdrawalAmount -= totalAmountFunded;
-            lastFundedWithdrawalId = highestFunded;
-            anyWithdrawalFunded = true;
-        }
+        _queueStorage.fulfill(limit, asset());
     }
 
     /// @notice Permissionless. Transfers assets to each funded withdrawal's receiver.
     /// Only processes IDs at or below lastFundedWithdrawalId that are marked isFunded.
     function claimUnbondedWithdrawals(uint256[] calldata ids) external nonReentrant {
-        if (!anyWithdrawalFunded) revert NothingFundedYet();
-
-        for (uint256 i = 0; i < ids.length; i++) {
-            uint256 id = ids[i];
-            if (id > lastFundedWithdrawalId) continue;
-
-            WithdrawalEntry storage entry = withdrawalRequests[id];
-
-            // Checks that the withdrawal entry has been previously funded.
-            // Also covers the case when duplicate IDs are passed- !entry.isFunded will be
-            // true since the request is deleted while processing the first occurrence.
-            if (!entry.isFunded) continue;
-
-            uint256 amount = entry.amountToReceive;
-            address receiver = entry.receiver;
-            address owner = entry.owner;
-            uint256 shares = entry.sharesBurned;
-
-            withdrawalQueueInfo.totalSharesBurned -= shares;
-            withdrawalQueueInfo.totalWithdrawalAmount -= amount;
-
-            delete withdrawalRequests[id];
-            _removeFromUserWithdrawalIds(owner, id);
-
-            SafeERC20.safeTransfer(IERC20(asset()), receiver, amount);
-            emit WithdrawalClaimed(id, receiver, amount);
-        }
+        _queueStorage.claim(ids, asset());
     }
 
     /// @notice Cancels unfunded withdrawal requests owned by msg.sender and re-mints shares.
@@ -530,36 +429,10 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     ///
     /// Reverts if the cancellation would push totalAssets() above depositCap.
     function cancelWithdrawal(uint256[] calldata ids) external nonReentrant {
-        uint256 lowestCancelable = anyWithdrawalFunded ? lastFundedWithdrawalId + 1 : 0;
-
-        uint256 totalAmount;
-        uint256 totalSharesBurnedToRemove;
-
-        for (uint256 i = 0; i < ids.length; i++) {
-            uint256 id = ids[i];
-            if (id < lowestCancelable) continue;
-
-            WithdrawalEntry storage entry = withdrawalRequests[id];
-            if (entry.initiatedAt == 0) continue;   // entry didn't exist or it was already canceled
-            if (entry.owner != msg.sender) continue; // not owned by caller
-            if (entry.isFunded) continue;            // already funded, cannot cancel
-
-            totalAmount += entry.amountToReceive;
-            totalSharesBurnedToRemove += entry.sharesBurned;
-
-            delete withdrawalRequests[id];
-            _removeFromUserWithdrawalIds(msg.sender, id);
-            emit WithdrawalCancelled(id, msg.sender);
-        }
-
+        (uint256 totalAmount, uint256 totalSharesBurnedToRemove) = _queueStorage.cancel(ids);
         if (totalAmount == 0) return;
 
-        // Update queue totals — restores the cancelled amount to totalAssets().
-        withdrawalQueueInfo.totalSharesBurned -= totalSharesBurnedToRemove;
-        withdrawalQueueInfo.totalWithdrawalAmount -= totalAmount;
-        withdrawalQueueInfo.nonFundedWithdrawalAmount -= totalAmount;
-
-        // Deposit cap check: cancellation increases effective pool value.
+        // Deposit cap check: cancellation restores assets to totalAssets().
         if (totalAssets() > depositCap) revert DepositCapReached();
 
         // Re-mint shares.
@@ -670,13 +543,13 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     /// (vault balance minus withdrawal reserves).
     function availableForDeployment() external view returns (uint256) {
         uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
-        uint256 reserved = withdrawalQueueInfo.totalWithdrawalAmount;
+        uint256 reserved = _queueStorage.info.totalWithdrawalAmount;
         return vaultBalance > reserved ? vaultBalance - reserved : 0;
     }
 
     /// @notice Returns all queued withdrawal IDs for `user` (including funded ones pending claim).
     function getUserWithdrawalIds(address user) external view returns (uint256[] memory) {
-        return _userWithdrawalIds[user];
+        return _queueStorage.userIds[user];
     }
 
     /// @notice Returns info for all registered adapters in registration order.
@@ -691,18 +564,29 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         return _adapterStorage.getAdapterByName(name);
     }
 
-    // INTERNAL HELPERS
+    // WITHDRAWAL QUEUE STATE GETTERS
 
-    /// @dev Removes `id` from `_userWithdrawalIds[user]` using swap-and-pop (O(n) scan).
-    function _removeFromUserWithdrawalIds(address user, uint256 id) internal {
-        uint256[] storage ids = _userWithdrawalIds[user];
-        uint256 n = ids.length;
-        for (uint256 i = 0; i < n; i++) {
-            if (ids[i] == id) {
-                ids[i] = ids[n - 1];
-                ids.pop();
-                return;
-            }
-        }
+    function withdrawalRequest(uint256 id)
+        external view returns (InflowWithdrawalQueueLib.WithdrawalEntry memory)
+    {
+        return _queueStorage.requests[id];
+    }
+
+    function withdrawalQueueInfo()
+        external view returns (InflowWithdrawalQueueLib.WithdrawalQueueInfo memory)
+    {
+        return _queueStorage.info;
+    }
+
+    function nextWithdrawalId() external view returns (uint256) {
+        return _queueStorage.nextId;
+    }
+
+    function lastFundedWithdrawalId() external view returns (uint256) {
+        return _queueStorage.lastFundedId;
+    }
+
+    function anyWithdrawalFunded() external view returns (bool) {
+        return _queueStorage.anyFunded;
     }
 }
