@@ -18,7 +18,6 @@ library InflowAdapterLib {
         bool automated;
         bool tracked;
         string name;
-        string description;
     }
 
     /// @dev All adapter-related state packed into one struct so it can be passed as a
@@ -40,8 +39,7 @@ library InflowAdapterLib {
         string calldata name,
         address addr,
         bool automated,
-        bool tracked,
-        string calldata description
+        bool tracked
     ) external {
         bytes32 key = keccak256(bytes(name));
         if (s.adapters[key].addr != address(0)) revert AdapterAlreadyExists(name);
@@ -49,8 +47,7 @@ library InflowAdapterLib {
             addr: addr,
             automated: automated,
             tracked: tracked,
-            name: name,
-            description: description
+            name: name
         });
         s.adapterKeys.push(key);
     }

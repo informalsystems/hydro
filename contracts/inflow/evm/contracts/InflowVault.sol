@@ -448,11 +448,10 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         string calldata name,
         address addr,
         bool automated,
-        bool tracked,
-        string calldata description
+        bool tracked
     ) external onlyWhitelisted {
         if (addr == address(0)) revert ZeroAddress();
-        _adapterStorage.registerAdapter(name, addr, automated, tracked, description);
+        _adapterStorage.registerAdapter(name, addr, automated, tracked);
         emit AdapterRegistered(name, addr, automated, tracked);
     }
 
