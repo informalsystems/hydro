@@ -7,7 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {IAdapter} from "./IAdapter.sol";
+import {InflowAdapterLib} from "./InflowAdapterLib.sol";
 
 /// @title InflowVault
 /// @notice ERC-4626 tokenised vault with adapter-based deployment, a two-phase withdrawal
@@ -25,6 +25,7 @@ import {IAdapter} from "./IAdapter.sol";
 ///   calls only), and Tracked (counted in deployedAmount) or Untracked (queried directly).
 contract InflowVault is ERC4626, ReentrancyGuard {
     using Math for uint256;
+    using InflowAdapterLib for InflowAdapterLib.AdapterStorage;
 
     // ERRORS
 
@@ -32,8 +33,6 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     error InvalidFeeRate();
     error FeeRecipientNotSet();
     error NoSharesIssued();
-    error AdapterAlreadyExists(string name);
-    error AdapterNotFound(string name);
     error ZeroAmount();
     error ZeroAddress();
     error DepositCapReached();
@@ -83,14 +82,6 @@ contract InflowVault is ERC4626, ReentrancyGuard {
 
     // TYPES
 
-    struct AdapterInfo {
-        address addr;
-        bool automated;     // true = included in automated deposit/withdraw allocation
-        bool tracked;       // true = position is counted in deployedAmount (not queried)
-        string name;
-        string description;
-    }
-
     struct WithdrawalEntry {
         uint256 id;
         uint256 initiatedAt;   // block.timestamp at queue time
@@ -130,9 +121,8 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     address public feeRecipient;
     uint256 public highWaterMarkPrice; // WAD share price during the last fee accrual
 
-    // Adapters - keyed by keccak256(name) for O(1) lookup; array of keys used for enumeration.
-    mapping(bytes32 => AdapterInfo) public adapters;
-    bytes32[] private _adapterKeys;
+    // Adapter registry
+    InflowAdapterLib.AdapterStorage internal _adapterStorage;
 
     // Withdrawal queue
     mapping(uint256 => WithdrawalEntry) public withdrawalRequests;
@@ -206,7 +196,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     /// as backing for remaining shares after the corresponding shares have been burned.
     function totalAssets() public view override returns (uint256) {
         uint256 balance = IERC20(asset()).balanceOf(address(this));
-        uint256 adapterPositions = _queryUntrackedAdapterPositions();
+        uint256 adapterPositions = _adapterStorage.queryUntrackedPositions(asset());
         uint256 pendingWithdrawals = withdrawalQueueInfo.totalWithdrawalAmount;
         uint256 gross = balance + adapterPositions + deployedAmount;
         return gross > pendingWithdrawals ? gross - pendingWithdrawals : 0;
@@ -278,7 +268,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     {
         if (assets == 0) revert ZeroAmount();
         SafeERC20.safeTransferFrom(IERC20(asset()), caller, address(this), assets);
-        _allocateToAdapters(assets);
+        deployedAmount = _adapterStorage.allocateToAdapters(assets, asset(), deployedAmount);
         _mint(receiver, shares);
         emit Deposit(caller, receiver, assets, shares);
     }
@@ -306,7 +296,8 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         uint256 freeBalance = vaultBalance > fundedReserve ? vaultBalance - fundedReserve : 0;
 
         uint256 remainingNeeded = assets > freeBalance ? assets - freeBalance : 0;
-        (bytes32[] memory keys, uint256[] memory amounts) = _calculateAllocation(remainingNeeded, false);
+        (bytes32[] memory keys, uint256[] memory amounts) =
+            _adapterStorage.calculateAllocation(remainingNeeded, false, asset());
 
         uint256 totalFromAdapters;
         for (uint256 i = 0; i < amounts.length; i++) {
@@ -315,17 +306,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
 
         if (freeBalance + totalFromAdapters >= assets) {
             // Immediate fulfilment
-            uint256 trackedAmount;
-            for (uint256 i = 0; i < keys.length; i++) {
-                AdapterInfo storage a = adapters[keys[i]];
-                IAdapter(a.addr).withdraw(amounts[i]);
-                if (a.tracked) trackedAmount += amounts[i];
-            }
-            if (trackedAmount > 0) {
-                deployedAmount = deployedAmount > trackedAmount
-                    ? deployedAmount - trackedAmount
-                    : 0;
-            }
+            deployedAmount = _adapterStorage.executeAdapterWithdrawals(keys, amounts, deployedAmount);
             SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
             emit Withdraw(caller, receiver, owner, assets, shares);
         } else {
@@ -598,44 +579,25 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         string calldata description
     ) external onlyWhitelisted {
         if (addr == address(0)) revert ZeroAddress();
-        bytes32 key = keccak256(bytes(name));
-        if (adapters[key].addr != address(0)) revert AdapterAlreadyExists(name);
-
-        adapters[key] = AdapterInfo({
-            addr: addr,
-            automated: automated,
-            tracked: tracked,
-            name: name,
-            description: description
-        });
-        _adapterKeys.push(key);
+        _adapterStorage.registerAdapter(name, addr, automated, tracked, description);
         emit AdapterRegistered(name, addr, automated, tracked);
     }
 
     /// @notice Whitelisted only. Removes an adapter. Does not withdraw any funds first.
     function unregisterAdapter(string calldata name) external onlyWhitelisted {
-        bytes32 key = keccak256(bytes(name));
-        AdapterInfo storage a = adapters[key];
-        if (a.addr == address(0)) revert AdapterNotFound(name);
-        address addr = a.addr;
-        delete adapters[key];
-        _removeAdapterKey(key);
+        address addr = _adapterStorage.unregisterAdapter(name);
         emit AdapterUnregistered(name, addr);
     }
 
     /// @notice Whitelisted only. Switches allocation mode between Automated and Manual.
     function setAdapterAllocationMode(string calldata name, bool automated) external onlyWhitelisted {
-        bytes32 key = keccak256(bytes(name));
-        if (adapters[key].addr == address(0)) revert AdapterNotFound(name);
-        adapters[key].automated = automated;
+        _adapterStorage.setAdapterAllocationMode(name, automated);
         emit AdapterAllocationModeUpdated(name, automated);
     }
 
     /// @notice Whitelisted only. Switches deployment tracking between Tracked and Untracked.
     function setAdapterDeploymentTracking(string calldata name, bool tracked) external onlyWhitelisted {
-        bytes32 key = keccak256(bytes(name));
-        if (adapters[key].addr == address(0)) revert AdapterNotFound(name);
-        adapters[key].tracked = tracked;
+        _adapterStorage.setAdapterDeploymentTracking(name, tracked);
         emit AdapterDeploymentTrackingUpdated(name, tracked);
     }
 
@@ -646,14 +608,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         onlyWhitelisted
         nonReentrant
     {
-        bytes32 key = keccak256(bytes(name));
-        AdapterInfo storage a = adapters[key];
-        if (a.addr == address(0)) revert AdapterNotFound(name);
-
-        IAdapter(a.addr).withdraw(amount);
-        if (a.tracked) {
-            deployedAmount = deployedAmount > amount ? deployedAmount - amount : 0;
-        }
+        deployedAmount = _adapterStorage.withdrawFromAdapter(name, amount, deployedAmount);
     }
 
     /// @notice Whitelisted only. Manually deposits `amount` from the vault into a specific
@@ -663,15 +618,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         onlyWhitelisted
         nonReentrant
     {
-        bytes32 key = keccak256(bytes(name));
-        AdapterInfo storage a = adapters[key];
-        if (a.addr == address(0)) revert AdapterNotFound(name);
-
-        SafeERC20.safeTransfer(IERC20(asset()), a.addr, amount);
-        IAdapter(a.addr).deposit(amount);
-        if (a.tracked) {
-            deployedAmount += amount;
-        }
+        deployedAmount = _adapterStorage.depositToAdapter(name, amount, asset(), deployedAmount);
     }
 
     /// @notice Whitelisted only. Moves `amount` from one adapter to another in a single
@@ -681,23 +628,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         string calldata toName,
         uint256 amount
     ) external onlyWhitelisted nonReentrant {
-        bytes32 fromKey = keccak256(bytes(fromName));
-        bytes32 toKey = keccak256(bytes(toName));
-        AdapterInfo storage fromAdapter = adapters[fromKey];
-        AdapterInfo storage toAdapter = adapters[toKey];
-        if (fromAdapter.addr == address(0)) revert AdapterNotFound(fromName);
-        if (toAdapter.addr == address(0)) revert AdapterNotFound(toName);
-
-        IAdapter(fromAdapter.addr).withdraw(amount);
-        SafeERC20.safeTransfer(IERC20(asset()), toAdapter.addr, amount);
-        IAdapter(toAdapter.addr).deposit(amount);
-
-        // Adjust deployedAmount only when tracking modes differ.
-        if (fromAdapter.tracked && !toAdapter.tracked) {
-            deployedAmount = deployedAmount > amount ? deployedAmount - amount : 0;
-        } else if (!fromAdapter.tracked && toAdapter.tracked) {
-            deployedAmount += amount;
-        }
+        deployedAmount = _adapterStorage.moveAdapterFunds(fromName, toName, amount, asset(), deployedAmount);
     }
 
     // ACCESS CONTROL
@@ -749,96 +680,18 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     }
 
     /// @notice Returns info for all registered adapters in registration order.
-    function getAdapters() external view returns (AdapterInfo[] memory result) {
-        result = new AdapterInfo[](_adapterKeys.length);
-        for (uint256 i = 0; i < _adapterKeys.length; i++) {
-            result[i] = adapters[_adapterKeys[i]];
-        }
+    function getAdapters() external view returns (InflowAdapterLib.AdapterInfo[] memory) {
+        return _adapterStorage.getAdapters();
     }
 
     /// @notice Returns info for a specific adapter by name.
-    function getAdapterByName(string calldata name) external view returns (AdapterInfo memory) {
-        bytes32 key = keccak256(bytes(name));
-        AdapterInfo storage a = adapters[key];
-        if (a.addr == address(0)) revert AdapterNotFound(name);
-        return a;
+    function getAdapterByName(string calldata name)
+        external view returns (InflowAdapterLib.AdapterInfo memory)
+    {
+        return _adapterStorage.getAdapterByName(name);
     }
 
     // INTERNAL HELPERS
-
-    /// @dev Greedily allocates `amount` across automated adapters in registration order.
-    /// For deposits, queries availableForDeposit; for withdrawals, queries availableForWithdraw.
-    /// Adapters not marked automated are skipped. Returns parallel arrays of adapter keys and
-    /// allocated amounts. The sum of amounts may be less than `amount` if adapter capacity
-    /// is insufficient — remaining funds stay in the vault.
-    function _calculateAllocation(uint256 amount, bool isDeposit)
-        internal
-        view
-        returns (bytes32[] memory keys, uint256[] memory amounts)
-    {
-        if (amount == 0) return (new bytes32[](0), new uint256[](0));
-
-        uint256 n = _adapterKeys.length;
-        bytes32[] memory tempKeys = new bytes32[](n);
-        uint256[] memory tempAmounts = new uint256[](n);
-        uint256 count;
-        uint256 remaining = amount;
-        address assetAddr = asset();
-
-        for (uint256 i = 0; i < n && remaining > 0; i++) {
-            bytes32 key = _adapterKeys[i];
-            AdapterInfo storage a = adapters[key];
-            if (!a.automated) continue;
-
-            uint256 available = isDeposit
-                ? IAdapter(a.addr).availableForDeposit(address(this), assetAddr)
-                : IAdapter(a.addr).availableForWithdraw(address(this), assetAddr);
-
-            if (available == 0) continue;
-
-            uint256 alloc = available < remaining ? available : remaining;
-            tempKeys[count] = key;
-            tempAmounts[count] = alloc;
-            count++;
-            remaining -= alloc;
-        }
-
-        keys = new bytes32[](count);
-        amounts = new uint256[](count);
-        for (uint256 i = 0; i < count; i++) {
-            keys[i] = tempKeys[i];
-            amounts[i] = tempAmounts[i];
-        }
-    }
-
-    /// @dev Sums depositor positions from all untracked adapters.
-    /// Tracked adapter positions are already counted in deployedAmount and must not be queried
-    /// here to avoid double-counting. Failures on individual adapters are silently ignored.
-    function _queryUntrackedAdapterPositions() internal view returns (uint256 total) {
-        address assetAddr = asset();
-        for (uint256 i = 0; i < _adapterKeys.length; i++) {
-            AdapterInfo storage a = adapters[_adapterKeys[i]];
-            if (a.tracked) continue;
-            try IAdapter(a.addr).depositorPosition(address(this), assetAddr) returns (uint256 pos) {
-                total += pos;
-            } catch {}
-        }
-    }
-
-    /// @dev Allocates `amount` to automated adapters and updates deployedAmount for tracked ones.
-    /// Called from _deposit after tokens have arrived in the vault.
-    function _allocateToAdapters(uint256 amount) internal {
-        (bytes32[] memory keys, uint256[] memory amounts) = _calculateAllocation(amount, true);
-        address assetAddr = asset();
-        uint256 trackedTotal;
-        for (uint256 i = 0; i < keys.length; i++) {
-            AdapterInfo storage a = adapters[keys[i]];
-            SafeERC20.safeTransfer(IERC20(assetAddr), a.addr, amounts[i]);
-            IAdapter(a.addr).deposit(amounts[i]);
-            if (a.tracked) trackedTotal += amounts[i];
-        }
-        if (trackedTotal > 0) deployedAmount += trackedTotal;
-    }
 
     /// @dev Removes `id` from `_userWithdrawalIds[user]` using swap-and-pop (O(n) scan).
     function _removeFromUserWithdrawalIds(address user, uint256 id) internal {
@@ -848,19 +701,6 @@ contract InflowVault is ERC4626, ReentrancyGuard {
             if (ids[i] == id) {
                 ids[i] = ids[n - 1];
                 ids.pop();
-                return;
-            }
-        }
-    }
-
-    /// @dev Removes `key` from `_adapterKeys` using swap-and-pop.
-    /// This changes the iteration order of remaining adapters.
-    function _removeAdapterKey(bytes32 key) internal {
-        uint256 n = _adapterKeys.length;
-        for (uint256 i = 0; i < n; i++) {
-            if (_adapterKeys[i] == key) {
-                _adapterKeys[i] = _adapterKeys[n - 1];
-                _adapterKeys.pop();
                 return;
             }
         }
