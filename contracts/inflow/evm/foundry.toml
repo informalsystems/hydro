@@ -1,0 +1,15 @@
+[profile.default]
+src = "contracts"
+out = "artifacts"
+libs = [
+    "lib",
+    "node_modules",
+]
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+    "@axelar-network/=node_modules/@axelar-network/",
+    "@openzeppelin/=node_modules/@openzeppelin/",
+    "hardhat/=node_modules/hardhat/",
+]
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
