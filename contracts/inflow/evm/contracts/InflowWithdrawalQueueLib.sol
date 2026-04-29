@@ -17,13 +17,13 @@ library InflowWithdrawalQueueLib {
         uint256 initiatedAt;   // block.timestamp at queue time
         address owner;         // shares owner — validated on cancellation
         address receiver;      // receives assets on claim
-        uint256 sharesBurned;
+        uint256 sharesLocked;  // shares transferred to vault on queue; burned on claim
         uint256 amountToReceive;
         bool isFunded;
     }
 
     struct WithdrawalQueueInfo {
-        uint256 totalSharesBurned;
+        uint256 totalSharesLocked;
         uint256 totalWithdrawalAmount;
         uint256 nonFundedWithdrawalAmount;
     }
@@ -49,8 +49,8 @@ library InflowWithdrawalQueueLib {
 
     event WithdrawalFunded(uint256 indexed id);
     event WithdrawalClaimed(uint256 indexed id, address indexed receiver, uint256 assets);
-    /// @notice Emitted once per cancelled withdrawal ID. The shares re-minted to the owner
-    /// after a batch cancellation are reported by the ERC-20 Transfer event from _mint.
+    /// @notice Emitted once per cancelled withdrawal ID. The locked shares are transferred
+    /// back to the owner by the vault after cancellation.
     event WithdrawalCancelled(uint256 indexed id, address indexed owner);
 
     // EXTERNAL FUNCTIONS
@@ -71,14 +71,14 @@ library InflowWithdrawalQueueLib {
             initiatedAt: block.timestamp,
             owner: owner,
             receiver: receiver,
-            sharesBurned: shares,
+            sharesLocked: shares,
             amountToReceive: assets,
             isFunded: false
         });
         q.userIds[owner].push(id);
         if (q.userIds[owner].length > maxPerUser) revert MaxWithdrawalsReached();
 
-        q.info.totalSharesBurned += shares;
+        q.info.totalSharesLocked += shares;
         q.info.totalWithdrawalAmount += assets;
         q.info.nonFundedWithdrawalAmount += assets;
     }
@@ -129,11 +129,12 @@ library InflowWithdrawalQueueLib {
 
     /// @dev Transfers assets to each funded withdrawal's receiver.
     /// Only processes IDs at or below lastFundedId that are marked isFunded.
+    /// Returns the total locked shares across all processed entries so the vault can burn them.
     function claim(
         QueueStorage storage q,
         uint256[] calldata ids,
         address assetAddr
-    ) external {
+    ) external returns (uint256 totalSharesToBurn) {
         if (!q.anyFunded) revert NothingFundedYet();
 
         for (uint256 i = 0; i < ids.length; i++) {
@@ -147,9 +148,11 @@ library InflowWithdrawalQueueLib {
             uint256 amount = entry.amountToReceive;
             address receiver = entry.receiver;
             address owner = entry.owner;
-            uint256 shares = entry.sharesBurned;
+            uint256 shares = entry.sharesLocked;
 
-            q.info.totalSharesBurned -= shares;
+            totalSharesToBurn += shares;
+
+            q.info.totalSharesLocked -= shares;
             q.info.totalWithdrawalAmount -= amount;
 
             delete q.requests[id];
@@ -162,12 +165,12 @@ library InflowWithdrawalQueueLib {
 
     /// @dev Cancels unfunded withdrawal requests owned by msg.sender and updates queue totals.
     /// IDs below the funded watermark are skipped to prevent races with fulfill().
-    /// Returns (totalAmountRestored, totalSharesBurnedToRemove) so the vault can perform
-    /// the deposit-cap check and re-mint shares.
+    /// Returns (totalAmountRestored, totalSharesToRelease) so the vault can perform
+    /// the deposit-cap check and transfer locked shares back to the owner.
     function cancel(
         QueueStorage storage q,
         uint256[] calldata ids
-    ) external returns (uint256 totalAmount, uint256 totalSharesBurnedToRemove) {
+    ) external returns (uint256 totalAmount, uint256 totalSharesToRelease) {
         uint256 lowestCancelable = q.anyFunded ? q.lastFundedId + 1 : 0;
 
         for (uint256 i = 0; i < ids.length; i++) {
@@ -180,7 +183,7 @@ library InflowWithdrawalQueueLib {
             if (entry.isFunded) continue;            // already funded, cannot cancel
 
             totalAmount += entry.amountToReceive;
-            totalSharesBurnedToRemove += entry.sharesBurned;
+            totalSharesToRelease += entry.sharesLocked;
 
             delete q.requests[id];
             _removeFromUserIds(q, msg.sender, id);
@@ -188,7 +191,7 @@ library InflowWithdrawalQueueLib {
         }
 
         if (totalAmount > 0) {
-            q.info.totalSharesBurned -= totalSharesBurnedToRemove;
+            q.info.totalSharesLocked -= totalSharesToRelease;
             q.info.totalWithdrawalAmount -= totalAmount;
             q.info.nonFundedWithdrawalAmount -= totalAmount;
         }

@@ -76,8 +76,8 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     // here so they appear in the vault's ABI and clients can decode them without the library ABI.
     event WithdrawalFunded(uint256 indexed id);
     event WithdrawalClaimed(uint256 indexed id, address indexed receiver, uint256 assets);
-    /// @notice The shares re-minted to the owner after a batch cancellation are reported by
-    /// the ERC-20 Transfer event from _mint.
+    /// @notice The shares released to the owner after a batch cancellation are reported by
+    /// the ERC-20 Transfer event from _transfer.
     event WithdrawalCancelled(uint256 indexed id, address indexed owner);
 
     event WithdrawForDeployment(address indexed caller, uint256 requested, uint256 withdrawn);
@@ -86,7 +86,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     // CONSTANTS
 
     /// @dev 1e18 fixed-point unit used for fee rate and share price arithmetic.
-    uint256 public constant WAD = 1e18;
+    uint256 private constant WAD = 1e18;
 
     // STATE
 
@@ -162,6 +162,13 @@ contract InflowVault is ERC4626, ReentrancyGuard {
 
     // ERC-4626 OVERRIDES
 
+    /// @notice Active shares supply: total minted shares minus shares locked in the vault for
+    /// pending withdrawals. Locked shares representing pending withdrawals are deducted from
+    /// the totalSupply() because the totalWithdrawalAmount is also deducted in totalAssets().
+    function totalSupply() public view override(ERC20, IERC20) returns (uint256) {
+        return super.totalSupply() - balanceOf(address(this));
+    }
+
     /// @notice Total assets backing outstanding shares.
     ///
     /// Formula:
@@ -171,7 +178,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     ///               - totalWithdrawalAmount        (funds already committed to pending withdrawers)
     ///
     /// Subtracting pending withdrawal reserves prevents them from being double-counted
-    /// as backing for remaining shares after the corresponding shares have been burned.
+    /// as backing for the active shares while the corresponding shares are locked in the vault.
     function totalAssets() public view override returns (uint256) {
         uint256 balance = IERC20(asset()).balanceOf(address(this));
         uint256 adapterPositions = _adapterStorage.queryUntrackedPositions(asset());
@@ -216,8 +223,9 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     }
 
     /// @notice Redeem shares for assets.
-    /// @dev If the vault cannot immediately fulfil the redemption, shares are burned and
-    /// the claim is queued. Listen for {WithdrawalQueued} to distinguish this case.
+    /// @dev If the vault cannot immediately fulfil the redemption, shares are locked in the
+    /// vault and the claim is queued. Locked shares are burned when claimed via
+    /// claimUnbondedWithdrawals(). Listen for {WithdrawalQueued} to distinguish this case.
     /// Returns 0 assets when queued.
     function redeem(uint256 shares, address receiver, address owner)
         public
@@ -228,7 +236,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         return super.redeem(shares, receiver, owner);
     }
 
-    /// @notice Withdraw a specific asset amount by burning the corresponding shares.
+    /// @notice Withdraw a specific asset amount.
     /// @dev See {redeem} for the queued-withdrawal caveat.
     function withdraw(uint256 assets, address receiver, address owner)
         public
@@ -252,7 +260,9 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     }
 
     /// @dev Withdraw/redeem hook: all-or-nothing logic.
-    /// Burns shares immediately in both paths. Fulfils immediately when possible, otherwise queues.
+    /// Immediate path: burns shares and transfers assets in the same transaction.
+    /// Queue path: locks shares in the vault (transferred to address(this)) rather than burning;
+    /// shares are burned only when the withdrawal is claimed via claimUnbondedWithdrawals().
     function _withdraw(
         address caller,
         address receiver,
@@ -265,7 +275,6 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         if (caller != owner) {
             _spendAllowance(owner, caller, shares);
         }
-        _burn(owner, shares);
 
         // Free balance = vault balance minus the reserve already allocated to funded-but-unclaimed withdrawals.
         uint256 fundedReserve = _queueStorage.info.totalWithdrawalAmount
@@ -283,12 +292,14 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         }
 
         if (freeBalance + totalFromAdapters >= assets) {
-            // Immediate fulfilment
+            // Immediate fulfilment - burn shares and transfer assets.
+            _burn(owner, shares);
             deployedAmount = _adapterStorage.executeAdapterWithdrawals(keys, amounts, deployedAmount);
             SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
             emit Withdraw(caller, receiver, owner, assets, shares);
         } else {
-            // Queued withdrawal
+            // Queued withdrawal - lock shares in the vault; they will be burned on claim.
+            _transfer(owner, address(this), shares);
             uint256 id = _queueStorage.enqueue(owner, receiver, shares, assets, maxWithdrawalsPerUser);
             emit WithdrawalQueued(id, owner, receiver, shares, assets);
         }
@@ -417,28 +428,29 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         _queueStorage.fulfill(limit, asset());
     }
 
-    /// @notice Permissionless. Transfers assets to each funded withdrawal's receiver.
-    /// Only processes IDs at or below lastFundedWithdrawalId that are marked isFunded.
+    /// @notice Permissionless. Transfers assets to each funded withdrawal's receiver and burns
+    /// the corresponding locked shares. Only processes IDs at or below lastFundedWithdrawalId
+    /// that are marked isFunded.
     function claimUnbondedWithdrawals(uint256[] calldata ids) external nonReentrant {
-        _queueStorage.claim(ids, asset());
+        uint256 sharesToBurn = _queueStorage.claim(ids, asset());
+        if (sharesToBurn > 0) {
+            _burn(address(this), sharesToBurn);
+        }
     }
 
-    /// @notice Cancels unfunded withdrawal requests owned by msg.sender and re-mints shares.
-    /// IDs below the funded watermark (lastFundedWithdrawalId) are skipped
-    /// to prevent cancellation races with fulfillPendingWithdrawals.
+    /// @notice Cancels unfunded withdrawal requests owned by msg.sender and releases the
+    /// locked shares back to the owner. IDs below the funded watermark (lastFundedWithdrawalId)
+    /// are skipped to prevent cancellation races with fulfillPendingWithdrawals.
     ///
     /// Reverts if the cancellation would push totalAssets() above depositCap.
     function cancelWithdrawal(uint256[] calldata ids) external nonReentrant {
-        (uint256 totalAmount, uint256 totalSharesBurnedToRemove) = _queueStorage.cancel(ids);
+        (uint256 totalAmount, uint256 totalSharesToRelease) = _queueStorage.cancel(ids);
         if (totalAmount == 0) return;
 
         // Deposit cap check: cancellation restores assets to totalAssets().
         if (totalAssets() > depositCap) revert DepositCapReached();
 
-        // Re-mint shares.
-        uint256 sharesToMint = _convertToShares(totalAmount, Math.Rounding.Floor);
-        if (sharesToMint > totalSharesBurnedToRemove) sharesToMint = totalSharesBurnedToRemove;
-        _mint(msg.sender, sharesToMint);
+        _transfer(address(this), msg.sender, totalSharesToRelease);
     }
 
     // ADAPTER MANAGEMENT
