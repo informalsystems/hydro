@@ -19,4 +19,7 @@
 # Hardhat coverage reports
 /coverage
 
+# Forge libraries
+/lib
+
 /package-lock.json
