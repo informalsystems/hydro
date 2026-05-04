@@ -115,9 +115,14 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     // MODIFIERS
 
     modifier onlyWhitelisted() {
-        if (!whitelist[msg.sender]) revert Unauthorized();
+        _onlyWhitelisted();
         _;
     }
+
+    function _onlyWhitelisted() internal view {
+        if (!whitelist[msg.sender]) revert Unauthorized();
+    }
+
 
     // CONSTRUCTOR
 
