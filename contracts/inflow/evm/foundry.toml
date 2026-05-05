@@ -11,6 +11,8 @@ remappings = [
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
     "openzeppelin-foundry-upgrades/=lib/openzeppelin-foundry-upgrades/src/",
 ]
+optimizer = true
+optimizer_runs = 1
 ffi = true
 ast = true
 build_info = true
