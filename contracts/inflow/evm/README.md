@@ -1,5 +1,25 @@
 # Inflow EVM smart contracts
-This folder contains various smart contract intended to be deployed on EVM compatible blockchains and used to bridge the gap to our Inflow smart contracts deployed on Neutron blockchain.
+This folder contains various smart contract intended to be deployed on EVM compatible blockchains.
+
+## Prerequisites
+
+The following tools must be available on the machine used to compile, test, or deploy:
+
+| Tool | Purpose |
+|---|---|
+| [Foundry](https://book.getfoundry.sh/getting-started/installation) | Compilation, testing, and deployment scripting |
+| [Node.js](https://nodejs.org/) ≥ 18 | Required by the OpenZeppelin Upgrades plugin to run storage-layout safety checks via `npx` at deploy time |
+
+After cloning, install Foundry libraries:
+
+```bash
+forge install \
+  foundry-rs/forge-std \
+  OpenZeppelin/openzeppelin-contracts@v5.6.1 \
+  OpenZeppelin/openzeppelin-contracts-upgradeable@v5.6.1 \
+  OpenZeppelin/openzeppelin-foundry-upgrades \
+  --no-git
+```
 
 ## CCTP USDC Forwarder
 This smart contract will be used as a temporary holder of USDC tokens on EVM chains, until we bridge those tokens to Neutron chain for Inflow USDC vault deployment. There will be an off-chain component which will monitor balance changes of this contract and, once the contract has certain amount of USDC tokens, it will initiate the bridging request.
@@ -16,35 +36,11 @@ Constructor parameters:
 
 *Note: Setting both `operationalFeeBps` and `minOperationalFee` to zero means that no operational fees will be charged for bridging (i.e. the operator wallet will cover the expense of submitting transactions on EVM chain).
 
-### Compiling
-To compile the contracts located in `contracts` folder, you will need to install `nodejs`, `npm` and `hardhat`. Then run the following command: `npx hardhat compile`. The output will be stored in `artifacts/contracts` folder.
-
 ## InflowVault
 
 An upgradeable ERC-4626 tokenised vault that holds a single ERC-20 asset. It supports adapter-based external deployment of idle funds, a two-phase FIFO withdrawal queue, and a high-water-mark performance fee system.
 
 Upgradeability uses the UUPS proxy pattern (EIP-1822): the proxy is a thin forwarder and upgrade authorisation lives in the implementation, guarded by the vault's whitelist.
-
-### Prerequisites
-
-The following tools must be available on the machine used to compile, test, or deploy:
-
-| Tool | Purpose |
-|---|---|
-| [Node.js](https://nodejs.org/) ≥ 18 | Required by the OZ Upgrades plugin to run storage-layout safety checks at deploy time |
-| [Foundry](https://book.getfoundry.sh/getting-started/installation) | Compilation, testing, and deployment scripting |
-
-Install Node dependencies (OpenZeppelin contracts):
-
-```bash
-npm install
-```
-
-The `lib/openzeppelin-foundry-upgrades/` directory is committed to the repo and contains the [OpenZeppelin Foundry Upgrades](https://docs.openzeppelin.com/upgrades-plugins/foundry/foundry-upgrades) plugin. It does **not** need to be reinstalled unless you delete the `lib/` directory, in which case run:
-
-```bash
-forge install OpenZeppelin/openzeppelin-foundry-upgrades --no-git
-```
 
 ### Testing
 

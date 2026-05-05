@@ -7,9 +7,8 @@ libs = [
 ]
 remappings = [
     "forge-std/=lib/forge-std/src/",
-    "@axelar-network/=node_modules/@axelar-network/",
-    "@openzeppelin/=node_modules/@openzeppelin/",
-    "hardhat/=node_modules/hardhat/",
+"@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
     "openzeppelin-foundry-upgrades/=lib/openzeppelin-foundry-upgrades/src/",
 ]
 ffi = true

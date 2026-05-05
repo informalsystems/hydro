@@ -1,25 +1,11 @@
-# Node modules
-/node_modules
-
-# Compilation output
-/dist
-
-# pnpm deploy output
-/bundle
-
-# Hardhat Build Artifacts
+# Foundry build output
 /artifacts
 
-# Hardhat compilation (v2) support directory
+# Foundry compilation cache
 /cache
 
-# Typechain output
-/types
-
-# Hardhat coverage reports
+# Foundry coverage reports
 /coverage
 
 # Forge libraries
 /lib
-
-/package-lock.json
