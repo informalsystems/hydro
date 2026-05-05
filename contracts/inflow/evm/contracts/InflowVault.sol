@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -24,7 +25,7 @@ import {InflowWithdrawalQueueLib} from "./InflowWithdrawalQueueLib.sol";
 /// * Fee accrual is based on a high-water-mark model.
 /// * Adapters can be Automated (included in deposit/withdraw flows) or Manual (explicit
 ///   calls only), and Tracked (counted in deployedAmount) or Untracked (queried directly).
-contract InflowVault is ERC4626, ReentrancyGuard {
+contract InflowVault is ERC4626Upgradeable, ReentrancyGuard, UUPSUpgradeable {
     using Math for uint256;
     using InflowAdapterLib for InflowAdapterLib.AdapterStorage;
     using InflowWithdrawalQueueLib for InflowWithdrawalQueueLib.QueueStorage;
@@ -124,7 +125,12 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     }
 
 
-    // CONSTRUCTOR
+    // CONSTRUCTOR / INITIALIZER
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
 
     /// @param asset_                 ERC-20 token accepted as deposit.
     /// @param name_                  Vault share token name.
@@ -134,7 +140,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     /// @param initialWhitelist       At least one address must be provided.
     /// @param feeRate_               Performance fee rate in WAD (0 = disabled, 1e18 = 100%).
     /// @param feeRecipient_          Recipient of fee shares; required when feeRate_ > 0.
-    constructor(
+    function initialize(
         IERC20 asset_,
         string memory name_,
         string memory symbol_,
@@ -143,7 +149,10 @@ contract InflowVault is ERC4626, ReentrancyGuard {
         address[] memory initialWhitelist,
         uint256 feeRate_,
         address feeRecipient_
-    ) ERC4626(asset_) ERC20(name_, symbol_) {
+    ) external initializer {
+        __ERC20_init(name_, symbol_);
+        __ERC4626_init(asset_);
+
         if (initialWhitelist.length == 0) revert WhitelistCannotBeEmpty();
         if (feeRate_ > WAD) revert InvalidFeeRate();
         if (feeRate_ > 0 && feeRecipient_ == address(0)) revert FeeRecipientNotSet();
@@ -170,7 +179,7 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     /// @notice Active shares supply: total minted shares minus shares locked in the vault for
     /// pending withdrawals. Locked shares representing pending withdrawals are deducted from
     /// the totalSupply() because the totalWithdrawalAmount is also deducted in totalAssets().
-    function totalSupply() public view override(ERC20, IERC20) returns (uint256) {
+    function totalSupply() public view override(ERC20Upgradeable, IERC20) returns (uint256) {
         return super.totalSupply() - balanceOf(address(this));
     }
 
@@ -521,6 +530,9 @@ contract InflowVault is ERC4626, ReentrancyGuard {
     }
 
     // ACCESS CONTROL
+
+    /// @notice Only whitelisted addresses (including the governing DAO) may upgrade.
+    function _authorizeUpgrade(address) internal override onlyWhitelisted {}
 
     /// @notice Whitelisted only. Adds `addr` to the whitelist.
     function addToWhitelist(address addr) external onlyWhitelisted {
