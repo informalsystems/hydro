@@ -8,7 +8,6 @@ The following tools must be available on the machine used to compile, test, or d
 | Tool | Purpose |
 |---|---|
 | [Foundry](https://book.getfoundry.sh/getting-started/installation) | Compilation, testing, and deployment scripting |
-| [Node.js](https://nodejs.org/) ≥ 18 | Required by the OpenZeppelin Upgrades plugin to run storage-layout safety checks via `npx` at deploy time |
 
 After cloning, install Foundry libraries:
 
@@ -17,7 +16,6 @@ forge install \
   foundry-rs/forge-std \
   OpenZeppelin/openzeppelin-contracts@v5.6.1 \
   OpenZeppelin/openzeppelin-contracts-upgradeable@v5.6.1 \
-  OpenZeppelin/openzeppelin-foundry-upgrades \
   --no-git
 ```
 
@@ -47,45 +45,3 @@ Upgradeability uses the UUPS proxy pattern (EIP-1822): the proxy is a thin forwa
 ```bash
 forge test
 ```
-
-### Deploying
-
-The deployment script at `script/DeployInflowVault.s.sol` uses the OZ Upgrades plugin. Before broadcasting, the plugin validates storage layout safety and confirms the contract is correctly configured for UUPS.
-
-Set the required environment variables, then run:
-
-```bash
-export ASSET=<ERC-20 token address>
-export VAULT_NAME="Hydro Inflow Vault"
-export VAULT_SYMBOL="hvUSDC"
-export DEPOSIT_CAP=<uint256, e.g. 1000000000000>
-export MAX_WITHDRAWALS_PER_USER=10
-export INITIAL_ADMIN=<whitelisted admin address>
-# Optional:
-export FEE_RATE=0          # WAD, 0 = disabled
-export FEE_RECIPIENT=0x0   # required when FEE_RATE > 0
-
-forge script script/DeployInflowVault.s.sol \
-  --rpc-url <RPC_URL> \
-  --sender <DEPLOYER_ADDRESS> \
-  --broadcast
-```
-
-The script prints both the proxy address (the address callers interact with) and the implementation address.
-
-### Upgrading
-
-To upgrade to a new implementation, call `upgradeToAndCall` on the proxy from a whitelisted address (including the governing DAO). Before broadcasting, the OZ Upgrades plugin compares the new implementation's storage layout against the previous one and rejects any changes that would corrupt existing state.
-
-`PROXY` is the address printed by the deploy script (the address callers interact with, not the implementation).
-
-```bash
-export PROXY=<proxy address from the deploy step>
-
-forge script script/UpgradeInflowVault.s.sol \
-  --rpc-url <RPC_URL> \
-  --sender <WHITELISTED_ADDRESS> \
-  --broadcast
-```
-
-The script prints the proxy address and the new implementation address once the upgrade is confirmed.

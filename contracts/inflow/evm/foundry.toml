@@ -3,19 +3,13 @@ src = "contracts"
 out = "out"
 libs = [
     "lib",
-    "node_modules",
 ]
 remappings = [
     "forge-std/=lib/forge-std/src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
-    "openzeppelin-foundry-upgrades/=lib/openzeppelin-foundry-upgrades/src/",
 ]
 optimizer = true
 optimizer_runs = 1
-ffi = true
-ast = true
-build_info = true
-extra_output = ["storageLayout"]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
