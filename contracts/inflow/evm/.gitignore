@@ -9,3 +9,6 @@
 
 # Forge libraries
 /lib
+
+# Foundry script runs output
+/broadcast

@@ -40,6 +40,93 @@ An upgradeable ERC-4626 tokenised vault that holds a single ERC-20 asset. It sup
 
 Upgradeability uses the UUPS proxy pattern (EIP-1822): the proxy is a thin forwarder and upgrade authorisation lives in the implementation, guarded by the vault's whitelist.
 
+### Deployment
+
+The deploy script deploys the implementation `InflowVault` contract and an `ERC1967Proxy` that wraps it, then calls `initialize()` through the proxy in a single broadcast.
+
+**Required environment variables**
+
+| Variable | Description |
+|---|---|
+| `ASSET` | ERC-20 token address accepted as deposit |
+| `VAULT_NAME` | Share token name (e.g. `"inflow_usdc_share"`) |
+| `VAULT_SYMBOL` | Share token symbol (e.g. `"inflow_usdc_share"`) |
+| `DEPOSIT_CAP` | Maximum total assets the vault will hold, in token base units |
+| `MAX_WITHDRAWALS_PER_USER` | Maximum concurrent queued withdrawals per address |
+| `INITIAL_ADMIN` | Address added to the whitelist at initialisation |
+| `PRIVATE_KEY` | Private key used to sign transactions |
+| `RPC_URL` | RPC endpoint of a node used to broadcast transactions |
+
+**Optional environment variables** (both default to `0` / `address(0)`)
+
+| Variable | Description |
+|---|---|
+| `FEE_RATE` | Performance fee rate in WAD — `0` disables fees, `1e18` = 100% |
+| `FEE_RECIPIENT` | Recipient of accrued fee shares; required when `FEE_RATE > 0` |
+
+```bash
+export ASSET=0x3600000000000000000000000000000000000000   # USDC on Arc
+export VAULT_NAME="inflow_usdc_share"
+export VAULT_SYMBOL="inflow_usdc_share"
+export DEPOSIT_CAP=1000000000000                         # 1 000 000 USDC (6 decimals)
+export MAX_WITHDRAWALS_PER_USER=10
+export INITIAL_ADMIN=0xYourAdminAddress
+export PRIVATE_KEY=0xYourAdminPrivateKey
+export RPC_URL=https://rpc.testnet.arc.network
+
+forge script script/DeployInflowVault.s.sol \
+  --rpc-url $RPC_URL --broadcast --private-key $PRIVATE_KEY -vvvv
+```
+
+The script prints the proxy and implementation addresses on completion.
+
+### Upgrade
+
+The upgrade script deploys a new implementation contract and calls `upgradeToAndCall` on the existing proxy. The signing wallet must be whitelisted on the vault (`_authorizeUpgrade()` in InflowVault enforces this). Upgrades support execution of functions in the new version of `InflowVault` contract that are marked with `reinitializer` modifier. These `reinitializer` functions allow setting the new smart contract version, as well as initialization of newly introduced smart contract fields. An example of such function would be:
+
+```bash
+function reinitializeV2(string calldata initialValue) external reinitializer(2) {
+  _newStringField = initialValue;
+}
+```
+
+**Required environment variables**
+
+| Variable | Description |
+|---|---|
+| `PROXY` | Address of the existing `ERC1967Proxy` |
+| `PRIVATE_KEY` | Private key used to sign transactions |
+| `RPC_URL` | RPC endpoint of a node used to broadcast transactions |
+
+**Optional environment variables**
+
+| Variable | Description |
+|---|---|
+| `MIGRATION_DATA` | ABI-encoded calldata forwarded to `upgradeToAndCall` — use this to invoke a `reinitializer` function on the new implementation. Defaults to empty (no migration call). |
+
+```bash
+# Upgrade with no migration call
+export PROXY=0xYourProxyAddress
+export PRIVATE_KEY=0xYourAdminPrivateKey
+export RPC_URL=https://rpc.testnet.arc.network
+
+forge script script/UpgradeInflowVault.s.sol \
+  --rpc-url $RPC_URL --broadcast --private-key $PRIVATE_KEY -vvvv
+```
+
+```bash
+# Upgrade and call a reinitializer on the new implementation
+export PROXY=0xYourProxyAddress
+export MIGRATION_DATA=$(cast calldata "reinitializeV2(string)" "initial field value")
+export PRIVATE_KEY=0xYourAdminPrivateKey
+export RPC_URL=https://rpc.testnet.arc.network
+
+forge script script/UpgradeInflowVault.s.sol \
+  --rpc-url $RPC_URL --broadcast --private-key $PRIVATE_KEY -vvvv
+```
+
+> **Note:** Storage layout compatibility between implementation versions must be verified manually before upgrading.
+
 ### Testing
 
 ```bash
