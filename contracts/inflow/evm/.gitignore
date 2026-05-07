@@ -1,5 +1,5 @@
 # Foundry build output
-/artifacts
+/out
 
 # Foundry compilation cache
 /cache
