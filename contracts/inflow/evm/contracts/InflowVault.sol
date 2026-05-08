@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {InflowAdapterLib} from "./InflowAdapterLib.sol";
 import {InflowWithdrawalQueueLib} from "./InflowWithdrawalQueueLib.sol";
@@ -25,7 +25,7 @@ import {InflowWithdrawalQueueLib} from "./InflowWithdrawalQueueLib.sol";
 /// * Fee accrual is based on a high-water-mark model.
 /// * Adapters can be Automated (included in deposit/withdraw flows) or Manual (explicit
 ///   calls only), and Tracked (counted in deployedAmount) or Untracked (queried directly).
-contract InflowVault is ERC4626Upgradeable, ReentrancyGuard, UUPSUpgradeable {
+contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgradeable {
     using Math for uint256;
     using InflowAdapterLib for InflowAdapterLib.AdapterStorage;
     using InflowWithdrawalQueueLib for InflowWithdrawalQueueLib.QueueStorage;
