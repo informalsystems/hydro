@@ -96,7 +96,8 @@ library InflowWithdrawalQueueLib {
         uint256 end = q.nextId;
         if (start >= end) return;
 
-        uint256 fundedReserve = q.info.totalWithdrawalAmount - q.info.nonFundedWithdrawalAmount;
+        uint256 fundedReserve = q.info.totalWithdrawalAmount > q.info.nonFundedWithdrawalAmount
+            ? q.info.totalWithdrawalAmount - q.info.nonFundedWithdrawalAmount : 0;
         uint256 vaultBalance = IERC20(assetAddr).balanceOf(address(this));
         uint256 freeBalance = vaultBalance > fundedReserve ? vaultBalance - fundedReserve : 0;
 

@@ -413,9 +413,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     function withdrawForDeployment(uint256 amount) external onlyWhitelisted nonReentrant {
         if (amount == 0) revert ZeroAmount();
         uint256 requested = amount;
-        uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
-        uint256 reserved = _queueStorage.info.totalWithdrawalAmount;
-        uint256 available = vaultBalance > reserved ? vaultBalance - reserved : 0;
+        uint256 available = availableForDeployment();
         if (available == 0) revert ZeroAmount();
         if (amount > available) amount = available;
 
@@ -569,7 +567,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
 
     /// @notice Amount available to send for external deployment
     /// (vault balance minus withdrawal reserves).
-    function availableForDeployment() external view returns (uint256) {
+    function availableForDeployment() public view returns (uint256) {
         uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
         uint256 reserved = _queueStorage.info.totalWithdrawalAmount;
         return vaultBalance > reserved ? vaultBalance - reserved : 0;
