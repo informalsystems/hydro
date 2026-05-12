@@ -57,8 +57,8 @@ contract InflowVaultCancelWithdrawalTest is Test {
     ///   1. User deposits 100,000 USDC → receives 100,000 shares.
     ///   2. Whitelisted admin calls withdrawForDeployment(100,000) → vault balance goes to 0.
     ///   3. User redeems 100,000 shares → vault has no free balance, so the
-    ///      withdrawal is queued. Shares are locked inside the vault.
-    ///   4. User cancels the queued withdrawal → shares are returned.
+    ///      withdrawal is queued. Shares are burned immediately.
+    ///   4. User cancels the queued withdrawal → shares are re-minted.
     function test_depositWithdrawForDeploymentRedeemAndCancelWithdrawal() public {
         // ── Step 1: deposit ──────────────────────────────────────────────────
         vm.startPrank(user);
@@ -87,15 +87,15 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vm.prank(user);
         vault.redeem(AMOUNT, user, user);
 
-        // Shares are locked inside the vault, not burned yet.
-        assertEq(vault.balanceOf(user), 0,                  "user shares should be locked in vault");
+        // Shares are burned immediately when queued.
+        assertEq(vault.balanceOf(user), 0,                  "user shares should be burned");
 
         // Verify the queue entry.
         InflowWithdrawalQueueLib.WithdrawalEntry memory entry = vault.withdrawalRequest(withdrawalId);
         assertEq(entry.id,              withdrawalId,       "entry id mismatch");
         assertEq(entry.owner,           user,               "entry owner should be user");
         assertEq(entry.receiver,        user,               "entry receiver should be user");
-        assertEq(entry.sharesLocked,    AMOUNT,             "entry sharesLocked should be 100,000");
+        assertEq(entry.sharesBurned,    AMOUNT,             "entry sharesBurned should be 100,000");
         assertEq(entry.amountToReceive, AMOUNT,             "entry amountToReceive should be 100,000 USDC");
         assertFalse(entry.isFunded,                         "entry should not yet be funded");
 
@@ -133,8 +133,8 @@ contract InflowVaultCancelWithdrawalTest is Test {
     ///   3. Bob deposits 60,000 USDC → 50,000 shares (price 1.2:1, not 1:1).
     ///      Vault: 60k. Supply: 150k. TotalAssets: 180k.
     ///   4. Alice redeems 100,000 shares → assets ≈ 120k (100k × 1.2);
-    ///      vault free balance = 60k < 120k → queued (id 0).
-    ///      Effective supply = 150k − 100k (locked) = 50k.
+    ///      vault free balance = 60k < 120k → queued (id 0). Shares burned immediately.
+    ///      Effective supply = 150k − 100k (burned) = 50k.
     ///      Effective assets ≈ 180k − 120k = 60k.
     ///   5. Admin attempts withdrawForDeployment(60,000) [between redeem and cancel].
     ///      Queue reserves ≈ 120k (> vault balance of 60k) → available = 0 → REVERTS.
@@ -201,8 +201,8 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vm.prank(alice);
         vault.redeem(AMOUNT, alice, alice);
 
-        // Shares locked in vault, not burned yet.
-        assertEq(vault.balanceOf(alice), 0, "alice shares locked in vault");
+        // Shares are burned immediately when queued.
+        assertEq(vault.balanceOf(alice), 0, "alice shares burned");
 
         // Effective supply / assets reflect only Bob's position.
         assertEq(vault.totalSupply(), bobExpectedShares,                                   "effective supply = 50k (bob only)");
@@ -210,7 +210,7 @@ contract InflowVaultCancelWithdrawalTest is Test {
 
         InflowWithdrawalQueueLib.WithdrawalEntry memory entry = vault.withdrawalRequest(withdrawalId);
         assertEq(entry.owner,           alice,                 "entry owner = alice");
-        assertEq(entry.sharesLocked,    AMOUNT,                "sharesLocked = 100k");
+        assertEq(entry.sharesBurned,    AMOUNT,                "sharesBurned = 100k");
         assertEq(entry.amountToReceive, aliceRedemptionAssets, "amountToReceive ~120k");
         assertFalse(entry.isFunded,                            "not funded");
 
@@ -257,11 +257,10 @@ contract InflowVaultCancelWithdrawalTest is Test {
     ///      Vault holds 200,000 USDC; total supply = 200,000 shares.
     ///   3. Admin withdrawForDeployment(200,000) → vault balance = 0,
     ///      deployedAmount = 200,000. Share price unchanged (1:1).
-    ///   4. Alice redeems 100,000 shares → no free balance → queued.
-    ///      Shares locked in vault.
-    ///      Effective supply = 200k − 100k (locked) = 100k (Bob only).
+    ///   4. Alice redeems 100,000 shares → no free balance → queued. Shares burned immediately.
+    ///      Effective supply = 200k − 100k (burned) = 100k (Bob only).
     ///      Effective totalAssets = 200k − 100k (pending) = 100k.
-    ///   5. Alice cancels the queued withdrawal → 100,000 shares returned.
+    ///   5. Alice cancels the queued withdrawal → 100,000 shares re-minted.
     ///      Supply and totalAssets both restored to 200,000.
     ///   6. Alice deposits 50,000 USDC → 50,000 shares (price still 1:1).
     ///      Alice total: 150,000 shares. Bob: 100,000 shares.
@@ -310,11 +309,11 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vm.prank(alice);
         vault.redeem(AMOUNT, alice, alice);
 
-        // Alice's shares are locked inside the vault, not burned.
-        assertEq(vault.balanceOf(alice), 0,      "alice shares locked in vault");
+        // Shares are burned immediately when queued.
+        assertEq(vault.balanceOf(alice), 0,      "alice shares burned");
         assertEq(vault.balanceOf(bob),   AMOUNT, "bob shares unaffected");
 
-        // Effective supply deducts locked shares; effective assets deduct pending claim.
+        // Burned shares reduce totalSupply; pending claim reduces totalAssets.
         assertEq(vault.totalSupply(), AMOUNT,    "effective supply = 100k (bob only)");
         assertEq(vault.totalAssets(), AMOUNT,    "effective assets = 100k (bob's portion)");
 
@@ -322,7 +321,7 @@ contract InflowVaultCancelWithdrawalTest is Test {
         InflowWithdrawalQueueLib.WithdrawalEntry memory entry = vault.withdrawalRequest(withdrawalId);
         assertEq(entry.owner,           alice,  "withdrawal owner = alice");
         assertEq(entry.receiver,        alice,  "withdrawal receiver = alice");
-        assertEq(entry.sharesLocked,    AMOUNT, "sharesLocked = 100k");
+        assertEq(entry.sharesBurned,    AMOUNT, "sharesBurned = 100k");
         assertEq(entry.amountToReceive, AMOUNT, "amountToReceive = 100k USDC");
         assertFalse(entry.isFunded,             "not yet funded");
 

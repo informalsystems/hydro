@@ -17,13 +17,13 @@ library InflowWithdrawalQueueLib {
         uint256 initiatedAt;   // block.timestamp at queue time
         address owner;         // shares owner — validated on cancellation
         address receiver;      // receives assets on claim
-        uint256 sharesLocked;  // shares transferred to vault on queue; burned on claim
+        uint256 sharesBurned;  // shares burned at queue time
         uint256 amountToReceive;
         bool isFunded;
     }
 
     struct WithdrawalQueueInfo {
-        uint256 totalSharesLocked;
+        uint256 totalSharesBurned;
         uint256 totalWithdrawalAmount;
         uint256 nonFundedWithdrawalAmount;
     }
@@ -71,14 +71,14 @@ library InflowWithdrawalQueueLib {
             initiatedAt: block.timestamp,
             owner: owner,
             receiver: receiver,
-            sharesLocked: shares,
+            sharesBurned: shares,
             amountToReceive: assets,
             isFunded: false
         });
         q.userIds[owner].push(id);
         if (q.userIds[owner].length > maxPerUser) revert MaxWithdrawalsReached();
 
-        q.info.totalSharesLocked += shares;
+        q.info.totalSharesBurned += shares;
         q.info.totalWithdrawalAmount += assets;
         q.info.nonFundedWithdrawalAmount += assets;
     }
@@ -130,7 +130,7 @@ library InflowWithdrawalQueueLib {
 
     /// @dev Transfers assets to each funded withdrawal's receiver.
     /// Only processes IDs at or below lastFundedId that are marked isFunded.
-    /// Returns the total locked shares across all processed entries so the vault can burn them.
+    /// Returns the total shares burned at queue time across all processed entries.
     function claim(
         QueueStorage storage q,
         uint256[] calldata ids,
@@ -149,11 +149,11 @@ library InflowWithdrawalQueueLib {
             uint256 amount = entry.amountToReceive;
             address receiver = entry.receiver;
             address owner = entry.owner;
-            uint256 shares = entry.sharesLocked;
+            uint256 shares = entry.sharesBurned;
 
             totalSharesToBurn += shares;
 
-            q.info.totalSharesLocked -= shares;
+            q.info.totalSharesBurned -= shares;
             q.info.totalWithdrawalAmount -= amount;
 
             delete q.requests[id];
@@ -166,12 +166,12 @@ library InflowWithdrawalQueueLib {
 
     /// @dev Cancels unfunded withdrawal requests owned by msg.sender and updates queue totals.
     /// IDs below the funded watermark are skipped to prevent races with fulfill().
-    /// Returns (totalAmountRestored, totalSharesToRelease) so the vault can perform
-    /// the deposit-cap check and transfer locked shares back to the owner.
+    /// Returns (totalAmountRestored, totalSharesBurned) so the vault can perform
+    /// the deposit-cap check and re-mint the burned shares to the owner.
     function cancel(
         QueueStorage storage q,
         uint256[] calldata ids
-    ) external returns (uint256 totalAmount, uint256 totalSharesToRelease) {
+    ) external returns (uint256 totalAmount, uint256 totalSharesBurned) {
         uint256 lowestCancelable = q.anyFunded ? q.lastFundedId + 1 : 0;
 
         for (uint256 i = 0; i < ids.length; i++) {
@@ -184,7 +184,7 @@ library InflowWithdrawalQueueLib {
             if (entry.isFunded) continue;            // already funded, cannot cancel
 
             totalAmount += entry.amountToReceive;
-            totalSharesToRelease += entry.sharesLocked;
+            totalSharesBurned += entry.sharesBurned;
 
             delete q.requests[id];
             _removeFromUserIds(q, msg.sender, id);
@@ -192,7 +192,7 @@ library InflowWithdrawalQueueLib {
         }
 
         if (totalAmount > 0) {
-            q.info.totalSharesLocked -= totalSharesToRelease;
+            q.info.totalSharesBurned -= totalSharesBurned;
             q.info.totalWithdrawalAmount -= totalAmount;
             q.info.nonFundedWithdrawalAmount -= totalAmount;
         }
