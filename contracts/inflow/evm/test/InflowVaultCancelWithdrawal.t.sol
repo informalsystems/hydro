@@ -39,11 +39,14 @@ contract InflowVaultCancelWithdrawalTest is Test {
         address[] memory wl = new address[](1);
         wl[0] = admin;
 
+        address[] memory deployedAmountWl = new address[](1);
+        deployedAmountWl[0] = admin;
+
         InflowVault impl = new InflowVault();
         bytes memory initData = abi.encodeCall(
             InflowVault.initialize,
             (IERC20(address(usdc)), "Hydro Inflow Vault", "hvUSDC",
-             DEPOSIT_CAP, MAX_WITHDRAWALS, wl, 0, address(0))
+             DEPOSIT_CAP, MAX_WITHDRAWALS, wl, deployedAmountWl, 0, address(0))
         );
         vault = InflowVault(address(new ERC1967Proxy(address(impl), initData)));
 

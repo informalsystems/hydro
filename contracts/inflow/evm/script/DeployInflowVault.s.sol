@@ -9,16 +9,17 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// @notice Deploys InflowVault implementation + ERC1967 proxy and initializes it.
 ///
 /// Required env vars:
-///   ASSET                   - ERC-20 token address accepted as deposit
-///   VAULT_NAME              - Share token name
-///   VAULT_SYMBOL            - Share token symbol
-///   DEPOSIT_CAP             - Max total assets (token base units)
-///   MAX_WITHDRAWALS_PER_USER - Max concurrent queued withdrawals per address
-///   INITIAL_ADMIN           - Initial whitelisted address (deployer or multisig)
+///   ASSET                           - ERC-20 token address accepted as deposit
+///   VAULT_NAME                      - Share token name
+///   VAULT_SYMBOL                    - Share token symbol
+///   DEPOSIT_CAP                     - Max total assets (token base units)
+///   MAX_WITHDRAWALS_PER_USER        - Max concurrent queued withdrawals per address
+///   INITIAL_ADMIN                   - Initial whitelisted address (deployer or multisig)
 ///
 /// Optional env vars (default to 0 / address(0)):
-///   FEE_RATE                - Performance fee rate in WAD (0 = disabled, 1e18 = 100%)
-///   FEE_RECIPIENT           - Fee recipient; required when FEE_RATE > 0
+///   INITIAL_DEPLOYED_AMOUNT_ADMIN   - Initial deployed-amount whitelisted address; defaults to INITIAL_ADMIN
+///   FEE_RATE                        - Performance fee rate in WAD (0 = disabled, 1e18 = 100%)
+///   FEE_RECIPIENT                   - Fee recipient; required when FEE_RATE > 0
 ///
 /// Example:
 ///   forge script script/DeployInflowVault.s.sol \
@@ -33,17 +34,21 @@ contract DeployInflowVault is Script {
         string memory symbol   = vm.envString("VAULT_SYMBOL");
         uint256 depositCap     = vm.envUint("DEPOSIT_CAP");
         uint256 maxWithdrawals = vm.envUint("MAX_WITHDRAWALS_PER_USER");
-        address initialAdmin   = vm.envAddress("INITIAL_ADMIN");
-        uint256 feeRate        = vm.envOr("FEE_RATE", uint256(0));
-        address feeRecipient   = vm.envOr("FEE_RECIPIENT", address(0));
+        address initialAdmin              = vm.envAddress("INITIAL_ADMIN");
+        address initialDeployedAmountAdmin = vm.envOr("INITIAL_DEPLOYED_AMOUNT_ADMIN", initialAdmin);
+        uint256 feeRate                   = vm.envOr("FEE_RATE", uint256(0));
+        address feeRecipient              = vm.envOr("FEE_RECIPIENT", address(0));
 
         address[] memory whitelist = new address[](1);
         whitelist[0] = initialAdmin;
 
+        address[] memory deployedAmountWhitelist = new address[](1);
+        deployedAmountWhitelist[0] = initialDeployedAmountAdmin;
+
         bytes memory initData = abi.encodeCall(
             InflowVault.initialize,
             (IERC20(asset), name, symbol, depositCap, maxWithdrawals,
-             whitelist, feeRate, feeRecipient)
+             whitelist, deployedAmountWhitelist, feeRate, feeRecipient)
         );
 
         vm.startBroadcast();

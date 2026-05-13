@@ -42,12 +42,16 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     error NotWhitelisted();
     error AlreadyWhitelisted();
     error WhitelistCannotBeEmpty();
+    error AlreadyDeployedAmountWhitelisted();
+    error DeployedAmountWhitelistCannotBeEmpty();
 
     // EVENTS
 
     event WhitelistAdded(address indexed addr);
     event WhitelistRemoved(address indexed addr);
     event DepositCapUpdated(uint256 newCap);
+    event DeployedAmountWhitelistAdded(address indexed addr);
+    event DeployedAmountWhitelistRemoved(address indexed addr);
     event MaxWithdrawalsPerUserUpdated(uint256 newMax);
 
     event AdapterRegistered(string name, address indexed addr, bool automated, bool tracked);
@@ -95,6 +99,9 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     mapping(address => bool) public whitelist;
     uint256 private _whitelistCount;
 
+    mapping(address => bool) public _deployedAmountWhitelist;
+    uint256 private _deployedAmountwhitelistCount;
+
     // Vault config
     uint256 public depositCap;
     uint256 public maxWithdrawalsPerUser;
@@ -120,10 +127,18 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         _;
     }
 
+    modifier onlyDeployedAmountWhitelisted() {
+        _onlyDeployedAmountWhitelisted();
+        _;
+    }
+
     function _onlyWhitelisted() internal view {
         if (!whitelist[msg.sender]) revert Unauthorized();
     }
 
+    function _onlyDeployedAmountWhitelisted() internal view {
+        if (!_deployedAmountWhitelist[msg.sender]) revert Unauthorized();
+    }
 
     // CONSTRUCTOR / INITIALIZER
 
@@ -132,14 +147,15 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         _disableInitializers();
     }
 
-    /// @param asset_                 ERC-20 token accepted as deposit.
-    /// @param name_                  Vault share token name.
-    /// @param symbol_                Vault share token symbol.
-    /// @param depositCap_            Maximum total assets the vault will hold (WAD units).
-    /// @param maxWithdrawalsPerUser_ Maximum concurrent queued withdrawals per address.
-    /// @param initialWhitelist       At least one address must be provided.
-    /// @param feeRate_               Performance fee rate in WAD (0 = disabled, 1e18 = 100%).
-    /// @param feeRecipient_          Recipient of fee shares; required when feeRate_ > 0.
+    /// @param asset_                               ERC-20 token accepted as deposit.
+    /// @param name_                                Vault share token name.
+    /// @param symbol_                              Vault share token symbol.
+    /// @param depositCap_                          Maximum total assets the vault will hold (WAD units).
+    /// @param maxWithdrawalsPerUser_               Maximum concurrent queued withdrawals per address.
+    /// @param initialWhitelist                     At least one address must be provided.
+    /// @param initialDeployedAmountWhitelist       At least one address must be provided.
+    /// @param feeRate_                             Performance fee rate in WAD (0 = disabled, 1e18 = 100%).
+    /// @param feeRecipient_                        Recipient of fee shares; required when feeRate_ > 0.
     function initialize(
         IERC20 asset_,
         string memory name_,
@@ -147,6 +163,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         uint256 depositCap_,
         uint256 maxWithdrawalsPerUser_,
         address[] memory initialWhitelist,
+        address[] memory initialDeployedAmountWhitelist,
         uint256 feeRate_,
         address feeRecipient_
     ) external initializer {
@@ -154,6 +171,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         __ERC4626_init(asset_);
 
         if (initialWhitelist.length == 0) revert WhitelistCannotBeEmpty();
+        if (initialDeployedAmountWhitelist.length == 0) revert DeployedAmountWhitelistCannotBeEmpty();
         if (feeRate_ > WAD) revert InvalidFeeRate();
         if (feeRate_ > 0 && feeRecipient_ == address(0)) revert FeeRecipientNotSet();
 
@@ -170,6 +188,16 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
                 whitelist[addr] = true;
                 _whitelistCount++;
                 emit WhitelistAdded(addr);
+            }
+        }
+
+        for (uint256 i = 0; i < initialDeployedAmountWhitelist.length; i++) {
+            address addr = initialDeployedAmountWhitelist[i];
+            if (addr == address(0)) revert ZeroAddress();
+            if (!_deployedAmountWhitelist[addr]) {
+                _deployedAmountWhitelist[addr] = true;
+                _deployedAmountwhitelistCount++;
+                emit DeployedAmountWhitelistAdded(addr);
             }
         }
     }
@@ -362,9 +390,9 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     /// @notice Whitelisted only. Overwrites deployedAmount entirely with `amount`.
     /// Accrues fees first so they are calculated at the old share price before the pool
     /// value changes.
-    function submitDeployedAmount(uint256 amount) external onlyWhitelisted {
-        accrueFees();
+    function submitDeployedAmount(uint256 amount) external onlyDeployedAmountWhitelisted {
         deployedAmount = amount;
+        accrueFees();
         emit DeployedAmountSubmitted(msg.sender, amount);
     }
 
@@ -551,6 +579,25 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         delete whitelist[addr];
         _whitelistCount--;
         emit WhitelistRemoved(addr);
+    }
+
+    /// @notice Whitelisted only. Adds `addr` to the deployed amount whitelist.
+    function addToDeployedAmountWhitelist(address addr) external onlyWhitelisted {
+        if (addr == address(0)) revert ZeroAddress();
+        if (_deployedAmountWhitelist[addr]) revert AlreadyDeployedAmountWhitelisted();
+        _deployedAmountWhitelist[addr] = true;
+        _deployedAmountwhitelistCount++;
+        emit DeployedAmountWhitelistAdded(addr);
+    }
+
+    /// @notice Whitelisted only. Removes `addr` from the deployed amount whitelist. Reverts if it is the
+    /// last remaining entry.
+    function removeFromDeployedAmountWhitelist(address addr) external onlyWhitelisted {
+        if (!_deployedAmountWhitelist[addr]) revert NotWhitelisted();
+        if (_deployedAmountwhitelistCount <= 1) revert DeployedAmountWhitelistCannotBeEmpty();
+        delete _deployedAmountWhitelist[addr];
+        _deployedAmountwhitelistCount--;
+        emit DeployedAmountWhitelistRemoved(addr);
     }
 
     // CONFIG

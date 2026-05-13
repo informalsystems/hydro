@@ -57,10 +57,11 @@ The deploy script deploys the implementation `InflowVault` contract and an `ERC1
 | `PRIVATE_KEY` | Private key used to sign transactions |
 | `RPC_URL` | RPC endpoint of a node used to broadcast transactions |
 
-**Optional environment variables** (both default to `0` / `address(0)`)
+**Optional environment variables**
 
 | Variable | Description |
 |---|---|
+| `INITIAL_DEPLOYED_AMOUNT_ADMIN` | Address added to the deployed-amount whitelist at initialisation; defaults to `INITIAL_ADMIN` |
 | `FEE_RATE` | Performance fee rate in WAD — `0` disables fees, `1e18` = 100% |
 | `FEE_RECIPIENT` | Recipient of accrued fee shares; required when `FEE_RATE > 0` |
 
