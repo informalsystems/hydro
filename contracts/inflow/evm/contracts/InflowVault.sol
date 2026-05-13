@@ -338,7 +338,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         uint256 currentSharePrice = assets.mulDiv(WAD, supply, Math.Rounding.Floor);
 
         if (feeRate == 0) {
-            // Fees disabled — advance HWM to prevent backdating when fees are re-enabled.
+            // Fees disabled - advance HWM to prevent backdating when fees are re-enabled.
             if (currentSharePrice > highWaterMarkPrice) {
                 highWaterMarkPrice = currentSharePrice;
             }
@@ -439,19 +439,32 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         _queueStorage.claim(ids, asset());
     }
 
-    /// @notice Cancels unfunded withdrawal requests owned by msg.sender and re-mints the
-    /// burned shares to the owner. IDs below the funded watermark (lastFundedWithdrawalId)
-    /// are skipped to prevent cancellation races with fulfillPendingWithdrawals.
+    /// @notice Cancels unfunded withdrawal requests owned by msg.sender and re-mints shares.
+    /// IDs below the funded watermark (lastFundedWithdrawalId) are skipped to prevent
+    /// cancellation races with fulfillPendingWithdrawals.
+    ///
+    /// sharesMintedBack = min(sharesBurned, sharesRecalculated) - if the vault
+    /// share price increased while the withdrawal was pending, the owner receives fewer shares.
+    /// Shares minted back never exceeds what was originally burned.
     ///
     /// Reverts if the cancellation would push totalAssets() above depositCap.
     function cancelWithdrawal(uint256[] calldata ids) external nonReentrant {
-        (uint256 totalAmount, uint256 totalSharesBurned) = _queueStorage.cancel(ids);
+        // Preview the cancellation to calculate the shares to mint back before modifying the state.
+        (uint256 totalAmount, uint256 totalSharesBurned, uint256[] memory cancelableIds) =
+            _queueStorage.previewCancel(ids);
+        
         if (totalAmount == 0) return;
+
+        uint256 totalSharesRecalculated = _convertToShares(totalAmount, Math.Rounding.Floor);
+
+        // Perform the cancellation, which deletes the entries and updates the totals in the queue storage.
+        _queueStorage.cancel(cancelableIds);
 
         // Deposit cap check: cancellation restores assets to totalAssets().
         if (totalAssets() > depositCap) revert DepositCapReached();
 
-        _mint(msg.sender, totalSharesBurned);
+        uint256 sharesToMint = totalSharesRecalculated < totalSharesBurned ? totalSharesRecalculated : totalSharesBurned;
+        _mint(msg.sender, sharesToMint);
     }
 
     // ADAPTER MANAGEMENT

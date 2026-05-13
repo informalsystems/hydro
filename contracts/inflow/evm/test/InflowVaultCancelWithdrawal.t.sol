@@ -226,6 +226,12 @@ contract InflowVaultCancelWithdrawalTest is Test {
         assertEq(vault.deployedAmount(),         deployedWithYield, "deployedAmount unchanged after failed deployment");
 
         // ── Step 6: Alice cancels the queued withdrawal ───────────────────────
+        // Because the vault share price is ~1.2 at cancel time, convertToShares(aliceRedemptionAssets)
+        // yields slightly fewer shares than the 100k originally burned (double floor rounding).
+        // The vault mints min(recalcShares, sharesBurned), so Alice gets back recalcShares.
+        uint256 recalcShares = vault.convertToShares(aliceRedemptionAssets);
+        uint256 aliceSharesRestored = recalcShares < AMOUNT ? recalcShares : AMOUNT;
+
         uint256[] memory cancelIds = new uint256[](1);
         cancelIds[0] = withdrawalId;
 
@@ -235,10 +241,10 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vm.prank(alice);
         vault.cancelWithdrawal(cancelIds);
 
-        assertEq(vault.balanceOf(alice),    AMOUNT,                          "alice shares restored");
-        assertEq(vault.balanceOf(bob),      bobExpectedShares,               "bob shares unaffected");
-        assertEq(vault.totalSupply(),       AMOUNT + bobExpectedShares,      "total supply = 150k");
-        assertEq(vault.totalAssets(),       bobDeposit + deployedWithYield,  "total assets = 180k");
+        assertEq(vault.balanceOf(alice),    aliceSharesRestored,                               "alice shares restored");
+        assertEq(vault.balanceOf(bob),      bobExpectedShares,                                 "bob shares unaffected");
+        assertEq(vault.totalSupply(),       aliceSharesRestored + bobExpectedShares,           "total supply after cancel");
+        assertEq(vault.totalAssets(),       bobDeposit + deployedWithYield,                    "total assets = 180k");
         assertEq(vault.withdrawalRequest(withdrawalId).initiatedAt, 0, "entry deleted");
         assertEq(vault.getUserWithdrawalIds(alice).length, 0,          "alice queue empty");
 
