@@ -81,6 +81,46 @@ forge script script/DeployInflowVault.s.sol \
 
 The script prints the proxy and implementation addresses on completion.
 
+Alternatively, a shell script is provided that loads `.env` automatically, accepts `PRIVATE_KEY` or `MNEMONIC`, and sets sensible Arc testnet defaults for all optional variables:
+
+```bash
+bash bin/deploy_inflow_vault.sh
+```
+
+### BasicInflowAdapter
+
+A minimal `IAdapter` implementation that holds tokens directly without deploying them to an external protocol. Useful for testing vault ↔ adapter integration and as a reference for building real adapters.
+
+**Required environment variables**
+
+| Variable | Description |
+|---|---|
+| `VAULT_ADDRESS` | Proxy address of the vault to register the adapter on |
+| `PRIVATE_KEY` or `MNEMONIC` | Signing key — provide one or the other |
+| `RPC_URL` | RPC endpoint of a node used to broadcast transactions |
+
+**Optional environment variables**
+
+| Variable | Description |
+|---|---|
+| `ADAPTER_ADMIN` | Address granted admin rights on the adapter; defaults to the deployer |
+
+Or use the shell script (reads `.env` automatically):
+
+```bash
+bash bin/deploy_basic_adapter.sh
+```
+
+### End-to-end deposit test
+
+After deploying both the vault and the adapter, verify the full deposit → adapter routing → redeem flow:
+
+```bash
+bash bin/test_deposit_flow.sh
+```
+
+Reads `VAULT_ADDRESS`, `ADAPTER_ADDRESS`, `PRIVATE_KEY` (or `MNEMONIC`), and optionally `DEPOSIT_AMOUNT` / `SKIP_REDEEM` from `.env`. See `.env.example` for all variables.
+
 ### Upgrade
 
 The upgrade script deploys a new implementation contract and calls `upgradeToAndCall` on the existing proxy. The signing wallet must be whitelisted on the vault (`_authorizeUpgrade()` in InflowVault enforces this). Upgrades support execution of functions in the new version of `InflowVault` contract that are marked with `reinitializer` modifier. These `reinitializer` functions allow setting the new smart contract version, as well as initialization of newly introduced smart contract fields. An example of such function would be:
@@ -133,3 +173,7 @@ forge script script/UpgradeInflowVault.s.sol \
 ```bash
 forge test
 ```
+
+Unit tests are split across two files:
+- `test/InflowVaultCancelWithdrawal.t.sol` — withdrawal queue and cancellation scenarios
+- `test/InflowVaultAdapters.t.sol` — adapter pull-pattern and multi-token fund movement

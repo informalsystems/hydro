@@ -12,3 +12,7 @@
 
 # Foundry script runs output
 /broadcast
+
+# Local secrets — never commit
+.env
+.env.local

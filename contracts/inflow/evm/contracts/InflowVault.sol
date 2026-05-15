@@ -43,6 +43,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     error WhitelistCannotBeEmpty();
     error AlreadyDeployedAmountWhitelisted();
     error DeployedAmountWhitelistCannotBeEmpty();
+    error TokenIsDepositAsset();
 
     // EVENTS
 
@@ -52,6 +53,8 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     event DeployedAmountWhitelistAdded(address indexed addr);
     event DeployedAmountWhitelistRemoved(address indexed addr);
     event MaxWithdrawalsPerUserUpdated(uint256 newMax);
+
+    event AdapterFundsMoved(string fromName, string toName, address indexed token, uint256 amount);
 
     event AdapterRegistered(string name, address indexed addr, bool automated, bool tracked);
     event AdapterUnregistered(string name, address indexed addr);
@@ -327,7 +330,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         if (freeBalance + totalFromAdapters >= assets) {
             // Immediate fulfilment - burn shares and transfer assets.
             _burn(owner, shares);
-            deployedAmount = _adapterStorage.executeAdapterWithdrawals(keys, amounts, deployedAmount);
+            deployedAmount = _adapterStorage.executeAdapterWithdrawals(keys, amounts, deployedAmount, asset());
             SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
             emit Withdraw(caller, receiver, owner, assets, shares);
         } else {
@@ -531,7 +534,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         onlyWhitelisted
         nonReentrant
     {
-        deployedAmount = _adapterStorage.withdrawFromAdapter(name, amount, deployedAmount);
+        deployedAmount = _adapterStorage.withdrawFromAdapter(name, amount, asset(), deployedAmount);
     }
 
     /// @notice Whitelisted only. Manually deposits `amount` from the vault into a specific
@@ -552,6 +555,23 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         uint256 amount
     ) external onlyWhitelisted nonReentrant {
         deployedAmount = _adapterStorage.moveAdapterFunds(fromName, toName, amount, asset(), deployedAmount);
+        emit AdapterFundsMoved(fromName, toName, asset(), amount);
+    }
+
+    /// @notice Whitelisted only. Moves `amount` of a non-deposit `token` from one adapter
+    /// to another. Use this for secondary tokens (e.g. USDT held in a Morpho pool).
+    /// Both adapters must have identical deployment-tracking mode; crossing the boundary
+    /// would silently corrupt deployedAmount since the token is not in vault denomination.
+    /// deployedAmount is not modified. Use moveAdapterFunds for the vault's primary asset.
+    function moveAdapterFundsToken(
+        string calldata fromName,
+        string calldata toName,
+        uint256 amount,
+        address token
+    ) external onlyWhitelisted nonReentrant {
+        if (token == asset()) revert TokenIsDepositAsset();
+        _adapterStorage.moveAdapterFundsToken(fromName, toName, amount, token);
+        emit AdapterFundsMoved(fromName, toName, token, amount);
     }
 
     // ACCESS CONTROL

@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IAdapter} from "./IAdapter.sol";
 
 /// @title InflowAdapterLib
@@ -31,6 +30,7 @@ library InflowAdapterLib {
 
     error AdapterAlreadyExists(string name);
     error AdapterNotFound(string name);
+    error AdapterTrackingMismatch(string fromAdapter, string toAdapter);
 
     // MANAGEMENT
 
@@ -88,12 +88,13 @@ library InflowAdapterLib {
         AdapterStorage storage s,
         string calldata name,
         uint256 amount,
+        address assetAddr,
         uint256 deployedAmount
     ) external returns (uint256) {
         bytes32 key = keccak256(bytes(name));
         AdapterInfo storage a = s.adapters[key];
         if (a.addr == address(0)) revert AdapterNotFound(name);
-        IAdapter(a.addr).withdraw(amount);
+        IAdapter(a.addr).withdraw(amount, assetAddr);
         if (a.tracked) {
             deployedAmount = deployedAmount > amount ? deployedAmount - amount : 0;
         }
@@ -110,8 +111,13 @@ library InflowAdapterLib {
         bytes32 key = keccak256(bytes(name));
         AdapterInfo storage a = s.adapters[key];
         if (a.addr == address(0)) revert AdapterNotFound(name);
-        SafeERC20.safeTransfer(IERC20(assetAddr), a.addr, amount);
-        IAdapter(a.addr).deposit(amount);
+        IERC20(assetAddr).approve(a.addr, amount);
+        IAdapter(a.addr).deposit(amount, assetAddr);
+        // Revoke any unconsumed approval so it cannot be used in a later transaction.
+        // A well-behaved adapter pulls exactly `amount`, but a partial deposit (e.g. a
+        // capacity-limited adapter that only absorbs part of the allowance) would leave
+        // a residual allowance on the vault that must not persist.
+        IERC20(assetAddr).approve(a.addr, 0);
         if (a.tracked) deployedAmount += amount;
         return deployedAmount;
     }
@@ -131,9 +137,10 @@ library InflowAdapterLib {
         if (fromAdapter.addr == address(0)) revert AdapterNotFound(fromName);
         if (toAdapter.addr == address(0)) revert AdapterNotFound(toName);
 
-        IAdapter(fromAdapter.addr).withdraw(amount);
-        SafeERC20.safeTransfer(IERC20(assetAddr), toAdapter.addr, amount);
-        IAdapter(toAdapter.addr).deposit(amount);
+        IAdapter(fromAdapter.addr).withdraw(amount, assetAddr);
+        IERC20(assetAddr).approve(toAdapter.addr, amount);
+        IAdapter(toAdapter.addr).deposit(amount, assetAddr);
+        IERC20(assetAddr).approve(toAdapter.addr, 0); // revoke any unconsumed approval
 
         if (fromAdapter.tracked && !toAdapter.tracked) {
             deployedAmount = deployedAmount > amount ? deployedAmount - amount : 0;
@@ -141,6 +148,36 @@ library InflowAdapterLib {
             deployedAmount += amount;
         }
         return deployedAmount;
+    }
+
+    /// @dev Moves `amount` of an arbitrary `tokenAddr` from one adapter to another.
+    /// Unlike moveAdapterFunds, deployedAmount is never adjusted because the token is
+    /// not in the vault's primary denomination. Both adapters must have the same
+    /// deployment-tracking mode to prevent silent accounting corruption.
+    function moveAdapterFundsToken(
+        AdapterStorage storage s,
+        string calldata fromName,
+        string calldata toName,
+        uint256 amount,
+        address tokenAddr
+    ) external {
+        bytes32 fromKey = keccak256(bytes(fromName));
+        bytes32 toKey   = keccak256(bytes(toName));
+        AdapterInfo storage fromAdapter = s.adapters[fromKey];
+        AdapterInfo storage toAdapter   = s.adapters[toKey];
+        if (fromAdapter.addr == address(0)) revert AdapterNotFound(fromName);
+        if (toAdapter.addr   == address(0)) revert AdapterNotFound(toName);
+
+        // Moving a non-deposit token across a tracking boundary would corrupt deployedAmount
+        // because we cannot convert the token to the vault's denomination without an oracle.
+        if (fromAdapter.tracked != toAdapter.tracked)
+            revert AdapterTrackingMismatch(fromName, toName);
+
+        IAdapter(fromAdapter.addr).withdraw(amount, tokenAddr);
+        IERC20(tokenAddr).approve(toAdapter.addr, amount);
+        IAdapter(toAdapter.addr).deposit(amount, tokenAddr);
+        IERC20(tokenAddr).approve(toAdapter.addr, 0); // revoke any unconsumed approval
+        // deployedAmount is intentionally not modified
     }
 
     // ALLOCATION
@@ -169,8 +206,9 @@ library InflowAdapterLib {
         uint256 trackedTotal;
         for (uint256 i = 0; i < keys.length; i++) {
             AdapterInfo storage a = s.adapters[keys[i]];
-            SafeERC20.safeTransfer(IERC20(assetAddr), a.addr, amounts[i]);
-            IAdapter(a.addr).deposit(amounts[i]);
+            IERC20(assetAddr).approve(a.addr, amounts[i]);
+            IAdapter(a.addr).deposit(amounts[i], assetAddr);
+            IERC20(assetAddr).approve(a.addr, 0); // revoke any unconsumed approval
             if (a.tracked) trackedTotal += amounts[i];
         }
         return deployedAmount + trackedTotal;
@@ -183,12 +221,13 @@ library InflowAdapterLib {
         AdapterStorage storage s,
         bytes32[] memory keys,
         uint256[] memory amounts,
-        uint256 deployedAmount
+        uint256 deployedAmount,
+        address assetAddr
     ) external returns (uint256) {
         uint256 trackedAmount;
         for (uint256 i = 0; i < keys.length; i++) {
             AdapterInfo storage a = s.adapters[keys[i]];
-            IAdapter(a.addr).withdraw(amounts[i]);
+            IAdapter(a.addr).withdraw(amounts[i], assetAddr);
             if (a.tracked) trackedAmount += amounts[i];
         }
         return deployedAmount > trackedAmount ? deployedAmount - trackedAmount : 0;
