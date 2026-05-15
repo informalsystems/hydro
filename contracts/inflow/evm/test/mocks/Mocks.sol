@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IAdapter} from "../../contracts/IAdapter.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MockERC20
@@ -33,7 +33,7 @@ contract MockERC20 is ERC20 {
 ///
 /// Capacity is controlled per depositor via setAvailableForDeposit /
 /// setAvailableForWithdraw. Position is the adapter's live token balance.
-contract MockAdapterWithAsset is IAdapter {
+contract MockAdapterWithAsset {
     address public immutable ASSET;
 
     bool public revertOnDeposit;
@@ -63,26 +63,25 @@ contract MockAdapterWithAsset is IAdapter {
 
     // ── IAdapter ─────────────────────────────────────────────────────────────
 
-    function deposit(uint256) external view override {
+    function deposit(uint256 amount, address token) external {
         require(!revertOnDeposit, "MockAdapter: deposit reverted");
-        // Tokens already transferred to this contract by the vault.
+        SafeERC20.safeTransferFrom(IERC20(token), msg.sender, address(this), amount);
     }
 
-    function withdraw(uint256 amount) external override {
+    function withdraw(uint256 amount, address token) external {
         require(!revertOnWithdraw, "MockAdapter: withdraw reverted");
-        bool success = IERC20(ASSET).transfer(msg.sender, amount);
-        require(success, "MockAdapter: transfer failed");
+        SafeERC20.safeTransfer(IERC20(token), msg.sender, amount);
     }
 
-    function availableForDeposit(address depositor, address) external view override returns (uint256) {
+    function availableForDeposit(address depositor, address) external view returns (uint256) {
         return _depositCap[depositor];
     }
 
-    function availableForWithdraw(address depositor, address) external view override returns (uint256) {
+    function availableForWithdraw(address depositor, address) external view returns (uint256) {
         return _withdrawCap[depositor];
     }
 
-    function depositorPosition(address, address token) external view override returns (uint256) {
+    function depositorPosition(address, address token) external view returns (uint256) {
         return IERC20(token).balanceOf(address(this));
     }
 }
