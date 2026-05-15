@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "forge-std/Script.sol";
+import {Script, console2} from  "forge-std/Script.sol";
 import {InflowVault} from "../contracts/InflowVault.sol";
 
 /// @notice Deploys a new InflowVault implementation and upgrades the existing proxy to it.

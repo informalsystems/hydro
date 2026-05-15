@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
-import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -388,8 +387,6 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     }
 
     /// @notice Whitelisted only. Overwrites deployedAmount entirely with `amount`.
-    /// Accrues fees first so they are calculated at the old share price before the pool
-    /// value changes.
     function submitDeployedAmount(uint256 amount) external onlyDeployedAmountWhitelisted {
         deployedAmount = amount;
         accrueFees();
