@@ -1,0 +1,1 @@
+- Add Eureka adapter contract for bridging tokens from Neutron to EVM chains via IBC Eureka, routing through Cosmos Hub using Skip's wasm contracts.

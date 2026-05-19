@@ -1676,6 +1676,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "eureka-adapter"
+version = "3.6.11"
+dependencies = [
+ "bech32 0.11.0",
+ "cosmwasm-schema 2.2.2",
+ "cosmwasm-std 2.2.2",
+ "cw-multi-test",
+ "cw-storage-plus 2.0.0",
+ "cw-utils 2.0.0",
+ "cw2 2.0.0",
+ "hex",
+ "interface",
+ "neutron-sdk",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "eyre"
 version = "0.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -52,6 +52,7 @@ schema:
 	cd contracts/inflow/ibc-adapter && cargo run --bin inflow_ibc_adapter_schema
 	cd contracts/inflow/skip-adapter && cargo run --bin inflow_skip_adapter_schema
 	cd contracts/inflow/cctp-adapter && cargo run --bin inflow_cctp_adapter_schema
+	cd contracts/inflow/eureka-adapter && cargo run --bin inflow_eureka_adapter_schema
 	cd contracts/claim && cargo run --bin claim_schema
 
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/hydro/schema NAME=HydroBase
@@ -70,6 +71,7 @@ schema:
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/ibc-adapter/schema NAME=InflowIBCAdapterBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/skip-adapter/schema NAME=InflowSkipAdapterBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/cctp-adapter/schema NAME=InflowCCTPAdapterBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/eureka-adapter/schema NAME=InflowEurekaAdapterBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/claim/schema NAME=ClaimBase
 
 ts-codegen-inner:
