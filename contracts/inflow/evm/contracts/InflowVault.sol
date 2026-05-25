@@ -78,14 +78,18 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         uint256 shares,
         uint256 assets
     );
-    // WithdrawalFunded, WithdrawalClaimed, WithdrawalCancelled are emitted by
+    // WithdrawalFunded and WithdrawalClaimed are emitted by
     // InflowWithdrawalQueueLib (DELEGATECALL context = vault address). They are re-declared
     // here so they appear in the vault's ABI and clients can decode them without the library ABI.
     event WithdrawalFunded(uint256 indexed id);
     event WithdrawalClaimed(uint256 indexed id, address indexed receiver, uint256 assets);
-    /// @notice The shares re-minted to the owner after a batch cancellation are reported by
-    /// the ERC-20 Transfer event from _mint.
-    event WithdrawalCancelled(uint256 indexed id, address indexed owner);
+
+    event WithdrawalCancelled(
+        address indexed owner,
+        uint256[] canceledWithdrawalIds,
+        uint256 sharesBurned,
+        uint256 sharesMintedBack
+    );
 
     event WithdrawForDeployment(address indexed caller, uint256 requested, uint256 withdrawn);
     event DepositFromDeployment(address indexed caller, uint256 amount);
@@ -493,6 +497,8 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
 
         uint256 sharesToMint = totalSharesRecalculated < totalSharesBurned ? totalSharesRecalculated : totalSharesBurned;
         _mint(msg.sender, sharesToMint);
+
+        emit WithdrawalCancelled(msg.sender, cancelableIds, totalSharesBurned, sharesToMint);
     }
 
     // ADAPTER MANAGEMENT

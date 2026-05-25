@@ -49,9 +49,6 @@ library InflowWithdrawalQueueLib {
 
     event WithdrawalFunded(uint256 indexed id);
     event WithdrawalClaimed(uint256 indexed id, address indexed receiver, uint256 assets);
-    /// @notice Emitted once per cancelled withdrawal ID. Burned shares are re-minted to the
-    /// owner by the vault after cancellation.
-    event WithdrawalCancelled(uint256 indexed id, address indexed owner);
 
     // EXTERNAL FUNCTIONS
 
@@ -226,7 +223,6 @@ library InflowWithdrawalQueueLib {
 
             delete q.requests[id];
             _removeFromUserIds(q, owner, id);
-            emit WithdrawalCancelled(id, owner);
         }
 
         if (totalAmount > 0) {
