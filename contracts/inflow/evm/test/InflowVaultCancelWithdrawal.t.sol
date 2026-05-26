@@ -110,8 +110,8 @@ contract InflowVaultCancelWithdrawalTest is Test {
         uint256[] memory cancelIds = new uint256[](1);
         cancelIds[0] = withdrawalId;
 
-        vm.expectEmit(true, true, false, false, address(vault));
-        emit InflowVault.WithdrawalCancelled(withdrawalId, user);
+        vm.expectEmit(true, false, false, true, address(vault));
+        emit InflowVault.WithdrawalCancelled(user, cancelIds, AMOUNT, AMOUNT);
 
         vm.prank(user);
         vault.cancelWithdrawal(cancelIds);
@@ -238,8 +238,8 @@ contract InflowVaultCancelWithdrawalTest is Test {
         uint256[] memory cancelIds = new uint256[](1);
         cancelIds[0] = withdrawalId;
 
-        vm.expectEmit(true, true, false, false, address(vault));
-        emit InflowVault.WithdrawalCancelled(withdrawalId, alice);
+        vm.expectEmit(true, false, false, true, address(vault));
+        emit InflowVault.WithdrawalCancelled(alice, cancelIds, AMOUNT, aliceSharesRestored);
 
         vm.prank(alice);
         vault.cancelWithdrawal(cancelIds);
@@ -345,8 +345,8 @@ contract InflowVaultCancelWithdrawalTest is Test {
         uint256[] memory cancelIds = new uint256[](1);
         cancelIds[0] = withdrawalId;
 
-        vm.expectEmit(true, true, false, false, address(vault));
-        emit InflowVault.WithdrawalCancelled(withdrawalId, alice);
+        vm.expectEmit(true, false, false, true, address(vault));
+        emit InflowVault.WithdrawalCancelled(alice, cancelIds, AMOUNT, AMOUNT);
 
         vm.prank(alice);
         vault.cancelWithdrawal(cancelIds);
