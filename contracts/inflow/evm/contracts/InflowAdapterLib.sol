@@ -301,10 +301,16 @@ library InflowAdapterLib {
             AdapterInfo storage a = s.adapters[key];
             if (!a.automated) continue;
 
-            uint256 available = isDeposit
-                ? IAdapter(a.addr).availableForDeposit(address(this), assetAddr)
-                : IAdapter(a.addr).availableForWithdraw(address(this), assetAddr);
-
+            uint256 available;
+            if (isDeposit) {
+                try IAdapter(a.addr).availableForDeposit(address(this), assetAddr) returns (uint256 v) {
+                    available = v;
+                } catch { continue; }
+            } else {
+                try IAdapter(a.addr).availableForWithdraw(address(this), assetAddr) returns (uint256 v) {
+                    available = v;
+                } catch { continue; }
+            }
             if (available == 0) continue;
 
             uint256 alloc = available < remaining ? available : remaining;

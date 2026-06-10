@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {InflowVaultBase, InflowVault, MockAdapterWithAsset, MockERC20} from "./InflowVaultBase.t.sol";
+import {RevertingAvailabilityAdapter} from "./mocks/Mocks.sol";
 import {InflowAdapterLib} from "../contracts/InflowAdapterLib.sol";
 
 /// @notice Tests for adapter registration, allocation, and manual operations.
@@ -288,6 +289,42 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
         assertEq(asset.balanceOf(address(a1)), 40_000e6, "a1 filled to capacity");
         assertEq(asset.balanceOf(address(a2)), 40_000e6, "a2 filled to capacity");
         assertEq(asset.balanceOf(address(vault)), 20_000e6, "20k stays in vault");
+    }
+
+    function test_deposit_skips_reverting_adapter_and_uses_healthy_one() public {
+        RevertingAvailabilityAdapter bad = new RevertingAvailabilityAdapter(address(asset));
+        MockAdapterWithAsset good = _newAdapter();
+        good.setDepositCap(address(vault), 100_000e6);
+
+        // bad is registered first; it must not block the vault.
+        vm.prank(admin);
+        vault.registerAdapter("bad", address(bad), true, false);
+        _registerAdapter("good", good, true, false);
+
+        _deposit(user, 100_000e6);
+
+        assertEq(asset.balanceOf(address(bad)),  0,          "reverting adapter skipped");
+        assertEq(asset.balanceOf(address(good)), 100_000e6,  "healthy adapter received funds");
+    }
+
+    function test_withdraw_skips_reverting_adapter_and_queues_remainder() public {
+        RevertingAvailabilityAdapter bad = new RevertingAvailabilityAdapter(address(asset));
+        MockAdapterWithAsset good = _newAdapter();
+        good.setWithdrawCap(address(vault), 0); // healthy adapter has nothing available either
+
+        vm.prank(admin);
+        vault.registerAdapter("bad", address(bad), true, false);
+        _registerAdapter("good", good, true, false);
+
+        _deposit(user, 100_000e6);
+        vm.prank(admin);
+        vault.withdrawForDeployment(100_000e6); // drain vault so free balance = 0
+
+        // Neither adapter can cover the redemption; should queue rather than revert.
+        vm.prank(user);
+        vault.redeem(100_000e6, user, user);
+
+        assertEq(vault.nextWithdrawalId(), 1, "withdrawal queued instead of reverting");
     }
 
     // ═══════════════════════════════════════════════════════════════════════

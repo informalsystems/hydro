@@ -85,3 +85,37 @@ contract MockAdapterWithAsset {
         return IERC20(token).balanceOf(address(this));
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RevertingAvailabilityAdapter
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// @dev Adapter whose availableForDeposit and availableForWithdraw always revert.
+/// Used to verify that _calculateAllocation isolates per-adapter failures.
+contract RevertingAvailabilityAdapter {
+    address public immutable ASSET;
+
+    constructor(address asset_) {
+        ASSET = asset_;
+    }
+
+    function deposit(uint256 amount, address token) external {
+        SafeERC20.safeTransferFrom(IERC20(token), msg.sender, address(this), amount);
+    }
+
+    function withdraw(uint256 amount, address token) external {
+        SafeERC20.safeTransfer(IERC20(token), msg.sender, amount);
+    }
+
+    function availableForDeposit(address, address) external pure returns (uint256) {
+        revert("adapter unavailable");
+    }
+
+    function availableForWithdraw(address, address) external pure returns (uint256) {
+        revert("adapter unavailable");
+    }
+
+    function depositorPosition(address, address token) external view returns (uint256) {
+        return IERC20(token).balanceOf(address(this));
+    }
+}
