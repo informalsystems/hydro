@@ -30,6 +30,7 @@ library InflowAdapterLib {
 
     error AdapterAlreadyExists(string name);
     error AdapterNotFound(string name);
+    error AdapterPositionNotEmpty(string name);
     error AdapterTrackingMismatch(string fromAdapter, string toAdapter);
 
     // MANAGEMENT
@@ -53,12 +54,15 @@ library InflowAdapterLib {
     }
 
     /// @return removedAddr Passed back to the vault so it can emit AdapterUnregistered.
-    function unregisterAdapter(AdapterStorage storage s, string calldata name)
+    function unregisterAdapter(AdapterStorage storage s, string calldata name, address assetAddr)
         external returns (address removedAddr)
     {
         bytes32 key = keccak256(bytes(name));
         AdapterInfo storage a = s.adapters[key];
         if (a.addr == address(0)) revert AdapterNotFound(name);
+        // Require the position to be zero before removal
+        uint256 position = IAdapter(a.addr).depositorPosition(address(this), assetAddr);
+        if (position != 0) revert AdapterPositionNotEmpty(name);
         removedAddr = a.addr;
         delete s.adapters[key];
         _removeAdapterKey(s, key);

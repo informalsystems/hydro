@@ -515,9 +515,10 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         emit AdapterRegistered(name, addr, automated, tracked);
     }
 
-    /// @notice Whitelisted only. Removes an adapter. Does not withdraw any funds first.
+    /// @notice Whitelisted only. Removes an adapter. Reverts if the adapter still holds
+    /// a non-zero position for this vault - withdraw funds first via withdrawFromAdapter().
     function unregisterAdapter(string calldata name) external onlyWhitelisted {
-        address addr = _adapterStorage.unregisterAdapter(name);
+        address addr = _adapterStorage.unregisterAdapter(name, asset());
         emit AdapterUnregistered(name, addr);
     }
 

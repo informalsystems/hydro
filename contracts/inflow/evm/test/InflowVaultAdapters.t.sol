@@ -93,6 +93,55 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
         vault.unregisterAdapter("a");
     }
 
+    function test_unregister_funded_untracked_adapter_reverts() public {
+        MockAdapterWithAsset a = _newAdapter();
+        a.setDepositCap(address(vault), 50_000e6);
+        _registerAdapter("a", a, false, false); // untracked
+
+        _deposit(user, 50_000e6);
+        vm.prank(admin);
+        vault.depositToAdapter("a", 50_000e6); // adapter holds 50k
+
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(InflowAdapterLib.AdapterPositionNotEmpty.selector, "a"));
+        vault.unregisterAdapter("a");
+
+        // After withdrawing, totalAssets() still matches recoverable assets.
+        vm.prank(admin);
+        vault.withdrawFromAdapter("a", 50_000e6);
+        assertEq(vault.totalAssets(), 50_000e6, "totalAssets matches recoverable assets");
+
+        // Now unregistration succeeds.
+        vm.prank(admin);
+        vault.unregisterAdapter("a");
+        assertEq(vault.getAdapters().length, 0);
+    }
+
+    function test_unregister_funded_tracked_adapter_reverts() public {
+        MockAdapterWithAsset a = _newAdapter();
+        a.setDepositCap(address(vault), 50_000e6);
+        _registerAdapter("a", a, false, true); // tracked
+
+        _deposit(user, 50_000e6);
+        vm.prank(admin);
+        vault.depositToAdapter("a", 50_000e6); // deployedAmount += 50k
+
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(InflowAdapterLib.AdapterPositionNotEmpty.selector, "a"));
+        vault.unregisterAdapter("a");
+
+        // After withdrawing, deployedAmount is decremented and totalAssets() still matches.
+        vm.prank(admin);
+        vault.withdrawFromAdapter("a", 50_000e6);
+        assertEq(vault.deployedAmount(), 0, "deployedAmount zeroed after withdraw");
+        assertEq(vault.totalAssets(), 50_000e6, "totalAssets matches recoverable assets");
+
+        // Now unregistration succeeds.
+        vm.prank(admin);
+        vault.unregisterAdapter("a");
+        assertEq(vault.getAdapters().length, 0);
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // Allocation mode
     // ═══════════════════════════════════════════════════════════════════════
