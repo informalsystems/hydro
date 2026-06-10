@@ -111,14 +111,25 @@ library InflowAdapterLib {
         bytes32 key = keccak256(bytes(name));
         AdapterInfo storage a = s.adapters[key];
         if (a.addr == address(0)) revert AdapterNotFound(name);
-        IERC20(assetAddr).approve(a.addr, amount);
-        IAdapter(a.addr).deposit(amount, assetAddr);
+
+        IERC20 assetERC20 = IERC20(assetAddr);
+        IAdapter adapter = IAdapter(a.addr);
+        uint256 availableForDeposit = adapter.availableForDeposit(address(this), assetAddr);
+        if (availableForDeposit == 0) return deployedAmount;
+
+        uint256 balanceBefore = assetERC20.balanceOf(address(this));
+        // Cap the deposit to the adapter's available capacity.
+        if (availableForDeposit < amount) amount = availableForDeposit;
+        assetERC20.approve(a.addr, amount);
+        adapter.deposit(amount, assetAddr);
         // Revoke any unconsumed approval so it cannot be used in a later transaction.
         // A well-behaved adapter pulls exactly `amount`, but a partial deposit (e.g. a
         // capacity-limited adapter that only absorbs part of the allowance) would leave
         // a residual allowance on the vault that must not persist.
-        IERC20(assetAddr).approve(a.addr, 0);
-        if (a.tracked) deployedAmount += amount;
+        assetERC20.approve(a.addr, 0);
+        uint256 balanceAfter = assetERC20.balanceOf(address(this));
+        uint256 actualDeposit = balanceBefore > balanceAfter ? balanceBefore - balanceAfter : 0;
+        if (a.tracked) deployedAmount += actualDeposit;
         return deployedAmount;
     }
 

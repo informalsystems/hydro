@@ -300,6 +300,7 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
 
     function test_withdraw_from_adapter_tracked_decrements_deployed_amount() public {
         MockAdapterWithAsset a = _newAdapter();
+        a.setDepositCap(address(vault), 50_000e6);
         _registerAdapter("a", a, false, true); // tracked
 
         _deposit(user, 50_000e6);
@@ -315,6 +316,7 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
 
     function test_withdraw_from_adapter_untracked_no_deployed_amount_change() public {
         MockAdapterWithAsset a = _newAdapter();
+        a.setDepositCap(address(vault), 50_000e6);
         _registerAdapter("a", a, false, false); // untracked
 
         _deposit(user, 50_000e6);
@@ -350,6 +352,7 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
 
     function test_deposit_to_adapter_success() public {
         MockAdapterWithAsset a = _newAdapter();
+        a.setDepositCap(address(vault), 50_000e6);
         _registerAdapter("a", a, false, true); // tracked
 
         _deposit(user, 50_000e6);
@@ -394,6 +397,7 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
 
     function test_deposit_to_adapter_works_regardless_of_allocation_mode() public {
         MockAdapterWithAsset a = _newAdapter();
+        a.setDepositCap(address(vault), 50_000e6);
         _registerAdapter("a", a, false, false); // manual (not automated)
 
         _deposit(user, 50_000e6);
@@ -410,6 +414,7 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
     function test_move_adapter_funds_tracked_to_tracked() public {
         MockAdapterWithAsset a1 = _newAdapter();
         MockAdapterWithAsset a2 = _newAdapter();
+        a1.setDepositCap(address(vault), 50_000e6);
         _registerAdapter("a1", a1, false, true);
         _registerAdapter("a2", a2, false, true);
 
@@ -429,6 +434,7 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
     function test_move_adapter_funds_tracked_to_untracked() public {
         MockAdapterWithAsset a1 = _newAdapter();
         MockAdapterWithAsset a2 = _newAdapter();
+        a1.setDepositCap(address(vault), 50_000e6);
         _registerAdapter("a1", a1, false, true);
         _registerAdapter("a2", a2, false, false); // untracked
 
@@ -446,6 +452,7 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
     function test_move_adapter_funds_untracked_to_tracked() public {
         MockAdapterWithAsset a1 = _newAdapter();
         MockAdapterWithAsset a2 = _newAdapter();
+        a1.setDepositCap(address(vault), 50_000e6);
         _registerAdapter("a1", a1, false, false); // untracked
         _registerAdapter("a2", a2, false, true);  // tracked
 
