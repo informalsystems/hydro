@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IAdapter} from "./IAdapter.sol";
 
 /// @title InflowAdapterLib
@@ -126,13 +127,13 @@ library InflowAdapterLib {
         uint256 balanceBefore = assetERC20.balanceOf(address(this));
         // Cap the deposit to the adapter's available capacity.
         if (availableForDeposit < amount) amount = availableForDeposit;
-        assetERC20.approve(a.addr, amount);
+        SafeERC20.forceApprove(assetERC20, a.addr, amount);
         adapter.deposit(amount, assetAddr);
         // Revoke any unconsumed approval so it cannot be used in a later transaction.
         // A well-behaved adapter pulls exactly `amount`, but a partial deposit (e.g. a
         // capacity-limited adapter that only absorbs part of the allowance) would leave
         // a residual allowance on the vault that must not persist.
-        assetERC20.approve(a.addr, 0);
+        SafeERC20.forceApprove(assetERC20, a.addr, 0);
         uint256 balanceAfter = assetERC20.balanceOf(address(this));
         uint256 actualDeposit = balanceBefore > balanceAfter ? balanceBefore - balanceAfter : 0;
         if (a.tracked) deployedAmount += actualDeposit;
@@ -156,9 +157,9 @@ library InflowAdapterLib {
         if (toAdapter.addr == address(0)) revert AdapterNotFound(toName);
 
         _withdrawChecked(fromAdapter, amount, assetAddr);
-        IERC20(assetAddr).approve(toAdapter.addr, amount);
+        SafeERC20.forceApprove(IERC20(assetAddr), toAdapter.addr, amount);
         IAdapter(toAdapter.addr).deposit(amount, assetAddr);
-        IERC20(assetAddr).approve(toAdapter.addr, 0); // revoke any unconsumed approval
+        SafeERC20.forceApprove(IERC20(assetAddr), toAdapter.addr, 0); // revoke any unconsumed approval
 
         if (fromAdapter.tracked && !toAdapter.tracked) {
             deployedAmount = deployedAmount > amount ? deployedAmount - amount : 0;
@@ -193,9 +194,9 @@ library InflowAdapterLib {
             revert AdapterTrackingMismatch(fromName, toName);
 
         _withdrawChecked(fromAdapter, amount, tokenAddr);
-        IERC20(tokenAddr).approve(toAdapter.addr, amount);
+        SafeERC20.forceApprove(IERC20(tokenAddr), toAdapter.addr, amount);
         IAdapter(toAdapter.addr).deposit(amount, tokenAddr);
-        IERC20(tokenAddr).approve(toAdapter.addr, 0); // revoke any unconsumed approval
+        SafeERC20.forceApprove(IERC20(tokenAddr), toAdapter.addr, 0); // revoke any unconsumed approval
         // deployedAmount is intentionally not modified
     }
 
@@ -225,9 +226,9 @@ library InflowAdapterLib {
         uint256 trackedTotal;
         for (uint256 i = 0; i < keys.length; i++) {
             AdapterInfo storage a = s.adapters[keys[i]];
-            IERC20(assetAddr).approve(a.addr, amounts[i]);
+            SafeERC20.forceApprove(IERC20(assetAddr), a.addr, amounts[i]);
             IAdapter(a.addr).deposit(amounts[i], assetAddr);
-            IERC20(assetAddr).approve(a.addr, 0); // revoke any unconsumed approval
+            SafeERC20.forceApprove(IERC20(assetAddr), a.addr, 0); // revoke any unconsumed approval
             if (a.tracked) trackedTotal += amounts[i];
         }
         return deployedAmount + trackedTotal;
