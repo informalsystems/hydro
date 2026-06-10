@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {InflowVaultBase, InflowVault, MockAdapterWithAsset, MockERC20} from "./InflowVaultBase.t.sol";
-import {RevertingAvailabilityAdapter} from "./mocks/Mocks.sol";
+import {RevertingAvailabilityAdapter, ShortfallAdapter} from "./mocks/Mocks.sol";
 import {InflowAdapterLib} from "../contracts/InflowAdapterLib.sol";
 
 /// @notice Tests for adapter registration, allocation, and manual operations.
@@ -430,6 +430,39 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
         vm.prank(admin);
         vm.expectRevert(abi.encodeWithSelector(InflowAdapterLib.AdapterNotFound.selector, "ghost"));
         vault.withdrawFromAdapter("ghost", 1_000e6);
+    }
+
+    function test_withdraw_from_adapter_shortfall_reverts() public {
+        uint256 shortfall = 1;
+        ShortfallAdapter a = new ShortfallAdapter(address(asset), shortfall);
+        vm.prank(admin);
+        vault.registerAdapter("a", address(a), false, true);
+
+        _deposit(user, 50_000e6);
+        asset.mint(address(a), 50_000e6); // seed adapter directly
+
+        vm.prank(admin);
+        vm.expectRevert(
+            abi.encodeWithSelector(InflowAdapterLib.AdapterWithdrawShortfall.selector, "a", 50_000e6, 50_000e6 - shortfall)
+        );
+        vault.withdrawFromAdapter("a", 50_000e6);
+    }
+
+    function test_move_adapter_funds_shortfall_reverts() public {
+        uint256 shortfall = 1;
+        ShortfallAdapter a1 = new ShortfallAdapter(address(asset), shortfall);
+        MockAdapterWithAsset a2 = _newAdapter();
+        vm.prank(admin);
+        vault.registerAdapter("a1", address(a1), false, false);
+        _registerAdapter("a2", a2, false, false);
+
+        asset.mint(address(a1), 50_000e6); // seed adapter directly
+
+        vm.prank(admin);
+        vm.expectRevert(
+            abi.encodeWithSelector(InflowAdapterLib.AdapterWithdrawShortfall.selector, "a1", 50_000e6, 50_000e6 - shortfall)
+        );
+        vault.moveAdapterFunds("a1", "a2", 50_000e6);
     }
 
     // ═══════════════════════════════════════════════════════════════════════

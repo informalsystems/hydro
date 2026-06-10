@@ -87,6 +87,43 @@ contract MockAdapterWithAsset {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ShortfallAdapter
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// @dev Adapter that returns normally on withdraw() but delivers fewer tokens than
+/// requested (simulates fee deductions or rounding without an explicit revert).
+contract ShortfallAdapter {
+    address public immutable ASSET;
+    uint256 public shortfall; // tokens withheld on each withdraw
+
+    constructor(address asset_, uint256 shortfall_) {
+        ASSET = asset_;
+        shortfall = shortfall_;
+    }
+
+    function deposit(uint256 amount, address token) external {
+        SafeERC20.safeTransferFrom(IERC20(token), msg.sender, address(this), amount);
+    }
+
+    function withdraw(uint256 amount, address token) external {
+        uint256 actual = amount > shortfall ? amount - shortfall : 0;
+        SafeERC20.safeTransfer(IERC20(token), msg.sender, actual);
+    }
+
+    function availableForDeposit(address, address) external pure returns (uint256) {
+        return type(uint256).max;
+    }
+
+    function availableForWithdraw(address, address token) external view returns (uint256) {
+        return IERC20(token).balanceOf(address(this));
+    }
+
+    function depositorPosition(address, address token) external view returns (uint256) {
+        return IERC20(token).balanceOf(address(this));
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // RevertingAvailabilityAdapter
 // ─────────────────────────────────────────────────────────────────────────────
 

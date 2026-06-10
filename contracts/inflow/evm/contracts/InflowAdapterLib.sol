@@ -32,6 +32,7 @@ library InflowAdapterLib {
     error AdapterNotFound(string name);
     error AdapterPositionNotEmpty(string name);
     error AdapterTrackingMismatch(string fromAdapter, string toAdapter);
+    error AdapterWithdrawShortfall(string name, uint256 requested, uint256 received);
 
     // MANAGEMENT
 
@@ -98,7 +99,7 @@ library InflowAdapterLib {
         bytes32 key = keccak256(bytes(name));
         AdapterInfo storage a = s.adapters[key];
         if (a.addr == address(0)) revert AdapterNotFound(name);
-        IAdapter(a.addr).withdraw(amount, assetAddr);
+        _withdrawChecked(a, amount, assetAddr);
         if (a.tracked) {
             deployedAmount = deployedAmount > amount ? deployedAmount - amount : 0;
         }
@@ -152,7 +153,7 @@ library InflowAdapterLib {
         if (fromAdapter.addr == address(0)) revert AdapterNotFound(fromName);
         if (toAdapter.addr == address(0)) revert AdapterNotFound(toName);
 
-        IAdapter(fromAdapter.addr).withdraw(amount, assetAddr);
+        _withdrawChecked(fromAdapter, amount, assetAddr);
         IERC20(assetAddr).approve(toAdapter.addr, amount);
         IAdapter(toAdapter.addr).deposit(amount, assetAddr);
         IERC20(assetAddr).approve(toAdapter.addr, 0); // revoke any unconsumed approval
@@ -188,7 +189,7 @@ library InflowAdapterLib {
         if (fromAdapter.tracked != toAdapter.tracked)
             revert AdapterTrackingMismatch(fromName, toName);
 
-        IAdapter(fromAdapter.addr).withdraw(amount, tokenAddr);
+        _withdrawChecked(fromAdapter, amount, tokenAddr);
         IERC20(tokenAddr).approve(toAdapter.addr, amount);
         IAdapter(toAdapter.addr).deposit(amount, tokenAddr);
         IERC20(tokenAddr).approve(toAdapter.addr, 0); // revoke any unconsumed approval
@@ -242,7 +243,7 @@ library InflowAdapterLib {
         uint256 trackedAmount;
         for (uint256 i = 0; i < keys.length; i++) {
             AdapterInfo storage a = s.adapters[keys[i]];
-            IAdapter(a.addr).withdraw(amounts[i], assetAddr);
+            _withdrawChecked(a, amounts[i], assetAddr);
             if (a.tracked) trackedAmount += amounts[i];
         }
         return deployedAmount > trackedAmount ? deployedAmount - trackedAmount : 0;
@@ -326,6 +327,15 @@ library InflowAdapterLib {
             keys[i] = tempKeys[i];
             amounts[i] = tempAmounts[i];
         }
+    }
+
+    /// @dev Calls adapter.withdraw() and verifies the vault actually received at least `amount` of tokens.
+    /// Using >= rather than == so adapters that legitimately deliver slightly more (e.g. accrued interest) are not rejected.
+    function _withdrawChecked(AdapterInfo storage a, uint256 amount, address tokenAddr) private {
+        uint256 before = IERC20(tokenAddr).balanceOf(address(this));
+        IAdapter(a.addr).withdraw(amount, tokenAddr);
+        uint256 received = IERC20(tokenAddr).balanceOf(address(this)) - before;
+        if (received < amount) revert AdapterWithdrawShortfall(a.name, amount, received);
     }
 
     function _removeAdapterKey(AdapterStorage storage s, bytes32 key) internal {
