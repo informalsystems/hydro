@@ -646,15 +646,12 @@ checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 name = "control-center"
 version = "3.6.11"
 dependencies = [
- "cosmos-sdk-proto 0.20.0",
  "cosmwasm-schema 2.2.2",
  "cosmwasm-std 2.2.2",
  "cw-storage-plus 2.0.0",
  "cw-utils 2.0.0",
  "cw2 2.0.0",
  "interface",
- "neutron-sdk",
- "prost 0.12.6",
  "schemars",
  "serde",
  "serde-json-wasm 1.0.1",
@@ -4108,6 +4105,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "shares-converter"
+version = "3.6.11"
+dependencies = [
+ "cosmwasm-schema 2.2.2",
+ "cosmwasm-std 2.2.2",
+ "cw-storage-plus 2.0.0",
+ "cw-utils 2.0.0",
+ "cw2 2.0.0",
+ "schemars",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4715,6 +4726,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "token-bindings"
+version = "0.53.3"
+source = "git+https://github.com/cosmos/tokenfactory#c704d14ae3b16d550a923b22236cfe21e7b14fa7"
+dependencies = [
+ "cosmwasm-schema 2.2.2",
+ "cosmwasm-std 2.2.2",
+ "schemars",
+ "serde",
+]
+
+[[package]]
 name = "tokio"
 version = "1.48.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5093,6 +5115,23 @@ dependencies = [
  "serde",
  "serde-json-wasm 1.0.1",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "vault-cosmoshub"
+version = "3.6.11"
+dependencies = [
+ "cosmwasm-schema 2.2.2",
+ "cosmwasm-std 2.2.2",
+ "cw-storage-plus 2.0.0",
+ "cw-utils 2.0.0",
+ "cw2 2.0.0",
+ "interface",
+ "schemars",
+ "serde",
+ "serde-json-wasm 1.0.1",
+ "thiserror 1.0.69",
+ "token-bindings",
 ]
 
 [[package]]

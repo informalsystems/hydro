@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "type": "object",
+  "required": [
+    "admin",
+    "pairs"
+  ],
+  "properties": {
+    "admin": {
+      "type": "string"
+    },
+    "pairs": {
+      "description": "Optional initial conversion pairs to register at instantiation.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ConversionPair"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "ConversionPair": {
+      "type": "object",
+      "required": [
+        "cosmos_hub_shares_denom",
+        "neutron_shares_denom"
+      ],
+      "properties": {
+        "cosmos_hub_shares_denom": {
+          "type": "string"
+        },
+        "neutron_shares_denom": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

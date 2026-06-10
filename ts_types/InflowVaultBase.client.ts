@@ -334,6 +334,17 @@ export interface InflowVaultBaseInterface extends InflowVaultBaseReadOnlyInterfa
     amount: Uint128;
     recipient: string;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  pause: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  unpause: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  mintForMigration: ({
+    conversionContract,
+    deployedAmount,
+    sharesToMint
+  }: {
+    conversionContract: string;
+    deployedAmount?: Uint128;
+    sharesToMint: Uint128;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements InflowVaultBaseInterface {
   client: SigningCosmWasmClient;
@@ -363,6 +374,9 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
     this.depositToAdapter = this.depositToAdapter.bind(this);
     this.moveAdapterFunds = this.moveAdapterFunds.bind(this);
     this.mintFeeShares = this.mintFeeShares.bind(this);
+    this.pause = this.pause.bind(this);
+    this.unpause = this.unpause.bind(this);
+    this.mintForMigration = this.mintForMigration.bind(this);
   }
   deposit = async ({
     onBehalfOf
@@ -597,6 +611,33 @@ export class InflowVaultBaseClient extends InflowVaultBaseQueryClient implements
       mint_fee_shares: {
         amount,
         recipient
+      }
+    }, fee, memo, _funds);
+  };
+  pause = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      pause: {}
+    }, fee, memo, _funds);
+  };
+  unpause = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      unpause: {}
+    }, fee, memo, _funds);
+  };
+  mintForMigration = async ({
+    conversionContract,
+    deployedAmount,
+    sharesToMint
+  }: {
+    conversionContract: string;
+    deployedAmount?: Uint128;
+    sharesToMint: Uint128;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      mint_for_migration: {
+        conversion_contract: conversionContract,
+        deployed_amount: deployedAmount,
+        shares_to_mint: sharesToMint
       }
     }, fee, memo, _funds);
   };

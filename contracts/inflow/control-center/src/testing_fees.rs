@@ -12,7 +12,6 @@ use interface::inflow_control_center::{
 use interface::inflow_vault::{
     PoolInfoResponse as VaultPoolInfoResponse, QueryMsg as VaultQueryMsg,
 };
-use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 use crate::{
     contract::{execute, instantiate, query},
@@ -29,7 +28,7 @@ const DEFAULT_DEPOSIT_CAP: Uint128 = Uint128::new(10000000);
 
 type WasmQueryFunc = Box<dyn Fn(&WasmQuery) -> QuerierResult>;
 
-pub fn mock_dependencies() -> OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery> {
+pub fn mock_dependencies() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
     OwnedDeps {
         storage: MockStorage::default(),
         api: MockApi::default(),
@@ -64,7 +63,7 @@ fn get_instantiate_msg(
 
 /// Sets up a mock querier that handles subvault PoolInfo queries
 fn setup_mock_querier_with_subvaults(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     subvault_shares: Vec<(String, Uint128)>,
 ) {
     let handlers: HashMap<String, WasmQueryFunc> = subvault_shares
@@ -859,11 +858,11 @@ fn test_high_water_mark_consecutive_accruals() {
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Helper to update mock and accrue
-    let run_accrual = |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    let run_accrual = |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
                        env: &Env,
                        shares: u128,
                        balance: u128|
-     -> Response<NeutronMsg> {
+     -> Response {
         let subvault_addr = deps.api.addr_make(SUBVAULT1).to_string();
         deps.querier.update_wasm({
             let addr = subvault_addr.clone();
@@ -947,11 +946,11 @@ fn test_high_water_mark_recovery_from_loss() {
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Helper function
-    let run_accrual = |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    let run_accrual = |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
                        env: &Env,
                        shares: u128,
                        balance: u128|
-     -> Response<NeutronMsg> {
+     -> Response {
         let subvault_addr = deps.api.addr_make(SUBVAULT1).to_string();
         deps.querier.update_wasm({
             let addr = subvault_addr.clone();
@@ -1068,9 +1067,7 @@ fn test_dust_yield_does_not_update_high_water_mark() {
 
     // Helper to set up mock querier
     let setup_vault_state =
-        |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
-         shares: u128,
-         balance: u128| {
+        |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>, shares: u128, balance: u128| {
             let subvault_addr = deps.api.addr_make(SUBVAULT1).to_string();
             deps.querier.update_wasm({
                 let addr = subvault_addr.clone();
@@ -1208,9 +1205,7 @@ fn test_reenable_fees_resets_high_water_mark() {
 
     // Helper to set up mock querier with specific shares and balance
     let setup_vault_state =
-        |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
-         shares: u128,
-         balance: u128| {
+        |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>, shares: u128, balance: u128| {
             let subvault_addr = deps.api.addr_make(SUBVAULT1).to_string();
             deps.querier.update_wasm({
                 let addr = subvault_addr.clone();

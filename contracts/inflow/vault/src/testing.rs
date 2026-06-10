@@ -3270,3 +3270,232 @@ fn deposit_from_deployment_test() {
     );
     assert!(balance_query.is_ok());
 }
+
+#[test]
+fn test_pause_blocks_deposit() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    env.contract.address = vault_contract_addr;
+
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr,
+        control_center_contract_addr,
+        token_info_provider_contract_addr,
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(deps.as_mut(), env.clone(), info, ExecuteMsg::Pause {}).unwrap();
+
+    let info = get_message_info(
+        &deps.api,
+        USER1,
+        &[Coin {
+            denom: DEPOSIT_DENOM.to_string(),
+            amount: Uint128::new(1000),
+        }],
+    );
+    let err = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::Deposit { on_behalf_of: None },
+    )
+    .unwrap_err();
+    assert!(matches!(err, ContractError::ContractPaused));
+}
+
+#[test]
+fn test_pause_blocks_withdraw() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    env.contract.address = vault_contract_addr.clone();
+
+    let vault_shares_denom_str = format!("factory/{vault_contract_addr}/hydro_inflow_udatom");
+
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr,
+        control_center_contract_addr,
+        token_info_provider_contract_addr,
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+    set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
+
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(deps.as_mut(), env.clone(), info, ExecuteMsg::Pause {}).unwrap();
+
+    let info = get_message_info(
+        &deps.api,
+        USER1,
+        &[Coin {
+            denom: vault_shares_denom_str,
+            amount: Uint128::new(1000),
+        }],
+    );
+    let err = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::Withdraw { on_behalf_of: None },
+    )
+    .unwrap_err();
+    assert!(matches!(err, ContractError::ContractPaused));
+}
+
+#[test]
+fn test_unpause_restores_deposit() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    env.contract.address = vault_contract_addr.clone();
+
+    let vault_shares_denom_str = format!("factory/{vault_contract_addr}/hydro_inflow_udatom");
+
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+    set_vault_shares_denom(&mut deps, vault_shares_denom_str.clone());
+
+    let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_control_center_mock(
+            control_center_contract_addr.clone(),
+            DEFAULT_DEPOSIT_CAP,
+            Uint128::zero(),
+            Uint128::zero(),
+        ),
+        setup_token_info_provider_mock(
+            token_info_provider_contract_addr,
+            DEPOSIT_DENOM.to_string(),
+            Decimal::one(),
+        ),
+    ]));
+    let querier_for_deps = wasm_querier.clone();
+    deps.querier
+        .update_wasm(move |q| querier_for_deps.handler(q));
+
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(deps.as_mut(), env.clone(), info, ExecuteMsg::Pause {}).unwrap();
+
+    let info = get_message_info(
+        &deps.api,
+        USER1,
+        &[Coin {
+            denom: DEPOSIT_DENOM.to_string(),
+            amount: Uint128::new(1000),
+        }],
+    );
+    let err = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::Deposit { on_behalf_of: None },
+    )
+    .unwrap_err();
+    assert!(matches!(err, ContractError::ContractPaused));
+
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(deps.as_mut(), env.clone(), info, ExecuteMsg::Unpause {}).unwrap();
+
+    let deposit_amount = Uint128::new(1000);
+    execute_deposit(
+        &mut deps,
+        &env,
+        &wasm_querier,
+        &vault_contract_addr,
+        USER1,
+        &vault_shares_denom_str,
+        deposit_amount,
+        deposit_amount,
+        deposit_amount,
+        deposit_amount,
+        deposit_amount.u128(),
+        0,
+        deposit_amount.u128(),
+    );
+}
+
+#[test]
+fn test_pause_unauthorized() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    env.contract.address = vault_contract_addr;
+
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr,
+        control_center_contract_addr,
+        token_info_provider_contract_addr,
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let info = get_message_info(&deps.api, USER1, &[]);
+    let err = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::Pause {}).unwrap_err();
+    assert!(matches!(err, ContractError::Unauthorized));
+}
+
+#[test]
+fn test_fulfill_and_claim_allowed_while_paused() {
+    let (mut deps, mut env) = (mock_dependencies(), mock_env());
+    let vault_contract_addr = deps.api.addr_make(INFLOW);
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    env.contract.address = vault_contract_addr;
+
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr,
+        token_info_provider_contract_addr,
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(deps.as_mut(), env.clone(), info, ExecuteMsg::Pause {}).unwrap();
+
+    // FulfillPendingWithdrawals is not blocked by pause (empty queue → no-op, still Ok)
+    let info = get_message_info(&deps.api, USER1, &[]);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::FulfillPendingWithdrawals { limit: 100 },
+    );
+    assert!(res.is_ok());
+
+    // ClaimUnbondedWithdrawals is not blocked by pause; it returns a domain error
+    // ("no withdrawal requests have been funded yet"), not ContractPaused
+    let info = get_message_info(&deps.api, USER1, &[]);
+    let err = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::ClaimUnbondedWithdrawals {
+            withdrawal_ids: vec![],
+        },
+    )
+    .unwrap_err();
+    assert!(!matches!(err, ContractError::ContractPaused));
+}

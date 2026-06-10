@@ -41,6 +41,9 @@ pub const PAYOUTS_HISTORY: Map<(Addr, u64), PayoutEntry> = Map::new("payouts_his
 /// ADAPTERS: key(adapter_name) -> AdapterInfo
 pub const ADAPTERS: Map<String, AdapterInfo> = Map::new("adapters");
 
+/// When true, Deposit, Withdraw, and CancelWithdrawal are rejected.
+pub const PAUSED: Item<bool> = Item::new("paused");
+
 pub fn load_config(storage: &dyn Storage) -> StdResult<Config> {
     CONFIG.load(storage)
 }

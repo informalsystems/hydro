@@ -39,7 +39,7 @@ use crate::{
     msg::{DenomMetadata, InstantiateMsg, ReplyPayload},
     state::{
         get_next_payout_id, get_next_withdrawal_id, load_config, load_withdrawal_queue_info,
-        ADAPTERS, CONFIG, LAST_FUNDED_WITHDRAWAL_ID, NEXT_PAYOUT_ID, NEXT_WITHDRAWAL_ID,
+        ADAPTERS, CONFIG, LAST_FUNDED_WITHDRAWAL_ID, NEXT_PAYOUT_ID, NEXT_WITHDRAWAL_ID, PAUSED,
         PAYOUTS_HISTORY, USER_WITHDRAWAL_REQUESTS, WHITELIST, WITHDRAWAL_QUEUE_INFO,
         WITHDRAWAL_REQUESTS,
     },
@@ -223,6 +223,9 @@ pub fn execute(
         ExecuteMsg::MintFeeShares { amount, recipient } => {
             mint_fee_shares(deps, env, info, &config, amount, recipient)
         }
+        ExecuteMsg::MintForMigration { .. } => Err(ContractError::Unauthorized),
+        ExecuteMsg::Pause {} => pause(deps, info),
+        ExecuteMsg::Unpause {} => unpause(deps, info),
     }
 }
 
@@ -234,6 +237,7 @@ fn deposit(
     config: &Config,
     on_behalf_of: Option<String>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
+    verify_not_paused(deps.storage)?;
     let deposit_amount = cw_utils::must_pay(&info, &config.deposit_denom)?;
     let recipient = match on_behalf_of {
         Some(addr) => deps.api.addr_validate(&addr)?,
@@ -363,6 +367,7 @@ fn withdraw(
     config: &Config,
     on_behalf_of: Option<String>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
+    verify_not_paused(deps.storage)?;
     let vault_shares_denom = config.vault_shares_denom.clone();
     let vault_shares_sent = cw_utils::must_pay(&info, &vault_shares_denom)?;
     let withdrawer = match on_behalf_of {
@@ -557,6 +562,7 @@ fn cancel_withdrawal(
     config: Config,
     withdrawal_ids: Vec<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
+    verify_not_paused(deps.storage)?;
     let deposit_cap = get_deposit_cap(&deps.as_ref(), &config.control_center_contract)?;
     let pool_info = get_control_center_pool_info(&deps.as_ref(), &config.control_center_contract)?;
     let total_pool_value = pool_info.total_pool_value;
@@ -1092,6 +1098,31 @@ fn validate_address_is_whitelisted(
     }
 
     Ok(())
+}
+
+fn verify_not_paused(storage: &dyn Storage) -> Result<(), ContractError> {
+    if PAUSED.may_load(storage)?.unwrap_or(false) {
+        return Err(ContractError::ContractPaused);
+    }
+    Ok(())
+}
+
+fn pause(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    validate_address_is_whitelisted(&deps, info.sender)?;
+    PAUSED.save(deps.storage, &true)?;
+    Ok(Response::new().add_attribute("action", "pause"))
+}
+
+fn unpause(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    validate_address_is_whitelisted(&deps, info.sender)?;
+    PAUSED.save(deps.storage, &false)?;
+    Ok(Response::new().add_attribute("action", "unpause"))
 }
 
 /// Given the `deposit_amount_base_tokens`, this function will calculate how many vault shares tokens should be minted in return.

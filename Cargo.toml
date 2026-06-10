@@ -10,6 +10,8 @@ members = [
     "contracts/marketplace",
     "contracts/gatekeeper",
     "contracts/inflow/vault",
+    "contracts/inflow/vault-cosmoshub",
+    "contracts/inflow/shares-converter",
     "contracts/inflow/control-center",
     "contracts/inflow/mars-adapter",
     "contracts/inflow/ibc-adapter",
@@ -57,6 +59,7 @@ prost = "0.12.6"
 prost-types = "0.12.6"
 cw-orch = "0.25.0"
 neutron-sdk = "0.11.0"
+token-bindings = { git = "https://github.com/cosmos/tokenfactory" }
 neutron-std = "4.2.2-rc"
 bech32 = "0.11.0"
 sha2 = { version = "0.10.8", default-features = false }

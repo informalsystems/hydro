@@ -14,7 +14,6 @@ use interface::{
         QueryMsg as VaultQueryMsg,
     },
 };
-use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 use crate::{
     error::{new_generic_error, ContractError},
@@ -32,11 +31,11 @@ pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     CONFIG.save(
@@ -129,11 +128,11 @@ pub fn instantiate(
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::SubmitDeployedAmount { amount } => {
             submit_deployed_amount(deps, env, info, amount)
@@ -157,11 +156,11 @@ pub fn execute(
 }
 
 fn submit_deployed_amount(
-    mut deps: DepsMut<NeutronQuery>,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     amount: Uint128,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
 
     // Try to accrue fees before updating the deployed amount.
@@ -197,12 +196,12 @@ fn submit_deployed_amount(
 }
 
 fn update_deployed_amount(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     amount: Uint128,
     direction: DeploymentDirection,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     // Only registered sub-vaults can execute this function.
     // This happens when a whitelisted address:
     // - withdraws funds for deployment
@@ -235,11 +234,11 @@ fn update_deployed_amount(
 
 // Adds a new account address to the whitelist.
 fn add_to_whitelist(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     address: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
     let whitelist_address = deps.api.addr_validate(&address)?;
 
@@ -264,11 +263,11 @@ fn add_to_whitelist(
 
 // Removes an account address from the whitelist.
 fn remove_from_whitelist(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     address: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
     let whitelist_address = deps.api.addr_validate(&address)?;
 
@@ -302,10 +301,10 @@ fn remove_from_whitelist(
 }
 
 fn update_config(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     info: MessageInfo,
     config_update: UpdateConfigData,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
 
     let mut config = load_config(deps.storage)?;
@@ -326,10 +325,10 @@ fn update_config(
 }
 
 fn add_subvault(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     info: MessageInfo,
     address: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
 
     let subvault_address = deps.api.addr_validate(&address)?;
@@ -349,10 +348,10 @@ fn add_subvault(
 }
 
 fn remove_subvault(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     info: MessageInfo,
     address: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
 
     let subvault_address = deps.api.addr_validate(&address)?;
@@ -399,7 +398,7 @@ enum AccrueFeesResult {
 /// Internal helper to accrue fees. Returns the result without building a Response,
 /// allowing callers to handle the result appropriately.
 fn try_accrue_fees_internal(
-    deps: &mut DepsMut<NeutronQuery>,
+    deps: &mut DepsMut,
     env: &Env,
 ) -> Result<AccrueFeesResult, ContractError> {
     let fee_config = load_fee_config(deps.storage)?;
@@ -546,10 +545,7 @@ fn try_accrue_fees_internal(
 /// Accrues performance fees based on yield since last accrual.
 /// This is a permissionless operation - anyone can call it.
 /// Fees are only accrued if fee_rate > 0.
-fn accrue_fees(
-    mut deps: DepsMut<NeutronQuery>,
-    env: Env,
-) -> Result<Response<NeutronMsg>, ContractError> {
+fn accrue_fees(mut deps: DepsMut, env: Env) -> Result<Response, ContractError> {
     match try_accrue_fees_internal(&mut deps, &env)? {
         AccrueFeesResult::Disabled {
             current_share_price,
@@ -612,12 +608,12 @@ fn accrue_fees(
 /// mark is reset to the current share price to avoid charging fees on yield
 /// that occurred while fees were disabled.
 fn update_fee_config(
-    deps: DepsMut<NeutronQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     fee_rate: Option<Decimal>,
     fee_recipient: Option<String>,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
 
     let mut fee_config = load_fee_config(deps.storage)?;
@@ -669,10 +665,7 @@ fn update_fee_config(
         .add_attribute("fee_enabled", fee_enabled.to_string()))
 }
 
-fn validate_address_is_whitelisted(
-    deps: &DepsMut<NeutronQuery>,
-    address: Addr,
-) -> Result<(), ContractError> {
+fn validate_address_is_whitelisted(deps: &DepsMut, address: Addr) -> Result<(), ContractError> {
     match WHITELIST.may_load(deps.storage, address)? {
         Some(_) => Ok(()),
         None => Err(ContractError::Unauthorized),
@@ -680,7 +673,7 @@ fn validate_address_is_whitelisted(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_json_binary(&query_config(&deps)?),
         QueryMsg::PoolInfo {} => to_json_binary(&query_pool_info(&deps, &env)?),
@@ -692,13 +685,13 @@ pub fn query(deps: Deps<NeutronQuery>, env: Env, msg: QueryMsg) -> StdResult<Bin
     }
 }
 
-fn query_config(deps: &Deps<NeutronQuery>) -> StdResult<ConfigResponse> {
+fn query_config(deps: &Deps) -> StdResult<ConfigResponse> {
     Ok(ConfigResponse {
         config: load_config(deps.storage)?,
     })
 }
 
-pub fn query_pool_info(deps: &Deps<NeutronQuery>, _env: &Env) -> StdResult<PoolInfoResponse> {
+pub fn query_pool_info(deps: &Deps, _env: &Env) -> StdResult<PoolInfoResponse> {
     let sub_vaults = SUBVAULTS
         .keys(deps.storage, None, None, Order::Ascending)
         .filter_map(|v| v.ok())
@@ -737,11 +730,11 @@ pub fn query_pool_info(deps: &Deps<NeutronQuery>, _env: &Env) -> StdResult<PoolI
     })
 }
 
-fn query_deployed_amount(deps: &Deps<NeutronQuery>) -> StdResult<Uint128> {
+fn query_deployed_amount(deps: &Deps) -> StdResult<Uint128> {
     DEPLOYED_AMOUNT.load(deps.storage)
 }
 
-fn query_whitelist(deps: &Deps<NeutronQuery>) -> StdResult<WhitelistResponse> {
+fn query_whitelist(deps: &Deps) -> StdResult<WhitelistResponse> {
     Ok(WhitelistResponse {
         whitelist: WHITELIST
             .keys(deps.storage, None, None, Order::Ascending)
@@ -750,7 +743,7 @@ fn query_whitelist(deps: &Deps<NeutronQuery>) -> StdResult<WhitelistResponse> {
     })
 }
 
-fn query_subvaults(deps: &Deps<NeutronQuery>) -> StdResult<SubvaultsResponse> {
+fn query_subvaults(deps: &Deps) -> StdResult<SubvaultsResponse> {
     Ok(SubvaultsResponse {
         subvaults: SUBVAULTS
             .keys(deps.storage, None, None, Order::Ascending)
@@ -759,7 +752,7 @@ fn query_subvaults(deps: &Deps<NeutronQuery>) -> StdResult<SubvaultsResponse> {
     })
 }
 
-fn query_fee_config(deps: &Deps<NeutronQuery>) -> StdResult<FeeConfigResponse> {
+fn query_fee_config(deps: &Deps) -> StdResult<FeeConfigResponse> {
     let fee_config = load_fee_config(deps.storage)?;
     Ok(FeeConfigResponse {
         fee_rate: fee_config.fee_rate,
@@ -767,10 +760,7 @@ fn query_fee_config(deps: &Deps<NeutronQuery>) -> StdResult<FeeConfigResponse> {
     })
 }
 
-fn query_fee_accrual_info(
-    deps: &Deps<NeutronQuery>,
-    env: &Env,
-) -> StdResult<FeeAccrualInfoResponse> {
+fn query_fee_accrual_info(deps: &Deps, env: &Env) -> StdResult<FeeAccrualInfoResponse> {
     let fee_config = load_fee_config(deps.storage)?;
     let high_water_mark_price = HIGH_WATER_MARK_PRICE.load(deps.storage)?;
     let pool_info = query_pool_info(deps, env)?;
