@@ -30,6 +30,7 @@ library InflowAdapterLib {
 
     error AdapterAlreadyExists(string name);
     error AdapterNotFound(string name);
+    error SameAdapter(string name);
     error AdapterPositionNotEmpty(string name);
     error AdapterTrackingMismatch(string fromAdapter, string toAdapter);
     error AdapterWithdrawShortfall(string name, uint256 requested, uint256 received);
@@ -148,6 +149,7 @@ library InflowAdapterLib {
     ) external returns (uint256) {
         bytes32 fromKey = keccak256(bytes(fromName));
         bytes32 toKey = keccak256(bytes(toName));
+        if (fromKey == toKey) revert SameAdapter(fromName);
         AdapterInfo storage fromAdapter = s.adapters[fromKey];
         AdapterInfo storage toAdapter = s.adapters[toKey];
         if (fromAdapter.addr == address(0)) revert AdapterNotFound(fromName);
@@ -179,6 +181,7 @@ library InflowAdapterLib {
     ) external {
         bytes32 fromKey = keccak256(bytes(fromName));
         bytes32 toKey   = keccak256(bytes(toName));
+        if (fromKey == toKey) revert SameAdapter(fromName);
         AdapterInfo storage fromAdapter = s.adapters[fromKey];
         AdapterInfo storage toAdapter   = s.adapters[toKey];
         if (fromAdapter.addr == address(0)) revert AdapterNotFound(fromName);
