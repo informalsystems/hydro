@@ -37,6 +37,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     error NoSharesIssued();
     error ZeroAmount();
     error ZeroAddress();
+    error ZeroShares();
     error DepositCapReached();
     error NotWhitelisted();
     error AlreadyWhitelisted();
@@ -495,9 +496,11 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         // Deposit cap check: cancellation restores assets to totalAssets().
         if (totalAssets() > depositCap) revert DepositCapReached();
 
+        // Mint minimum between initially burned and recalculated shares to address the share price variation in both directions.
         uint256 sharesToMint = totalSharesRecalculated < totalSharesBurned ? totalSharesRecalculated : totalSharesBurned;
-        _mint(msg.sender, sharesToMint);
+        if (sharesToMint == 0) revert ZeroShares();
 
+        _mint(msg.sender, sharesToMint);
         emit WithdrawalCancelled(msg.sender, cancelableIds, totalSharesBurned, sharesToMint);
     }
 
