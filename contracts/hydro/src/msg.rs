@@ -69,6 +69,13 @@ pub enum TokenInfoProviderInstantiateMsg {
         // Needed for the Hydro contract to be able to validate LSM IBC token denoms on its own
         hub_transfer_channel_id: String,
     },
+    #[serde(rename = "lsm_hub")]
+    LSMHub {
+        code_id: u64,
+        msg: Binary,
+        label: String,
+        admin: Option<String>,
+    },
     Base {
         token_group_id: String,
         denom: String,
@@ -101,6 +108,15 @@ impl Display for TokenInfoProviderInstantiateMsg {
             } => write!(
                 f,
                 "LSM(code_id: {code_id}, msg: {msg}, label: {label}, admin: {admin:?}, hub_transfer_channel_id: {hub_transfer_channel_id:?})"
+            ),
+            TokenInfoProviderInstantiateMsg::LSMHub {
+                code_id,
+                msg,
+                label,
+                admin,
+            } => write!(
+                f,
+                "LSMHub(code_id: {code_id}, msg: {msg}, label: {label}, admin: {admin:?})"
             ),
             TokenInfoProviderInstantiateMsg::Base {
                 token_group_id,
