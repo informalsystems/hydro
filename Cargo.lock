@@ -2648,6 +2648,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
 
 [[package]]
+name = "lsm-hub-token-info-provider"
+version = "3.6.11"
+dependencies = [
+ "bech32 0.11.0",
+ "cosmos-sdk-proto 0.20.0",
+ "cosmwasm-schema 2.2.2",
+ "cosmwasm-std 2.2.2",
+ "cw-storage-plus 2.0.0",
+ "cw-utils 2.0.0",
+ "cw2 2.0.0",
+ "interface",
+ "prost 0.12.6",
+ "schemars",
+ "serde",
+ "serde-json-wasm 1.0.1",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "lsm-token-info-provider"
 version = "3.6.11"
 dependencies = [

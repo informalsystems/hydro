@@ -15,7 +15,7 @@ use interface::{
 use crate::{
     contract::compute_current_round_id,
     error::{new_generic_error, ContractError},
-    lsm_integration::resolve_validator_from_denom,
+    lsm_integration::{extract_validator_from_lsm_denom, resolve_validator_from_denom},
     msg::{ReplyPayload, TokenInfoProviderInstantiateMsg},
     score_keeper::apply_token_groups_ratio_changes,
     state::{Constants, TOKEN_INFO_PROVIDERS},
@@ -134,6 +134,8 @@ impl TokenManager {
 pub enum TokenInfoProvider {
     #[serde(rename = "lsm")]
     LSM(TokenInfoProviderLSM),
+    #[serde(rename = "lsm_hub")]
+    LSMHub(TokenInfoProviderLSMHub),
     Base(TokenInfoProviderBase),
     Derivative(TokenInfoProviderDerivative),
 }
@@ -147,6 +149,7 @@ impl TokenInfoProvider {
     ) -> StdResult<String> {
         match self {
             TokenInfoProvider::LSM(provider) => provider.resolve_denom(deps, round_id, denom),
+            TokenInfoProvider::LSMHub(provider) => provider.resolve_denom(deps, round_id, denom),
             TokenInfoProvider::Base(provider) => provider.resolve_denom(deps, round_id, denom),
             TokenInfoProvider::Derivative(provider) => {
                 provider.resolve_denom(deps, round_id, denom)
@@ -162,6 +165,9 @@ impl TokenInfoProvider {
     ) -> StdResult<Decimal> {
         match self {
             TokenInfoProvider::LSM(provider) => {
+                provider.get_token_group_ratio(deps, round_id, token_group_id)
+            }
+            TokenInfoProvider::LSMHub(provider) => {
                 provider.get_token_group_ratio(deps, round_id, token_group_id)
             }
             TokenInfoProvider::Base(provider) => {
@@ -180,6 +186,9 @@ impl TokenInfoProvider {
     ) -> StdResult<HashMap<String, Decimal>> {
         match self {
             TokenInfoProvider::LSM(provider) => provider.get_all_token_group_ratios(deps, round_id),
+            TokenInfoProvider::LSMHub(provider) => {
+                provider.get_all_token_group_ratios(deps, round_id)
+            }
             TokenInfoProvider::Base(provider) => {
                 provider.get_all_token_group_ratios(deps, round_id)
             }
@@ -368,6 +377,97 @@ impl TokenInfoProviderLSM {
 }
 
 #[cw_serde]
+pub struct TokenInfoProviderLSMHub {
+    pub contract: String,
+    // Validators cached per round ID
+    pub cache: HashMap<u64, HashMap<String, ValidatorInfo>>,
+}
+
+impl TokenInfoProviderLSMHub {
+    // Returns OK if the denom is a valid LSM tokenized share on the Cosmos Hub
+    // of a validator that is also among the top max_validators validators
+    // for the given round, and returns the address of that validator.
+    pub fn resolve_denom(
+        &mut self,
+        deps: &Deps,
+        round_id: u64,
+        denom: String,
+    ) -> StdResult<String> {
+        let validator = extract_validator_from_lsm_denom(denom)?;
+        let round_validators = self.get_all_round_validators_with_caching(deps, round_id)?;
+
+        round_validators
+            .get(&validator)
+            .map(|validator_info| validator_info.address.clone())
+            .ok_or_else(|| {
+                StdError::generic_err(format!(
+                    "Validator {validator} is not present; possibly they are not part of the top N validators by delegated tokens",
+                ))
+        })
+    }
+
+    // Returns true if denom is a valid LSM IBC denom.
+    // Note: it is purely checking the denom, and does not check whether the validator exists/is active
+    pub fn is_lsm_denom(&self, _deps: &Deps, denom: String) -> bool {
+        let result = extract_validator_from_lsm_denom(denom);
+        result.is_ok()
+    }
+
+    pub fn get_token_group_ratio(
+        &mut self,
+        deps: &Deps,
+        round_id: u64,
+        token_group_id: String,
+    ) -> StdResult<Decimal> {
+        let round_validators = self.get_all_round_validators_with_caching(deps, round_id)?;
+
+        round_validators
+            .get(&token_group_id)
+            .map(|validator_info| validator_info.power_ratio)
+            .ok_or_else(|| {
+                StdError::generic_err(format!(
+                    "Input token group ID {token_group_id} doesn't match any of the round validators."
+                ))
+            })
+    }
+
+    pub fn get_all_token_group_ratios(
+        &mut self,
+        deps: &Deps,
+        round_id: u64,
+    ) -> StdResult<HashMap<String, Decimal>> {
+        Ok(self
+            .get_all_round_validators_with_caching(deps, round_id)?
+            .values()
+            .map(|validator_info| (validator_info.address.clone(), validator_info.power_ratio))
+            .collect())
+    }
+
+    fn get_all_round_validators_with_caching(
+        &mut self,
+        deps: &Deps,
+        round_id: u64,
+    ) -> StdResult<HashMap<String, ValidatorInfo>> {
+        let validators_info = match self.cache.get(&round_id) {
+            Some(cache) => cache.clone(),
+            None => {
+                let validators_info: ValidatorsInfoResponse = deps.querier.query_wasm_smart(
+                    self.contract.clone(),
+                    &TokenInfoProviderQueryMsg::ValidatorsInfo { round_id },
+                )?;
+
+                self.cache
+                    .insert(round_id, validators_info.validators.clone());
+
+                validators_info.validators
+            }
+        };
+
+        Ok(validators_info)
+    }
+}
+
+#[cw_serde]
 pub struct TokenInfoProviderBase {
     pub token_group_id: String,
     pub denom: String,
@@ -474,6 +574,42 @@ pub fn add_token_info_providers(
                 found_lsm_provider = true;
                 token_info_provider_num += 1;
             }
+            TokenInfoProviderInstantiateMsg::LSMHub {
+                code_id,
+                msg,
+                label,
+                admin,
+            } => {
+                if found_lsm_provider {
+                    return Err(new_generic_error(
+                        "Only one LSM token info provider can be used.",
+                    ));
+                }
+
+                let token_info_provider = TokenInfoProvider::LSMHub(TokenInfoProviderLSMHub {
+                    contract: String::new(),
+                    cache: HashMap::new(),
+                });
+
+                let submsg: SubMsg = SubMsg::reply_on_success(
+                    WasmMsg::Instantiate {
+                        admin,
+                        code_id,
+                        msg,
+                        funds: vec![],
+                        label,
+                    },
+                    0,
+                )
+                .with_payload(to_json_vec(
+                    &ReplyPayload::InstantiateTokenInfoProvider(token_info_provider),
+                )?);
+
+                submsgs.push(submsg);
+
+                found_lsm_provider = true;
+                token_info_provider_num += 1;
+            }
             TokenInfoProviderInstantiateMsg::Base {
                 token_group_id,
                 denom,
@@ -559,6 +695,11 @@ pub fn token_manager_handle_submsg_reply(
             token_info_provider.contract = instantiate_msg_response.contract_address.clone();
 
             TokenInfoProvider::LSM(token_info_provider)
+        }
+        TokenInfoProvider::LSMHub(mut token_info_provider) => {
+            token_info_provider.contract = instantiate_msg_response.contract_address.clone();
+
+            TokenInfoProvider::LSMHub(token_info_provider)
         }
         TokenInfoProvider::Derivative(mut token_info_provider) => {
             token_info_provider.contract = instantiate_msg_response.contract_address.clone();
