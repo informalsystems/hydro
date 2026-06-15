@@ -18,6 +18,8 @@ members = [
     "contracts/inflow/skip-adapter",
     "contracts/inflow/proxy",
     "contracts/inflow/cctp-adapter",
+    "contracts/inflow/cctp-adapter-cosmoshub",
+    "contracts/inflow/skip-adapter-cosmoshub",
     "contracts/inflow/user-registry",
     "contracts/claim",
     "packages/cw-orch-interface",
