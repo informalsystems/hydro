@@ -1,14 +1,15 @@
 #!/bin/bash
 
-# Deploy and register CCTP Adapter + Skip Adapter on Cosmos Hub devnet.
-# Both adapters are registered on the existing Inflow vault after instantiation.
+# Deploy and register CCTP Adapter + Skip Adapter + Reserve Adapter on Cosmos Hub devnet.
+# All adapters are registered on the existing Inflow vault after instantiation.
 #
 # Usage: ./deploy-adapters-cosmoshub.sh [config-file.json]
 # Example: ./deploy-adapters-cosmoshub.sh deploy-config.json
 #
 # Prerequisites:
-#   - artifacts/cctp_adapter_cosmoshub.wasm  (built via `make compile`)
-#   - artifacts/skip_adapter_cosmoshub.wasm  (built via `make compile`)
+#   - artifacts/cctp_adapter_cosmoshub.wasm      (built via `make compile`)
+#   - artifacts/skip_adapter_cosmoshub.wasm      (built via `make compile`)
+#   - artifacts/basic_adapter_cosmoshub.wasm     (built via `make compile`)
 #   - Vault already deployed (address in deploy-config.json)
 #   - TODO fields in deploy-config.json filled in
 
@@ -32,6 +33,7 @@ fi
 
 CCTP_ADAPTER_WASM="../../artifacts/cctp_adapter_cosmoshub.wasm"
 SKIP_ADAPTER_WASM="../../artifacts/skip_adapter_cosmoshub.wasm"
+RESERVE_ADAPTER_WASM="../../artifacts/basic_adapter_cosmoshub.wasm"
 
 # ============================================================================
 # Load configuration
@@ -62,8 +64,10 @@ SKIP_SLIPPAGE=$(jq -r '.skip_adapter.max_slippage_bps' "$CONFIG_FILE")
 # Existing code IDs / contract addresses (null → fresh deploy)
 CCTP_CODE_ID=$(jq -r '.code_ids.cctp_adapter // empty' "$CONFIG_FILE")
 SKIP_CODE_ID=$(jq -r '.code_ids.skip_adapter // empty' "$CONFIG_FILE")
+RESERVE_CODE_ID=$(jq -r '.code_ids.reserve_adapter // empty' "$CONFIG_FILE")
 CCTP_ADDRESS=$(jq -r '.contracts.cctp_adapter // empty' "$CONFIG_FILE")
 SKIP_ADDRESS=$(jq -r '.contracts.skip_adapter // empty' "$CONFIG_FILE")
+RESERVE_ADDRESS=$(jq -r '.contracts.reserve_adapter // empty' "$CONFIG_FILE")
 
 if [ -n "$BINARY_HOME" ]; then
     CLI="$BINARY --home $BINARY_HOME"
@@ -160,6 +164,10 @@ store_contract() {
     echo "$CODE_ID"
 }
 
+CCTP_CODE_REDEPLOYED=false
+SKIP_CODE_REDEPLOYED=false
+RESERVE_CODE_REDEPLOYED=false
+
 # ============================================================================
 # Step 1: Upload contract code
 # ============================================================================
@@ -169,21 +177,37 @@ echo ""
 
 if [ -z "$CCTP_CODE_ID" ] || [ "$CCTP_CODE_ID" = "null" ]; then
     CCTP_CODE_ID=$(store_contract "cctp_adapter" "$CCTP_ADAPTER_WASM" ".code_ids.cctp_adapter")
+    CCTP_CODE_REDEPLOYED=true
 else
     echo "CCTP Adapter already uploaded (code ID: $CCTP_CODE_ID)"
     read -p "Upload new version? (y/N): " -n 1 -r; echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         CCTP_CODE_ID=$(store_contract "cctp_adapter" "$CCTP_ADAPTER_WASM" ".code_ids.cctp_adapter")
+        CCTP_CODE_REDEPLOYED=true
     fi
 fi
 
 if [ -z "$SKIP_CODE_ID" ] || [ "$SKIP_CODE_ID" = "null" ]; then
     SKIP_CODE_ID=$(store_contract "skip_adapter" "$SKIP_ADAPTER_WASM" ".code_ids.skip_adapter")
+    SKIP_CODE_REDEPLOYED=true
 else
     echo "Skip Adapter already uploaded (code ID: $SKIP_CODE_ID)"
     read -p "Upload new version? (y/N): " -n 1 -r; echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         SKIP_CODE_ID=$(store_contract "skip_adapter" "$SKIP_ADAPTER_WASM" ".code_ids.skip_adapter")
+        SKIP_CODE_REDEPLOYED=true
+    fi
+fi
+
+if [ -z "$RESERVE_CODE_ID" ] || [ "$RESERVE_CODE_ID" = "null" ]; then
+    RESERVE_CODE_ID=$(store_contract "reserve_adapter" "$RESERVE_ADAPTER_WASM" ".code_ids.reserve_adapter")
+    RESERVE_CODE_REDEPLOYED=true
+else
+    echo "Reserve Adapter already uploaded (code ID: $RESERVE_CODE_ID)"
+    read -p "Upload new version? (y/N): " -n 1 -r; echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        RESERVE_CODE_ID=$(store_contract "reserve_adapter" "$RESERVE_ADAPTER_WASM" ".code_ids.reserve_adapter")
+        RESERVE_CODE_REDEPLOYED=true
     fi
 fi
 
@@ -248,7 +272,7 @@ instantiate_cctp_adapter() {
     update_config ".contracts.cctp_adapter" "$CCTP_ADDRESS"
 }
 
-if [ -z "$CCTP_ADDRESS" ] || [ "$CCTP_ADDRESS" = "null" ]; then
+if [ -z "$CCTP_ADDRESS" ] || [ "$CCTP_ADDRESS" = "null" ] || [ "$CCTP_CODE_REDEPLOYED" = "true" ]; then
     instantiate_cctp_adapter
 else
     echo "CCTP Adapter already instantiated at: $CCTP_ADDRESS"
@@ -306,7 +330,7 @@ instantiate_skip_adapter() {
     update_config ".contracts.skip_adapter" "$SKIP_ADDRESS"
 }
 
-if [ -z "$SKIP_ADDRESS" ] || [ "$SKIP_ADDRESS" = "null" ]; then
+if [ -z "$SKIP_ADDRESS" ] || [ "$SKIP_ADDRESS" = "null" ] || [ "$SKIP_CODE_REDEPLOYED" = "true" ]; then
     instantiate_skip_adapter
 else
     echo "Skip Adapter already instantiated at: $SKIP_ADDRESS"
@@ -319,14 +343,64 @@ fi
 echo ""
 
 # ============================================================================
-# Step 4: (optional) Register vault as depositor if adapters were pre-existing
+# Step 4: Instantiate Reserve Adapter
+# ============================================================================
+
+echo -e "${BLUE}=== Step 4: Instantiate Reserve Adapter ===${NC}"
+echo ""
+
+instantiate_reserve_adapter() {
+    local init_msg
+    init_msg=$(jq -n \
+        --arg admin "$ADMIN_ADDRESS" \
+        --arg vault "$VAULT_ADDRESS" \
+        '{
+            admins: [$admin],
+            initial_depositors: [$vault]
+        }'
+    )
+
+    echo "Instantiate message:"
+    echo "$init_msg" | jq .
+    echo ""
+
+    printf "Instantiating Reserve Adapter"
+    $CLI tx wasm instantiate "$RESERVE_CODE_ID" "$init_msg" \
+        --from "$DEPLOYER_WALLET" \
+        --label "Inflow Reserve Adapter" \
+        --admin "$ADMIN_ADDRESS" \
+        $TX_FLAGS --output json \
+        &> ./instantiate_reserve_adapter_res.json
+
+    TX_HASH=$(grep -o '{.*}' ./instantiate_reserve_adapter_res.json | jq -r '.txhash')
+    TX_RESULT=$(retry_command "$CLI q tx $TX_HASH $NODE_FLAG --output json" 60)
+    RESERVE_ADDRESS=$(echo "$TX_RESULT" | jq -r '.events[] | select(.type == "instantiate") | .attributes[] | select(.key == "_contract_address") | .value')
+
+    echo -e "${GREEN}Reserve Adapter instantiated at: $RESERVE_ADDRESS${NC}"
+    update_config ".contracts.reserve_adapter" "$RESERVE_ADDRESS"
+}
+
+if [ -z "$RESERVE_ADDRESS" ] || [ "$RESERVE_ADDRESS" = "null" ] || [ "$RESERVE_CODE_REDEPLOYED" = "true" ]; then
+    instantiate_reserve_adapter
+else
+    echo "Reserve Adapter already instantiated at: $RESERVE_ADDRESS"
+    read -p "Reinstantiate? (y/N): " -n 1 -r; echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        instantiate_reserve_adapter
+    fi
+fi
+
+echo ""
+
+# ============================================================================
+# Step 5: (optional) Register vault as depositor if adapters were pre-existing
 #
 # Vault is already included in initial_depositors during instantiation above.
 # This step is only needed if you reused pre-existing adapter contracts that
 # don't have the vault registered yet.
 # ============================================================================
 
-echo -e "${BLUE}=== Step 4: Register Vault as Depositor (if not already done) ===${NC}"
+echo -e "${BLUE}=== Step 5: Register Vault as Depositor (if not already done) ===${NC}"
 echo ""
 echo "The vault was included in initial_depositors during instantiation."
 read -p "Register vault as depositor again (e.g., on pre-existing adapters)? (y/N): " -n 1 -r; echo
@@ -382,6 +456,9 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
 
     # Skip adapter: metadata is ignored by the contract, pass null
     register_depositor "skip_adapter" "$SKIP_ADDRESS" "null"
+
+    # Reserve adapter: metadata is ignored, pass null
+    register_depositor "reserve_adapter" "$RESERVE_ADDRESS" "null"
 else
     echo "Skipped."
 fi
@@ -389,10 +466,10 @@ fi
 echo ""
 
 # ============================================================================
-# Step 5: Register adapters on the vault
+# Step 6: Register adapters on the vault
 # ============================================================================
 
-echo -e "${BLUE}=== Step 5: Register Adapters on Vault ===${NC}"
+echo -e "${BLUE}=== Step 6: Register Adapters on Vault ===${NC}"
 echo ""
 
 register_adapter_on_vault() {
@@ -438,11 +515,15 @@ register_adapter_on_vault "CCTP Adapter" "$CCTP_ADDRESS" "manual" "tracked" \
 register_adapter_on_vault "Skip Adapter" "$SKIP_ADDRESS" "manual" "not_tracked" \
     "register_skip_adapter_res.json"
 
+# Reserve: manual allocation, not_tracked (funds stay on-chain, accessible at any time)
+register_adapter_on_vault "Reserve Adapter" "$RESERVE_ADDRESS" "manual" "not_tracked" \
+    "register_reserve_adapter_res.json"
+
 # ============================================================================
-# Step 6: Register initial routes on Skip Adapter (optional)
+# Step 7: Register initial routes on Skip Adapter (optional)
 # ============================================================================
 
-echo -e "${BLUE}=== Step 6: Register Routes on Skip Adapter ===${NC}"
+echo -e "${BLUE}=== Step 7: Register Routes on Skip Adapter ===${NC}"
 echo ""
 
 ROUTE_KEYS=$(jq -r '.skip_adapter.initial_routes | keys[]' "$CONFIG_FILE" 2>/dev/null || echo "")
@@ -523,12 +604,14 @@ echo "Chain:   $CHAIN_ID  ($NODE)"
 echo "Vault:   $VAULT_ADDRESS"
 echo ""
 echo "Contract Addresses:"
-echo "  CCTP Adapter: $CCTP_ADDRESS"
-echo "  Skip Adapter: $SKIP_ADDRESS"
+echo "  CCTP Adapter:    $CCTP_ADDRESS"
+echo "  Skip Adapter:    $SKIP_ADDRESS"
+echo "  Reserve Adapter: $RESERVE_ADDRESS"
 echo ""
 echo "Code IDs:"
-echo "  CCTP Adapter: $CCTP_CODE_ID"
-echo "  Skip Adapter: $SKIP_CODE_ID"
+echo "  CCTP Adapter:    $CCTP_CODE_ID"
+echo "  Skip Adapter:    $SKIP_CODE_ID"
+echo "  Reserve Adapter: $RESERVE_CODE_ID"
 echo ""
 echo "Addresses saved to: $CONFIG_FILE"
 echo ""
@@ -546,6 +629,7 @@ echo -e "${GREEN}Done!${NC}"
 #
 # CCTP_ADAPTER=<address from above>
 # SKIP_ADAPTER=<address from above>
+# RESERVE_ADAPTER=<address from above>
 # VAULT=cosmos1436kxs0w2es6xlqpp9rd35e3d0cjnw4sv8j3a7483sgks29jqwgsks67u5
 # NODE=https://rpc-dev-cosmoshub.moonkitt.com
 #
@@ -576,6 +660,17 @@ echo -e "${GREEN}Done!${NC}"
 #
 # Depositors:
 # gaiad query wasm contract-state smart $SKIP_ADAPTER '{"standard_query":{"registered_depositors":{}}}' --node $NODE
+#
+# --- RESERVE ADAPTER ---
+#
+# Config (admins):
+# gaiad query wasm contract-state smart $RESERVE_ADAPTER '{"standard_query":{"config":{}}}' --node $NODE
+#
+# Depositors:
+# gaiad query wasm contract-state smart $RESERVE_ADAPTER '{"standard_query":{"registered_depositors":{}}}' --node $NODE
+#
+# Available balance (uatom):
+# gaiad query wasm contract-state smart $RESERVE_ADAPTER '{"standard_query":{"available_for_withdraw":{"depositor_address":"<vault>","denom":"uatom"}}}' --node $NODE
 #
 # --- VAULT ---
 #
