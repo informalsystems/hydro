@@ -3,15 +3,15 @@
 # Deploy and register CCTP Adapter + Skip Adapter + Reserve Adapter on Cosmos Hub devnet.
 # All adapters are registered on the existing Inflow vault after instantiation.
 #
-# Usage: ./deploy-adapters-cosmoshub.sh [config-file.json]
+# Usage: ./deploy-adapters-cosmoshub.sh <config-file.json>
 # Example: ./deploy-adapters-cosmoshub.sh deploy-config.json
 #
 # Prerequisites:
 #   - artifacts/cctp_adapter_cosmoshub.wasm      (built via `make compile`)
 #   - artifacts/skip_adapter_cosmoshub.wasm      (built via `make compile`)
 #   - artifacts/basic_adapter_cosmoshub.wasm     (built via `make compile`)
-#   - Vault already deployed (address in deploy-config.json)
-#   - TODO fields in deploy-config.json filled in
+#   - Vault already deployed (address in config file)
+#   - TODO fields in config file filled in
 
 set -eo pipefail
 
@@ -24,7 +24,14 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-CONFIG_FILE="${1:-deploy-config.json}"
+if [ -z "$1" ]; then
+    echo -e "${RED}Error: config file argument required${NC}"
+    echo ""
+    echo "Usage: $0 <config-file.json>"
+    exit 1
+fi
+
+CONFIG_FILE="$1"
 
 if [ ! -f "$CONFIG_FILE" ]; then
     echo -e "${RED}Error: config file '$CONFIG_FILE' not found${NC}"
@@ -47,19 +54,36 @@ GAS_PRICE=$(jq -r '.gas_price' "$CONFIG_FILE")
 GAS_ADJUSTMENT=$(jq -r '.gas_adjustment' "$CONFIG_FILE")
 DEPLOYER_WALLET=$(jq -r '.deployer_wallet' "$CONFIG_FILE")
 ADMIN_ADDRESS=$(jq -r '.admin_address' "$CONFIG_FILE")
+# admin_wallet: keyring name for signing admin-only txs.
+# If empty, the script will print the JSON and wait for manual confirmation.
+ADMIN_WALLET=$(jq -r '.admin_wallet // empty' "$CONFIG_FILE")
 KEYRING=$(jq -r '.keyring_backend' "$CONFIG_FILE")
 VAULT_ADDRESS=$(jq -r '.vault_address' "$CONFIG_FILE")
+SKIP_VAULT_REGISTRATION=$(jq -r '.skip_vault_registration // false' "$CONFIG_FILE")
 
 # CCTP adapter config
 CCTP_USDC_DENOM=$(jq -r '.cctp_adapter.usdc_denom' "$CONFIG_FILE")
 CCTP_NOBLE_CHANNEL=$(jq -r '.cctp_adapter.noble_transfer_channel_id' "$CONFIG_FILE")
 CCTP_TIMEOUT=$(jq -r '.cctp_adapter.ibc_default_timeout_seconds' "$CONFIG_FILE")
 CCTP_INITIAL_CHAINS=$(jq -c '.cctp_adapter.initial_chains' "$CONFIG_FILE")
+CCTP_INITIAL_EXECUTORS=$(jq -c '.cctp_adapter.initial_executors // []' "$CONFIG_FILE")
+CCTP_VAULT_NAME=$(jq -r '.cctp_adapter.vault_registration.name // "cctp-adapter"' "$CONFIG_FILE")
+CCTP_ALLOC_MODE=$(jq -r '.cctp_adapter.vault_registration.allocation_mode // "manual"' "$CONFIG_FILE")
+CCTP_TRACKING=$(jq -r '.cctp_adapter.vault_registration.deployment_tracking // "tracked"' "$CONFIG_FILE")
 
 # Skip adapter config
 SKIP_CONTRACTS=$(jq -c '.skip_adapter.skip_contracts' "$CONFIG_FILE")
 SKIP_TIMEOUT=$(jq -r '.skip_adapter.default_timeout_nanos' "$CONFIG_FILE")
 SKIP_SLIPPAGE=$(jq -r '.skip_adapter.max_slippage_bps' "$CONFIG_FILE")
+SKIP_INITIAL_EXECUTORS=$(jq -c '.skip_adapter.initial_executors // []' "$CONFIG_FILE")
+SKIP_VAULT_NAME=$(jq -r '.skip_adapter.vault_registration.name // "skip-adapter"' "$CONFIG_FILE")
+SKIP_ALLOC_MODE=$(jq -r '.skip_adapter.vault_registration.allocation_mode // "manual"' "$CONFIG_FILE")
+SKIP_TRACKING=$(jq -r '.skip_adapter.vault_registration.deployment_tracking // "tracked"' "$CONFIG_FILE")
+
+# Reserve adapter config
+RESERVE_VAULT_NAME=$(jq -r '.reserve_adapter.vault_registration.name // "reserve-adapter"' "$CONFIG_FILE")
+RESERVE_ALLOC_MODE=$(jq -r '.reserve_adapter.vault_registration.allocation_mode // "manual"' "$CONFIG_FILE")
+RESERVE_TRACKING=$(jq -r '.reserve_adapter.vault_registration.deployment_tracking // "tracked"' "$CONFIG_FILE")
 
 # Existing code IDs / contract addresses (null → fresh deploy)
 CCTP_CODE_ID=$(jq -r '.code_ids.cctp_adapter // empty' "$CONFIG_FILE")
@@ -142,6 +166,47 @@ update_config_number() {
     jq "$key = $value" "$CONFIG_FILE" > "$tmp" && mv "$tmp" "$CONFIG_FILE"
 }
 
+# Execute an admin-only tx.
+# Args: contract_label contract_address msg res_file [ignore_pattern]
+#   contract_label:  human-readable name shown when prompting for manual execution
+#   contract_address: the contract to execute on
+#   msg:             JSON message
+#   res_file:        file to write tx output to
+#   ignore_pattern:  optional — if error output matches, skip with a warning instead of failing
+exec_admin_tx() {
+    local label="$1" contract="$2" msg="$3" res_file="$4" ignore_pattern="${5:-}"
+
+    if [ -n "$ADMIN_WALLET" ]; then
+        set +e
+        $CLI tx wasm execute "$contract" "$msg" \
+            --from "$ADMIN_WALLET" \
+            $TX_FLAGS --output json \
+            &> "$res_file"
+        local tx_exit=$?
+        set -e
+
+        if [ -n "$ignore_pattern" ] && grep -q "$ignore_pattern" "$res_file" 2>/dev/null; then
+            echo -e "${YELLOW}Skipped (already done: $ignore_pattern)${NC}"
+            return 0
+        fi
+
+        if [ $tx_exit -ne 0 ]; then
+            echo -e "${RED}Admin tx failed${NC}"
+            cat "$res_file"
+            return 1
+        fi
+
+        TX_HASH=$(grep -o '{.*}' "$res_file" | jq -r '.txhash')
+        retry_command "$CLI q tx $TX_HASH $NODE_FLAG --output json" 60 > /dev/null
+    else
+        echo -e "${YELLOW}admin_wallet not set — execute the following on ${label} (${contract}):${NC}"
+        echo ""
+        echo "$msg" | jq .
+        echo ""
+        read -p "Press Enter once the transaction is confirmed..."
+    fi
+}
+
 store_contract() {
     local name="$1" wasm="$2" config_key="$3"
 
@@ -167,6 +232,10 @@ store_contract() {
 CCTP_CODE_REDEPLOYED=false
 SKIP_CODE_REDEPLOYED=false
 RESERVE_CODE_REDEPLOYED=false
+
+CCTP_INSTANTIATED=false
+SKIP_INSTANTIATED=false
+RESERVE_INSTANTIATED=false
 
 # ============================================================================
 # Step 1: Upload contract code
@@ -239,6 +308,7 @@ instantiate_cctp_adapter() {
         --arg channel "$CCTP_NOBLE_CHANNEL" \
         --argjson timeout "$CCTP_TIMEOUT" \
         --argjson chains "$initial_chains" \
+        --argjson executors "$CCTP_INITIAL_EXECUTORS" \
         '{
             admins: [$admin],
             denom: $denom,
@@ -248,7 +318,7 @@ instantiate_cctp_adapter() {
                 { address: $vault, capabilities: { can_withdraw: true } }
             ],
             initial_chains: $chains,
-            initial_executors: []
+            initial_executors: $executors
         }'
     )
 
@@ -270,6 +340,7 @@ instantiate_cctp_adapter() {
 
     echo -e "${GREEN}CCTP Adapter instantiated at: $CCTP_ADDRESS${NC}"
     update_config ".contracts.cctp_adapter" "$CCTP_ADDRESS"
+    CCTP_INSTANTIATED=true
 }
 
 if [ -z "$CCTP_ADDRESS" ] || [ "$CCTP_ADDRESS" = "null" ] || [ "$CCTP_CODE_REDEPLOYED" = "true" ]; then
@@ -299,12 +370,13 @@ instantiate_skip_adapter() {
         --argjson skip_contracts "$SKIP_CONTRACTS" \
         --argjson timeout "$SKIP_TIMEOUT" \
         --argjson slippage "$SKIP_SLIPPAGE" \
+        --argjson executors "$SKIP_INITIAL_EXECUTORS" \
         '{
             admins: [$admin],
             skip_contracts: $skip_contracts,
             default_timeout_nanos: $timeout,
             max_slippage_bps: $slippage,
-            executors: [],
+            executors: $executors,
             initial_routes: [],
             initial_depositors: [$vault]
         }'
@@ -328,6 +400,7 @@ instantiate_skip_adapter() {
 
     echo -e "${GREEN}Skip Adapter instantiated at: $SKIP_ADDRESS${NC}"
     update_config ".contracts.skip_adapter" "$SKIP_ADDRESS"
+    SKIP_INSTANTIATED=true
 }
 
 if [ -z "$SKIP_ADDRESS" ] || [ "$SKIP_ADDRESS" = "null" ] || [ "$SKIP_CODE_REDEPLOYED" = "true" ]; then
@@ -378,6 +451,7 @@ instantiate_reserve_adapter() {
 
     echo -e "${GREEN}Reserve Adapter instantiated at: $RESERVE_ADDRESS${NC}"
     update_config ".contracts.reserve_adapter" "$RESERVE_ADDRESS"
+    RESERVE_INSTANTIATED=true
 }
 
 if [ -z "$RESERVE_ADDRESS" ] || [ "$RESERVE_ADDRESS" = "null" ] || [ "$RESERVE_CODE_REDEPLOYED" = "true" ]; then
@@ -393,74 +467,72 @@ fi
 echo ""
 
 # ============================================================================
-# Step 5: (optional) Register vault as depositor if adapters were pre-existing
+# Step 5: Register vault as depositor on pre-existing adapters
 #
-# Vault is already included in initial_depositors during instantiation above.
-# This step is only needed if you reused pre-existing adapter contracts that
-# don't have the vault registered yet.
+# Skipped automatically for adapters that were just instantiated in this run
+# (vault is already in initial_depositors). Only runs for adapters that were
+# reused from a prior deployment and may not have the vault registered.
 # ============================================================================
 
-echo -e "${BLUE}=== Step 5: Register Vault as Depositor (if not already done) ===${NC}"
-echo ""
-echo "The vault was included in initial_depositors during instantiation."
-read -p "Register vault as depositor again (e.g., on pre-existing adapters)? (y/N): " -n 1 -r; echo
+register_depositor_on_adapter() {
+    local adapter_name="$1" adapter_address="$2" metadata_b64="$3"
 
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    register_depositor() {
-        local adapter_name="$1" adapter_address="$2" metadata_b64="$3"
+    echo "Registering vault as depositor on $adapter_name..."
 
-        echo "Registering vault as depositor on $adapter_name..."
-
-        local exec_msg
-        if [ -z "$metadata_b64" ] || [ "$metadata_b64" = "null" ]; then
-            exec_msg=$(jq -n \
-                --arg vault "$VAULT_ADDRESS" \
-                '{
-                    standard_action: {
-                        register_depositor: {
-                            depositor_address: $vault,
-                            metadata: null
-                        }
+    local exec_msg
+    if [ -z "$metadata_b64" ] || [ "$metadata_b64" = "null" ]; then
+        exec_msg=$(jq -n \
+            --arg vault "$VAULT_ADDRESS" \
+            '{
+                standard_action: {
+                    register_depositor: {
+                        depositor_address: $vault,
+                        metadata: null
                     }
-                }'
-            )
-        else
-            exec_msg=$(jq -n \
-                --arg vault "$VAULT_ADDRESS" \
-                --arg meta "$metadata_b64" \
-                '{
-                    standard_action: {
-                        register_depositor: {
-                            depositor_address: $vault,
-                            metadata: $meta
-                        }
+                }
+            }'
+        )
+    else
+        exec_msg=$(jq -n \
+            --arg vault "$VAULT_ADDRESS" \
+            --arg meta "$metadata_b64" \
+            '{
+                standard_action: {
+                    register_depositor: {
+                        depositor_address: $vault,
+                        metadata: $meta
                     }
-                }'
-            )
-        fi
+                }
+            }'
+        )
+    fi
 
-        $CLI tx wasm execute "$adapter_address" "$exec_msg" \
-            --from "$DEPLOYER_WALLET" \
-            $TX_FLAGS --output json \
-            &> "./register_vault_depositor_${adapter_name}_res.json"
+    exec_admin_tx "$adapter_name" "$adapter_address" "$exec_msg" \
+        "./register_vault_depositor_${adapter_name}_res.json" \
+        "Depositor already registered"
 
-        TX_HASH=$(grep -o '{.*}' "./register_vault_depositor_${adapter_name}_res.json" | jq -r '.txhash')
-        retry_command "$CLI q tx $TX_HASH $NODE_FLAG --output json" 60 > /dev/null
+    echo -e "${GREEN}Vault registered as depositor on $adapter_name${NC}"
+}
 
-        echo -e "${GREEN}Vault registered as depositor on $adapter_name${NC}"
-    }
+PREEXISTING_ADAPTERS=()
+[ "$CCTP_INSTANTIATED" = "false" ] && PREEXISTING_ADAPTERS+=("cctp")
+[ "$SKIP_INSTANTIATED" = "false" ] && PREEXISTING_ADAPTERS+=("skip")
+[ "$RESERVE_INSTANTIATED" = "false" ] && PREEXISTING_ADAPTERS+=("reserve")
 
-    # CCTP adapter: vault needs can_withdraw capability — encode as base64 Binary
-    CCTP_CAPS_B64=$(printf '{"can_withdraw":true}' | base64 | tr -d '\n')
-    register_depositor "cctp_adapter" "$CCTP_ADDRESS" "$CCTP_CAPS_B64"
-
-    # Skip adapter: metadata is ignored by the contract, pass null
-    register_depositor "skip_adapter" "$SKIP_ADDRESS" "null"
-
-    # Reserve adapter: metadata is ignored, pass null
-    register_depositor "reserve_adapter" "$RESERVE_ADDRESS" "null"
-else
-    echo "Skipped."
+if [ ${#PREEXISTING_ADAPTERS[@]} -gt 0 ]; then
+    echo -e "${BLUE}=== Step 5: Register Vault as Depositor on Pre-existing Adapters ===${NC}"
+    echo ""
+    echo "Pre-existing adapters (not instantiated this run): ${PREEXISTING_ADAPTERS[*]}"
+    read -p "Register vault as depositor on these adapters? (y/N): " -n 1 -r; echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        CCTP_CAPS_B64=$(printf '{"can_withdraw":true}' | base64 | tr -d '\n')
+        [[ " ${PREEXISTING_ADAPTERS[*]} " =~ " cctp " ]] && register_depositor_on_adapter "cctp_adapter" "$CCTP_ADDRESS" "$CCTP_CAPS_B64"
+        [[ " ${PREEXISTING_ADAPTERS[*]} " =~ " skip " ]] && register_depositor_on_adapter "skip_adapter" "$SKIP_ADDRESS" "null"
+        [[ " ${PREEXISTING_ADAPTERS[*]} " =~ " reserve " ]] && register_depositor_on_adapter "reserve_adapter" "$RESERVE_ADDRESS" "null"
+    else
+        echo "Skipped."
+    fi
+    echo ""
 fi
 
 echo ""
@@ -469,55 +541,58 @@ echo ""
 # Step 6: Register adapters on the vault
 # ============================================================================
 
-echo -e "${BLUE}=== Step 6: Register Adapters on Vault ===${NC}"
-echo ""
-
-register_adapter_on_vault() {
-    local name="$1" address="$2" allocation_mode="$3" deployment_tracking="$4" res_file="$5"
-
-    echo "Registering '$name' on vault..."
-
-    local exec_msg
-    exec_msg=$(jq -n \
-        --arg name "$name" \
-        --arg address "$address" \
-        --arg allocation_mode "$allocation_mode" \
-        --arg deployment_tracking "$deployment_tracking" \
-        '{
-            register_adapter: {
-                name: $name,
-                address: $address,
-                allocation_mode: $allocation_mode,
-                deployment_tracking: $deployment_tracking
-            }
-        }'
-    )
-
-    echo "$exec_msg" | jq .
-
-    $CLI tx wasm execute "$VAULT_ADDRESS" "$exec_msg" \
-        --from "$DEPLOYER_WALLET" \
-        $TX_FLAGS --output json \
-        &> "./${res_file}"
-
-    TX_HASH=$(grep -o '{.*}' "./${res_file}" | jq -r '.txhash')
-    retry_command "$CLI q tx $TX_HASH $NODE_FLAG --output json" 60 > /dev/null
-
-    echo -e "${GREEN}'$name' registered on vault${NC}"
+if [ "$SKIP_VAULT_REGISTRATION" = "true" ]; then
+    echo -e "${YELLOW}=== Step 6: Skipping vault registration (skip_vault_registration=true) ===${NC}"
+    echo "  Adapters will not be registered on a vault."
+    echo "  vault_address is used as the initial depositor for direct testing."
+else
+    echo -e "${BLUE}=== Step 6: Register Adapters on Vault ===${NC}"
     echo ""
-}
 
-# CCTP: manual allocation (admin triggers bridging), tracked (funds leave the vault to EVM)
-register_adapter_on_vault "CCTP Adapter" "$CCTP_ADDRESS" "manual" "tracked" \
-    "register_cctp_adapter_res.json"
+    register_adapter_on_vault() {
+        local name="$1" address="$2" allocation_mode="$3" deployment_tracking="$4" res_file="$5"
 
-# Skip: manual allocation (admin triggers swaps), not_tracked (round-trip stays within system)
-register_adapter_on_vault "Skip Adapter" "$SKIP_ADDRESS" "manual" "not_tracked" \
-    "register_skip_adapter_res.json"
+        echo "Registering '$name' on vault..."
 
-# Reserve: manual allocation, not_tracked (funds stay on-chain, accessible at any time)
-register_adapter_on_vault "Reserve Adapter" "$RESERVE_ADDRESS" "manual" "not_tracked" \
-    "register_reserve_adapter_res.json"
+        local exec_msg
+        exec_msg=$(jq -n \
+            --arg name "$name" \
+            --arg address "$address" \
+            --arg allocation_mode "$allocation_mode" \
+            --arg deployment_tracking "$deployment_tracking" \
+            '{
+                register_adapter: {
+                    name: $name,
+                    address: $address,
+                    allocation_mode: $allocation_mode,
+                    deployment_tracking: $deployment_tracking
+                }
+            }'
+        )
+
+        echo "$exec_msg" | jq .
+
+        $CLI tx wasm execute "$VAULT_ADDRESS" "$exec_msg" \
+            --from "$DEPLOYER_WALLET" \
+            $TX_FLAGS --output json \
+            &> "./${res_file}"
+
+        TX_HASH=$(grep -o '{.*}' "./${res_file}" | jq -r '.txhash')
+        retry_command "$CLI q tx $TX_HASH $NODE_FLAG --output json" 60 > /dev/null
+
+        echo -e "${GREEN}'$name' registered on vault${NC}"
+        echo ""
+    }
+
+    register_adapter_on_vault "$CCTP_VAULT_NAME" "$CCTP_ADDRESS" "$CCTP_ALLOC_MODE" "$CCTP_TRACKING" \
+        "register_cctp_adapter_res.json"
+
+    register_adapter_on_vault "$SKIP_VAULT_NAME" "$SKIP_ADDRESS" "$SKIP_ALLOC_MODE" "$SKIP_TRACKING" \
+        "register_skip_adapter_res.json"
+
+    register_adapter_on_vault "$RESERVE_VAULT_NAME" "$RESERVE_ADDRESS" "$RESERVE_ALLOC_MODE" "$RESERVE_TRACKING" \
+        "register_reserve_adapter_res.json"
+fi
 
 # ============================================================================
 # Step 7: Register initial routes on Skip Adapter (optional)
@@ -575,13 +650,8 @@ else
 
             echo "$exec_msg" | jq .
 
-            $CLI tx wasm execute "$SKIP_ADDRESS" "$exec_msg" \
-                --from "$DEPLOYER_WALLET" \
-                $TX_FLAGS --output json \
-                &> "./register_route_${route_key}_res.json"
-
-            TX_HASH=$(grep -o '{.*}' "./register_route_${route_key}_res.json" | jq -r '.txhash')
-            retry_command "$CLI q tx $TX_HASH $NODE_FLAG --output json" 60 > /dev/null
+            exec_admin_tx "Skip Adapter" "$SKIP_ADDRESS" "$exec_msg" \
+                "./register_route_${route_key}_res.json"
 
             echo -e "${GREEN}Route '$route_id' registered${NC}"
             echo ""
@@ -613,7 +683,7 @@ echo "  CCTP Adapter:    $CCTP_CODE_ID"
 echo "  Skip Adapter:    $SKIP_CODE_ID"
 echo "  Reserve Adapter: $RESERVE_CODE_ID"
 echo ""
-echo "Addresses saved to: $CONFIG_FILE"
+echo "State saved to: $CONFIG_FILE"
 echo ""
 echo "Next steps:"
 echo "  1. Fill in any remaining TODO values in $CONFIG_FILE"

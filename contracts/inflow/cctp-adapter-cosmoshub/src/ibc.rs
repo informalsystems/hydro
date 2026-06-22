@@ -2,8 +2,6 @@ use cosmwasm_std::{Coin, CosmosMsg, Env, IbcMsg, IbcTimeout, StdResult};
 
 use crate::state::Config;
 
-pub const TRANSFER_PORT: &str = "transfer";
-
 /// Create IBC transfer message to Noble.
 /// On Cosmos Hub, contracts issue standard IbcMsg::Transfer directly —
 /// no Neutron relayer fee (IbcFee) is required.

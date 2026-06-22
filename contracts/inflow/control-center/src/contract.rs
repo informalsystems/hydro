@@ -163,8 +163,10 @@ fn submit_deployed_amount(
 ) -> Result<Response, ContractError> {
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
 
-    // Try to accrue fees before updating the deployed amount.
-    // This ensures fees are calculated at the correct share price before the value changes.
+    // Update deployed amount first so fee accrual sees the new pool value.
+    DEPLOYED_AMOUNT.save(deps.storage, &amount, env.block.height)?;
+
+    // Try to accrue fees after updating the deployed amount.
     // We silently ignore cases where fees cannot be accrued (disabled, no shares, below HWM, dust).
     let mut response = Response::new();
     if let AccrueFeesResult::Accrued {
@@ -186,8 +188,6 @@ fn submit_deployed_amount(
             )
             .add_attribute("fee_share_price", current_share_price.to_string());
     }
-
-    DEPLOYED_AMOUNT.save(deps.storage, &amount, env.block.height)?;
 
     Ok(response
         .add_attribute("action", "submit_deployed_amount")
