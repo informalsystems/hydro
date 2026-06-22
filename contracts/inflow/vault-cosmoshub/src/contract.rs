@@ -1608,11 +1608,12 @@ fn mint_for_migration(
     if MIGRATION_MINTED.may_load(deps.storage)?.unwrap_or(false) {
         return Err(ContractError::MigrationAlreadyExecuted);
     }
-    MIGRATION_MINTED.save(deps.storage, &true)?;
 
     if shares_to_mint.is_zero() {
         return Err(ContractError::ZeroAmount {});
     }
+
+    MIGRATION_MINTED.save(deps.storage, &true)?;
 
     let conversion_addr = deps.api.addr_validate(&conversion_contract)?;
 

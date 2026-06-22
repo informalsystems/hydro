@@ -5,7 +5,7 @@ use cw_storage_plus::{Item, Map};
 /// Contract configuration
 #[cw_serde]
 pub struct Config {
-    /// The token denom this adapter handles (i.e. USDC denom on Neutron)
+    /// The token denom this adapter handles (i.e. USDC denom on Cosmos Hub)
     pub denom: String,
     /// Neutron-Noble transfer channel ID
     pub noble_transfer_channel_id: String,

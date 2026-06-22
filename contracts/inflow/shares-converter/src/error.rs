@@ -12,6 +12,9 @@ pub enum ContractError {
     #[error("Conversion pair not found for denom: {denom}")]
     PairNotFound { denom: String },
 
+    #[error("Conversion pair already exists for denom: {denom}")]
+    PairAlreadyExists { denom: String },
+
     #[error("Must send exactly one coin")]
     InvalidFunds,
 
