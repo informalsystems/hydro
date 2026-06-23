@@ -819,9 +819,13 @@ fn dispatch_query_standard(
     match msg {
         AdapterInterfaceQueryMsg::Config {} => to_json_binary(&query_config(deps)?),
         AdapterInterfaceQueryMsg::AvailableForDeposit {
-            depositor_address: _,
-            denom: _,
-        } => to_json_binary(&query_available_for_deposit()?),
+            depositor_address,
+            denom,
+        } => to_json_binary(&query_available_for_deposit(
+            deps,
+            depositor_address,
+            denom,
+        )?),
         AdapterInterfaceQueryMsg::AvailableForWithdraw {
             depositor_address: _,
             denom,
@@ -876,11 +880,21 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     })
 }
 
-/// Query available amount for deposit (no cap for CCTP adapter)
-fn query_available_for_deposit() -> StdResult<AvailableAmountResponse> {
-    Ok(AvailableAmountResponse {
-        amount: Uint128::MAX,
-    })
+fn query_available_for_deposit(
+    deps: Deps,
+    depositor_address: String,
+    denom: String,
+) -> StdResult<AvailableAmountResponse> {
+    let config = CONFIG.load(deps.storage)?;
+    let depositor_addr = deps.api.addr_validate(&depositor_address)?;
+    let depositor = WHITELISTED_DEPOSITORS.may_load(deps.storage, depositor_addr)?;
+
+    let amount = match depositor {
+        Some(d) if d.enabled && denom == config.denom => Uint128::MAX,
+        _ => Uint128::zero(),
+    };
+
+    Ok(AvailableAmountResponse { amount })
 }
 
 /// Query available amount for withdrawal (adapter balance)

@@ -1,7 +1,10 @@
 use crate::{
     contract::{execute, instantiate, query},
     error::ContractError,
-    msg::{AllPairsResponse, ConversionPair, ExecuteMsg, InstantiateMsg, PairResponse, QueryMsg},
+    msg::{
+        AllPairsResponse, ConfigResponse, ConversionPair, ExecuteMsg, InstantiateMsg, PairResponse,
+        QueryMsg,
+    },
 };
 use cosmwasm_std::testing::{message_info, mock_dependencies, mock_env, MockApi};
 use cosmwasm_std::{coins, from_json, Coin, DepsMut};
@@ -275,4 +278,64 @@ fn test_query_all_pairs() {
 
     assert_eq!(res.pairs.len(), 1);
     assert_eq!(res.pairs[0].neutron_shares_denom, NEUTRON_DENOM);
+}
+
+#[test]
+fn test_update_admin_success() {
+    let mut deps = mock_dependencies();
+    do_instantiate(deps.as_mut());
+    let admin = api().addr_make(ADMIN);
+    let new_admin = api().addr_make("new_admin");
+
+    execute(
+        deps.as_mut(),
+        mock_env(),
+        message_info(&admin, &[]),
+        ExecuteMsg::UpdateAdmin {
+            new_admin: new_admin.to_string(),
+        },
+    )
+    .unwrap();
+
+    let config: ConfigResponse =
+        from_json(query(deps.as_ref(), mock_env(), QueryMsg::Config {}).unwrap()).unwrap();
+    assert_eq!(config.admin, new_admin.to_string());
+}
+
+#[test]
+fn test_update_admin_unauthorized() {
+    let mut deps = mock_dependencies();
+    do_instantiate(deps.as_mut());
+    let user = api().addr_make(USER);
+
+    let err = execute(
+        deps.as_mut(),
+        mock_env(),
+        message_info(&user, &[]),
+        ExecuteMsg::UpdateAdmin {
+            new_admin: user.to_string(),
+        },
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, ContractError::Unauthorized));
+}
+
+#[test]
+fn test_update_admin_invalid_address() {
+    let mut deps = mock_dependencies();
+    do_instantiate(deps.as_mut());
+    let admin = api().addr_make(ADMIN);
+
+    let err = execute(
+        deps.as_mut(),
+        mock_env(),
+        message_info(&admin, &[]),
+        ExecuteMsg::UpdateAdmin {
+            new_admin: "not_a_valid_address!!!".to_string(),
+        },
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, ContractError::Std(_)));
 }

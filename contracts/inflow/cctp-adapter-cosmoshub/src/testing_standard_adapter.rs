@@ -555,18 +555,79 @@ mod standard_adapter_tests {
     }
 
     #[test]
-    fn test_query_available_for_deposit() {
-        let (deps, _) = setup_contract_with_defaults();
+    fn test_query_available_for_deposit_registered_depositor() {
+        let (deps, test_data) = setup_contract_with_defaults();
         let env = mock_env();
 
         let msg = QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::AvailableForDeposit {
-            depositor_address: "any".to_string(),
+            depositor_address: test_data.depositor.to_string(),
             denom: "ibc/usdc".to_string(),
         });
         let res = query(deps.as_ref(), env, msg).unwrap();
         let available: AvailableAmountResponse = from_json(&res).unwrap();
 
         assert_eq!(available.amount, Uint128::MAX);
+    }
+
+    #[test]
+    fn test_query_available_for_deposit_unregistered_depositor() {
+        let (deps, test_data) = setup_contract_with_defaults();
+        let env = mock_env();
+
+        let msg = QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::AvailableForDeposit {
+            depositor_address: test_data.non_depositor.to_string(),
+            denom: "ibc/usdc".to_string(),
+        });
+        let res = query(deps.as_ref(), env, msg).unwrap();
+        let available: AvailableAmountResponse = from_json(&res).unwrap();
+
+        assert_eq!(available.amount, Uint128::zero());
+    }
+
+    #[test]
+    fn test_query_available_for_deposit_wrong_denom() {
+        let (deps, test_data) = setup_contract_with_defaults();
+        let env = mock_env();
+
+        let msg = QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::AvailableForDeposit {
+            depositor_address: test_data.depositor.to_string(),
+            denom: "uatom".to_string(),
+        });
+        let res = query(deps.as_ref(), env, msg).unwrap();
+        let available: AvailableAmountResponse = from_json(&res).unwrap();
+
+        assert_eq!(available.amount, Uint128::zero());
+    }
+
+    #[test]
+    fn test_query_available_for_deposit_disabled_depositor() {
+        let (mut deps, test_data) = setup_contract_with_defaults();
+        let env = mock_env();
+
+        // Disable the depositor
+        let info = MessageInfo {
+            sender: test_data.admin.clone(),
+            funds: vec![],
+        };
+        execute(
+            deps.as_mut(),
+            env.clone(),
+            info,
+            ExecuteMsg::StandardAction(AdapterInterfaceMsg::SetDepositorEnabled {
+                depositor_address: test_data.depositor.to_string(),
+                enabled: false,
+            }),
+        )
+        .unwrap();
+
+        let msg = QueryMsg::StandardQuery(AdapterInterfaceQueryMsg::AvailableForDeposit {
+            depositor_address: test_data.depositor.to_string(),
+            denom: "ibc/usdc".to_string(),
+        });
+        let res = query(deps.as_ref(), env, msg).unwrap();
+        let available: AvailableAmountResponse = from_json(&res).unwrap();
+
+        assert_eq!(available.amount, Uint128::zero());
     }
 
     #[test]

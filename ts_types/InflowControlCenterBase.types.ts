@@ -14,7 +14,7 @@ export interface InstantiateMsg {
 }
 export interface FeeConfigInit {
   fee_rate: Decimal;
-  fee_recipient: string;
+  fee_recipient?: string | null;
 }
 export type ExecuteMsg = {
   submit_deployed_amount: {
@@ -87,7 +87,7 @@ export interface FeeAccrualInfoResponse {
 export type Addr = string;
 export interface FeeConfigResponse {
   fee_rate: Decimal;
-  fee_recipient: Addr;
+  fee_recipient?: Addr | null;
 }
 export interface PoolInfoResponse {
   total_pool_value: Uint128;

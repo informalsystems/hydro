@@ -81,17 +81,25 @@ pub fn instantiate(
             if init.fee_rate > Decimal::one() {
                 return Err(ContractError::InvalidFeeRate);
             }
-            let fee_recipient = deps.api.addr_validate(&init.fee_recipient)?;
+            let fee_recipient = init
+                .fee_recipient
+                .as_deref()
+                .filter(|r| !r.is_empty())
+                .map(|r| deps.api.addr_validate(r))
+                .transpose()?;
+            if !init.fee_rate.is_zero() && fee_recipient.is_none() {
+                return Err(ContractError::FeeRecipientNotSet);
+            }
             FeeConfig {
                 fee_rate: init.fee_rate,
                 fee_recipient,
             }
         }
         None => {
-            // Default: fees disabled (fee_rate = 0)
+            // Default: fees disabled
             FeeConfig {
                 fee_rate: Decimal::zero(),
-                fee_recipient: Addr::unchecked(""),
+                fee_recipient: None,
             }
         }
     };
@@ -521,7 +529,11 @@ fn try_accrue_fees_internal(
             contract_addr: subvault.to_string(),
             msg: to_json_binary(&VaultExecuteMsg::MintFeeShares {
                 amount: vault_mint_amount,
-                recipient: fee_config.fee_recipient.to_string(),
+                recipient: fee_config
+                    .fee_recipient
+                    .as_ref()
+                    .map(|a| a.to_string())
+                    .unwrap_or_default(),
             })?,
             funds: vec![],
         };
@@ -624,8 +636,8 @@ fn update_fee_config(
         }
         // If setting a non-zero rate, ensure we have a valid recipient
         // (either from this update or from existing config)
-        let has_valid_recipient = fee_recipient.as_ref().is_some_and(|r| !r.is_empty())
-            || !fee_config.fee_recipient.as_str().is_empty();
+        let has_valid_recipient = fee_recipient.as_deref().is_some_and(|r| !r.is_empty())
+            || fee_config.fee_recipient.is_some();
         if !rate.is_zero() && !has_valid_recipient {
             return Err(ContractError::FeeRecipientNotSet);
         }
@@ -650,7 +662,7 @@ fn update_fee_config(
     }
 
     if let Some(recipient) = fee_recipient {
-        fee_config.fee_recipient = deps.api.addr_validate(&recipient)?;
+        fee_config.fee_recipient = Some(deps.api.addr_validate(&recipient)?);
     }
 
     FEE_CONFIG.save(deps.storage, &fee_config)?;
@@ -661,7 +673,14 @@ fn update_fee_config(
         .add_attribute("action", "update_fee_config")
         .add_attribute("sender", info.sender)
         .add_attribute("fee_rate", fee_config.fee_rate.to_string())
-        .add_attribute("fee_recipient", fee_config.fee_recipient.to_string())
+        .add_attribute(
+            "fee_recipient",
+            fee_config
+                .fee_recipient
+                .as_ref()
+                .map(|a| a.to_string())
+                .unwrap_or_default(),
+        )
         .add_attribute("fee_enabled", fee_enabled.to_string()))
 }
 

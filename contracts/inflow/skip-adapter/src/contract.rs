@@ -339,7 +339,7 @@ fn execute_swap(
     // 7. Calculate timeout
     let timeout_nanos = env.block.time.nanos() + config.default_timeout_nanos;
 
-    // 6. Dispatch based on venue type
+    // 8. Dispatch based on venue type
     if route.venue.is_local() {
         execute_local_swap(deps, env, &config, &route, &coin_in, &params, timeout_nanos)
     } else {

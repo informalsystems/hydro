@@ -13,6 +13,7 @@ use crate::msg::{
     RegisteredDepositorInfo, RegisteredDepositorsResponse, RouteResponse, SkipAdapterMsg,
     SkipAdapterQueryMsg, SkipConfigResponse, SwapParams, TimeEstimateResponse,
 };
+use crate::skip::create_local_swap_and_action_msg;
 use crate::state::{
     Config, Depositor, SwapVenue, UnifiedRoute, ADMINS, CONFIG, EXECUTORS, ROUTES,
     WHITELISTED_DEPOSITORS,
@@ -320,8 +321,49 @@ fn execute_swap(deps: DepsMut, env: Env, params: SwapParams) -> Result<Response,
     // 7. Calculate timeout
     let timeout_nanos = env.block.time.nanos() + config.default_timeout_nanos;
 
-    // 8. On Cosmos Hub, all venues are cross-chain — dispatch IBC transfer directly
-    execute_cross_chain_swap(env, &config, &route, &coin_in, &params, timeout_nanos)
+    // 8. Dispatch based on venue type
+    if route.venue.is_local() {
+        execute_local_swap(deps, env, &config, &route, &coin_in, &params, timeout_nanos)
+    } else {
+        execute_cross_chain_swap(env, &config, &route, &coin_in, &params, timeout_nanos)
+    }
+}
+
+fn execute_local_swap(
+    deps: DepsMut,
+    env: Env,
+    config: &Config,
+    route: &UnifiedRoute,
+    coin_in: &Coin,
+    params: &SwapParams,
+    timeout_nanos: u64,
+) -> Result<Response, ContractError> {
+    // Get Skip contract for this venue
+    let skip_contract_str = config.get_skip_contract(&route.swap_venue_name)?;
+    let skip_contract = deps.api.addr_validate(skip_contract_str)?;
+
+    // Build Skip message using stored operations from route
+    // Transfer output back to this adapter contract
+    let min_coin_out = Coin {
+        denom: route.denom_out.clone(),
+        amount: params.min_amount_out,
+    };
+    let swap_msg = create_local_swap_and_action_msg(
+        skip_contract,
+        coin_in.clone(),
+        min_coin_out,
+        route.operations.clone(),
+        route.swap_venue_name.clone(),
+        env.contract.address.to_string(), // Return funds to adapter
+        timeout_nanos,
+    )?;
+
+    Ok(Response::new()
+        .add_message(swap_msg)
+        .add_attribute("action", "swap")
+        .add_attribute("venue", "neutron")
+        .add_attribute("route_id", &params.route_id)
+        .add_attribute("amount_in", coin_in.amount))
 }
 
 fn execute_cross_chain_swap(

@@ -70,14 +70,14 @@ pub fn instantiate(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     let ExecuteMsg::StandardAction(interface_msg) = msg;
     match interface_msg {
         AdapterInterfaceMsg::Deposit {} => execute_deposit(deps, info),
-        AdapterInterfaceMsg::Withdraw { coin } => execute_withdraw(deps, _env, info, coin),
+        AdapterInterfaceMsg::Withdraw { coin } => execute_withdraw(deps, env, info, coin),
         AdapterInterfaceMsg::RegisterDepositor {
             depositor_address,
             metadata: _,

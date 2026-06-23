@@ -24,6 +24,8 @@ pub enum ExecuteMsg {
     },
     /// Admin: remove a conversion pair (e.g. once conversion window is closed).
     RemovePair { neutron_shares_denom: String },
+    /// Admin: replace the current admin with a new address.
+    UpdateAdmin { new_admin: String },
 }
 
 #[cw_serde]

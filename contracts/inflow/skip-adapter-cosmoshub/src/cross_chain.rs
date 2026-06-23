@@ -105,9 +105,20 @@ pub fn construct_cross_chain_wasm_hook_memo(
 /// Build ibc_transfer post_swap_action with potential PFM forward
 fn build_ibc_return_action(route: &UnifiedRoute, timeout: u64) -> StdResult<serde_json::Value> {
     if route.return_path.is_empty() {
-        return Err(cosmwasm_std::StdError::generic_err(
-            "Cross chain route must have return path",
-        ));
+        let to_address = route
+            .recover_address
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                cosmwasm_std::StdError::generic_err(
+                    "Route with empty return_path must have recover_address set",
+                )
+            })?;
+        return Ok(json!({
+            "transfer": {
+                "to_address": to_address
+            }
+        }));
     }
 
     let first_hop = &route.return_path[0];
@@ -125,7 +136,7 @@ fn build_ibc_return_action(route: &UnifiedRoute, timeout: u64) -> StdResult<serd
                 "source_channel": first_hop.channel,
                 "receiver": first_hop.receiver,
                 "memo": forward_memo,
-                "recover_address": route.recover_address.as_ref().unwrap_or(&"".to_string())
+                "recover_address": route.recover_address.as_deref().unwrap_or("")
             }
         }
     }))

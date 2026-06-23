@@ -48,6 +48,9 @@ pub enum ContractError {
     #[error("Invalid forward path: {reason}")]
     InvalidForwardPath { reason: String },
 
+    #[error("Invalid return path: {reason}")]
+    InvalidReturnPath { reason: String },
+
     #[error("Executor already exists: {executor}")]
     ExecutorAlreadyExists { executor: String },
 

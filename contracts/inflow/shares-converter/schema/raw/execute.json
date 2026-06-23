@@ -63,6 +63,28 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Admin: replace the current admin with a new address.",
+      "type": "object",
+      "required": [
+        "update_admin"
+      ],
+      "properties": {
+        "update_admin": {
+          "type": "object",
+          "required": [
+            "new_admin"
+          ],
+          "properties": {
+            "new_admin": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ]
 }

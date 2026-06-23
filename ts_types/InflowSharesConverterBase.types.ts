@@ -23,6 +23,10 @@ export type ExecuteMsg = {
   remove_pair: {
     neutron_shares_denom: string;
   };
+} | {
+  update_admin: {
+    new_admin: string;
+  };
 };
 export type QueryMsg = {
   config: {};

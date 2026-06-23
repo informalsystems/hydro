@@ -80,6 +80,11 @@ export interface InflowSharesConverterBaseInterface extends InflowSharesConverte
   }: {
     neutronSharesDenom: string;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  updateAdmin: ({
+    newAdmin
+  }: {
+    newAdmin: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class InflowSharesConverterBaseClient extends InflowSharesConverterBaseQueryClient implements InflowSharesConverterBaseInterface {
   client: SigningCosmWasmClient;
@@ -93,6 +98,7 @@ export class InflowSharesConverterBaseClient extends InflowSharesConverterBaseQu
     this.convert = this.convert.bind(this);
     this.addPair = this.addPair.bind(this);
     this.removePair = this.removePair.bind(this);
+    this.updateAdmin = this.updateAdmin.bind(this);
   }
   convert = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
@@ -121,6 +127,17 @@ export class InflowSharesConverterBaseClient extends InflowSharesConverterBaseQu
     return await this.client.execute(this.sender, this.contractAddress, {
       remove_pair: {
         neutron_shares_denom: neutronSharesDenom
+      }
+    }, fee, memo, _funds);
+  };
+  updateAdmin = async ({
+    newAdmin
+  }: {
+    newAdmin: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      update_admin: {
+        new_admin: newAdmin
       }
     }, fee, memo, _funds);
   };

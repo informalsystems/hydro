@@ -544,7 +544,7 @@
           "type": "boolean"
         },
         "forward_path": {
-          "description": "Forward path from Cosmos Hub to the swap venue Example: [Cosmos Hub → Osmosis]",
+          "description": "Forward path from Cosmos Hub to the swap venue Empty for local routes Example: [Cosmos Hub → Osmosis]",
           "type": "array",
           "items": {
             "$ref": "#/definitions/PathHop"
@@ -558,14 +558,14 @@
           }
         },
         "recover_address": {
-          "description": "Recovery address on the swap venue (e.g., osmo1...)",
+          "description": "Recovery address on the swap venue (e.g., osmo1...). Will be used as final destination if return_path is empty on cross-chain routes.",
           "type": [
             "string",
             "null"
           ]
         },
         "return_path": {
-          "description": "Return path back to Cosmos Hub Example: [Osmosis → Cosmos Hub]",
+          "description": "Return path back to Cosmos Hub Empty for local routes Example: [Osmosis → Cosmos Hub]",
           "type": "array",
           "items": {
             "$ref": "#/definitions/PathHop"

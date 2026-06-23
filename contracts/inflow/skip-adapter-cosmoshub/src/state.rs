@@ -109,14 +109,16 @@ pub struct UnifiedRoute {
     pub swap_venue_name: String,
 
     /// Forward path from Cosmos Hub to the swap venue
+    /// Empty for local routes
     /// Example: [Cosmos Hub → Osmosis]
     pub forward_path: Vec<PathHop>,
 
     /// Return path back to Cosmos Hub
+    /// Empty for local routes
     /// Example: [Osmosis → Cosmos Hub]
     pub return_path: Vec<PathHop>,
 
-    /// Recovery address on the swap venue (e.g., osmo1...)
+    /// Recovery address on the swap venue (e.g., osmo1...). Will be used as final destination if return_path is empty on cross-chain routes.
     pub recover_address: Option<String>,
 
     /// Whether route is enabled

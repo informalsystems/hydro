@@ -1,6 +1,6 @@
 use cosmwasm_std::{
     entry_point, to_json_binary, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Order,
-    Response, StdResult, Uint128,
+    Response, StdResult,
 };
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
@@ -58,6 +58,7 @@ pub fn execute(
         ExecuteMsg::RemovePair {
             neutron_shares_denom,
         } => remove_pair(deps, info, neutron_shares_denom),
+        ExecuteMsg::UpdateAdmin { new_admin } => update_admin(deps, info, new_admin),
     }
 }
 
@@ -75,11 +76,7 @@ fn convert(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, Contr
 
     let contract_balance = deps
         .querier
-        .query_balance(&env.contract.address, &cosmos_hub_denom)
-        .unwrap_or(Coin {
-            denom: cosmos_hub_denom.clone(),
-            amount: Uint128::zero(),
-        });
+        .query_balance(&env.contract.address, &cosmos_hub_denom)?;
 
     if contract_balance.amount < sent.amount {
         return Err(ContractError::InsufficientBalance {
@@ -159,6 +156,25 @@ fn remove_pair(
     Ok(Response::new()
         .add_attribute("action", "remove_pair")
         .add_attribute("neutron_denom", neutron_shares_denom))
+}
+
+fn update_admin(
+    deps: DepsMut,
+    info: MessageInfo,
+    new_admin: String,
+) -> Result<Response, ContractError> {
+    let admin = ADMIN.load(deps.storage)?;
+    if info.sender != admin {
+        return Err(ContractError::Unauthorized);
+    }
+
+    let new_admin_addr = deps.api.addr_validate(&new_admin)?;
+    ADMIN.save(deps.storage, &new_admin_addr)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "update_admin")
+        .add_attribute("old_admin", admin)
+        .add_attribute("new_admin", new_admin_addr))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
