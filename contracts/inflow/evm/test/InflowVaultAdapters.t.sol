@@ -529,6 +529,35 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
         assertEq(asset.balanceOf(address(a)), 50_000e6);
     }
 
+    function test_deposit_to_adapter_reverts_when_amount_exceeds_vault_balance() public {
+        MockAdapterWithAsset a = _newAdapter();
+        _registerAdapter("a", a, false, true);
+
+        _deposit(user, 30_000e6); // vault holds 30k
+
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(InflowVault.InsufficientAvailableBalance.selector, 30_000e6, 50_000e6));
+        vault.depositToAdapter("a", 50_000e6); // 50k > 30k available
+    }
+
+    function test_deposit_to_adapter_reverts_when_withdrawal_reserves_reduce_available_amount() public {
+        MockAdapterWithAsset a = _newAdapter();
+        _registerAdapter("a", a, false, true);
+
+        // Deposit 50k so vault holds 50k.
+        _deposit(user, 50_000e6);
+
+        // Queue a withdrawal for 40k: totalWithdrawalAmount becomes 40k,
+        // so availableForDeployment = 50k - 40k = 10k.
+        vm.prank(user);
+        vault.redeem(40_000e6, user, user); // queued, not immediately funded
+
+        // Requesting 20k exceeds the 10k available even though raw balance is 50k.
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(InflowVault.InsufficientAvailableBalance.selector, 10_000e6, 20_000e6));
+        vault.depositToAdapter("a", 20_000e6);
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // moveAdapterFunds
     // ═══════════════════════════════════════════════════════════════════════
