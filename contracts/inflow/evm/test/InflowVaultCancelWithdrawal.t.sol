@@ -25,13 +25,13 @@ contract InflowVaultCancelWithdrawalTest is Test {
     MockUSDC usdc;
 
     address admin = makeAddr("admin");
-    address user  = makeAddr("user");
+    address user = makeAddr("user");
     address alice = makeAddr("alice");
-    address bob   = makeAddr("bob");
+    address bob = makeAddr("bob");
 
-    uint256 constant AMOUNT           = 100_000e6;  // 100,000 USDC (6 decimals)
-    uint256 constant DEPOSIT_CAP      = 1_000_000e6;
-    uint256 constant MAX_WITHDRAWALS  = 10;
+    uint256 constant AMOUNT = 100_000e6; // 100,000 USDC (6 decimals)
+    uint256 constant DEPOSIT_CAP = 1_000_000e6;
+    uint256 constant MAX_WITHDRAWALS = 10;
 
     function setUp() public {
         usdc = new MockUSDC();
@@ -45,15 +45,24 @@ contract InflowVaultCancelWithdrawalTest is Test {
         InflowVault impl = new InflowVault();
         bytes memory initData = abi.encodeCall(
             InflowVault.initialize,
-            (IERC20(address(usdc)), "Hydro Inflow Vault", "hvUSDC",
-             DEPOSIT_CAP, MAX_WITHDRAWALS, wl, deployedAmountWl, 0, address(0))
+            (
+                IERC20(address(usdc)),
+                "Hydro Inflow Vault",
+                "hvUSDC",
+                DEPOSIT_CAP,
+                MAX_WITHDRAWALS,
+                wl,
+                deployedAmountWl,
+                0,
+                address(0)
+            )
         );
         vault = InflowVault(address(new ERC1967Proxy(address(impl), initData)));
 
         usdc.mint(user, AMOUNT);
         // Alice needs 150k: 100k initial + 50k for the second deposit.
         usdc.mint(alice, 150_000e6);
-        usdc.mint(bob,   AMOUNT);
+        usdc.mint(bob, AMOUNT);
     }
 
     /// @notice Scenario:
@@ -69,20 +78,20 @@ contract InflowVaultCancelWithdrawalTest is Test {
         uint256 sharesReceived = vault.deposit(AMOUNT, user);
         vm.stopPrank();
 
-        assertEq(sharesReceived, AMOUNT,                    "shares minted should equal deposited assets (1:1)");
-        assertEq(vault.balanceOf(user), AMOUNT,             "user should hold 100,000 shares");
-        assertEq(usdc.balanceOf(address(vault)), AMOUNT,    "vault USDC balance should be 100,000");
+        assertEq(sharesReceived, AMOUNT, "shares minted should equal deposited assets (1:1)");
+        assertEq(vault.balanceOf(user), AMOUNT, "user should hold 100,000 shares");
+        assertEq(usdc.balanceOf(address(vault)), AMOUNT, "vault USDC balance should be 100,000");
 
         // ── Step 2: admin withdraws for deployment ───────────────────────────
         vm.prank(admin);
         vault.withdrawForDeployment(AMOUNT);
 
-        assertEq(usdc.balanceOf(address(vault)), 0,         "vault balance should be 0 after deployment withdrawal");
-        assertEq(vault.deployedAmount(), AMOUNT,            "deployedAmount should be 100,000 USDC");
-        assertEq(usdc.balanceOf(admin), AMOUNT,             "admin should hold the deployed USDC");
+        assertEq(usdc.balanceOf(address(vault)), 0, "vault balance should be 0 after deployment withdrawal");
+        assertEq(vault.deployedAmount(), AMOUNT, "deployedAmount should be 100,000 USDC");
+        assertEq(usdc.balanceOf(admin), AMOUNT, "admin should hold the deployed USDC");
 
         // ── Step 3: user redeems — vault has no free balance -> queued ────────
-        uint256 withdrawalId = vault.nextWithdrawalId();    // == 0 (first entry)
+        uint256 withdrawalId = vault.nextWithdrawalId(); // == 0 (first entry)
 
         vm.expectEmit(true, true, true, true, address(vault));
         emit InflowVault.WithdrawalQueued(withdrawalId, user, user, AMOUNT, AMOUNT);
@@ -91,20 +100,20 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vault.redeem(AMOUNT, user, user);
 
         // Shares are burned immediately when queued.
-        assertEq(vault.balanceOf(user), 0,                  "user shares should be burned");
+        assertEq(vault.balanceOf(user), 0, "user shares should be burned");
 
         // Verify the queue entry.
         InflowWithdrawalQueueLib.WithdrawalEntry memory entry = vault.withdrawalRequest(withdrawalId);
-        assertEq(entry.id,              withdrawalId,       "entry id mismatch");
-        assertEq(entry.owner,           user,               "entry owner should be user");
-        assertEq(entry.receiver,        user,               "entry receiver should be user");
-        assertEq(entry.sharesBurned,    AMOUNT,             "entry sharesBurned should be 100,000");
-        assertEq(entry.amountToReceive, AMOUNT,             "entry amountToReceive should be 100,000 USDC");
-        assertFalse(entry.isFunded,                         "entry should not yet be funded");
+        assertEq(entry.id, withdrawalId, "entry id mismatch");
+        assertEq(entry.owner, user, "entry owner should be user");
+        assertEq(entry.receiver, user, "entry receiver should be user");
+        assertEq(entry.sharesBurned, AMOUNT, "entry sharesBurned should be 100,000");
+        assertEq(entry.amountToReceive, AMOUNT, "entry amountToReceive should be 100,000 USDC");
+        assertFalse(entry.isFunded, "entry should not yet be funded");
 
         uint256[] memory queuedIds = vault.getUserWithdrawalIds(user);
-        assertEq(queuedIds.length,  1,            "user should have exactly 1 queued withdrawal");
-        assertEq(queuedIds[0],      withdrawalId, "queued id should match");
+        assertEq(queuedIds.length, 1, "user should have exactly 1 queued withdrawal");
+        assertEq(queuedIds[0], withdrawalId, "queued id should match");
 
         // ── Step 4: user cancels the queued withdrawal ────────────────────────
         uint256[] memory cancelIds = new uint256[](1);
@@ -117,14 +126,14 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vault.cancelWithdrawal(cancelIds);
 
         // Shares returned to user.
-        assertEq(vault.balanceOf(user), AMOUNT,             "user should have 100,000 shares restored");
+        assertEq(vault.balanceOf(user), AMOUNT, "user should have 100,000 shares restored");
 
         // Queue entry cleared.
         InflowWithdrawalQueueLib.WithdrawalEntry memory cancelled = vault.withdrawalRequest(withdrawalId);
-        assertEq(cancelled.initiatedAt, 0,                  "cancelled entry should be deleted");
+        assertEq(cancelled.initiatedAt, 0, "cancelled entry should be deleted");
 
         uint256[] memory remainingIds = vault.getUserWithdrawalIds(user);
-        assertEq(remainingIds.length, 0,                    "user withdrawal queue should be empty");
+        assertEq(remainingIds.length, 0, "user withdrawal queue should be empty");
     }
 
     /// @notice Interleaved-deployment scenario with yield simulation:
@@ -146,7 +155,7 @@ contract InflowVaultCancelWithdrawalTest is Test {
     ///   7. Admin withdrawForDeployment(60,000) [after cancel] -> SUCCEEDS.
     ///      Vault: 0. DeployedAmount: 180k. TotalAssets: 180k.
     function test_interleaved_deployments_queueProtectsAndCancelUnlocks() public {
-        uint256 bobDeposit       = 60_000e6;
+        uint256 bobDeposit = 60_000e6;
         uint256 deployedWithYield = 120_000e6; // 100k deployed + 20k yield
 
         // ── Step 1: Alice deposits 100,000 USDC ──────────────────────────────
@@ -155,7 +164,7 @@ contract InflowVaultCancelWithdrawalTest is Test {
         uint256 aliceShares = vault.deposit(AMOUNT, alice);
         vm.stopPrank();
 
-        assertEq(aliceShares,         AMOUNT, "alice: 100k shares at 1:1");
+        assertEq(aliceShares, AMOUNT, "alice: 100k shares at 1:1");
         assertEq(vault.totalSupply(), AMOUNT, "total supply = 100k");
         assertEq(vault.totalAssets(), AMOUNT, "total assets = 100k");
 
@@ -163,9 +172,9 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vm.prank(admin);
         vault.withdrawForDeployment(AMOUNT);
 
-        assertEq(usdc.balanceOf(address(vault)), 0,      "vault balance = 0 after first deployment");
-        assertEq(vault.deployedAmount(),         AMOUNT, "deployedAmount = 100k");
-        assertEq(vault.totalAssets(),            AMOUNT, "totalAssets = 100k");
+        assertEq(usdc.balanceOf(address(vault)), 0, "vault balance = 0 after first deployment");
+        assertEq(vault.deployedAmount(), AMOUNT, "deployedAmount = 100k");
+        assertEq(vault.totalAssets(), AMOUNT, "totalAssets = 100k");
 
         // ── Step 2b: Simulate yield — admin reports updated deployment value ──
         // Deployment earned 20k: submit 120k instead of 100k.
@@ -174,8 +183,8 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vault.submitDeployedAmount(deployedWithYield);
 
         assertEq(vault.deployedAmount(), deployedWithYield, "deployedAmount = 120k (100k + 20k yield)");
-        assertEq(vault.totalAssets(),    deployedWithYield, "totalAssets = 120k");
-        assertEq(vault.totalSupply(),    AMOUNT,            "supply unchanged = 100k");
+        assertEq(vault.totalAssets(), deployedWithYield, "totalAssets = 120k");
+        assertEq(vault.totalSupply(), AMOUNT, "supply unchanged = 100k");
         // Share price: 120k assets / 100k shares = 1.2 USDC per share.
 
         // ── Step 3: Bob deposits 60,000 USDC ─────────────────────────────────
@@ -187,10 +196,10 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vm.stopPrank();
 
         uint256 bobExpectedShares = 50_000e6;
-        assertEq(bobShares,                      bobExpectedShares,                       "bob: 50k shares (price 1.2:1)");
-        assertEq(usdc.balanceOf(address(vault)), bobDeposit,                              "vault holds 60k");
-        assertEq(vault.totalSupply(),            AMOUNT + bobExpectedShares,              "total supply = 150k");
-        assertEq(vault.totalAssets(),            bobDeposit + deployedWithYield,          "total assets = 180k (60k vault + 120k deployed)");
+        assertEq(bobShares, bobExpectedShares, "bob: 50k shares (price 1.2:1)");
+        assertEq(usdc.balanceOf(address(vault)), bobDeposit, "vault holds 60k");
+        assertEq(vault.totalSupply(), AMOUNT + bobExpectedShares, "total supply = 150k");
+        assertEq(vault.totalAssets(), bobDeposit + deployedWithYield, "total assets = 180k (60k vault + 120k deployed)");
 
         // ── Step 4: Alice redeems 100k shares -> queued ────────────────────────
         // previewRedeem(100k) = floor(100k × (180k+1) / (150k+1)) = 119,999.866 ≈ 120k.
@@ -208,14 +217,18 @@ contract InflowVaultCancelWithdrawalTest is Test {
         assertEq(vault.balanceOf(alice), 0, "alice shares burned");
 
         // Effective supply / assets reflect only Bob's position.
-        assertEq(vault.totalSupply(), bobExpectedShares,                                   "effective supply = 50k (bob only)");
-        assertEq(vault.totalAssets(), bobDeposit + deployedWithYield - aliceRedemptionAssets, "effective assets = 180k - queued (~60k)");
+        assertEq(vault.totalSupply(), bobExpectedShares, "effective supply = 50k (bob only)");
+        assertEq(
+            vault.totalAssets(),
+            bobDeposit + deployedWithYield - aliceRedemptionAssets,
+            "effective assets = 180k - queued (~60k)"
+        );
 
         InflowWithdrawalQueueLib.WithdrawalEntry memory entry = vault.withdrawalRequest(withdrawalId);
-        assertEq(entry.owner,           alice,                 "entry owner = alice");
-        assertEq(entry.sharesBurned,    AMOUNT,                "sharesBurned = 100k");
+        assertEq(entry.owner, alice, "entry owner = alice");
+        assertEq(entry.sharesBurned, AMOUNT, "sharesBurned = 100k");
         assertEq(entry.amountToReceive, aliceRedemptionAssets, "amountToReceive ~120k");
-        assertFalse(entry.isFunded,                            "not funded");
+        assertFalse(entry.isFunded, "not funded");
 
         // ── Step 5: Admin attempts second deployment while withdrawal is pending ─
         // totalWithdrawalAmount ≈ 120k; vaultBalance = 60k -> available = 0 -> reverts.
@@ -225,8 +238,8 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vault.withdrawForDeployment(bobDeposit);
 
         // Vault state unchanged after the failed call.
-        assertEq(usdc.balanceOf(address(vault)), bobDeposit,        "vault balance unchanged after failed deployment");
-        assertEq(vault.deployedAmount(),         deployedWithYield, "deployedAmount unchanged after failed deployment");
+        assertEq(usdc.balanceOf(address(vault)), bobDeposit, "vault balance unchanged after failed deployment");
+        assertEq(vault.deployedAmount(), deployedWithYield, "deployedAmount unchanged after failed deployment");
 
         // ── Step 6: Alice cancels the queued withdrawal ───────────────────────
         // Because the vault share price is ~1.2 at cancel time, convertToShares(aliceRedemptionAssets)
@@ -244,20 +257,20 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vm.prank(alice);
         vault.cancelWithdrawal(cancelIds);
 
-        assertEq(vault.balanceOf(alice),    aliceSharesRestored,                               "alice shares restored");
-        assertEq(vault.balanceOf(bob),      bobExpectedShares,                                 "bob shares unaffected");
-        assertEq(vault.totalSupply(),       aliceSharesRestored + bobExpectedShares,           "total supply after cancel");
-        assertEq(vault.totalAssets(),       bobDeposit + deployedWithYield,                    "total assets = 180k");
+        assertEq(vault.balanceOf(alice), aliceSharesRestored, "alice shares restored");
+        assertEq(vault.balanceOf(bob), bobExpectedShares, "bob shares unaffected");
+        assertEq(vault.totalSupply(), aliceSharesRestored + bobExpectedShares, "total supply after cancel");
+        assertEq(vault.totalAssets(), bobDeposit + deployedWithYield, "total assets = 180k");
         assertEq(vault.withdrawalRequest(withdrawalId).initiatedAt, 0, "entry deleted");
-        assertEq(vault.getUserWithdrawalIds(alice).length, 0,          "alice queue empty");
+        assertEq(vault.getUserWithdrawalIds(alice).length, 0, "alice queue empty");
 
         // ── Step 7: Admin can now deploy the 60k freed by the cancellation ────
         vm.prank(admin);
         vault.withdrawForDeployment(bobDeposit);
 
-        assertEq(usdc.balanceOf(address(vault)), 0,                                "vault = 0 after final deployment");
-        assertEq(vault.deployedAmount(),         deployedWithYield + bobDeposit,   "deployedAmount = 180k");
-        assertEq(vault.totalAssets(),            deployedWithYield + bobDeposit,   "totalAssets = 180k (fully deployed)");
+        assertEq(usdc.balanceOf(address(vault)), 0, "vault = 0 after final deployment");
+        assertEq(vault.deployedAmount(), deployedWithYield + bobDeposit, "deployedAmount = 180k");
+        assertEq(vault.totalAssets(), deployedWithYield + bobDeposit, "totalAssets = 180k (fully deployed)");
     }
 
     /// @notice Two-user scenario:
@@ -281,11 +294,11 @@ contract InflowVaultCancelWithdrawalTest is Test {
         uint256 aliceShares = vault.deposit(AMOUNT, alice);
         vm.stopPrank();
 
-        assertEq(aliceShares,                    AMOUNT, "alice: 100k shares at 1:1");
-        assertEq(vault.balanceOf(alice),         AMOUNT, "alice share balance");
+        assertEq(aliceShares, AMOUNT, "alice: 100k shares at 1:1");
+        assertEq(vault.balanceOf(alice), AMOUNT, "alice share balance");
         assertEq(usdc.balanceOf(address(vault)), AMOUNT, "vault holds 100k USDC");
-        assertEq(vault.totalSupply(),            AMOUNT, "total supply = 100k");
-        assertEq(vault.totalAssets(),            AMOUNT, "total assets = 100k");
+        assertEq(vault.totalSupply(), AMOUNT, "total supply = 100k");
+        assertEq(vault.totalAssets(), AMOUNT, "total assets = 100k");
 
         // ── Step 2: Bob deposits 100,000 USDC ────────────────────────────────
         vm.startPrank(bob);
@@ -293,20 +306,20 @@ contract InflowVaultCancelWithdrawalTest is Test {
         uint256 bobShares = vault.deposit(AMOUNT, bob);
         vm.stopPrank();
 
-        assertEq(bobShares,                      AMOUNT,       "bob: 100k shares at 1:1");
-        assertEq(vault.balanceOf(bob),           AMOUNT,       "bob share balance");
-        assertEq(usdc.balanceOf(address(vault)), 2 * AMOUNT,   "vault holds 200k USDC");
-        assertEq(vault.totalSupply(),            2 * AMOUNT,   "total supply = 200k");
-        assertEq(vault.totalAssets(),            2 * AMOUNT,   "total assets = 200k");
+        assertEq(bobShares, AMOUNT, "bob: 100k shares at 1:1");
+        assertEq(vault.balanceOf(bob), AMOUNT, "bob share balance");
+        assertEq(usdc.balanceOf(address(vault)), 2 * AMOUNT, "vault holds 200k USDC");
+        assertEq(vault.totalSupply(), 2 * AMOUNT, "total supply = 200k");
+        assertEq(vault.totalAssets(), 2 * AMOUNT, "total assets = 200k");
 
         // ── Step 3: admin withdraws all 200,000 for deployment ────────────────
         vm.prank(admin);
         vault.withdrawForDeployment(2 * AMOUNT);
 
-        assertEq(usdc.balanceOf(address(vault)), 0,           "vault balance = 0");
-        assertEq(vault.deployedAmount(),         2 * AMOUNT,  "deployedAmount = 200k");
-        assertEq(vault.totalAssets(),            2 * AMOUNT,  "totalAssets unchanged (tracked via deployedAmount)");
-        assertEq(vault.totalSupply(),            2 * AMOUNT,  "total supply unchanged");
+        assertEq(usdc.balanceOf(address(vault)), 0, "vault balance = 0");
+        assertEq(vault.deployedAmount(), 2 * AMOUNT, "deployedAmount = 200k");
+        assertEq(vault.totalAssets(), 2 * AMOUNT, "totalAssets unchanged (tracked via deployedAmount)");
+        assertEq(vault.totalSupply(), 2 * AMOUNT, "total supply unchanged");
 
         // ── Step 4: Alice redeems 100,000 shares -> queued ─────────────────────
         // previewRedeem(100k): 100k * (200k+1)/(200k+1) = 100k assets
@@ -319,24 +332,24 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vault.redeem(AMOUNT, alice, alice);
 
         // Shares are burned immediately when queued.
-        assertEq(vault.balanceOf(alice), 0,      "alice shares burned");
-        assertEq(vault.balanceOf(bob),   AMOUNT, "bob shares unaffected");
+        assertEq(vault.balanceOf(alice), 0, "alice shares burned");
+        assertEq(vault.balanceOf(bob), AMOUNT, "bob shares unaffected");
 
         // Burned shares reduce totalSupply; pending claim reduces totalAssets.
-        assertEq(vault.totalSupply(), AMOUNT,    "effective supply = 100k (bob only)");
-        assertEq(vault.totalAssets(), AMOUNT,    "effective assets = 100k (bob's portion)");
+        assertEq(vault.totalSupply(), AMOUNT, "effective supply = 100k (bob only)");
+        assertEq(vault.totalAssets(), AMOUNT, "effective assets = 100k (bob's portion)");
 
         // Verify queue entry.
         InflowWithdrawalQueueLib.WithdrawalEntry memory entry = vault.withdrawalRequest(withdrawalId);
-        assertEq(entry.owner,           alice,  "withdrawal owner = alice");
-        assertEq(entry.receiver,        alice,  "withdrawal receiver = alice");
-        assertEq(entry.sharesBurned,    AMOUNT, "sharesBurned = 100k");
+        assertEq(entry.owner, alice, "withdrawal owner = alice");
+        assertEq(entry.receiver, alice, "withdrawal receiver = alice");
+        assertEq(entry.sharesBurned, AMOUNT, "sharesBurned = 100k");
         assertEq(entry.amountToReceive, AMOUNT, "amountToReceive = 100k USDC");
-        assertFalse(entry.isFunded,             "not yet funded");
+        assertFalse(entry.isFunded, "not yet funded");
 
         uint256[] memory aliceIds = vault.getUserWithdrawalIds(alice);
-        assertEq(aliceIds.length, 1,            "alice has 1 queued withdrawal");
-        assertEq(aliceIds[0],     withdrawalId, "queued withdrawal id = 0");
+        assertEq(aliceIds.length, 1, "alice has 1 queued withdrawal");
+        assertEq(aliceIds[0], withdrawalId, "queued withdrawal id = 0");
 
         // Bob's queue is untouched.
         assertEq(vault.getUserWithdrawalIds(bob).length, 0, "bob has no queued withdrawals");
@@ -352,14 +365,14 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vault.cancelWithdrawal(cancelIds);
 
         // Alice's shares are restored; totals back to post-step-3 levels.
-        assertEq(vault.balanceOf(alice),    AMOUNT,       "alice shares restored to 100k");
-        assertEq(vault.balanceOf(bob),      AMOUNT,       "bob shares unchanged");
-        assertEq(vault.totalSupply(),       2 * AMOUNT,   "total supply = 200k");
-        assertEq(vault.totalAssets(),       2 * AMOUNT,   "total assets = 200k");
+        assertEq(vault.balanceOf(alice), AMOUNT, "alice shares restored to 100k");
+        assertEq(vault.balanceOf(bob), AMOUNT, "bob shares unchanged");
+        assertEq(vault.totalSupply(), 2 * AMOUNT, "total supply = 200k");
+        assertEq(vault.totalAssets(), 2 * AMOUNT, "total assets = 200k");
 
         // Queue entry deleted.
         assertEq(vault.withdrawalRequest(withdrawalId).initiatedAt, 0, "cancelled entry cleared");
-        assertEq(vault.getUserWithdrawalIds(alice).length, 0,          "alice queue empty");
+        assertEq(vault.getUserWithdrawalIds(alice).length, 0, "alice queue empty");
 
         // ── Step 6: Alice deposits another 50,000 USDC ────────────────────────
         // Share price is still 1:1 (200k assets / 200k supply).
@@ -371,13 +384,13 @@ contract InflowVaultCancelWithdrawalTest is Test {
         uint256 newShares = vault.deposit(secondDeposit, alice);
         vm.stopPrank();
 
-        assertEq(newShares, secondDeposit,                         "50k new shares at 1:1");
-        assertEq(vault.balanceOf(alice),         150_000e6,        "alice total shares = 150k");
-        assertEq(vault.balanceOf(bob),           AMOUNT,           "bob shares still 100k");
-        assertEq(vault.totalSupply(),            250_000e6,        "total supply = 250k");
-        assertEq(usdc.balanceOf(address(vault)), secondDeposit,    "vault USDC balance = 50k");
-        assertEq(vault.deployedAmount(),         2 * AMOUNT,       "deployedAmount unchanged at 200k");
-        assertEq(vault.totalAssets(),            250_000e6,        "total assets = 250k (50k vault + 200k deployed)");
+        assertEq(newShares, secondDeposit, "50k new shares at 1:1");
+        assertEq(vault.balanceOf(alice), 150_000e6, "alice total shares = 150k");
+        assertEq(vault.balanceOf(bob), AMOUNT, "bob shares still 100k");
+        assertEq(vault.totalSupply(), 250_000e6, "total supply = 250k");
+        assertEq(usdc.balanceOf(address(vault)), secondDeposit, "vault USDC balance = 50k");
+        assertEq(vault.deployedAmount(), 2 * AMOUNT, "deployedAmount unchanged at 200k");
+        assertEq(vault.totalAssets(), 250_000e6, "total assets = 250k (50k vault + 200k deployed)");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -472,7 +485,9 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vault.redeem(AMOUNT, user, user); // id 0
 
         uint256[] memory ids = new uint256[](3);
-        ids[0] = 0; ids[1] = 0; ids[2] = 0;
+        ids[0] = 0;
+        ids[1] = 0;
+        ids[2] = 0;
 
         vm.prank(user);
         vault.cancelWithdrawal(ids);
@@ -534,7 +549,7 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vault.cancelWithdrawal(ids);
 
         assertEq(vault.balanceOf(alice), expectedMint, "min(burned, recalc) shares minted");
-        assertLe(vault.balanceOf(alice), AMOUNT,       "never exceeds original shares burned");
+        assertLe(vault.balanceOf(alice), AMOUNT, "never exceeds original shares burned");
     }
 
     // ── deposit cap check ─────────────────────────────────────────────────────
@@ -589,7 +604,7 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vault.redeem(AMOUNT, alice, alice); // id 0
 
         vm.prank(bob);
-        vault.redeem(AMOUNT, bob, bob);   // id 1
+        vault.redeem(AMOUNT, bob, bob); // id 1
 
         // Fund id 0.
         usdc.mint(admin, AMOUNT);
@@ -634,7 +649,7 @@ contract InflowVaultCancelWithdrawalTest is Test {
         vault.cancelWithdrawal(ids);
 
         InflowWithdrawalQueueLib.WithdrawalQueueInfo memory after_ = vault.withdrawalQueueInfo();
-        assertEq(after_.totalWithdrawalAmount,    0, "totalWithdrawalAmount cleared");
+        assertEq(after_.totalWithdrawalAmount, 0, "totalWithdrawalAmount cleared");
         assertEq(after_.nonFundedWithdrawalAmount, 0, "nonFundedWithdrawalAmount cleared");
     }
 
@@ -647,10 +662,57 @@ contract InflowVaultCancelWithdrawalTest is Test {
         assertEq(vault.balanceOf(user), 0);
     }
 
+    // ── duplicate id deduplication ────────────────────────────────────────────
+
+    /// @dev Passing the same ID twice must cancel it exactly once.
+    ///
+    /// The bug: the deduplication inner loop was missing braces around its body,
+    /// so `break` was an unconditional statement rather than part of the `if`.
+    /// The loop always exited after checking only cancelableIds[0], so a
+    /// duplicate whose first occurrence was NOT at position 0 of the accumulator
+    /// went undetected and was counted twice.
+    ///
+    /// Concretely, ids=[0,1,1] triggers the bug because:
+    ///   - after id=0 and id=1 are accepted, cancelableIds=[0,1]
+    ///   - when id=1 appears again, the loop checks cancelableIds[0]=0 ≠ 1,
+    ///     then breaks without setting isDuplicate — so id=1 is accepted a
+    ///     second time, inflating totalSharesBurned and thus sharesToMint.
+    function test_cancel_duplicate_id_not_at_position_zero_counted_once() public {
+        usdc.mint(user, AMOUNT * 2);
+        vm.startPrank(user);
+        usdc.approve(address(vault), AMOUNT * 2);
+        vault.deposit(AMOUNT * 2, user);
+        vm.stopPrank();
+
+        // Drain vault so both redeems are queued rather than fulfilled immediately.
+        vm.prank(admin);
+        vault.withdrawForDeployment(AMOUNT * 2);
+
+        uint256 halfShares = vault.balanceOf(user) / 2;
+        vm.startPrank(user);
+        vault.redeem(halfShares, user, user); // queued as id=0
+        vault.redeem(vault.balanceOf(user), user, user); // queued as id=1
+        vm.stopPrank();
+
+        uint256 shares0 = vault.withdrawalRequest(0).sharesBurned;
+        uint256 shares1 = vault.withdrawalRequest(1).sharesBurned;
+
+        // ids=[0,1,1]: id=1 duplicate sits at position 2, past cancelableIds[0].
+        uint256[] memory ids = new uint256[](3);
+        ids[0] = 0;
+        ids[1] = 1;
+        ids[2] = 1;
+
+        vm.prank(user);
+        vault.cancelWithdrawal(ids);
+
+        assertEq(vault.balanceOf(user), shares0 + shares1, "duplicate id must not inflate share refund");
+    }
+
     // ── internal helper ───────────────────────────────────────────────────────
 
     function _mintUsers() internal {
         usdc.mint(alice, AMOUNT);
-        usdc.mint(bob,   AMOUNT);
+        usdc.mint(bob, AMOUNT);
     }
 }

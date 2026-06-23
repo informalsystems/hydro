@@ -8,7 +8,6 @@ import {InflowAdapterLib} from "../contracts/InflowAdapterLib.sol";
 /// @notice Tests for adapter registration, allocation, and manual operations.
 /// Corresponds to all 39 tests in vault/testing_adapters.rs.
 contract InflowVaultAdaptersTest is InflowVaultBase {
-
     // ── helpers ───────────────────────────────────────────────────────────────
 
     function _newAdapter() internal returns (MockAdapterWithAsset) {
@@ -29,10 +28,10 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
         vault.registerAdapter("myAdapter", address(a), true, false);
 
         InflowAdapterLib.AdapterInfo memory info = vault.getAdapterByName("myAdapter");
-        assertEq(info.addr,      address(a));
+        assertEq(info.addr, address(a));
         assertTrue(info.automated);
         assertFalse(info.tracked);
-        assertEq(info.name,      "myAdapter");
+        assertEq(info.name, "myAdapter");
     }
 
     function test_register_adapter_unauthorized() public {
@@ -207,7 +206,7 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
         MockAdapterWithAsset a1 = _newAdapter();
         MockAdapterWithAsset a2 = _newAdapter();
         vm.prank(admin);
-        vault.registerAdapter("first",  address(a1), true,  false);
+        vault.registerAdapter("first", address(a1), true, false);
         vm.prank(admin);
         vault.registerAdapter("second", address(a2), false, true);
 
@@ -267,7 +266,7 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
 
         _deposit(user, 100_000e6);
 
-        assertEq(asset.balanceOf(address(a)),   0,          "manual adapter not used on deposit");
+        assertEq(asset.balanceOf(address(a)), 0, "manual adapter not used on deposit");
         assertEq(asset.balanceOf(address(vault)), 100_000e6, "funds stay in vault");
     }
 
@@ -303,8 +302,8 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
 
         _deposit(user, 100_000e6);
 
-        assertEq(asset.balanceOf(address(bad)),  0,          "reverting adapter skipped");
-        assertEq(asset.balanceOf(address(good)), 100_000e6,  "healthy adapter received funds");
+        assertEq(asset.balanceOf(address(bad)), 0, "reverting adapter skipped");
+        assertEq(asset.balanceOf(address(good)), 100_000e6, "healthy adapter received funds");
     }
 
     function test_withdraw_skips_reverting_adapter_and_queues_remainder() public {
@@ -443,7 +442,9 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
 
         vm.prank(admin);
         vm.expectRevert(
-            abi.encodeWithSelector(InflowAdapterLib.AdapterWithdrawShortfall.selector, "a", 50_000e6, 50_000e6 - shortfall)
+            abi.encodeWithSelector(
+                InflowAdapterLib.AdapterWithdrawShortfall.selector, "a", 50_000e6, 50_000e6 - shortfall
+            )
         );
         vault.withdrawFromAdapter("a", 50_000e6);
     }
@@ -460,7 +461,9 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
 
         vm.prank(admin);
         vm.expectRevert(
-            abi.encodeWithSelector(InflowAdapterLib.AdapterWithdrawShortfall.selector, "a1", 50_000e6, 50_000e6 - shortfall)
+            abi.encodeWithSelector(
+                InflowAdapterLib.AdapterWithdrawShortfall.selector, "a1", 50_000e6, 50_000e6 - shortfall
+            )
         );
         vault.moveAdapterFunds("a1", "a2", 50_000e6);
     }
@@ -546,8 +549,8 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
         vault.moveAdapterFunds("a1", "a2", 50_000e6);
 
         assertEq(vault.deployedAmount(), deployedBefore, "tracked-to-tracked: deployedAmount unchanged");
-        assertEq(asset.balanceOf(address(a1)), 0,          "a1 drained");
-        assertEq(asset.balanceOf(address(a2)), 50_000e6,   "a2 received");
+        assertEq(asset.balanceOf(address(a1)), 0, "a1 drained");
+        assertEq(asset.balanceOf(address(a2)), 50_000e6, "a2 received");
     }
 
     function test_move_adapter_funds_tracked_to_untracked() public {
@@ -573,7 +576,7 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
         MockAdapterWithAsset a2 = _newAdapter();
         a1.setDepositCap(address(vault), 50_000e6);
         _registerAdapter("a1", a1, false, false); // untracked
-        _registerAdapter("a2", a2, false, true);  // tracked
+        _registerAdapter("a2", a2, false, true); // tracked
 
         _deposit(user, 50_000e6);
         vm.prank(admin);
@@ -662,19 +665,19 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
         vm.prank(user);
         uint256 sharesReceived = vault.deposit(100_000e6, user);
 
-        assertEq(sharesReceived,                 100_000e6, "1:1 shares minted");
-        assertEq(asset.balanceOf(address(vault)), 0,         "vault holds 0 - tokens routed to adapter");
-        assertEq(asset.balanceOf(address(a)),     100_000e6, "adapter holds 100k");
-        assertEq(vault.totalAssets(),             100_000e6, "totalAssets = 100k");
+        assertEq(sharesReceived, 100_000e6, "1:1 shares minted");
+        assertEq(asset.balanceOf(address(vault)), 0, "vault holds 0 - tokens routed to adapter");
+        assertEq(asset.balanceOf(address(a)), 100_000e6, "adapter holds 100k");
+        assertEq(vault.totalAssets(), 100_000e6, "totalAssets = 100k");
 
         vm.prank(user);
         uint256 assetsReturned = vault.redeem(sharesReceived, user, user);
 
-        assertEq(assetsReturned,             100_000e6, "user receives 100k back");
-        assertEq(asset.balanceOf(user),       100_000e6, "user balance restored");
-        assertEq(asset.balanceOf(address(a)), 0,         "adapter drained");
-        assertEq(vault.totalSupply(),         0,         "no shares outstanding");
-        assertEq(vault.totalAssets(),         0);
+        assertEq(assetsReturned, 100_000e6, "user receives 100k back");
+        assertEq(asset.balanceOf(user), 100_000e6, "user balance restored");
+        assertEq(asset.balanceOf(address(a)), 0, "adapter drained");
+        assertEq(vault.totalSupply(), 0, "no shares outstanding");
+        assertEq(vault.totalAssets(), 0);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -697,25 +700,21 @@ contract InflowVaultAdaptersTest is InflowVaultBase {
         vm.prank(admin);
         vault.moveAdapterFundsToken("adapterA", "adapterB", transferAmount, address(usdt));
 
-        assertEq(usdt.balanceOf(address(a1)), 0,              "adapterA: USDT drained");
+        assertEq(usdt.balanceOf(address(a1)), 0, "adapterA: USDT drained");
         assertEq(usdt.balanceOf(address(a2)), transferAmount, "adapterB: USDT received");
-        assertEq(vault.deployedAmount(),      deployedBefore, "deployedAmount unchanged");
+        assertEq(vault.deployedAmount(), deployedBefore, "deployedAmount unchanged");
     }
 
     function test_moveAdapterFundsToken_trackingMismatch_reverts() public {
         MockAdapterWithAsset a1 = _newAdapter();
         MockAdapterWithAsset a2 = _newAdapter();
-        _registerAdapter("trackedA",   a1, false, true);   // tracked
-        _registerAdapter("untrackedB", a2, false, false);  // untracked
+        _registerAdapter("trackedA", a1, false, true); // tracked
+        _registerAdapter("untrackedB", a2, false, false); // untracked
 
         MockERC20 usdt = new MockERC20("Tether USD", "USDT", 6);
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                InflowAdapterLib.AdapterTrackingMismatch.selector,
-                "trackedA",
-                "untrackedB"
-            )
+            abi.encodeWithSelector(InflowAdapterLib.AdapterTrackingMismatch.selector, "trackedA", "untrackedB")
         );
         vm.prank(admin);
         vault.moveAdapterFundsToken("trackedA", "untrackedB", 1e6, address(usdt));

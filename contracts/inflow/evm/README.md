@@ -177,3 +177,22 @@ forge test
 Unit tests are split across two files:
 - `test/InflowVaultCancelWithdrawal.t.sol` — withdrawal queue and cancellation scenarios
 - `test/InflowVaultAdapters.t.sol` — adapter pull-pattern and multi-token fund movement
+
+## Before committing
+
+Run all three commands from the `contracts/inflow/evm/` directory:
+
+```bash
+forge fmt && forge lint && forge test
+```
+
+`forge lint` will always emit one unfixable note:
+
+```
+note[mixed-case-function]: contracts/CCTPUSDCForwarder.sol — requestCCTPTransferWithCaller
+```
+
+This is expected. The function is declared in `ICCTPBridge`, an interface that mirrors an
+external contract's ABI. The name cannot be changed without breaking the call. Forge lint
+does not support per-line suppression, so the note cannot be silenced without disabling the
+rule globally. Ignore it.

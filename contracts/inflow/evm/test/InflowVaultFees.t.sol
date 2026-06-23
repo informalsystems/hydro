@@ -9,7 +9,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 contract InflowVaultFeesTest is InflowVaultBase {
     using Math for uint256;
 
-    uint256 internal constant FEE_RATE_20 = WAD / 5;  // 20 %
+    uint256 internal constant FEE_RATE_20 = WAD / 5; // 20 %
     uint256 internal constant FEE_RATE_10 = WAD / 10; // 10 %
 
     // ── accrueFees — disabled ─────────────────────────────────────────────────
@@ -42,7 +42,7 @@ contract InflowVaultFeesTest is InflowVaultBase {
         // Share price == 1.0 == HWM -> no fees.
         vault.accrueFees();
         assertEq(vault.balanceOf(feeRecipient), 0, "no shares minted below HWM");
-        assertEq(vault.highWaterMarkPrice(),    WAD, "HWM unchanged");
+        assertEq(vault.highWaterMarkPrice(), WAD, "HWM unchanged");
     }
 
     // ── accrueFees — basic yield ──────────────────────────────────────────────
@@ -59,12 +59,12 @@ contract InflowVaultFeesTest is InflowVaultBase {
         asset.mint(address(vault), 10_000e6);
         // totalAssets = 110k (vault holds), totalSupply = 100k, price = 1.1
 
-        uint256 supply         = vault.totalSupply();
-        uint256 assets         = vault.totalAssets();
-        uint256 currentPrice   = assets.mulDiv(WAD, supply, Math.Rounding.Floor);
-        uint256 yieldPerShare  = currentPrice - WAD; // HWM was 1.0
-        uint256 totalYield     = yieldPerShare.mulDiv(supply, WAD, Math.Rounding.Floor);
-        uint256 feeAssets      = totalYield.mulDiv(FEE_RATE_20, WAD, Math.Rounding.Floor);
+        uint256 supply = vault.totalSupply();
+        uint256 assets = vault.totalAssets();
+        uint256 currentPrice = assets.mulDiv(WAD, supply, Math.Rounding.Floor);
+        uint256 yieldPerShare = currentPrice - WAD; // HWM was 1.0
+        uint256 totalYield = yieldPerShare.mulDiv(supply, WAD, Math.Rounding.Floor);
+        uint256 feeAssets = totalYield.mulDiv(FEE_RATE_20, WAD, Math.Rounding.Floor);
         uint256 expectedShares = feeAssets.mulDiv(WAD, currentPrice, Math.Rounding.Floor);
 
         vm.expectEmit(true, false, false, true, address(vault));
@@ -73,7 +73,7 @@ contract InflowVaultFeesTest is InflowVaultBase {
         vault.accrueFees();
 
         assertEq(vault.balanceOf(feeRecipient), expectedShares, "correct fee shares minted");
-        assertEq(vault.highWaterMarkPrice(),    currentPrice,   "HWM updated to current price");
+        assertEq(vault.highWaterMarkPrice(), currentPrice, "HWM updated to current price");
     }
 
     // ── accrueFees — permissionless ───────────────────────────────────────────
@@ -101,9 +101,9 @@ contract InflowVaultFeesTest is InflowVaultBase {
 
         vault.accrueFees(); // feeRate == 0
 
-        assertEq(vault.balanceOf(feeRecipient), 0,             "no fee shares");
-        assertGt(vault.highWaterMarkPrice(),    WAD,           "HWM advanced");
-        assertEq(vault.highWaterMarkPrice(),    vault.totalAssets().mulDiv(WAD, vault.totalSupply(), Math.Rounding.Floor));
+        assertEq(vault.balanceOf(feeRecipient), 0, "no fee shares");
+        assertGt(vault.highWaterMarkPrice(), WAD, "HWM advanced");
+        assertEq(vault.highWaterMarkPrice(), vault.totalAssets().mulDiv(WAD, vault.totalSupply(), Math.Rounding.Floor));
     }
 
     // ── dust yield ────────────────────────────────────────────────────────────
@@ -123,8 +123,8 @@ contract InflowVaultFeesTest is InflowVaultBase {
         uint256 hwmBefore = vault.highWaterMarkPrice();
         vault.accrueFees();
 
-        assertEq(vault.balanceOf(feeRecipient), 0,         "dust: no shares minted");
-        assertEq(vault.highWaterMarkPrice(),    hwmBefore, "dust: HWM must not advance");
+        assertEq(vault.balanceOf(feeRecipient), 0, "dust: no shares minted");
+        assertEq(vault.highWaterMarkPrice(), hwmBefore, "dust: HWM must not advance");
     }
 
     /// Three small yields accumulate; the third crosses the threshold and mints shares.
@@ -237,7 +237,7 @@ contract InflowVaultFeesTest is InflowVaultBase {
         vm.prank(admin);
         vault.updateFeeConfig(FEE_RATE_20, address(0)); // address(0) means keep current recipient
 
-        assertEq(vault.feeRate(),      FEE_RATE_20,       "rate updated");
+        assertEq(vault.feeRate(), FEE_RATE_20, "rate updated");
         assertEq(vault.feeRecipient(), originalRecipient, "recipient unchanged");
     }
 
@@ -249,7 +249,7 @@ contract InflowVaultFeesTest is InflowVaultBase {
         vault.updateFeeConfig(FEE_RATE_10, newRecipient);
 
         assertEq(vault.feeRecipient(), newRecipient);
-        assertEq(vault.feeRate(),      FEE_RATE_10, "rate unchanged");
+        assertEq(vault.feeRate(), FEE_RATE_10, "rate unchanged");
     }
 
     function test_update_fee_config_disable_by_zero_rate() public {
@@ -323,10 +323,8 @@ contract InflowVaultFeesTest is InflowVaultBase {
         vm.prank(admin);
         vault.updateFeeConfig(FEE_RATE_20, address(0));
 
-        assertEq(vault.highWaterMarkPrice(), priceWhileDisabled,
-                 "HWM reset to current price on re-enable");
-        assertGt(vault.highWaterMarkPrice(), hwmAfterFirstAccrual,
-                 "HWM must exceed old value");
+        assertEq(vault.highWaterMarkPrice(), priceWhileDisabled, "HWM reset to current price on re-enable");
+        assertGt(vault.highWaterMarkPrice(), hwmAfterFirstAccrual, "HWM must exceed old value");
     }
 
     // ── submitDeployedAmount — fee interaction ────────────────────────────────
@@ -343,5 +341,4 @@ contract InflowVaultFeesTest is InflowVaultBase {
         assertEq(vault.deployedAmount(), 120_000e6);
         assertEq(vault.balanceOf(feeRecipient), 0, "no fees when disabled");
     }
-
 }

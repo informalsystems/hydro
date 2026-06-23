@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Script, console2} from  "forge-std/Script.sol";
+import {Script, console2} from "forge-std/Script.sol";
 import {InflowVault} from "../contracts/InflowVault.sol";
 
 /// @notice Deploys a new InflowVault implementation and upgrades the existing proxy to it.
@@ -24,11 +24,10 @@ import {InflowVault} from "../contracts/InflowVault.sol";
 ///   forge script script/UpgradeInflowVault.s.sol \
 ///     --rpc-url $RPC_URL --broadcast --private-key $PRIVATE_KEY -vvvv
 contract UpgradeInflowVault is Script {
-    bytes32 private constant IMPL_SLOT =
-        bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
+    bytes32 private constant IMPL_SLOT = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
 
     function run() external {
-        address proxy          = vm.envAddress("PROXY");
+        address proxy = vm.envAddress("PROXY");
         bytes memory migration = vm.envOr("MIGRATION_DATA", new bytes(0));
 
         vm.startBroadcast();

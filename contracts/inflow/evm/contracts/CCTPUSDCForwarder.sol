@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 interface ICCTPBridge {
     function requestCCTPTransferWithCaller(
@@ -19,23 +19,23 @@ contract CCTPUSDCForwarder {
     uint256 public constant MAX_BPS = 10_000; // 100% = 10000 basis points
 
     // Address of Skip's contract used to initiate CCTP transfer
-    address public immutable cctpContract;
-    // Destination domain ID accorindg to CCTP protocol: https://developers.circle.com/cctp/v1/supported-domains
-    uint32 public immutable destinationDomain;
+    address public immutable CCTP_CONTRACT;
+    // Destination domain ID according to CCTP protocol: https://developers.circle.com/cctp/v1/supported-domains
+    uint32 public immutable DESTINATION_DOMAIN;
     // Address of the USDC ERC-20 token to bridge
-    address public immutable tokenToBridge;
+    address public immutable TOKEN_TO_BRIDGE;
     // Recipient Forwarding Account address on the Noble blockchain encoded as bytes32
-    bytes32 public immutable recipient;
+    bytes32 public immutable RECIPIENT;
     // Skip's relayer address on the Noble blockchain authorized to execute the minting
-    bytes32 public immutable destinationCaller;
+    bytes32 public immutable DESTINATION_CALLER;
     // Address of the operator that can only initiate bridging transactions
-    address public immutable operator;
+    address public immutable OPERATOR;
     // Address of the admin that can pause the contract and safeguard tokens in case of emergency
-    address public immutable admin;
+    address public immutable ADMIN;
     // Operational fee in basis points (bps) charged on each bridging transaction in order to cover operational costs
-    uint256 public immutable operationalFeeBps;
+    uint256 public immutable OPERATIONAL_FEE_BPS;
     // Minimum operational fee amount charged on each bridging transaction to cover operational costs
-    uint256 public immutable minOperationalFee;
+    uint256 public immutable MIN_OPERATIONAL_FEE;
     // Indicates whether the contract is paused or not
     bool public paused;
 
@@ -76,26 +76,34 @@ contract CCTPUSDCForwarder {
         require(_destinationCaller != bytes32(0), "destinationCaller is required");
         require(_operationalFeeBps <= MAX_BPS, "operationalFeeBps exceeds maximum allowed value");
 
-        cctpContract = _cctpContract;
-        operator = _operator;
-        admin = _admin;
-        destinationDomain = _destinationDomain;
-        tokenToBridge = _tokenToBridge;
-        recipient = _recipient;
-        destinationCaller = _destinationCaller;
-        operationalFeeBps = _operationalFeeBps;
-        minOperationalFee = _minOperationalFee;
+        CCTP_CONTRACT = _cctpContract;
+        OPERATOR = _operator;
+        ADMIN = _admin;
+        DESTINATION_DOMAIN = _destinationDomain;
+        TOKEN_TO_BRIDGE = _tokenToBridge;
+        RECIPIENT = _recipient;
+        DESTINATION_CALLER = _destinationCaller;
+        OPERATIONAL_FEE_BPS = _operationalFeeBps;
+        MIN_OPERATIONAL_FEE = _minOperationalFee;
         paused = false;
     }
 
     modifier onlyOperator() {
-        require(msg.sender == operator, "only operator can call this function");
+        _onlyOperator();
         _;
     }
 
     modifier onlyAdmin() {
-        require(msg.sender == admin, "only admin can call this function");
+        _onlyAdmin();
         _;
+    }
+
+    function _onlyOperator() internal view {
+        require(msg.sender == OPERATOR, "only operator can call this function");
+    }
+
+    function _onlyAdmin() internal view {
+        require(msg.sender == ADMIN, "only admin can call this function");
     }
 
     // In case of emergency, admin can pause the contract
@@ -132,7 +140,7 @@ contract CCTPUSDCForwarder {
         require(transferAmount > 0, "transferAmount must be greater than zero");
         require(smartRelayFeeAmount > 0, "smartRelayFeeAmount must be greater than zero");
 
-        IERC20 erc20TokenToBridge = IERC20(tokenToBridge);
+        IERC20 erc20TokenToBridge = IERC20(TOKEN_TO_BRIDGE);
         uint256 contractBalance = erc20TokenToBridge.balanceOf(address(this));
         require(
             contractBalance >= transferAmount + smartRelayFeeAmount,
@@ -146,9 +154,9 @@ contract CCTPUSDCForwarder {
             )
         );
 
-        uint256 operationalFee = (transferAmount * operationalFeeBps) / MAX_BPS;
-        if (operationalFee < minOperationalFee) {
-            operationalFee = minOperationalFee;
+        uint256 operationalFee = (transferAmount * OPERATIONAL_FEE_BPS) / MAX_BPS;
+        if (operationalFee < MIN_OPERATIONAL_FEE) {
+            operationalFee = MIN_OPERATIONAL_FEE;
         }
         require(
             transferAmount > operationalFee,
@@ -182,7 +190,7 @@ contract CCTPUSDCForwarder {
         }
 
         uint256 approvalAmount = transferAmount + smartRelayFeeAmount;
-        bool success = erc20TokenToBridge.approve(cctpContract, approvalAmount);
+        bool success = erc20TokenToBridge.approve(CCTP_CONTRACT, approvalAmount);
         if (!success) {
             revert(
                 string(
@@ -191,20 +199,20 @@ contract CCTPUSDCForwarder {
             );
         }
 
-        ICCTPBridge(cctpContract)
+        ICCTPBridge(CCTP_CONTRACT)
             .requestCCTPTransferWithCaller(
-                transferAmount, destinationDomain, recipient, tokenToBridge, smartRelayFeeAmount, destinationCaller
+                transferAmount, DESTINATION_DOMAIN, RECIPIENT, TOKEN_TO_BRIDGE, smartRelayFeeAmount, DESTINATION_CALLER
             );
         emit BridgingRequested(
             msg.sender,
-            tokenToBridge,
+            TOKEN_TO_BRIDGE,
             transferAmount,
             smartRelayFeeAmount,
             operationalFee,
             operationalFeeRecipient,
-            destinationDomain,
-            recipient,
-            destinationCaller
+            DESTINATION_DOMAIN,
+            RECIPIENT,
+            DESTINATION_CALLER
         );
     }
 }

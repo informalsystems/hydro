@@ -8,14 +8,10 @@ import {InflowWithdrawalQueueLib} from "../contracts/InflowWithdrawalQueueLib.so
 /// Corresponds to: fulfill_pending_withdrawals_test, claim_unbonded_withdrawals_test
 /// (vault/testing.rs).
 contract InflowVaultWithdrawalQueueTest is InflowVaultBase {
-
     // ── helpers ───────────────────────────────────────────────────────────────
 
     /// Queue `count` withdrawals of `amountEach` for `who` (vault must have no free balance).
-    function _queueWithdrawals(address who, uint256 amountEach, uint256 count)
-        internal
-        returns (uint256[] memory ids)
-    {
+    function _queueWithdrawals(address who, uint256 amountEach, uint256 count) internal returns (uint256[] memory ids) {
         ids = new uint256[](count);
         vm.startPrank(who);
         for (uint256 i = 0; i < count; i++) {
@@ -51,8 +47,8 @@ contract InflowVaultWithdrawalQueueTest is InflowVaultBase {
         _fundVault(200_000e6);
         vault.fulfillPendingWithdrawals(10);
 
-        assertTrue(vault.withdrawalRequest(0).isFunded,  "id 0 funded");
-        assertTrue(vault.withdrawalRequest(1).isFunded,  "id 1 funded");
+        assertTrue(vault.withdrawalRequest(0).isFunded, "id 0 funded");
+        assertTrue(vault.withdrawalRequest(1).isFunded, "id 1 funded");
         assertFalse(vault.withdrawalRequest(2).isFunded, "id 2 not funded (no balance)");
         assertEq(vault.lastFundedWithdrawalId(), 1);
         assertTrue(vault.anyWithdrawalFunded());
@@ -65,7 +61,7 @@ contract InflowVaultWithdrawalQueueTest is InflowVaultBase {
 
         vm.startPrank(user);
         vault.redeem(200_000e6, user, user); // id 0 — large, needs 200k
-        vault.redeem(10_000e6,  user, user); // id 1 — small
+        vault.redeem(10_000e6, user, user); // id 1 — small
         vm.stopPrank();
 
         // Only 50k available — can't cover id 0 -> FIFO stops.
@@ -121,7 +117,7 @@ contract InflowVaultWithdrawalQueueTest is InflowVaultBase {
         _fundVault(100_000e6);
         vault.fulfillPendingWithdrawals(10);
 
-        assertTrue(vault.withdrawalRequest(1).isFunded,  "id 1 funded");
+        assertTrue(vault.withdrawalRequest(1).isFunded, "id 1 funded");
         assertEq(vault.lastFundedWithdrawalId(), 1);
     }
 
@@ -198,7 +194,9 @@ contract InflowVaultWithdrawalQueueTest is InflowVaultBase {
 
         uint256 before = asset.balanceOf(user);
         uint256[] memory ids = new uint256[](3);
-        ids[0] = 0; ids[1] = 1; ids[2] = 2;
+        ids[0] = 0;
+        ids[1] = 1;
+        ids[2] = 2;
         vault.claimUnbondedWithdrawals(ids);
 
         assertEq(asset.balanceOf(user), before + 300_000e6, "all three amounts received");
@@ -216,7 +214,9 @@ contract InflowVaultWithdrawalQueueTest is InflowVaultBase {
 
         uint256 before = asset.balanceOf(user);
         uint256[] memory ids = new uint256[](3);
-        ids[0] = 0; ids[1] = 0; ids[2] = 0; // same id three times
+        ids[0] = 0; // same id three times
+        ids[1] = 0;
+        ids[2] = 0;
         vault.claimUnbondedWithdrawals(ids);
 
         // Only one transfer — 100k received, not 300k.
@@ -239,7 +239,8 @@ contract InflowVaultWithdrawalQueueTest is InflowVaultBase {
 
         uint256 before = asset.balanceOf(user);
         uint256[] memory ids = new uint256[](2);
-        ids[0] = 0; ids[1] = 1;
+        ids[0] = 0;
+        ids[1] = 1;
         vault.claimUnbondedWithdrawals(ids);
 
         assertEq(asset.balanceOf(user), before + 100_000e6, "only funded id claimed");
@@ -314,7 +315,7 @@ contract InflowVaultWithdrawalQueueTest is InflowVaultBase {
 
         InflowWithdrawalQueueLib.WithdrawalQueueInfo memory before = vault.withdrawalQueueInfo();
         assertEq(before.totalWithdrawalAmount, 100_000e6);
-        assertEq(before.totalSharesBurned,     100_000e6);
+        assertEq(before.totalSharesBurned, 100_000e6);
 
         uint256[] memory ids = new uint256[](1);
         ids[0] = 0;
@@ -322,7 +323,7 @@ contract InflowVaultWithdrawalQueueTest is InflowVaultBase {
 
         InflowWithdrawalQueueLib.WithdrawalQueueInfo memory after_ = vault.withdrawalQueueInfo();
         assertEq(after_.totalWithdrawalAmount, 0);
-        assertEq(after_.totalSharesBurned,     0);
+        assertEq(after_.totalSharesBurned, 0);
     }
 
     // ── end-to-end ────────────────────────────────────────────────────────────
@@ -330,7 +331,7 @@ contract InflowVaultWithdrawalQueueTest is InflowVaultBase {
     function test_fulfill_then_claim_end_to_end() public {
         // Alice and Bob both deposit 100k.
         _deposit(alice, 100_000e6);
-        _deposit(bob,   100_000e6);
+        _deposit(bob, 100_000e6);
 
         // Admin deploys all 200k.
         vm.prank(admin);
@@ -341,7 +342,7 @@ contract InflowVaultWithdrawalQueueTest is InflowVaultBase {
         vault.redeem(100_000e6, alice, alice); // id 0
 
         vm.prank(bob);
-        vault.redeem(100_000e6, bob, bob);   // id 1
+        vault.redeem(100_000e6, bob, bob); // id 1
 
         assertEq(vault.totalAssets(), 0, "all assets pending");
 
@@ -369,6 +370,6 @@ contract InflowVaultWithdrawalQueueTest is InflowVaultBase {
         // Queue fully cleared.
         assertEq(vault.withdrawalQueueInfo().totalWithdrawalAmount, 0);
         assertEq(vault.getUserWithdrawalIds(alice).length, 0);
-        assertEq(vault.getUserWithdrawalIds(bob).length,   0);
+        assertEq(vault.getUserWithdrawalIds(bob).length, 0);
     }
 }

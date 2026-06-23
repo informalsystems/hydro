@@ -10,7 +10,6 @@ import {IAdapter} from "./IAdapter.sol";
 /// for InflowVault. All external functions execute via DELEGATECALL in the vault's storage
 /// context, so state changes and events are attributed to the vault.
 library InflowAdapterLib {
-
     // STRUCTS
 
     struct AdapterInfo {
@@ -38,27 +37,21 @@ library InflowAdapterLib {
 
     // MANAGEMENT
 
-    function registerAdapter(
-        AdapterStorage storage s,
-        string calldata name,
-        address addr,
-        bool automated,
-        bool tracked
-    ) external {
+    function registerAdapter(AdapterStorage storage s, string calldata name, address addr, bool automated, bool tracked)
+        external
+    {
         bytes32 key = keccak256(bytes(name));
-        if (s.adapters[key].addr != address(0)) revert AdapterAlreadyExists(name);
-        s.adapters[key] = AdapterInfo({
-            addr: addr,
-            automated: automated,
-            tracked: tracked,
-            name: name
-        });
+        if (s.adapters[key].addr != address(0)) {
+            revert AdapterAlreadyExists(name);
+        }
+        s.adapters[key] = AdapterInfo({addr: addr, automated: automated, tracked: tracked, name: name});
         s.adapterKeys.push(key);
     }
 
     /// @return removedAddr Passed back to the vault so it can emit AdapterUnregistered.
     function unregisterAdapter(AdapterStorage storage s, string calldata name, address assetAddr)
-        external returns (address removedAddr)
+        external
+        returns (address removedAddr)
     {
         bytes32 key = keccak256(bytes(name));
         AdapterInfo storage a = s.adapters[key];
@@ -71,21 +64,13 @@ library InflowAdapterLib {
         _removeAdapterKey(s, key);
     }
 
-    function setAdapterAllocationMode(
-        AdapterStorage storage s,
-        string calldata name,
-        bool automated
-    ) external {
+    function setAdapterAllocationMode(AdapterStorage storage s, string calldata name, bool automated) external {
         bytes32 key = keccak256(bytes(name));
         if (s.adapters[key].addr == address(0)) revert AdapterNotFound(name);
         s.adapters[key].automated = automated;
     }
 
-    function setAdapterDeploymentTracking(
-        AdapterStorage storage s,
-        string calldata name,
-        bool tracked
-    ) external {
+    function setAdapterDeploymentTracking(AdapterStorage storage s, string calldata name, bool tracked) external {
         bytes32 key = keccak256(bytes(name));
         if (s.adapters[key].addr == address(0)) revert AdapterNotFound(name);
         s.adapters[key].tracked = tracked;
@@ -181,17 +166,18 @@ library InflowAdapterLib {
         address tokenAddr
     ) external {
         bytes32 fromKey = keccak256(bytes(fromName));
-        bytes32 toKey   = keccak256(bytes(toName));
+        bytes32 toKey = keccak256(bytes(toName));
         if (fromKey == toKey) revert SameAdapter(fromName);
         AdapterInfo storage fromAdapter = s.adapters[fromKey];
-        AdapterInfo storage toAdapter   = s.adapters[toKey];
+        AdapterInfo storage toAdapter = s.adapters[toKey];
         if (fromAdapter.addr == address(0)) revert AdapterNotFound(fromName);
-        if (toAdapter.addr   == address(0)) revert AdapterNotFound(toName);
+        if (toAdapter.addr == address(0)) revert AdapterNotFound(toName);
 
         // Moving a non-deposit token across a tracking boundary would corrupt deployedAmount
         // because we cannot convert the token to the vault's denomination without an oracle.
-        if (fromAdapter.tracked != toAdapter.tracked)
+        if (fromAdapter.tracked != toAdapter.tracked) {
             revert AdapterTrackingMismatch(fromName, toName);
+        }
 
         _withdrawChecked(fromAdapter, amount, tokenAddr);
         SafeERC20.forceApprove(IERC20(tokenAddr), toAdapter.addr, amount);
@@ -205,23 +191,20 @@ library InflowAdapterLib {
     /// @dev Greedily allocates `amount` across automated adapters in registration order.
     /// Returns parallel arrays of adapter keys and allocated amounts; their sum may be less
     /// than `amount` if adapter capacity is insufficient.
-    function calculateAllocation(
-        AdapterStorage storage s,
-        uint256 amount,
-        bool isDeposit,
-        address assetAddr
-    ) external view returns (bytes32[] memory keys, uint256[] memory amounts) {
+    function calculateAllocation(AdapterStorage storage s, uint256 amount, bool isDeposit, address assetAddr)
+        external
+        view
+        returns (bytes32[] memory keys, uint256[] memory amounts)
+    {
         return _calculateAllocation(s, amount, isDeposit, assetAddr);
     }
 
     /// @dev Allocates `amount` to automated adapters, executes transfers and adapter deposits,
     /// and returns the updated deployedAmount (incremented for tracked adapters).
-    function allocateToAdapters(
-        AdapterStorage storage s,
-        uint256 amount,
-        address assetAddr,
-        uint256 deployedAmount
-    ) external returns (uint256) {
+    function allocateToAdapters(AdapterStorage storage s, uint256 amount, address assetAddr, uint256 deployedAmount)
+        external
+        returns (uint256)
+    {
         (bytes32[] memory keys, uint256[] memory amounts) = _calculateAllocation(s, amount, true, assetAddr);
         uint256 trackedTotal;
         for (uint256 i = 0; i < keys.length; i++) {
@@ -258,7 +241,9 @@ library InflowAdapterLib {
     /// @dev Sums positions from all untracked adapters. Tracked adapter positions are
     /// already counted in deployedAmount and must not be queried to avoid double-counting.
     function queryUntrackedPositions(AdapterStorage storage s, address assetAddr)
-        external view returns (uint256 total)
+        external
+        view
+        returns (uint256 total)
     {
         for (uint256 i = 0; i < s.adapterKeys.length; i++) {
             AdapterInfo storage a = s.adapters[s.adapterKeys[i]];
@@ -277,7 +262,9 @@ library InflowAdapterLib {
     }
 
     function getAdapterByName(AdapterStorage storage s, string calldata name)
-        external view returns (AdapterInfo memory)
+        external
+        view
+        returns (AdapterInfo memory)
     {
         bytes32 key = keccak256(bytes(name));
         AdapterInfo storage a = s.adapters[key];
@@ -287,12 +274,11 @@ library InflowAdapterLib {
 
     // INTERNAL HELPERS
 
-    function _calculateAllocation(
-        AdapterStorage storage s,
-        uint256 amount,
-        bool isDeposit,
-        address assetAddr
-    ) internal view returns (bytes32[] memory keys, uint256[] memory amounts) {
+    function _calculateAllocation(AdapterStorage storage s, uint256 amount, bool isDeposit, address assetAddr)
+        internal
+        view
+        returns (bytes32[] memory keys, uint256[] memory amounts)
+    {
         if (amount == 0) return (new bytes32[](0), new uint256[](0));
 
         uint256 n = s.adapterKeys.length;
@@ -310,11 +296,15 @@ library InflowAdapterLib {
             if (isDeposit) {
                 try IAdapter(a.addr).availableForDeposit(address(this), assetAddr) returns (uint256 v) {
                     available = v;
-                } catch { continue; }
+                } catch {
+                    continue;
+                }
             } else {
                 try IAdapter(a.addr).availableForWithdraw(address(this), assetAddr) returns (uint256 v) {
                     available = v;
-                } catch { continue; }
+                } catch {
+                    continue;
+                }
             }
             if (available == 0) continue;
 
@@ -339,7 +329,9 @@ library InflowAdapterLib {
         uint256 before = IERC20(tokenAddr).balanceOf(address(this));
         IAdapter(a.addr).withdraw(amount, tokenAddr);
         uint256 received = IERC20(tokenAddr).balanceOf(address(this)) - before;
-        if (received < amount) revert AdapterWithdrawShortfall(a.name, amount, received);
+        if (received < amount) {
+            revert AdapterWithdrawShortfall(a.name, amount, received);
+        }
     }
 
     function _removeAdapterKey(AdapterStorage storage s, bytes32 key) internal {

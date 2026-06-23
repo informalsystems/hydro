@@ -10,14 +10,14 @@ import {MockERC20} from "./mocks/Mocks.sol";
 /// @notice Tests for UUPS upgrade authorization.
 /// No direct CosmWasm counterpart; covers _authorizeUpgrade().
 contract InflowVaultUpgradeTest is Test {
-    MockERC20   internal asset;
+    MockERC20 internal asset;
     InflowVault internal vault;
 
-    address internal admin    = makeAddr("admin");
+    address internal admin = makeAddr("admin");
     address internal stranger = makeAddr("stranger");
-    address internal user     = makeAddr("user");
+    address internal user = makeAddr("user");
 
-    uint256 internal constant DEPOSIT_CAP     = 1_000_000e6;
+    uint256 internal constant DEPOSIT_CAP = 1_000_000e6;
     uint256 internal constant MAX_WITHDRAWALS = 10;
 
     function setUp() public {
@@ -29,8 +29,17 @@ contract InflowVaultUpgradeTest is Test {
         InflowVault impl = new InflowVault();
         bytes memory init = abi.encodeCall(
             InflowVault.initialize,
-            (IERC20(address(asset)), "Hydro Inflow Vault", "hvUSDC",
-             DEPOSIT_CAP, MAX_WITHDRAWALS, wl, wl, 0, address(0))
+            (
+                IERC20(address(asset)),
+                "Hydro Inflow Vault",
+                "hvUSDC",
+                DEPOSIT_CAP,
+                MAX_WITHDRAWALS,
+                wl,
+                wl,
+                0,
+                address(0)
+            )
         );
         vault = InflowVault(address(new ERC1967Proxy(address(impl), init)));
     }
@@ -72,10 +81,10 @@ contract InflowVaultUpgradeTest is Test {
         vm.prank(admin);
         vault.submitDeployedAmount(60_000e6);
 
-        uint256 sharesBefore     = vault.balanceOf(user);
+        uint256 sharesBefore = vault.balanceOf(user);
         uint256 totalAssetBefore = vault.totalAssets();
-        uint256 deployedBefore   = vault.deployedAmount();
-        uint256 capBefore        = vault.depositCap();
+        uint256 deployedBefore = vault.deployedAmount();
+        uint256 capBefore = vault.depositCap();
 
         // Upgrade.
         InflowVault newImpl = new InflowVault();
@@ -83,10 +92,10 @@ contract InflowVaultUpgradeTest is Test {
         vault.upgradeToAndCall(address(newImpl), "");
 
         // All state intact.
-        assertEq(vault.balanceOf(user), sharesBefore,     "shares preserved");
-        assertEq(vault.totalAssets(),   totalAssetBefore, "totalAssets preserved");
-        assertEq(vault.deployedAmount(), deployedBefore,  "deployedAmount preserved");
-        assertEq(vault.depositCap(),    capBefore,        "depositCap preserved");
-        assertTrue(vault.whitelist(admin),                "whitelist preserved");
+        assertEq(vault.balanceOf(user), sharesBefore, "shares preserved");
+        assertEq(vault.totalAssets(), totalAssetBefore, "totalAssets preserved");
+        assertEq(vault.deployedAmount(), deployedBefore, "deployedAmount preserved");
+        assertEq(vault.depositCap(), capBefore, "depositCap preserved");
+        assertTrue(vault.whitelist(admin), "whitelist preserved");
     }
 }

@@ -8,7 +8,6 @@ import {InflowVaultBase, InflowVault} from "./InflowVaultBase.t.sol";
 /// control-center/testing.rs; submit_deployed_amount_test in
 /// control-center/testing.rs.
 contract InflowVaultAccessControlTest is InflowVaultBase {
-
     // ═══════════════════════════════════════════════════════════════════════
     // Primary whitelist
     // ═══════════════════════════════════════════════════════════════════════
@@ -97,7 +96,7 @@ contract InflowVaultAccessControlTest is InflowVaultBase {
         vm.prank(admin);
         vault.addToDeployedAmountWhitelist(user);
 
-        assertTrue(vault._deployedAmountWhitelist(user));
+        assertTrue(vault.deployedAmountWhitelist(user));
     }
 
     function test_add_to_deployed_amount_whitelist_unauthorized() public {
@@ -129,7 +128,7 @@ contract InflowVaultAccessControlTest is InflowVaultBase {
         vm.prank(admin);
         vault.removeFromDeployedAmountWhitelist(user);
 
-        assertFalse(vault._deployedAmountWhitelist(user));
+        assertFalse(vault.deployedAmountWhitelist(user));
     }
 
     function test_remove_from_deployed_amount_whitelist_last_entry_reverts() public {

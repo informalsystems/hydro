@@ -9,16 +9,15 @@ import {InflowVaultBase, InflowVault, MockAdapterWithAsset} from "./InflowVaultB
 /// dry_run_deposit_query_test, reporting_balance_queries_test
 /// (vault/testing.rs).
 contract InflowVaultDepositTest is InflowVaultBase {
-
     // ── 1:1 initial deposit ───────────────────────────────────────────────────
 
     function test_deposit_1to1_empty_vault() public {
         uint256 amount = 1_000e6;
         uint256 shares = _deposit(user, amount);
 
-        assertEq(shares,                          amount, "shares == assets at 1:1");
-        assertEq(vault.balanceOf(user),           amount);
-        assertEq(vault.totalSupply(),             amount);
+        assertEq(shares, amount, "shares == assets at 1:1");
+        assertEq(vault.balanceOf(user), amount);
+        assertEq(vault.totalSupply(), amount);
         assertEq(asset.balanceOf(address(vault)), amount);
     }
 
@@ -33,7 +32,7 @@ contract InflowVaultDepositTest is InflowVaultBase {
         uint256 amount = 200e6;
         _depositTo(user, alice, amount);
 
-        assertEq(vault.balanceOf(user),  0,      "user should not hold shares");
+        assertEq(vault.balanceOf(user), 0, "user should not hold shares");
         assertEq(vault.balanceOf(alice), amount, "alice should hold shares");
     }
 
@@ -49,9 +48,9 @@ contract InflowVaultDepositTest is InflowVaultBase {
         vm.prank(user);
         uint256 assetsUsed = vault.mint(sharesToMint, user);
 
-        assertEq(assetsUsed,              assetsNeeded);
-        assertEq(vault.balanceOf(user),   sharesToMint);
-        assertEq(vault.totalSupply(),     sharesToMint);
+        assertEq(assetsUsed, assetsNeeded);
+        assertEq(vault.balanceOf(user), sharesToMint);
+        assertEq(vault.totalSupply(), sharesToMint);
     }
 
     // ── deposit at non-unit share price ───────────────────────────────────────
@@ -69,7 +68,7 @@ contract InflowVaultDepositTest is InflowVaultBase {
 
         // Bob deposits 60k at price 1.2 -> should receive 50k shares.
         uint256 bobDeposit = 60_000e6;
-        uint256 bobShares  = _deposit(bob, bobDeposit);
+        uint256 bobShares = _deposit(bob, bobDeposit);
 
         assertEq(bobShares, 50_000e6, "bob should receive 50k shares at 1.2:1 price");
     }
@@ -112,7 +111,7 @@ contract InflowVaultDepositTest is InflowVaultBase {
     }
 
     function test_max_mint() public view {
-        uint256 room     = vault.maxDeposit(address(0));
+        uint256 room = vault.maxDeposit(address(0));
         uint256 maxShares = vault.maxMint(user);
         // In an empty vault (price 1:1) maxMint == maxDeposit.
         assertEq(maxShares, room);
@@ -152,12 +151,12 @@ contract InflowVaultDepositTest is InflowVaultBase {
 
     function test_multiple_users_deposit() public {
         _deposit(alice, 100_000e6);
-        _deposit(bob,   200_000e6);
+        _deposit(bob, 200_000e6);
 
-        assertEq(vault.totalSupply(),  300_000e6);
-        assertEq(vault.totalAssets(),  300_000e6);
+        assertEq(vault.totalSupply(), 300_000e6);
+        assertEq(vault.totalAssets(), 300_000e6);
         assertEq(vault.balanceOf(alice), 100_000e6);
-        assertEq(vault.balanceOf(bob),   200_000e6);
+        assertEq(vault.balanceOf(bob), 200_000e6);
     }
 
     // ── zero amount ───────────────────────────────────────────────────────────
@@ -180,7 +179,7 @@ contract InflowVaultDepositTest is InflowVaultBase {
 
         // Adapter should hold 50k (its capacity), vault keeps the remaining 50k.
         assertEq(asset.balanceOf(address(adapter)), 50_000e6, "adapter holds 50k");
-        assertEq(asset.balanceOf(address(vault)),   50_000e6, "vault holds 50k");
+        assertEq(asset.balanceOf(address(vault)), 50_000e6, "vault holds 50k");
     }
 
     function test_deposit_keeps_funds_when_no_adapters() public {
@@ -195,7 +194,7 @@ contract InflowVaultDepositTest is InflowVaultBase {
 
         _deposit(user, 100_000e6);
 
-        assertEq(asset.balanceOf(address(adapter)), 0,          "manual adapter untouched");
-        assertEq(asset.balanceOf(address(vault)),   100_000e6,  "all funds stay in vault");
+        assertEq(asset.balanceOf(address(adapter)), 0, "manual adapter untouched");
+        assertEq(asset.balanceOf(address(vault)), 100_000e6, "all funds stay in vault");
     }
 }

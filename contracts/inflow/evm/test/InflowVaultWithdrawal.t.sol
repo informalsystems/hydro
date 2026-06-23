@@ -9,7 +9,6 @@ import {InflowWithdrawalQueueLib} from "../contracts/InflowWithdrawalQueueLib.so
 /// Corresponds to: withdrawal_test, withdraw_pays_on_behalf_recipient,
 /// withdraw_queue_uses_on_behalf_withdrawer (vault/testing.rs).
 contract InflowVaultWithdrawalTest is InflowVaultBase {
-
     // ── immediate fulfilment ──────────────────────────────────────────────────
 
     function test_redeem_immediate_when_funds_available() public {
@@ -19,8 +18,8 @@ contract InflowVaultWithdrawalTest is InflowVaultBase {
         vm.prank(user);
         uint256 assetsOut = vault.redeem(100_000e6, user, user);
 
-        assertEq(assetsOut,             100_000e6, "assets returned immediately");
-        assertEq(vault.balanceOf(user), 0,         "shares burned");
+        assertEq(assetsOut, 100_000e6, "assets returned immediately");
+        assertEq(vault.balanceOf(user), 0, "shares burned");
         assertEq(asset.balanceOf(user), balanceBefore + 100_000e6);
         assertEq(vault.nextWithdrawalId(), 0, "no queue entry created");
     }
@@ -51,9 +50,9 @@ contract InflowVaultWithdrawalTest is InflowVaultBase {
         vm.prank(user);
         vault.redeem(100_000e6, user, user);
 
-        assertEq(vault.nextWithdrawalId(), 1,            "queue entry created");
-        assertEq(vault.balanceOf(user),    0,            "shares burned immediately");
-        assertEq(asset.balanceOf(user),    balanceBefore, "no assets transferred when queued");
+        assertEq(vault.nextWithdrawalId(), 1, "queue entry created");
+        assertEq(vault.balanceOf(user), 0, "shares burned immediately");
+        assertEq(asset.balanceOf(user), balanceBefore, "no assets transferred when queued");
     }
 
     function test_redeem_queues_returns_zero_assets() public {
@@ -82,13 +81,13 @@ contract InflowVaultWithdrawalTest is InflowVaultBase {
         vault.redeem(100_000e6, alice, user); // receiver = alice, owner = user
 
         InflowWithdrawalQueueLib.WithdrawalEntry memory e = vault.withdrawalRequest(id);
-        assertEq(e.id,              id);
-        assertEq(e.owner,           user,        "owner is msg.sender");
-        assertEq(e.receiver,        alice,       "receiver is alice");
-        assertEq(e.sharesBurned,    100_000e6);
+        assertEq(e.id, id);
+        assertEq(e.owner, user, "owner is msg.sender");
+        assertEq(e.receiver, alice, "receiver is alice");
+        assertEq(e.sharesBurned, 100_000e6);
         assertEq(e.amountToReceive, 100_000e6);
         assertFalse(e.isFunded);
-        assertGt(e.initiatedAt,     0,           "timestamp set");
+        assertGt(e.initiatedAt, 0, "timestamp set");
     }
 
     function test_user_withdrawal_ids_tracked() public {
@@ -120,7 +119,7 @@ contract InflowVaultWithdrawalTest is InflowVaultBase {
 
         InflowWithdrawalQueueLib.WithdrawalEntry memory e = vault.withdrawalRequest(id);
         assertEq(e.receiver, alice);
-        assertEq(e.owner,    user);
+        assertEq(e.owner, user);
     }
 
     function test_redeem_immediate_with_different_receiver() public {
@@ -130,7 +129,7 @@ contract InflowVaultWithdrawalTest is InflowVaultBase {
         vm.prank(user);
         vault.redeem(100_000e6, alice, user);
         assertEq(asset.balanceOf(alice), aliceBefore + 100_000e6, "alice received assets");
-        assertEq(vault.balanceOf(user),  0,                       "user shares burned");
+        assertEq(vault.balanceOf(user), 0, "user shares burned");
     }
 
     // ── operator allowance ────────────────────────────────────────────────────
@@ -145,8 +144,8 @@ contract InflowVaultWithdrawalTest is InflowVaultBase {
         vm.prank(alice);
         uint256 assetsOut = vault.redeem(100_000e6, alice, user);
 
-        assertEq(assetsOut,              100_000e6);
-        assertEq(vault.balanceOf(user),  0);
+        assertEq(assetsOut, 100_000e6);
+        assertEq(vault.balanceOf(user), 0);
         assertEq(asset.balanceOf(alice), 100_000e6);
         assertEq(vault.allowance(user, alice), 0, "allowance fully spent");
     }
@@ -223,7 +222,7 @@ contract InflowVaultWithdrawalTest is InflowVaultBase {
 
     function test_total_assets_subtracts_pending_withdrawal_reserve() public {
         _deposit(alice, 100_000e6);
-        _deposit(bob,   100_000e6);
+        _deposit(bob, 100_000e6);
 
         vm.prank(admin);
         vault.withdrawForDeployment(200_000e6); // deployedAmount = 200k, vault balance = 0

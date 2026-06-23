@@ -25,19 +25,18 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 ///   forge script script/DeployInflowVault.s.sol \
 ///     --rpc-url $RPC_URL --broadcast --private-key $PRIVATE_KEY -vvvv
 contract DeployInflowVault is Script {
-    bytes32 private constant IMPL_SLOT =
-        bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
+    bytes32 private constant IMPL_SLOT = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
 
     function run() external {
-        address asset          = vm.envAddress("ASSET");
-        string memory name     = vm.envString("VAULT_NAME");
-        string memory symbol   = vm.envString("VAULT_SYMBOL");
-        uint256 depositCap     = vm.envUint("DEPOSIT_CAP");
+        address asset = vm.envAddress("ASSET");
+        string memory name = vm.envString("VAULT_NAME");
+        string memory symbol = vm.envString("VAULT_SYMBOL");
+        uint256 depositCap = vm.envUint("DEPOSIT_CAP");
         uint256 maxWithdrawals = vm.envUint("MAX_WITHDRAWALS_PER_USER");
-        address initialAdmin              = vm.envAddress("INITIAL_ADMIN");
+        address initialAdmin = vm.envAddress("INITIAL_ADMIN");
         address initialDeployedAmountAdmin = vm.envOr("INITIAL_DEPLOYED_AMOUNT_ADMIN", initialAdmin);
-        uint256 feeRate                   = vm.envOr("FEE_RATE", uint256(0));
-        address feeRecipient              = vm.envOr("FEE_RECIPIENT", address(0));
+        uint256 feeRate = vm.envOr("FEE_RATE", uint256(0));
+        address feeRecipient = vm.envOr("FEE_RECIPIENT", address(0));
 
         address[] memory whitelist = new address[](1);
         whitelist[0] = initialAdmin;
@@ -47,8 +46,17 @@ contract DeployInflowVault is Script {
 
         bytes memory initData = abi.encodeCall(
             InflowVault.initialize,
-            (IERC20(asset), name, symbol, depositCap, maxWithdrawals,
-             whitelist, deployedAmountWhitelist, feeRate, feeRecipient)
+            (
+                IERC20(asset),
+                name,
+                symbol,
+                depositCap,
+                maxWithdrawals,
+                whitelist,
+                deployedAmountWhitelist,
+                feeRate,
+                feeRecipient
+            )
         );
 
         vm.startBroadcast();

@@ -13,28 +13,35 @@ import {MockERC20} from "./mocks/Mocks.sol";
 contract InflowVaultInitializationTest is Test {
     MockERC20 internal asset;
 
-    uint256 internal constant WAD             = 1e18;
-    uint256 internal constant DEPOSIT_CAP     = 1_000_000e6;
+    uint256 internal constant WAD = 1e18;
+    uint256 internal constant DEPOSIT_CAP = 1_000_000e6;
     uint256 internal constant MAX_WITHDRAWALS = 10;
 
-    address internal admin        = makeAddr("admin");
+    address internal admin = makeAddr("admin");
     address internal feeRecipient = makeAddr("feeRecipient");
 
     function setUp() public {
         asset = new MockERC20("USD Coin", "USDC", 6);
     }
 
-    function _deploy(
-        address[] memory whitelist,
-        address[] memory daWhitelist,
-        uint256 feeRate,
-        address feeRec
-    ) internal returns (InflowVault) {
+    function _deploy(address[] memory whitelist, address[] memory daWhitelist, uint256 feeRate, address feeRec)
+        internal
+        returns (InflowVault)
+    {
         InflowVault impl = new InflowVault();
         bytes memory init = abi.encodeCall(
             InflowVault.initialize,
-            (IERC20(address(asset)), "Hydro Inflow Vault", "hvUSDC",
-             DEPOSIT_CAP, MAX_WITHDRAWALS, whitelist, daWhitelist, feeRate, feeRec)
+            (
+                IERC20(address(asset)),
+                "Hydro Inflow Vault",
+                "hvUSDC",
+                DEPOSIT_CAP,
+                MAX_WITHDRAWALS,
+                whitelist,
+                daWhitelist,
+                feeRate,
+                feeRec
+            )
         );
         return InflowVault(address(new ERC1967Proxy(address(impl), init)));
     }
@@ -49,7 +56,7 @@ contract InflowVaultInitializationTest is Test {
     function test_initialize_stores_asset_and_name() public {
         InflowVault v = _deploy(_defaultWhitelist(), _defaultWhitelist(), 0, address(0));
         assertEq(v.asset(), address(asset));
-        assertEq(v.name(),   "Hydro Inflow Vault");
+        assertEq(v.name(), "Hydro Inflow Vault");
         assertEq(v.symbol(), "hvUSDC");
         assertEq(v.decimals(), asset.decimals());
     }
@@ -67,15 +74,15 @@ contract InflowVaultInitializationTest is Test {
     function test_initialize_with_fee_config() public {
         uint256 rate = WAD / 10; // 10 %
         InflowVault v = _deploy(_defaultWhitelist(), _defaultWhitelist(), rate, feeRecipient);
-        assertEq(v.feeRate(),            rate);
-        assertEq(v.feeRecipient(),       feeRecipient);
+        assertEq(v.feeRate(), rate);
+        assertEq(v.feeRecipient(), feeRecipient);
         assertEq(v.highWaterMarkPrice(), WAD, "HWM should start at 1.0 WAD");
     }
 
     function test_initialize_without_fee_config() public {
         InflowVault v = _deploy(_defaultWhitelist(), _defaultWhitelist(), 0, address(0));
-        assertEq(v.feeRate(),            0);
-        assertEq(v.feeRecipient(),       address(0));
+        assertEq(v.feeRate(), 0);
+        assertEq(v.feeRecipient(), address(0));
         assertEq(v.highWaterMarkPrice(), WAD, "HWM should start at 1.0 WAD");
     }
 
@@ -85,7 +92,7 @@ contract InflowVaultInitializationTest is Test {
         wl[0] = admin;
         wl[1] = second;
         InflowVault v = _deploy(wl, _defaultWhitelist(), 0, address(0));
-        assertTrue(v.whitelist(admin),  "admin should be whitelisted");
+        assertTrue(v.whitelist(admin), "admin should be whitelisted");
         assertTrue(v.whitelist(second), "second should be whitelisted");
     }
 
@@ -95,10 +102,17 @@ contract InflowVaultInitializationTest is Test {
         InflowVault impl = new InflowVault();
         bytes memory init = abi.encodeCall(
             InflowVault.initialize,
-            (IERC20(address(asset)), "Vault", "V",
-             DEPOSIT_CAP, MAX_WITHDRAWALS,
-             _defaultWhitelist(), _defaultWhitelist(),
-             WAD + 1, feeRecipient)
+            (
+                IERC20(address(asset)),
+                "Vault",
+                "V",
+                DEPOSIT_CAP,
+                MAX_WITHDRAWALS,
+                _defaultWhitelist(),
+                _defaultWhitelist(),
+                WAD + 1,
+                feeRecipient
+            )
         );
         vm.expectRevert(InflowVault.InvalidFeeRate.selector);
         new ERC1967Proxy(address(impl), init);
@@ -108,10 +122,17 @@ contract InflowVaultInitializationTest is Test {
         InflowVault impl = new InflowVault();
         bytes memory init = abi.encodeCall(
             InflowVault.initialize,
-            (IERC20(address(asset)), "Vault", "V",
-             DEPOSIT_CAP, MAX_WITHDRAWALS,
-             _defaultWhitelist(), _defaultWhitelist(),
-             WAD / 10, address(0))
+            (
+                IERC20(address(asset)),
+                "Vault",
+                "V",
+                DEPOSIT_CAP,
+                MAX_WITHDRAWALS,
+                _defaultWhitelist(),
+                _defaultWhitelist(),
+                WAD / 10,
+                address(0)
+            )
         );
         vm.expectRevert(InflowVault.FeeRecipientNotSet.selector);
         new ERC1967Proxy(address(impl), init);
@@ -122,9 +143,17 @@ contract InflowVaultInitializationTest is Test {
         address[] memory empty = new address[](0);
         bytes memory init = abi.encodeCall(
             InflowVault.initialize,
-            (IERC20(address(asset)), "Vault", "V",
-             DEPOSIT_CAP, MAX_WITHDRAWALS,
-             empty, _defaultWhitelist(), 0, address(0))
+            (
+                IERC20(address(asset)),
+                "Vault",
+                "V",
+                DEPOSIT_CAP,
+                MAX_WITHDRAWALS,
+                empty,
+                _defaultWhitelist(),
+                0,
+                address(0)
+            )
         );
         vm.expectRevert(InflowVault.WhitelistCannotBeEmpty.selector);
         new ERC1967Proxy(address(impl), init);
@@ -135,9 +164,17 @@ contract InflowVaultInitializationTest is Test {
         address[] memory empty = new address[](0);
         bytes memory init = abi.encodeCall(
             InflowVault.initialize,
-            (IERC20(address(asset)), "Vault", "V",
-             DEPOSIT_CAP, MAX_WITHDRAWALS,
-             _defaultWhitelist(), empty, 0, address(0))
+            (
+                IERC20(address(asset)),
+                "Vault",
+                "V",
+                DEPOSIT_CAP,
+                MAX_WITHDRAWALS,
+                _defaultWhitelist(),
+                empty,
+                0,
+                address(0)
+            )
         );
         vm.expectRevert(InflowVault.DeployedAmountWhitelistCannotBeEmpty.selector);
         new ERC1967Proxy(address(impl), init);
@@ -150,9 +187,7 @@ contract InflowVaultInitializationTest is Test {
         wl[1] = address(0);
         bytes memory init = abi.encodeCall(
             InflowVault.initialize,
-            (IERC20(address(asset)), "Vault", "V",
-             DEPOSIT_CAP, MAX_WITHDRAWALS,
-             wl, _defaultWhitelist(), 0, address(0))
+            (IERC20(address(asset)), "Vault", "V", DEPOSIT_CAP, MAX_WITHDRAWALS, wl, _defaultWhitelist(), 0, address(0))
         );
         vm.expectRevert(InflowVault.ZeroAddress.selector);
         new ERC1967Proxy(address(impl), init);
@@ -175,9 +210,15 @@ contract InflowVaultInitializationTest is Test {
         InflowVault v = _deploy(_defaultWhitelist(), _defaultWhitelist(), 0, address(0));
         vm.expectRevert();
         v.initialize(
-            IERC20(address(asset)), "Vault", "V",
-            DEPOSIT_CAP, MAX_WITHDRAWALS,
-            _defaultWhitelist(), _defaultWhitelist(), 0, address(0)
+            IERC20(address(asset)),
+            "Vault",
+            "V",
+            DEPOSIT_CAP,
+            MAX_WITHDRAWALS,
+            _defaultWhitelist(),
+            _defaultWhitelist(),
+            0,
+            address(0)
         );
     }
 }

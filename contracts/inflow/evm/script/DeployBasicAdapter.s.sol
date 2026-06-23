@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "forge-std/Script.sol";
+import {Script, console2} from "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {BasicInflowAdapter} from "../contracts/BasicInflowAdapter.sol";
 import {InflowVault} from "../contracts/InflowVault.sol";
@@ -23,11 +23,10 @@ import {InflowVault} from "../contracts/InflowVault.sol";
 ///   forge script script/DeployBasicAdapter.s.sol \
 ///     --rpc-url $RPC_URL --broadcast --private-key $PRIVATE_KEY -vvvv
 contract DeployBasicAdapter is Script {
-    bytes32 private constant IMPL_SLOT =
-        bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
+    bytes32 private constant IMPL_SLOT = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
 
     function run() external {
-        address vault        = vm.envAddress("VAULT_ADDRESS");
+        address vault = vm.envAddress("VAULT_ADDRESS");
         address adapterAdmin = vm.envAddress("ADAPTER_ADMIN");
 
         address[] memory admins = new address[](1);

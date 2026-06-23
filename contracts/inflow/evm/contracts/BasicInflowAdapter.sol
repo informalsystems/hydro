@@ -21,7 +21,6 @@ import {IAdapter} from "./IAdapter.sol";
 /// - Intended to be registered as "untracked" in the vault so totalAssets() is
 ///   calculated by querying depositorPosition() rather than deployedAmount.
 contract BasicInflowAdapter is IAdapter, Initializable, UUPSUpgradeable {
-
     // ERRORS
 
     error Unauthorized();
@@ -52,13 +51,21 @@ contract BasicInflowAdapter is IAdapter, Initializable, UUPSUpgradeable {
     // MODIFIERS
 
     modifier onlyAdmin() {
-        if (!_isAdmin[msg.sender]) revert Unauthorized();
+        _onlyAdmin();
         _;
     }
 
     modifier onlyDepositor() {
-        if (!_registered[msg.sender] || !_enabled[msg.sender]) revert Unauthorized();
+        _onlyDepositor();
         _;
+    }
+
+    function _onlyAdmin() internal view {
+        if (!_isAdmin[msg.sender]) revert Unauthorized();
+    }
+
+    function _onlyDepositor() internal view {
+        if (!_registered[msg.sender] || !_enabled[msg.sender]) revert Unauthorized();
     }
 
     // CONSTRUCTOR / INITIALIZER

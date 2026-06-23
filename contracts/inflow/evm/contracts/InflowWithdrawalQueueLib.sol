@@ -9,15 +9,14 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 /// execute via DELEGATECALL in the vault's storage context, so token transfers and event
 /// emissions are attributed to the vault.
 library InflowWithdrawalQueueLib {
-
     // STRUCTS
 
     struct WithdrawalEntry {
         uint256 id;
-        uint256 initiatedAt;   // block.timestamp at queue time
-        address owner;         // shares owner - validated on cancellation
-        address receiver;      // receives assets on claim
-        uint256 sharesBurned;  // shares burned at queue time
+        uint256 initiatedAt; // block.timestamp at queue time
+        address owner; // shares owner - validated on cancellation
+        address receiver; // receives assets on claim
+        uint256 sharesBurned; // shares burned at queue time
         uint256 amountToReceive;
         bool isFunded;
     }
@@ -82,11 +81,7 @@ library InflowWithdrawalQueueLib {
 
     /// @dev Scans the queue FIFO, marking entries as funded when the vault's free balance
     /// covers them. Processes at most `limit` entries.
-    function fulfill(
-        QueueStorage storage q,
-        uint256 limit,
-        address assetAddr
-    ) external {
+    function fulfill(QueueStorage storage q, uint256 limit, address assetAddr) external {
         if (limit == 0) return;
 
         uint256 start = q.anyFunded ? q.lastFundedId + 1 : 0;
@@ -94,7 +89,8 @@ library InflowWithdrawalQueueLib {
         if (start >= end) return;
 
         uint256 fundedReserve = q.info.totalWithdrawalAmount > q.info.nonFundedWithdrawalAmount
-            ? q.info.totalWithdrawalAmount - q.info.nonFundedWithdrawalAmount : 0;
+            ? q.info.totalWithdrawalAmount - q.info.nonFundedWithdrawalAmount
+            : 0;
         uint256 vaultBalance = IERC20(assetAddr).balanceOf(address(this));
         uint256 freeBalance = vaultBalance > fundedReserve ? vaultBalance - fundedReserve : 0;
 
@@ -105,9 +101,9 @@ library InflowWithdrawalQueueLib {
 
         for (uint256 id = start; id < end && processed < limit; id++) {
             WithdrawalEntry storage entry = q.requests[id];
-            if (entry.initiatedAt == 0) continue;             // cancelled entry
-            if (entry.isFunded) continue;                     // already funded (should not occur past start)
-            if (entry.amountToReceive > freeBalance) break;   // FIFO: stop at first unaffordable
+            if (entry.initiatedAt == 0) continue; // cancelled entry
+            if (entry.isFunded) continue; // already funded (should not occur past start)
+            if (entry.amountToReceive > freeBalance) break; // FIFO: stop at first unaffordable
 
             entry.isFunded = true;
             freeBalance -= entry.amountToReceive;
@@ -128,11 +124,10 @@ library InflowWithdrawalQueueLib {
     /// @dev Transfers assets to each funded withdrawal's receiver.
     /// Only processes IDs at or below lastFundedId that are marked isFunded.
     /// Returns the total shares burned at queue time across all processed entries.
-    function claim(
-        QueueStorage storage q,
-        uint256[] calldata ids,
-        address assetAddr
-    ) external returns (uint256 totalSharesToBurn) {
+    function claim(QueueStorage storage q, uint256[] calldata ids, address assetAddr)
+        external
+        returns (uint256 totalSharesToBurn)
+    {
         if (!q.anyFunded) revert NothingFundedYet();
 
         for (uint256 i = 0; i < ids.length; i++) {
@@ -165,10 +160,11 @@ library InflowWithdrawalQueueLib {
     /// without modifying any state. Applies identical filtering rules to cancel().
     /// Returns (totalAmount, totalSharesBurned, cancelableIds) where cancelableIds are the
     /// unique IDs owned by msg.sender that are unfunded.
-    function previewCancel(
-        QueueStorage storage q,
-        uint256[] calldata ids
-    ) external view returns (uint256 totalAmount, uint256 totalSharesBurned, uint256[] memory cancelableIds) {
+    function previewCancel(QueueStorage storage q, uint256[] calldata ids)
+        external
+        view
+        returns (uint256 totalAmount, uint256 totalSharesBurned, uint256[] memory cancelableIds)
+    {
         uint256 lowestCancelable = q.anyFunded ? q.lastFundedId + 1 : 0;
 
         cancelableIds = new uint256[](ids.length);
@@ -184,7 +180,10 @@ library InflowWithdrawalQueueLib {
 
             bool isDuplicate;
             for (uint256 j = 0; j < count; j++) {
-                if (cancelableIds[j] == id) { isDuplicate = true; break; }
+                if (cancelableIds[j] == id) {
+                    isDuplicate = true;
+                    break;
+                }
             }
             if (isDuplicate) continue;
 
@@ -202,10 +201,7 @@ library InflowWithdrawalQueueLib {
     /// @dev Executes cancellation for the pre-filtered IDs returned by previewCancel().
     /// Caller must ensure all IDs are valid (unfunded, owned by msg.sender, above the
     /// funded watermark) - previewCancel() guarantees this when used as intended.
-    function cancel(
-        QueueStorage storage q,
-        uint256[] memory ids
-    ) external {
+    function cancel(QueueStorage storage q, uint256[] memory ids) external {
         uint256 totalAmount;
         uint256 totalSharesBurned;
 

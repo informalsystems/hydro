@@ -64,20 +64,11 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
 
     event DeployedAmountSubmitted(address indexed caller, uint256 newAmount);
     event FeeConfigUpdated(uint256 feeRate, address feeRecipient);
-    event FeesAccrued(
-        address indexed recipient,
-        uint256 sharesMinted,
-        uint256 sharePrice,
-        uint256 feeAssets
-    );
+    event FeesAccrued(address indexed recipient, uint256 sharesMinted, uint256 sharePrice, uint256 feeAssets);
 
     /// @notice Emitted when a withdrawal cannot be fulfilled immediately and is queued.
     event WithdrawalQueued(
-        uint256 indexed id,
-        address indexed owner,
-        address indexed receiver,
-        uint256 shares,
-        uint256 assets
+        uint256 indexed id, address indexed owner, address indexed receiver, uint256 shares, uint256 assets
     );
     // WithdrawalFunded and WithdrawalClaimed are emitted by
     // InflowWithdrawalQueueLib (DELEGATECALL context = vault address). They are re-declared
@@ -86,10 +77,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     event WithdrawalClaimed(uint256 indexed id, address indexed receiver, uint256 assets);
 
     event WithdrawalCancelled(
-        address indexed owner,
-        uint256[] canceledWithdrawalIds,
-        uint256 sharesBurned,
-        uint256 sharesMintedBack
+        address indexed owner, uint256[] canceledWithdrawalIds, uint256 sharesBurned, uint256 sharesMintedBack
     );
 
     event WithdrawForDeployment(address indexed caller, uint256 requested, uint256 withdrawn);
@@ -100,32 +88,47 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     /// @dev 1e18 fixed-point unit used for fee rate and share price arithmetic.
     uint256 private constant WAD = 1e18;
 
-    // STATE
+    // ERC-7201 NAMESPACED STORAGE
+    //
+    // All vault-owned state lives in a single struct stored at a deterministic
+    // pseudo-random slot so it cannot collide with parent-contract storage (OZ v5
+    // already uses ERC-7201 internally) or change if the inheritance order is ever
+    // modified. To add new state variables in a future upgrade, append fields to
+    // VaultStorage — do not insert between existing fields.
+    //
+    // Slot derivation (ERC-7201):
+    //   keccak256(abi.encode(uint256(keccak256("hydro.inflow.vault")) - 1)) & ~bytes32(uint256(0xff))
 
-    // Access control
-    mapping(address => bool) public whitelist;
-    uint256 private _whitelistCount;
+    /// @custom:storage-location erc7201:hydro.inflow.vault
+    struct VaultStorage {
+        // Access control
+        mapping(address => bool) whitelist;
+        uint256 whitelistCount;
+        mapping(address => bool) deployedAmountWhitelist;
+        uint256 deployedAmountWhitelistCount;
+        // Vault config
+        uint256 depositCap;
+        uint256 maxWithdrawalsPerUser;
+        // Deployed amount represents funds that left the vault for external deployment (principal + yield).
+        uint256 deployedAmount;
+        // Fee system
+        uint256 feeRate; // WAD: 0 = disabled, 1e18 = 100 %
+        address feeRecipient;
+        uint256 highWaterMarkPrice; // WAD share price during the last fee accrual
+        // Adapter registry
+        InflowAdapterLib.AdapterStorage adapterStorage;
+        // Withdrawal queue
+        InflowWithdrawalQueueLib.QueueStorage queueStorage;
+    }
 
-    mapping(address => bool) public _deployedAmountWhitelist;
-    uint256 private _deployedAmountwhitelistCount;
+    bytes32 private constant VAULT_STORAGE_LOCATION =
+        0x458f53c9064414ecce2b3f4f3b9d75be7c7a51360c84e83c1bf699c0bc4c6400;
 
-    // Vault config
-    uint256 public depositCap;
-    uint256 public maxWithdrawalsPerUser;
-
-    // Deployed amount represents funds that left the vault for external deployment (principal + yield).
-    uint256 public deployedAmount;
-
-    // Fee system
-    uint256 public feeRate;            // WAD: 0 = disabled, 1e18 = 100 %
-    address public feeRecipient;
-    uint256 public highWaterMarkPrice; // WAD share price during the last fee accrual
-
-    // Adapter registry
-    InflowAdapterLib.AdapterStorage internal _adapterStorage;
-
-    // Withdrawal queue
-    InflowWithdrawalQueueLib.QueueStorage internal _queueStorage;
+    function _getStorage() internal pure returns (VaultStorage storage $) {
+        assembly {
+            $.slot := VAULT_STORAGE_LOCATION
+        }
+    }
 
     // MODIFIERS
 
@@ -140,11 +143,13 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     }
 
     function _onlyWhitelisted() internal view {
-        if (!whitelist[msg.sender]) revert Unauthorized();
+        if (!_getStorage().whitelist[msg.sender]) revert Unauthorized();
     }
 
     function _onlyDeployedAmountWhitelisted() internal view {
-        if (!_deployedAmountWhitelist[msg.sender]) revert Unauthorized();
+        if (!_getStorage().deployedAmountWhitelist[msg.sender]) {
+            revert Unauthorized();
+        }
     }
 
     // CONSTRUCTOR / INITIALIZER
@@ -157,7 +162,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     /// @param asset_                               ERC-20 token accepted as deposit.
     /// @param name_                                Vault share token name.
     /// @param symbol_                              Vault share token symbol.
-    /// @param depositCap_                          Maximum total assets the vault will hold (WAD units).
+    /// @param depositCap_                          Maximum total assets the vault will hold (token base units).
     /// @param maxWithdrawalsPerUser_               Maximum concurrent queued withdrawals per address.
     /// @param initialWhitelist                     At least one address must be provided.
     /// @param initialDeployedAmountWhitelist       At least one address must be provided.
@@ -178,22 +183,28 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         __ERC4626_init(asset_);
 
         if (initialWhitelist.length == 0) revert WhitelistCannotBeEmpty();
-        if (initialDeployedAmountWhitelist.length == 0) revert DeployedAmountWhitelistCannotBeEmpty();
+        if (initialDeployedAmountWhitelist.length == 0) {
+            revert DeployedAmountWhitelistCannotBeEmpty();
+        }
         if (feeRate_ > WAD) revert InvalidFeeRate();
-        if (feeRate_ > 0 && feeRecipient_ == address(0)) revert FeeRecipientNotSet();
+        if (feeRate_ > 0 && feeRecipient_ == address(0)) {
+            revert FeeRecipientNotSet();
+        }
 
-        depositCap = depositCap_;
-        maxWithdrawalsPerUser = maxWithdrawalsPerUser_;
-        feeRate = feeRate_;
-        feeRecipient = feeRecipient_;
-        highWaterMarkPrice = WAD;
+        VaultStorage storage $ = _getStorage();
+
+        $.depositCap = depositCap_;
+        $.maxWithdrawalsPerUser = maxWithdrawalsPerUser_;
+        $.feeRate = feeRate_;
+        $.feeRecipient = feeRecipient_;
+        $.highWaterMarkPrice = WAD;
 
         for (uint256 i = 0; i < initialWhitelist.length; i++) {
             address addr = initialWhitelist[i];
             if (addr == address(0)) revert ZeroAddress();
-            if (!whitelist[addr]) {
-                whitelist[addr] = true;
-                _whitelistCount++;
+            if (!$.whitelist[addr]) {
+                $.whitelist[addr] = true;
+                $.whitelistCount++;
                 emit WhitelistAdded(addr);
             }
         }
@@ -201,9 +212,9 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         for (uint256 i = 0; i < initialDeployedAmountWhitelist.length; i++) {
             address addr = initialDeployedAmountWhitelist[i];
             if (addr == address(0)) revert ZeroAddress();
-            if (!_deployedAmountWhitelist[addr]) {
-                _deployedAmountWhitelist[addr] = true;
-                _deployedAmountwhitelistCount++;
+            if (!$.deployedAmountWhitelist[addr]) {
+                $.deployedAmountWhitelist[addr] = true;
+                $.deployedAmountWhitelistCount++;
                 emit DeployedAmountWhitelistAdded(addr);
             }
         }
@@ -222,17 +233,19 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     /// Subtracting pending withdrawal reserves prevents them from being double-counted
     /// as backing for the active shares after the corresponding shares have been burned.
     function totalAssets() public view override returns (uint256) {
+        VaultStorage storage $ = _getStorage();
         uint256 balance = IERC20(asset()).balanceOf(address(this));
-        uint256 adapterPositions = _adapterStorage.queryUntrackedPositions(asset());
-        uint256 pendingWithdrawals = _queueStorage.info.totalWithdrawalAmount;
-        uint256 gross = balance + adapterPositions + deployedAmount;
+        uint256 adapterPositions = $.adapterStorage.queryUntrackedPositions(asset());
+        uint256 pendingWithdrawals = $.queueStorage.info.totalWithdrawalAmount;
+        uint256 gross = balance + adapterPositions + $.deployedAmount;
         return gross > pendingWithdrawals ? gross - pendingWithdrawals : 0;
     }
 
     /// @notice Returns 0 when the deposit cap is already reached, otherwise the remaining room.
     function maxDeposit(address) public view override returns (uint256) {
         uint256 assets = totalAssets();
-        return assets >= depositCap ? 0 : depositCap - assets;
+        uint256 cap = _getStorage().depositCap;
+        return assets >= cap ? 0 : cap - assets;
     }
 
     /// @notice Returns 0 when the deposit cap is already reached, otherwise the share equivalent
@@ -246,21 +259,11 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     // Expose nonReentrant on the public ERC-4626 entry points so adapter callbacks
     // cannot re-enter any vault state-changing function.
 
-    function deposit(uint256 assets, address receiver)
-        public
-        override
-        nonReentrant
-        returns (uint256)
-    {
+    function deposit(uint256 assets, address receiver) public override nonReentrant returns (uint256) {
         return super.deposit(assets, receiver);
     }
 
-    function mint(uint256 shares, address receiver)
-        public
-        override
-        nonReentrant
-        returns (uint256)
-    {
+    function mint(uint256 shares, address receiver) public override nonReentrant returns (uint256) {
         return super.mint(shares, receiver);
     }
 
@@ -268,34 +271,22 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     /// @dev If the vault cannot immediately fulfil the redemption, shares are burned and the
     /// claim is queued. Listen for {WithdrawalQueued} to distinguish this case.
     /// Returns 0 assets when queued.
-    function redeem(uint256 shares, address receiver, address owner)
-        public
-        override
-        nonReentrant
-        returns (uint256)
-    {
+    function redeem(uint256 shares, address receiver, address owner) public override nonReentrant returns (uint256) {
         return super.redeem(shares, receiver, owner);
     }
 
     /// @notice Withdraw a specific asset amount.
     /// @dev See {redeem} for the queued-withdrawal caveat.
-    function withdraw(uint256 assets, address receiver, address owner)
-        public
-        override
-        nonReentrant
-        returns (uint256)
-    {
+    function withdraw(uint256 assets, address receiver, address owner) public override nonReentrant returns (uint256) {
         return super.withdraw(assets, receiver, owner);
     }
 
     /// @dev Deposit/mint hook: pull tokens then allocate to automated adapters.
-    function _deposit(address caller, address receiver, uint256 assets, uint256 shares)
-        internal
-        override
-    {
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal override {
         if (assets == 0) revert ZeroAmount();
         SafeERC20.safeTransferFrom(IERC20(asset()), caller, address(this), assets);
-        deployedAmount = _adapterStorage.allocateToAdapters(assets, asset(), deployedAmount);
+        VaultStorage storage $ = _getStorage();
+        $.deployedAmount = $.adapterStorage.allocateToAdapters(assets, asset(), $.deployedAmount);
         _mint(receiver, shares);
         emit Deposit(caller, receiver, assets, shares);
     }
@@ -304,28 +295,27 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     /// Both paths burn shares immediately.
     /// Immediate path: also transfers assets in the same transaction.
     /// Queue path: assets are transferred later via claimUnbondedWithdrawals().
-    function _withdraw(
-        address caller,
-        address receiver,
-        address owner,
-        uint256 assets,
-        uint256 shares
-    ) internal override {
+    function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
+        internal
+        override
+    {
         if (assets == 0) revert ZeroAmount();
 
         if (caller != owner) {
             _spendAllowance(owner, caller, shares);
         }
 
+        VaultStorage storage $ = _getStorage();
+
         // Free balance = vault balance minus the reserve already allocated to funded-but-unclaimed withdrawals.
-        uint256 fundedReserve = _queueStorage.info.totalWithdrawalAmount
-            - _queueStorage.info.nonFundedWithdrawalAmount;
+        uint256 fundedReserve =
+            $.queueStorage.info.totalWithdrawalAmount - $.queueStorage.info.nonFundedWithdrawalAmount;
         uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
         uint256 freeBalance = vaultBalance > fundedReserve ? vaultBalance - fundedReserve : 0;
 
         uint256 remainingNeeded = assets > freeBalance ? assets - freeBalance : 0;
         (bytes32[] memory keys, uint256[] memory amounts) =
-            _adapterStorage.calculateAllocation(remainingNeeded, false, asset());
+            $.adapterStorage.calculateAllocation(remainingNeeded, false, asset());
 
         uint256 totalFromAdapters;
         for (uint256 i = 0; i < amounts.length; i++) {
@@ -335,13 +325,13 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         if (freeBalance + totalFromAdapters >= assets) {
             // Immediate fulfilment - burn shares and transfer assets.
             _burn(owner, shares);
-            deployedAmount = _adapterStorage.executeAdapterWithdrawals(keys, amounts, deployedAmount, asset());
+            $.deployedAmount = $.adapterStorage.executeAdapterWithdrawals(keys, amounts, $.deployedAmount, asset());
             SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
             emit Withdraw(caller, receiver, owner, assets, shares);
         } else {
             // Queued withdrawal - burn shares immediately; assets are claimed later.
             _burn(owner, shares);
-            uint256 id = _queueStorage.enqueue(owner, receiver, shares, assets, maxWithdrawalsPerUser);
+            uint256 id = $.queueStorage.enqueue(owner, receiver, shares, assets, $.maxWithdrawalsPerUser);
             emit WithdrawalQueued(id, owner, receiver, shares, assets);
         }
     }
@@ -364,39 +354,41 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     /// multiple calls until enough yield has built up to mint at least one share.
     function accrueFees() public {
         uint256 supply = totalSupply();
+        VaultStorage storage $ = _getStorage();
+
         if (supply == 0) {
-            if (feeRate > 0) revert NoSharesIssued();
+            if ($.feeRate > 0) revert NoSharesIssued();
             return;
         }
 
         uint256 assets = totalAssets();
         uint256 currentSharePrice = assets.mulDiv(WAD, supply, Math.Rounding.Floor);
 
-        if (feeRate == 0) {
+        if ($.feeRate == 0) {
             // Fees disabled - advance HWM to prevent backdating when fees are re-enabled.
-            if (currentSharePrice > highWaterMarkPrice) {
-                highWaterMarkPrice = currentSharePrice;
+            if (currentSharePrice > $.highWaterMarkPrice) {
+                $.highWaterMarkPrice = currentSharePrice;
             }
             return;
         }
 
-        if (currentSharePrice <= highWaterMarkPrice) return;
+        if (currentSharePrice <= $.highWaterMarkPrice) return;
 
-        uint256 yieldPerShare = currentSharePrice - highWaterMarkPrice;
+        uint256 yieldPerShare = currentSharePrice - $.highWaterMarkPrice;
         uint256 totalYield = yieldPerShare.mulDiv(supply, WAD, Math.Rounding.Floor);
-        uint256 feeAssets = totalYield.mulDiv(feeRate, WAD, Math.Rounding.Floor);
+        uint256 feeAssets = totalYield.mulDiv($.feeRate, WAD, Math.Rounding.Floor);
         uint256 sharesToMint = feeAssets.mulDiv(WAD, currentSharePrice, Math.Rounding.Floor);
 
         if (sharesToMint == 0) return; // dust; do not update HWM
 
-        highWaterMarkPrice = currentSharePrice;
-        _mint(feeRecipient, sharesToMint);
-        emit FeesAccrued(feeRecipient, sharesToMint, currentSharePrice, feeAssets);
+        $.highWaterMarkPrice = currentSharePrice;
+        _mint($.feeRecipient, sharesToMint);
+        emit FeesAccrued($.feeRecipient, sharesToMint, currentSharePrice, feeAssets);
     }
 
     /// @notice Whitelisted only. Overwrites deployedAmount entirely with `amount`.
     function submitDeployedAmount(uint256 amount) external onlyDeployedAmountWhitelisted {
-        deployedAmount = amount;
+        _getStorage().deployedAmount = amount;
         accrueFees();
         emit DeployedAmountSubmitted(msg.sender, amount);
     }
@@ -408,26 +400,28 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     function updateFeeConfig(uint256 newFeeRate, address newRecipient) external onlyWhitelisted {
         if (newFeeRate > WAD) revert InvalidFeeRate();
 
+        VaultStorage storage $ = _getStorage();
+
         // Validate recipient: required when enabling fees (existing or new rate > 0)
-        address effectiveRecipient = (newRecipient != address(0)) ? newRecipient : feeRecipient;
-        if (newFeeRate > 0 && effectiveRecipient == address(0)) revert FeeRecipientNotSet();
+        address effectiveRecipient = (newRecipient != address(0)) ? newRecipient : $.feeRecipient;
+        if (newFeeRate > 0 && effectiveRecipient == address(0)) {
+            revert FeeRecipientNotSet();
+        }
 
         // When enabling fees, advance HWM to current price (if higher) to avoid
         // backdating charges for yield that occurred while fees were disabled.
-        if (feeRate == 0 && newFeeRate > 0) {
+        if ($.feeRate == 0 && newFeeRate > 0) {
             uint256 supply = totalSupply();
-            uint256 currentSharePrice = supply == 0
-                ? WAD
-                : totalAssets().mulDiv(WAD, supply, Math.Rounding.Floor);
-            if (currentSharePrice > highWaterMarkPrice) {
-                highWaterMarkPrice = currentSharePrice;
+            uint256 currentSharePrice = supply == 0 ? WAD : totalAssets().mulDiv(WAD, supply, Math.Rounding.Floor);
+            if (currentSharePrice > $.highWaterMarkPrice) {
+                $.highWaterMarkPrice = currentSharePrice;
             }
         }
 
-        feeRate = newFeeRate;
-        if (newRecipient != address(0)) feeRecipient = newRecipient;
+        $.feeRate = newFeeRate;
+        if (newRecipient != address(0)) $.feeRecipient = newRecipient;
 
-        emit FeeConfigUpdated(feeRate, feeRecipient);
+        emit FeeConfigUpdated($.feeRate, $.feeRecipient);
     }
 
     // DEPLOYMENT FLOWS
@@ -442,7 +436,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         if (available == 0) revert ZeroAmount();
         if (amount > available) amount = available;
 
-        deployedAmount += amount;
+        _getStorage().deployedAmount += amount;
         SafeERC20.safeTransfer(IERC20(asset()), msg.sender, amount);
         emit WithdrawForDeployment(msg.sender, requested, amount);
     }
@@ -453,7 +447,8 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     function depositFromDeployment(uint256 amount) external onlyWhitelisted nonReentrant {
         if (amount == 0) revert ZeroAmount();
         SafeERC20.safeTransferFrom(IERC20(asset()), msg.sender, address(this), amount);
-        deployedAmount = deployedAmount > amount ? deployedAmount - amount : 0;
+        VaultStorage storage $ = _getStorage();
+        $.deployedAmount = $.deployedAmount > amount ? $.deployedAmount - amount : 0;
         emit DepositFromDeployment(msg.sender, amount);
     }
 
@@ -462,14 +457,14 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     /// @notice Permissionless. Scans the withdrawal queue FIFO, marking entries as funded
     /// when the vault's free balance covers them. Processes at most `limit` entries.
     function fulfillPendingWithdrawals(uint256 limit) external nonReentrant {
-        _queueStorage.fulfill(limit, asset());
+        _getStorage().queueStorage.fulfill(limit, asset());
     }
 
     /// @notice Permissionless. Transfers assets to each funded withdrawal's receiver.
     /// Only processes IDs at or below lastFundedWithdrawalId that are marked isFunded.
     /// Shares were already burned when the withdrawal was queued.
     function claimUnbondedWithdrawals(uint256[] calldata ids) external nonReentrant {
-        _queueStorage.claim(ids, asset());
+        _getStorage().queueStorage.claim(ids, asset());
     }
 
     /// @notice Cancels unfunded withdrawal requests owned by msg.sender and re-mints shares.
@@ -482,19 +477,21 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     ///
     /// Reverts if the cancellation would push totalAssets() above depositCap.
     function cancelWithdrawal(uint256[] calldata ids) external nonReentrant {
+        VaultStorage storage $ = _getStorage();
+
         // Preview the cancellation to calculate the shares to mint back before modifying the state.
         (uint256 totalAmount, uint256 totalSharesBurned, uint256[] memory cancelableIds) =
-            _queueStorage.previewCancel(ids);
-        
+            $.queueStorage.previewCancel(ids);
+
         if (totalAmount == 0) return;
 
         uint256 totalSharesRecalculated = _convertToShares(totalAmount, Math.Rounding.Floor);
 
         // Perform the cancellation, which deletes the entries and updates the totals in the queue storage.
-        _queueStorage.cancel(cancelableIds);
+        $.queueStorage.cancel(cancelableIds);
 
         // Deposit cap check: cancellation restores assets to totalAssets().
-        if (totalAssets() > depositCap) revert DepositCapReached();
+        if (totalAssets() > $.depositCap) revert DepositCapReached();
 
         // Mint minimum between initially burned and recalculated shares to address the share price variation in both directions.
         uint256 sharesToMint = totalSharesRecalculated < totalSharesBurned ? totalSharesRecalculated : totalSharesBurned;
@@ -507,64 +504,57 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     // ADAPTER MANAGEMENT
 
     /// @notice Whitelisted only. Registers a new adapter.
-    function registerAdapter(
-        string calldata name,
-        address addr,
-        bool automated,
-        bool tracked
-    ) external onlyWhitelisted {
+    function registerAdapter(string calldata name, address addr, bool automated, bool tracked)
+        external
+        onlyWhitelisted
+    {
         if (addr == address(0)) revert ZeroAddress();
-        _adapterStorage.registerAdapter(name, addr, automated, tracked);
+        _getStorage().adapterStorage.registerAdapter(name, addr, automated, tracked);
         emit AdapterRegistered(name, addr, automated, tracked);
     }
 
     /// @notice Whitelisted only. Removes an adapter. Reverts if the adapter still holds
     /// a non-zero position for this vault - withdraw funds first via withdrawFromAdapter().
     function unregisterAdapter(string calldata name) external onlyWhitelisted {
-        address addr = _adapterStorage.unregisterAdapter(name, asset());
+        address addr = _getStorage().adapterStorage.unregisterAdapter(name, asset());
         emit AdapterUnregistered(name, addr);
     }
 
     /// @notice Whitelisted only. Switches allocation mode between Automated and Manual.
     function setAdapterAllocationMode(string calldata name, bool automated) external onlyWhitelisted {
-        _adapterStorage.setAdapterAllocationMode(name, automated);
+        _getStorage().adapterStorage.setAdapterAllocationMode(name, automated);
         emit AdapterAllocationModeUpdated(name, automated);
     }
 
     /// @notice Whitelisted only. Switches deployment tracking between Tracked and Untracked.
     function setAdapterDeploymentTracking(string calldata name, bool tracked) external onlyWhitelisted {
-        _adapterStorage.setAdapterDeploymentTracking(name, tracked);
+        _getStorage().adapterStorage.setAdapterDeploymentTracking(name, tracked);
         emit AdapterDeploymentTrackingUpdated(name, tracked);
     }
 
     /// @notice Whitelisted only. Manually withdraws `amount` from a specific adapter back
     /// to the vault. Updates deployedAmount if the adapter is tracked.
-    function withdrawFromAdapter(string calldata name, uint256 amount)
-        external
-        onlyWhitelisted
-        nonReentrant
-    {
-        deployedAmount = _adapterStorage.withdrawFromAdapter(name, amount, asset(), deployedAmount);
+    function withdrawFromAdapter(string calldata name, uint256 amount) external onlyWhitelisted nonReentrant {
+        VaultStorage storage $ = _getStorage();
+        $.deployedAmount = $.adapterStorage.withdrawFromAdapter(name, amount, asset(), $.deployedAmount);
     }
 
     /// @notice Whitelisted only. Manually deposits `amount` from the vault into a specific
     /// adapter. Updates deployedAmount if the adapter is tracked.
-    function depositToAdapter(string calldata name, uint256 amount)
-        external
-        onlyWhitelisted
-        nonReentrant
-    {
-        deployedAmount = _adapterStorage.depositToAdapter(name, amount, asset(), deployedAmount);
+    function depositToAdapter(string calldata name, uint256 amount) external onlyWhitelisted nonReentrant {
+        VaultStorage storage $ = _getStorage();
+        $.deployedAmount = $.adapterStorage.depositToAdapter(name, amount, asset(), $.deployedAmount);
     }
 
     /// @notice Whitelisted only. Moves `amount` from one adapter to another in a single
     /// call. Updates deployedAmount if the tracking modes of the two adapters differ.
-    function moveAdapterFunds(
-        string calldata fromName,
-        string calldata toName,
-        uint256 amount
-    ) external onlyWhitelisted nonReentrant {
-        deployedAmount = _adapterStorage.moveAdapterFunds(fromName, toName, amount, asset(), deployedAmount);
+    function moveAdapterFunds(string calldata fromName, string calldata toName, uint256 amount)
+        external
+        onlyWhitelisted
+        nonReentrant
+    {
+        VaultStorage storage $ = _getStorage();
+        $.deployedAmount = $.adapterStorage.moveAdapterFunds(fromName, toName, amount, asset(), $.deployedAmount);
         emit AdapterFundsMoved(fromName, toName, asset(), amount);
     }
 
@@ -573,14 +563,13 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     /// Both adapters must have identical deployment-tracking mode; crossing the boundary
     /// would silently corrupt deployedAmount since the token is not in vault denomination.
     /// deployedAmount is not modified. Use moveAdapterFunds for the vault's primary asset.
-    function moveAdapterFundsToken(
-        string calldata fromName,
-        string calldata toName,
-        uint256 amount,
-        address token
-    ) external onlyWhitelisted nonReentrant {
+    function moveAdapterFundsToken(string calldata fromName, string calldata toName, uint256 amount, address token)
+        external
+        onlyWhitelisted
+        nonReentrant
+    {
         if (token == asset()) revert TokenIsDepositAsset();
-        _adapterStorage.moveAdapterFundsToken(fromName, toName, amount, token);
+        _getStorage().adapterStorage.moveAdapterFundsToken(fromName, toName, amount, token);
         emit AdapterFundsMoved(fromName, toName, token, amount);
     }
 
@@ -592,103 +581,140 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     /// @notice Whitelisted only. Adds `addr` to the whitelist.
     function addToWhitelist(address addr) external onlyWhitelisted {
         if (addr == address(0)) revert ZeroAddress();
-        if (whitelist[addr]) revert AlreadyWhitelisted();
-        whitelist[addr] = true;
-        _whitelistCount++;
+        VaultStorage storage $ = _getStorage();
+        if ($.whitelist[addr]) revert AlreadyWhitelisted();
+        $.whitelist[addr] = true;
+        $.whitelistCount++;
         emit WhitelistAdded(addr);
     }
 
     /// @notice Whitelisted only. Removes `addr` from the whitelist. Reverts if it is the
     /// last remaining entry.
     function removeFromWhitelist(address addr) external onlyWhitelisted {
-        if (!whitelist[addr]) revert NotWhitelisted();
-        if (_whitelistCount <= 1) revert WhitelistCannotBeEmpty();
-        delete whitelist[addr];
-        _whitelistCount--;
+        VaultStorage storage $ = _getStorage();
+        if (!$.whitelist[addr]) revert NotWhitelisted();
+        if ($.whitelistCount <= 1) revert WhitelistCannotBeEmpty();
+        delete $.whitelist[addr];
+        $.whitelistCount--;
         emit WhitelistRemoved(addr);
     }
 
     /// @notice Whitelisted only. Adds `addr` to the deployed amount whitelist.
     function addToDeployedAmountWhitelist(address addr) external onlyWhitelisted {
         if (addr == address(0)) revert ZeroAddress();
-        if (_deployedAmountWhitelist[addr]) revert AlreadyDeployedAmountWhitelisted();
-        _deployedAmountWhitelist[addr] = true;
-        _deployedAmountwhitelistCount++;
+        VaultStorage storage $ = _getStorage();
+        if ($.deployedAmountWhitelist[addr]) {
+            revert AlreadyDeployedAmountWhitelisted();
+        }
+        $.deployedAmountWhitelist[addr] = true;
+        $.deployedAmountWhitelistCount++;
         emit DeployedAmountWhitelistAdded(addr);
     }
 
     /// @notice Whitelisted only. Removes `addr` from the deployed amount whitelist. Reverts if it is the
     /// last remaining entry.
     function removeFromDeployedAmountWhitelist(address addr) external onlyWhitelisted {
-        if (!_deployedAmountWhitelist[addr]) revert NotWhitelisted();
-        if (_deployedAmountwhitelistCount <= 1) revert DeployedAmountWhitelistCannotBeEmpty();
-        delete _deployedAmountWhitelist[addr];
-        _deployedAmountwhitelistCount--;
+        VaultStorage storage $ = _getStorage();
+        if (!$.deployedAmountWhitelist[addr]) revert NotWhitelisted();
+        if ($.deployedAmountWhitelistCount <= 1) {
+            revert DeployedAmountWhitelistCannotBeEmpty();
+        }
+        delete $.deployedAmountWhitelist[addr];
+        $.deployedAmountWhitelistCount--;
         emit DeployedAmountWhitelistRemoved(addr);
     }
 
     // CONFIG
 
     function updateDepositCap(uint256 newCap) external onlyWhitelisted {
-        depositCap = newCap;
+        _getStorage().depositCap = newCap;
         emit DepositCapUpdated(newCap);
     }
 
     function updateMaxWithdrawalsPerUser(uint256 newMax) external onlyWhitelisted {
-        maxWithdrawalsPerUser = newMax;
+        _getStorage().maxWithdrawalsPerUser = newMax;
         emit MaxWithdrawalsPerUserUpdated(newMax);
     }
 
     // VIEW FUNCTIONS
 
     /// @notice Amount available to send for external deployment
-    /// (vault balance minus withdrawal reserves).
+    /// (vault balance minus all queued withdrawal reserves, funded and non-funded).
     function availableForDeployment() public view returns (uint256) {
         uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
-        uint256 reserved = _queueStorage.info.totalWithdrawalAmount;
+        uint256 reserved = _getStorage().queueStorage.info.totalWithdrawalAmount;
         return vaultBalance > reserved ? vaultBalance - reserved : 0;
     }
 
     /// @notice Returns all queued withdrawal IDs for `user` (including funded ones pending claim).
     function getUserWithdrawalIds(address user) external view returns (uint256[] memory) {
-        return _queueStorage.userIds[user];
+        return _getStorage().queueStorage.userIds[user];
     }
 
     /// @notice Returns info for all registered adapters in registration order.
     function getAdapters() external view returns (InflowAdapterLib.AdapterInfo[] memory) {
-        return _adapterStorage.getAdapters();
+        return _getStorage().adapterStorage.getAdapters();
     }
 
     /// @notice Returns info for a specific adapter by name.
-    function getAdapterByName(string calldata name)
-        external view returns (InflowAdapterLib.AdapterInfo memory)
-    {
-        return _adapterStorage.getAdapterByName(name);
+    function getAdapterByName(string calldata name) external view returns (InflowAdapterLib.AdapterInfo memory) {
+        return _getStorage().adapterStorage.getAdapterByName(name);
     }
 
     // WITHDRAWAL QUEUE STATE GETTERS
 
-    function withdrawalRequest(uint256 id)
-        external view returns (InflowWithdrawalQueueLib.WithdrawalEntry memory)
-    {
-        return _queueStorage.requests[id];
+    function withdrawalRequest(uint256 id) external view returns (InflowWithdrawalQueueLib.WithdrawalEntry memory) {
+        return _getStorage().queueStorage.requests[id];
     }
 
-    function withdrawalQueueInfo()
-        external view returns (InflowWithdrawalQueueLib.WithdrawalQueueInfo memory)
-    {
-        return _queueStorage.info;
+    function withdrawalQueueInfo() external view returns (InflowWithdrawalQueueLib.WithdrawalQueueInfo memory) {
+        return _getStorage().queueStorage.info;
     }
 
     function nextWithdrawalId() external view returns (uint256) {
-        return _queueStorage.nextId;
+        return _getStorage().queueStorage.nextId;
     }
 
     function lastFundedWithdrawalId() external view returns (uint256) {
-        return _queueStorage.lastFundedId;
+        return _getStorage().queueStorage.lastFundedId;
     }
 
     function anyWithdrawalFunded() external view returns (bool) {
-        return _queueStorage.anyFunded;
+        return _getStorage().queueStorage.anyFunded;
+    }
+
+    // EXPLICIT GETTERS FOR PREVIOUSLY-PUBLIC STATE VARIABLES
+    // (public visibility is not available on struct fields; these preserve the external interface)
+
+    function whitelist(address addr) external view returns (bool) {
+        return _getStorage().whitelist[addr];
+    }
+
+    function deployedAmountWhitelist(address addr) external view returns (bool) {
+        return _getStorage().deployedAmountWhitelist[addr];
+    }
+
+    function depositCap() external view returns (uint256) {
+        return _getStorage().depositCap;
+    }
+
+    function maxWithdrawalsPerUser() external view returns (uint256) {
+        return _getStorage().maxWithdrawalsPerUser;
+    }
+
+    function deployedAmount() external view returns (uint256) {
+        return _getStorage().deployedAmount;
+    }
+
+    function feeRate() external view returns (uint256) {
+        return _getStorage().feeRate;
+    }
+
+    function feeRecipient() external view returns (address) {
+        return _getStorage().feeRecipient;
+    }
+
+    function highWaterMarkPrice() external view returns (uint256) {
+        return _getStorage().highWaterMarkPrice;
     }
 }

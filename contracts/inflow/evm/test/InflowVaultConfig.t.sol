@@ -7,7 +7,6 @@ import {InflowWithdrawalQueueLib} from "../contracts/InflowWithdrawalQueueLib.so
 /// @notice Tests for updateDepositCap() and updateMaxWithdrawalsPerUser().
 /// Corresponds to: withdrawal_with_config_update_test (vault/testing.rs).
 contract InflowVaultConfigTest is InflowVaultBase {
-
     // ── updateDepositCap ──────────────────────────────────────────────────────
 
     function test_update_deposit_cap_success() public {

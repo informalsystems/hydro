@@ -8,7 +8,6 @@ import {InflowVaultBase, InflowVault, MockERC20} from "./InflowVaultBase.t.sol";
 /// Corresponds to: deposit_from_deployment_test, submit_deployed_amount_test,
 /// deposit_withdrawal_for_deployment_test (vault/testing.rs + control-center/testing.rs).
 contract InflowVaultDeploymentTest is InflowVaultBase {
-
     // ── withdrawForDeployment ─────────────────────────────────────────────────
 
     function test_withdraw_for_deployment_transfers_and_tracks() public {
@@ -18,9 +17,9 @@ contract InflowVaultDeploymentTest is InflowVaultBase {
         vm.prank(admin);
         vault.withdrawForDeployment(100_000e6);
 
-        assertEq(asset.balanceOf(admin),          adminBefore + 100_000e6, "admin received assets");
-        assertEq(asset.balanceOf(address(vault)), 0,                       "vault balance drained");
-        assertEq(vault.deployedAmount(),          100_000e6,               "deployedAmount incremented");
+        assertEq(asset.balanceOf(admin), adminBefore + 100_000e6, "admin received assets");
+        assertEq(asset.balanceOf(address(vault)), 0, "vault balance drained");
+        assertEq(vault.deployedAmount(), 100_000e6, "deployedAmount incremented");
     }
 
     function test_withdraw_for_deployment_capped_at_available() public {
@@ -42,8 +41,8 @@ contract InflowVaultDeploymentTest is InflowVaultBase {
         vm.prank(admin);
         vault.withdrawForDeployment(200_000e6); // request 200k but only 60k available
 
-        assertEq(vault.deployedAmount(),          60_000e6,               "only available amount deployed");
-        assertEq(asset.balanceOf(admin),          adminBefore + 60_000e6, "admin got 60k");
+        assertEq(vault.deployedAmount(), 60_000e6, "only available amount deployed");
+        assertEq(asset.balanceOf(admin), adminBefore + 60_000e6, "admin got 60k");
         assertEq(asset.balanceOf(address(vault)), 0);
     }
 
@@ -124,7 +123,7 @@ contract InflowVaultDeploymentTest is InflowVaultBase {
         vault.depositFromDeployment(110_000e6);
 
         assertEq(asset.balanceOf(address(vault)), 110_000e6, "vault received 110k");
-        assertEq(vault.deployedAmount(),          0,         "deployedAmount decreased (clamped to 0)");
+        assertEq(vault.deployedAmount(), 0, "deployedAmount decreased (clamped to 0)");
     }
 
     function test_deposit_from_deployment_exact_amount() public {
@@ -232,9 +231,9 @@ contract InflowVaultDeploymentTest is InflowVaultBase {
         vm.prank(admin);
         vault.submitDeployedAmount(120_000e6);
 
-        assertGt(vault.highWaterMarkPrice(), WAD,        "HWM advanced to the new price");
-        assertGt(vault.balanceOf(feeRecipient), 0,        "fee shares minted at the new price");
-        assertEq(vault.deployedAmount(),       120_000e6, "deployedAmount stored correctly");
+        assertGt(vault.highWaterMarkPrice(), WAD, "HWM advanced to the new price");
+        assertGt(vault.balanceOf(feeRecipient), 0, "fee shares minted at the new price");
+        assertEq(vault.deployedAmount(), 120_000e6, "deployedAmount stored correctly");
     }
 
     // ── availableForDeployment ────────────────────────────────────────────────
@@ -245,7 +244,7 @@ contract InflowVaultDeploymentTest is InflowVaultBase {
     }
 
     function test_available_for_deployment_with_queue_reserve() public {
-        _deposit(user,  100_000e6);
+        _deposit(user, 100_000e6);
         _deposit(alice, 100_000e6);
 
         // Drain 100k via deployment.
