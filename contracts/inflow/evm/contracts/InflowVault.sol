@@ -540,8 +540,13 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     }
 
     /// @notice Whitelisted only. Manually deposits `amount` from the vault into a specific
-    /// adapter. Updates deployedAmount if the adapter is tracked.
+    /// adapter. Updates deployedAmount if the adapter is tracked. Caps the deposit to the
+    /// amount available for deployment (vault balance minus pending withdrawal reserves).
     function depositToAdapter(string calldata name, uint256 amount) external onlyWhitelisted nonReentrant {
+        if (amount == 0) revert ZeroAmount();
+        uint256 available = availableForDeployment();
+        if (available == 0) revert ZeroAmount();
+        if (amount > available) amount = available;
         VaultStorage storage $ = _getStorage();
         $.deployedAmount = $.adapterStorage.depositToAdapter(name, amount, asset(), $.deployedAmount);
     }
