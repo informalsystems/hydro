@@ -1371,20 +1371,19 @@ fn deposit_to_adapter(
             name: adapter_name.clone(),
         })?;
 
-    // Check vault has sufficient balance (skipped when moving between adapters,
-    // since the funds will arrive from the source adapter before this executes)
+    // Check vault has sufficient available balance (skipped when moving between adapters,
+    // since the funds will arrive from the source adapter before this executes).
+    // Uses available_for_deployment rather than raw balance to respect pending withdrawal reserves.
     if !skip_vault_balance_check {
-        let vault_balance = deps
-            .querier
-            .query_balance(&env.contract.address, &config.deposit_denom)?;
-
-        if vault_balance.amount < amount {
+        let available_for_deployment = query_available_for_deployment(&deps.as_ref(), &env)?;
+        if available_for_deployment < amount {
             return Err(ContractError::InsufficientBalance {
-                available: vault_balance.amount,
+                available: available_for_deployment,
                 required: amount,
             });
         }
     }
+    let amount_to_deposit = amount;
 
     let mut messages = vec![];
 
@@ -1396,7 +1395,7 @@ fn deposit_to_adapter(
         msg: serialize_adapter_interface_msg(&deposit_msg)?,
         funds: vec![Coin {
             denom: config.deposit_denom.clone(),
-            amount,
+            amount: amount_to_deposit,
         }],
     };
     messages.push(CosmosMsg::Wasm(wasm_msg));
@@ -1407,7 +1406,7 @@ fn deposit_to_adapter(
         DeploymentTracking::Tracked
     ) {
         let amount_in_base_tokens =
-            convert_deposit_token_into_base_token(&deps.as_ref(), config, amount)?;
+            convert_deposit_token_into_base_token(&deps.as_ref(), config, amount_to_deposit)?;
         let update_msg = build_update_deployed_amount_msg(
             amount_in_base_tokens,
             DeploymentDirection::Add,
@@ -1421,7 +1420,8 @@ fn deposit_to_adapter(
         .add_attribute("action", "deposit_to_adapter")
         .add_attribute("sender", info.sender)
         .add_attribute("adapter_name", adapter_name)
-        .add_attribute("amount", amount)
+        .add_attribute("amount_requested", amount)
+        .add_attribute("amount_deposited", amount_to_deposit)
         .add_attribute(
             "deployment_tracking",
             format!("{:?}", adapter_info.deployment_tracking),
