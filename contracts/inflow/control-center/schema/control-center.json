@@ -1,6 +1,6 @@
 {
   "contract_name": "control-center",
-  "contract_version": "3.6.11",
+  "contract_version": "3.6.12",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -56,8 +56,7 @@
         "description": "Configuration for performance fee tracking, used during instantiation or migration. Fees are enabled when fee_rate > 0 and disabled when fee_rate = 0.",
         "type": "object",
         "required": [
-          "fee_rate",
-          "fee_recipient"
+          "fee_rate"
         ],
         "properties": {
           "fee_rate": {
@@ -69,8 +68,11 @@
             ]
           },
           "fee_recipient": {
-            "description": "Address where fee shares are minted to",
-            "type": "string"
+            "description": "Address where fee shares are minted to. Required when fee_rate > 0.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -520,15 +522,21 @@
       "title": "FeeConfigResponse",
       "type": "object",
       "required": [
-        "fee_rate",
-        "fee_recipient"
+        "fee_rate"
       ],
       "properties": {
         "fee_rate": {
           "$ref": "#/definitions/Decimal"
         },
         "fee_recipient": {
-          "$ref": "#/definitions/Addr"
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Addr"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,

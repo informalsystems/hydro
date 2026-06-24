@@ -1,0 +1,1 @@
+- Add Cosmos Hub support for Inflow contracts and adapters. Add `Pause` and `Unpause` capabilities on Inflow vault contract. ([\#421](https://github.com/informalsystems/hydro/pull/421))

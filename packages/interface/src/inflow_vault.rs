@@ -187,6 +187,21 @@ pub enum ExecuteMsg {
         amount: Uint128,
         recipient: String,
     },
+
+    /// Pause the vault — blocks Deposit, Withdraw, and CancelWithdrawal. Whitelisted only.
+    Pause {},
+    /// Unpause the vault. Whitelisted only.
+    Unpause {},
+
+    /// One-time migration: mints vault shares and sends them to a conversion contract.
+    /// Guarded by a one-shot flag — reverts if already called.
+    /// Only implemented on the Cosmos Hub vault; returns Unauthorized on Neutron.
+    MintForMigration {
+        shares_to_mint: Uint128,
+        /// If set, calls UpdateDeployedAmount on the Control Center with this value.
+        deployed_amount: Option<Uint128>,
+        conversion_contract: String,
+    },
 }
 
 #[cw_serde]

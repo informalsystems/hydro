@@ -45,6 +45,8 @@ schema:
 	cd contracts/gatekeeper && cargo run --bin gatekeeper_schema
 	cd contracts/marketplace && cargo run --bin marketplace_schema
 	cd contracts/inflow/vault && cargo run --bin inflow_vault_schema
+	cd contracts/inflow/vault-cosmoshub && cargo run --bin inflow_vault_schema
+	cd contracts/inflow/shares-converter && cargo run --bin shares_converter_schema
 	cd contracts/inflow/proxy && cargo run --bin inflow_proxy_schema
 	cd contracts/inflow/control-center && cargo run --bin inflow_control_center_schema
 	cd contracts/inflow/user-registry && cargo run --bin inflow_user_registry_schema
@@ -52,6 +54,9 @@ schema:
 	cd contracts/inflow/ibc-adapter && cargo run --bin inflow_ibc_adapter_schema
 	cd contracts/inflow/skip-adapter && cargo run --bin inflow_skip_adapter_schema
 	cd contracts/inflow/cctp-adapter && cargo run --bin inflow_cctp_adapter_schema
+	cd contracts/inflow/cctp-adapter-cosmoshub && cargo run --bin inflow_cctp_adapter_cosmoshub_schema
+	cd contracts/inflow/skip-adapter-cosmoshub && cargo run --bin inflow_skip_adapter_cosmoshub_schema
+	cd contracts/inflow/basic-adapter-cosmoshub && cargo run --bin inflow_basic_adapter_cosmoshub_schema
 	cd contracts/claim && cargo run --bin claim_schema
 
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/hydro/schema NAME=HydroBase
@@ -63,6 +68,8 @@ schema:
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/gatekeeper/schema NAME=GatekeeperBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/marketplace/schema NAME=MarketplaceBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/vault/schema NAME=InflowVaultBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/vault-cosmoshub/schema NAME=InflowVaultCosmosHubBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/shares-converter/schema NAME=InflowSharesConverterBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/proxy/schema NAME=InflowProxyBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/control-center/schema NAME=InflowControlCenterBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/user-registry/schema NAME=InflowUserRegistryBase
@@ -70,6 +77,9 @@ schema:
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/ibc-adapter/schema NAME=InflowIBCAdapterBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/skip-adapter/schema NAME=InflowSkipAdapterBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/cctp-adapter/schema NAME=InflowCCTPAdapterBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/cctp-adapter-cosmoshub/schema NAME=InflowCCTPAdapterCosmosHubBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/skip-adapter-cosmoshub/schema NAME=InflowSkipAdapterCosmosHubBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/basic-adapter-cosmoshub/schema NAME=InflowBasicAdapterCosmosHubBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/claim/schema NAME=ClaimBase
 
 ts-codegen-inner:

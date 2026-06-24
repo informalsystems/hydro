@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## v3.6.12
+
+Date: June 24th, 2026
+
+### FEATURES
+
+- Add Cosmos Hub support for Inflow contracts and adapters. Add `Pause` and `Unpause` capabilities on Inflow vault contract. ([\#421](https://github.com/informalsystems/hydro/pull/421))
+
 ## v3.6.11
 
 Date: April 16th, 2026

@@ -12,7 +12,6 @@ use interface::inflow_control_center::{
 use interface::inflow_vault::{
     PoolInfoResponse as VaultPoolInfoResponse, QueryMsg as VaultQueryMsg,
 };
-use neutron_sdk::bindings::{msg::NeutronMsg, query::NeutronQuery};
 
 use crate::{
     contract::{execute, instantiate, query},
@@ -29,7 +28,7 @@ const DEFAULT_DEPOSIT_CAP: Uint128 = Uint128::new(10000000);
 
 type WasmQueryFunc = Box<dyn Fn(&WasmQuery) -> QuerierResult>;
 
-pub fn mock_dependencies() -> OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery> {
+pub fn mock_dependencies() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
     OwnedDeps {
         storage: MockStorage::default(),
         api: MockApi::default(),
@@ -64,7 +63,7 @@ fn get_instantiate_msg(
 
 /// Sets up a mock querier that handles subvault PoolInfo queries
 fn setup_mock_querier_with_subvaults(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     subvault_shares: Vec<(String, Uint128)>,
 ) {
     let handlers: HashMap<String, WasmQueryFunc> = subvault_shares
@@ -128,7 +127,7 @@ fn test_instantiate_with_fee_config() {
         vec![],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -139,7 +138,7 @@ fn test_instantiate_with_fee_config() {
     // Verify fee config was stored
     let fee_config = FEE_CONFIG.load(&deps.storage).unwrap();
     assert_eq!(fee_config.fee_rate, Decimal::percent(20));
-    assert_eq!(fee_config.fee_recipient, treasury_addr);
+    assert_eq!(fee_config.fee_recipient, Some(treasury_addr));
 
     // Verify high-water mark was initialized
     let high_water_mark_price = HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap();
@@ -181,7 +180,7 @@ fn test_instantiate_invalid_fee_rate() {
         vec![],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(150), // Invalid: > 100%
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -209,7 +208,7 @@ fn test_update_fee_config_partial() {
         vec![],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -232,7 +231,7 @@ fn test_update_fee_config_partial() {
     // Verify only fee_rate was updated
     let fee_config = FEE_CONFIG.load(&deps.storage).unwrap();
     assert_eq!(fee_config.fee_rate, Decimal::percent(15));
-    assert_eq!(fee_config.fee_recipient, treasury_addr); // Unchanged
+    assert_eq!(fee_config.fee_recipient, Some(treasury_addr)); // Unchanged
 }
 
 #[test]
@@ -248,7 +247,7 @@ fn test_update_fee_config_unauthorized() {
         vec![],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -283,7 +282,7 @@ fn test_update_fee_config_invalid_rate() {
         vec![],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -350,7 +349,7 @@ fn test_update_fee_config_change_recipient() {
         vec![],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: old_treasury.to_string(),
+            fee_recipient: Some(old_treasury.to_string()),
         }),
     );
 
@@ -372,7 +371,7 @@ fn test_update_fee_config_change_recipient() {
 
     // Verify recipient was updated
     let fee_config = FEE_CONFIG.load(&deps.storage).unwrap();
-    assert_eq!(fee_config.fee_recipient, new_treasury);
+    assert_eq!(fee_config.fee_recipient, Some(new_treasury));
 }
 
 #[test]
@@ -388,7 +387,7 @@ fn test_update_fee_config_disable_by_zero_rate() {
         vec![],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -430,7 +429,7 @@ fn test_query_fee_config() {
         vec![],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -442,7 +441,7 @@ fn test_query_fee_config() {
     let fee_config: FeeConfigResponse = from_json(query_res).unwrap();
 
     assert_eq!(fee_config.fee_rate, Decimal::percent(20));
-    assert_eq!(fee_config.fee_recipient, treasury_addr);
+    assert_eq!(fee_config.fee_recipient, Some(treasury_addr));
 }
 
 #[test]
@@ -458,7 +457,7 @@ fn test_query_fee_accrual_info_no_subvaults() {
         vec![],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -516,7 +515,7 @@ fn test_accrue_fees_no_shares() {
         vec![], // No subvaults
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -548,7 +547,7 @@ fn test_accrue_fees_below_high_water_mark() {
         vec![subvault1_addr.clone()],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -588,7 +587,7 @@ fn test_accrue_fees_basic_yield() {
         vec![subvault1_addr.clone()],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -657,7 +656,7 @@ fn test_accrue_fees_permissionless() {
         vec![subvault1_addr.clone()],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -710,7 +709,7 @@ fn test_accrue_fees_zero_fee_rate_is_disabled() {
         vec![subvault1_addr.clone()],
         Some(FeeConfigInit {
             fee_rate: Decimal::zero(), // 0% fee rate means disabled
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -772,7 +771,7 @@ fn test_accrue_fees_proportional_two_vaults() {
         vec![subvault1_addr.clone(), subvault2_addr.clone()],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -851,7 +850,7 @@ fn test_high_water_mark_consecutive_accruals() {
         vec![subvault1_addr.clone()],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -859,11 +858,11 @@ fn test_high_water_mark_consecutive_accruals() {
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Helper to update mock and accrue
-    let run_accrual = |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    let run_accrual = |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
                        env: &Env,
                        shares: u128,
                        balance: u128|
-     -> Response<NeutronMsg> {
+     -> Response {
         let subvault_addr = deps.api.addr_make(SUBVAULT1).to_string();
         deps.querier.update_wasm({
             let addr = subvault_addr.clone();
@@ -939,7 +938,7 @@ fn test_high_water_mark_recovery_from_loss() {
         vec![subvault1_addr.clone()],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -947,11 +946,11 @@ fn test_high_water_mark_recovery_from_loss() {
     instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
 
     // Helper function
-    let run_accrual = |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
+    let run_accrual = |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
                        env: &Env,
                        shares: u128,
                        balance: u128|
-     -> Response<NeutronMsg> {
+     -> Response {
         let subvault_addr = deps.api.addr_make(SUBVAULT1).to_string();
         deps.querier.update_wasm({
             let addr = subvault_addr.clone();
@@ -1055,7 +1054,7 @@ fn test_dust_yield_does_not_update_high_water_mark() {
         vec![subvault1_addr.clone()],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -1068,9 +1067,7 @@ fn test_dust_yield_does_not_update_high_water_mark() {
 
     // Helper to set up mock querier
     let setup_vault_state =
-        |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
-         shares: u128,
-         balance: u128| {
+        |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>, shares: u128, balance: u128| {
             let subvault_addr = deps.api.addr_make(SUBVAULT1).to_string();
             deps.querier.update_wasm({
                 let addr = subvault_addr.clone();
@@ -1193,7 +1190,7 @@ fn test_reenable_fees_resets_high_water_mark() {
         vec![subvault1_addr.clone()],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 
@@ -1208,9 +1205,7 @@ fn test_reenable_fees_resets_high_water_mark() {
 
     // Helper to set up mock querier with specific shares and balance
     let setup_vault_state =
-        |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery>,
-         shares: u128,
-         balance: u128| {
+        |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>, shares: u128, balance: u128| {
             let subvault_addr = deps.api.addr_make(SUBVAULT1).to_string();
             deps.querier.update_wasm({
                 let addr = subvault_addr.clone();
@@ -1339,7 +1334,7 @@ fn test_accrue_fees_remainder_when_last_vault_has_zero_shares() {
         ],
         Some(FeeConfigInit {
             fee_rate: Decimal::percent(20),
-            fee_recipient: treasury_addr.to_string(),
+            fee_recipient: Some(treasury_addr.to_string()),
         }),
     );
 

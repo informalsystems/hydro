@@ -3,15 +3,21 @@
   "title": "FeeConfigResponse",
   "type": "object",
   "required": [
-    "fee_rate",
-    "fee_recipient"
+    "fee_rate"
   ],
   "properties": {
     "fee_rate": {
       "$ref": "#/definitions/Decimal"
     },
     "fee_recipient": {
-      "$ref": "#/definitions/Addr"
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Addr"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "additionalProperties": false,

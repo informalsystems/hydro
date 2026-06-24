@@ -570,8 +570,7 @@ fn icq_results_state_update_test() {
         assert!(res.is_ok());
 
         // setup initial validators
-        let mut mock_query_id = 1;
-        for validator in test_case.initial_validators {
+        for (mock_query_id, validator) in (1..).zip(test_case.initial_validators) {
             let res = VALIDATORS_INFO.save(
                 deps.as_mut().storage,
                 (current_round_id, validator.address.clone()),
@@ -602,8 +601,6 @@ fn icq_results_state_update_test() {
                 &validator.address,
             );
             assert!(res.is_ok());
-
-            mock_query_id += 1;
         }
 
         let msg = SudoMsg::KVQueryResult {

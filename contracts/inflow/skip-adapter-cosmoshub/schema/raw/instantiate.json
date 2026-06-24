@@ -1,0 +1,219 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "description": "Message for instantiating the Skip adapter contract on Cosmos Hub",
+  "type": "object",
+  "required": [
+    "admins",
+    "default_timeout_nanos",
+    "executors",
+    "initial_depositors",
+    "initial_routes",
+    "max_slippage_bps",
+    "skip_contracts"
+  ],
+  "properties": {
+    "admins": {
+      "description": "The config admins who can update config and manage routes/executors",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "default_timeout_nanos": {
+      "description": "Default timeout in nanoseconds (e.g., 1800000000000 for 30 minutes)",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "executors": {
+      "description": "Initial executors who can call ExecuteSwap (can be empty array)",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "initial_depositors": {
+      "description": "Initial depositor addresses to register during instantiation (can be empty array)",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "initial_routes": {
+      "description": "Initial route configurations to register (can be empty array)",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/definitions/UnifiedRoute"
+          }
+        ],
+        "maxItems": 2,
+        "minItems": 2
+      }
+    },
+    "max_slippage_bps": {
+      "description": "Maximum allowed slippage in basis points (e.g., 100 = 1%)",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "skip_contracts": {
+      "description": "Skip contract addresses by chain (e.g., {\"osmosis\": \"osmo1...\"})",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "Binary": {
+      "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
+      "type": "string"
+    },
+    "PathHop": {
+      "description": "A single hop in an IBC path (used for both forward and return paths) Used for multi-chain transfers (e.g., Cosmos Hub → Osmosis or Osmosis → Cosmos Hub)",
+      "type": "object",
+      "required": [
+        "chain_id",
+        "channel",
+        "receiver"
+      ],
+      "properties": {
+        "chain_id": {
+          "description": "Chain ID of the destination for this hop (e.g., \"cosmoshub-4\", \"osmosis-1\")",
+          "type": "string"
+        },
+        "channel": {
+          "description": "IBC channel to use for this hop",
+          "type": "string"
+        },
+        "receiver": {
+          "description": "Receiver address on the next chain (intermediary or final)",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SwapOperation": {
+      "description": "A single swap operation (hop in the swap path) Matches Skip Protocol's SwapOperation schema",
+      "type": "object",
+      "required": [
+        "denom_in",
+        "denom_out",
+        "pool"
+      ],
+      "properties": {
+        "denom_in": {
+          "description": "Input denom for this hop",
+          "type": "string"
+        },
+        "denom_out": {
+          "description": "Output denom for this hop",
+          "type": "string"
+        },
+        "interface": {
+          "description": "Optional interface specification returned by Coinhall API. Not generated internally; passed through when present in API responses. See: https://github.com/skip-mev/skip-go-cosmwasm-contracts/pull/108#issuecomment-2099460954 And: https://github.com/skip-mev/skip-go-cosmwasm-contracts/blob/main/contracts/adapters/swap/hallswap/src/contract.rs#L364-L367",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Binary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pool": {
+          "description": "Pool identifier",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SwapVenue": {
+      "description": "Swap venue — on Cosmos Hub only cross-chain venues are supported",
+      "oneOf": [
+        {
+          "description": "Swap on Osmosis (via PFM + wasm hook)",
+          "type": "string",
+          "enum": [
+            "osmosis"
+          ]
+        }
+      ]
+    },
+    "UnifiedRoute": {
+      "description": "Unified route configuration — cross-chain (Osmosis) only on Cosmos Hub",
+      "type": "object",
+      "required": [
+        "denom_in",
+        "denom_out",
+        "enabled",
+        "forward_path",
+        "operations",
+        "return_path",
+        "swap_venue_name",
+        "venue"
+      ],
+      "properties": {
+        "denom_in": {
+          "description": "Input token denom on Cosmos Hub (what the adapter holds)",
+          "type": "string"
+        },
+        "denom_out": {
+          "description": "Output token denom on Cosmos Hub (what we expect back)",
+          "type": "string"
+        },
+        "enabled": {
+          "description": "Whether route is enabled",
+          "type": "boolean"
+        },
+        "forward_path": {
+          "description": "Forward path from Cosmos Hub to the swap venue Empty for local routes Example: [Cosmos Hub → Osmosis]",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PathHop"
+          }
+        },
+        "operations": {
+          "description": "Swap operations (multi-hop path) Denoms are AS THEY APPEAR ON THE SWAP VENUE (e.g., Osmosis)",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SwapOperation"
+          }
+        },
+        "recover_address": {
+          "description": "Recovery address on the swap venue (e.g., osmo1...). Will be used as final destination if return_path is empty on cross-chain routes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "return_path": {
+          "description": "Return path back to Cosmos Hub Empty for local routes Example: [Osmosis → Cosmos Hub]",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PathHop"
+          }
+        },
+        "swap_venue_name": {
+          "description": "Swap venue name (e.g., \"osmosis-poolmanager\")",
+          "type": "string"
+        },
+        "venue": {
+          "description": "Where the swap executes",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SwapVenue"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

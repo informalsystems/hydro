@@ -6,7 +6,6 @@ use cosmwasm_std::{
     Addr, Coin, MessageInfo, OwnedDeps, Uint128,
 };
 use interface::inflow_control_center::{DeploymentDirection, ExecuteMsg, QueryMsg};
-use neutron_sdk::bindings::query::NeutronQuery;
 
 use crate::{
     contract::{execute, instantiate, query},
@@ -22,7 +21,7 @@ const SUBVAULT1: &str = "subvault1";
 const SUBVAULT2: &str = "subvault2";
 const DEFAULT_DEPOSIT_CAP: Uint128 = Uint128::new(10000000);
 
-pub fn mock_dependencies() -> OwnedDeps<MockStorage, MockApi, MockQuerier, NeutronQuery> {
+pub fn mock_dependencies() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
     OwnedDeps {
         storage: MockStorage::default(),
         api: MockApi::default(),

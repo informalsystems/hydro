@@ -351,6 +351,16 @@ fn refund_tribute(
     // Load the tribute
     let mut tribute = ID_TO_TRIBUTE_MAP.load(deps.storage, tribute_id)?;
 
+    // Verify the tribute belongs to the proposal coordinates supplied by the caller.
+    if tribute.round_id != round_id
+        || tribute.tranche_id != tranche_id
+        || tribute.proposal_id != proposal_id
+    {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Tribute does not belong to the specified proposal",
+        )));
+    }
+
     // Check that the sender is the depositor of the tribute
     if tribute.depositor != info.sender {
         return Err(ContractError::Std(StdError::generic_err(

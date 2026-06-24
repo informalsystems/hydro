@@ -39,7 +39,7 @@ use crate::{
     msg::{DenomMetadata, InstantiateMsg, ReplyPayload},
     state::{
         get_next_payout_id, get_next_withdrawal_id, load_config, load_withdrawal_queue_info,
-        ADAPTERS, CONFIG, LAST_FUNDED_WITHDRAWAL_ID, NEXT_PAYOUT_ID, NEXT_WITHDRAWAL_ID,
+        ADAPTERS, CONFIG, LAST_FUNDED_WITHDRAWAL_ID, NEXT_PAYOUT_ID, NEXT_WITHDRAWAL_ID, PAUSED,
         PAYOUTS_HISTORY, USER_WITHDRAWAL_REQUESTS, WHITELIST, WITHDRAWAL_QUEUE_INFO,
         WITHDRAWAL_REQUESTS,
     },
@@ -223,6 +223,9 @@ pub fn execute(
         ExecuteMsg::MintFeeShares { amount, recipient } => {
             mint_fee_shares(deps, env, info, &config, amount, recipient)
         }
+        ExecuteMsg::MintForMigration { .. } => Err(ContractError::Unauthorized),
+        ExecuteMsg::Pause {} => pause(deps, info),
+        ExecuteMsg::Unpause {} => unpause(deps, info),
     }
 }
 
@@ -234,6 +237,7 @@ fn deposit(
     config: &Config,
     on_behalf_of: Option<String>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
+    verify_not_paused(deps.storage)?;
     let deposit_amount = cw_utils::must_pay(&info, &config.deposit_denom)?;
     let recipient = match on_behalf_of {
         Some(addr) => deps.api.addr_validate(&addr)?,
@@ -363,6 +367,7 @@ fn withdraw(
     config: &Config,
     on_behalf_of: Option<String>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
+    verify_not_paused(deps.storage)?;
     let vault_shares_denom = config.vault_shares_denom.clone();
     let vault_shares_sent = cw_utils::must_pay(&info, &vault_shares_denom)?;
     let withdrawer = match on_behalf_of {
@@ -557,6 +562,7 @@ fn cancel_withdrawal(
     config: Config,
     withdrawal_ids: Vec<u64>,
 ) -> Result<Response<NeutronMsg>, ContractError> {
+    verify_not_paused(deps.storage)?;
     let deposit_cap = get_deposit_cap(&deps.as_ref(), &config.control_center_contract)?;
     let pool_info = get_control_center_pool_info(&deps.as_ref(), &config.control_center_contract)?;
     let total_pool_value = pool_info.total_pool_value;
@@ -1094,6 +1100,31 @@ fn validate_address_is_whitelisted(
     Ok(())
 }
 
+fn verify_not_paused(storage: &dyn Storage) -> Result<(), ContractError> {
+    if PAUSED.may_load(storage)?.unwrap_or(false) {
+        return Err(ContractError::ContractPaused);
+    }
+    Ok(())
+}
+
+fn pause(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    validate_address_is_whitelisted(&deps, info.sender)?;
+    PAUSED.save(deps.storage, &true)?;
+    Ok(Response::new().add_attribute("action", "pause"))
+}
+
+fn unpause(
+    deps: DepsMut<NeutronQuery>,
+    info: MessageInfo,
+) -> Result<Response<NeutronMsg>, ContractError> {
+    validate_address_is_whitelisted(&deps, info.sender)?;
+    PAUSED.save(deps.storage, &false)?;
+    Ok(Response::new().add_attribute("action", "unpause"))
+}
+
 /// Given the `deposit_amount_base_tokens`, this function will calculate how many vault shares tokens should be minted in return.
 pub fn calculate_number_of_shares_to_mint(
     deposit_amount_base_tokens: Uint128,
@@ -1340,20 +1371,19 @@ fn deposit_to_adapter(
             name: adapter_name.clone(),
         })?;
 
-    // Check vault has sufficient balance (skipped when moving between adapters,
-    // since the funds will arrive from the source adapter before this executes)
+    // Check vault has sufficient available balance (skipped when moving between adapters,
+    // since the funds will arrive from the source adapter before this executes).
+    // Uses available_for_deployment rather than raw balance to respect pending withdrawal reserves.
     if !skip_vault_balance_check {
-        let vault_balance = deps
-            .querier
-            .query_balance(&env.contract.address, &config.deposit_denom)?;
-
-        if vault_balance.amount < amount {
+        let available_for_deployment = query_available_for_deployment(&deps.as_ref(), &env)?;
+        if available_for_deployment < amount {
             return Err(ContractError::InsufficientBalance {
-                available: vault_balance.amount,
+                available: available_for_deployment,
                 required: amount,
             });
         }
     }
+    let amount_to_deposit = amount;
 
     let mut messages = vec![];
 
@@ -1365,7 +1395,7 @@ fn deposit_to_adapter(
         msg: serialize_adapter_interface_msg(&deposit_msg)?,
         funds: vec![Coin {
             denom: config.deposit_denom.clone(),
-            amount,
+            amount: amount_to_deposit,
         }],
     };
     messages.push(CosmosMsg::Wasm(wasm_msg));
@@ -1376,7 +1406,7 @@ fn deposit_to_adapter(
         DeploymentTracking::Tracked
     ) {
         let amount_in_base_tokens =
-            convert_deposit_token_into_base_token(&deps.as_ref(), config, amount)?;
+            convert_deposit_token_into_base_token(&deps.as_ref(), config, amount_to_deposit)?;
         let update_msg = build_update_deployed_amount_msg(
             amount_in_base_tokens,
             DeploymentDirection::Add,
@@ -1390,7 +1420,8 @@ fn deposit_to_adapter(
         .add_attribute("action", "deposit_to_adapter")
         .add_attribute("sender", info.sender)
         .add_attribute("adapter_name", adapter_name)
-        .add_attribute("amount", amount)
+        .add_attribute("amount_requested", amount)
+        .add_attribute("amount_deposited", amount_to_deposit)
         .add_attribute(
             "deployment_tracking",
             format!("{:?}", adapter_info.deployment_tracking),
