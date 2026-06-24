@@ -3,7 +3,7 @@ use super::testing::{get_message_info, mock_dependencies};
 use crate::{
     contract::{execute, instantiate, query},
     msg::{DenomMetadata, InstantiateMsg},
-    state::{ADAPTERS, CONFIG},
+    state::{ADAPTERS, CONFIG, WITHDRAWAL_QUEUE_INFO},
     testing_mocks::{
         mock_address_balance, setup_adapter_mock, setup_control_center_mock,
         setup_token_info_provider_mock, update_contract_mock, MockAdapterConfig, MockWasmQuerier,
@@ -17,7 +17,7 @@ use interface::{
     inflow_adapter::deserialize_adapter_interface_msg,
     inflow_vault::{
         AdapterInfoResponse, AdaptersListResponse, AllocationMode, DeploymentTracking, ExecuteMsg,
-        QueryMsg,
+        QueryMsg, WithdrawalQueueInfo,
     },
 };
 use std::collections::HashMap;
@@ -2052,12 +2052,13 @@ fn test_deposit_to_adapter_success() {
     .unwrap();
 
     // Verify response attributes
-    assert_eq!(res.attributes.len(), 5);
+    assert_eq!(res.attributes.len(), 6);
     assert_eq!(res.attributes[0].value, "deposit_to_adapter");
     assert_eq!(res.attributes[1].value, whitelist_addr.as_str());
     assert_eq!(res.attributes[2].value, "mars_adapter");
-    assert_eq!(res.attributes[3].value, "5000");
-    assert_eq!(res.attributes[4].value, "NotTracked");
+    assert_eq!(res.attributes[3].value, "5000"); // amount_requested
+    assert_eq!(res.attributes[4].value, "5000"); // amount_deposited (no capping)
+    assert_eq!(res.attributes[5].value, "NotTracked");
 
     // Verify wasm message was created
     assert_eq!(res.messages.len(), 1);
@@ -2142,6 +2143,75 @@ fn test_deposit_to_adapter_insufficient_balance() {
         ExecuteMsg::DepositToAdapter {
             adapter_name: "mars_adapter".to_string(),
             amount: Uint128::new(5000),
+        },
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("Insufficient vault balance"));
+}
+
+#[test]
+fn test_deposit_to_adapter_fails_when_withdrawal_reserves_reduce_available_amount() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST_ADDR);
+    let control_center_contract_addr = deps.api.addr_make(CONTROL_CENTER);
+    let token_info_provider_contract_addr = deps.api.addr_make(TOKEN_INFO_PROVIDER);
+    let adapter_addr = deps.api.addr_make("adapter1");
+
+    let instantiate_msg = get_default_instantiate_msg(
+        DEPOSIT_DENOM,
+        whitelist_addr.clone(),
+        control_center_contract_addr.clone(),
+        token_info_provider_contract_addr.clone(),
+    );
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::RegisterAdapter {
+            name: "mars_adapter".to_string(),
+            address: adapter_addr.to_string(),
+            description: Some("Mars lending protocol adapter".to_string()),
+            allocation_mode: AllocationMode::Automated,
+            deployment_tracking: DeploymentTracking::NotTracked,
+        },
+    )
+    .unwrap();
+
+    // Vault balance is 5000, but 3000 is reserved for pending withdrawals,
+    // leaving only 2000 available for deployment.
+    mock_address_balance(
+        &mut deps,
+        env.contract.address.as_ref(),
+        DEPOSIT_DENOM,
+        Uint128::new(5000),
+    );
+    WITHDRAWAL_QUEUE_INFO
+        .save(
+            &mut deps.storage,
+            &WithdrawalQueueInfo {
+                total_shares_burned: Uint128::zero(),
+                total_withdrawal_amount: Uint128::new(3000),
+                non_funded_withdrawal_amount: Uint128::new(3000),
+            },
+        )
+        .unwrap();
+
+    // Requesting 3000 exceeds the 2000 available — must fail even though the raw balance is 5000.
+    let info = get_message_info(&deps.api, WHITELIST_ADDR, &[]);
+    let err = execute(
+        deps.as_mut(),
+        env,
+        info,
+        ExecuteMsg::DepositToAdapter {
+            adapter_name: "mars_adapter".to_string(),
+            amount: Uint128::new(3000),
         },
     )
     .unwrap_err();

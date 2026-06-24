@@ -60,13 +60,6 @@ pub fn get_depositor(deps: Deps<NeutronQuery>, depositor_address: String) -> Std
     WHITELISTED_DEPOSITORS.load(deps.storage, addr)
 }
 
-/// Helper function to check if executor exists (returns bool since no capabilities)
-#[allow(dead_code)]
-pub fn get_executor_exists(deps: Deps<NeutronQuery>, executor_address: String) -> StdResult<bool> {
-    let addr = deps.api.addr_validate(&executor_address)?;
-    Ok(EXECUTORS.has(deps.storage, addr))
-}
-
 /// Validate and normalize EVM address to lowercase without 0x prefix.
 /// Accepts addresses with or without the 0x prefix; the prefix is stripped.
 /// Validates that the address is exactly 40 hex characters (excluding 0x prefix).

@@ -54,6 +54,9 @@ pub enum ContractError {
 
     #[error("Zero amount not allowed")]
     ZeroAmount {},
+
+    #[error("Contract is paused")]
+    ContractPaused,
 }
 
 pub fn new_generic_error(msg: impl Into<String>) -> ContractError {

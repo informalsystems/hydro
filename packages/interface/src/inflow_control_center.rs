@@ -18,8 +18,8 @@ pub struct UpdateConfigData {
 pub struct FeeConfigInit {
     /// Fee rate as a decimal (e.g., 0.2 for 20%). Set to 0 to disable fees.
     pub fee_rate: Decimal,
-    /// Address where fee shares are minted to
-    pub fee_recipient: String,
+    /// Address where fee shares are minted to. Required when fee_rate > 0.
+    pub fee_recipient: Option<String>,
 }
 
 /// Stored fee configuration.
@@ -28,8 +28,8 @@ pub struct FeeConfigInit {
 pub struct FeeConfig {
     /// Fee rate as a decimal (e.g., 0.2 for 20%). Set to 0 to disable fees.
     pub fee_rate: Decimal,
-    /// Address where fee shares are minted to
-    pub fee_recipient: Addr,
+    /// Address where fee shares are minted to. None when fees are disabled.
+    pub fee_recipient: Option<Addr>,
 }
 
 #[cw_serde]
@@ -129,7 +129,7 @@ pub struct SubvaultsResponse {
 #[cw_serde]
 pub struct FeeConfigResponse {
     pub fee_rate: Decimal,
-    pub fee_recipient: Addr,
+    pub fee_recipient: Option<Addr>,
 }
 
 #[cw_serde]

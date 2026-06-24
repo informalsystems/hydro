@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Nullable_PairResponse",
+  "anyOf": [
+    {
+      "$ref": "#/definitions/PairResponse"
+    },
+    {
+      "type": "null"
+    }
+  ],
+  "definitions": {
+    "PairResponse": {
+      "type": "object",
+      "required": [
+        "cosmos_hub_shares_denom",
+        "neutron_shares_denom"
+      ],
+      "properties": {
+        "cosmos_hub_shares_denom": {
+          "type": "string"
+        },
+        "neutron_shares_denom": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

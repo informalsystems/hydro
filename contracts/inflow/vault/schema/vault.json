@@ -579,6 +579,71 @@
           }
         },
         "additionalProperties": false
+      },
+      {
+        "description": "Pause the vault — blocks Deposit, Withdraw, and CancelWithdrawal. Whitelisted only.",
+        "type": "object",
+        "required": [
+          "pause"
+        ],
+        "properties": {
+          "pause": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Unpause the vault. Whitelisted only.",
+        "type": "object",
+        "required": [
+          "unpause"
+        ],
+        "properties": {
+          "unpause": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "One-time migration: mints vault shares and sends them to a conversion contract. Guarded by a one-shot flag — reverts if already called. Only implemented on the Cosmos Hub vault; returns Unauthorized on Neutron.",
+        "type": "object",
+        "required": [
+          "mint_for_migration"
+        ],
+        "properties": {
+          "mint_for_migration": {
+            "type": "object",
+            "required": [
+              "conversion_contract",
+              "shares_to_mint"
+            ],
+            "properties": {
+              "conversion_contract": {
+                "type": "string"
+              },
+              "deployed_amount": {
+                "description": "If set, calls UpdateDeployedAmount on the Control Center with this value.",
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/Uint128"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "shares_to_mint": {
+                "$ref": "#/definitions/Uint128"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
       }
     ],
     "definitions": {

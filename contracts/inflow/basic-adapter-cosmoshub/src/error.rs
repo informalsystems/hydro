@@ -1,0 +1,41 @@
+use cosmwasm_std::StdError;
+use thiserror::Error;
+
+#[derive(Error, Debug, PartialEq)]
+pub enum ContractError {
+    #[error("{0}")]
+    Std(#[from] StdError),
+
+    #[error("At least one admin should be set")]
+    AtLeastOneAdmin {},
+
+    #[error("Unauthorized - only admins can call this function")]
+    UnauthorizedAdmin {},
+
+    #[error("Unauthorized - only a registered depositor can call this function")]
+    Unauthorized {},
+
+    #[error("Depositor not registered: {depositor_address}")]
+    DepositorNotRegistered { depositor_address: String },
+
+    #[error("Depositor already registered: {depositor_address}")]
+    DepositorAlreadyRegistered { depositor_address: String },
+
+    #[error("Invalid funds: expected exactly one coin, got {count}")]
+    InvalidFunds { count: usize },
+
+    #[error("Zero amount not allowed")]
+    ZeroAmount {},
+
+    #[error("Insufficient balance for withdrawal")]
+    InsufficientBalance {},
+
+    #[error("Admin already exists: {admin}")]
+    AdminAlreadyExists { admin: String },
+
+    #[error("Admin not found: {admin}")]
+    AdminNotFound { admin: String },
+
+    #[error("Cannot remove the last admin")]
+    CannotRemoveLastAdmin {},
+}

@@ -52,8 +52,7 @@
       "description": "Configuration for performance fee tracking, used during instantiation or migration. Fees are enabled when fee_rate > 0 and disabled when fee_rate = 0.",
       "type": "object",
       "required": [
-        "fee_rate",
-        "fee_recipient"
+        "fee_rate"
       ],
       "properties": {
         "fee_rate": {
@@ -65,8 +64,11 @@
           ]
         },
         "fee_recipient": {
-          "description": "Address where fee shares are minted to",
-          "type": "string"
+          "description": "Address where fee shares are minted to. Required when fee_rate > 0.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false

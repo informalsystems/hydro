@@ -1,0 +1,287 @@
+{
+  "contract_name": "shares-converter",
+  "contract_version": "3.6.11",
+  "idl_version": "1.0.0",
+  "instantiate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "InstantiateMsg",
+    "type": "object",
+    "required": [
+      "admin",
+      "pairs"
+    ],
+    "properties": {
+      "admin": {
+        "type": "string"
+      },
+      "pairs": {
+        "description": "Optional initial conversion pairs to register at instantiation.",
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ConversionPair"
+        }
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "ConversionPair": {
+        "type": "object",
+        "required": [
+          "cosmos_hub_shares_denom",
+          "neutron_shares_denom"
+        ],
+        "properties": {
+          "cosmos_hub_shares_denom": {
+            "type": "string"
+          },
+          "neutron_shares_denom": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "execute": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExecuteMsg",
+    "oneOf": [
+      {
+        "description": "User sends Neutron IBC shares and receives equal Cosmos Hub vault shares back.",
+        "type": "object",
+        "required": [
+          "convert"
+        ],
+        "properties": {
+          "convert": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Admin: register a new conversion pair (or update an existing one).",
+        "type": "object",
+        "required": [
+          "add_pair"
+        ],
+        "properties": {
+          "add_pair": {
+            "type": "object",
+            "required": [
+              "cosmos_hub_shares_denom",
+              "neutron_shares_denom"
+            ],
+            "properties": {
+              "cosmos_hub_shares_denom": {
+                "type": "string"
+              },
+              "neutron_shares_denom": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Admin: remove a conversion pair (e.g. once conversion window is closed).",
+        "type": "object",
+        "required": [
+          "remove_pair"
+        ],
+        "properties": {
+          "remove_pair": {
+            "type": "object",
+            "required": [
+              "neutron_shares_denom"
+            ],
+            "properties": {
+              "neutron_shares_denom": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Admin: replace the current admin with a new address.",
+        "type": "object",
+        "required": [
+          "update_admin"
+        ],
+        "properties": {
+          "update_admin": {
+            "type": "object",
+            "required": [
+              "new_admin"
+            ],
+            "properties": {
+              "new_admin": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    ]
+  },
+  "query": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "QueryMsg",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "config"
+        ],
+        "properties": {
+          "config": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "pair"
+        ],
+        "properties": {
+          "pair": {
+            "type": "object",
+            "required": [
+              "neutron_denom"
+            ],
+            "properties": {
+              "neutron_denom": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "all_pairs"
+        ],
+        "properties": {
+          "all_pairs": {
+            "type": "object",
+            "properties": {
+              "limit": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              "start_after": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    ]
+  },
+  "migrate": null,
+  "sudo": null,
+  "responses": {
+    "all_pairs": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "AllPairsResponse",
+      "type": "object",
+      "required": [
+        "pairs"
+      ],
+      "properties": {
+        "pairs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PairResponse"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "PairResponse": {
+          "type": "object",
+          "required": [
+            "cosmos_hub_shares_denom",
+            "neutron_shares_denom"
+          ],
+          "properties": {
+            "cosmos_hub_shares_denom": {
+              "type": "string"
+            },
+            "neutron_shares_denom": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "config": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ConfigResponse",
+      "type": "object",
+      "required": [
+        "admin"
+      ],
+      "properties": {
+        "admin": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "pair": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Nullable_PairResponse",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/PairResponse"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "definitions": {
+        "PairResponse": {
+          "type": "object",
+          "required": [
+            "cosmos_hub_shares_denom",
+            "neutron_shares_denom"
+          ],
+          "properties": {
+            "cosmos_hub_shares_denom": {
+              "type": "string"
+            },
+            "neutron_shares_denom": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}
