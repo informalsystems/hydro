@@ -37,6 +37,12 @@ GAS_PRICE=$(jq -r '.gas_price' "$CONFIG_FILE")
 GAS_ADJUSTMENT=$(jq -r '.gas_adjustment' "$CONFIG_FILE")
 DEPLOYER_WALLET=$(jq -r '.deployer_wallet' "$CONFIG_FILE")
 ADMIN_ADDRESS=$(jq -r '.admin_address' "$CONFIG_FILE")
+# admin_wallet: keyring name for signing admin-only txs.
+# If empty, the script will print the JSON and wait for manual confirmation.
+ADMIN_WALLET=$(jq -r '.admin_wallet // empty' "$CONFIG_FILE")
+# whitelist: array of addresses whitelisted in the Control Center and Vault.
+# Falls back to [admin_address] if not set in config.
+WHITELIST_JSON=$(jq -c 'if (.whitelist | length) > 0 then .whitelist else [.admin_address] end' "$CONFIG_FILE")
 KEYRING_BACKEND=$(jq -r '.keyring_backend' "$CONFIG_FILE")
 
 DEPOSIT_DENOM=$(jq -r '.deposit_denom // empty' "$CONFIG_FILE")
@@ -144,6 +150,28 @@ update_config() {
     jq "$key = \"$value\"" "$CONFIG_FILE" > "$tmp_file" && mv "$tmp_file" "$CONFIG_FILE"
 }
 
+# Execute an admin-only tx.
+# If admin_wallet is set in config, signs with that keyring key.
+# Otherwise prints the message and waits for manual confirmation.
+exec_admin_tx() {
+    local label="$1" contract="$2" msg="$3" res_file="$4"
+
+    if [ -n "$ADMIN_WALLET" ]; then
+        $CLI tx wasm execute "$contract" "$msg" \
+            --from "$ADMIN_WALLET" \
+            $TX_FLAGS --output json \
+            &> "$res_file"
+        TX_HASH=$(grep -o '{.*}' "$res_file" | jq -r '.txhash')
+        retry_command "$CLI q tx $TX_HASH $NODE_FLAG --output json" 60 > /dev/null
+    else
+        echo -e "${YELLOW}admin_wallet not set — execute the following on ${label} (${contract}):${NC}"
+        echo ""
+        echo "$msg" | jq .
+        echo ""
+        read -p "Press Enter once the transaction is confirmed..."
+    fi
+}
+
 # ============================================================================
 # Store (upload) functions
 # ============================================================================
@@ -221,14 +249,14 @@ instantiate_control_center() {
 
     printf "Instantiating Control Center"
 
-    INIT_MSG=$(cat <<EOF
-{
-  "subvaults": [],
-  "whitelist": ["$ADMIN_ADDRESS"],
-  "deposit_cap": "$DEPOSIT_CAP"
-}
-EOF
-)
+    INIT_MSG=$(jq -n \
+        --argjson whitelist "$WHITELIST_JSON" \
+        --arg deposit_cap "$DEPOSIT_CAP" \
+        '{
+            subvaults: [],
+            whitelist: $whitelist,
+            deposit_cap: $deposit_cap
+        }')
 
     $CLI tx wasm instantiate "$CONTROL_CENTER_CODE_ID" "$INIT_MSG" \
         --admin "$ADMIN_ADDRESS" \
@@ -262,14 +290,14 @@ instantiate_vault() {
     printf "Instantiating Vault"
 
     INIT_MSG=$(jq -n \
-        --arg whitelist "$ADMIN_ADDRESS" \
+        --argjson whitelist "$WHITELIST_JSON" \
         --arg control_center "$CONTROL_CENTER_ADDRESS" \
         --arg deposit_denom "$DEPOSIT_DENOM" \
         --argjson max_withdrawals "$MAX_WITHDRAWALS" \
         --arg subdenom "$VAULT_SUBDENOM" \
         --argjson token_metadata "$TOKEN_METADATA" \
         '{
-            whitelist: [$whitelist],
+            whitelist: $whitelist,
             control_center_contract: $control_center,
             deposit_denom: $deposit_denom,
             max_withdrawals_per_user: $max_withdrawals,
@@ -317,13 +345,8 @@ register_subvault() {
 EOF
 )
 
-    $CLI tx wasm execute "$CONTROL_CENTER_ADDRESS" "$ADD_SUBVAULT_MSG" \
-        --from "$DEPLOYER_WALLET" \
-        $TX_FLAGS \
-        --output json &> ./add_subvault_res.json
-
-    TX_HASH=$(grep -o '{.*}' ./add_subvault_res.json | jq -r '.txhash')
-    retry_command "$CLI q tx $TX_HASH $NODE_FLAG --output json" 60 > /dev/null
+    exec_admin_tx "Control Center" "$CONTROL_CENTER_ADDRESS" "$ADD_SUBVAULT_MSG" \
+        "./add_subvault_res.json"
 
     echo "Vault registered as subvault"
 }
