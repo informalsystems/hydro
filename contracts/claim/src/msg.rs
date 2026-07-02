@@ -5,6 +5,8 @@ use cosmwasm_std::{Timestamp, Uint128};
 pub struct InstantiateMsg {
     pub admin: String,
     pub treasury: String,
+    /// First ID to assign to a new distribution. Defaults to 0 if not set.
+    pub initial_distribution_id: Option<u64>,
 }
 
 #[cw_serde]
