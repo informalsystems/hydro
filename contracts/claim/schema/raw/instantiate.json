@@ -10,6 +10,15 @@
     "admin": {
       "type": "string"
     },
+    "initial_distribution_id": {
+      "description": "First ID to assign to a new distribution. Defaults to 0 if not set. Useful when migrating distributions created by another deployment of this contract, so that IDs continue rather than restart at 0.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0.0
+    },
     "treasury": {
       "type": "string"
     }

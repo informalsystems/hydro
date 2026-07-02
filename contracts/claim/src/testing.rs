@@ -24,6 +24,7 @@ fn setup_contract() -> (
     let msg = InstantiateMsg {
         admin: admin.to_string(),
         treasury: treasury.to_string(),
+        initial_distribution_id: None,
     };
     let info = message_info(&admin, &[]);
     instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
@@ -43,6 +44,37 @@ fn test_instantiate() {
     let treasury = deps.api.addr_make("treasury");
     assert_eq!(res.config.admin, admin);
     assert_eq!(res.config.treasury, treasury);
+}
+
+#[test]
+fn test_instantiate_with_initial_distribution_id() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+    let admin = deps.api.addr_make("admin");
+    let treasury = deps.api.addr_make("treasury");
+    let alice = deps.api.addr_make("alice");
+
+    let msg = InstantiateMsg {
+        admin: admin.to_string(),
+        treasury: treasury.to_string(),
+        initial_distribution_id: Some(4),
+    };
+    let info = message_info(&admin, &[]);
+    instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
+
+    let create_msg = ExecuteMsg::CreateDistribution {
+        claims: vec![ClaimEntry {
+            address: alice.to_string(),
+            weight: Uint128::new(1),
+        }],
+        expiry: Timestamp::from_seconds(env.block.time.seconds() + 3600),
+    };
+    let info = message_info(&admin, &[coin(1000, "uatom")]);
+    let res = execute(deps.as_mut(), env.clone(), info, create_msg).unwrap();
+    assert!(res
+        .attributes
+        .iter()
+        .any(|a| a.key == "distribution_id" && a.value == "4"));
 }
 
 #[test]
