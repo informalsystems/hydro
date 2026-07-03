@@ -14,6 +14,15 @@
       "admin": {
         "type": "string"
       },
+      "initial_distribution_id": {
+        "description": "First ID to assign to a new distribution. Defaults to 0 if not set.",
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
       "treasury": {
         "type": "string"
       }
