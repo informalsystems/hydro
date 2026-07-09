@@ -42,6 +42,7 @@ schema:
 	cd contracts/token-info-providers/st-token-info-provider && cargo run --bin st_token_info_provider_schema
 	cd contracts/token-info-providers/d-token-info-provider && cargo run --bin d_token_info_provider_schema
 	cd contracts/token-info-providers/lsm-token-info-provider && cargo run --bin lsm_token_info_provider_schema
+	cd contracts/token-info-providers/lsm-hub-token-info-provider && cargo run --bin lsm_hub_token_info_provider_schema
 	cd contracts/token-info-providers/trusted-derivative-token-info-provider && cargo run --bin trusted_derivative_token_info_provider_schema
 	cd contracts/gatekeeper && cargo run --bin gatekeeper_schema
 	cd contracts/marketplace && cargo run --bin marketplace_schema
