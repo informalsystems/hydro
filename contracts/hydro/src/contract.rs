@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use bech32::{Bech32, Hrp};
 use cosmwasm_std::{
     from_json, to_json_vec, Attribute, CosmosMsg, Decimal256, SubMsg, SubMsgResult, Uint256,
     WasmMsg,
@@ -22,6 +23,7 @@ use crate::gatekeeper::{
     build_gatekeeper_lock_tokens_msg, build_init_gatekeeper_msg, gatekeeper_handle_submsg_reply,
 };
 use crate::governance::{query_total_power_at_height, query_voting_power_at_height};
+use crate::ibc_transfer::build_neutron_ibc_transfer_msg;
 use crate::lsm_integration::{query_ibc_denom_trace, TRANSFER_PORT};
 use crate::msg::{
     CollectionInfo, ConvertLockupPayload, ExecuteMsg, InstantiateMsg, LiquidityDeployment,
@@ -29,7 +31,7 @@ use crate::msg::{
     UpdateConfigData,
 };
 use crate::query::{
-    AllAvailableConversionFundsResponse, AllUserLockupsResponse,
+    AllAvailableConversionFundsResponse, AllLockupsResponse, AllUserLockupsResponse,
     AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, CanLockDenomResponse,
     ConstantsResponse, ConversionFundInfo, DtokenAmountResponse, DtokenAmountsResponse,
     ExpiredUserLockupsResponse, GatekeeperResponse, LiquidityDeploymentResponse,
@@ -93,6 +95,16 @@ pub const MIN_DEPLOYMENT_DURATION: u64 = 1;
 pub const MIN_SPLIT_LOCK_SIZE: Uint128 = Uint128::new(10_000);
 
 const UNUSED_MSG_ID: u64 = 0;
+
+/// Constants used only for migration purposes
+const NEUTRON_HUB_TRANSFER_CHANNEL: &str = "channel-1"; // Neutron -> Hub (direct)
+const NEUTRON_STRIDE_TRANSFER_CHANNEL: &str = "channel-8"; // Neutron -> Stride (first PFM hop)
+const STRIDE_HUB_TRANSFER_CHANNEL: &str = "channel-0"; // Stride -> Hub (PFM forward target)
+const ST_ATOM_ON_NEUTRON_DENOM: &str =
+    "ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA5222815620B3C";
+const IBC_TRANSFER_TIMEOUT_SECONDS: u64 = 1800; // 30 minutes
+const HUB_ADDRESS_PREFIX: &str = "cosmos";
+const STRIDE_ADDRESS_PREFIX: &str = "stride";
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -419,6 +431,11 @@ pub fn execute(
         ExecuteMsg::BuyoutPendingSlash { lock_id } => {
             buyout_pending_slash(deps, env, info, &constants, lock_id)
         }
+        ExecuteMsg::TransferFundsToHub {
+            denoms,
+            recipient,
+            ibc_fee,
+        } => transfer_funds_to_hub(deps, env, info, denoms, recipient, ibc_fee),
     }
 }
 
@@ -2787,6 +2804,103 @@ fn withdraw_conversion_funds(
     Ok(response)
 }
 
+// TransferFundsToHub(denoms, recipient, ibc_fee):
+// Validate that the sender is a whitelist admin and that recipient is a valid Hub address.
+// For each denom, query the contract's own balance and, if non-zero, IBC-transfer it to
+// recipient. All denoms go directly Neutron -> Hub, except stATOM, which is routed
+// Neutron -> Stride -> Hub via a PFM memo. Neutron's ibc-transfer-with-fee middleware requires
+// relayer fees to be attached, or the packet will fail to relay; ibc_fee is used for both the
+// ack_fee and the timeout_fee.
+fn transfer_funds_to_hub(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    denoms: Vec<String>,
+    recipient: String,
+    ibc_fee: Coin,
+) -> Result<Response, ContractError> {
+    validate_sender_is_whitelist_admin(&deps, &info)?;
+
+    let recipient_addr_bytes = match bech32::decode(&recipient) {
+        Ok((hrp, address_bytes)) if hrp.as_str() == HUB_ADDRESS_PREFIX => address_bytes,
+        _ => {
+            return Err(ContractError::Std(StdError::generic_err(format!(
+                "recipient must be a valid '{HUB_ADDRESS_PREFIX}' bech32 address"
+            ))))
+        }
+    };
+
+    let timeout_nanos = env
+        .block
+        .time
+        .plus_seconds(IBC_TRANSFER_TIMEOUT_SECONDS)
+        .nanos();
+
+    let mut messages = vec![];
+    let mut transferred_funds: Vec<Coin> = vec![];
+
+    // Remove duplicates and trim whitespace from denoms
+    let denoms = HashSet::<String>::from_iter(denoms.iter().map(|d| d.trim().to_string()));
+
+    for denom in denoms {
+        let balance = deps
+            .querier
+            .query_balance(env.contract.address.clone(), denom.clone())?;
+
+        if balance.amount.is_zero() {
+            continue;
+        }
+
+        let (channel_id, to_address, memo) = if denom == ST_ATOM_ON_NEUTRON_DENOM {
+            // stATOM IBC transfers require a valid Stride address as the recipient, otherwise the transfer will fail.
+            // We just use the recipient's Hub address to construct a valid Stride address, since the funds will be forwarded to the Hub anyway.
+            let stride_address = bech32::encode::<Bech32>(
+                Hrp::parse_unchecked(STRIDE_ADDRESS_PREFIX),
+                &recipient_addr_bytes,
+            )
+            .map_err(|_| {
+                ContractError::Std(StdError::generic_err(
+                    "could not construct valid Stride chain address",
+                ))
+            })?;
+
+            let memo = format!(
+                r#"{{"forward":{{"receiver":"{recipient}","port":"{TRANSFER_PORT}","channel":"{STRIDE_HUB_TRANSFER_CHANNEL}"}}}}"#
+            );
+            (NEUTRON_STRIDE_TRANSFER_CHANNEL, stride_address, Some(memo))
+        } else {
+            (NEUTRON_HUB_TRANSFER_CHANNEL, recipient.clone(), None)
+        };
+
+        messages.push(build_neutron_ibc_transfer_msg(
+            TRANSFER_PORT,
+            channel_id,
+            env.contract.address.to_string(),
+            to_address,
+            balance.clone(),
+            timeout_nanos,
+            memo,
+            ibc_fee.clone(),
+        ));
+
+        transferred_funds.push(balance);
+    }
+
+    Ok(Response::new()
+        .add_messages(messages)
+        .add_attribute("action", "transfer_funds")
+        .add_attribute("sender", info.sender)
+        .add_attribute("recipient", recipient)
+        .add_attribute(
+            "transferred_funds",
+            transferred_funds
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<String>>()
+                .join(", "),
+        ))
+}
+
 // For each reply the following happens: (reply_id is lock_id)
 // 1. If there are any votes with lock_id - unvote
 // 2. Apply proposal power changes
@@ -3096,6 +3210,10 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, ContractErro
         QueryMsg::LockupsPendingSlashes { lockup_ids } => {
             to_json_binary(&query_lockups_pending_slashes(deps, lockup_ids)?)
         }
+        QueryMsg::AllLockups {
+            start_lock_id,
+            limit,
+        } => to_json_binary(&query_all_lockups(deps, start_lock_id, limit)?),
         QueryMsg::UserVotingPower { address } => {
             to_json_binary(&query_user_voting_power(deps, env, address)?)
         }
@@ -4201,6 +4319,40 @@ pub fn query_available_conversion_funds(deps: Deps, token_denom: String) -> StdR
     Ok(AVAILABLE_CONVERSION_FUNDS
         .may_load(deps.storage, token_denom)?
         .unwrap_or_default())
+}
+
+pub fn query_all_lockups(
+    deps: Deps,
+    start_lock_id: Option<u64>,
+    limit: u64,
+) -> StdResult<AllLockupsResponse> {
+    if limit == 0 {
+        return Err(StdError::generic_err("Limit must be greater than zero"));
+    }
+
+    let limit = limit.min(MAX_PAGINATION_LIMIT as u64) as usize;
+    let min_bound = start_lock_id.map(Bound::inclusive);
+
+    let mut lockups: Vec<LockEntryV2> = vec![];
+    for item in LOCKS_MAP_V2
+        .range(deps.storage, min_bound, None, Order::Ascending)
+        // We request one more item than the limit to determine if there are more results
+        .take(limit + 1)
+    {
+        let (_, lock_entry) = item?;
+        lockups.push(lock_entry);
+    }
+
+    let next_lock_id = if lockups.len() > limit {
+        lockups.pop().map(|lock| lock.lock_id)
+    } else {
+        None
+    };
+
+    Ok(AllLockupsResponse {
+        lockups,
+        next_lock_id,
+    })
 }
 
 pub fn query_all_available_conversion_funds(

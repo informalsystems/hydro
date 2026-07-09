@@ -2164,6 +2164,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde-json-wasm 1.0.1",
+ "serde_json",
  "thiserror 1.0.69",
 ]
 

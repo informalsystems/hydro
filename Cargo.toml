@@ -37,7 +37,7 @@ version = "3.6.12"
 edition = "2021"
 
 [profile.release]
-opt-level = 3
+opt-level = "s"
 debug = false
 rpath = false
 lto = true
