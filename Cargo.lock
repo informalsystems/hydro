@@ -2682,7 +2682,7 @@ checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
 
 [[package]]
 name = "lsm-hub-token-info-provider"
-version = "3.6.11"
+version = "3.6.12"
 dependencies = [
  "bech32 0.11.0",
  "cosmos-sdk-proto 0.20.0",
@@ -5088,7 +5088,7 @@ dependencies = [
 
 [[package]]
 name = "trusted-derivative-token-info-provider"
-version = "3.6.11"
+version = "3.6.12"
 dependencies = [
  "cosmwasm-schema 2.2.2",
  "cosmwasm-std 2.2.2",
