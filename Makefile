@@ -67,6 +67,7 @@ schema:
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/st-token-info-provider/schema NAME=STTokenInfoProviderBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/d-token-info-provider/schema NAME=DTokenInfoProviderBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/lsm-token-info-provider/schema NAME=LSMTokenInfoProviderBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/lsm-hub-token-info-provider/schema NAME=LSMHubTokenInfoProviderBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/trusted-derivative-token-info-provider/schema NAME=TrustedDerivativeTokenInfoProviderBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/gatekeeper/schema NAME=GatekeeperBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/marketplace/schema NAME=MarketplaceBase

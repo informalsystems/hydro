@@ -2888,7 +2888,7 @@ fn transfer_funds_to_hub(
 
     Ok(Response::new()
         .add_messages(messages)
-        .add_attribute("action", "transfer_funds")
+        .add_attribute("action", "transfer_funds_to_hub")
         .add_attribute("sender", info.sender)
         .add_attribute("recipient", recipient)
         .add_attribute(

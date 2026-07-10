@@ -18,5 +18,5 @@ export HUB_CHAIN_HOME_DIR=$HOME/.gaia
 # lower this if you get errors about exceeding the max block size
 export BATCH_SIZE=100
 
-# Create the ICQ queries by running the go script in this folder
+# update validator ratios by using the hub-validators-tool
 hub-validators-tool
