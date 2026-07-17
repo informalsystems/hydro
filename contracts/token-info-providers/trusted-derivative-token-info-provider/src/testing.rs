@@ -18,6 +18,7 @@ const DERIVATIVE_TOKEN_DENOM: &str =
     "ibc/B7864B03E54B0E4D283072AA25AF3C850A9B394AAAF0CFC4B10F9F1F5AAA00B";
 const TOKEN_GROUP_ID: &str = "stATOM";
 const HYDRO_CONTRACT: &str = "hydro";
+const DEFAULT_MAX_RATIO_DIFF: &str = "1.0";
 
 type WasmQueryFunc = dyn Fn(&WasmQuery) -> QuerierResult;
 
@@ -47,10 +48,19 @@ fn hydro_mock(current_round: u64) -> Box<WasmQueryFunc> {
 }
 
 fn default_instantiate_msg(api: &MockApi, whitelisted: &[&str]) -> InstantiateMsg {
+    instantiate_msg_with_max_diff(api, whitelisted, DEFAULT_MAX_RATIO_DIFF)
+}
+
+fn instantiate_msg_with_max_diff(
+    api: &MockApi,
+    whitelisted: &[&str],
+    max_ratio_diff: &str,
+) -> InstantiateMsg {
     InstantiateMsg {
         hydro_contract_address: None,
         derivative_token_denom: DERIVATIVE_TOKEN_DENOM.to_string(),
         token_group_id: TOKEN_GROUP_ID.to_string(),
+        max_ratio_diff: Decimal::from_str(max_ratio_diff).unwrap(),
         initial_whitelist: whitelisted
             .iter()
             .map(|s| api.addr_make(s).to_string())
@@ -82,6 +92,7 @@ fn test_instantiate_explicit_hydro_address() {
         hydro_contract_address: Some(hydro_addr.clone()),
         derivative_token_denom: DERIVATIVE_TOKEN_DENOM.to_string(),
         token_group_id: TOKEN_GROUP_ID.to_string(),
+        max_ratio_diff: Decimal::from_str(DEFAULT_MAX_RATIO_DIFF).unwrap(),
         initial_whitelist: vec![alice_addr],
     };
 
@@ -357,4 +368,239 @@ fn test_whitelist_management() {
         res.unwrap_err(),
         crate::error::ContractError::Unauthorized {}
     ));
+}
+
+#[test]
+fn test_first_submission_allows_large_diff() {
+    let (env, mut deps) = (mock_env(), mock_dependencies());
+    let info_hydro = get_message_info(&deps.api, HYDRO_CONTRACT, &[]);
+    let info_alice = get_message_info(&deps.api, "alice", &[]);
+
+    let msg = instantiate_msg_with_max_diff(&deps.api, &["alice"], "0.05");
+    instantiate(deps.as_mut(), env.clone(), info_hydro.clone(), msg).unwrap();
+
+    // First submission has a diff (5.0) far exceeding the threshold (0.05), but should
+    // still succeed since it's exempt from the threshold check.
+    let ratio = Decimal::from_str("5.0").unwrap();
+    deps.querier.update_wasm(hydro_mock(0));
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info_alice,
+        ExecuteMsg::SubmitTokenRatio { ratio },
+    )
+    .unwrap();
+
+    assert_eq!(
+        res.messages,
+        vec![SubMsg::new(WasmMsg::Execute {
+            contract_addr: info_hydro.sender.to_string(),
+            msg: to_json_binary(&HydroExecuteMsg::UpdateTokenGroupsRatios {
+                changes: vec![TokenGroupRatioChange {
+                    token_group_id: TOKEN_GROUP_ID.to_owned(),
+                    old_ratio: Decimal::zero(),
+                    new_ratio: ratio,
+                }],
+            })
+            .unwrap(),
+            funds: vec![],
+        })]
+    );
+
+    let res = query(deps.as_ref(), env, QueryMsg::Config {}).unwrap();
+    let config_resp: crate::query::ConfigResponse = cosmwasm_std::from_json(&res).unwrap();
+    assert!(!config_resp.config.first_submission);
+}
+
+#[test]
+fn test_no_op_submission_does_not_consume_first_submission() {
+    let (env, mut deps) = (mock_env(), mock_dependencies());
+    let info_hydro = get_message_info(&deps.api, HYDRO_CONTRACT, &[]);
+    let info_alice = get_message_info(&deps.api, "alice", &[]);
+
+    let msg = instantiate_msg_with_max_diff(&deps.api, &["alice"], "0.05");
+    instantiate(deps.as_mut(), env.clone(), info_hydro, msg).unwrap();
+
+    // Submitting the same ratio as the pre-initialized value (zero) is a no-op and
+    // shouldn't consume the "first submission" allowance.
+    deps.querier.update_wasm(hydro_mock(0));
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info_alice.clone(),
+        ExecuteMsg::SubmitTokenRatio {
+            ratio: Decimal::zero(),
+        },
+    )
+    .unwrap();
+    assert!(res.messages.is_empty());
+
+    let res = query(deps.as_ref(), env.clone(), QueryMsg::Config {}).unwrap();
+    let config_resp: crate::query::ConfigResponse = cosmwasm_std::from_json(&res).unwrap();
+    assert!(config_resp.config.first_submission);
+
+    // The next, genuinely different submission is still treated as the first one, so a
+    // large diff is still allowed.
+    let ratio = Decimal::from_str("5.0").unwrap();
+    deps.querier.update_wasm(hydro_mock(0));
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info_alice,
+        ExecuteMsg::SubmitTokenRatio { ratio },
+    );
+    assert!(res.is_ok());
+
+    let res = query(deps.as_ref(), env, QueryMsg::Config {}).unwrap();
+    let config_resp: crate::query::ConfigResponse = cosmwasm_std::from_json(&res).unwrap();
+    assert!(!config_resp.config.first_submission);
+}
+
+#[test]
+fn test_second_submission_within_threshold_succeeds() {
+    let (env, mut deps) = (mock_env(), mock_dependencies());
+    let info_hydro = get_message_info(&deps.api, HYDRO_CONTRACT, &[]);
+    let info_alice = get_message_info(&deps.api, "alice", &[]);
+
+    let msg = instantiate_msg_with_max_diff(&deps.api, &["alice"], "0.05");
+    instantiate(deps.as_mut(), env.clone(), info_hydro, msg).unwrap();
+
+    deps.querier.update_wasm(hydro_mock(0));
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info_alice.clone(),
+        ExecuteMsg::SubmitTokenRatio {
+            ratio: Decimal::from_str("1.0").unwrap(),
+        },
+    )
+    .unwrap();
+
+    // Diff of exactly the threshold (0.05) should be allowed.
+    let new_ratio = Decimal::from_str("1.05").unwrap();
+    deps.querier.update_wasm(hydro_mock(0));
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info_alice,
+        ExecuteMsg::SubmitTokenRatio { ratio: new_ratio },
+    );
+    assert!(res.is_ok());
+
+    let res = query(deps.as_ref(), env, QueryMsg::DenomInfo { round_id: 0 }).unwrap();
+    let denom_info: DenomInfoResponse = cosmwasm_std::from_json(&res).unwrap();
+    assert_eq!(denom_info.ratio, new_ratio);
+}
+
+#[test]
+fn test_second_submission_exceeding_threshold_fails() {
+    let (env, mut deps) = (mock_env(), mock_dependencies());
+    let info_hydro = get_message_info(&deps.api, HYDRO_CONTRACT, &[]);
+    let info_alice = get_message_info(&deps.api, "alice", &[]);
+
+    let msg = instantiate_msg_with_max_diff(&deps.api, &["alice"], "0.05");
+    instantiate(deps.as_mut(), env.clone(), info_hydro, msg).unwrap();
+
+    let first_ratio = Decimal::from_str("1.0").unwrap();
+    deps.querier.update_wasm(hydro_mock(0));
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info_alice.clone(),
+        ExecuteMsg::SubmitTokenRatio { ratio: first_ratio },
+    )
+    .unwrap();
+
+    // Diff of 0.06 exceeds the 0.05 threshold.
+    let new_ratio = Decimal::from_str("1.06").unwrap();
+    deps.querier.update_wasm(hydro_mock(0));
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info_alice,
+        ExecuteMsg::SubmitTokenRatio { ratio: new_ratio },
+    );
+    assert!(matches!(
+        res.unwrap_err(),
+        crate::error::ContractError::RatioDiffExceedsThreshold { .. }
+    ));
+
+    // State must be unchanged after the rejected submission.
+    let res = query(deps.as_ref(), env, QueryMsg::DenomInfo { round_id: 0 }).unwrap();
+    let denom_info: DenomInfoResponse = cosmwasm_std::from_json(&res).unwrap();
+    assert_eq!(denom_info.ratio, first_ratio);
+}
+
+#[test]
+fn test_second_submission_decrease_within_threshold_succeeds() {
+    let (env, mut deps) = (mock_env(), mock_dependencies());
+    let info_hydro = get_message_info(&deps.api, HYDRO_CONTRACT, &[]);
+    let info_alice = get_message_info(&deps.api, "alice", &[]);
+
+    let msg = instantiate_msg_with_max_diff(&deps.api, &["alice"], "0.05");
+    instantiate(deps.as_mut(), env.clone(), info_hydro, msg).unwrap();
+
+    deps.querier.update_wasm(hydro_mock(0));
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info_alice.clone(),
+        ExecuteMsg::SubmitTokenRatio {
+            ratio: Decimal::from_str("1.0").unwrap(),
+        },
+    )
+    .unwrap();
+
+    // Decrease of exactly the threshold (0.05) should be allowed.
+    let new_ratio = Decimal::from_str("0.95").unwrap();
+    deps.querier.update_wasm(hydro_mock(0));
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info_alice,
+        ExecuteMsg::SubmitTokenRatio { ratio: new_ratio },
+    );
+    assert!(res.is_ok());
+
+    let res = query(deps.as_ref(), env, QueryMsg::DenomInfo { round_id: 0 }).unwrap();
+    let denom_info: DenomInfoResponse = cosmwasm_std::from_json(&res).unwrap();
+    assert_eq!(denom_info.ratio, new_ratio);
+}
+
+#[test]
+fn test_second_submission_decrease_exceeding_threshold_fails() {
+    let (env, mut deps) = (mock_env(), mock_dependencies());
+    let info_hydro = get_message_info(&deps.api, HYDRO_CONTRACT, &[]);
+    let info_alice = get_message_info(&deps.api, "alice", &[]);
+
+    let msg = instantiate_msg_with_max_diff(&deps.api, &["alice"], "0.05");
+    instantiate(deps.as_mut(), env.clone(), info_hydro, msg).unwrap();
+
+    let first_ratio = Decimal::from_str("1.0").unwrap();
+    deps.querier.update_wasm(hydro_mock(0));
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info_alice.clone(),
+        ExecuteMsg::SubmitTokenRatio { ratio: first_ratio },
+    )
+    .unwrap();
+
+    // Decrease of 0.10 exceeds the 0.05 threshold.
+    let new_ratio = Decimal::from_str("0.90").unwrap();
+    deps.querier.update_wasm(hydro_mock(0));
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info_alice,
+        ExecuteMsg::SubmitTokenRatio { ratio: new_ratio },
+    );
+    assert!(matches!(
+        res.unwrap_err(),
+        crate::error::ContractError::RatioDiffExceedsThreshold { .. }
+    ));
+
+    let res = query(deps.as_ref(), env, QueryMsg::DenomInfo { round_id: 0 }).unwrap();
+    let denom_info: DenomInfoResponse = cosmwasm_std::from_json(&res).unwrap();
+    assert_eq!(denom_info.ratio, first_ratio);
 }

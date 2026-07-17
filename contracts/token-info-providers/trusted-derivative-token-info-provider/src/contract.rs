@@ -40,6 +40,8 @@ pub fn instantiate(
         hydro_contract_address: hydro_contract_address.clone(),
         derivative_token_denom: msg.derivative_token_denom.clone(),
         token_group_id: msg.token_group_id.clone(),
+        max_ratio_diff: msg.max_ratio_diff,
+        first_submission: true,
     };
 
     CONFIG.save(deps.storage, &config)?;
@@ -82,7 +84,7 @@ fn execute_submit_token_ratio(
 ) -> Result<Response, ContractError> {
     ensure_whitelisted(deps.storage, &info.sender)?;
 
-    let config = CONFIG.load(deps.storage)?;
+    let mut config = CONFIG.load(deps.storage)?;
 
     let current_round = query_current_round_id(&deps.as_ref(), &config.hydro_contract_address)
         .map_err(|e| {
@@ -97,6 +99,24 @@ fn execute_submit_token_ratio(
     let mut submsgs = vec![];
 
     if old_ratio != new_ratio {
+        let diff = if new_ratio > old_ratio {
+            new_ratio - old_ratio
+        } else {
+            old_ratio - new_ratio
+        };
+
+        if config.first_submission {
+            config.first_submission = false;
+            CONFIG.save(deps.storage, &config)?;
+        } else if diff > config.max_ratio_diff {
+            return Err(ContractError::RatioDiffExceedsThreshold {
+                old_ratio,
+                new_ratio,
+                max_diff: config.max_ratio_diff,
+                actual_diff: diff,
+            });
+        }
+
         TOKEN_RATIO.save(deps.storage, current_round, &new_ratio)?;
 
         let update_msg = HydroExecuteMsg::UpdateTokenGroupsRatios {

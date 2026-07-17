@@ -7,6 +7,9 @@ pub struct InstantiateMsg {
     pub hydro_contract_address: Option<String>,
     pub derivative_token_denom: String,
     pub token_group_id: String,
+    /// Maximum allowed absolute difference between two consecutive ratio submissions,
+    /// enforced starting from the second submission.
+    pub max_ratio_diff: Decimal,
     /// Initial set of addresses allowed to submit ratio updates and manage the whitelist.
     /// Must contain at least one address.
     pub initial_whitelist: Vec<String>,

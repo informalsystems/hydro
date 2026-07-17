@@ -14,4 +14,10 @@ pub struct Config {
     pub hydro_contract_address: Addr,
     pub derivative_token_denom: String,
     pub token_group_id: String,
+    /// Maximum allowed absolute difference between two consecutive submitted ratios.
+    /// Not enforced for the very first ratio submission (see `first_submission`).
+    pub max_ratio_diff: Decimal,
+    /// True until the first ratio-changing `SubmitTokenRatio` call succeeds; while true,
+    /// `max_ratio_diff` is not enforced, allowing the initial ratio to be set freely.
+    pub first_submission: bool,
 }
