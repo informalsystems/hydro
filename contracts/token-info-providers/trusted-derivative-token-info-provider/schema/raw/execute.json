@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecuteMsg",
+  "oneOf": [
+    {
+      "description": "Submit a new derivative token ratio. Caller must be in the whitelist.",
+      "type": "object",
+      "required": [
+        "submit_token_ratio"
+      ],
+      "properties": {
+        "submit_token_ratio": {
+          "type": "object",
+          "required": [
+            "ratio"
+          ],
+          "properties": {
+            "ratio": {
+              "$ref": "#/definitions/Decimal"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Add an address to the whitelist. Caller must be in the whitelist.",
+      "type": "object",
+      "required": [
+        "add_to_whitelist"
+      ],
+      "properties": {
+        "add_to_whitelist": {
+          "type": "object",
+          "required": [
+            "address"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Remove an address from the whitelist. Caller must be in the whitelist. Fails if removing the address would leave the whitelist empty.",
+      "type": "object",
+      "required": [
+        "remove_from_whitelist"
+      ],
+      "properties": {
+        "remove_from_whitelist": {
+          "type": "object",
+          "required": [
+            "address"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ],
+  "definitions": {
+    "Decimal": {
+      "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
+      "type": "string"
+    }
+  }
+}

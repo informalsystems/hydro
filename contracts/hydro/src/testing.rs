@@ -198,7 +198,7 @@ pub fn setup_token_info_providers_with_extra_mocks(
     extra_mocks: Vec<WasmQueryFunc>,
 ) {
     if should_save_in_storage {
-        for (contract_address, _) in derivative_providers.iter() {
+        for contract_address in derivative_providers.keys() {
             TOKEN_INFO_PROVIDERS
                 .save(
                     &mut deps.storage,

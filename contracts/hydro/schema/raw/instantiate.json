@@ -231,6 +231,43 @@
         {
           "type": "object",
           "required": [
+            "lsm_hub"
+          ],
+          "properties": {
+            "lsm_hub": {
+              "type": "object",
+              "required": [
+                "code_id",
+                "label",
+                "msg"
+              ],
+              "properties": {
+                "admin": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "code_id": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "label": {
+                  "type": "string"
+                },
+                "msg": {
+                  "$ref": "#/definitions/Binary"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
             "base"
           ],
           "properties": {
