@@ -242,8 +242,14 @@ pub fn execute(
 
     // Since un-pausing can only be done through contract migration,
     // we can check that the contract is not paused within execute.
+    //
+    // For Neutron instance, if the contract is paused, we only allow
+    // the TransferFundsToHub message to be executed.
     if constants.paused {
-        return Err(ContractError::Paused);
+        match msg {
+            ExecuteMsg::TransferFundsToHub { .. } => (),
+            _ => return Err(ContractError::Paused),
+        }
     }
 
     let current_round = compute_current_round_id(&env, &constants)?;

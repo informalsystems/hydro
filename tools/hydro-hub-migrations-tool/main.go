@@ -74,6 +74,7 @@ const CmdQueryCurrentLockups = "query-current-lockups"
 const dAtomNeutronDenom = "factory/neutron1k6hr0f83e7un2wjf29cspk7j69jrnskk65k3ek2nj9dztrlzpj6q00rtsa/udatom"
 
 const stAtomHubIBCDenom = "ibc/B05539B66B72E2739B986B86391E5D08F12B8D5D2C2A7F8F8CF9ADF674DFA231"
+const dAtomHubIBCDenom = "ibc/AFC2F1B2FD45D549E34445E63921ECDECF1EAC68DA72412C2E087BEB503693F2"
 
 const hubAddressPrefix = "cosmos"
 
@@ -166,6 +167,11 @@ func queryAllLockups(node, contract string, limit uint64) ([]LockEntry, error) {
 // resolveDenom converts an on-Neutron denom to its Hub-native equivalent.
 // Results are cached to avoid redundant IBC trace queries.
 func resolveDenom(node, denom string, cache map[string]string) (string, error) {
+	// dATOM is Neutron native, so we replace it with its Hub IBC denom.
+	if denom == dAtomNeutronDenom {
+		return dAtomHubIBCDenom, nil
+	}
+
 	if !strings.HasPrefix(denom, "ibc/") {
 		return "", fmt.Errorf("unexpected non-IBC denom: %s", denom)
 	}
@@ -193,8 +199,7 @@ func resolveDenom(node, denom string, cache map[string]string) (string, error) {
 		// the native denom format on the Hub.
 		resolved = base
 	default:
-		log.Printf("Warning: unrecognized IBC denom %s (base=%s, hops=%d), keeping original", denom, base, len(resp.Denom.Trace))
-		resolved = denom
+		return "", fmt.Errorf("unrecognized IBC denom %s (base=%s, hops_count=%d)", denom, base, len(resp.Denom.Trace))
 	}
 
 	cache[denom] = resolved
@@ -272,21 +277,16 @@ func runQueryCurrentLockups(args []string) {
 		log.Fatalf("Error fetching lockups: %v", err)
 	}
 
-	// Step 3: resolve every IBC denom to its Hub-native equivalent.
+	// Step 3: resolve every denom to its Hub-native equivalent.
 	cache := make(map[string]string)
 	lockups := make([]LockEntry, 0, len(initialLockups))
 	for _, entry := range initialLockups {
-		if entry.Funds.Denom == dAtomNeutronDenom {
-			// dATOM lockups are not migrated to the Hub, so we skip them.
-			continue
-		}
-
-		newDenom, err := resolveDenom(*node, entry.Funds.Denom, cache)
+		hubDenom, err := resolveDenom(*node, entry.Funds.Denom, cache)
 		if err != nil {
 			log.Fatalf("Error resolving denom for lock_id %d: %v", entry.LockID, err)
 		}
-		entry.Funds.Denom = newDenom
 
+		entry.Funds.Denom = hubDenom
 		entry.IsSmartContractOwner = len(entry.Owner) != neutronWalletAddrLen
 
 		// Only convert EOA addresses automatically. Smart contract addresses will be provided separately by the owning teams.
