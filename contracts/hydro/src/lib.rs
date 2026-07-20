@@ -3,6 +3,7 @@ pub mod cw721;
 mod error;
 pub mod gatekeeper;
 pub mod governance;
+pub mod ibc_transfer;
 pub mod lsm_integration;
 pub mod migration;
 pub mod msg;
@@ -70,3 +71,6 @@ mod testing_slashing;
 
 #[cfg(test)]
 mod testing_buyout_pending_slash;
+
+#[cfg(test)]
+mod testing_transfer_funds;

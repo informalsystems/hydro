@@ -240,6 +240,38 @@
       "additionalProperties": false
     },
     {
+      "description": "Returns all lockups in the contract (across all users), ordered by lock_id. Supports pagination via start_lock_id (lock_id to start from, inclusive) and limit. Pass the `next_lock_id` from the previous response as `start_lock_id` to fetch the next page.",
+      "type": "object",
+      "required": [
+        "all_lockups"
+      ],
+      "properties": {
+        "all_lockups": {
+          "type": "object",
+          "required": [
+            "limit"
+          ],
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "start_lock_id": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
       "type": "object",
       "required": [
         "user_voting_power"

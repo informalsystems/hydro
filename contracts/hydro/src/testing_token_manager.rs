@@ -296,6 +296,9 @@ fn handle_token_info_provider_instantiate_reply_test() {
         TokenInfoProvider::LSM(_) => {
             panic!("expected derivative token info provider, found LSM one.")
         }
+        TokenInfoProvider::LSMHub(_) => {
+            panic!("expected derivative token info provider, found LSM Hub provider.")
+        }
         TokenInfoProvider::Base(_) => {
             panic!("expected derivative token info provider, found Base provider.")
         }

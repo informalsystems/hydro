@@ -18,6 +18,13 @@ export type TokenInfoProviderInstantiateMsg = {
     msg: Binary;
   };
 } | {
+  lsm_hub: {
+    admin?: string | null;
+    code_id: number;
+    label: string;
+    msg: Binary;
+  };
+} | {
   base: {
     denom: string;
     token_group_id: string;
@@ -246,6 +253,12 @@ export type ExecuteMsg = {
   buyout_pending_slash: {
     lock_id: number;
   };
+} | {
+  transfer_funds_to_hub: {
+    denoms: string[];
+    ibc_fee: Coin;
+    recipient: string;
+  };
 };
 export type Expiration = {
   at_height: number;
@@ -327,6 +340,11 @@ export type QueryMsg = {
 } | {
   lockups_pending_slashes: {
     lockup_ids: number[];
+  };
+} | {
+  all_lockups: {
+    limit: number;
+    start_lock_id?: number | null;
   };
 } | {
   user_voting_power: {
@@ -519,6 +537,17 @@ export interface ConversionFundInfo {
   ratio: Decimal;
 }
 export type Addr = string;
+export interface AllLockupsResponse {
+  lockups: LockEntryV2[];
+  next_lock_id?: number | null;
+}
+export interface LockEntryV2 {
+  funds: Coin;
+  lock_end: Timestamp;
+  lock_id: number;
+  lock_start: Timestamp;
+  owner: Addr;
+}
 export interface AllNftInfoResponse {
   access: OwnerOfResponse;
   info: NftInfoResponse;
@@ -542,13 +571,6 @@ export interface LockupWithPerTrancheInfo {
 export interface LockEntryWithPower {
   current_voting_power: Uint128;
   lock_entry: LockEntryV2;
-}
-export interface LockEntryV2 {
-  funds: Coin;
-  lock_end: Timestamp;
-  lock_id: number;
-  lock_start: Timestamp;
-  owner: Addr;
 }
 export interface PerTrancheLockupInfo {
   current_voted_on_proposal?: number | null;
@@ -719,6 +741,8 @@ export interface SpecificUserLockupsWithTrancheInfosResponse {
 export type TokenInfoProvider = {
   lsm: TokenInfoProviderLSM;
 } | {
+  lsm_hub: TokenInfoProviderLSMHub;
+} | {
   base: TokenInfoProviderBase;
 } | {
   derivative: TokenInfoProviderDerivative;
@@ -730,6 +754,10 @@ export interface TokenInfoProviderLSM {
   cache: {};
   contract: string;
   hub_transfer_channel_id: string;
+}
+export interface TokenInfoProviderLSMHub {
+  cache: {};
+  contract: string;
 }
 export interface TokenInfoProviderBase {
   denom: string;

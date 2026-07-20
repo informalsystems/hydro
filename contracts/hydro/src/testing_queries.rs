@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use crate::contract::{
-    compute_current_round_id, query_all_user_lockups, query_all_user_lockups_with_tranche_infos,
-    query_all_votes, query_all_votes_round_tranche, query_lockup_voting_metrics,
-    query_simulate_dtoken_amounts, query_specific_user_lockups,
+    compute_current_round_id, query_all_lockups, query_all_user_lockups,
+    query_all_user_lockups_with_tranche_infos, query_all_votes, query_all_votes_round_tranche,
+    query_lockup_voting_metrics, query_simulate_dtoken_amounts, query_specific_user_lockups,
     query_specific_user_lockups_with_tranche_infos, query_user_votes,
 };
 use crate::msg::{ProposalToLockups, TrancheInfo};
@@ -2013,4 +2013,97 @@ fn test_query_lockup_voting_metrics_validate_denom_fail() {
         error_msg.contains("IBC token expected"),
         "Error should mention denom validation failure: {error_msg}"
     );
+}
+
+// Tests the `query_all_lockups` function to ensure it correctly paginates over
+// LOCKS_MAP_V2 regardless of lockup owner, and reports next_lock_id correctly.
+#[test]
+fn query_all_lockups_test() {
+    let mut deps = mock_dependencies(no_op_grpc_query_mock());
+    let env = mock_env();
+    let owner = deps.api.addr_make("addr0000");
+
+    // empty map: no lockups, no next_lock_id
+    let res = query_all_lockups(deps.as_ref(), None, 10);
+    assert!(res.is_ok());
+    let response = res.unwrap();
+    assert_eq!(response.lockups.len(), 0);
+    assert_eq!(response.next_lock_id, None);
+
+    let lock_ids: Vec<u64> = vec![1, 2, 3, 5, 8];
+    for lock_id in &lock_ids {
+        let lock_entry = LockEntryV2 {
+            lock_id: *lock_id,
+            owner: owner.clone(),
+            funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
+            lock_start: Timestamp::from_seconds(10),
+            lock_end: Timestamp::from_seconds(100),
+        };
+        let res = LOCKS_MAP_V2.save(&mut deps.storage, *lock_id, &lock_entry, env.block.height);
+        assert!(res.is_ok(), "failed to save lock {lock_id}");
+    }
+
+    // first page: limit smaller than total count, should return first 2 lockups,
+    // ordered by lock_id, with next_lock_id pointing to the first lockup not returned
+    let res = query_all_lockups(deps.as_ref(), None, 2);
+    assert!(res.is_ok());
+    let response = res.unwrap();
+    assert_eq!(
+        response
+            .lockups
+            .iter()
+            .map(|lock| lock.lock_id)
+            .collect::<Vec<u64>>(),
+        vec![1, 2]
+    );
+    assert_eq!(response.next_lock_id, Some(3));
+
+    // second page: continue from next_lock_id returned above
+    let res = query_all_lockups(deps.as_ref(), response.next_lock_id, 2);
+    assert!(res.is_ok());
+    let response = res.unwrap();
+    assert_eq!(
+        response
+            .lockups
+            .iter()
+            .map(|lock| lock.lock_id)
+            .collect::<Vec<u64>>(),
+        vec![3, 5]
+    );
+    assert_eq!(response.next_lock_id, Some(8));
+
+    // last page: limit larger than remaining items, next_lock_id should be None
+    let res = query_all_lockups(deps.as_ref(), response.next_lock_id, 10);
+    assert!(res.is_ok());
+    let response = res.unwrap();
+    assert_eq!(
+        response
+            .lockups
+            .iter()
+            .map(|lock| lock.lock_id)
+            .collect::<Vec<u64>>(),
+        vec![8]
+    );
+    assert_eq!(response.next_lock_id, None);
+
+    // start_lock_id past the end: empty page, no next_lock_id
+    let res = query_all_lockups(deps.as_ref(), Some(100), 10);
+    assert!(res.is_ok());
+    let response = res.unwrap();
+    assert_eq!(response.lockups.len(), 0);
+    assert_eq!(response.next_lock_id, None);
+
+    // fetching everything at once matches the full ordered set
+    let res = query_all_lockups(deps.as_ref(), None, 100);
+    assert!(res.is_ok());
+    let response = res.unwrap();
+    assert_eq!(
+        response
+            .lockups
+            .iter()
+            .map(|lock| lock.lock_id)
+            .collect::<Vec<u64>>(),
+        lock_ids
+    );
+    assert_eq!(response.next_lock_id, None);
 }
