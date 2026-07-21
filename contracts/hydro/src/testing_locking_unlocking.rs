@@ -10,9 +10,9 @@ use crate::{
         get_address_as_str, get_default_instantiate_msg, get_message_info,
         get_st_atom_denom_info_mock_data, get_validator_info_mock_data,
         setup_lsm_token_info_provider_mock, setup_multiple_token_info_provider_mocks,
-        DERIVATIVE_TOKEN_PROVIDER_ADDR, IBC_DENOM_1, LSM_TOKEN_PROVIDER_ADDR,
-        ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, ST_ATOM_ON_STRIDE,
-        THREE_MONTHS_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
+        DERIVATIVE_TOKEN_PROVIDER_ADDR, LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS,
+        ST_ATOM_ON_NEUTRON, ST_ATOM_ON_STRIDE, THREE_MONTHS_IN_NANO_SECONDS, VALIDATOR_1,
+        VALIDATOR_1_LST_DENOM_1,
     },
     testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies},
 };
@@ -21,7 +21,10 @@ use crate::{
 fn lock_tokens_basic_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
 
     let user_address = "addr0000";
@@ -43,7 +46,7 @@ fn lock_tokens_basic_test() {
     let info1 = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -55,7 +58,7 @@ fn lock_tokens_basic_test() {
     let info2 = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(3000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(3000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
@@ -120,7 +123,10 @@ fn lock_tokens_various_denoms_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -195,7 +201,7 @@ fn lock_tokens_various_denoms_test() {
     let info3 = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(3000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(3000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
@@ -217,18 +223,24 @@ fn lock_tokens_various_denoms_test() {
     assert_eq!(lockup.current_voting_power, Uint128::new(1000));
 
     let lockup = user_lockups[1].clone();
-    assert_eq!(lockup.lock_entry.funds.denom.clone(), IBC_DENOM_1);
+    assert_eq!(
+        lockup.lock_entry.funds.denom.clone(),
+        VALIDATOR_1_LST_DENOM_1
+    );
     assert_eq!(lockup.current_voting_power, Uint128::new(4500));
 }
 
 #[test]
 fn unlock_tokens_basic_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
@@ -307,11 +319,14 @@ fn unlock_tokens_basic_test() {
 fn unlock_tokens_pending_slashes_test() {
     // Use address different from "addr0000" since that one is used to send slashed amounts to it
     let user_address = "addr0001";
-    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
@@ -401,11 +416,14 @@ fn unlock_tokens_pending_slashes_test() {
 #[test]
 fn unlock_specific_tokens_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
@@ -571,13 +589,16 @@ fn unlock_specific_tokens_test() {
 fn test_too_many_locks() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let msg = get_default_instantiate_msg(&deps.api);
 
@@ -618,7 +639,7 @@ fn test_too_many_locks() {
     let info2 = get_message_info(
         &deps.api,
         "addr0001",
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     for i in 0..MAX_LOCK_ENTRIES + 10 {
         let res = execute(deps.as_mut(), env.clone(), info2.clone(), lock_msg.clone());
@@ -658,7 +679,10 @@ fn test_too_many_locks() {
 fn max_locked_tokens_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let mut info = get_message_info(&deps.api, "addr0000", &[]);
@@ -686,7 +710,7 @@ fn max_locked_tokens_test() {
     info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(1500u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1500u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let mut lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -699,7 +723,7 @@ fn max_locked_tokens_test() {
     info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(1500u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1500u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_err());
@@ -712,7 +736,7 @@ fn max_locked_tokens_test() {
     info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(500u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(500u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     lock_msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
@@ -735,7 +759,7 @@ fn max_locked_tokens_test() {
     info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(1500u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1500u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_ok());
@@ -794,7 +818,7 @@ fn max_locked_tokens_test() {
     info = get_message_info(
         &deps.api,
         "addr0002",
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_ok());
@@ -803,7 +827,7 @@ fn max_locked_tokens_test() {
     info = get_message_info(
         &deps.api,
         "addr0002",
-        &[Coin::new(1u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_err());
@@ -840,7 +864,7 @@ fn max_locked_tokens_test() {
     info = get_message_info(
         &deps.api,
         "addr0002",
-        &[Coin::new(500u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(500u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let res = execute(deps.as_mut(), env.clone(), info.clone(), lock_msg.clone());
     assert!(res.is_err());

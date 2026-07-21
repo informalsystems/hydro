@@ -2,7 +2,7 @@ use crate::contract::{can_lock_vote_for_proposal, compute_round_end};
 use crate::error::ContractError;
 use crate::msg::ProposalToLockups;
 use crate::score_keeper::ProposalPowerUpdate;
-use crate::state::{Constants, LockEntryV2, Vote, VOTE_MAP_V2, VOTING_ALLOWED_ROUND};
+use crate::state::{Constants, LockEntry, Vote, VOTE_MAP_V2, VOTING_ALLOWED_ROUND};
 use crate::token_manager::TokenManager;
 use crate::utils::{
     find_deployment_for_voted_lock, get_lock_time_weighted_shares, get_lock_vote,
@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 
 type TargetVotes = HashMap<u64, Option<u64>>; // Maps lock IDs to their associated proposal IDs (or None)
-type LockEntries = HashMap<u64, LockEntryV2>; // Maps lock IDs to their corresponding lock entries
+type LockEntries = HashMap<u64, LockEntry>; // Maps lock IDs to their corresponding lock entries
 
 // Validate input proposals and locks
 // Returns target votes: lock_id -> proposal_id

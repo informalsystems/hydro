@@ -11,8 +11,8 @@ use crate::{
     msg::ExecuteMsg,
     testing::{
         get_default_instantiate_msg, get_message_info, setup_lsm_token_info_provider_mock,
-        IBC_DENOM_1, IBC_DENOM_2, LSM_TOKEN_PROVIDER_ADDR, ONE_DAY_IN_NANO_SECONDS, VALIDATOR_1,
-        VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
+        LSM_TOKEN_PROVIDER_ADDR, ONE_DAY_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
+        VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
     },
     testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, MockQuerier},
 };
@@ -31,8 +31,14 @@ fn test_voting_power_queries() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
-            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
+            (
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+            ),
         ]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
@@ -91,7 +97,7 @@ fn test_voting_power_queries() {
         &mut env,
         days_num,
         user1,
-        Coin::new(100u128, IBC_DENOM_1),
+        Coin::new(100u128, VALIDATOR_1_LST_DENOM_1),
         12 * LOCK_EPOCH_LENGTH,
     );
 
@@ -113,7 +119,7 @@ fn test_voting_power_queries() {
         &mut env,
         days_num,
         user1,
-        Coin::new(200u128, IBC_DENOM_1),
+        Coin::new(200u128, VALIDATOR_1_LST_DENOM_1),
         12 * LOCK_EPOCH_LENGTH,
     );
 
@@ -170,7 +176,7 @@ fn test_voting_power_queries() {
         &mut env,
         days_num,
         user2,
-        Coin::new(300u128, IBC_DENOM_2),
+        Coin::new(300u128, VALIDATOR_2_LST_DENOM_1),
         6 * LOCK_EPOCH_LENGTH,
     );
 
@@ -192,7 +198,7 @@ fn test_voting_power_queries() {
         &mut env,
         days_num,
         user2,
-        Coin::new(500u128, IBC_DENOM_2),
+        Coin::new(500u128, VALIDATOR_2_LST_DENOM_1),
         6 * LOCK_EPOCH_LENGTH,
     );
 
@@ -214,7 +220,7 @@ fn test_voting_power_queries() {
         &mut env,
         days_num,
         user1,
-        Coin::new(700u128, IBC_DENOM_1),
+        Coin::new(700u128, VALIDATOR_1_LST_DENOM_1),
         LOCK_EPOCH_LENGTH,
     );
 

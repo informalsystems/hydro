@@ -4,20 +4,19 @@ use std::str::FromStr;
 use crate::contract::{
     compute_current_round_id, query_all_lockups, query_all_user_lockups,
     query_all_user_lockups_with_tranche_infos, query_all_votes, query_all_votes_round_tranche,
-    query_lockup_voting_metrics, query_simulate_dtoken_amounts, query_specific_user_lockups,
+    query_lockup_voting_metrics, query_specific_user_lockups,
     query_specific_user_lockups_with_tranche_infos, query_user_votes,
 };
 use crate::msg::{ProposalToLockups, TrancheInfo};
 use crate::query::VoteEntry;
 use crate::state::{
-    DropTokenInfo, HeightRange, RoundLockPowerSchedule, Vote, DROP_TOKEN_INFO, LOCKS_MAP_V2,
-    ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, VOTE_MAP_V2,
+    HeightRange, RoundLockPowerSchedule, Vote, LOCKS_MAP, ROUND_TO_HEIGHT_RANGE,
+    SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, VOTE_MAP_V2,
 };
 use crate::testing::{
     get_address_as_str, get_default_instantiate_msg, get_message_info,
-    setup_lsm_token_info_provider_mock, IBC_DENOM_1, IBC_DENOM_2, LSM_TOKEN_PROVIDER_ADDR,
-    ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
-    VALIDATOR_2_LST_DENOM_1, VALIDATOR_3,
+    setup_lsm_token_info_provider_mock, LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS,
+    VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_3,
 };
 use crate::testing_mocks::{
     denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
@@ -26,32 +25,25 @@ use crate::utils::{load_current_constants, scale_lockup_power};
 use crate::{
     contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
     msg::ExecuteMsg,
-    state::LockEntryV2,
-};
-use cosmwasm_std::Decimal256;
-use cosmwasm_std::{
-    from_json, to_json_binary, Addr, ContractResult, Decimal, QuerierResult, StdError, StdResult,
-    SystemError, SystemResult, Timestamp, Uint128, WasmQuery,
+    state::LockEntry,
 };
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
     Coin, Env, OwnedDeps,
 };
-use interface::drop_core::QueryMsg as DropQueryMsg;
-use interface::drop_puppeteer::{
-    Delegations, DelegationsResponse, DropDelegation, PuppeteerQueryMsg, QueryExtMsg,
-};
+use cosmwasm_std::{Addr, Decimal, StdError, StdResult, Timestamp, Uint128};
 use interface::hydro::TokenGroupRatioChange;
 use interface::lsm::ValidatorInfo;
-
-pub type WasmQueryFunc = dyn Fn(&WasmQuery) -> QuerierResult;
 
 #[test]
 fn query_user_lockups_test() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
@@ -82,7 +74,10 @@ fn query_user_lockups_test() {
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(first_lockup_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            first_lockup_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -99,7 +94,10 @@ fn query_user_lockups_test() {
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(second_lockup_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            second_lockup_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
@@ -499,7 +497,10 @@ fn query_user_voting_power_test() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
@@ -528,7 +529,10 @@ fn query_user_voting_power_test() {
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(first_lockup_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            first_lockup_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -545,7 +549,10 @@ fn query_user_voting_power_test() {
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(second_lockup_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            second_lockup_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
@@ -1015,12 +1022,12 @@ fn query_all_votes_test() {
     let env = mock_env();
 
     for vote_to_create in &votes_to_create {
-        let res_lock = LOCKS_MAP_V2.save(
+        let res_lock = LOCKS_MAP.save(
             &mut deps.storage,
             vote_to_create.lock_id,
-            &LockEntryV2 {
+            &LockEntry {
                 lock_id: vote_to_create.lock_id,
-                funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
+                funds: Coin::new(Uint128::from(1000u128), VALIDATOR_1_LST_DENOM_1.to_string()),
                 owner: voter.clone(),
                 lock_start: Timestamp::from_seconds(10),
                 lock_end: Timestamp::from_seconds(100),
@@ -1123,12 +1130,12 @@ fn query_all_votes_round_tranche_test() {
     let env = mock_env();
 
     for vote_to_create in &votes_to_create {
-        let res_lock = LOCKS_MAP_V2.save(
+        let res_lock = LOCKS_MAP.save(
             &mut deps.storage,
             vote_to_create.lock_id,
-            &LockEntryV2 {
+            &LockEntry {
                 lock_id: vote_to_create.lock_id,
-                funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
+                funds: Coin::new(Uint128::from(1000u128), VALIDATOR_1_LST_DENOM_1.to_string()),
                 owner: voter.clone(),
                 lock_start: Timestamp::from_seconds(10),
                 lock_end: Timestamp::from_seconds(100),
@@ -1181,7 +1188,7 @@ fn get_expired_user_lockups(
     deps: &OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: Env,
     user_address: String,
-) -> Vec<LockEntryV2> {
+) -> Vec<LockEntry> {
     let res = query_expired_user_lockups(&deps.as_ref(), &env, user_address.to_string(), 0, 2000);
     assert!(res.is_ok());
     let res = res.unwrap();
@@ -1204,7 +1211,10 @@ fn query_lock_votes_history_test() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
@@ -1228,7 +1238,7 @@ fn query_lock_votes_history_test() {
 
     // Create some test locks
     let lock_funds = vec![Coin {
-        denom: IBC_DENOM_1.to_string(),
+        denom: VALIDATOR_1_LST_DENOM_1.to_string(),
         amount: Uint128::from(1000u128),
     }];
 
@@ -1519,185 +1529,14 @@ fn query_lock_votes_history_test() {
 }
 
 #[test]
-fn simulate_dtoken_amounts() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
-            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
-        ]),
-    );
-    let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
-    let user_address = deps.api.addr_make("addr0000");
-    let info = get_message_info(&deps.api, user_address.as_ref(), &[]);
-
-    let instantiate_msg: crate::msg::InstantiateMsg = get_default_instantiate_msg(&deps.api);
-
-    let res = instantiate(deps.as_mut(), env.clone(), info, instantiate_msg.clone());
-    assert!(res.is_ok());
-
-    let lsm_token_info_provider_addr = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
-    setup_lsm_token_info_provider_mock(
-        &mut deps,
-        lsm_token_info_provider_addr.clone(),
-        vec![(0, vec![(VALIDATOR_1.to_string(), Decimal::one())])],
-        true,
-    );
-
-    // simulate user locking 1000 tokens for 1 month, one day after the round started
-    env.block.time = env.block.time.plus_days(1);
-
-    let first_lockup_amount: u128 = 1000;
-    let info = get_message_info(
-        &deps.api,
-        user_address.as_ref(),
-        &[Coin::new(first_lockup_amount, IBC_DENOM_1.to_string())],
-    );
-    let msg = ExecuteMsg::LockTokens {
-        lock_duration: ONE_MONTH_IN_NANO_SECONDS,
-        proof: None,
-    };
-
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok());
-
-    let ids: Vec<u64> = vec![1, 2, 3];
-
-    USER_LOCKS
-        .save(
-            &mut deps.storage,
-            user_address.clone(),
-            &ids,
-            env.block.height,
-        )
-        .unwrap();
-
-    // simulate user locking 2000 tokens for 3 months, two days after the round started
-    env.block.time = env.block.time.plus_days(1);
-
-    let second_lockup_amount: u128 = 2000;
-    let info = get_message_info(
-        &deps.api,
-        user_address.as_ref(),
-        &[Coin::new(second_lockup_amount, IBC_DENOM_1.to_string())],
-    );
-    let msg = ExecuteMsg::LockTokens {
-        lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
-        proof: None,
-    };
-
-    let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-    assert!(res.is_ok());
-
-    let res_lock = LOCKS_MAP_V2.save(
-        &mut deps.storage,
-        1,
-        &LockEntryV2 {
-            lock_id: 1,
-            funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
-            owner: user_address.clone(),
-            lock_start: Timestamp::from_seconds(10),
-            lock_end: Timestamp::from_seconds(100),
-        },
-        env.block.height,
-    );
-    assert!(res_lock.is_ok(), "failed to save lock");
-
-    let res_lock_2 = LOCKS_MAP_V2.save(
-        &mut deps.storage,
-        2,
-        &LockEntryV2 {
-            lock_id: 2,
-            funds: Coin::new(Uint128::from(2000u128), IBC_DENOM_1.to_string()),
-            owner: user_address.clone(),
-            lock_start: Timestamp::from_seconds(10),
-            lock_end: Timestamp::from_seconds(100),
-        },
-        env.block.height,
-    );
-    assert!(res_lock_2.is_ok(), "failed to save lock");
-
-    let res_lock_3 = LOCKS_MAP_V2.save(
-        &mut deps.storage,
-        3,
-        &LockEntryV2 {
-            lock_id: 3,
-            funds: Coin::new(Uint128::from(2000u128), IBC_DENOM_2.to_string()),
-            owner: user_address.clone(),
-            lock_start: Timestamp::from_seconds(10),
-            lock_end: Timestamp::from_seconds(100),
-        },
-        env.block.height,
-    );
-    assert!(res_lock_3.is_ok(), "failed to save lock");
-
-    let drop_address = deps.api.addr_make("drop");
-    let puppeteer_address = deps.api.addr_make("puppeteer");
-    let d_token_denom =
-        "factory/neutron1k6hr0f83e7un2wjf29cspk7j69jrnskk65k3ek2nj9dztrlzpj6q00rtsa/udatom"
-            .to_string();
-
-    let drop_token_info = DropTokenInfo {
-        address: drop_address,
-        d_token_denom,
-        puppeteer_address,
-    };
-
-    let drop_contract = DROP_TOKEN_INFO.save(&mut deps.storage, &drop_token_info);
-    assert!(drop_contract.is_ok(), "failed to save drop contract info");
-
-    let current_ratio = Decimal::from_str("1.15").unwrap();
-
-    let mock_puppeteer_response = DelegationsResponse {
-        delegations: Delegations {
-            delegations: vec![
-                DropDelegation {
-                    delegator: Addr::unchecked(
-                        "cosmos1srjdd7y6duuukmaenghucasqlycddcc65qdj34k6spq8pwk4h6ms7j4w4j",
-                    ),
-                    validator: "cosmosvaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcvrj90c".to_string(),
-                    amount: Coin {
-                        denom: "uatom".to_string(),
-                        amount: 96_581_728_232u128.into(),
-                    },
-                    share_ratio: Decimal256::from_str("0.999800011043535397").unwrap(),
-                },
-                DropDelegation {
-                    delegator: Addr::unchecked(
-                        "cosmos1srjdd7y6duuukmaenghucasqlycddcc65qdj34k6spq8pwk4h6ms7j4w4j",
-                    ),
-                    validator: "cosmosvaloper157v7tczs40axfgejp2m43kwuzqe0wsy0rv8puv".to_string(),
-                    amount: Coin {
-                        denom: "uatom".to_string(),
-                        amount: 706_769_074_698u128.into(),
-                    },
-                    share_ratio: Decimal256::from_str("1").unwrap(),
-                },
-            ],
-        },
-        remote_height: 26227986,
-        local_height: 27676281,
-        timestamp: Timestamp::from_nanos(1750217292399260448),
-    };
-    deps.querier
-        .update_wasm(drop_mock(current_ratio, mock_puppeteer_response));
-
-    let res =
-        query_simulate_dtoken_amounts(&deps.as_ref(), vec![1, 2, 3], user_address.to_string());
-    assert!(res.is_ok());
-    let res = res.unwrap();
-    assert_eq!(res.dtokens_response.len(), 3);
-    assert_eq!(res.dtokens_response[0].dtoken_amount, "869".to_string());
-    assert_eq!(res.dtokens_response[1].dtoken_amount, "1739".to_string());
-    assert!(res.dtokens_response[2].dtoken_amount.contains("error"));
-}
-
-#[test]
 fn query_parent_lock_ids_test() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
@@ -1723,7 +1562,7 @@ fn query_parent_lock_ids_test() {
     let lsm_lock_info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(50000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(50000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -1736,7 +1575,7 @@ fn query_parent_lock_ids_test() {
     let lsm_lock_info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(60000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(60000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let lock_res = execute(deps.as_mut(), env.clone(), lsm_lock_info, lock_msg);
     assert!(lock_res.is_ok(), "Failed to create lock");
@@ -1779,44 +1618,15 @@ fn query_parent_lock_ids_test() {
     assert!(query_for_child_6.parent_ids.contains(&3));
 }
 
-pub fn drop_mock(
-    current_ratio: Decimal,
-    puppeteer_response: DelegationsResponse,
-) -> Box<WasmQueryFunc> {
-    Box::new(move |req| match req {
-        WasmQuery::Smart {
-            contract_addr: _,
-            msg,
-        } => {
-            // First try DropQueryMsg::ExchangeRate
-            if let Ok(DropQueryMsg::ExchangeRate {}) = from_json(msg) {
-                return SystemResult::Ok(ContractResult::Ok(
-                    to_json_binary(&current_ratio).unwrap(),
-                ));
-            }
-
-            // Then try PuppeteerQueryMsg::Extension::Delegations
-            if let Ok(PuppeteerQueryMsg::Extension {
-                msg: QueryExtMsg::Delegations {},
-            }) = from_json(msg)
-            {
-                return SystemResult::Ok(ContractResult::Ok(
-                    to_json_binary(&puppeteer_response).unwrap(),
-                ));
-            }
-
-            SystemResult::Err(SystemError::Unknown {})
-        }
-        _ => SystemResult::Err(SystemError::Unknown {}),
-    })
-}
-
 #[test]
 fn test_query_lockup_voting_metrics_success() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
@@ -1839,7 +1649,10 @@ fn test_query_lockup_voting_metrics_success() {
     let lock_info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(first_lockup_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            first_lockup_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
     let lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -1853,7 +1666,10 @@ fn test_query_lockup_voting_metrics_success() {
     let lock_info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(second_lockup_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            second_lockup_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
     let lock_msg = ExecuteMsg::LockTokens {
         lock_duration: 2 * ONE_MONTH_IN_NANO_SECONDS,
@@ -1899,7 +1715,10 @@ fn test_query_lockup_voting_metrics_nonexistent_lockup_fail() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
@@ -1922,7 +1741,10 @@ fn test_query_lockup_voting_metrics_nonexistent_lockup_fail() {
     let lock_info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(lockup_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            lockup_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
     let lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -1951,7 +1773,10 @@ fn test_query_lockup_voting_metrics_validate_denom_fail() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
@@ -1974,7 +1799,10 @@ fn test_query_lockup_voting_metrics_validate_denom_fail() {
     let lock_info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(lockup_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            lockup_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
     let lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -1984,14 +1812,14 @@ fn test_query_lockup_voting_metrics_validate_denom_fail() {
     assert!(res.is_ok());
 
     // Manually corrupt the lockup's denom to an invalid one by directly modifying storage
-    let corrupted_lockup = LockEntryV2 {
+    let corrupted_lockup = LockEntry {
         lock_id: 0,
         owner: deps.api.addr_make(user_address),
         funds: Coin::new(lockup_amount, "invalid_denom"), // Invalid denom not in token manager
         lock_start: env.block.time,
         lock_end: env.block.time.plus_nanos(ONE_MONTH_IN_NANO_SECONDS),
     };
-    LOCKS_MAP_V2
+    LOCKS_MAP
         .save(
             deps.as_mut().storage,
             0,
@@ -2010,7 +1838,7 @@ fn test_query_lockup_voting_metrics_validate_denom_fail() {
     let error_msg = res.unwrap_err().to_string();
 
     assert!(
-        error_msg.contains("IBC token expected"),
+        error_msg.contains("Only LSTs from the Cosmos Hub can be locked."),
         "Error should mention denom validation failure: {error_msg}"
     );
 }
@@ -2032,14 +1860,14 @@ fn query_all_lockups_test() {
 
     let lock_ids: Vec<u64> = vec![1, 2, 3, 5, 8];
     for lock_id in &lock_ids {
-        let lock_entry = LockEntryV2 {
+        let lock_entry = LockEntry {
             lock_id: *lock_id,
             owner: owner.clone(),
-            funds: Coin::new(Uint128::from(1000u128), IBC_DENOM_1.to_string()),
+            funds: Coin::new(Uint128::from(1000u128), VALIDATOR_1_LST_DENOM_1.to_string()),
             lock_start: Timestamp::from_seconds(10),
             lock_end: Timestamp::from_seconds(100),
         };
-        let res = LOCKS_MAP_V2.save(&mut deps.storage, *lock_id, &lock_entry, env.block.height);
+        let res = LOCKS_MAP.save(&mut deps.storage, *lock_id, &lock_entry, env.block.height);
         assert!(res.is_ok(), "failed to save lock {lock_id}");
     }
 

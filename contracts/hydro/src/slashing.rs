@@ -15,9 +15,9 @@ use crate::{
     msg::ProposalToLockups,
     score_keeper::get_token_group_shares_for_round,
     state::{
-        Constants, LockEntryV2, Vote, LOCKED_TOKENS, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES,
-        PROPOSAL_MAP, SCALED_ROUND_POWER_SHARES_MAP, TOTAL_VOTING_POWER_PER_ROUND, TRANCHE_MAP,
-        VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
+        Constants, LockEntry, Vote, LOCKED_TOKENS, LOCKS_MAP, LOCKS_PENDING_SLASHES, PROPOSAL_MAP,
+        SCALED_ROUND_POWER_SHARES_MAP, TOTAL_VOTING_POWER_PER_ROUND, TRANCHE_MAP, VOTE_MAP_V2,
+        VOTING_ALLOWED_ROUND,
     },
     token_manager::TokenManager,
     utils::{
@@ -102,7 +102,7 @@ pub fn slash_proposal_voters(
             continue;
         }
 
-        let voted_lockup = match LOCKS_MAP_V2.may_load_at_height(
+        let voted_lockup = match LOCKS_MAP.may_load_at_height(
             deps.storage,
             voted_lock.0,
             voting_round_latest_height,
@@ -117,7 +117,7 @@ pub fn slash_proposal_voters(
         };
 
         for (lock_id, fraction) in get_current_lock_composition(&deps.as_ref(), voted_lock.0)? {
-            let mut lockup_to_slash = match LOCKS_MAP_V2.may_load(deps.storage, lock_id)? {
+            let mut lockup_to_slash = match LOCKS_MAP.may_load(deps.storage, lock_id)? {
                 None => {
                     // Lock returned by `get_current_lock_composition()` should always exist
                     context.skipped_lockups.push(lock_id);
@@ -165,7 +165,7 @@ pub fn slash_proposal_voters(
 
                 // If the amount left on the lockup is 0, the lockup should be removed from the store.
                 if lockup_to_slash.funds.amount == Uint128::zero() {
-                    LOCKS_MAP_V2.remove(deps.storage, lockup_to_slash.lock_id, env.block.height)?;
+                    LOCKS_MAP.remove(deps.storage, lockup_to_slash.lock_id, env.block.height)?;
                     cw721::maybe_remove_token_id(deps.storage, lockup_to_slash.lock_id);
 
                     context
@@ -181,7 +181,7 @@ pub fn slash_proposal_voters(
                             .remove(deps.storage, (*tranche_id, lockup_to_slash.lock_id));
                     }
                 } else {
-                    LOCKS_MAP_V2.save(
+                    LOCKS_MAP.save(
                         deps.storage,
                         lockup_to_slash.lock_id,
                         &lockup_to_slash,
@@ -310,8 +310,8 @@ pub fn slash_proposal_voters(
 pub fn into_amount_to_slash(
     deps: &Deps,
     token_manager: &mut TokenManager,
-    voted_lockup: &LockEntryV2,
-    lockup_to_slash: &LockEntryV2,
+    voted_lockup: &LockEntry,
+    lockup_to_slash: &LockEntry,
     fraction: Decimal,
     slash_percent: Decimal,
     voting_round: u64,
@@ -386,7 +386,7 @@ fn update_current_round_votes(
     constants: &Constants,
     token_manager: &mut TokenManager,
     current_round_id: u64,
-    slashed_lockups: &HashMap<u64, (LockEntryV2, Uint128)>,
+    slashed_lockups: &HashMap<u64, (LockEntry, Uint128)>,
     tranche_ids: Vec<u64>,
 ) -> Result<(), ContractError> {
     // Remove all votes for the slashed lockups in the current round.
@@ -434,7 +434,7 @@ fn update_current_round_votes(
 
         // Prepare lock entries to be used in `process_votes_and_apply_proposal_changes()`
         // by filtering out those lockups that were entirely slashed and removed.
-        let lock_entries: HashMap<u64, LockEntryV2> = slashed_lockups
+        let lock_entries: HashMap<u64, LockEntry> = slashed_lockups
             .iter()
             .filter_map(|slashed_lockup_info| {
                 if slashed_lockup_info.1 .0.funds.amount == Uint128::zero() {
@@ -470,7 +470,7 @@ fn update_rounds_powers_and_scaled_shares(
     constants: &Constants,
     token_manager: &mut TokenManager,
     current_round_id: u64,
-    slashed_lockups: &HashMap<u64, (LockEntryV2, Uint128)>,
+    slashed_lockups: &HashMap<u64, (LockEntry, Uint128)>,
 ) -> Result<(), ContractError> {
     let highest_round_id_with_power = current_round_id
         + constants
@@ -679,17 +679,14 @@ pub fn query_slashable_token_num_for_voting_on_proposal(
             continue;
         }
 
-        let Some(voted_lockup) = LOCKS_MAP_V2.may_load_at_height(
-            deps.storage,
-            voted_lock.0,
-            voting_round_latest_height,
-        )?
+        let Some(voted_lockup) =
+            LOCKS_MAP.may_load_at_height(deps.storage, voted_lock.0, voting_round_latest_height)?
         else {
             continue;
         };
 
         for (lock_id, fraction) in get_current_lock_composition(&deps, voted_lock.0)? {
-            let Some(lockup_to_slash) = LOCKS_MAP_V2.may_load(deps.storage, lock_id)? else {
+            let Some(lockup_to_slash) = LOCKS_MAP.may_load(deps.storage, lock_id)? else {
                 continue;
             };
 
@@ -731,7 +728,7 @@ struct SlashingContext {
     // Used to collect all lockups that were actually slashed (i.e. some amount of tokens was taken from the lockup)
     // and the corresponding slashed amounts. This info is later used to prepare the inputs for unvoting and revoting
     // in the current round.
-    pub slashed_lockups: HashMap<u64, (LockEntryV2, Uint128)>,
+    pub slashed_lockups: HashMap<u64, (LockEntry, Uint128)>,
 
     // Lockup IDs that had pending slashes attached to them during execution.
     pub pending_slashes_added: Vec<u64>,

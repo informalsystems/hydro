@@ -10,9 +10,9 @@ use crate::{
         get_default_instantiate_msg, get_default_lsm_token_info_provider_init_msg,
         get_message_info, get_st_atom_denom_info_mock_data, get_validator_info_mock_data,
         setup_lsm_token_info_provider_mock, setup_multiple_token_info_provider_mocks,
-        DERIVATIVE_TOKEN_PROVIDER_ADDR, IBC_DENOM_1, IBC_DENOM_2, LSM_TOKEN_PROVIDER_ADDR,
-        ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
-        VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
+        DERIVATIVE_TOKEN_PROVIDER_ADDR, LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS,
+        ST_ATOM_ON_NEUTRON, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
+        VALIDATOR_2_LST_DENOM_1,
     },
     testing_mocks::{denom_trace_grpc_query_mock, grpc_query_diff_paths_mock, mock_dependencies},
 };
@@ -25,7 +25,10 @@ pub const ATOM_ON_NEUTRON: &str =
 fn buyout_pending_slash_same_denom_exact_amount_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
@@ -46,7 +49,10 @@ fn buyout_pending_slash_same_denom_exact_amount_test() {
     let info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(lockup_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            lockup_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
@@ -62,7 +68,10 @@ fn buyout_pending_slash_same_denom_exact_amount_test() {
     let buyout_info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(buyout_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            buyout_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
 
     let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 0 };
@@ -78,7 +87,10 @@ fn buyout_pending_slash_same_denom_exact_amount_test() {
 fn buyout_pending_slash_same_denom_partial_amount_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
@@ -99,7 +111,10 @@ fn buyout_pending_slash_same_denom_partial_amount_test() {
     let info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(lockup_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            lockup_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
@@ -115,7 +130,10 @@ fn buyout_pending_slash_same_denom_partial_amount_test() {
     let buyout_info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(buyout_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            buyout_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
 
     let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 0 };
@@ -131,7 +149,10 @@ fn buyout_pending_slash_same_denom_partial_amount_test() {
 fn buyout_pending_slash_same_denom_overpay_amount_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
@@ -152,7 +173,10 @@ fn buyout_pending_slash_same_denom_overpay_amount_test() {
     let info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(lockup_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            lockup_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
@@ -168,7 +192,10 @@ fn buyout_pending_slash_same_denom_overpay_amount_test() {
     let buyout_info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(buyout_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            buyout_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
 
     let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 0 };
@@ -185,8 +212,14 @@ fn buyout_pending_slash_same_denom_validator_slashed_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
-            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
+            (
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+            ),
         ]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -214,7 +247,10 @@ fn buyout_pending_slash_same_denom_validator_slashed_test() {
     let info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(lockup_amount, IBC_DENOM_2.to_string())],
+        &[Coin::new(
+            lockup_amount,
+            VALIDATOR_2_LST_DENOM_1.to_string(),
+        )],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
@@ -230,7 +266,10 @@ fn buyout_pending_slash_same_denom_validator_slashed_test() {
     let buyout_info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(buyout_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            buyout_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
 
     let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 0 };
@@ -245,7 +284,10 @@ fn buyout_pending_slash_same_denom_validator_slashed_test() {
 fn buyout_pending_slash_lsm_statom_exact_amount_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
@@ -285,7 +327,10 @@ fn buyout_pending_slash_lsm_statom_exact_amount_test() {
     let info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(lockup_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            lockup_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,
@@ -303,7 +348,7 @@ fn buyout_pending_slash_lsm_statom_exact_amount_test() {
         &deps.api,
         "addr0000",
         &[
-            Coin::new(buyout_amount_lsm, IBC_DENOM_1.to_string()),
+            Coin::new(buyout_amount_lsm, VALIDATOR_1_LST_DENOM_1.to_string()),
             Coin::new(buyout_amount_st, ST_ATOM_ON_NEUTRON.to_string()),
         ],
     );
@@ -322,7 +367,10 @@ fn buyout_pending_slash_statom_lsm_test() {
     let grpc_map = HashMap::from([
         (
             "transfer/channel-0".to_string(),
-            HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+            HashMap::from([(
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            )]),
         ),
         (
             "transfer/channel-8".to_string(),
@@ -385,7 +433,10 @@ fn buyout_pending_slash_statom_lsm_test() {
     let buyout_info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(buyout_amount_lsm, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            buyout_amount_lsm,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
 
     let msg = ExecuteMsg::BuyoutPendingSlash { lock_id: 0 };
@@ -400,7 +451,10 @@ fn buyout_pending_slash_statom_lsm_test() {
 fn buyout_pending_slash_with_atom_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
@@ -429,7 +483,10 @@ fn buyout_pending_slash_with_atom_test() {
     let info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(lockup_amount, IBC_DENOM_1.to_string())],
+        &[Coin::new(
+            lockup_amount,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: 3 * ONE_MONTH_IN_NANO_SECONDS,

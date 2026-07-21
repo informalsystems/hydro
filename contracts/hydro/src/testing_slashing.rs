@@ -2,16 +2,15 @@ use crate::contract::{execute, instantiate, query_round_total_power};
 use crate::msg::{ExecuteMsg, TrancheInfo};
 use crate::slashing::query_slashable_token_num_for_voting_on_proposal;
 use crate::state::{
-    LockEntryV2, LOCKED_TOKENS, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES, PROPOSAL_MAP, USER_LOCKS,
+    LockEntry, LOCKED_TOKENS, LOCKS_MAP, LOCKS_PENDING_SLASHES, PROPOSAL_MAP, USER_LOCKS,
     VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
 };
 use crate::testing::{
     get_address_as_str, get_d_atom_denom_info_mock_data, get_default_instantiate_msg,
     get_message_info, get_validator_info_mock_data, setup_lsm_token_info_provider_mock,
-    setup_multiple_token_info_provider_mocks, D_ATOM_ON_NEUTRON, IBC_DENOM_1, IBC_DENOM_2,
-    IBC_DENOM_3, LSM_TOKEN_PROVIDER_ADDR, ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS,
-    VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3,
-    VALIDATOR_3_LST_DENOM_1,
+    setup_multiple_token_info_provider_mocks, D_ATOM_ON_NEUTRON, LSM_TOKEN_PROVIDER_ADDR,
+    ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
+    VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3, VALIDATOR_3_LST_DENOM_1,
 };
 use crate::testing_mocks::{denom_trace_grpc_query_mock, MockQuerier};
 use cosmwasm_std::testing::{MockApi, MockStorage};
@@ -29,9 +28,18 @@ fn pending_slashes_accumulation_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
-            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
-            (IBC_DENOM_3.to_string(), VALIDATOR_3_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
+            (
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+            ),
+            (
+                VALIDATOR_3_LST_DENOM_1.to_string(),
+                VALIDATOR_3_LST_DENOM_1.to_string(),
+            ),
         ]),
     );
     let (mut deps, mut env) = (
@@ -128,9 +136,9 @@ fn pending_slashes_accumulation_test() {
 
     let lock_amount_initial = 1000;
     let users_locking_tokens = [
-        (user1, IBC_DENOM_1),
-        (user2, IBC_DENOM_2),
-        (user3, IBC_DENOM_3),
+        (user1, VALIDATOR_1_LST_DENOM_1),
+        (user2, VALIDATOR_2_LST_DENOM_1),
+        (user3, VALIDATOR_3_LST_DENOM_1),
     ];
     for &user_locking_tokens in &users_locking_tokens {
         for &period in &lock_periods {
@@ -334,9 +342,18 @@ fn slash_when_threshold_is_reached_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
-            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
-            (IBC_DENOM_3.to_string(), VALIDATOR_3_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
+            (
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+            ),
+            (
+                VALIDATOR_3_LST_DENOM_1.to_string(),
+                VALIDATOR_3_LST_DENOM_1.to_string(),
+            ),
         ]),
     );
     let (mut deps, mut env) = (
@@ -444,9 +461,9 @@ fn slash_when_threshold_is_reached_test() {
 
     let lock_amount_initial = 1000;
     let users_locking_tokens = [
-        (user1, IBC_DENOM_1),
-        (user2, IBC_DENOM_2),
-        (user3, IBC_DENOM_3),
+        (user1, VALIDATOR_1_LST_DENOM_1),
+        (user2, VALIDATOR_2_LST_DENOM_1),
+        (user3, VALIDATOR_3_LST_DENOM_1),
     ];
     for &user_locking_tokens in &users_locking_tokens {
         for &period in &lock_periods {
@@ -632,8 +649,8 @@ fn slash_when_threshold_is_reached_test() {
                     assert_eq!(amount.len(), 2);
 
                     for slashed_tokens in amount {
-                        if slashed_tokens.denom != IBC_DENOM_1
-                            && slashed_tokens.denom != IBC_DENOM_2
+                        if slashed_tokens.denom != VALIDATOR_1_LST_DENOM_1
+                            && slashed_tokens.denom != VALIDATOR_2_LST_DENOM_1
                         {
                             panic!(
                                 "slashed unexpected tokens with denom: {}",
@@ -790,8 +807,14 @@ fn slashing_removes_lockups_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
-            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
+            (
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+            ),
         ]),
     );
     let (mut deps, mut env) = (
@@ -863,7 +886,10 @@ fn slashing_removes_lockups_test() {
 
     // user1 and user2 create one lockup each
     let lock_amount_initial = 1000u128;
-    let users_locking_tokens = [(user1, IBC_DENOM_1), (user2, IBC_DENOM_2)];
+    let users_locking_tokens = [
+        (user1, VALIDATOR_1_LST_DENOM_1),
+        (user2, VALIDATOR_2_LST_DENOM_1),
+    ];
     for &user_locking_tokens in &users_locking_tokens {
         let funds = vec![Coin::new(lock_amount_initial, user_locking_tokens.1)];
         let info = get_message_info(&deps.api, user_locking_tokens.0, &funds);
@@ -1012,7 +1038,7 @@ fn slashing_removes_lockups_test() {
 
     // Verify that the lock infos are removed from all relevant stores.
     for user_locks in &[(user1_addr, user1_lock_1), (user2_addr, user2_lock_1)] {
-        assert!(LOCKS_MAP_V2
+        assert!(LOCKS_MAP
             .may_load(&deps.storage, user_locks.1)
             .unwrap()
             .is_none());
@@ -1051,8 +1077,14 @@ fn proposals_and_rounds_power_updates_on_slashing_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
-            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
+            (
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+            ),
         ]),
     );
     let (mut deps, mut env) = (
@@ -1133,7 +1165,10 @@ fn proposals_and_rounds_power_updates_on_slashing_test() {
 
     // user1 and user2 create one lockup each
     let lock_amount_initial = 1000u128;
-    let users_locking_tokens = [(user1, IBC_DENOM_1), (user2, IBC_DENOM_2)];
+    let users_locking_tokens = [
+        (user1, VALIDATOR_1_LST_DENOM_1),
+        (user2, VALIDATOR_2_LST_DENOM_1),
+    ];
     for &user_locking_tokens in &users_locking_tokens {
         let funds = vec![Coin::new(lock_amount_initial, user_locking_tokens.1)];
         let info = get_message_info(&deps.api, user_locking_tokens.0, &funds);
@@ -1329,7 +1364,10 @@ fn slashing_after_lock_split_merge_test() {
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
@@ -1392,7 +1430,7 @@ fn slashing_after_lock_split_merge_test() {
 
     // Have user create two lockups to lock 90.0000 and 10.000 tokens for 3 rounds
     for lock_amount in [90000u128, 10000u128] {
-        let funds = vec![Coin::new(lock_amount, IBC_DENOM_1)];
+        let funds = vec![Coin::new(lock_amount, VALIDATOR_1_LST_DENOM_1)];
         let info = get_message_info(&deps.api, user1, &funds);
         let res = execute(
             deps.as_mut(),
@@ -1460,7 +1498,7 @@ fn slashing_after_lock_split_merge_test() {
     );
     assert!(merge_res.is_ok());
 
-    let merged_lock_7 = LOCKS_MAP_V2
+    let merged_lock_7 = LOCKS_MAP
         .may_load(&deps.storage, user1_lock_7)
         .unwrap()
         .unwrap();
@@ -1490,7 +1528,7 @@ fn slashing_after_lock_split_merge_test() {
 
     // user1_lock_4: 30.000 tokens, all inherited from user1_lock_1
     // should be slashed by 60% (18.000 tokens) = 12.000 tokens left
-    let lock_4 = LOCKS_MAP_V2
+    let lock_4 = LOCKS_MAP
         .may_load(&deps.storage, user1_lock_4)
         .unwrap()
         .unwrap();
@@ -1498,7 +1536,7 @@ fn slashing_after_lock_split_merge_test() {
 
     // user1_lock_7: originally 70.000 tokens, inherited 60.000 tokens from user1_lock_1
     // should be slashed by 60% (36.000 tokens) = 34.000 tokens left.
-    let lock_7 = LOCKS_MAP_V2
+    let lock_7 = LOCKS_MAP
         .may_load(&deps.storage, user1_lock_7)
         .unwrap()
         .unwrap();
@@ -1512,7 +1550,10 @@ fn slash_after_dtoken_conversion_test() {
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
@@ -1583,7 +1624,7 @@ fn slash_after_dtoken_conversion_test() {
 
     let lock_amount_initial = 1000u128;
 
-    let funds = vec![Coin::new(lock_amount_initial, IBC_DENOM_1)];
+    let funds = vec![Coin::new(lock_amount_initial, VALIDATOR_1_LST_DENOM_1)];
     let lcoking_info = get_message_info(&deps.api, user1, &funds);
     let res = execute(
         deps.as_mut(),
@@ -1626,12 +1667,12 @@ fn slash_after_dtoken_conversion_test() {
     env.block.height += 100000;
 
     // Mock as if user converted their lockup to dTOKEN one.
-    LOCKS_MAP_V2
+    LOCKS_MAP
         .update(
             &mut deps.storage,
             user1_lock_1,
             env.block.height,
-            |lock: Option<LockEntryV2>| -> StdResult<LockEntryV2> {
+            |lock: Option<LockEntry>| -> StdResult<LockEntry> {
                 let mut lock = lock.unwrap();
 
                 let datom_amount = Decimal::from_ratio(lock.funds.amount, Uint128::one())
@@ -1744,7 +1785,7 @@ fn verify_locks_and_pending_slashes(
         );
 
         assert_eq!(
-            LOCKS_MAP_V2
+            LOCKS_MAP
                 .load(storage, expected_result.0)
                 .unwrap()
                 .funds

@@ -17,8 +17,8 @@ use crate::{
         get_st_atom_denom_info_mock_data, get_validator_info_mock_data, setup_contract_info_mock,
         setup_lsm_token_info_provider_mock, setup_multiple_token_info_provider_mocks,
         setup_st_atom_token_info_provider_mock, setup_token_info_providers_with_extra_mocks,
-        IBC_DENOM_1, LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON,
-        ST_ATOM_ON_STRIDE, ST_ATOM_TOKEN_GROUP, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
+        LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, ST_ATOM_ON_STRIDE,
+        ST_ATOM_TOKEN_GROUP, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
     },
     testing_mocks::{
         contract_info_mock, denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock,
@@ -33,7 +33,10 @@ fn test_handle_execute_transfer_lsm_fail() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -65,7 +68,7 @@ fn test_handle_execute_transfer_lsm_fail() {
     let lock_info = get_message_info(
         &deps.api,
         owner,
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -101,7 +104,10 @@ fn test_handle_execute_transfer_st_atom_success() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -201,7 +207,10 @@ fn test_handle_execute_transfer_oneself_fail() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -268,7 +277,10 @@ fn test_handle_execute_transfer_st_atom_with_vote_success() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -423,7 +435,10 @@ fn test_handle_execute_transfer_unlock_queries_for_tributes() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -610,7 +625,10 @@ fn test_handle_execute_send_nft_lsm_fail() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -660,7 +678,7 @@ fn test_handle_execute_send_nft_lsm_fail() {
     let lock_info = get_message_info(
         &deps.api,
         owner,
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -698,7 +716,10 @@ fn test_handle_execute_send_nft_st_atom_success() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -773,7 +794,10 @@ fn test_handle_execute_send_nft_st_atom_with_vote_success() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -951,7 +975,10 @@ fn test_handle_execute_approve() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -1063,7 +1090,10 @@ fn test_handle_execute_approve_fail_for_lsm() {
     // Setup mock for grpc queries
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
 
     // Setup initial state
@@ -1090,7 +1120,7 @@ fn test_handle_execute_approve_fail_for_lsm() {
     let lock_info = get_message_info(
         &deps.api,
         owner,
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -1126,7 +1156,10 @@ fn test_handle_execute_revoke() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -1236,7 +1269,10 @@ fn test_handle_execute_revoke_fail_for_lsm() {
     // Setup mock for grpc queries
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
 
     // Setup initial state
@@ -1263,7 +1299,7 @@ fn test_handle_execute_revoke_fail_for_lsm() {
     let lock_info = get_message_info(
         &deps.api,
         owner,
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -1294,7 +1330,10 @@ fn test_handle_execute_revoke_fail_for_lsm() {
 fn test_query_owner_of() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
 
     // Setup initial state
@@ -1321,7 +1360,7 @@ fn test_query_owner_of() {
     let lock_info = get_message_info(
         &deps.api,
         owner,
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -1346,7 +1385,10 @@ fn test_query_owner_of() {
 fn test_query_nft_info() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
 
     // Setup initial state
@@ -1373,7 +1415,7 @@ fn test_query_nft_info() {
     let lock_info = get_message_info(
         &deps.api,
         owner,
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let lock_msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -1400,7 +1442,10 @@ fn test_query_approval() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -1479,7 +1524,10 @@ fn test_query_approval_for_owner() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -2106,7 +2154,10 @@ fn test_query_all_tokens_filters_lsm() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -2172,11 +2223,11 @@ fn test_query_all_tokens_filters_lsm() {
     let lock_res1 = execute(deps.as_mut(), env.clone(), lock_info1, lock_msg.clone());
     assert!(lock_res1.is_ok(), "Failed to create first non-LSM lock");
 
-    // Create first LSM lock (owner1, IBC_DENOM_1) - should NOT appear in results
+    // Create first LSM lock (owner1, VALIDATOR_1_LST_DENOM_1) - should NOT appear in results
     let lock_info2 = get_message_info(
         &deps.api,
         owner1,
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let lock_res2 = execute(deps.as_mut(), env.clone(), lock_info2, lock_msg.clone());
     assert!(lock_res2.is_ok(), "Failed to create first LSM lock");
@@ -2190,11 +2241,11 @@ fn test_query_all_tokens_filters_lsm() {
     let lock_res3 = execute(deps.as_mut(), env.clone(), lock_info3, lock_msg.clone());
     assert!(lock_res3.is_ok(), "Failed to create second non-LSM lock");
 
-    // Create second LSM lock (owner2, IBC_DENOM_1) - should NOT appear in results
+    // Create second LSM lock (owner2, VALIDATOR_1_LST_DENOM_1) - should NOT appear in results
     let lock_info4 = get_message_info(
         &deps.api,
         owner2,
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let lock_res4 = execute(deps.as_mut(), env.clone(), lock_info4, lock_msg);
     assert!(lock_res4.is_ok(), "Failed to create second LSM lock");
@@ -2872,7 +2923,10 @@ fn test_handle_execute_lock_tokens_then_send_nft_lsm_fail() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -2887,7 +2941,7 @@ fn test_handle_execute_lock_tokens_then_send_nft_lsm_fail() {
     let info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())], // LSM token
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())], // LSM token
     );
 
     // Proper contract initialization

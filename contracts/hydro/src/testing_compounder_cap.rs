@@ -13,9 +13,9 @@ use crate::{
     state::{EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, LOCKED_TOKENS},
     testing::{
         get_address_as_str, get_default_instantiate_msg, get_message_info,
-        setup_lsm_token_info_provider_mock, IBC_DENOM_1, IBC_DENOM_2, IBC_DENOM_3,
-        LSM_TOKEN_PROVIDER_ADDR, ONE_DAY_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
-        VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3, VALIDATOR_3_LST_DENOM_1,
+        setup_lsm_token_info_provider_mock, LSM_TOKEN_PROVIDER_ADDR, ONE_DAY_IN_NANO_SECONDS,
+        VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3,
+        VALIDATOR_3_LST_DENOM_1,
     },
     testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, MockQuerier},
 };
@@ -57,9 +57,18 @@ fn test_compounder_cap() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
-            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
-            (IBC_DENOM_3.to_string(), VALIDATOR_3_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
+            (
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+            ),
+            (
+                VALIDATOR_3_LST_DENOM_1.to_string(),
+                VALIDATOR_3_LST_DENOM_1.to_string(),
+            ),
         ]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
@@ -122,19 +131,19 @@ fn test_compounder_cap() {
         (
             user1,
             LOCK_EPOCH_LENGTH,
-            Coin::new(10000u64, IBC_DENOM_1.to_string()),
+            Coin::new(10000u64, VALIDATOR_1_LST_DENOM_1.to_string()),
             None,
         ),
         (
             user2,
             6 * LOCK_EPOCH_LENGTH,
-            Coin::new(10000u64, IBC_DENOM_2.to_string()),
+            Coin::new(10000u64, VALIDATOR_2_LST_DENOM_1.to_string()),
             None,
         ),
         (
             user3,
             12 * LOCK_EPOCH_LENGTH,
-            Coin::new(10000u64, IBC_DENOM_3.to_string()),
+            Coin::new(10000u64, VALIDATOR_3_LST_DENOM_1.to_string()),
             None,
         ),
     ];
@@ -314,14 +323,14 @@ fn test_compounder_cap() {
         (
             user1,
             LOCK_EPOCH_LENGTH,
-            Coin::new(10000u64, IBC_DENOM_1.to_string()),
+            Coin::new(10000u64, VALIDATOR_1_LST_DENOM_1.to_string()),
             None,
         ),
         // Completely new user tries to lock more than it is available in public_cap
         (
             user4,
             LOCK_EPOCH_LENGTH,
-            Coin::new(8001u64, IBC_DENOM_1.to_string()),
+            Coin::new(8001u64, VALIDATOR_1_LST_DENOM_1.to_string()),
             Some(
                 "Can not lock 1 tokens in known users cap. User had zero voting power in previous round.",
             ),
@@ -330,7 +339,7 @@ fn test_compounder_cap() {
         (
             user4,
             LOCK_EPOCH_LENGTH,
-            Coin::new(5000u64, IBC_DENOM_1.to_string()),
+            Coin::new(5000u64, VALIDATOR_1_LST_DENOM_1.to_string()),
             None,
         ),
     ];
@@ -361,7 +370,7 @@ fn test_compounder_cap() {
         (
             user1,
             LOCK_EPOCH_LENGTH,
-            Coin::new(3100u64, IBC_DENOM_1.to_string()),
+            Coin::new(3100u64, VALIDATOR_1_LST_DENOM_1.to_string()),
             None,
         ),
         // User 1 tries to lock in known_users_cap more than it should be allowed.
@@ -370,7 +379,7 @@ fn test_compounder_cap() {
         (
             user1,
             LOCK_EPOCH_LENGTH,
-            Coin::new(186u64, IBC_DENOM_1.to_string()),
+            Coin::new(186u64, VALIDATOR_1_LST_DENOM_1.to_string()),
             Some("Can not lock 186 tokens in known users cap. User reached the personal cap for locking tokens in the known users cap."),
         ),
         // User 1 locks in known_users_cap the maximum it should be allowed (285)
@@ -378,7 +387,7 @@ fn test_compounder_cap() {
         (
             user1,
             LOCK_EPOCH_LENGTH,
-            Coin::new(185u64, IBC_DENOM_1.to_string()),
+            Coin::new(185u64, VALIDATOR_1_LST_DENOM_1.to_string()),
             None,
         ),
         // User 2 locks in known_users_cap the maximum it should be allowed (571)
@@ -386,7 +395,7 @@ fn test_compounder_cap() {
         (
             user2,
             LOCK_EPOCH_LENGTH,
-            Coin::new(571u64, IBC_DENOM_1.to_string()),
+            Coin::new(571u64, VALIDATOR_1_LST_DENOM_1.to_string()),
             None,
         ),
         // User 3 locks in known_users_cap the maximum it should be allowed (1142)
@@ -394,7 +403,7 @@ fn test_compounder_cap() {
         (
             user3,
             LOCK_EPOCH_LENGTH,
-            Coin::new(1142u64, IBC_DENOM_1.to_string()),
+            Coin::new(1142u64, VALIDATOR_1_LST_DENOM_1.to_string()),
             None,
         ),
     ];
@@ -469,14 +478,14 @@ fn test_compounder_cap() {
         (
             user5,
             LOCK_EPOCH_LENGTH,
-            Coin::new(5002u64, IBC_DENOM_1.to_string()),
+            Coin::new(5002u64, VALIDATOR_1_LST_DENOM_1.to_string()),
             None,
         ),
         // Then the same user tries to lock more than allowed in public_cap, while known_users_cap is still active
         (
             user5,
             LOCK_EPOCH_LENGTH,
-            Coin::new(1u64, IBC_DENOM_1.to_string()),
+            Coin::new(1u64, VALIDATOR_1_LST_DENOM_1.to_string()),
             Some(
                 "Can not lock 1 tokens in known users cap. User had zero voting power in previous round.",
             ),
@@ -487,7 +496,7 @@ fn test_compounder_cap() {
         (
             user4,
             LOCK_EPOCH_LENGTH,
-            Coin::new(312u64, IBC_DENOM_1.to_string()),
+            Coin::new(312u64, VALIDATOR_1_LST_DENOM_1.to_string()),
             None,
         ),
     ];
@@ -502,7 +511,7 @@ fn test_compounder_cap() {
     let info = get_message_info(
         &deps.api,
         user5,
-        &[Coin::new(4688u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(4688u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: LOCK_EPOCH_LENGTH,

@@ -7,8 +7,8 @@ use crate::{
     state::{LOCK_ID_EXPIRY, LOCK_ID_TRACKING, REVERSE_LOCK_ID_TRACKING},
     testing::{
         get_address_as_str, get_default_instantiate_msg, get_message_info,
-        setup_lsm_token_info_provider_mock, IBC_DENOM_1, LSM_TOKEN_PROVIDER_ADDR,
-        ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
+        setup_lsm_token_info_provider_mock, LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS,
+        VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
     },
     testing_mocks::denom_trace_grpc_query_mock,
 };
@@ -18,7 +18,10 @@ fn test_get_current_lock_composition() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
@@ -92,7 +95,10 @@ fn test_get_lock_ancestor_depth() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
@@ -169,7 +175,10 @@ fn test_split_merge_composition_and_depth() {
     let user_address = "addr0000";
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
@@ -197,7 +206,10 @@ fn test_split_merge_composition_and_depth() {
 
     // Lock tokens
     let initial_lock_amount = Uint128::from(50000u128);
-    let funds = vec![Coin::new(initial_lock_amount.u128(), IBC_DENOM_1)];
+    let funds = vec![Coin::new(
+        initial_lock_amount.u128(),
+        VALIDATOR_1_LST_DENOM_1,
+    )];
     let lock_info = get_message_info(&deps.api, user_address, &funds);
     env.block.time = env.block.time.plus_nanos(1);
 

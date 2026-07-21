@@ -6,11 +6,11 @@ use crate::contract::{
     query_gatekeeper, query_tranches, query_user_votes, query_whitelist, query_whitelist_admins,
 };
 use crate::msg::{
-    CollectionInfo, ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo,
+    CollectionInfo, MigrateInfo, ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo,
     UpdateConfigData,
 };
 use crate::state::{
-    LockEntryV2, RoundLockPowerSchedule, Vote, CONSTANTS, TOKEN_INFO_PROVIDERS, USER_LOCKS,
+    LockEntry, RoundLockPowerSchedule, Vote, CONSTANTS, TOKEN_INFO_PROVIDERS, USER_LOCKS,
     VOTE_MAP_V2,
 };
 
@@ -19,7 +19,9 @@ use crate::testing_mocks::{
     contract_info_mock, denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock,
     token_info_providers_mock, MockQuerier, MockWasmQuerier, RoundsValidators, WasmQueryFunc,
 };
-use crate::token_manager::{TokenInfoProvider, TokenInfoProviderDerivative, TokenInfoProviderLSM};
+use crate::token_manager::{
+    TokenInfoProvider, TokenInfoProviderDerivative, TokenInfoProviderLSMHub,
+};
 use crate::{
     contract::{
         compute_current_round_id, execute, instantiate, query_all_user_lockups, query_constants,
@@ -48,18 +50,6 @@ pub const VALIDATOR_2_LST_DENOM_1: &str =
     "cosmosvaloper140l6y2gp3gxvay6qtn70re7z2s0gn57zfd832j/34205";
 pub const VALIDATOR_3_LST_DENOM_1: &str =
     "cosmosvaloper14upntdx8lf0f49t987mj99zksxnluanvu6x4lu/13608";
-
-// To get all IBC denom traces on some chain use:
-//      BINARY q ibc-transfer denom-traces --node NODE_RPC
-// Then find some denom trace whose base_denom is LST token and to obtain IBC denom use:
-//      BINARY q ibc-transfer denom-hash PATH/BASE_DENOM --node NODE_RPC
-// Note: the following IBC denoms do not match specific LST tokens on Neutron. They are just an arbitrary IBC denoms.
-pub const IBC_DENOM_1: &str =
-    "ibc/0EA38305D72BE22FD87E7C0D1002D36D59B59BC3C863078A54550F8E50C50EEE";
-pub const IBC_DENOM_2: &str =
-    "ibc/0BADD323A0FE849BCF0034BA8329771737EB54F2B6EA6F314A80520366338CFC";
-pub const IBC_DENOM_3: &str =
-    "ibc/0A5935F2493A9B8DE23899C4D30842B3E3DD69A147388D010F3C9BAA6D6C6D37";
 
 pub const ST_ATOM_ON_NEUTRON: &str =
     "ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA5222815620B3C";
@@ -102,12 +92,11 @@ pub fn get_default_cw721_collection_info() -> CollectionInfo {
 }
 
 pub fn get_default_lsm_token_info_provider_init_msg() -> TokenInfoProviderInstantiateMsg {
-    TokenInfoProviderInstantiateMsg::LSM {
+    TokenInfoProviderInstantiateMsg::LSMHub {
         code_id: 0,
         msg: Binary::default(),
         label: "lsm token info provider".to_string(),
         admin: None,
-        hub_transfer_channel_id: "channel-0".to_string(),
     }
 }
 
@@ -155,6 +144,11 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         slash_percentage_threshold: Decimal::percent(50),
         slash_tokens_receiver_addr: slashed_tokens_receiver_address,
         lockup_conversion_fee_percent: Decimal::percent(2),
+        migrate_info: MigrateInfo {
+            paused: false,
+            lock_id: 0,
+            proposal_id: 0,
+        },
     }
 }
 
@@ -216,10 +210,9 @@ pub fn setup_token_info_providers_with_extra_mocks(
                 .save(
                     &mut deps.storage,
                     contract_address.to_string(),
-                    &TokenInfoProvider::LSM(TokenInfoProviderLSM {
+                    &TokenInfoProvider::LSMHub(TokenInfoProviderLSMHub {
                         contract: contract_address.to_string(),
                         cache: HashMap::new(),
-                        hub_transfer_channel_id: "channel-0".to_string(),
                     }),
                 )
                 .unwrap();
@@ -470,7 +463,7 @@ fn deduplicate_whitelist_admins_test() {
 #[test]
 fn create_proposal_basic_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
 
     let (mut deps, mut env) = (mock_dependencies(no_op_grpc_query_mock()), mock_env());
     let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
@@ -586,14 +579,20 @@ fn vote_basic_test() {
 #[test]
 fn proposal_power_change_on_lock_and_refresh_test() {
     let user_address = "addr0000";
-    let user_token1 = Coin::new(1000u64, IBC_DENOM_1.to_string());
-    let user_token2 = Coin::new(1000u64, IBC_DENOM_2.to_string());
+    let user_token1 = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
+    let user_token2 = Coin::new(1000u64, VALIDATOR_2_LST_DENOM_1.to_string());
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
-            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
+            (
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+                VALIDATOR_2_LST_DENOM_1.to_string(),
+            ),
         ]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
@@ -1086,13 +1085,16 @@ fn past_start_time_test() {
 // round id to query proposals and votes.
 fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
     let user_address = "addr0000";
-    let user_token1 = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token1 = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
     let user_token2 = Coin::new(2000u64, ST_ATOM_ON_NEUTRON.to_string());
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
         HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
+            (
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            ),
             (
                 ST_ATOM_ON_NEUTRON.to_string(),
                 ST_ATOM_ON_STRIDE.to_string(),
@@ -1282,11 +1284,14 @@ fn vote_test_with_start_time(start_time: Timestamp, current_round_id: u64) {
 #[test]
 fn vote_extended_proposals_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
@@ -1556,11 +1561,14 @@ fn vote_extended_proposals_test() {
 #[test]
 fn switch_vote_between_short_and_long_props_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
@@ -1720,11 +1728,14 @@ fn switch_vote_between_short_and_long_props_test() {
 #[test]
 fn unvote_and_revote_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
@@ -1906,11 +1917,14 @@ fn unvote_and_revote_test() {
 #[test]
 fn unvote_forbidden_locks() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
@@ -1988,7 +2002,7 @@ fn unvote_forbidden_locks() {
 
     // Another user votes for the same proposal creating a new lock ID
     let other_user_address = "addr0001";
-    let other_user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let other_user_token = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
     let other_user_info = get_message_info(
         &deps.api,
         other_user_address,
@@ -2038,11 +2052,14 @@ fn unvote_forbidden_locks() {
 #[test]
 fn disable_voting_in_next_round_with_auto_voted_lock_test() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
@@ -2190,13 +2207,16 @@ fn disable_voting_in_next_round_with_auto_voted_lock_test() {
 fn multi_tranches_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let mut msg = get_default_instantiate_msg(&deps.api);
     msg.tranches = vec![
@@ -2306,7 +2326,7 @@ fn multi_tranches_test() {
     let info2 = get_message_info(
         &deps.api,
         "addr0001",
-        &[Coin::new(2000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(2000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -2329,7 +2349,7 @@ fn multi_tranches_test() {
     let info3 = get_message_info(
         &deps.api,
         "addr0002",
-        &[Coin::new(1u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -2390,7 +2410,7 @@ fn test_query_round_tranche_proposals_pagination() {
     let info = get_message_info(
         &deps.api,
         "addr0000",
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let msg = get_default_instantiate_msg(&deps.api);
 
@@ -2659,7 +2679,10 @@ fn total_voting_power_tracking_test() {
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
@@ -2685,7 +2708,7 @@ fn total_voting_power_tracking_test() {
     let info1 = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(10u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(10u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: ONE_MONTH_IN_NANO_SECONDS,
@@ -2704,7 +2727,7 @@ fn total_voting_power_tracking_test() {
     let info2 = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(20u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(20u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
@@ -2751,7 +2774,7 @@ fn total_voting_power_tracking_test() {
     let info2 = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(50u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(50u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: THREE_MONTHS_IN_NANO_SECONDS,
@@ -2792,14 +2815,14 @@ proptest! {
     fn relock_proptest(old_lock_remaining_time: u64, new_lock_duration: u8) {
         let grpc_query = denom_trace_grpc_query_mock(
             "transfer/channel-0".to_string(),
-            HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+            HashMap::from([(VALIDATOR_1_LST_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
         );
 
         let (mut deps, mut env) = (
             mock_dependencies(grpc_query),
             mock_env(),
         );
-        let info = get_message_info(&deps.api, "addr0001", &[Coin::new(1000u64, IBC_DENOM_1.to_string())]);
+        let info = get_message_info(&deps.api, "addr0001", &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())]);
         let msg = get_default_instantiate_msg(&deps.api);
 
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
@@ -3030,12 +3053,11 @@ fn contract_pausing_test() {
             proposal_id: 0,
         },
         ExecuteMsg::AddTokenInfoProvider {
-            token_info_provider: TokenInfoProviderInstantiateMsg::LSM {
+            token_info_provider: TokenInfoProviderInstantiateMsg::LSMHub {
                 code_id: 0,
                 msg: Binary::default(),
                 label: String::new(),
                 admin: None,
-                hub_transfer_channel_id: "channel-1".to_string(),
             },
         },
         ExecuteMsg::RemoveTokenInfoProvider {
@@ -3044,6 +3066,20 @@ fn contract_pausing_test() {
                 .addr_make("token info provider contract")
                 .to_string(),
         },
+    ];
+
+    for msg in msgs {
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("Paused"));
+    }
+
+    // UpdateTokenGroupsRatios is allowed to execute while paused, so that token group
+    // ratios can still be updated for lockups migrated from the previous deployment.
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
         ExecuteMsg::UpdateTokenGroupsRatios {
             changes: vec![TokenGroupRatioChange {
                 token_group_id: "token_group_id".to_string(),
@@ -3051,12 +3087,9 @@ fn contract_pausing_test() {
                 new_ratio: Decimal::zero(),
             }],
         },
-    ];
-
-    for msg in msgs {
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-        assert!(res.is_err());
-        assert!(res.unwrap_err().to_string().contains("Paused"));
+    );
+    if let Err(err) = res {
+        assert!(!err.to_string().contains("Paused"));
     }
 }
 
@@ -3183,7 +3216,10 @@ pub fn pilot_round_lock_duration_test() {
     for case in test_cases {
         let grpc_query = denom_trace_grpc_query_mock(
             "transfer/channel-0".to_string(),
-            HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+            HashMap::from([(
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            )]),
         );
         let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
         let mut info: MessageInfo = get_message_info(&deps.api, "addr0000", &[]);
@@ -3214,7 +3250,7 @@ pub fn pilot_round_lock_duration_test() {
         info = get_message_info(
             &deps.api,
             "addr0000",
-            &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+            &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
         );
 
         let lock_msg = ExecuteMsg::LockTokens {
@@ -3327,7 +3363,10 @@ fn test_refresh_multiple_locks() {
 
         let grpc_query = denom_trace_grpc_query_mock(
             "transfer/channel-0".to_string(),
-            HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+            HashMap::from([(
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
+            )]),
         );
         let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
         let info = get_message_info(&deps.api, sender, &[]);
@@ -3361,7 +3400,7 @@ fn test_refresh_multiple_locks() {
             let info = get_message_info(
                 &deps.api,
                 locker,
-                &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+                &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
             );
             let lock_msg = ExecuteMsg::LockTokens {
                 lock_duration: duration,
@@ -3466,14 +3505,14 @@ fn test_get_vote_for_update() {
         time_weighted_shares: (validator_2.clone(), Decimal::one()),
     };
 
-    let lock_entry_1 = LockEntryV2 {
+    let lock_entry_1 = LockEntry {
         lock_id: lockup_id_1,
         owner: sender.clone(),
         funds: Coin::default(),
         lock_start: Timestamp::from_seconds(10),
         lock_end: Timestamp::from_seconds(100),
     };
-    let lock_entry_2 = LockEntryV2 {
+    let lock_entry_2 = LockEntry {
         lock_id: lockup_id_2,
         owner: sender.clone(),
         funds: Coin::default(),
@@ -3484,7 +3523,7 @@ fn test_get_vote_for_update() {
     struct TestCase {
         description: &'static str,
         votes_to_add: Vec<(u64, Vote)>,
-        old_lock_entry: Option<LockEntryV2>,
+        old_lock_entry: Option<LockEntry>,
         validator: String,
         expected_vote_to_update: Option<Vote>,
     }
@@ -3591,11 +3630,14 @@ fn test_get_vote_for_update() {
 #[test]
 fn test_cannot_vote_while_long_deployment_ongoing() {
     let user_address = "addr0000";
-    let user_token = Coin::new(1000u64, IBC_DENOM_1.to_string());
+    let user_token = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
 
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
@@ -3742,7 +3784,10 @@ fn test_set_gatekeeper() {
     // Setup initial contract state
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
 
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());

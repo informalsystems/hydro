@@ -6,8 +6,8 @@ use crate::{
     ibc_transfer::{NeutronMsgTransfer, NEUTRON_TRANSFER_TYPE_URL},
     msg::ExecuteMsg,
     testing::{
-        get_default_instantiate_msg, get_message_info, DEFAULT_WHITELIST_ADMIN, IBC_DENOM_1,
-        ST_ATOM_ON_NEUTRON,
+        get_default_instantiate_msg, get_message_info, DEFAULT_WHITELIST_ADMIN, ST_ATOM_ON_NEUTRON,
+        VALIDATOR_1_LST_DENOM_1,
     },
     testing_mocks::{mock_dependencies, no_op_grpc_query_mock},
 };
@@ -44,9 +44,8 @@ fn transfer_funds_unauthorized_test() {
         env,
         non_admin_info,
         ExecuteMsg::TransferFundsToHub {
-            denoms: vec![IBC_DENOM_1.to_string()],
-            recipient_hub: HUB_RECIPIENT.to_string(),
-            recipient_stride: STRIDE_RECIPIENT.to_string(),
+            denoms: vec![VALIDATOR_1_LST_DENOM_1.to_string()],
+            recipient: HUB_RECIPIENT.to_string(),
             ibc_fee: ibc_fee(),
         },
     );
@@ -67,9 +66,8 @@ fn transfer_funds_invalid_recipient_test() {
         env,
         admin_info,
         ExecuteMsg::TransferFundsToHub {
-            denoms: vec![IBC_DENOM_1.to_string()],
-            recipient_hub: "not-a-valid-address".to_string(),
-            recipient_stride: STRIDE_RECIPIENT.to_string(),
+            denoms: vec![VALIDATOR_1_LST_DENOM_1.to_string()],
+            recipient: "not-a-valid-address".to_string(),
             ibc_fee: ibc_fee(),
         },
     );
@@ -87,7 +85,7 @@ fn transfer_funds_regular_denom_test() {
 
     deps.querier.update_balance(
         env.contract.address.clone(),
-        vec![Coin::new(1000u128, IBC_DENOM_1.to_string())],
+        vec![Coin::new(1000u128, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
 
     let res = execute(
@@ -95,9 +93,8 @@ fn transfer_funds_regular_denom_test() {
         env,
         admin_info,
         ExecuteMsg::TransferFundsToHub {
-            denoms: vec![IBC_DENOM_1.to_string()],
-            recipient_hub: HUB_RECIPIENT.to_string(),
-            recipient_stride: STRIDE_RECIPIENT.to_string(),
+            denoms: vec![VALIDATOR_1_LST_DENOM_1.to_string()],
+            recipient: HUB_RECIPIENT.to_string(),
             ibc_fee: ibc_fee(),
         },
     )
@@ -165,10 +162,10 @@ fn transfer_funds_skips_zero_balance_denoms_test() {
     let res = instantiate(deps.as_mut(), env.clone(), admin_info.clone(), msg);
     assert!(res.is_ok());
 
-    // Only IBC_DENOM_1 has a nonzero balance; the other two should be skipped without error.
+    // Only VALIDATOR_1_LST_DENOM_1 has a nonzero balance; the other two should be skipped without error.
     deps.querier.update_balance(
         env.contract.address.clone(),
-        vec![Coin::new(1000u128, IBC_DENOM_1.to_string())],
+        vec![Coin::new(1000u128, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
 
     let res = execute(
@@ -177,7 +174,7 @@ fn transfer_funds_skips_zero_balance_denoms_test() {
         admin_info,
         ExecuteMsg::TransferFundsToHub {
             denoms: vec![
-                IBC_DENOM_1.to_string(),
+                VALIDATOR_1_LST_DENOM_1.to_string(),
                 ST_ATOM_ON_NEUTRON.to_string(),
                 "ibc/unrelated-empty-denom".to_string(),
             ],
@@ -206,9 +203,8 @@ fn transfer_funds_all_zero_balances_produces_no_messages_test() {
         env,
         admin_info,
         ExecuteMsg::TransferFundsToHub {
-            denoms: vec![IBC_DENOM_1.to_string()],
-            recipient_hub: HUB_RECIPIENT.to_string(),
-            recipient_stride: STRIDE_RECIPIENT.to_string(),
+            denoms: vec![VALIDATOR_1_LST_DENOM_1.to_string()],
+            recipient: HUB_RECIPIENT.to_string(),
             ibc_fee: ibc_fee(),
         },
     )

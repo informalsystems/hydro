@@ -8,8 +8,7 @@ use crate::{
     state::{HEIGHT_TO_ROUND, ROUND_TO_HEIGHT_RANGE, USER_LOCKS},
     testing::{
         get_default_instantiate_msg, get_message_info, setup_lsm_token_info_provider_mock,
-        IBC_DENOM_1, LSM_TOKEN_PROVIDER_ADDR, ONE_DAY_IN_NANO_SECONDS, VALIDATOR_1,
-        VALIDATOR_1_LST_DENOM_1,
+        LSM_TOKEN_PROVIDER_ADDR, ONE_DAY_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
     },
     testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies},
 };
@@ -18,7 +17,10 @@ use crate::{
 fn test_user_locks_snapshoting() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
 
     let user = "addr0000";
@@ -60,7 +62,7 @@ fn test_user_locks_snapshoting() {
     let info = get_message_info(
         &deps.api,
         user,
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: instantiate_msg.lock_epoch_length,

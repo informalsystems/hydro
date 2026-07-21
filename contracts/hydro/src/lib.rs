@@ -55,9 +55,6 @@ mod testing_locking_unlocking;
 mod testing_cw721;
 
 #[cfg(test)]
-mod testing_lockup_conversion_dtoken;
-
-#[cfg(test)]
 mod testing_lockup_conversion;
 
 #[cfg(test)]
@@ -74,3 +71,6 @@ mod testing_buyout_pending_slash;
 
 #[cfg(test)]
 mod testing_transfer_funds;
+
+#[cfg(test)]
+mod testing_mint_lockups;

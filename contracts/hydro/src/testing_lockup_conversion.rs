@@ -7,14 +7,14 @@ use crate::{
     cw721::query_all_tokens,
     msg::{ExecuteMsg, ProposalToLockups},
     state::{
-        AVAILABLE_CONVERSION_FUNDS, LOCKED_TOKENS, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES, VOTE_MAP_V2,
+        AVAILABLE_CONVERSION_FUNDS, LOCKED_TOKENS, LOCKS_MAP, LOCKS_PENDING_SLASHES, VOTE_MAP_V2,
     },
     testing::{
         get_d_atom_denom_info_mock_data, get_default_instantiate_msg, get_message_info,
         get_st_atom_denom_info_mock_data, get_validator_info_mock_data,
-        setup_multiple_token_info_provider_mocks, D_ATOM_ON_NEUTRON, IBC_DENOM_1, IBC_DENOM_2,
-        LSM_TOKEN_PROVIDER_ADDR, ST_ATOM_ON_NEUTRON, ST_ATOM_TOKEN_GROUP, VALIDATOR_1,
-        VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
+        setup_multiple_token_info_provider_mocks, D_ATOM_ON_NEUTRON, LSM_TOKEN_PROVIDER_ADDR,
+        ST_ATOM_ON_NEUTRON, ST_ATOM_TOKEN_GROUP, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
+        VALIDATOR_2_LST_DENOM_1,
     },
     testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies},
 };
@@ -23,7 +23,10 @@ use crate::{
 fn lockup_conversion_test() {
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
 
     let round_id = 0;
@@ -166,7 +169,7 @@ fn lockup_conversion_test() {
         deps.as_ref(),
         env.clone(),
         lock_id1,
-        IBC_DENOM_1.to_string(),
+        VALIDATOR_1_LST_DENOM_1.to_string(),
         false,
     )
     .unwrap();
@@ -176,7 +179,7 @@ fn lockup_conversion_test() {
         deps.as_ref(),
         env.clone(),
         lock_id1,
-        IBC_DENOM_1.to_string(),
+        VALIDATOR_1_LST_DENOM_1.to_string(),
         true,
     )
     .unwrap();
@@ -190,7 +193,7 @@ fn lockup_conversion_test() {
         user2_info.clone(),
         ExecuteMsg::ConvertLockup {
             lock_id: lock_id1,
-            target_denom: IBC_DENOM_1.to_string(),
+            target_denom: VALIDATOR_1_LST_DENOM_1.to_string(),
         },
     );
     assert!(res.unwrap_err().to_string().contains("Unauthorized"));
@@ -199,7 +202,7 @@ fn lockup_conversion_test() {
     let user1_info = get_message_info(
         &deps.api,
         "addr0002",
-        &[Coin::new(2000u128, IBC_DENOM_2.to_string())],
+        &[Coin::new(2000u128, VALIDATOR_2_LST_DENOM_1.to_string())],
     );
     let res = execute(
         deps.as_mut(),
@@ -207,13 +210,13 @@ fn lockup_conversion_test() {
         user1_info.clone(),
         ExecuteMsg::ConvertLockup {
             lock_id: lock_id1,
-            target_denom: IBC_DENOM_1.to_string(),
+            target_denom: VALIDATOR_1_LST_DENOM_1.to_string(),
         },
     );
     assert!(res
         .unwrap_err()
         .to_string()
-        .contains(format!("Must send reserve token '{IBC_DENOM_1}'").as_str()));
+        .contains(format!("Must send reserve token '{VALIDATOR_1_LST_DENOM_1}'").as_str()));
 
     // Have lockup owner try to convert to the same denom - should fail
     let user1_info = get_message_info(&deps.api, "addr0002", &[]);
@@ -254,16 +257,16 @@ fn lockup_conversion_test() {
         user1_info.clone(),
         ExecuteMsg::ConvertLockup {
             lock_id: lock_id1,
-            target_denom: IBC_DENOM_1.to_string(),
+            target_denom: VALIDATOR_1_LST_DENOM_1.to_string(),
         },
     );
-    assert!(res.unwrap_err().to_string().contains(format!("insufficient funds to perform conversion into denom: {IBC_DENOM_1}. required funds: {}, available funds: {}", Uint128::new(1176), Uint128::new(0)).as_str()));
+    assert!(res.unwrap_err().to_string().contains(format!("insufficient funds to perform conversion into denom: {VALIDATOR_1_LST_DENOM_1}. required funds: {}, available funds: {}", Uint128::new(1176), Uint128::new(0)).as_str()));
 
     // Have lockup owner try to convert to denom while providing insufficient funds - should fail
     let user1_info = get_message_info(
         &deps.api,
         "addr0002",
-        &[Coin::new(1199u128, IBC_DENOM_1.to_string())],
+        &[Coin::new(1199u128, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let res = execute(
         deps.as_mut(),
@@ -271,7 +274,7 @@ fn lockup_conversion_test() {
         user1_info.clone(),
         ExecuteMsg::ConvertLockup {
             lock_id: lock_id1,
-            target_denom: IBC_DENOM_1.to_string(),
+            target_denom: VALIDATOR_1_LST_DENOM_1.to_string(),
         },
     );
     assert!(res.unwrap_err().to_string().contains(format!("funds provided for conversion must be exact match to required amount; provided: {}, required: {}", Uint128::new(1199), Uint128::new(1200)).as_str()));
@@ -280,7 +283,7 @@ fn lockup_conversion_test() {
     let user1_info = get_message_info(
         &deps.api,
         "addr0002",
-        &[Coin::new(1200u128, IBC_DENOM_1.to_string())],
+        &[Coin::new(1200u128, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let res = execute(
         deps.as_mut(),
@@ -288,7 +291,7 @@ fn lockup_conversion_test() {
         user1_info.clone(),
         ExecuteMsg::ConvertLockup {
             lock_id: lock_id1,
-            target_denom: IBC_DENOM_1.to_string(),
+            target_denom: VALIDATOR_1_LST_DENOM_1.to_string(),
         },
     );
     assert!(res.is_ok());
@@ -311,8 +314,11 @@ fn lockup_conversion_test() {
 
     // Verify that lockup entry has been updated
     let expected_lock_funds = Uint128::new(1200);
-    let updated_lock = LOCKS_MAP_V2.load(&deps.storage, lock_id1).unwrap();
-    assert_eq!(updated_lock.funds.denom, IBC_DENOM_1.to_string());
+    let updated_lock = LOCKS_MAP.load(&deps.storage, lock_id1).unwrap();
+    assert_eq!(
+        updated_lock.funds.denom,
+        VALIDATOR_1_LST_DENOM_1.to_string()
+    );
     assert_eq!(updated_lock.funds.amount, expected_lock_funds);
 
     // Verify that the lockup is no longer a token (since it is LSM lockup now)
@@ -401,12 +407,16 @@ fn lockup_conversion_test() {
     // Even though previous execute failed, the storage update wasn't reverted, so we need to revert it manually
     assert_eq!(
         AVAILABLE_CONVERSION_FUNDS
-            .load(&deps.storage, IBC_DENOM_1.to_string())
+            .load(&deps.storage, VALIDATOR_1_LST_DENOM_1.to_string())
             .unwrap(),
         Uint128::new(1200) // this value should be 0
     );
     AVAILABLE_CONVERSION_FUNDS
-        .save(&mut deps.storage, IBC_DENOM_1.to_string(), &Uint128::zero())
+        .save(
+            &mut deps.storage,
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            &Uint128::zero(),
+        )
         .unwrap();
 
     // Have whitelist admin provide missing funds to convert into stATOM
@@ -453,7 +463,7 @@ fn lockup_conversion_test() {
         .unwrap();
 
     // Verify that lockup entry has been updated
-    let updated_lock = LOCKS_MAP_V2.load(&deps.storage, lock_id1).unwrap();
+    let updated_lock = LOCKS_MAP.load(&deps.storage, lock_id1).unwrap();
     assert_eq!(updated_lock.funds.denom, ST_ATOM_ON_NEUTRON.to_string());
     assert_eq!(updated_lock.funds.amount, expected_lock_funds);
 
@@ -501,7 +511,7 @@ fn lockup_conversion_test() {
     // Verify that the available conversion funds have been updated for both source and target denoms
     assert_eq!(
         AVAILABLE_CONVERSION_FUNDS
-            .load(&deps.storage, IBC_DENOM_1.to_string())
+            .load(&deps.storage, VALIDATOR_1_LST_DENOM_1.to_string())
             .unwrap(),
         Uint128::new(1200)
     );
@@ -513,12 +523,12 @@ fn lockup_conversion_test() {
         Uint128::zero()
     );
 
-    // Have a whitelist admin withdraw all available conversion funds for IBC_DENOM_1 by specifying
+    // Have a whitelist admin withdraw all available conversion funds for VALIDATOR_1_LST_DENOM_1 by specifying
     // more than the available amount- should succeed and withdraw only what is available
     let whitelist_admin_info = get_message_info(&deps.api, "addr0001", &[]);
 
     let msg = ExecuteMsg::WithdrawConversionFunds {
-        funds_to_withdraw: vec![Coin::new(1500u128, IBC_DENOM_1.to_string())],
+        funds_to_withdraw: vec![Coin::new(1500u128, VALIDATOR_1_LST_DENOM_1.to_string())],
     };
     let res = execute(
         deps.as_mut(),
@@ -528,7 +538,7 @@ fn lockup_conversion_test() {
     );
     assert!(res.is_ok());
 
-    // Verify that the correct number of IBC_DENOM_1 tokens are sent back to the whitelist admin
+    // Verify that the correct number of VALIDATOR_1_LST_DENOM_1 tokens are sent back to the whitelist admin
     let messages = res.unwrap().messages;
     assert_eq!(messages.len(), 1);
 
@@ -536,7 +546,7 @@ fn lockup_conversion_test() {
         cosmwasm_std::CosmosMsg::Bank(bank_msg) => match bank_msg {
             cosmwasm_std::BankMsg::Send { to_address, amount } => {
                 assert_eq!(to_address, whitelist_admin_info.sender.to_string());
-                assert_eq!(amount[0].denom, IBC_DENOM_1.to_string());
+                assert_eq!(amount[0].denom, VALIDATOR_1_LST_DENOM_1.to_string());
                 assert_eq!(amount[0].amount, Uint128::new(1200));
             }
             _ => panic!("expected bank send message"),
@@ -547,7 +557,7 @@ fn lockup_conversion_test() {
     // Verify that the available conversion funds have been updated correctly
     assert_eq!(
         AVAILABLE_CONVERSION_FUNDS
-            .load(&deps.storage, IBC_DENOM_1.to_string())
+            .load(&deps.storage, VALIDATOR_1_LST_DENOM_1.to_string())
             .unwrap(),
         Uint128::zero()
     );
@@ -559,7 +569,10 @@ fn query_all_available_conversion_funds_test() {
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
 
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -730,7 +743,10 @@ fn query_all_available_conversion_funds_pagination_test() {
 
     let grpc_query = denom_trace_grpc_query_mock(
         "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
+        HashMap::from([(
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+            VALIDATOR_1_LST_DENOM_1.to_string(),
+        )]),
     );
 
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
