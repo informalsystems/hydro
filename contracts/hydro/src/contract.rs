@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use bech32::{Bech32, Hrp};
 use cosmwasm_std::{from_json, CosmosMsg};
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 #[allow(unused_imports)]
@@ -19,8 +18,6 @@ use crate::gatekeeper::{
     build_gatekeeper_lock_tokens_msg, build_init_gatekeeper_msg, gatekeeper_handle_submsg_reply,
 };
 use crate::governance::{query_total_power_at_height, query_voting_power_at_height};
-use crate::ibc_transfer::build_neutron_ibc_transfer_msg;
-use crate::lsm_integration::TRANSFER_PORT;
 use crate::msg::{
     CollectionInfo, ExecuteMsg, InstantiateMsg, LiquidityDeployment, LockTokensProof, LockupToMint,
     ProposalToLockups, ReplyPayload, TokenInfoProviderInstantiateMsg, TrancheInfo,
@@ -83,24 +80,10 @@ pub const MAX_LOCK_ENTRIES: usize = 100;
 
 const D_ATOM_HUB_DENOM: &str =
     "ibc/AFC2F1B2FD45D549E34445E63921ECDECF1EAC68DA72412C2E087BEB503693F2";
-// const ST_ATOM_HUB_DENOM: &str =
-//     "ibc/B05539B66B72E2739B986B86391E5D08F12B8D5D2C2A7F8F8CF9ADF674DFA231";
-
-pub const NATIVE_TOKEN_DENOM: &str = "untrn";
 
 pub const MIN_DEPLOYMENT_DURATION: u64 = 1;
 
 pub const MIN_SPLIT_LOCK_SIZE: Uint128 = Uint128::new(10_000);
-
-/// Constants used only for migration purposes
-const NEUTRON_HUB_TRANSFER_CHANNEL: &str = "channel-1"; // Neutron -> Hub (direct)
-const NEUTRON_STRIDE_TRANSFER_CHANNEL: &str = "channel-8"; // Neutron -> Stride (first PFM hop)
-const STRIDE_HUB_TRANSFER_CHANNEL: &str = "channel-0"; // Stride -> Hub (PFM forward target)
-const ST_ATOM_ON_NEUTRON_DENOM: &str =
-    "ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA5222815620B3C";
-const IBC_TRANSFER_TIMEOUT_SECONDS: u64 = 1800; // 30 minutes
-const HUB_ADDRESS_PREFIX: &str = "cosmos";
-const STRIDE_ADDRESS_PREFIX: &str = "stride";
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -164,6 +147,14 @@ pub fn instantiate(
     LOCKED_TOKENS.save(deps.storage, &0)?;
     LOCK_ID.save(deps.storage, &msg.migrate_info.lock_id)?;
     PROP_ID.save(deps.storage, &msg.migrate_info.proposal_id)?;
+
+    for conversion_funds in msg.migrate_info.conversion_funds {
+        AVAILABLE_CONVERSION_FUNDS.save(
+            deps.storage,
+            conversion_funds.denom.clone(),
+            &conversion_funds.amount,
+        )?;
+    }
 
     let mut whitelist_admins: Vec<Addr> = vec![];
     let mut whitelist: Vec<Addr> = vec![];
@@ -421,12 +412,6 @@ pub fn execute(
         ExecuteMsg::BuyoutPendingSlash { lock_id } => {
             buyout_pending_slash(deps, env, info, &constants, lock_id)
         }
-        ExecuteMsg::TransferFundsToHub {
-            denoms,
-            recipient_hub,
-            recipient_stride,
-            ibc_fee,
-        } => transfer_funds_to_hub(deps, env, info, denoms, recipient, ibc_fee),
         ExecuteMsg::MintLockups { lockups } => mint_lockups(deps, env, info, &constants, lockups),
     }
 }
@@ -2832,106 +2817,6 @@ fn withdraw_conversion_funds(
     }
 
     Ok(response)
-}
-
-// TransferFundsToHub(denoms, recipient_hub, recipient_stride, ibc_fee):
-// Validate that the sender is a whitelist admin and that recipient_hub and recipient_stride are valid addresses.
-// For each denom, query the contract's own balance and, if non-zero, IBC-transfer it to
-// recipient. All denoms go directly Neutron -> Hub, except stATOM, which is routed
-// Neutron -> Stride -> Hub via a PFM memo. Neutron's ibc-transfer-with-fee middleware requires
-// relayer fees to be attached, or the packet will fail to relay; ibc_fee is used for both the
-// ack_fee and the timeout_fee.
-fn transfer_funds_to_hub(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    denoms: Vec<String>,
-    recipient_hub: String,
-    recipient_stride: String,
-    ibc_fee: Coin,
-) -> Result<Response, ContractError> {
-    validate_sender_is_whitelist_admin(&deps, &info)?;
-
-    match bech32::decode(&recipient_hub) {
-        Ok((hrp, _)) if hrp.as_str() == HUB_ADDRESS_PREFIX => (),
-        _ => {
-            return Err(ContractError::Std(StdError::generic_err(format!(
-                "recipient_hub must be a valid '{HUB_ADDRESS_PREFIX}' bech32 address"
-            ))))
-        }
-    };
-
-    // stATOM IBC transfers require a valid Stride address as the recipient, otherwise the transfer will fail.
-    match bech32::decode(&recipient_stride) {
-        Ok((hrp, _)) if hrp.as_str() == STRIDE_ADDRESS_PREFIX => (),
-        _ => {
-            return Err(ContractError::Std(StdError::generic_err(format!(
-                "recipient_stride must be a valid '{STRIDE_ADDRESS_PREFIX}' bech32 address"
-            ))))
-        }
-    };
-
-    let timeout_nanos = env
-        .block
-        .time
-        .plus_seconds(IBC_TRANSFER_TIMEOUT_SECONDS)
-        .nanos();
-
-    let mut messages = vec![];
-    let mut transferred_funds: Vec<Coin> = vec![];
-
-    // Remove duplicates and trim whitespace from denoms
-    let denoms = HashSet::<String>::from_iter(denoms.iter().map(|d| d.trim().to_string()));
-
-    for denom in denoms {
-        let balance = deps
-            .querier
-            .query_balance(env.contract.address.clone(), denom.clone())?;
-
-        if balance.amount.is_zero() {
-            continue;
-        }
-
-        let (channel_id, to_address, memo) = if denom == ST_ATOM_ON_NEUTRON_DENOM {
-            let memo = format!(
-                r#"{{"forward":{{"receiver":"{recipient_hub}","port":"{TRANSFER_PORT}","channel":"{STRIDE_HUB_TRANSFER_CHANNEL}"}}}}"#
-            );
-            (
-                NEUTRON_STRIDE_TRANSFER_CHANNEL,
-                recipient_stride.clone(),
-                Some(memo),
-            )
-        } else {
-            (NEUTRON_HUB_TRANSFER_CHANNEL, recipient_hub.clone(), None)
-        };
-
-        messages.push(build_neutron_ibc_transfer_msg(
-            TRANSFER_PORT,
-            channel_id,
-            env.contract.address.to_string(),
-            to_address,
-            balance.clone(),
-            timeout_nanos,
-            memo,
-            ibc_fee.clone(),
-        ));
-
-        transferred_funds.push(balance);
-    }
-
-    Ok(Response::new()
-        .add_messages(messages)
-        .add_attribute("action", "transfer_funds_to_hub")
-        .add_attribute("sender", info.sender)
-        .add_attribute("recipient", recipient_hub)
-        .add_attribute(
-            "transferred_funds",
-            transferred_funds
-                .iter()
-                .map(|c| c.to_string())
-                .collect::<Vec<String>>()
-                .join(", "),
-        ))
 }
 
 /// Allows a user to buy out (i.e., pay off) the pending slash on a specific lockup.

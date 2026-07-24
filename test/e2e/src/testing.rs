@@ -94,6 +94,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
                 paused: false,
                 lock_id: 0,
                 proposal_id: 0,
+                conversion_funds: vec![],
             },
         },
         Some(&Addr::unchecked(whitelist_admin_address.clone())),

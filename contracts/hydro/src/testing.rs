@@ -148,6 +148,7 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
             paused: false,
             lock_id: 0,
             proposal_id: 0,
+            conversion_funds: vec![],
         },
     }
 }

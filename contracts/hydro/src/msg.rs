@@ -54,6 +54,7 @@ pub struct MigrateInfo {
     pub paused: bool,
     pub lock_id: u64,
     pub proposal_id: u64,
+    pub conversion_funds: Vec<Coin>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -292,17 +293,6 @@ pub enum ExecuteMsg {
     /// Allows users to remove/reduce pending slash fully or partially by inserting funds
     BuyoutPendingSlash {
         lock_id: u64,
-    },
-
-    /// For migration purposes, allows whitelisted admins to transfer contract-held funds to a Cosmos Hub address via IBC.
-    /// All denoms are sent directly Neutron -> Hub, except stATOM, which is routed Neutron -> Stride -> Hub using PFM.
-    /// `ibc_fee` is required by Neutron's ibc-transfer-with-fee middleware and is applied as both
-    /// the ack_fee and the timeout_fee (recv_fee is always zero, per Neutron's requirement).
-    TransferFundsToHub {
-        denoms: Vec<String>,
-        recipient_hub: String,
-        recipient_stride: String,
-        ibc_fee: Coin,
     },
 
     /// For migration purposes, allows whitelisted accounts to directly mint historical lockups

@@ -32,7 +32,6 @@ ibc-proto = { git = "https://github.com/cosmos/ibc-proto-rs", rev = "83b7f1075fd
 prost = "0.13"
 prost-types = "0.13"
 cw-orch = { workspace = true }
-bech32 = { workspace = true }
 serde-json-wasm = { workspace = true }
 interface = { path = "../../packages/interface" }
 
