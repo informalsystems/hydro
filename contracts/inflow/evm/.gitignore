@@ -1,22 +1,18 @@
-# Node modules
-/node_modules
+# Foundry build output
+/out
 
-# Compilation output
-/dist
-
-# pnpm deploy output
-/bundle
-
-# Hardhat Build Artifacts
-/artifacts
-
-# Hardhat compilation (v2) support directory
+# Foundry compilation cache
 /cache
 
-# Typechain output
-/types
-
-# Hardhat coverage reports
+# Foundry coverage reports
 /coverage
 
-/package-lock.json
+# Forge libraries
+/lib
+
+# Foundry script runs output
+/broadcast
+
+# Local secrets — never commit
+.env
+.env.local

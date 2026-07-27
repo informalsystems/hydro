@@ -1,0 +1,725 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {InflowAdapterLib} from "./InflowAdapterLib.sol";
+import {InflowWithdrawalQueueLib} from "./InflowWithdrawalQueueLib.sol";
+
+/// @title InflowVault
+/// @notice ERC-4626 tokenised vault with adapter-based deployment, a two-phase withdrawal
+/// queue, and an embedded high-water-mark performance fee system.
+///
+/// Design highlights
+/// -----------------
+/// * Vault accepts deposits of a single asset.
+/// * totalAssets() = vault balance + untracked adapter positions + deployedAmount
+///                 - pending withdrawal reserves.
+/// * All-or-nothing withdrawal: if the vault cannot immediately cover a redemption,
+///   shares are burned instantly and the claim is queued (FIFO).
+/// * Fee accrual is based on a high-water-mark model.
+/// * Adapters can be Automated (included in deposit/withdraw flows) or Manual (explicit
+///   calls only), and Tracked (counted in deployedAmount) or Untracked (queried directly).
+contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgradeable {
+    using Math for uint256;
+    using InflowAdapterLib for InflowAdapterLib.AdapterStorage;
+    using InflowWithdrawalQueueLib for InflowWithdrawalQueueLib.QueueStorage;
+
+    // ERRORS
+
+    error Unauthorized();
+    error InvalidFeeRate();
+    error FeeRecipientNotSet();
+    error NoSharesIssued();
+    error ZeroAmount();
+    error ZeroAddress();
+    error ZeroShares();
+    error DepositCapReached();
+    error NotWhitelisted();
+    error AlreadyWhitelisted();
+    error WhitelistCannotBeEmpty();
+    error AlreadyDeployedAmountWhitelisted();
+    error DeployedAmountWhitelistCannotBeEmpty();
+    error TokenIsDepositAsset();
+    error InsufficientAvailableBalance(uint256 available, uint256 requested);
+
+    // EVENTS
+
+    event WhitelistAdded(address indexed addr);
+    event WhitelistRemoved(address indexed addr);
+    event DepositCapUpdated(uint256 newCap);
+    event DeployedAmountWhitelistAdded(address indexed addr);
+    event DeployedAmountWhitelistRemoved(address indexed addr);
+    event MaxWithdrawalsPerUserUpdated(uint256 newMax);
+
+    event AdapterFundsMoved(string fromName, string toName, address indexed token, uint256 amount);
+
+    event AdapterRegistered(string name, address indexed addr, bool automated, bool tracked);
+    event AdapterUnregistered(string name, address indexed addr);
+    event AdapterAllocationModeUpdated(string name, bool automated);
+    event AdapterDeploymentTrackingUpdated(string name, bool tracked);
+
+    event DeployedAmountSubmitted(address indexed caller, uint256 newAmount);
+    event FeeConfigUpdated(uint256 feeRate, address feeRecipient);
+    event FeesAccrued(address indexed recipient, uint256 sharesMinted, uint256 sharePrice, uint256 feeAssets);
+
+    /// @notice Emitted when a withdrawal cannot be fulfilled immediately and is queued.
+    event WithdrawalQueued(
+        uint256 indexed id, address indexed owner, address indexed receiver, uint256 shares, uint256 assets
+    );
+    // WithdrawalFunded and WithdrawalClaimed are emitted by
+    // InflowWithdrawalQueueLib (DELEGATECALL context = vault address). They are re-declared
+    // here so they appear in the vault's ABI and clients can decode them without the library ABI.
+    event WithdrawalFunded(uint256 indexed id);
+    event WithdrawalClaimed(uint256 indexed id, address indexed receiver, uint256 assets);
+
+    event WithdrawalCancelled(
+        address indexed owner, uint256[] canceledWithdrawalIds, uint256 sharesBurned, uint256 sharesMintedBack
+    );
+
+    event WithdrawForDeployment(address indexed caller, uint256 requested, uint256 withdrawn);
+    event DepositFromDeployment(address indexed caller, uint256 amount);
+
+    // CONSTANTS
+
+    /// @dev 1e18 fixed-point unit used for fee rate and share price arithmetic.
+    uint256 private constant WAD = 1e18;
+
+    // ERC-7201 NAMESPACED STORAGE
+    //
+    // All vault-owned state lives in a single struct stored at a deterministic
+    // pseudo-random slot so it cannot collide with parent-contract storage (OZ v5
+    // already uses ERC-7201 internally) or change if the inheritance order is ever
+    // modified. To add new state variables in a future upgrade, append fields to
+    // VaultStorage — do not insert between existing fields.
+    //
+    // Slot derivation (ERC-7201):
+    //   keccak256(abi.encode(uint256(keccak256("hydro.inflow.vault")) - 1)) & ~bytes32(uint256(0xff))
+
+    /// @custom:storage-location erc7201:hydro.inflow.vault
+    struct VaultStorage {
+        // Access control
+        mapping(address => bool) whitelist;
+        uint256 whitelistCount;
+        mapping(address => bool) deployedAmountWhitelist;
+        uint256 deployedAmountWhitelistCount;
+        // Vault config
+        uint256 depositCap;
+        uint256 maxWithdrawalsPerUser;
+        // Deployed amount represents funds that left the vault for external deployment (principal + yield).
+        uint256 deployedAmount;
+        // Fee system
+        uint256 feeRate; // WAD: 0 = disabled, 1e18 = 100 %
+        address feeRecipient;
+        uint256 highWaterMarkPrice; // WAD share price during the last fee accrual
+        // Adapter registry
+        InflowAdapterLib.AdapterStorage adapterStorage;
+        // Withdrawal queue
+        InflowWithdrawalQueueLib.QueueStorage queueStorage;
+    }
+
+    bytes32 private constant VAULT_STORAGE_LOCATION =
+        0x458f53c9064414ecce2b3f4f3b9d75be7c7a51360c84e83c1bf699c0bc4c6400;
+
+    function _getStorage() internal pure returns (VaultStorage storage $) {
+        assembly {
+            $.slot := VAULT_STORAGE_LOCATION
+        }
+    }
+
+    // MODIFIERS
+
+    modifier onlyWhitelisted() {
+        _onlyWhitelisted();
+        _;
+    }
+
+    modifier onlyDeployedAmountWhitelisted() {
+        _onlyDeployedAmountWhitelisted();
+        _;
+    }
+
+    function _onlyWhitelisted() internal view {
+        if (!_getStorage().whitelist[msg.sender]) revert Unauthorized();
+    }
+
+    function _onlyDeployedAmountWhitelisted() internal view {
+        if (!_getStorage().deployedAmountWhitelist[msg.sender]) {
+            revert Unauthorized();
+        }
+    }
+
+    // CONSTRUCTOR / INITIALIZER
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /// @param asset_                               ERC-20 token accepted as deposit.
+    /// @param name_                                Vault share token name.
+    /// @param symbol_                              Vault share token symbol.
+    /// @param depositCap_                          Maximum total assets the vault will hold (token base units).
+    /// @param maxWithdrawalsPerUser_               Maximum concurrent queued withdrawals per address.
+    /// @param initialWhitelist                     At least one address must be provided.
+    /// @param initialDeployedAmountWhitelist       At least one address must be provided.
+    /// @param feeRate_                             Performance fee rate in WAD (0 = disabled, 1e18 = 100%).
+    /// @param feeRecipient_                        Recipient of fee shares; required when feeRate_ > 0.
+    function initialize(
+        IERC20 asset_,
+        string memory name_,
+        string memory symbol_,
+        uint256 depositCap_,
+        uint256 maxWithdrawalsPerUser_,
+        address[] memory initialWhitelist,
+        address[] memory initialDeployedAmountWhitelist,
+        uint256 feeRate_,
+        address feeRecipient_
+    ) external initializer {
+        __ERC20_init(name_, symbol_);
+        __ERC4626_init(asset_);
+
+        if (initialWhitelist.length == 0) revert WhitelistCannotBeEmpty();
+        if (initialDeployedAmountWhitelist.length == 0) {
+            revert DeployedAmountWhitelistCannotBeEmpty();
+        }
+        if (feeRate_ > WAD) revert InvalidFeeRate();
+        if (feeRate_ > 0 && feeRecipient_ == address(0)) {
+            revert FeeRecipientNotSet();
+        }
+
+        VaultStorage storage $ = _getStorage();
+
+        $.depositCap = depositCap_;
+        $.maxWithdrawalsPerUser = maxWithdrawalsPerUser_;
+        $.feeRate = feeRate_;
+        $.feeRecipient = feeRecipient_;
+        $.highWaterMarkPrice = WAD;
+
+        for (uint256 i = 0; i < initialWhitelist.length; i++) {
+            address addr = initialWhitelist[i];
+            if (addr == address(0)) revert ZeroAddress();
+            if (!$.whitelist[addr]) {
+                $.whitelist[addr] = true;
+                $.whitelistCount++;
+                emit WhitelistAdded(addr);
+            }
+        }
+
+        for (uint256 i = 0; i < initialDeployedAmountWhitelist.length; i++) {
+            address addr = initialDeployedAmountWhitelist[i];
+            if (addr == address(0)) revert ZeroAddress();
+            if (!$.deployedAmountWhitelist[addr]) {
+                $.deployedAmountWhitelist[addr] = true;
+                $.deployedAmountWhitelistCount++;
+                emit DeployedAmountWhitelistAdded(addr);
+            }
+        }
+    }
+
+    // ERC-4626 OVERRIDES
+
+    /// @notice Total assets backing outstanding shares.
+    ///
+    /// Formula:
+    ///   totalAssets = vaultBalance
+    ///               + untrackedAdapterPositions   (queried; tracked adapters positions are already in deployedAmount)
+    ///               + deployedAmount
+    ///               - totalWithdrawalAmount        (funds already committed to pending withdrawers)
+    ///
+    /// Subtracting pending withdrawal reserves prevents them from being double-counted
+    /// as backing for the active shares after the corresponding shares have been burned.
+    function totalAssets() public view override returns (uint256) {
+        VaultStorage storage $ = _getStorage();
+        uint256 balance = IERC20(asset()).balanceOf(address(this));
+        uint256 adapterPositions = $.adapterStorage.queryUntrackedPositions(asset());
+        uint256 pendingWithdrawals = $.queueStorage.info.totalWithdrawalAmount;
+        uint256 gross = balance + adapterPositions + $.deployedAmount;
+        return gross > pendingWithdrawals ? gross - pendingWithdrawals : 0;
+    }
+
+    /// @notice Returns 0 when the deposit cap is already reached, otherwise the remaining room.
+    function maxDeposit(address) public view override returns (uint256) {
+        uint256 assets = totalAssets();
+        uint256 cap = _getStorage().depositCap;
+        return assets >= cap ? 0 : cap - assets;
+    }
+
+    /// @notice Returns 0 when the deposit cap is already reached, otherwise the share equivalent
+    /// of the remaining deposit room.
+    function maxMint(address) public view override returns (uint256) {
+        uint256 remaining = maxDeposit(address(0));
+        if (remaining == 0) return 0;
+        return _convertToShares(remaining, Math.Rounding.Floor);
+    }
+
+    // Expose nonReentrant on the public ERC-4626 entry points so adapter callbacks
+    // cannot re-enter any vault state-changing function.
+
+    function deposit(uint256 assets, address receiver) public override nonReentrant returns (uint256) {
+        return super.deposit(assets, receiver);
+    }
+
+    function mint(uint256 shares, address receiver) public override nonReentrant returns (uint256) {
+        return super.mint(shares, receiver);
+    }
+
+    /// @notice Redeem shares for assets.
+    /// @dev If the vault cannot immediately fulfil the redemption, shares are burned and the
+    /// claim is queued. Listen for {WithdrawalQueued} to distinguish this case.
+    /// Returns 0 assets when queued.
+    function redeem(uint256 shares, address receiver, address owner) public override nonReentrant returns (uint256) {
+        return super.redeem(shares, receiver, owner);
+    }
+
+    /// @notice Withdraw a specific asset amount.
+    /// @dev See {redeem} for the queued-withdrawal caveat.
+    function withdraw(uint256 assets, address receiver, address owner) public override nonReentrant returns (uint256) {
+        return super.withdraw(assets, receiver, owner);
+    }
+
+    /// @dev Deposit/mint hook: pull tokens then allocate to automated adapters.
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal override {
+        if (assets == 0) revert ZeroAmount();
+        SafeERC20.safeTransferFrom(IERC20(asset()), caller, address(this), assets);
+        VaultStorage storage $ = _getStorage();
+        $.deployedAmount = $.adapterStorage.allocateToAdapters(assets, asset(), $.deployedAmount);
+        _mint(receiver, shares);
+        emit Deposit(caller, receiver, assets, shares);
+    }
+
+    /// @dev Withdraw/redeem hook: all-or-nothing logic.
+    /// Both paths burn shares immediately.
+    /// Immediate path: also transfers assets in the same transaction.
+    /// Queue path: assets are transferred later via claimUnbondedWithdrawals().
+    function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
+        internal
+        override
+    {
+        if (assets == 0) revert ZeroAmount();
+
+        if (caller != owner) {
+            _spendAllowance(owner, caller, shares);
+        }
+
+        VaultStorage storage $ = _getStorage();
+
+        // Free balance = vault balance minus the reserve already allocated to funded-but-unclaimed withdrawals.
+        uint256 fundedReserve =
+            $.queueStorage.info.totalWithdrawalAmount - $.queueStorage.info.nonFundedWithdrawalAmount;
+        uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
+        uint256 freeBalance = vaultBalance > fundedReserve ? vaultBalance - fundedReserve : 0;
+
+        uint256 remainingNeeded = assets > freeBalance ? assets - freeBalance : 0;
+        (bytes32[] memory keys, uint256[] memory amounts) =
+            $.adapterStorage.calculateAllocation(remainingNeeded, false, asset());
+
+        uint256 totalFromAdapters;
+        for (uint256 i = 0; i < amounts.length; i++) {
+            totalFromAdapters += amounts[i];
+        }
+
+        if (freeBalance + totalFromAdapters >= assets) {
+            // Immediate fulfilment - burn shares and transfer assets.
+            _burn(owner, shares);
+            $.deployedAmount = $.adapterStorage.executeAdapterWithdrawals(keys, amounts, $.deployedAmount, asset());
+            SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
+            emit Withdraw(caller, receiver, owner, assets, shares);
+        } else {
+            // Queued withdrawal - burn shares immediately; assets are claimed later.
+            _burn(owner, shares);
+            uint256 id = $.queueStorage.enqueue(owner, receiver, shares, assets, $.maxWithdrawalsPerUser);
+            emit WithdrawalQueued(id, owner, receiver, shares, assets);
+        }
+    }
+
+    // FEE LOGIC
+
+    /// @notice Permissionless. Mints fee shares to feeRecipient when the current share price
+    /// exceeds highWaterMarkPrice.
+    ///
+    /// When fees are disabled (feeRate == 0) the high-water mark is still advanced so that
+    /// re-enabling fees does not retroactively charge for gains made during the fee-free period.
+    ///
+    /// Formula (all arithmetic in WAD):
+    ///   sharePrice  = totalAssets * WAD / totalSupply
+    ///   totalYield  = (sharePrice − HWM) * totalSupply / WAD
+    ///   feeAssets   = totalYield * feeRate / WAD
+    ///   sharesToMint = feeAssets * WAD / sharePrice
+    ///
+    /// If sharesToMint rounds to 0 (dust), HWM is NOT updated so dust accumulates over
+    /// multiple calls until enough yield has built up to mint at least one share.
+    function accrueFees() public {
+        uint256 supply = totalSupply();
+        VaultStorage storage $ = _getStorage();
+
+        if (supply == 0) {
+            if ($.feeRate > 0) revert NoSharesIssued();
+            return;
+        }
+
+        uint256 assets = totalAssets();
+        uint256 currentSharePrice = assets.mulDiv(WAD, supply, Math.Rounding.Floor);
+
+        if ($.feeRate == 0) {
+            // Fees disabled - advance HWM to prevent backdating when fees are re-enabled.
+            if (currentSharePrice > $.highWaterMarkPrice) {
+                $.highWaterMarkPrice = currentSharePrice;
+            }
+            return;
+        }
+
+        if (currentSharePrice <= $.highWaterMarkPrice) return;
+
+        uint256 yieldPerShare = currentSharePrice - $.highWaterMarkPrice;
+        uint256 totalYield = yieldPerShare.mulDiv(supply, WAD, Math.Rounding.Floor);
+        uint256 feeAssets = totalYield.mulDiv($.feeRate, WAD, Math.Rounding.Floor);
+        uint256 sharesToMint = feeAssets.mulDiv(WAD, currentSharePrice, Math.Rounding.Floor);
+
+        if (sharesToMint == 0) return; // dust; do not update HWM
+
+        $.highWaterMarkPrice = currentSharePrice;
+        _mint($.feeRecipient, sharesToMint);
+        emit FeesAccrued($.feeRecipient, sharesToMint, currentSharePrice, feeAssets);
+    }
+
+    /// @notice Whitelisted only. Overwrites deployedAmount entirely with `amount`.
+    function submitDeployedAmount(uint256 amount) external onlyDeployedAmountWhitelisted {
+        _getStorage().deployedAmount = amount;
+        accrueFees();
+        emit DeployedAmountSubmitted(msg.sender, amount);
+    }
+
+    /// @notice Whitelisted only. Updates fee rate and/or recipient.
+    /// When transitioning from 0 to non-zero rate, highWaterMarkPrice is advanced to
+    /// max(existing HWM, current share price) to avoid charging fees on yield that
+    /// accrued while fees were disabled.
+    function updateFeeConfig(uint256 newFeeRate, address newRecipient) external onlyWhitelisted {
+        if (newFeeRate > WAD) revert InvalidFeeRate();
+
+        VaultStorage storage $ = _getStorage();
+
+        // Validate recipient: required when enabling fees (existing or new rate > 0)
+        address effectiveRecipient = (newRecipient != address(0)) ? newRecipient : $.feeRecipient;
+        if (newFeeRate > 0 && effectiveRecipient == address(0)) {
+            revert FeeRecipientNotSet();
+        }
+
+        // When enabling fees, advance HWM to current price (if higher) to avoid
+        // backdating charges for yield that occurred while fees were disabled.
+        if ($.feeRate == 0 && newFeeRate > 0) {
+            uint256 supply = totalSupply();
+            uint256 currentSharePrice = supply == 0 ? WAD : totalAssets().mulDiv(WAD, supply, Math.Rounding.Floor);
+            if (currentSharePrice > $.highWaterMarkPrice) {
+                $.highWaterMarkPrice = currentSharePrice;
+            }
+        }
+
+        $.feeRate = newFeeRate;
+        if (newRecipient != address(0)) $.feeRecipient = newRecipient;
+
+        emit FeeConfigUpdated($.feeRate, $.feeRecipient);
+    }
+
+    // DEPLOYMENT FLOWS
+
+    /// @notice Whitelisted only. Transfers idle vault funds to the caller for external
+    /// deployment. Increases deployedAmount to track the outflow. The actual transferred
+    /// amount is capped at available (balance minus pending withdrawal reserves).
+    function withdrawForDeployment(uint256 amount) external onlyWhitelisted nonReentrant {
+        if (amount == 0) revert ZeroAmount();
+        uint256 requested = amount;
+        uint256 available = availableForDeployment();
+        if (available == 0) revert ZeroAmount();
+        if (amount > available) amount = available;
+
+        _getStorage().deployedAmount += amount;
+        SafeERC20.safeTransfer(IERC20(asset()), msg.sender, amount);
+        emit WithdrawForDeployment(msg.sender, requested, amount);
+    }
+
+    /// @notice Whitelisted only. Accepts funds returned from external deployment.
+    /// Caller must approve this contract to pull `amount` before calling.
+    /// Decreases deployedAmount accordingly.
+    function depositFromDeployment(uint256 amount) external onlyWhitelisted nonReentrant {
+        if (amount == 0) revert ZeroAmount();
+        SafeERC20.safeTransferFrom(IERC20(asset()), msg.sender, address(this), amount);
+        VaultStorage storage $ = _getStorage();
+        $.deployedAmount = $.deployedAmount > amount ? $.deployedAmount - amount : 0;
+        emit DepositFromDeployment(msg.sender, amount);
+    }
+
+    // WITHDRAWAL QUEUE
+
+    /// @notice Permissionless. Scans the withdrawal queue FIFO, marking entries as funded
+    /// when the vault's free balance covers them. Processes at most `limit` entries.
+    function fulfillPendingWithdrawals(uint256 limit) external nonReentrant {
+        _getStorage().queueStorage.fulfill(limit, asset());
+    }
+
+    /// @notice Permissionless. Transfers assets to each funded withdrawal's receiver.
+    /// Only processes IDs at or below lastFundedWithdrawalId that are marked isFunded.
+    /// Shares were already burned when the withdrawal was queued.
+    function claimUnbondedWithdrawals(uint256[] calldata ids) external nonReentrant {
+        _getStorage().queueStorage.claim(ids, asset());
+    }
+
+    /// @notice Cancels unfunded withdrawal requests owned by msg.sender and re-mints shares.
+    /// IDs below the funded watermark (lastFundedWithdrawalId) are skipped to prevent
+    /// cancellation races with fulfillPendingWithdrawals.
+    ///
+    /// sharesMintedBack = min(sharesBurned, sharesRecalculated) - if the vault
+    /// share price increased while the withdrawal was pending, the owner receives fewer shares.
+    /// Shares minted back never exceeds what was originally burned.
+    ///
+    /// Reverts if the cancellation would push totalAssets() above depositCap.
+    function cancelWithdrawal(uint256[] calldata ids) external nonReentrant {
+        VaultStorage storage $ = _getStorage();
+
+        // Preview the cancellation to calculate the shares to mint back before modifying the state.
+        (uint256 totalAmount, uint256 totalSharesBurned, uint256[] memory cancelableIds) =
+            $.queueStorage.previewCancel(ids);
+
+        if (totalAmount == 0) return;
+
+        uint256 totalSharesRecalculated = _convertToShares(totalAmount, Math.Rounding.Floor);
+
+        // Perform the cancellation, which deletes the entries and updates the totals in the queue storage.
+        $.queueStorage.cancel(cancelableIds);
+
+        // Deposit cap check: cancellation restores assets to totalAssets().
+        if (totalAssets() > $.depositCap) revert DepositCapReached();
+
+        // Mint minimum between initially burned and recalculated shares to address the share price variation in both directions.
+        uint256 sharesToMint = totalSharesRecalculated < totalSharesBurned ? totalSharesRecalculated : totalSharesBurned;
+        if (sharesToMint == 0) revert ZeroShares();
+
+        _mint(msg.sender, sharesToMint);
+        emit WithdrawalCancelled(msg.sender, cancelableIds, totalSharesBurned, sharesToMint);
+    }
+
+    // ADAPTER MANAGEMENT
+
+    /// @notice Whitelisted only. Registers a new adapter.
+    function registerAdapter(string calldata name, address addr, bool automated, bool tracked)
+        external
+        onlyWhitelisted
+    {
+        if (addr == address(0)) revert ZeroAddress();
+        _getStorage().adapterStorage.registerAdapter(name, addr, automated, tracked);
+        emit AdapterRegistered(name, addr, automated, tracked);
+    }
+
+    /// @notice Whitelisted only. Removes an adapter. Reverts if the adapter still holds
+    /// a non-zero position for this vault - withdraw funds first via withdrawFromAdapter().
+    function unregisterAdapter(string calldata name) external onlyWhitelisted {
+        address addr = _getStorage().adapterStorage.unregisterAdapter(name, asset());
+        emit AdapterUnregistered(name, addr);
+    }
+
+    /// @notice Whitelisted only. Switches allocation mode between Automated and Manual.
+    function setAdapterAllocationMode(string calldata name, bool automated) external onlyWhitelisted {
+        _getStorage().adapterStorage.setAdapterAllocationMode(name, automated);
+        emit AdapterAllocationModeUpdated(name, automated);
+    }
+
+    /// @notice Whitelisted only. Switches deployment tracking between Tracked and Untracked.
+    function setAdapterDeploymentTracking(string calldata name, bool tracked) external onlyWhitelisted {
+        _getStorage().adapterStorage.setAdapterDeploymentTracking(name, tracked);
+        emit AdapterDeploymentTrackingUpdated(name, tracked);
+    }
+
+    /// @notice Whitelisted only. Manually withdraws `amount` from a specific adapter back
+    /// to the vault. Updates deployedAmount if the adapter is tracked.
+    function withdrawFromAdapter(string calldata name, uint256 amount) external onlyWhitelisted nonReentrant {
+        VaultStorage storage $ = _getStorage();
+        $.deployedAmount = $.adapterStorage.withdrawFromAdapter(name, amount, asset(), $.deployedAmount);
+    }
+
+    /// @notice Whitelisted only. Manually deposits `amount` from the vault into a specific
+    /// adapter. Updates deployedAmount if the adapter is tracked. Reverts if `amount` exceeds
+    /// the available balance (vault balance minus pending withdrawal reserves).
+    function depositToAdapter(string calldata name, uint256 amount) external onlyWhitelisted nonReentrant {
+        if (amount == 0) revert ZeroAmount();
+        uint256 available = availableForDeployment();
+        if (amount > available) revert InsufficientAvailableBalance(available, amount);
+        VaultStorage storage $ = _getStorage();
+        $.deployedAmount = $.adapterStorage.depositToAdapter(name, amount, asset(), $.deployedAmount);
+    }
+
+    /// @notice Whitelisted only. Moves `amount` from one adapter to another in a single
+    /// call. Updates deployedAmount if the tracking modes of the two adapters differ.
+    function moveAdapterFunds(string calldata fromName, string calldata toName, uint256 amount)
+        external
+        onlyWhitelisted
+        nonReentrant
+    {
+        VaultStorage storage $ = _getStorage();
+        $.deployedAmount = $.adapterStorage.moveAdapterFunds(fromName, toName, amount, asset(), $.deployedAmount);
+        emit AdapterFundsMoved(fromName, toName, asset(), amount);
+    }
+
+    /// @notice Whitelisted only. Moves `amount` of a non-deposit `token` from one adapter
+    /// to another. Use this for secondary tokens (e.g. USDT held in a Morpho pool).
+    /// Both adapters must have identical deployment-tracking mode; crossing the boundary
+    /// would silently corrupt deployedAmount since the token is not in vault denomination.
+    /// deployedAmount is not modified. Use moveAdapterFunds for the vault's primary asset.
+    function moveAdapterFundsToken(string calldata fromName, string calldata toName, uint256 amount, address token)
+        external
+        onlyWhitelisted
+        nonReentrant
+    {
+        if (token == asset()) revert TokenIsDepositAsset();
+        _getStorage().adapterStorage.moveAdapterFundsToken(fromName, toName, amount, token);
+        emit AdapterFundsMoved(fromName, toName, token, amount);
+    }
+
+    // ACCESS CONTROL
+
+    /// @notice Only whitelisted addresses (including the governing DAO) may upgrade.
+    function _authorizeUpgrade(address) internal override onlyWhitelisted {}
+
+    /// @notice Whitelisted only. Adds `addr` to the whitelist.
+    function addToWhitelist(address addr) external onlyWhitelisted {
+        if (addr == address(0)) revert ZeroAddress();
+        VaultStorage storage $ = _getStorage();
+        if ($.whitelist[addr]) revert AlreadyWhitelisted();
+        $.whitelist[addr] = true;
+        $.whitelistCount++;
+        emit WhitelistAdded(addr);
+    }
+
+    /// @notice Whitelisted only. Removes `addr` from the whitelist. Reverts if it is the
+    /// last remaining entry.
+    function removeFromWhitelist(address addr) external onlyWhitelisted {
+        VaultStorage storage $ = _getStorage();
+        if (!$.whitelist[addr]) revert NotWhitelisted();
+        if ($.whitelistCount <= 1) revert WhitelistCannotBeEmpty();
+        delete $.whitelist[addr];
+        $.whitelistCount--;
+        emit WhitelistRemoved(addr);
+    }
+
+    /// @notice Whitelisted only. Adds `addr` to the deployed amount whitelist.
+    function addToDeployedAmountWhitelist(address addr) external onlyWhitelisted {
+        if (addr == address(0)) revert ZeroAddress();
+        VaultStorage storage $ = _getStorage();
+        if ($.deployedAmountWhitelist[addr]) {
+            revert AlreadyDeployedAmountWhitelisted();
+        }
+        $.deployedAmountWhitelist[addr] = true;
+        $.deployedAmountWhitelistCount++;
+        emit DeployedAmountWhitelistAdded(addr);
+    }
+
+    /// @notice Whitelisted only. Removes `addr` from the deployed amount whitelist. Reverts if it is the
+    /// last remaining entry.
+    function removeFromDeployedAmountWhitelist(address addr) external onlyWhitelisted {
+        VaultStorage storage $ = _getStorage();
+        if (!$.deployedAmountWhitelist[addr]) revert NotWhitelisted();
+        if ($.deployedAmountWhitelistCount <= 1) {
+            revert DeployedAmountWhitelistCannotBeEmpty();
+        }
+        delete $.deployedAmountWhitelist[addr];
+        $.deployedAmountWhitelistCount--;
+        emit DeployedAmountWhitelistRemoved(addr);
+    }
+
+    // CONFIG
+
+    function updateDepositCap(uint256 newCap) external onlyWhitelisted {
+        _getStorage().depositCap = newCap;
+        emit DepositCapUpdated(newCap);
+    }
+
+    function updateMaxWithdrawalsPerUser(uint256 newMax) external onlyWhitelisted {
+        _getStorage().maxWithdrawalsPerUser = newMax;
+        emit MaxWithdrawalsPerUserUpdated(newMax);
+    }
+
+    // VIEW FUNCTIONS
+
+    /// @notice Amount available to send for external deployment
+    /// (vault balance minus all queued withdrawal reserves, funded and non-funded).
+    function availableForDeployment() public view returns (uint256) {
+        uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
+        uint256 reserved = _getStorage().queueStorage.info.totalWithdrawalAmount;
+        return vaultBalance > reserved ? vaultBalance - reserved : 0;
+    }
+
+    /// @notice Returns all queued withdrawal IDs for `user` (including funded ones pending claim).
+    function getUserWithdrawalIds(address user) external view returns (uint256[] memory) {
+        return _getStorage().queueStorage.userIds[user];
+    }
+
+    /// @notice Returns info for all registered adapters in registration order.
+    function getAdapters() external view returns (InflowAdapterLib.AdapterInfo[] memory) {
+        return _getStorage().adapterStorage.getAdapters();
+    }
+
+    /// @notice Returns info for a specific adapter by name.
+    function getAdapterByName(string calldata name) external view returns (InflowAdapterLib.AdapterInfo memory) {
+        return _getStorage().adapterStorage.getAdapterByName(name);
+    }
+
+    // WITHDRAWAL QUEUE STATE GETTERS
+
+    function withdrawalRequest(uint256 id) external view returns (InflowWithdrawalQueueLib.WithdrawalEntry memory) {
+        return _getStorage().queueStorage.requests[id];
+    }
+
+    function withdrawalQueueInfo() external view returns (InflowWithdrawalQueueLib.WithdrawalQueueInfo memory) {
+        return _getStorage().queueStorage.info;
+    }
+
+    function nextWithdrawalId() external view returns (uint256) {
+        return _getStorage().queueStorage.nextId;
+    }
+
+    function lastFundedWithdrawalId() external view returns (uint256) {
+        return _getStorage().queueStorage.lastFundedId;
+    }
+
+    function anyWithdrawalFunded() external view returns (bool) {
+        return _getStorage().queueStorage.anyFunded;
+    }
+
+    // EXPLICIT GETTERS FOR PREVIOUSLY-PUBLIC STATE VARIABLES
+    // (public visibility is not available on struct fields; these preserve the external interface)
+
+    function whitelist(address addr) external view returns (bool) {
+        return _getStorage().whitelist[addr];
+    }
+
+    function deployedAmountWhitelist(address addr) external view returns (bool) {
+        return _getStorage().deployedAmountWhitelist[addr];
+    }
+
+    function depositCap() external view returns (uint256) {
+        return _getStorage().depositCap;
+    }
+
+    function maxWithdrawalsPerUser() external view returns (uint256) {
+        return _getStorage().maxWithdrawalsPerUser;
+    }
+
+    function deployedAmount() external view returns (uint256) {
+        return _getStorage().deployedAmount;
+    }
+
+    function feeRate() external view returns (uint256) {
+        return _getStorage().feeRate;
+    }
+
+    function feeRecipient() external view returns (address) {
+        return _getStorage().feeRecipient;
+    }
+
+    function highWaterMarkPrice() external view returns (uint256) {
+        return _getStorage().highWaterMarkPrice;
+    }
+}

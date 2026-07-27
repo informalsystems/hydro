@@ -1058,6 +1058,39 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "For migration purposes, allows whitelisted admins to transfer contract-held funds to a Cosmos Hub address via IBC. All denoms are sent directly Neutron -> Hub, except stATOM, which is routed Neutron -> Stride -> Hub using PFM. `ibc_fee` is required by Neutron's ibc-transfer-with-fee middleware and is applied as both the ack_fee and the timeout_fee (recv_fee is always zero, per Neutron's requirement).",
+      "type": "object",
+      "required": [
+        "transfer_funds_to_hub"
+      ],
+      "properties": {
+        "transfer_funds_to_hub": {
+          "type": "object",
+          "required": [
+            "denoms",
+            "ibc_fee",
+            "recipient"
+          ],
+          "properties": {
+            "denoms": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "ibc_fee": {
+              "$ref": "#/definitions/Coin"
+            },
+            "recipient": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {
@@ -1275,6 +1308,43 @@
                 },
                 "hub_transfer_channel_id": {
                   "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "msg": {
+                  "$ref": "#/definitions/Binary"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "lsm_hub"
+          ],
+          "properties": {
+            "lsm_hub": {
+              "type": "object",
+              "required": [
+                "code_id",
+                "label",
+                "msg"
+              ],
+              "properties": {
+                "admin": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "code_id": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
                 },
                 "label": {
                   "type": "string"

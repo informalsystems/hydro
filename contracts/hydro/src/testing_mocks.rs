@@ -3,7 +3,7 @@ use std::{collections::HashMap, marker::PhantomData};
 use cosmwasm_std::{
     from_json,
     testing::{MockApi, MockQuerier as BaseMockQuerier, MockStorage},
-    to_json_binary, Binary, GrpcQuery, OwnedDeps, Querier, QuerierResult, QueryRequest,
+    to_json_binary, Binary, Coin, GrpcQuery, OwnedDeps, Querier, QuerierResult, QueryRequest,
     SystemError, SystemResult, WasmQuery,
 };
 use cosmwasm_std::{ContractResult, Empty};
@@ -50,6 +50,10 @@ impl MockQuerier {
         WH: Fn(&WasmQuery) -> QuerierResult + 'static,
     {
         self.base_querier.update_wasm(handler);
+    }
+
+    pub fn update_balance(&mut self, addr: impl Into<String>, balance: Vec<Coin>) {
+        self.base_querier.bank.update_balance(addr, balance);
     }
 }
 

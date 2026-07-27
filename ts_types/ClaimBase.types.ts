@@ -6,6 +6,7 @@
 
 export interface InstantiateMsg {
   admin: string;
+  initial_distribution_id?: number | null;
   treasury: string;
 }
 export type ExecuteMsg = {

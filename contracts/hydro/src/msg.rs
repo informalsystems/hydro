@@ -69,6 +69,13 @@ pub enum TokenInfoProviderInstantiateMsg {
         // Needed for the Hydro contract to be able to validate LSM IBC token denoms on its own
         hub_transfer_channel_id: String,
     },
+    #[serde(rename = "lsm_hub")]
+    LSMHub {
+        code_id: u64,
+        msg: Binary,
+        label: String,
+        admin: Option<String>,
+    },
     Base {
         token_group_id: String,
         denom: String,
@@ -101,6 +108,15 @@ impl Display for TokenInfoProviderInstantiateMsg {
             } => write!(
                 f,
                 "LSM(code_id: {code_id}, msg: {msg}, label: {label}, admin: {admin:?}, hub_transfer_channel_id: {hub_transfer_channel_id:?})"
+            ),
+            TokenInfoProviderInstantiateMsg::LSMHub {
+                code_id,
+                msg,
+                label,
+                admin,
+            } => write!(
+                f,
+                "LSMHub(code_id: {code_id}, msg: {msg}, label: {label}, admin: {admin:?})"
             ),
             TokenInfoProviderInstantiateMsg::Base {
                 token_group_id,
@@ -295,6 +311,16 @@ pub enum ExecuteMsg {
     /// Allows users to remove/reduce pending slash fully or partially by inserting funds
     BuyoutPendingSlash {
         lock_id: u64,
+    },
+
+    /// For migration purposes, allows whitelisted admins to transfer contract-held funds to a Cosmos Hub address via IBC.
+    /// All denoms are sent directly Neutron -> Hub, except stATOM, which is routed Neutron -> Stride -> Hub using PFM.
+    /// `ibc_fee` is required by Neutron's ibc-transfer-with-fee middleware and is applied as both
+    /// the ack_fee and the timeout_fee (recv_fee is always zero, per Neutron's requirement).
+    TransferFundsToHub {
+        denoms: Vec<String>,
+        recipient: String,
+        ibc_fee: Coin,
     },
 }
 

@@ -36,7 +36,7 @@ pub fn instantiate(
     };
 
     CONFIG.save(deps.storage, &config)?;
-    NEXT_DISTRIBUTION_ID.save(deps.storage, &0)?;
+    NEXT_DISTRIBUTION_ID.save(deps.storage, &msg.initial_distribution_id.unwrap_or(0))?;
 
     Ok(Response::new().add_attribute("action", "instantiate"))
 }

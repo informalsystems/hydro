@@ -56,6 +56,15 @@ pub enum QueryMsg {
     #[returns(LockupsPendingSlashesResponse)]
     LockupsPendingSlashes { lockup_ids: Vec<u64> },
 
+    /// Returns all lockups in the contract (across all users), ordered by lock_id.
+    /// Supports pagination via start_lock_id (lock_id to start from, inclusive) and limit.
+    /// Pass the `next_lock_id` from the previous response as `start_lock_id` to fetch the next page.
+    #[returns(AllLockupsResponse)]
+    AllLockups {
+        start_lock_id: Option<u64>,
+        limit: u64,
+    },
+
     #[returns(UserVotingPowerResponse)]
     UserVotingPower { address: String },
 
@@ -406,6 +415,12 @@ pub struct LockupWithPerTrancheInfo {
 #[cw_serde]
 pub struct AllUserLockupsResponse {
     pub lockups: Vec<LockEntryWithPower>,
+}
+
+#[cw_serde]
+pub struct AllLockupsResponse {
+    pub lockups: Vec<LockEntryV2>,
+    pub next_lock_id: Option<u64>,
 }
 
 // This is necessary because otherwise, cosmwasm-ts-codegen does not generate SpecificUserLockupsResponse

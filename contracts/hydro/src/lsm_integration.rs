@@ -35,18 +35,26 @@ pub fn resolve_validator_from_denom(
     }
 
     // valid base_denom example: cosmosvaloper16k579jk6yt2cwmqx9dz5xvq9fug2tekvlu9qdv/22409
-    let base_denom_parts: Vec<&str> = denom_trace.base_denom.split("/").collect();
-    if base_denom_parts.len() != 2
-        || base_denom_parts[0].len() != COSMOS_VALIDATOR_ADDR_LENGTH
-        || !base_denom_parts[0].starts_with(COSMOS_VALIDATOR_PREFIX)
-        || base_denom_parts[1].parse::<u64>().is_err()
+    let validator = extract_validator_from_lsm_denom(denom_trace.base_denom)?;
+
+    Ok(validator)
+}
+
+// Given an input denom, verifies that it is a valid LSM tokenized share denom and returns the validator address contained in the denom.
+pub fn extract_validator_from_lsm_denom(denom: String) -> StdResult<String> {
+    let denom_parts: Vec<&str> = denom.split("/").collect();
+
+    if denom_parts.len() != 2
+        || denom_parts[0].len() != COSMOS_VALIDATOR_ADDR_LENGTH
+        || !denom_parts[0].starts_with(COSMOS_VALIDATOR_PREFIX)
+        || denom_parts[1].parse::<u64>().is_err()
     {
         return Err(StdError::generic_err(
             "Only LSTs from the Cosmos Hub can be locked.",
         ));
     }
 
-    Ok(base_denom_parts[0].to_string())
+    Ok(denom_parts[0].to_string())
 }
 
 pub fn query_ibc_denom_trace(deps: &Deps, denom: String) -> StdResult<DenomTrace> {

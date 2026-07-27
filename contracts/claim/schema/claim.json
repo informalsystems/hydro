@@ -1,6 +1,6 @@
 {
   "contract_name": "claim",
-  "contract_version": "3.6.12",
+  "contract_version": "3.6.13",
   "idl_version": "1.0.0",
   "instantiate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -13,6 +13,15 @@
     "properties": {
       "admin": {
         "type": "string"
+      },
+      "initial_distribution_id": {
+        "description": "First ID to assign to a new distribution. Defaults to 0 if not set.",
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
       },
       "treasury": {
         "type": "string"
