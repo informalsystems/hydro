@@ -257,7 +257,8 @@ export type ExecuteMsg = {
   transfer_funds_to_hub: {
     denoms: string[];
     ibc_fee: Coin;
-    recipient: string;
+    recipient_hub: string;
+    recipient_stride: string;
   };
 };
 export type Expiration = {

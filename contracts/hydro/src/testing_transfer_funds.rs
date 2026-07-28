@@ -13,6 +13,7 @@ use crate::{
 };
 
 const HUB_RECIPIENT: &str = "cosmos1srjdd7y6duuukmaenghucasqlycddcc65qdj34k6spq8pwk4h6ms7j4w4j";
+const STRIDE_RECIPIENT: &str = "stride1ahu8aaqed8kr64sw5pm5r4xm2znxvkch583fsamkgplw93m3xjcq4c7yw6";
 
 fn ibc_fee() -> Coin {
     Coin::new(1000u128, "untrn".to_string())
@@ -44,7 +45,8 @@ fn transfer_funds_unauthorized_test() {
         non_admin_info,
         ExecuteMsg::TransferFundsToHub {
             denoms: vec![IBC_DENOM_1.to_string()],
-            recipient: HUB_RECIPIENT.to_string(),
+            recipient_hub: HUB_RECIPIENT.to_string(),
+            recipient_stride: STRIDE_RECIPIENT.to_string(),
             ibc_fee: ibc_fee(),
         },
     );
@@ -66,7 +68,8 @@ fn transfer_funds_invalid_recipient_test() {
         admin_info,
         ExecuteMsg::TransferFundsToHub {
             denoms: vec![IBC_DENOM_1.to_string()],
-            recipient: "not-a-valid-address".to_string(),
+            recipient_hub: "not-a-valid-address".to_string(),
+            recipient_stride: STRIDE_RECIPIENT.to_string(),
             ibc_fee: ibc_fee(),
         },
     );
@@ -93,7 +96,8 @@ fn transfer_funds_regular_denom_test() {
         admin_info,
         ExecuteMsg::TransferFundsToHub {
             denoms: vec![IBC_DENOM_1.to_string()],
-            recipient: HUB_RECIPIENT.to_string(),
+            recipient_hub: HUB_RECIPIENT.to_string(),
+            recipient_stride: STRIDE_RECIPIENT.to_string(),
             ibc_fee: ibc_fee(),
         },
     )
@@ -133,7 +137,8 @@ fn transfer_funds_st_atom_uses_pfm_test() {
         admin_info,
         ExecuteMsg::TransferFundsToHub {
             denoms: vec![ST_ATOM_ON_NEUTRON.to_string()],
-            recipient: HUB_RECIPIENT.to_string(),
+            recipient_hub: HUB_RECIPIENT.to_string(),
+            recipient_stride: STRIDE_RECIPIENT.to_string(),
             ibc_fee: ibc_fee(),
         },
     )
@@ -142,10 +147,7 @@ fn transfer_funds_st_atom_uses_pfm_test() {
     assert_eq!(res.messages.len(), 1);
     let transfer = decode_transfer_msg(&res.messages[0].clone().msg);
     assert_eq!(transfer.source_channel, "channel-8");
-    assert_eq!(
-        transfer.receiver,
-        "stride1srjdd7y6duuukmaenghucasqlycddcc65qdj34k6spq8pwk4h6msfjsukj"
-    );
+    assert_eq!(transfer.receiver, STRIDE_RECIPIENT.to_string(),);
     assert_eq!(transfer.token.unwrap().amount, "500");
 
     let memo_json: serde_json::Value = serde_json::from_str(&transfer.memo).unwrap();
@@ -179,7 +181,8 @@ fn transfer_funds_skips_zero_balance_denoms_test() {
                 ST_ATOM_ON_NEUTRON.to_string(),
                 "ibc/unrelated-empty-denom".to_string(),
             ],
-            recipient: HUB_RECIPIENT.to_string(),
+            recipient_hub: HUB_RECIPIENT.to_string(),
+            recipient_stride: STRIDE_RECIPIENT.to_string(),
             ibc_fee: ibc_fee(),
         },
     )
@@ -204,7 +207,8 @@ fn transfer_funds_all_zero_balances_produces_no_messages_test() {
         admin_info,
         ExecuteMsg::TransferFundsToHub {
             denoms: vec![IBC_DENOM_1.to_string()],
-            recipient: HUB_RECIPIENT.to_string(),
+            recipient_hub: HUB_RECIPIENT.to_string(),
+            recipient_stride: STRIDE_RECIPIENT.to_string(),
             ibc_fee: ibc_fee(),
         },
     )

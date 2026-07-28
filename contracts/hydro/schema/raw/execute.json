@@ -1071,7 +1071,8 @@
           "required": [
             "denoms",
             "ibc_fee",
-            "recipient"
+            "recipient_hub",
+            "recipient_stride"
           ],
           "properties": {
             "denoms": {
@@ -1083,7 +1084,10 @@
             "ibc_fee": {
               "$ref": "#/definitions/Coin"
             },
-            "recipient": {
+            "recipient_hub": {
+              "type": "string"
+            },
+            "recipient_stride": {
               "type": "string"
             }
           },

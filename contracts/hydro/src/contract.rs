@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use bech32::{Bech32, Hrp};
 use cosmwasm_std::{
     from_json, to_json_vec, Attribute, CosmosMsg, Decimal256, SubMsg, SubMsgResult, Uint256,
     WasmMsg,
@@ -439,9 +438,18 @@ pub fn execute(
         }
         ExecuteMsg::TransferFundsToHub {
             denoms,
-            recipient,
+            recipient_hub,
+            recipient_stride,
             ibc_fee,
-        } => transfer_funds_to_hub(deps, env, info, denoms, recipient, ibc_fee),
+        } => transfer_funds_to_hub(
+            deps,
+            env,
+            info,
+            denoms,
+            recipient_hub,
+            recipient_stride,
+            ibc_fee,
+        ),
     }
 }
 
@@ -2810,8 +2818,8 @@ fn withdraw_conversion_funds(
     Ok(response)
 }
 
-// TransferFundsToHub(denoms, recipient, ibc_fee):
-// Validate that the sender is a whitelist admin and that recipient is a valid Hub address.
+// TransferFundsToHub(denoms, recipient_hub, recipient_stride, ibc_fee):
+// Validate that the sender is a whitelist admin and that recipient_hub and recipient_stride are valid addresses.
 // For each denom, query the contract's own balance and, if non-zero, IBC-transfer it to
 // recipient. All denoms go directly Neutron -> Hub, except stATOM, which is routed
 // Neutron -> Stride -> Hub via a PFM memo. Neutron's ibc-transfer-with-fee middleware requires
@@ -2822,16 +2830,27 @@ fn transfer_funds_to_hub(
     env: Env,
     info: MessageInfo,
     denoms: Vec<String>,
-    recipient: String,
+    recipient_hub: String,
+    recipient_stride: String,
     ibc_fee: Coin,
 ) -> Result<Response, ContractError> {
     validate_sender_is_whitelist_admin(&deps, &info)?;
 
-    let recipient_addr_bytes = match bech32::decode(&recipient) {
-        Ok((hrp, address_bytes)) if hrp.as_str() == HUB_ADDRESS_PREFIX => address_bytes,
+    match bech32::decode(&recipient_hub) {
+        Ok((hrp, _)) if hrp.as_str() == HUB_ADDRESS_PREFIX => (),
         _ => {
             return Err(ContractError::Std(StdError::generic_err(format!(
-                "recipient must be a valid '{HUB_ADDRESS_PREFIX}' bech32 address"
+                "recipient_hub must be a valid '{HUB_ADDRESS_PREFIX}' bech32 address"
+            ))))
+        }
+    };
+
+    // stATOM IBC transfers require a valid Stride address as the recipient, otherwise the transfer will fail.
+    match bech32::decode(&recipient_stride) {
+        Ok((hrp, _)) if hrp.as_str() == STRIDE_ADDRESS_PREFIX => (),
+        _ => {
+            return Err(ContractError::Std(StdError::generic_err(format!(
+                "recipient_stride must be a valid '{STRIDE_ADDRESS_PREFIX}' bech32 address"
             ))))
         }
     };
@@ -2858,24 +2877,16 @@ fn transfer_funds_to_hub(
         }
 
         let (channel_id, to_address, memo) = if denom == ST_ATOM_ON_NEUTRON_DENOM {
-            // stATOM IBC transfers require a valid Stride address as the recipient, otherwise the transfer will fail.
-            // We just use the recipient's Hub address to construct a valid Stride address, since the funds will be forwarded to the Hub anyway.
-            let stride_address = bech32::encode::<Bech32>(
-                Hrp::parse_unchecked(STRIDE_ADDRESS_PREFIX),
-                &recipient_addr_bytes,
-            )
-            .map_err(|_| {
-                ContractError::Std(StdError::generic_err(
-                    "could not construct valid Stride chain address",
-                ))
-            })?;
-
             let memo = format!(
-                r#"{{"forward":{{"receiver":"{recipient}","port":"{TRANSFER_PORT}","channel":"{STRIDE_HUB_TRANSFER_CHANNEL}"}}}}"#
+                r#"{{"forward":{{"receiver":"{recipient_hub}","port":"{TRANSFER_PORT}","channel":"{STRIDE_HUB_TRANSFER_CHANNEL}"}}}}"#
             );
-            (NEUTRON_STRIDE_TRANSFER_CHANNEL, stride_address, Some(memo))
+            (
+                NEUTRON_STRIDE_TRANSFER_CHANNEL,
+                recipient_stride.clone(),
+                Some(memo),
+            )
         } else {
-            (NEUTRON_HUB_TRANSFER_CHANNEL, recipient.clone(), None)
+            (NEUTRON_HUB_TRANSFER_CHANNEL, recipient_hub.clone(), None)
         };
 
         messages.push(build_neutron_ibc_transfer_msg(
@@ -2896,7 +2907,7 @@ fn transfer_funds_to_hub(
         .add_messages(messages)
         .add_attribute("action", "transfer_funds_to_hub")
         .add_attribute("sender", info.sender)
-        .add_attribute("recipient", recipient)
+        .add_attribute("recipient", recipient_hub)
         .add_attribute(
             "transferred_funds",
             transferred_funds
