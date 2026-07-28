@@ -1250,11 +1250,13 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   transferFundsToHub: ({
     denoms,
     ibcFee,
-    recipient
+    recipientHub,
+    recipientStride
   }: {
     denoms: string[];
     ibcFee: Coin;
-    recipient: string;
+    recipientHub: string;
+    recipientStride: string;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseInterface {
@@ -1820,17 +1822,20 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
   transferFundsToHub = async ({
     denoms,
     ibcFee,
-    recipient
+    recipientHub,
+    recipientStride
   }: {
     denoms: string[];
     ibcFee: Coin;
-    recipient: string;
+    recipientHub: string;
+    recipientStride: string;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       transfer_funds_to_hub: {
         denoms,
         ibc_fee: ibcFee,
-        recipient
+        recipient_hub: recipientHub,
+        recipient_stride: recipientStride
       }
     }, fee, memo, _funds);
   };

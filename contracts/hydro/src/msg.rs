@@ -319,7 +319,8 @@ pub enum ExecuteMsg {
     /// the ack_fee and the timeout_fee (recv_fee is always zero, per Neutron's requirement).
     TransferFundsToHub {
         denoms: Vec<String>,
-        recipient: String,
+        recipient_hub: String,
+        recipient_stride: String,
         ibc_fee: Coin,
     },
 }
