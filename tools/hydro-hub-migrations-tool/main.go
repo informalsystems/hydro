@@ -1,13 +1,16 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -29,6 +32,7 @@ type LockEntry struct {
 	OwnerHub             string `json:"owner_hub"`
 	IsSmartContractOwner bool   `json:"is_smart_contract_owner"`
 	Funds                Coin   `json:"funds"`
+	DenomNeutron         string `json:"denom_neutron"`
 	LockStart            string `json:"lock_start"`
 	LockEnd              string `json:"lock_end"`
 }
@@ -65,8 +69,14 @@ type denomInfo struct {
 	Trace []denomHop `json:"trace"`
 }
 
-type denomResponse struct {
-	Denom denomInfo `json:"denom"`
+type pageResponse struct {
+	NextKey string `json:"next_key"`
+	Total   string `json:"total"`
+}
+
+type denomsResponse struct {
+	Denoms     []denomInfo  `json:"denoms"`
+	Pagination pageResponse `json:"pagination"`
 }
 
 // lockupToMint mirrors the Rust LockupToMint type used by ExecuteMsg::MintLockups.
@@ -103,19 +113,25 @@ type txResponse struct {
 
 // --- constants ---
 
-const CmdQueryCurrentLockups = "query-current-lockups"
+const CmdExportHydroState = "export-hydro-state"
 const CmdMintHubLockups = "mint-hub-lockups"
 
 const gaiadBinary = "gaiad"
 const uatomDenom = "uatom"
 const testKeyringBackend = "test"
 
+const stAtomNeutronDenom = "ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA5222815620B3C"
 const dAtomNeutronDenom = "factory/neutron1k6hr0f83e7un2wjf29cspk7j69jrnskk65k3ek2nj9dztrlzpj6q00rtsa/udatom"
 
 const stAtomHubIBCDenom = "ibc/B05539B66B72E2739B986B86391E5D08F12B8D5D2C2A7F8F8CF9ADF674DFA231"
 const dAtomHubIBCDenom = "ibc/AFC2F1B2FD45D549E34445E63921ECDECF1EAC68DA72412C2E087BEB503693F2"
 
 const hubAddressPrefix = "cosmos"
+const hubValoperPrefix = "cosmosvaloper"
+
+const transferPort = "transfer"
+const hubChannelID = "channel-1"
+const strideChannelID = "channel-8"
 
 // neutronWalletAddrLen is the bech32 string length of a standard Neutron
 // wallet address (20-byte hash). Smart contract addresses use a 32-byte
@@ -203,9 +219,91 @@ func queryAllLockups(node, contract string, limit uint64) ([]LockEntry, error) {
 	return all, nil
 }
 
-// resolveDenom converts an on-Neutron denom to its Hub-native equivalent.
-// Results are cached to avoid redundant IBC trace queries.
-func resolveDenom(node, denom string, cache map[string]string) (string, error) {
+// fetchAllIbcDenoms pages through the ibc-transfer module's Denoms query, collecting
+// every known IBC denom trace on the chain. This lets us resolve all lockup denoms
+// with a single set of paginated requests instead of one request per unique denom.
+func fetchAllIbcDenoms(node string, pageLimit uint64) ([]denomInfo, error) {
+	var all []denomInfo
+	nextKey := ""
+	page := 0
+
+	for {
+		page++
+
+		reqURL := fmt.Sprintf("%s/ibc/apps/transfer/v1/denoms?pagination.limit=%d", node, pageLimit)
+		if nextKey != "" {
+			reqURL += "&pagination.key=" + url.QueryEscape(nextKey)
+		}
+
+		var resp denomsResponse
+		if err := getJSON(reqURL, &resp); err != nil {
+			return nil, fmt.Errorf("Denoms page %d: %w", page, err)
+		}
+
+		fmt.Printf("Fetched IBC denoms page %d, got %d denoms\n", page, len(resp.Denoms))
+		all = append(all, resp.Denoms...)
+
+		if resp.Pagination.NextKey == "" {
+			break
+		}
+		nextKey = resp.Pagination.NextKey
+	}
+
+	return all, nil
+}
+
+// hashDenomTrace computes the "ibc/{HASH}" denom for a denom trace the same way
+// ibc-go does: sha256 of the hops joined as "port_id/channel_id/.../base", hex-encoded
+// in uppercase.
+func hashDenomTrace(d denomInfo) string {
+	var sb strings.Builder
+	for _, hop := range d.Trace {
+		sb.WriteString(hop.PortID)
+		sb.WriteByte('/')
+		sb.WriteString(hop.ChannelID)
+		sb.WriteByte('/')
+	}
+	sb.WriteString(d.Base)
+
+	hash := sha256.Sum256([]byte(sb.String()))
+	return "ibc/" + strings.ToUpper(hex.EncodeToString(hash[:]))
+}
+
+func buildIbcDenomMap(denoms []denomInfo) map[string]string {
+	denomMap := make(map[string]string)
+
+	isLsmShare := func(d denomInfo) bool {
+		return strings.HasPrefix(d.Base, hubValoperPrefix) && len(d.Trace) == 1 && d.Trace[0].PortID == transferPort && d.Trace[0].ChannelID == hubChannelID
+	}
+
+	isStAtom := func(d denomInfo) bool {
+		return d.Base == "stuatom" && len(d.Trace) == 1 && d.Trace[0].PortID == transferPort && d.Trace[0].ChannelID == strideChannelID
+	}
+
+	for _, d := range denoms {
+		var resolved string
+
+		switch {
+		case isStAtom(d):
+			// stATOM: replace with its Hub IBC denom on the Hub chain.
+			resolved = stAtomHubIBCDenom
+		case isLsmShare(d):
+			// LSM share: base is "<cosmosvaloper...>/<shareID>", which is exactly the native denom format on the Hub.
+			resolved = d.Base
+		default:
+			// We are only interested in stATOM and LSM share denoms, so skip everything else.
+			continue
+		}
+
+		denomMap[hashDenomTrace(d)] = resolved
+	}
+
+	return denomMap
+}
+
+// resolveDenom converts an on-Neutron denom to its Hub-native equivalent, using the
+// prebuilt denom map so no additional network requests are needed per lockup.
+func resolveDenom(denom string, ibcDenomMap map[string]string) (string, error) {
 	// dATOM is Neutron native, so we replace it with its Hub IBC denom.
 	if denom == dAtomNeutronDenom {
 		return dAtomHubIBCDenom, nil
@@ -215,33 +313,10 @@ func resolveDenom(node, denom string, cache map[string]string) (string, error) {
 		return "", fmt.Errorf("unexpected non-IBC denom: %s", denom)
 	}
 
-	if resolved, ok := cache[denom]; ok {
-		return resolved, nil
+	resolved, ok := ibcDenomMap[denom]
+	if !ok {
+		return "", fmt.Errorf("unrecognized IBC denom: %s", denom)
 	}
-
-	hash := strings.TrimPrefix(denom, "ibc/")
-	url := fmt.Sprintf("%s/ibc/apps/transfer/v1/denoms/%s", node, hash)
-
-	var resp denomResponse
-	if err := getJSON(url, &resp); err != nil {
-		return "", fmt.Errorf("resolve denom trace for %s: %w", denom, err)
-	}
-
-	base := resp.Denom.Base
-	var resolved string
-	switch {
-	case base == "stuatom":
-		// stATOM: replace with its Hub IBC denom on the Hub chain.
-		resolved = stAtomHubIBCDenom
-	case strings.Contains(base, "/"):
-		// LSM share: base is "<cosmosvaloper...>/<shareID>", which is exactly
-		// the native denom format on the Hub.
-		resolved = base
-	default:
-		return "", fmt.Errorf("unrecognized IBC denom %s (base=%s, hops_count=%d)", denom, base, len(resp.Denom.Trace))
-	}
-
-	cache[denom] = resolved
 	return resolved, nil
 }
 
@@ -398,8 +473,8 @@ func main() {
 	}
 
 	switch os.Args[1] {
-	case CmdQueryCurrentLockups:
-		runQueryCurrentLockups(os.Args[2:])
+	case CmdExportHydroState:
+		runExportHydroState(os.Args[2:])
 	case CmdMintHubLockups:
 		runMintHubLockups(os.Args[2:])
 	default:
@@ -416,8 +491,8 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  mint-hub-lockups        Mint historical lockups on the Cosmos Hub Hydro contract")
 }
 
-func runQueryCurrentLockups(args []string) {
-	fs := flag.NewFlagSet(CmdQueryCurrentLockups, flag.ExitOnError)
+func runExportHydroState(args []string) {
+	fs := flag.NewFlagSet(CmdExportHydroState, flag.ExitOnError)
 	node := fs.String("node", "", "Neutron LCD REST endpoint (required)")
 	contract := fs.String("contract", "", "Neutron Hydro contract address (required)")
 	limit := fs.Uint64("limit", 100, "Number of lockups to fetch per AllLockups page")
@@ -448,15 +523,25 @@ func runQueryCurrentLockups(args []string) {
 		log.Fatalf("Error fetching lockups: %v", err)
 	}
 
-	// Step 3: resolve every denom to its Hub-native equivalent.
-	cache := make(map[string]string)
+	// Step 3: fetch all known IBC denom traces once and build a resolution map.
+	allIbcDenoms, err := fetchAllIbcDenoms(*node, 10000)
+	if err != nil {
+		log.Fatalf("Error fetching denoms: %v", err)
+	}
+
+	ibcDenomMap := buildIbcDenomMap(allIbcDenoms)
+	fmt.Printf("Fetched %d IBC denom traces, kept %d relevant entries\n", len(allIbcDenoms), len(ibcDenomMap))
+
+	// Step 4: resolve every denom to its Hub-native equivalent.
 	lockups := make([]LockEntry, 0, len(initialLockups))
 	for _, entry := range initialLockups {
-		hubDenom, err := resolveDenom(*node, entry.Funds.Denom, cache)
+		hubDenom, err := resolveDenom(entry.Funds.Denom, ibcDenomMap)
 		if err != nil {
 			log.Fatalf("Error resolving denom for lock_id %d: %v", entry.LockID, err)
 		}
 
+		// Store the original Neutron denom for reference
+		entry.DenomNeutron = entry.Funds.Denom
 		entry.Funds.Denom = hubDenom
 		entry.IsSmartContractOwner = len(entry.Owner) != neutronWalletAddrLen
 
@@ -472,7 +557,7 @@ func runQueryCurrentLockups(args []string) {
 		lockups = append(lockups, entry)
 	}
 
-	// Step 4: write the output JSON file.
+	// Step 5: write the output JSON file.
 	outBytes, err := json.MarshalIndent(lockups, "", "  ")
 	if err != nil {
 		log.Fatalf("Error marshaling output: %v", err)
