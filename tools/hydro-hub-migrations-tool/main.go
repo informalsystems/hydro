@@ -180,30 +180,37 @@ func getJSON(url string, target interface{}) error {
 
 // fetchNextLockID performs a RawQuery for the LOCK_ID Item<u64> and returns its value.
 func fetchNextLockID(node, contract string) (uint64, error) {
-	key := base64.StdEncoding.EncodeToString([]byte("lock_id"))
+	return queryRawU64Field(node, contract, "lock_id")
+}
+
+// fetchNextPropID performs a RawQuery for the PROP_ID Item<u64> and returns its value.
+func fetchNextPropID(node, contract string) (uint64, error) {
+	return queryRawU64Field(node, contract, "prop_id")
+}
+
+func queryRawU64Field(node, contract, field string) (uint64, error) {
+	key := base64.StdEncoding.EncodeToString([]byte(field))
 	url := fmt.Sprintf("%s/cosmwasm/wasm/v1/contract/%s/raw/%s", node, contract, key)
 
 	var envelope rawQueryEnvelope
 	if err := getJSON(url, &envelope); err != nil {
-		return 0, fmt.Errorf("raw query lock_id: %w", err)
+		return 0, fmt.Errorf("raw query %s: %w", field, err)
 	}
 
 	valueBytes, err := base64.StdEncoding.DecodeString(envelope.Data)
 	if err != nil {
-		return 0, fmt.Errorf("decode lock_id data: %w", err)
+		return 0, fmt.Errorf("decode %s data: %w", field, err)
 	}
 
 	var lockID uint64
 	if err := json.Unmarshal(valueBytes, &lockID); err != nil {
-		return 0, fmt.Errorf("unmarshal lock_id: %w", err)
+		return 0, fmt.Errorf("unmarshal %s: %w", field, err)
 	}
 	return lockID, nil
 }
 
 // queryAllLockups pages through AllLockups until no next_lock_id is returned.
 func queryAllLockups(node, contract string, limit uint64) ([]LockEntry, error) {
-	fmt.Println("Fetching lockups from Hydro contract...")
-
 	var allLockups []LockEntry
 	var startLockID *uint64
 	page := 0
@@ -597,19 +604,25 @@ func runExportHydroState(args []string) {
 	fmt.Printf("Node:     %s\n", *node)
 	fmt.Printf("Output:   %s\n\n", *output)
 
-	// Step 1: read the current lock_id counter from raw storage.
+	// Step 1: read the current lock_id and prop_id counters from raw storage.
 	nextLockID, err := fetchNextLockID(*node, *contract)
 	if err != nil {
 		log.Fatalf("Error fetching next lock_id: %v", err)
 	}
+	nextPropID, err := fetchNextPropID(*node, *contract)
+	if err != nil {
+		log.Fatalf("Error fetching next prop_id: %v", err)
+	}
 
 	// Step 2: paginate through all lockup entries.
+	fmt.Println("Fetching lockups from Hydro contract...")
 	initialLockups, err := queryAllLockups(*node, *contract, HydroQueryPageLimit)
 	if err != nil {
 		log.Fatalf("Error fetching lockups: %v", err)
 	}
 
 	// Step 3: fetch all known IBC denom traces once and build a resolution map.
+	fmt.Println("Resolving lockup denoms...")
 	allIbcDenoms, err := fetchAllIbcDenoms(*node, 10000)
 	if err != nil {
 		log.Fatalf("Error fetching denoms: %v", err)
@@ -667,9 +680,10 @@ func runExportHydroState(args []string) {
 
 	fmt.Printf("\nTotal lockups: %d\n", len(lockups))
 	fmt.Printf("Written to:    %s\n", *output)
-	fmt.Printf("Next lock_id:  %d\n", nextLockID)
 	fmt.Printf("\nAvailable conversion funds tokens: %d\n", len(conversionFunds))
 	fmt.Printf("Written to:    %s\n", *availableConversionFundsOutput)
+	fmt.Printf("\nNext lock ID:      %d\n", nextLockID)
+	fmt.Printf("Next proposal ID:  %d\n", nextPropID)
 }
 
 func runMintHubLockups(args []string) {
