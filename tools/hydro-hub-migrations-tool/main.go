@@ -51,6 +51,28 @@ type allLockupsResponse struct {
 	NextLockID *uint64     `json:"next_lock_id"`
 }
 
+type allAvailableConversionFundsArgs struct {
+	StartAfter *string `json:"start_after"`
+	Limit      *uint32 `json:"limit"`
+}
+
+type allAvailableConversionFundsMsg struct {
+	AllAvailableConversionFunds allAvailableConversionFundsArgs `json:"all_available_conversion_funds"`
+}
+
+type conversionFundInfo struct {
+	Denom               string `json:"denom"`
+	Amount              string `json:"amount"`
+	Ratio               string `json:"ratio"`
+	BaseTokenEquivalent string `json:"base_token_equivalent"`
+}
+
+type allAvailableConversionFundsResponse struct {
+	Funds                    []conversionFundInfo `json:"funds"`
+	TotalBaseTokenEquivalent string               `json:"total_base_token_equivalent"`
+	HasMore                  bool                 `json:"has_more"`
+}
+
 type smartQueryEnvelope struct {
 	Data json.RawMessage `json:"data"`
 }
@@ -116,6 +138,9 @@ type txResponse struct {
 const CmdExportHydroState = "export-hydro-state"
 const CmdMintHubLockups = "mint-hub-lockups"
 
+// All Hydro paginated queries are limited to 100 items per page
+const HydroQueryPageLimit = 100
+
 const gaiadBinary = "gaiad"
 const uatomDenom = "uatom"
 const testKeyringBackend = "test"
@@ -177,7 +202,9 @@ func fetchNextLockID(node, contract string) (uint64, error) {
 
 // queryAllLockups pages through AllLockups until no next_lock_id is returned.
 func queryAllLockups(node, contract string, limit uint64) ([]LockEntry, error) {
-	var all []LockEntry
+	fmt.Println("Fetching lockups from Hydro contract...")
+
+	var allLockups []LockEntry
 	var startLockID *uint64
 	page := 0
 
@@ -208,15 +235,76 @@ func queryAllLockups(node, contract string, limit uint64) ([]LockEntry, error) {
 			return nil, fmt.Errorf("unmarshal AllLockups page %d: %w", page, err)
 		}
 
-		fmt.Printf("Fetched page %d, got %d lockups\n", page, len(result.Lockups))
-		all = append(all, result.Lockups...)
+		allLockups = append(allLockups, result.Lockups...)
 
 		if result.NextLockID == nil {
 			break
 		}
+
 		startLockID = result.NextLockID
 	}
-	return all, nil
+
+	return allLockups, nil
+}
+
+// queryAllAvailableConversionFunds pages through AllAvailableConversionFunds
+// until has_more is false, keeping only entries with a non-zero amount and
+// resolving each kept entry's denom to its Hub-native equivalent.
+func queryAllAvailableConversionFunds(node, contract string, limit uint32, ibcDenomMap map[string]string) ([]conversionFundInfo, error) {
+	var conversionFunds []conversionFundInfo
+	var startAfter *string
+	page := 0
+
+	for {
+		page++
+
+		msg := allAvailableConversionFundsMsg{
+			AllAvailableConversionFunds: allAvailableConversionFundsArgs{
+				StartAfter: startAfter,
+				Limit:      &limit,
+			},
+		}
+		msgBytes, err := json.Marshal(msg)
+		if err != nil {
+			return nil, fmt.Errorf("marshal AllAvailableConversionFunds query: %w", err)
+		}
+
+		encoded := base64.StdEncoding.EncodeToString(msgBytes)
+		url := fmt.Sprintf("%s/cosmwasm/wasm/v1/contract/%s/smart/%s", node, contract, encoded)
+
+		var envelope smartQueryEnvelope
+		if err := getJSON(url, &envelope); err != nil {
+			return nil, fmt.Errorf("AllAvailableConversionFunds page %d: %w", page, err)
+		}
+
+		var result allAvailableConversionFundsResponse
+		if err := json.Unmarshal(envelope.Data, &result); err != nil {
+			return nil, fmt.Errorf("unmarshal AllAvailableConversionFunds page %d: %w", page, err)
+		}
+
+		var lastDenom string
+		for _, fund := range result.Funds {
+			lastDenom = fund.Denom
+			if fund.Amount == "0" {
+				continue
+			}
+
+			hubDenom, err := resolveDenom(fund.Denom, ibcDenomMap)
+			if err != nil {
+				return nil, fmt.Errorf("resolving denom for conversion fund %q: %w", fund.Denom, err)
+			}
+			fund.Denom = hubDenom
+			conversionFunds = append(conversionFunds, fund)
+		}
+
+		if !result.HasMore {
+			break
+		}
+
+		startAfter = &lastDenom
+	}
+
+	return conversionFunds, nil
 }
 
 // fetchAllIbcDenoms pages through the ibc-transfer module's Denoms query, collecting
@@ -240,7 +328,6 @@ func fetchAllIbcDenoms(node string, pageLimit uint64) ([]denomInfo, error) {
 			return nil, fmt.Errorf("Denoms page %d: %w", page, err)
 		}
 
-		fmt.Printf("Fetched IBC denoms page %d, got %d denoms\n", page, len(resp.Denoms))
 		all = append(all, resp.Denoms...)
 
 		if resp.Pagination.NextKey == "" {
@@ -493,10 +580,10 @@ func printUsage() {
 
 func runExportHydroState(args []string) {
 	fs := flag.NewFlagSet(CmdExportHydroState, flag.ExitOnError)
-	node := fs.String("node", "", "Neutron LCD REST endpoint (required)")
 	contract := fs.String("contract", "", "Neutron Hydro contract address (required)")
-	limit := fs.Uint64("limit", 100, "Number of lockups to fetch per AllLockups page")
+	node := fs.String("node", "", "Neutron LCD REST endpoint (required)")
 	output := fs.String("output", "lockups.json", "Output JSON file path")
+	availableConversionFundsOutput := fs.String("available-conversion-funds-output", "available_conversion_funds.json", "Output JSON file path for available conversion funds")
 	fs.Parse(args)
 
 	if *node == "" {
@@ -506,9 +593,8 @@ func runExportHydroState(args []string) {
 		log.Fatal("--contract is required")
 	}
 
-	fmt.Printf("Node:     %s\n", *node)
 	fmt.Printf("Contract: %s\n", *contract)
-	fmt.Printf("Limit:    %d\n", *limit)
+	fmt.Printf("Node:     %s\n", *node)
 	fmt.Printf("Output:   %s\n\n", *output)
 
 	// Step 1: read the current lock_id counter from raw storage.
@@ -518,7 +604,7 @@ func runExportHydroState(args []string) {
 	}
 
 	// Step 2: paginate through all lockup entries.
-	initialLockups, err := queryAllLockups(*node, *contract, *limit)
+	initialLockups, err := queryAllLockups(*node, *contract, HydroQueryPageLimit)
 	if err != nil {
 		log.Fatalf("Error fetching lockups: %v", err)
 	}
@@ -530,7 +616,6 @@ func runExportHydroState(args []string) {
 	}
 
 	ibcDenomMap := buildIbcDenomMap(allIbcDenoms)
-	fmt.Printf("Fetched %d IBC denom traces, kept %d relevant entries\n", len(allIbcDenoms), len(ibcDenomMap))
 
 	// Step 4: resolve every denom to its Hub-native equivalent.
 	lockups := make([]LockEntry, 0, len(initialLockups))
@@ -566,9 +651,25 @@ func runExportHydroState(args []string) {
 		log.Fatalf("Error writing %s: %v", *output, err)
 	}
 
+	// Step 6: fetch available conversion funds and write them out.
+	conversionFunds, err := queryAllAvailableConversionFunds(*node, *contract, HydroQueryPageLimit, ibcDenomMap)
+	if err != nil {
+		log.Fatalf("Error fetching available conversion funds: %v", err)
+	}
+
+	conversionFundsBytes, err := json.MarshalIndent(conversionFunds, "", "  ")
+	if err != nil {
+		log.Fatalf("Error marshaling available conversion funds: %v", err)
+	}
+	if err := os.WriteFile(*availableConversionFundsOutput, conversionFundsBytes, 0644); err != nil {
+		log.Fatalf("Error writing %s: %v", *availableConversionFundsOutput, err)
+	}
+
 	fmt.Printf("\nTotal lockups: %d\n", len(lockups))
 	fmt.Printf("Written to:    %s\n", *output)
 	fmt.Printf("Next lock_id:  %d\n", nextLockID)
+	fmt.Printf("\nAvailable conversion funds tokens: %d\n", len(conversionFunds))
+	fmt.Printf("Written to:    %s\n", *availableConversionFundsOutput)
 }
 
 func runMintHubLockups(args []string) {
