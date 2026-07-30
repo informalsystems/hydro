@@ -7,25 +7,43 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {IAdapter} from "./IAdapter.sol";
 
-/// @title BasicInflowAdapter
-/// @notice A minimal IAdapter implementation that holds tokens directly without
-/// deploying them to any external protocol. Useful for testing the vault ↔ adapter
-/// integration and as a reference for building real adapters.
+/// @title ReserveAdapter
+/// @notice A shared backstop reserve that one or more vaults draw on for APY smoothing:
+/// funds are moved into the reserve when a vault's raw yield for a period is above target,
+/// and pulled back out when it's below target, so the vault's reported growth stays steadier
+/// over time. Unlike BasicInflowAdapter, this adapter deliberately keeps the original
+/// shared-pool model (no per-depositor accounting): multiple vaults are meant to draw on
+/// the same pool, and any registered+enabled depositor can access the full balance.
+///
+/// Registration mode: read carefully, this is safety-critical and not enforced on-chain.
+/// - Register this adapter as **tracked** (`tracked = true`) on every vault that uses it.
+///   `depositorPosition()` is hardcoded to always return 0 (see below), so `totalAssets()`
+///   never derives a real value from this adapter either way. That hardcoding is what
+///   guarantees `vault.unregisterAdapter(...)` can always disconnect from it instantly,
+///   regardless of real balance.
+/// - Because it's tracked, the vault's own `depositToAdapter`/`withdrawFromAdapter` will
+///   automatically bump/reduce the vault's `deployedAmount` by the moved amount. That
+///   adjustment is unconditional and built into the vault's adapter library, not something
+///   this contract controls. For the reserve's balance to stay genuinely invisible to the
+///   vault's reported totalAssets() (as intended: parked funds must not count toward the
+///   share ratio, in either direction), the operator MUST immediately follow every reserve
+///   transfer with a `submitDeployedAmount` call computed to cancel that automatic
+///   adjustment back out, so the submitted value reflects only the true, unsmoothed value
+///   of the vault's real tracked venues. Skipping this step, or computing it wrong, will
+///   leave the reserve's balance incorrectly inflating or deflating totalAssets() until
+///   corrected. There is no on-chain guard against this.
+/// - Since `depositorPosition()` always reports 0, `vault.unregisterAdapter(...)`'s
+///   position guard offers no protection at all here. Reconciling real funds and
+///   `deployedAmount` before disconnecting is entirely an operational responsibility.
 ///
 /// Design:
 /// - Multi-token: a single deployment can serve vaults with different assets.
-/// - One depositor per asset: each token is exclusively owned by a single registered
-///   depositor. `registerDepositor`'s `metadata` argument must be `abi.encode(token)`.
-///   A second depositor may register for a *different* token on the same deployment,
-///   but never for a token another depositor already holds. This is what makes
-///   `depositorPosition()` exact (no shared-pool ambiguity) and prevents two vaults
-///   with the same underlying asset from double-counting the same balance if both
-///   register this adapter as untracked.
+/// - Shared pool: no per-depositor accounting; the full token balance is available to any
+///   registered and enabled depositor. This is intentional here (unlike BasicInflowAdapter),
+///   since the reserve is meant to be shared across vaults for the same asset.
 /// - Multi-admin: any admin can add/remove other admins; at least one must remain.
 /// - UUPS upgradeable: upgrade authority is guarded by the admin list.
-/// - Intended to be registered as "untracked" in the vault so totalAssets() is
-///   calculated by querying depositorPosition() rather than deployedAmount.
-contract BasicInflowAdapter is IAdapter, Initializable, UUPSUpgradeable {
+contract ReserveAdapter is IAdapter, Initializable, UUPSUpgradeable {
     // ERRORS
 
     error Unauthorized();
@@ -35,14 +53,12 @@ contract BasicInflowAdapter is IAdapter, Initializable, UUPSUpgradeable {
     error AlreadyAdmin();
     error NotAdmin();
     error AdminListCannotBeEmpty();
-    error InvalidMetadata();
-    error TokenAlreadyClaimed(address token);
-    error PositionNotEmpty(address token);
+    error PositionNotEmpty();
 
     // EVENTS
 
-    event DepositorRegistered(address indexed depositor, address indexed token);
-    event DepositorUnregistered(address indexed depositor, address indexed token);
+    event DepositorRegistered(address indexed depositor);
+    event DepositorUnregistered(address indexed depositor);
     event DepositorEnabled(address indexed depositor, bool enabled);
     event AdminAdded(address indexed admin);
     event AdminRemoved(address indexed admin);
@@ -56,11 +72,6 @@ contract BasicInflowAdapter is IAdapter, Initializable, UUPSUpgradeable {
     mapping(address => bool) private _enabled;
     address[] private _depositorList;
 
-    /// @dev Each registered depositor exclusively owns exactly one token.
-    mapping(address => address) private _depositorToken;
-    /// @dev Inverse of `_depositorToken`, used to enforce one-depositor-per-asset at registration.
-    mapping(address => address) private _tokenDepositor;
-
     // MODIFIERS
 
     modifier onlyAdmin() {
@@ -68,8 +79,8 @@ contract BasicInflowAdapter is IAdapter, Initializable, UUPSUpgradeable {
         _;
     }
 
-    modifier onlyDepositorForToken(address token) {
-        _onlyDepositorForToken(token);
+    modifier onlyDepositor() {
+        _onlyDepositor();
         _;
     }
 
@@ -77,10 +88,8 @@ contract BasicInflowAdapter is IAdapter, Initializable, UUPSUpgradeable {
         if (!_isAdmin[msg.sender]) revert Unauthorized();
     }
 
-    function _onlyDepositorForToken(address token) internal view {
-        if (!_registered[msg.sender] || !_enabled[msg.sender] || _depositorToken[msg.sender] != token) {
-            revert Unauthorized();
-        }
+    function _onlyDepositor() internal view {
+        if (!_registered[msg.sender] || !_enabled[msg.sender]) revert Unauthorized();
     }
 
     // CONSTRUCTOR / INITIALIZER
@@ -106,72 +115,63 @@ contract BasicInflowAdapter is IAdapter, Initializable, UUPSUpgradeable {
     // IADAPTER - WRITE
 
     /// @inheritdoc IAdapter
-    function deposit(uint256 amount, address token) external onlyDepositorForToken(token) {
+    function deposit(uint256 amount, address token) external onlyDepositor {
         SafeERC20.safeTransferFrom(IERC20(token), msg.sender, address(this), amount);
     }
 
     /// @inheritdoc IAdapter
-    function withdraw(uint256 amount, address token) external onlyDepositorForToken(token) {
+    function withdraw(uint256 amount, address token) external onlyDepositor {
         SafeERC20.safeTransfer(IERC20(token), msg.sender, amount);
     }
 
     // IADAPTER - VIEWS
 
     /// @inheritdoc IAdapter
-    function availableForDeposit(address depositor, address token) external view returns (uint256) {
-        if (!_registered[depositor] || !_enabled[depositor] || _depositorToken[depositor] != token) return 0;
+    function availableForDeposit(address depositor, address) external view returns (uint256) {
+        if (!_registered[depositor] || !_enabled[depositor]) return 0;
         return type(uint256).max;
     }
 
     /// @inheritdoc IAdapter
     function availableForWithdraw(address depositor, address token) external view returns (uint256) {
-        if (!_registered[depositor] || !_enabled[depositor] || _depositorToken[depositor] != token) return 0;
+        if (!_registered[depositor] || !_enabled[depositor]) return 0;
         return IERC20(token).balanceOf(address(this));
     }
 
     /// @inheritdoc IAdapter
-    /// @dev Exact per (depositor, token): returns the real balance only for the token this
-    /// depositor is registered for, 0 otherwise. Not gated on `_enabled` so a disabled-but-still-
-    /// registered depositor's position is still reported correctly (needed by `unregisterDepositor`'s
-    /// guard and by the vault's totalAssets()).
-    function depositorPosition(address depositor, address token) external view returns (uint256) {
-        if (_depositorToken[depositor] != token) return 0;
-        return IERC20(token).balanceOf(address(this));
+    /// @dev Always 0, regardless of depositor/token or real balance. This is deliberate: it's what
+    /// keeps this adapter always disconnectable from any vault via `vault.unregisterAdapter(...)`,
+    /// and it's why the vault MUST be registered tracked and reconciled manually: see the contract
+    /// NatSpec above. This is not a real balance query; do not treat it as one.
+    function depositorPosition(address, address) external pure returns (uint256) {
+        return 0;
     }
 
     // IADAPTER - DEPOSITOR MANAGEMENT
 
     /// @inheritdoc IAdapter
-    /// @param metadata Must be `abi.encode(token)`: the asset this depositor will exclusively hold.
-    function registerDepositor(address depositor, bytes calldata metadata) external onlyAdmin {
+    /// @dev The `metadata` parameter is unused: this adapter has no per-depositor configuration.
+    function registerDepositor(address depositor, bytes calldata) external onlyAdmin {
         if (depositor == address(0)) revert ZeroAddress();
-        if (metadata.length != 32) revert InvalidMetadata();
-        address token = abi.decode(metadata, (address));
-        if (token == address(0)) revert ZeroAddress();
         if (_registered[depositor]) revert AlreadyRegistered();
-        if (_tokenDepositor[token] != address(0)) revert TokenAlreadyClaimed(token);
-
         _registered[depositor] = true;
         _enabled[depositor] = true;
         _depositorList.push(depositor);
-        _depositorToken[depositor] = token;
-        _tokenDepositor[token] = depositor;
-        emit DepositorRegistered(depositor, token);
+        emit DepositorRegistered(depositor);
     }
 
     /// @inheritdoc IAdapter
+    /// @dev The position check below can never revert, since `depositorPosition()` is hardcoded to 0.
+    /// It's kept only for interface symmetry with BasicInflowAdapter.unregisterDepositor's guard.
+    /// There is no single, well-defined per-depositor "position" to check in this shared, multi-token
+    /// pool in the first place, so a real guard isn't meaningful here even in principle.
     function unregisterDepositor(address depositor) external onlyAdmin {
         if (!_registered[depositor]) revert NotRegistered();
-        address token = _depositorToken[depositor];
-        uint256 balance = IERC20(token).balanceOf(address(this));
-        if (balance != 0) revert PositionNotEmpty(token);
-
+        if (this.depositorPosition(depositor, address(0)) != 0) revert PositionNotEmpty();
         _registered[depositor] = false;
         _enabled[depositor] = false;
         _removeFromDepositorList(depositor);
-        delete _tokenDepositor[token];
-        delete _depositorToken[depositor];
-        emit DepositorUnregistered(depositor, token);
+        emit DepositorUnregistered(depositor);
     }
 
     /// @inheritdoc IAdapter
@@ -194,16 +194,6 @@ contract BasicInflowAdapter is IAdapter, Initializable, UUPSUpgradeable {
     /// @notice Returns all registered depositor addresses.
     function depositors() external view returns (address[] memory) {
         return _depositorList;
-    }
-
-    /// @notice Returns the token a registered depositor exclusively holds, or the zero address if unregistered.
-    function depositorToken(address depositor) external view returns (address) {
-        return _depositorToken[depositor];
-    }
-
-    /// @notice Returns the depositor currently registered for `token`, or the zero address if free.
-    function tokenDepositor(address token) external view returns (address) {
-        return _tokenDepositor[token];
     }
 
     // IADAPTER - ADMIN MANAGEMENT

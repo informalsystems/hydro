@@ -87,9 +87,47 @@ Alternatively, a shell script is provided that loads `.env` automatically, accep
 bash bin/deploy_inflow_vault.sh
 ```
 
+### Adapters
+
+Two adapter implementations are provided. `BasicInflowAdapter` is a minimal reference/example for testing vault ↔ adapter integration and for building real adapters. `ReserveAdapter` is the first adapter built for genuine production use: a shared backstop reserve used for APY smoothing. See the comparison table under `ReserveAdapter` below for how they differ.
+
 ### BasicInflowAdapter
 
 A minimal `IAdapter` implementation that holds tokens directly without deploying them to an external protocol. Useful for testing vault ↔ adapter integration and as a reference for building real adapters.
+
+Enforces **one depositor per asset**: each token is exclusively owned by a single registered depositor, so `depositorPosition()` is always exact rather than a shared-pool total. `registerDepositor`'s `metadata` argument must be `abi.encode(tokenAddress)`, the asset that depositor will exclusively hold; a second depositor may register for a *different* token on the same deployment, but never for a token another depositor already holds. Always registered as **untracked**; combined with per-asset exclusivity, this is what prevents two vaults with the same underlying asset from double-counting the same balance in `totalAssets()`.
+
+**Required environment variables**
+
+| Variable | Description |
+|---|---|
+| `VAULT_ADDRESS` | Proxy address of the vault to register the adapter on |
+| `PRIVATE_KEY` or `MNEMONIC` | Signing key: provide one or the other |
+| `RPC_URL` | RPC endpoint of a node used to broadcast transactions |
+
+**Optional environment variables**
+
+| Variable | Description |
+|---|---|
+| `ADAPTER_ADMIN` | Address granted admin rights on the adapter; defaults to the deployer |
+
+Or use the shell script (reads `.env` automatically):
+
+```bash
+bash bin/02_deploy_basic_adapter.sh
+```
+
+### ReserveAdapter
+
+A shared backstop reserve that one or more vaults draw on for APY smoothing: funds move into the reserve when a vault's raw yield for a period is above target, and move back out when it's below target, so the vault's reported growth stays steadier over time. Unlike `BasicInflowAdapter`, the shared-pool model (no per-depositor accounting) is intentional here: multiple vaults are meant to draw on the same pool for the same asset.
+
+| | BasicInflowAdapter | ReserveAdapter |
+|---|---|---|
+| Tracking mode | Untracked only | Tracked only |
+| Per-asset exclusivity | One depositor per token | None (shared pool, multiple depositors per token) |
+| `depositorPosition()` | Real balance for the depositor's own token, else 0 | Always hardcoded `0` |
+| Disconnect (`vault.unregisterAdapter`) | Blocked while real balance > 0 | Always succeeds instantly, regardless of balance |
+| Intended use | Reference/example, testing | Production APY-smoothing reserve |
 
 **Required environment variables**
 
@@ -108,8 +146,30 @@ A minimal `IAdapter` implementation that holds tokens directly without deploying
 Or use the shell script (reads `.env` automatically):
 
 ```bash
-bash bin/deploy_basic_adapter.sh
+bash bin/06_deploy_reserve_adapter.sh
 ```
+
+#### Reserve fund-movement runbook
+
+`ReserveAdapter` is registered tracked, but its funds must never be allowed to persist in the vault's reported `deployedAmount`. Parked reserve funds should not affect the share ratio while sitting idle, in either direction. This isn't enforced on-chain; it requires the following sequence for every reserve transfer:
+
+1. Once the period's raw tracked-venue value is known (e.g. the verifier-approved `submitDeployedAmount` value for that period), compute the target smoothing delta.
+2. Call `depositToAdapter("reserve", amount)` (raw growth above target) or `withdrawFromAdapter("reserve", amount)` (raw growth below target). Because the adapter is tracked, this automatically bumps or reduces `deployedAmount` by `amount`. That adjustment is unconditional, built into the vault's adapter library, not something `ReserveAdapter` itself controls.
+3. Immediately follow with a `submitDeployedAmount` call computed to cancel that automatic adjustment back out, so the submitted value reflects only the true, unsmoothed value of the real tracked venues, never including the reserve.
+
+Skipping step 3, or computing it wrong, will leave the reserve's balance incorrectly inflating or deflating the vault's reported `totalAssets()` until corrected.
+
+#### Unregistering an adapter: runbook
+
+Vault-side (`vault.unregisterAdapter`) and adapter-side (`adapter.unregisterDepositor`) registrations are independent; neither call affects the other. Fully disconnecting a vault from an adapter requires both, **in this order**:
+
+1. Drain funds: `vault.withdrawFromAdapter(name, fullAmount)`.
+2. `vault.unregisterAdapter(name)`, checked while the vault is still a registered depositor on the adapter.
+3. `adapter.unregisterDepositor(vaultAddress)` for adapter-side cleanup.
+
+Doing step 3 before step 1 locks the vault out of its own funds (the adapter's depositor gating blocks it once unregistered). Doing step 3 before step 2 can also silently defeat the vault-side check on `BasicInflowAdapter`, since `depositorPosition()` returns 0 for a depositor no longer registered for that token.
+
+For `ReserveAdapter`, the vault-side guard offers **no protection at all**: `vault.unregisterAdapter` always succeeds instantly regardless of real balance. Reconciling real funds and `deployedAmount` (per the runbook above) before disconnecting is purely an operational responsibility.
 
 ### End-to-end deposit test
 
