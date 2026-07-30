@@ -18,9 +18,7 @@ use crate::testing::{
     setup_lsm_token_info_provider_mock, LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS,
     VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_3,
 };
-use crate::testing_mocks::{
-    denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
-};
+use crate::testing_mocks::{mock_dependencies, no_op_grpc_query_mock, MockQuerier};
 use crate::utils::{load_current_constants, scale_lockup_power};
 use crate::{
     contract::{execute, instantiate, query_expired_user_lockups, query_user_voting_power},
@@ -38,13 +36,7 @@ use interface::lsm::ValidatorInfo;
 #[test]
 fn query_user_lockups_test() {
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
 
@@ -495,13 +487,7 @@ fn query_user_lockups_test() {
 #[test]
 fn query_user_voting_power_test() {
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
     let msg = get_default_instantiate_msg(&deps.api);
@@ -1209,13 +1195,7 @@ fn get_user_voting_power(
 #[test]
 fn query_lock_votes_history_test() {
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
 
@@ -1531,13 +1511,7 @@ fn query_lock_votes_history_test() {
 #[test]
 fn query_parent_lock_ids_test() {
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
 
@@ -1621,13 +1595,7 @@ fn query_parent_lock_ids_test() {
 #[test]
 fn test_query_lockup_voting_metrics_success() {
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
 
@@ -1713,13 +1681,7 @@ fn test_query_lockup_voting_metrics_success() {
 #[test]
 fn test_query_lockup_voting_metrics_nonexistent_lockup_fail() {
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
 
@@ -1771,13 +1733,7 @@ fn test_query_lockup_voting_metrics_nonexistent_lockup_fail() {
 #[test]
 fn test_query_lockup_voting_metrics_validate_denom_fail() {
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, &[]);
 

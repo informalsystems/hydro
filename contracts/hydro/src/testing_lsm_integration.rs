@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str::FromStr};
+use std::str::FromStr;
 
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
@@ -19,10 +19,7 @@ use crate::{
         ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
         VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3, VALIDATOR_3_LST_DENOM_1,
     },
-    testing_mocks::{
-        denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, GrpcQueryFunc,
-        MockQuerier,
-    },
+    testing_mocks::{mock_dependencies, no_op_grpc_query_mock, GrpcQueryFunc, MockQuerier},
     token_manager::TokenManager,
 };
 
@@ -196,19 +193,7 @@ fn lock_tokens_with_multiple_denoms() {
                 Coin::new(2000u64, VALIDATOR_2_LST_DENOM_1.to_string()),
             ],
             lock_duration: ONE_MONTH_IN_NANO_SECONDS,
-            grpc_query: denom_trace_grpc_query_mock(
-                "transfer/channel-0".to_string(),
-                HashMap::from([
-                    (
-                        VALIDATOR_1_LST_DENOM_1.to_string(),
-                        VALIDATOR_1_LST_DENOM_1.to_string(),
-                    ),
-                    (
-                        VALIDATOR_2_LST_DENOM_1.to_string(),
-                        VALIDATOR_2_LST_DENOM_1.to_string(),
-                    ),
-                ]),
-            ),
+            grpc_query: no_op_grpc_query_mock(),
             expected_error_msg: "".to_string(),
         },
         LockMultipleDenomTestCases {
@@ -216,13 +201,7 @@ fn lock_tokens_with_multiple_denoms() {
             validators: vec![VALIDATOR_1],
             funds: vec![Coin::new(1000u64, VALIDATOR_3_LST_DENOM_1.to_string())],
             lock_duration: ONE_MONTH_IN_NANO_SECONDS,
-            grpc_query: denom_trace_grpc_query_mock(
-                "transfer/channel-0".to_string(),
-                HashMap::from([(
-                    VALIDATOR_3_LST_DENOM_1.to_string(),
-                    VALIDATOR_3_LST_DENOM_1.to_string(),
-                )]),
-            ),
+            grpc_query: no_op_grpc_query_mock(),
             expected_error_msg: "is not present".to_string(),
         },
     ];
@@ -285,19 +264,7 @@ fn unlock_tokens_multiple_denoms() {
     let user_token1 = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
     let user_token2 = Coin::new(2000u64, VALIDATOR_2_LST_DENOM_1.to_string());
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let mut info = get_message_info(
@@ -384,13 +351,7 @@ fn unlock_tokens_multiple_users() {
     let user1_token = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
     let user2_token = Coin::new(2000u64, VALIDATOR_1_LST_DENOM_1.to_string());
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info1 = get_message_info(&deps.api, user1_address, std::slice::from_ref(&user1_token));
@@ -483,23 +444,7 @@ fn lock_tokens_multiple_validators_and_vote() {
     let user_token2 = Coin::new(2000u64, VALIDATOR_2_LST_DENOM_1.to_string());
     let user_token3 = Coin::new(3000u64, VALIDATOR_3_LST_DENOM_1.to_string());
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-            ),
-            (
-                VALIDATOR_3_LST_DENOM_1.to_string(),
-                VALIDATOR_3_LST_DENOM_1.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let mut info = get_message_info(

@@ -27,10 +27,6 @@ cw-storage-plus = { workspace = true }
 cw2 = { workspace = true }
 cosmwasm-schema = { workspace = true }
 cw-utils = { workspace = true }
-cosmos-sdk-proto = { workspace = true }
-ibc-proto = { git = "https://github.com/cosmos/ibc-proto-rs", rev = "83b7f1075fd72f9a5abdd0baa3d3c02ddabf7f3b", default-features = false }
-prost = "0.13"
-prost-types = "0.13"
 cw-orch = { workspace = true }
 serde-json-wasm = { workspace = true }
 interface = { path = "../../packages/interface" }
@@ -39,3 +35,5 @@ interface = { path = "../../packages/interface" }
 cosmwasm-schema = { workspace = true }
 proptest = { workspace = true }
 serde_json = { workspace = true }
+prost = "0.13"
+prost-types = "0.13"

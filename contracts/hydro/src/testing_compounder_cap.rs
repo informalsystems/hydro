@@ -1,5 +1,4 @@
 use interface::hydro::TokenGroupRatioChange;
-use std::collections::HashMap;
 
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
@@ -17,7 +16,7 @@ use crate::{
         VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3,
         VALIDATOR_3_LST_DENOM_1,
     },
-    testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, MockQuerier},
+    testing_mocks::{mock_dependencies, no_op_grpc_query_mock, MockQuerier},
 };
 
 const ROUND_LENGTH: u64 = 30 * ONE_DAY_IN_NANO_SECONDS;
@@ -54,23 +53,7 @@ fn test_compounder_cap() {
     let user4 = "addr0004";
     let user5 = "addr0005";
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-            ),
-            (
-                VALIDATOR_3_LST_DENOM_1.to_string(),
-                VALIDATOR_3_LST_DENOM_1.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
 
     env.block.time = FIRST_ROUND_START;

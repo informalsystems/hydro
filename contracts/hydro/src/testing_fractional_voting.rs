@@ -1,4 +1,4 @@
-use std::{collections::HashMap, slice::Iter};
+use std::slice::Iter;
 
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
@@ -13,7 +13,7 @@ use crate::{
         LSM_TOKEN_PROVIDER_ADDR, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
         VALIDATOR_2_LST_DENOM_1,
     },
-    testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, MockQuerier},
+    testing_mocks::{mock_dependencies, no_op_grpc_query_mock, MockQuerier},
 };
 
 #[derive(Clone)]
@@ -424,19 +424,7 @@ fn fractional_voting_test() {
     for test in test_cases {
         println!("running test case: {}", test.description);
 
-        let grpc_query = denom_trace_grpc_query_mock(
-            "transfer/channel-0".to_string(),
-            HashMap::from([
-                (
-                    VALIDATOR_1_LST_DENOM_1.to_string(),
-                    VALIDATOR_1_LST_DENOM_1.to_string(),
-                ),
-                (
-                    VALIDATOR_2_LST_DENOM_1.to_string(),
-                    VALIDATOR_2_LST_DENOM_1.to_string(),
-                ),
-            ]),
-        );
+        let grpc_query = no_op_grpc_query_mock();
         let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
         let info1 = get_message_info(&deps.api, test.voter_address, &[]);
         let instantiate_msg = get_default_instantiate_msg(&deps.api);

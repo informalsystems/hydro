@@ -9,10 +9,10 @@ use crate::testing::{
     get_st_atom_denom_info_mock_data, get_validator_info_mock_data,
     setup_lsm_token_info_provider_mock, setup_multiple_token_info_provider_mocks,
     DERIVATIVE_TOKEN_PROVIDER_ADDR, LSM_TOKEN_PROVIDER_ADDR, ONE_DAY_IN_NANO_SECONDS,
-    ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, ST_ATOM_ON_STRIDE, THREE_MONTHS_IN_NANO_SECONDS,
-    VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
+    ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, THREE_MONTHS_IN_NANO_SECONDS, VALIDATOR_1,
+    VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
 };
-use crate::testing_mocks::denom_trace_grpc_query_mock;
+use crate::testing_mocks::no_op_grpc_query_mock;
 use cosmwasm_std::{from_json, testing::mock_env, Coin, Decimal, Uint128};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -24,13 +24,7 @@ use crate::state::{LOCKS_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM};
 fn test_lock_split_flow_multiple_rounds() {
     // Instantiate contract
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -407,13 +401,7 @@ fn test_lock_split_flow_multiple_rounds() {
 fn test_merge_locks_flow() {
     // Instantiate contract
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -781,19 +769,7 @@ fn test_merge_locks_basic_validation() {
     // Instantiate contract
     let user_address_1 = "addr0000";
     let user_address_2 = "addr0001";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -908,13 +884,7 @@ fn test_merge_locks_basic_validation() {
 #[test]
 fn test_merge_locks_update_proposal_powers() {
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -1211,19 +1181,7 @@ fn verify_proposal_voting_power(
 #[test]
 fn test_split_merge_locks_query_all_tokens_behavior() {
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),

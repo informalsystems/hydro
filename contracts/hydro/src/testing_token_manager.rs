@@ -24,12 +24,10 @@ use crate::{
         get_st_atom_denom_info_mock_data, get_validator_info_mock_data,
         setup_multiple_token_info_provider_mocks, setup_st_atom_token_info_provider_mock,
         DERIVATIVE_TOKEN_PROVIDER_ADDR, LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS,
-        ST_ATOM_ON_NEUTRON, ST_ATOM_ON_STRIDE, ST_ATOM_TOKEN_GROUP, VALIDATOR_1,
-        VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
+        ST_ATOM_ON_NEUTRON, ST_ATOM_TOKEN_GROUP, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
+        VALIDATOR_2_LST_DENOM_1,
     },
-    testing_mocks::{
-        denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
-    },
+    testing_mocks::{mock_dependencies, no_op_grpc_query_mock, MockQuerier},
     token_manager::{TokenInfoProvider, TokenInfoProviderDerivative, TokenInfoProviderLSMHub},
     utils::load_current_constants,
 };
@@ -505,23 +503,7 @@ fn add_remove_token_info_provider_test() {
 fn token_info_provider_lifecycle_test() {
     let user_address = "addr0000";
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
 

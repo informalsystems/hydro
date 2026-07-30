@@ -1,5 +1,4 @@
 use cosmwasm_std::{testing::mock_env, Coin, Decimal, Uint128};
-use std::collections::HashMap;
 
 use crate::{
     contract::{execute, get_current_lock_composition, get_lock_ancestor_depth, instantiate},
@@ -10,19 +9,13 @@ use crate::{
         setup_lsm_token_info_provider_mock, LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS,
         VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
     },
-    testing_mocks::denom_trace_grpc_query_mock,
+    testing_mocks::no_op_grpc_query_mock,
 };
 
 #[test]
 fn test_get_current_lock_composition() {
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -93,13 +86,7 @@ fn test_get_current_lock_composition() {
 #[test]
 fn test_get_lock_ancestor_depth() {
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -173,13 +160,7 @@ fn test_get_lock_ancestor_depth() {
 #[test]
 fn test_split_merge_composition_and_depth() {
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),

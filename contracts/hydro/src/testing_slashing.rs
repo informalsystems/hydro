@@ -12,7 +12,7 @@ use crate::testing::{
     ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
     VALIDATOR_2, VALIDATOR_2_LST_DENOM_1, VALIDATOR_3, VALIDATOR_3_LST_DENOM_1,
 };
-use crate::testing_mocks::{denom_trace_grpc_query_mock, MockQuerier};
+use crate::testing_mocks::{no_op_grpc_query_mock, MockQuerier};
 use cosmwasm_std::testing::{MockApi, MockStorage};
 use cosmwasm_std::{testing::mock_env, Coin, Decimal, Uint128};
 use cosmwasm_std::{Env, OwnedDeps, StdResult, Storage};
@@ -25,23 +25,7 @@ fn pending_slashes_accumulation_test() {
     let user2 = "addr0001";
     let user3 = "addr0002";
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-            ),
-            (
-                VALIDATOR_3_LST_DENOM_1.to_string(),
-                VALIDATOR_3_LST_DENOM_1.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -339,23 +323,7 @@ fn slash_when_threshold_is_reached_test() {
     let user2 = "addr0001";
     let user3 = "addr0002";
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-            ),
-            (
-                VALIDATOR_3_LST_DENOM_1.to_string(),
-                VALIDATOR_3_LST_DENOM_1.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -804,19 +772,7 @@ fn slashing_removes_lockups_test() {
     let user1 = "addr0000";
     let user2 = "addr0001";
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -1074,19 +1030,7 @@ fn proposals_and_rounds_power_updates_on_slashing_test() {
     let user1 = "addr0000";
     let user2 = "addr0001";
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -1362,13 +1306,7 @@ fn slashing_after_lock_split_merge_test() {
     // New lockup after merge
     let user1_lock_7 = 6;
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -1548,13 +1486,7 @@ fn slashing_after_lock_split_merge_test() {
 fn slash_after_dtoken_conversion_test() {
     let user1 = "addr0000";
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),

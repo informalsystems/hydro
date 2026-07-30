@@ -17,12 +17,10 @@ use crate::{
         get_st_atom_denom_info_mock_data, get_validator_info_mock_data, setup_contract_info_mock,
         setup_lsm_token_info_provider_mock, setup_multiple_token_info_provider_mocks,
         setup_st_atom_token_info_provider_mock, setup_token_info_providers_with_extra_mocks,
-        LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, ST_ATOM_ON_STRIDE,
+        LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON,
         ST_ATOM_TOKEN_GROUP, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
     },
-    testing_mocks::{
-        contract_info_mock, denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock,
-    },
+    testing_mocks::{contract_info_mock, mock_dependencies, no_op_grpc_query_mock},
 };
 
 use cosmwasm_std::testing::mock_env;
@@ -30,19 +28,7 @@ use cosmwasm_std::{Coin, Decimal};
 
 #[test]
 fn test_handle_execute_transfer_lsm_fail() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -101,19 +87,7 @@ fn test_handle_execute_transfer_lsm_fail() {
 
 #[test]
 fn test_handle_execute_transfer_st_atom_success() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -204,19 +178,7 @@ fn test_handle_execute_transfer_st_atom_success() {
 
 #[test]
 fn test_handle_execute_transfer_oneself_fail() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -274,19 +236,7 @@ fn test_handle_execute_transfer_oneself_fail() {
 
 #[test]
 fn test_handle_execute_transfer_st_atom_with_vote_success() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -432,19 +382,7 @@ fn test_handle_execute_transfer_st_atom_with_vote_success() {
 
 #[test]
 fn test_handle_execute_transfer_unlock_queries_for_tributes() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
@@ -622,19 +560,7 @@ fn test_handle_execute_transfer_unlock_queries_for_tributes() {
 
 #[test]
 fn test_handle_execute_send_nft_lsm_fail() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -713,19 +639,7 @@ fn test_handle_execute_send_nft_lsm_fail() {
 
 #[test]
 fn test_handle_execute_send_nft_st_atom_success() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -791,19 +705,7 @@ fn test_handle_execute_send_nft_st_atom_success() {
 
 #[test]
 fn test_handle_execute_send_nft_st_atom_with_vote_success() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -972,19 +874,7 @@ fn check_send_nft_result(
 #[test]
 fn test_handle_execute_approve() {
     // Setup mock for grpc queries
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -1088,13 +978,7 @@ fn test_handle_execute_approve() {
 #[test]
 fn test_handle_execute_approve_fail_for_lsm() {
     // Setup mock for grpc queries
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -1153,19 +1037,7 @@ fn test_handle_execute_approve_fail_for_lsm() {
 #[test]
 fn test_handle_execute_revoke() {
     // Setup mock for grpc queries
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -1267,13 +1139,7 @@ fn test_handle_execute_revoke() {
 #[test]
 fn test_handle_execute_revoke_fail_for_lsm() {
     // Setup mock for grpc queries
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -1328,13 +1194,7 @@ fn test_handle_execute_revoke_fail_for_lsm() {
 
 #[test]
 fn test_query_owner_of() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -1383,13 +1243,7 @@ fn test_query_owner_of() {
 
 #[test]
 fn test_query_nft_info() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -1439,19 +1293,7 @@ fn test_query_nft_info() {
 
 #[test]
 fn test_query_approval() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -1521,19 +1363,7 @@ fn test_query_approval() {
 
 #[test]
 fn test_query_approval_for_owner() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -1591,13 +1421,7 @@ fn test_query_approval_for_owner() {
 
 #[test]
 fn test_handle_execute_approve_all() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            ST_ATOM_ON_NEUTRON.to_string(),
-            ST_ATOM_ON_STRIDE.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -1683,13 +1507,7 @@ fn test_handle_execute_approve_all() {
 
 #[test]
 fn test_handle_execute_approve_all_fail_expired() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            ST_ATOM_ON_NEUTRON.to_string(),
-            ST_ATOM_ON_STRIDE.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -1753,13 +1571,7 @@ fn test_handle_execute_approve_all_fail_expired() {
 
 #[test]
 fn test_handle_execute_revoke_all() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            ST_ATOM_ON_NEUTRON.to_string(),
-            ST_ATOM_ON_STRIDE.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -1862,13 +1674,7 @@ fn test_handle_execute_revoke_all() {
 //We can revoke all for an operator even if there is no approval for that operator, this operator should not be able to transfer the token
 #[test]
 fn test_handle_execute_revoke_all_no_approval() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            ST_ATOM_ON_NEUTRON.to_string(),
-            ST_ATOM_ON_STRIDE.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -1942,13 +1748,7 @@ fn test_handle_execute_revoke_all_no_approval() {
 
 #[test]
 fn test_query_num_tokens() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            ST_ATOM_ON_NEUTRON.to_string(),
-            ST_ATOM_ON_STRIDE.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -2000,13 +1800,7 @@ fn test_query_num_tokens() {
 
 #[test]
 fn test_query_tokens() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            ST_ATOM_ON_NEUTRON.to_string(),
-            ST_ATOM_ON_STRIDE.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -2068,13 +1862,7 @@ fn test_query_tokens() {
 
 #[test]
 fn test_query_all_tokens() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            ST_ATOM_ON_NEUTRON.to_string(),
-            ST_ATOM_ON_STRIDE.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -2151,19 +1939,7 @@ fn test_query_all_tokens() {
 
 #[test]
 fn test_query_all_tokens_filters_lsm() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
@@ -2329,13 +2105,7 @@ fn test_query_all_tokens_filters_lsm() {
 
 #[test]
 fn test_query_all_operators() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            ST_ATOM_ON_NEUTRON.to_string(),
-            ST_ATOM_ON_STRIDE.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -2436,13 +2206,7 @@ fn test_query_collection_info() {
 
 #[test]
 fn test_query_tokens_with_transfer() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            ST_ATOM_ON_NEUTRON.to_string(),
-            ST_ATOM_ON_STRIDE.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -2535,13 +2299,7 @@ fn test_query_tokens_with_transfer() {
 
 #[test]
 fn test_operator_approve_for_token() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            ST_ATOM_ON_NEUTRON.to_string(),
-            ST_ATOM_ON_STRIDE.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -2634,13 +2392,7 @@ fn test_operator_approve_for_token() {
 
 #[test]
 fn test_operator_revoke_for_token() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            ST_ATOM_ON_NEUTRON.to_string(),
-            ST_ATOM_ON_STRIDE.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -2747,13 +2499,7 @@ fn test_operator_revoke_for_token() {
 #[test]
 fn test_handle_execute_approve_then_unlock() {
     // Setup mock for grpc queries
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            ST_ATOM_ON_NEUTRON.to_string(),
-            ST_ATOM_ON_STRIDE.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
@@ -2824,13 +2570,7 @@ fn test_handle_execute_approve_then_unlock() {
 
 #[test]
 fn test_handle_execute_lock_tokens_then_send_nft_success() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            ST_ATOM_ON_NEUTRON.to_string(),
-            ST_ATOM_ON_STRIDE.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -2920,19 +2660,7 @@ fn test_handle_execute_lock_tokens_then_send_nft_success() {
 
 #[test]
 fn test_handle_execute_lock_tokens_then_send_nft_lsm_fail() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -3001,13 +2729,7 @@ fn test_handle_execute_lock_tokens_then_send_nft_lsm_fail() {
 
 #[test]
 fn test_handle_execute_lock_tokens_then_send_nft_invalid_contract_fail() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            ST_ATOM_ON_NEUTRON.to_string(),
-            ST_ATOM_ON_STRIDE.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -3063,13 +2785,7 @@ fn test_handle_execute_lock_tokens_then_send_nft_invalid_contract_fail() {
 
 #[test]
 fn test_handle_execute_lock_tokens_then_send_nft_insufficient_funds_fail() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            ST_ATOM_ON_NEUTRON.to_string(),
-            ST_ATOM_ON_STRIDE.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     // Setup initial state
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());

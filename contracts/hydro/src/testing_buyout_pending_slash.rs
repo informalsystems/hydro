@@ -14,7 +14,7 @@ use crate::{
         ST_ATOM_ON_NEUTRON, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
         VALIDATOR_2_LST_DENOM_1,
     },
-    testing_mocks::{denom_trace_grpc_query_mock, grpc_query_diff_paths_mock, mock_dependencies},
+    testing_mocks::{mock_dependencies, no_op_grpc_query_mock},
 };
 
 pub const ATOM_ON_NEUTRON: &str =
@@ -23,13 +23,7 @@ pub const ATOM_ON_NEUTRON: &str =
 // slash denom: lsm, buyout_denom: lsm , exact amount
 #[test]
 fn buyout_pending_slash_same_denom_exact_amount_test() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
     let msg = get_default_instantiate_msg(&deps.api);
@@ -85,13 +79,7 @@ fn buyout_pending_slash_same_denom_exact_amount_test() {
 // slash denom: lsm, buyout_denom: lsm , partial buyout
 #[test]
 fn buyout_pending_slash_same_denom_partial_amount_test() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
     let msg = get_default_instantiate_msg(&deps.api);
@@ -147,13 +135,7 @@ fn buyout_pending_slash_same_denom_partial_amount_test() {
 // slash denom: lsm, buyout_denom: lsm , overpay - needs return
 #[test]
 fn buyout_pending_slash_same_denom_overpay_amount_test() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
     let msg = get_default_instantiate_msg(&deps.api);
@@ -209,19 +191,7 @@ fn buyout_pending_slash_same_denom_overpay_amount_test() {
 // slash denom: lsm, buyout_denom: lsm , exact amount, validator slashed
 #[test]
 fn buyout_pending_slash_same_denom_validator_slashed_test() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-                VALIDATOR_2_LST_DENOM_1.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
     let msg = get_default_instantiate_msg(&deps.api);
@@ -282,13 +252,7 @@ fn buyout_pending_slash_same_denom_validator_slashed_test() {
 // slash denom: lsm, buyout_denom: lsm and statom
 #[test]
 fn buyout_pending_slash_lsm_statom_exact_amount_test() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
     let msg = get_default_instantiate_msg(&deps.api);
@@ -364,20 +328,7 @@ fn buyout_pending_slash_lsm_statom_exact_amount_test() {
 // slash denom: statom, buyout_denom: lsm
 #[test]
 fn buyout_pending_slash_statom_lsm_test() {
-    let grpc_map = HashMap::from([
-        (
-            "transfer/channel-0".to_string(),
-            HashMap::from([(
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            )]),
-        ),
-        (
-            "transfer/channel-8".to_string(),
-            HashMap::from([(ST_ATOM_ON_NEUTRON.to_string(), "stATOM".to_string())]),
-        ),
-    ]);
-    let grpc_query = grpc_query_diff_paths_mock(grpc_map);
+    let grpc_query = no_op_grpc_query_mock();
 
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
@@ -449,13 +400,7 @@ fn buyout_pending_slash_statom_lsm_test() {
 // slash denom: lsm, buyout_denom: atom
 #[test]
 fn buyout_pending_slash_with_atom_test() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, "addr0000", &[]);
     let mut msg = get_default_instantiate_msg(&deps.api);

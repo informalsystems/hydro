@@ -16,18 +16,12 @@ use crate::{
         ST_ATOM_ON_NEUTRON, ST_ATOM_TOKEN_GROUP, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
         VALIDATOR_2_LST_DENOM_1,
     },
-    testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies},
+    testing_mocks::{mock_dependencies, no_op_grpc_query_mock},
 };
 
 #[test]
 fn lockup_conversion_test() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     let round_id = 0;
     let tranche_id = 1;
@@ -567,13 +561,7 @@ fn lockup_conversion_test() {
 fn query_all_available_conversion_funds_test() {
     use crate::contract::query_all_available_conversion_funds;
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
 
@@ -741,13 +729,7 @@ fn query_all_available_conversion_funds_test() {
 fn query_all_available_conversion_funds_pagination_test() {
     use crate::contract::query_all_available_conversion_funds;
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
 

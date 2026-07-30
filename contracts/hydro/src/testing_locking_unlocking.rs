@@ -11,21 +11,14 @@ use crate::{
         get_st_atom_denom_info_mock_data, get_validator_info_mock_data,
         setup_lsm_token_info_provider_mock, setup_multiple_token_info_provider_mocks,
         DERIVATIVE_TOKEN_PROVIDER_ADDR, LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS,
-        ST_ATOM_ON_NEUTRON, ST_ATOM_ON_STRIDE, THREE_MONTHS_IN_NANO_SECONDS, VALIDATOR_1,
-        VALIDATOR_1_LST_DENOM_1,
+        ST_ATOM_ON_NEUTRON, THREE_MONTHS_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
     },
-    testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies},
+    testing_mocks::{mock_dependencies, no_op_grpc_query_mock},
 };
 
 #[test]
 fn lock_tokens_basic_test() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     let user_address = "addr0000";
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -120,19 +113,7 @@ fn lock_tokens_basic_test() {
 
 #[test]
 fn lock_tokens_various_denoms_test() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-                VALIDATOR_1_LST_DENOM_1.to_string(),
-            ),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     let user_address = "addr0000";
     let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
@@ -235,13 +216,7 @@ fn unlock_tokens_basic_test() {
     let user_address = "addr0000";
     let user_token = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
     let msg = get_default_instantiate_msg(&deps.api);
@@ -321,13 +296,7 @@ fn unlock_tokens_pending_slashes_test() {
     let user_address = "addr0001";
     let user_token = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
     let instantiate_msg = get_default_instantiate_msg(&deps.api);
@@ -418,13 +387,7 @@ fn unlock_specific_tokens_test() {
     let user_address = "addr0000";
     let user_token = Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string());
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(&deps.api, user_address, std::slice::from_ref(&user_token));
     let msg = get_default_instantiate_msg(&deps.api);
@@ -587,13 +550,7 @@ fn unlock_specific_tokens_test() {
 
 #[test]
 fn test_too_many_locks() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let info = get_message_info(
         &deps.api,
@@ -677,13 +634,7 @@ fn test_too_many_locks() {
 
 #[test]
 fn max_locked_tokens_test() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-            VALIDATOR_1_LST_DENOM_1.to_string(),
-        )]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
     let mut info = get_message_info(&deps.api, "addr0000", &[]);
 
