@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## v3.6.15
+
+Date: August 4th, 2026
+
+### FEATURES
+
+- Mint lockups on the Cosmos Hub Hydro instance based on lockups from the Neutron instance.
+  ([\#426](https://github.com/informalsystems/hydro/pull/426))
+
 ## v3.6.14
 
 Date: July 28th, 2026
