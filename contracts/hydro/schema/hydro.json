@@ -15,6 +15,7 @@
       "lockup_conversion_fee_percent",
       "max_deployment_duration",
       "max_locked_tokens",
+      "migrate_info",
       "round_length",
       "round_lock_power_schedule",
       "slash_percentage_threshold",
@@ -79,6 +80,9 @@
       "max_locked_tokens": {
         "$ref": "#/definitions/Uint128"
       },
+      "migrate_info": {
+        "$ref": "#/definitions/MigrateInfo"
+      },
       "round_length": {
         "type": "integer",
         "format": "uint64",
@@ -133,6 +137,22 @@
         "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
         "type": "string"
       },
+      "Coin": {
+        "type": "object",
+        "required": [
+          "amount",
+          "denom"
+        ],
+        "properties": {
+          "amount": {
+            "$ref": "#/definitions/Uint128"
+          },
+          "denom": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "CollectionInfo": {
         "type": "object",
         "required": [
@@ -181,6 +201,37 @@
         },
         "additionalProperties": false
       },
+      "MigrateInfo": {
+        "type": "object",
+        "required": [
+          "conversion_funds",
+          "lock_id",
+          "paused",
+          "proposal_id"
+        ],
+        "properties": {
+          "conversion_funds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/Coin"
+            }
+          },
+          "lock_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "proposal_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        },
+        "additionalProperties": false
+      },
       "Timestamp": {
         "description": "A point in time in nanosecond precision.\n\nThis type can represent times from 1970-01-01T00:00:00Z to 2554-07-21T23:34:33Z.\n\n## Examples\n\n``` # use cosmwasm_std::Timestamp; let ts = Timestamp::from_nanos(1_000_000_202); assert_eq!(ts.nanos(), 1_000_000_202); assert_eq!(ts.seconds(), 1); assert_eq!(ts.subsec_nanos(), 202);\n\nlet ts = ts.plus_seconds(2); assert_eq!(ts.nanos(), 3_000_000_202); assert_eq!(ts.seconds(), 3); assert_eq!(ts.subsec_nanos(), 202); ```",
         "allOf": [
@@ -191,47 +242,6 @@
       },
       "TokenInfoProviderInstantiateMsg": {
         "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "lsm"
-            ],
-            "properties": {
-              "lsm": {
-                "type": "object",
-                "required": [
-                  "code_id",
-                  "hub_transfer_channel_id",
-                  "label",
-                  "msg"
-                ],
-                "properties": {
-                  "admin": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "code_id": {
-                    "type": "integer",
-                    "format": "uint64",
-                    "minimum": 0.0
-                  },
-                  "hub_transfer_channel_id": {
-                    "type": "string"
-                  },
-                  "label": {
-                    "type": "string"
-                  },
-                  "msg": {
-                    "$ref": "#/definitions/Binary"
-                  }
-                },
-                "additionalProperties": false
-              }
-            },
-            "additionalProperties": false
-          },
           {
             "type": "object",
             "required": [
@@ -1221,63 +1231,6 @@
         "additionalProperties": false
       },
       {
-        "description": "Allows whitelisted admin to set the drop token info for lockup conversions.",
-        "type": "object",
-        "required": [
-          "set_drop_token_info"
-        ],
-        "properties": {
-          "set_drop_token_info": {
-            "type": "object",
-            "required": [
-              "core_address",
-              "d_token_denom",
-              "puppeteer_address"
-            ],
-            "properties": {
-              "core_address": {
-                "type": "string"
-              },
-              "d_token_denom": {
-                "type": "string"
-              },
-              "puppeteer_address": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
-      },
-      {
-        "description": "Allows users to convert their lockups to dTokens. This action is only available if the drop token info is set.",
-        "type": "object",
-        "required": [
-          "convert_lockup_to_dtoken"
-        ],
-        "properties": {
-          "convert_lockup_to_dtoken": {
-            "type": "object",
-            "required": [
-              "lock_ids"
-            ],
-            "properties": {
-              "lock_ids": {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "format": "uint64",
-                  "minimum": 0.0
-                }
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
-      },
-      {
         "description": "Allows users to convert their existing lockup to one holding a different denom.",
         "type": "object",
         "required": [
@@ -1421,35 +1374,23 @@
         "additionalProperties": false
       },
       {
-        "description": "For migration purposes, allows whitelisted admins to transfer contract-held funds to a Cosmos Hub address via IBC. All denoms are sent directly Neutron -> Hub, except stATOM, which is routed Neutron -> Stride -> Hub using PFM. `ibc_fee` is required by Neutron's ibc-transfer-with-fee middleware and is applied as both the ack_fee and the timeout_fee (recv_fee is always zero, per Neutron's requirement).",
+        "description": "For migration purposes, allows whitelisted accounts to directly mint historical lockups (i.e. migrated from the Neutron deployment) without going through the normal LockTokens flow.",
         "type": "object",
         "required": [
-          "transfer_funds_to_hub"
+          "mint_lockups"
         ],
         "properties": {
-          "transfer_funds_to_hub": {
+          "mint_lockups": {
             "type": "object",
             "required": [
-              "denoms",
-              "ibc_fee",
-              "recipient_hub",
-              "recipient_stride"
+              "lockups"
             ],
             "properties": {
-              "denoms": {
+              "lockups": {
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "$ref": "#/definitions/LockupToMint"
                 }
-              },
-              "ibc_fee": {
-                "$ref": "#/definitions/Coin"
-              },
-              "recipient_hub": {
-                "type": "string"
-              },
-              "recipient_stride": {
-                "type": "string"
               }
             },
             "additionalProperties": false
@@ -1576,6 +1517,36 @@
         },
         "additionalProperties": false
       },
+      "LockupToMint": {
+        "type": "object",
+        "required": [
+          "funds",
+          "lock_end",
+          "lock_id",
+          "lock_start",
+          "owner"
+        ],
+        "properties": {
+          "funds": {
+            "$ref": "#/definitions/Coin"
+          },
+          "lock_end": {
+            "$ref": "#/definitions/Timestamp"
+          },
+          "lock_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "lock_start": {
+            "$ref": "#/definitions/Timestamp"
+          },
+          "owner": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "ProposalToLockups": {
         "type": "object",
         "required": [
@@ -1645,47 +1616,6 @@
       },
       "TokenInfoProviderInstantiateMsg": {
         "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "lsm"
-            ],
-            "properties": {
-              "lsm": {
-                "type": "object",
-                "required": [
-                  "code_id",
-                  "hub_transfer_channel_id",
-                  "label",
-                  "msg"
-                ],
-                "properties": {
-                  "admin": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "code_id": {
-                    "type": "integer",
-                    "format": "uint64",
-                    "minimum": 0.0
-                  },
-                  "hub_transfer_channel_id": {
-                    "type": "string"
-                  },
-                  "label": {
-                    "type": "string"
-                  },
-                  "msg": {
-                    "$ref": "#/definitions/Binary"
-                  }
-                },
-                "additionalProperties": false
-              }
-            },
-            "additionalProperties": false
-          },
           {
             "type": "object",
             "required": [
@@ -3055,37 +2985,6 @@
         "additionalProperties": false
       },
       {
-        "description": "Lists token_ids controlled by the contract.",
-        "type": "object",
-        "required": [
-          "simulate_dtoken_amounts"
-        ],
-        "properties": {
-          "simulate_dtoken_amounts": {
-            "type": "object",
-            "required": [
-              "address",
-              "lock_ids"
-            ],
-            "properties": {
-              "address": {
-                "type": "string"
-              },
-              "lock_ids": {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "format": "uint64",
-                  "minimum": 0.0
-                }
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
-      },
-      {
         "description": "Returns the list of parent lock IDs (ancestors) for a given child lock.",
         "type": "object",
         "required": [
@@ -3319,7 +3218,7 @@
         "lockups": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/LockEntryV2"
+            "$ref": "#/definitions/LockEntry"
           }
         },
         "next_lock_id": {
@@ -3353,7 +3252,7 @@
           },
           "additionalProperties": false
         },
-        "LockEntryV2": {
+        "LockEntry": {
           "type": "object",
           "required": [
             "funds",
@@ -3512,7 +3411,7 @@
             }
           ]
         },
-        "LockEntryV2": {
+        "LockEntry": {
           "type": "object",
           "required": [
             "funds",
@@ -3553,7 +3452,7 @@
               "$ref": "#/definitions/Uint128"
             },
             "lock_entry": {
-              "$ref": "#/definitions/LockEntryV2"
+              "$ref": "#/definitions/LockEntry"
             }
           },
           "additionalProperties": false
@@ -3857,7 +3756,7 @@
           },
           "additionalProperties": false
         },
-        "LockEntryV2": {
+        "LockEntry": {
           "type": "object",
           "required": [
             "funds",
@@ -3898,7 +3797,7 @@
               "$ref": "#/definitions/Uint128"
             },
             "lock_entry": {
-              "$ref": "#/definitions/LockEntryV2"
+              "$ref": "#/definitions/LockEntry"
             }
           },
           "additionalProperties": false
@@ -3958,7 +3857,7 @@
           },
           "additionalProperties": false
         },
-        "LockEntryV2": {
+        "LockEntry": {
           "type": "object",
           "required": [
             "funds",
@@ -3999,7 +3898,7 @@
               "$ref": "#/definitions/Uint128"
             },
             "lock_entry": {
-              "$ref": "#/definitions/LockEntryV2"
+              "$ref": "#/definitions/LockEntry"
             }
           },
           "additionalProperties": false
@@ -4724,7 +4623,7 @@
         "lockups": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/LockEntryV2"
+            "$ref": "#/definitions/LockEntry"
           }
         }
       },
@@ -4750,7 +4649,7 @@
           },
           "additionalProperties": false
         },
-        "LockEntryV2": {
+        "LockEntry": {
           "type": "object",
           "required": [
             "funds",
@@ -5099,7 +4998,7 @@
           },
           "additionalProperties": false
         },
-        "LockEntryV2": {
+        "LockEntry": {
           "type": "object",
           "required": [
             "funds",
@@ -5140,7 +5039,7 @@
               "$ref": "#/definitions/Uint128"
             },
             "lock_entry": {
-              "$ref": "#/definitions/LockEntryV2"
+              "$ref": "#/definitions/LockEntry"
             }
           },
           "additionalProperties": false
@@ -5678,43 +5577,6 @@
         }
       }
     },
-    "simulate_dtoken_amounts": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "DtokenAmountsResponse",
-      "type": "object",
-      "required": [
-        "dtokens_response"
-      ],
-      "properties": {
-        "dtokens_response": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/DtokenAmountResponse"
-          }
-        }
-      },
-      "additionalProperties": false,
-      "definitions": {
-        "DtokenAmountResponse": {
-          "type": "object",
-          "required": [
-            "dtoken_amount",
-            "lock_id"
-          ],
-          "properties": {
-            "dtoken_amount": {
-              "type": "string"
-            },
-            "lock_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            }
-          },
-          "additionalProperties": false
-        }
-      }
-    },
     "slashable_token_num_for_voting_on_proposal": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Uint128",
@@ -5758,7 +5620,7 @@
           },
           "additionalProperties": false
         },
-        "LockEntryV2": {
+        "LockEntry": {
           "type": "object",
           "required": [
             "funds",
@@ -5799,7 +5661,7 @@
               "$ref": "#/definitions/Uint128"
             },
             "lock_entry": {
-              "$ref": "#/definitions/LockEntryV2"
+              "$ref": "#/definitions/LockEntry"
             }
           },
           "additionalProperties": false
@@ -5859,7 +5721,7 @@
           },
           "additionalProperties": false
         },
-        "LockEntryV2": {
+        "LockEntry": {
           "type": "object",
           "required": [
             "funds",
@@ -5900,7 +5762,7 @@
               "$ref": "#/definitions/Uint128"
             },
             "lock_entry": {
-              "$ref": "#/definitions/LockEntryV2"
+              "$ref": "#/definitions/LockEntry"
             }
           },
           "additionalProperties": false
@@ -6056,18 +5918,6 @@
             {
               "type": "object",
               "required": [
-                "lsm"
-              ],
-              "properties": {
-                "lsm": {
-                  "$ref": "#/definitions/TokenInfoProviderLSM"
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
                 "lsm_hub"
               ],
               "properties": {
@@ -6135,27 +5985,6 @@
               "additionalProperties": false
             },
             "contract": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false
-        },
-        "TokenInfoProviderLSM": {
-          "type": "object",
-          "required": [
-            "cache",
-            "contract",
-            "hub_transfer_channel_id"
-          ],
-          "properties": {
-            "cache": {
-              "type": "object",
-              "additionalProperties": false
-            },
-            "contract": {
-              "type": "string"
-            },
-            "hub_transfer_channel_id": {
               "type": "string"
             }
           },
