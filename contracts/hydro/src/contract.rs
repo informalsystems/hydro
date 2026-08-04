@@ -1,9 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use cosmwasm_std::{
-    from_json, to_json_vec, Attribute, CosmosMsg, Decimal256, SubMsg, SubMsgResult, Uint256,
-    WasmMsg,
-};
+use cosmwasm_std::{from_json, CosmosMsg};
 // entry_point is being used but for some reason clippy doesn't see that, hence the allow attribute here
 #[allow(unused_imports)]
 use cosmwasm_std::{
@@ -12,31 +9,28 @@ use cosmwasm_std::{
 };
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
-use interface::drop_puppeteer::{DelegationsResponse, PuppeteerQueryMsg, QueryExtMsg};
 use interface::hydro::{CurrentRoundResponse, TokenGroupRatioChange};
 use interface::utils::{DEFAULT_PAGINATION_LIMIT, MAX_PAGINATION_LIMIT};
 
-use crate::cw721;
+use crate::cw721::{self, is_denom_lsm};
 use crate::error::{new_generic_error, ContractError};
 use crate::gatekeeper::{
     build_gatekeeper_lock_tokens_msg, build_init_gatekeeper_msg, gatekeeper_handle_submsg_reply,
 };
 use crate::governance::{query_total_power_at_height, query_voting_power_at_height};
-use crate::ibc_transfer::build_neutron_ibc_transfer_msg;
-use crate::lsm_integration::{query_ibc_denom_trace, TRANSFER_PORT};
 use crate::msg::{
-    CollectionInfo, ConvertLockupPayload, ExecuteMsg, InstantiateMsg, LiquidityDeployment,
-    LockTokensProof, ProposalToLockups, ReplyPayload, TokenInfoProviderInstantiateMsg, TrancheInfo,
+    CollectionInfo, ExecuteMsg, InstantiateMsg, LiquidityDeployment, LockTokensProof, LockupToMint,
+    ProposalToLockups, ReplyPayload, TokenInfoProviderInstantiateMsg, TrancheInfo,
     UpdateConfigData,
 };
 use crate::query::{
     AllAvailableConversionFundsResponse, AllLockupsResponse, AllUserLockupsResponse,
     AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, CanLockDenomResponse,
-    ConstantsResponse, ConversionFundInfo, DtokenAmountResponse, DtokenAmountsResponse,
-    ExpiredUserLockupsResponse, GatekeeperResponse, LiquidityDeploymentResponse,
-    LockEntryWithPower, LockVotesHistoryEntry, LockVotesHistoryResponse, LockupVotingMetrics,
-    LockupVotingMetricsResponse, LockupWithPerTrancheInfo, LockupsPendingSlashesResponse,
-    ParentLockIdsResponse, ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
+    ConstantsResponse, ConversionFundInfo, ExpiredUserLockupsResponse, GatekeeperResponse,
+    LiquidityDeploymentResponse, LockEntryWithPower, LockVotesHistoryEntry,
+    LockVotesHistoryResponse, LockupVotingMetrics, LockupVotingMetricsResponse,
+    LockupWithPerTrancheInfo, LockupsPendingSlashesResponse, ParentLockIdsResponse,
+    ProposalResponse, QueryMsg, RoundEndResponse, RoundProposalsResponse,
     RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse,
     SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse,
     TokenInfoProvidersResponse, TopNProposalsResponse, TotalLockedTokensResponse, TranchesResponse,
@@ -51,13 +45,12 @@ use crate::score_keeper::{
 };
 use crate::slashing::{query_slashable_token_num_for_voting_on_proposal, slash_proposal_voters};
 use crate::state::{
-    Constants, DropTokenInfo, LockEntryV2, Proposal, RoundLockPowerSchedule, Tranche, Vote,
-    VoteWithPower, AVAILABLE_CONVERSION_FUNDS, CONSTANTS, DROP_TOKEN_INFO, GATEKEEPER,
-    LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP_V2, LOCKS_PENDING_SLASHES, LOCK_ID,
-    LOCK_ID_EXPIRY, LOCK_ID_TRACKING, PROPOSAL_MAP, PROPS_BY_SCORE, PROP_ID,
-    REVERSE_LOCK_ID_TRACKING, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_INFO_PROVIDERS, TRANCHE_ID,
-    TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VOTE_MAP_V1, VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
-    WHITELIST, WHITELIST_ADMINS,
+    Constants, LockEntry, Proposal, RoundLockPowerSchedule, Tranche, Vote, VoteWithPower,
+    AVAILABLE_CONVERSION_FUNDS, CONSTANTS, GATEKEEPER, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS,
+    LOCKS_MAP, LOCKS_PENDING_SLASHES, LOCK_ID, LOCK_ID_EXPIRY, LOCK_ID_TRACKING, PROPOSAL_MAP,
+    PROPS_BY_SCORE, PROP_ID, REVERSE_LOCK_ID_TRACKING, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_IDS,
+    TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VOTE_MAP_V1,
+    VOTE_MAP_V2, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
 use crate::token_manager::{
     add_token_info_providers, handle_token_info_provider_add_remove,
@@ -77,8 +70,6 @@ use crate::vote::{
     process_unvotes, process_votes, validate_proposals_and_locks_for_voting, ProcessUnvotesResult,
     ProcessVotesResult, VoteProcessingContext,
 };
-use interface::drop_core::ExecuteMsg as DropExecuteMsg;
-use interface::drop_core::QueryMsg as DropQueryMsg;
 
 /// Contract name that is used for migration.
 pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
@@ -87,23 +78,12 @@ pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const MAX_LOCK_ENTRIES: usize = 100;
 
-pub const NATIVE_TOKEN_DENOM: &str = "untrn";
+const D_ATOM_HUB_DENOM: &str =
+    "ibc/AFC2F1B2FD45D549E34445E63921ECDECF1EAC68DA72412C2E087BEB503693F2";
 
 pub const MIN_DEPLOYMENT_DURATION: u64 = 1;
 
 pub const MIN_SPLIT_LOCK_SIZE: Uint128 = Uint128::new(10_000);
-
-const UNUSED_MSG_ID: u64 = 0;
-
-/// Constants used only for migration purposes
-const NEUTRON_HUB_TRANSFER_CHANNEL: &str = "channel-1"; // Neutron -> Hub (direct)
-const NEUTRON_STRIDE_TRANSFER_CHANNEL: &str = "channel-8"; // Neutron -> Stride (first PFM hop)
-const STRIDE_HUB_TRANSFER_CHANNEL: &str = "channel-0"; // Stride -> Hub (PFM forward target)
-const ST_ATOM_ON_NEUTRON_DENOM: &str =
-    "ibc/B7864B03E1B9FD4F049243E92ABD691586F682137037A9F3FCA5222815620B3C";
-const IBC_TRANSFER_TIMEOUT_SECONDS: u64 = 1800; // 30 minutes
-const HUB_ADDRESS_PREFIX: &str = "cosmos";
-const STRIDE_ADDRESS_PREFIX: &str = "stride";
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -149,7 +129,8 @@ pub fn instantiate(
         max_locked_tokens: msg.max_locked_tokens.u128(),
         known_users_cap: 0,
         max_deployment_duration: msg.max_deployment_duration,
-        paused: false,
+        // Until we migrate the lockups, contract will stay paused
+        paused: msg.migrate_info.paused,
         round_lock_power_schedule: RoundLockPowerSchedule::new(msg.round_lock_power_schedule),
         cw721_collection_info,
         lock_expiry_duration_seconds: msg.lock_expiry_duration_seconds,
@@ -164,8 +145,16 @@ pub fn instantiate(
 
     CONSTANTS.save(deps.storage, env.block.time.nanos(), &state)?;
     LOCKED_TOKENS.save(deps.storage, &0)?;
-    LOCK_ID.save(deps.storage, &0)?;
-    PROP_ID.save(deps.storage, &0)?;
+    LOCK_ID.save(deps.storage, &msg.migrate_info.lock_id)?;
+    PROP_ID.save(deps.storage, &msg.migrate_info.proposal_id)?;
+
+    for conversion_funds in msg.migrate_info.conversion_funds {
+        AVAILABLE_CONVERSION_FUNDS.save(
+            deps.storage,
+            conversion_funds.denom.clone(),
+            &conversion_funds.amount,
+        )?;
+    }
 
     let mut whitelist_admins: Vec<Addr> = vec![];
     let mut whitelist: Vec<Addr> = vec![];
@@ -242,11 +231,13 @@ pub fn execute(
     // Since un-pausing can only be done through contract migration,
     // we can check that the contract is not paused within execute.
     //
-    // For Neutron instance, if the contract is paused, we only allow
-    // the TransferFundsToHub message to be executed.
+    // For Cosmos Hub instance, if the contract is paused, we only allow
+    // the MintLockups and UpdateTokenGroupsRatios messages to be executed.
+    // Later one is needed to allow the token group ratios to be updated for the migrated lockups.
     if constants.paused {
         match msg {
-            ExecuteMsg::TransferFundsToHub { .. } => (),
+            ExecuteMsg::MintLockups { .. } => (),
+            ExecuteMsg::UpdateTokenGroupsRatios { .. } => (),
             _ => return Err(ContractError::Paused),
         }
     }
@@ -391,21 +382,6 @@ pub fn execute(
         ExecuteMsg::RevokeAll { operator } => {
             cw721::handle_execute_revoke_all(deps, env, info, operator)
         }
-        ExecuteMsg::SetDropTokenInfo {
-            core_address,
-            d_token_denom,
-            puppeteer_address,
-        } => set_drop_token_info(
-            deps,
-            env,
-            info,
-            core_address,
-            d_token_denom,
-            puppeteer_address,
-        ),
-        ExecuteMsg::ConvertLockupToDtoken { lock_ids } => {
-            convert_lockup_to_dtoken(deps, env, info, lock_ids)
-        }
         ExecuteMsg::ConvertLockup {
             lock_id,
             target_denom,
@@ -436,20 +412,7 @@ pub fn execute(
         ExecuteMsg::BuyoutPendingSlash { lock_id } => {
             buyout_pending_slash(deps, env, info, &constants, lock_id)
         }
-        ExecuteMsg::TransferFundsToHub {
-            denoms,
-            recipient_hub,
-            recipient_stride,
-            ibc_fee,
-        } => transfer_funds_to_hub(
-            deps,
-            env,
-            info,
-            denoms,
-            recipient_hub,
-            recipient_stride,
-            ibc_fee,
-        ),
+        ExecuteMsg::MintLockups { lockups } => mint_lockups(deps, env, info, &constants, lockups),
     }
 }
 
@@ -546,7 +509,7 @@ pub fn lock_tokens(
     }
 
     let lock_id = get_next_lock_id(deps.storage)?;
-    let lock_entry = LockEntryV2 {
+    let lock_entry = LockEntry {
         lock_id,
         owner: info.sender.clone(),
         funds: info.funds[0].clone(),
@@ -554,7 +517,7 @@ pub fn lock_tokens(
         lock_end: env.block.time.plus_nanos(lock_duration),
     };
     let lock_end = lock_entry.lock_end.nanos();
-    LOCKS_MAP_V2.save(deps.storage, lock_id, &lock_entry, env.block.height)?;
+    LOCKS_MAP.save(deps.storage, lock_id, &lock_entry, env.block.height)?;
 
     // Add to TOKEN_IDS if it's a NFT (non-LSM lockup)
     cw721::maybe_add_token_id(&mut deps, &lock_entry)?;
@@ -649,6 +612,140 @@ pub fn lock_tokens(
         .add_attribute("lock_end", lock_entry.lock_end.to_string()))
 }
 
+// MintLockups(lockups_to_mint):
+// For migration purposes, allows whitelisted accounts to directly create lock entries
+// (i.e. lockups migrated from the Neutron deployment) without going through the normal
+// LockTokens flow. Unlike LockTokens, this does not require the sender to attach funds,
+// does not enforce MAX_LOCK_ENTRIES / lock duration schedule / max_locked_tokens, and does
+// not go through the Gatekeeper.
+fn mint_lockups(
+    mut deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    constants: &Constants,
+    lockups_to_mint: Vec<LockupToMint>,
+) -> Result<Response, ContractError> {
+    // validate that the sender is on the whitelist
+    let whitelist = WHITELIST.load(deps.storage)?;
+    if !whitelist.contains(&info.sender) {
+        return Err(ContractError::Unauthorized);
+    }
+
+    let current_round = compute_current_round_id(&env, constants)?;
+    let mut token_manager = TokenManager::new(&deps.as_ref());
+
+    let mut total_locked_tokens = LOCKED_TOKENS.load(deps.storage)?;
+    let mut seen_lock_ids: HashSet<u64> = HashSet::new();
+    let mut lock_ids_minted = vec![];
+
+    for lockup in lockups_to_mint {
+        if !seen_lock_ids.insert(lockup.lock_id) {
+            return Err(new_generic_error(format!(
+                "Duplicate lock_id {} in request",
+                lockup.lock_id
+            )));
+        }
+
+        if LOCKS_MAP.may_load(deps.storage, lockup.lock_id)?.is_some() {
+            return Err(new_generic_error(format!(
+                "Lock with id {} already exists",
+                lockup.lock_id
+            )));
+        }
+
+        let owner = deps.api.addr_validate(&lockup.owner)?;
+
+        let lock_entry = LockEntry {
+            lock_id: lockup.lock_id,
+            owner: owner.clone(),
+            funds: lockup.funds.clone(),
+            lock_start: lockup.lock_start,
+            lock_end: lockup.lock_end,
+        };
+        let lock_end = lock_entry.lock_end.nanos();
+
+        LOCKS_MAP.save(
+            deps.storage,
+            lock_entry.lock_id,
+            &lock_entry,
+            env.block.height,
+        )?;
+
+        // Add to TOKEN_IDS if it's a dATOM/stATOM lockup (non-LSM)
+        if !is_denom_lsm(&deps.as_ref(), lock_entry.funds.denom.clone())? {
+            TOKEN_IDS.save(deps.storage, lock_entry.lock_id, &())?;
+        }
+
+        USER_LOCKS.update(
+            deps.storage,
+            owner.clone(),
+            env.block.height,
+            |current_locks| -> Result<Vec<u64>, StdError> {
+                match current_locks {
+                    None => Ok(vec![lock_entry.lock_id]),
+                    Some(mut current_locks) => {
+                        current_locks.push(lock_entry.lock_id);
+                        Ok(current_locks)
+                    }
+                }
+            },
+        )?;
+
+        USER_LOCKS_FOR_CLAIM.update(
+            deps.storage,
+            owner.clone(),
+            |current_claim_locks| -> Result<Vec<u64>, StdError> {
+                match current_claim_locks {
+                    None => Ok(vec![lock_entry.lock_id]),
+                    Some(mut current_claim_locks) => {
+                        current_claim_locks.push(lock_entry.lock_id);
+                        Ok(current_claim_locks)
+                    }
+                }
+            },
+        )?;
+
+        total_locked_tokens += lock_entry.funds.amount.u128();
+        lock_ids_minted.push(lock_entry.lock_id.to_string());
+
+        let last_round_with_power = compute_round_id_for_timestamp(constants, lock_end)? - 1;
+
+        // If the lockup has already expired, we don't need to update total powers for current and future rounds.
+        if last_round_with_power >= current_round {
+            // We won't be able to validate denom of dATOM lockups. There will be no token info provider for it.
+            // Those lockups will have 0 voting power, so there is no need to update total powers for current and future rounds.
+            if lockup.funds.denom.as_str() == D_ATOM_HUB_DENOM {
+                continue;
+            }
+
+            let token_group_id = token_manager
+                .validate_denom(&deps.as_ref(), current_round, lockup.funds.denom.clone())
+                .map_err(|err| new_generic_error(format!("validating denom: {err}")))?;
+
+            update_total_time_weighted_shares(
+                &mut deps,
+                env.block.height,
+                constants,
+                &mut token_manager,
+                current_round,
+                current_round,
+                last_round_with_power,
+                lock_end,
+                token_group_id,
+                lock_entry.funds.amount,
+                |_, _, _| Uint128::zero(),
+            )?;
+        }
+    }
+
+    LOCKED_TOKENS.save(deps.storage, &total_locked_tokens)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "mint_lockups")
+        .add_attribute("sender", info.sender)
+        .add_attribute("lock_ids", lock_ids_minted.join(",")))
+}
+
 // Extends the lock duration of the guiven lock entries to be current_block_time + lock_duration,
 // assuming that this would actually increase the lock_end_time (so this *should not* be a way to make the lock time shorter).
 // Thus, for each lock entry the lock_end_time afterwards *must* be later than the lock_end_time before.
@@ -733,7 +830,7 @@ fn refresh_single_lock(
         )));
     }
     lock_entry.lock_end = Timestamp::from_nanos(new_lock_end);
-    LOCKS_MAP_V2.save(deps.storage, lock_id, &lock_entry, env.block.height)?;
+    LOCKS_MAP.save(deps.storage, lock_id, &lock_entry, env.block.height)?;
     let validate_denom_result = token_manager.validate_denom(
         &deps.as_ref(),
         current_round_id,
@@ -828,7 +925,7 @@ fn split_lock(
 
     // All other fields except lock_id and amount should remain the same as with original lock entry
     let new_lock_id_1 = get_next_lock_id(deps.storage)?;
-    let new_lock_entry_1 = LockEntryV2 {
+    let new_lock_entry_1 = LockEntry {
         lock_id: new_lock_id_1,
         funds: Coin {
             denom: starting_lock_entry.funds.denom.clone(),
@@ -838,7 +935,7 @@ fn split_lock(
     };
 
     let new_lock_id_2 = get_next_lock_id(deps.storage)?;
-    let new_lock_entry_2 = LockEntryV2 {
+    let new_lock_entry_2 = LockEntry {
         lock_id: new_lock_id_2,
         owner: info.sender.clone(),
         funds: Coin {
@@ -889,14 +986,14 @@ fn split_lock(
     LOCK_ID_EXPIRY.save(deps.storage, starting_lock_entry.lock_id, &env.block.time)?;
 
     // Remove starting lock entry
-    LOCKS_MAP_V2.remove(deps.storage, starting_lock_entry.lock_id, env.block.height)?;
+    LOCKS_MAP.remove(deps.storage, starting_lock_entry.lock_id, env.block.height)?;
 
     // Remove from TOKEN_IDS
     cw721::maybe_remove_token_id(deps.storage, starting_lock_entry.lock_id);
 
     // Insert new lock entries
     for lock_entry in [&new_lock_entry_1, &new_lock_entry_2] {
-        LOCKS_MAP_V2.save(
+        LOCKS_MAP.save(
             deps.storage,
             lock_entry.lock_id,
             lock_entry,
@@ -1110,7 +1207,7 @@ fn merge_locks(
     }
 
     let resulting_lock_id = get_next_lock_id(deps.storage)?;
-    let resulting_lock_entry = LockEntryV2 {
+    let resulting_lock_entry = LockEntry {
         lock_id: resulting_lock_id,
         owner: info.sender.clone(),
         funds: Coin {
@@ -1121,7 +1218,7 @@ fn merge_locks(
         lock_end: Timestamp::from_nanos(new_lock_end),
     };
 
-    LOCKS_MAP_V2.save(
+    LOCKS_MAP.save(
         deps.storage,
         resulting_lock_entry.lock_id,
         &resulting_lock_entry,
@@ -1167,7 +1264,7 @@ fn merge_locks(
 
         LOCK_ID_EXPIRY.save(deps.storage, *lock_id, &env.block.time)?;
         // Remove merged lock from locks map
-        LOCKS_MAP_V2.remove(deps.storage, *lock_id, env.block.height)?;
+        LOCKS_MAP.remove(deps.storage, *lock_id, env.block.height)?;
 
         // Remove from TOKEN_IDS
         cw721::maybe_remove_token_id(deps.storage, *lock_id);
@@ -1607,7 +1704,7 @@ fn unlock_tokens(
                 return None;
             }
 
-            LOCKS_MAP_V2
+            LOCKS_MAP
                 .load(deps.storage, id)
                 .map(|lock| Some((id, lock)))
                 .transpose()
@@ -1645,7 +1742,7 @@ fn unlock_tokens(
         total_unlocked_amount = total_unlocked_amount.checked_add(lock_entry.funds.amount)?;
 
         // Delete unlocked lock and any pending slashes attached to it
-        LOCKS_MAP_V2.remove(deps.storage, lock_id, env.block.height)?;
+        LOCKS_MAP.remove(deps.storage, lock_id, env.block.height)?;
         LOCKS_PENDING_SLASHES.remove(deps.storage, lock_id);
 
         // Clear any CW721 Approval on the lock
@@ -1737,8 +1834,8 @@ fn get_lockups_allowed_to_unlock(
     deps: &DepsMut,
     env: &Env,
     current_round_id: u64,
-    locks: &[(u64, LockEntryV2)],
-) -> Result<Vec<(u64, LockEntryV2)>, ContractError> {
+    locks: &[(u64, LockEntry)],
+) -> Result<Vec<(u64, LockEntry)>, ContractError> {
     let tranche_ids = TRANCHE_MAP
         .keys(deps.storage, None, None, Order::Ascending)
         .collect::<StdResult<Vec<u64>>>()?;
@@ -2558,102 +2655,6 @@ pub fn remove_token_info_provider(
         .add_attribute("provider_id", provider_id))
 }
 
-// Inserts or updates the drop info needed for conversion of lockups to dTokens
-// Validate that the sender is a whitelist admin
-// Sets the address of the drop core contract, the dToken denom, and the puppeteer address.
-fn set_drop_token_info(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    core_address: String,
-    d_token_denom: String,
-    puppeteer_address: String,
-) -> Result<Response, ContractError> {
-    let whitelist_admins = WHITELIST_ADMINS.load(deps.storage)?;
-
-    if !whitelist_admins.contains(&info.sender) {
-        return Err(ContractError::Unauthorized);
-    }
-
-    let drop_token_info = DropTokenInfo {
-        address: deps.api.addr_validate(&core_address)?,
-        d_token_denom,
-        puppeteer_address: deps.api.addr_validate(&puppeteer_address)?,
-    };
-
-    DROP_TOKEN_INFO.save(deps.storage, &drop_token_info)?;
-
-    Ok(Response::new()
-        .add_attribute("action", "set_drop_token_info")
-        .add_attribute("sender", info.sender))
-}
-
-// Converts existing lockup (of lsm token) to dToken
-// The user specifies one or several lockups in order to convert it on drop
-// Hydro contract exectutes Bond message/s to drop core contract
-// https://github.com/hadronlabs-org/drop-contracts/blob/bdbb1a7986b4448aff10db3baaa150d71527e815/contracts/core/src/contract.rs#L1002-L1002
-// Drop core contract mints appropriate amount of dtoken given lsm shares sent
-pub fn convert_lockup_to_dtoken(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    lock_ids: Vec<u64>,
-) -> Result<Response, ContractError> {
-    let lock_ids_set: HashSet<u64> = lock_ids.into_iter().collect();
-
-    let lockups = query_user_lockups(
-        &deps.as_ref(),
-        info.sender.clone(),
-        |lock| lock_ids_set.contains(&lock.lock_id),
-        0,
-        lock_ids_set.len() as u32,
-    );
-
-    let drop_info = DROP_TOKEN_INFO.load(deps.storage)?;
-
-    let mut submsgs = vec![];
-
-    for lockup in lockups {
-        // Sender needs to be the owner of the lockups
-        if lockup.owner != info.sender {
-            return Err(ContractError::Unauthorized);
-        }
-        // Check if the lockup is already converted to dToken
-        if lockup.funds.denom == drop_info.d_token_denom {
-            return Err(ContractError::Std(StdError::generic_err(format!(
-                "Lockup {lock_id} is already converted to dToken",
-                lock_id = lockup.lock_id
-            ))));
-        }
-
-        let convert_token_msg = DropExecuteMsg::Bond {
-            receiver: None,
-            r#ref: None,
-        };
-
-        let wasm_execute_msg = WasmMsg::Execute {
-            contract_addr: drop_info.address.to_string(),
-            msg: to_json_binary(&convert_token_msg)?,
-            funds: vec![lockup.funds.clone()],
-        };
-
-        let reply_payload = ConvertLockupPayload {
-            lock_id: lockup.lock_id,
-            amount: lockup.funds.amount,
-            sender: info.sender.clone(),
-        };
-
-        submsgs.push(
-            SubMsg::reply_on_success(wasm_execute_msg, UNUSED_MSG_ID)
-                .with_payload(to_json_vec(&ReplyPayload::ConvertLockup(reply_payload))?),
-        );
-    }
-
-    Ok(Response::new()
-        .add_submessages(submsgs)
-        .add_attribute("action", "convert_lockup_to_dtoken"))
-}
-
 // Converts existing lockup holding arbitrary supported token to a lockup of another supported token.
 // Users may provide the conversion funds by themselves, or use available conversion funds provided by Hydro.
 // Conversion fee is applied only if users don't provide the conversion funds themselves.
@@ -2818,176 +2819,6 @@ fn withdraw_conversion_funds(
     Ok(response)
 }
 
-// TransferFundsToHub(denoms, recipient_hub, recipient_stride, ibc_fee):
-// Validate that the sender is a whitelist admin and that recipient_hub and recipient_stride are valid addresses.
-// For each denom, query the contract's own balance and, if non-zero, IBC-transfer it to
-// recipient. All denoms go directly Neutron -> Hub, except stATOM, which is routed
-// Neutron -> Stride -> Hub via a PFM memo. Neutron's ibc-transfer-with-fee middleware requires
-// relayer fees to be attached, or the packet will fail to relay; ibc_fee is used for both the
-// ack_fee and the timeout_fee.
-fn transfer_funds_to_hub(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    denoms: Vec<String>,
-    recipient_hub: String,
-    recipient_stride: String,
-    ibc_fee: Coin,
-) -> Result<Response, ContractError> {
-    validate_sender_is_whitelist_admin(&deps, &info)?;
-
-    match bech32::decode(&recipient_hub) {
-        Ok((hrp, _)) if hrp.as_str() == HUB_ADDRESS_PREFIX => (),
-        _ => {
-            return Err(ContractError::Std(StdError::generic_err(format!(
-                "recipient_hub must be a valid '{HUB_ADDRESS_PREFIX}' bech32 address"
-            ))))
-        }
-    };
-
-    // stATOM IBC transfers require a valid Stride address as the recipient, otherwise the transfer will fail.
-    match bech32::decode(&recipient_stride) {
-        Ok((hrp, _)) if hrp.as_str() == STRIDE_ADDRESS_PREFIX => (),
-        _ => {
-            return Err(ContractError::Std(StdError::generic_err(format!(
-                "recipient_stride must be a valid '{STRIDE_ADDRESS_PREFIX}' bech32 address"
-            ))))
-        }
-    };
-
-    let timeout_nanos = env
-        .block
-        .time
-        .plus_seconds(IBC_TRANSFER_TIMEOUT_SECONDS)
-        .nanos();
-
-    let mut messages = vec![];
-    let mut transferred_funds: Vec<Coin> = vec![];
-
-    // Remove duplicates and trim whitespace from denoms
-    let denoms = HashSet::<String>::from_iter(denoms.iter().map(|d| d.trim().to_string()));
-
-    for denom in denoms {
-        let balance = deps
-            .querier
-            .query_balance(env.contract.address.clone(), denom.clone())?;
-
-        if balance.amount.is_zero() {
-            continue;
-        }
-
-        let (channel_id, to_address, memo) = if denom == ST_ATOM_ON_NEUTRON_DENOM {
-            let memo = format!(
-                r#"{{"forward":{{"receiver":"{recipient_hub}","port":"{TRANSFER_PORT}","channel":"{STRIDE_HUB_TRANSFER_CHANNEL}"}}}}"#
-            );
-            (
-                NEUTRON_STRIDE_TRANSFER_CHANNEL,
-                recipient_stride.clone(),
-                Some(memo),
-            )
-        } else {
-            (NEUTRON_HUB_TRANSFER_CHANNEL, recipient_hub.clone(), None)
-        };
-
-        messages.push(build_neutron_ibc_transfer_msg(
-            TRANSFER_PORT,
-            channel_id,
-            env.contract.address.to_string(),
-            to_address,
-            balance.clone(),
-            timeout_nanos,
-            memo,
-            ibc_fee.clone(),
-        ));
-
-        transferred_funds.push(balance);
-    }
-
-    Ok(Response::new()
-        .add_messages(messages)
-        .add_attribute("action", "transfer_funds_to_hub")
-        .add_attribute("sender", info.sender)
-        .add_attribute("recipient", recipient_hub)
-        .add_attribute(
-            "transferred_funds",
-            transferred_funds
-                .iter()
-                .map(|c| c.to_string())
-                .collect::<Vec<String>>()
-                .join(", "),
-        ))
-}
-
-// For each reply the following happens: (reply_id is lock_id)
-// 1. If there are any votes with lock_id - unvote
-// 2. Apply proposal power changes
-// 3. Update lock entry with converted denom and amount
-// 4. Convert any pending slash into dtoken amount
-// 5. Re-vote with the new lock entry if there were previous votes
-// 6. Apply proposal power changes
-pub fn convert_lockup_to_dtoken_reply(
-    mut deps: DepsMut,
-    env: Env,
-    convert_lockup_payload: ConvertLockupPayload,
-    msg: Reply,
-) -> Result<Response, ContractError> {
-    let d_token_issued_amount = match msg.result {
-        SubMsgResult::Ok(res) => {
-            // Collect all attributes from events
-            let attrs: Vec<&Attribute> = res
-                .events
-                .iter()
-                .flat_map(|e| e.attributes.iter())
-                .collect();
-
-            let issue_amount_attr = attrs
-                .iter()
-                .find(|attr| attr.key == "issue_amount")
-                .ok_or_else(|| {
-                    ContractError::Std(cosmwasm_std::StdError::generic_err(
-                        "issue_amount attribute not found",
-                    ))
-                })?;
-
-            issue_amount_attr
-                .value
-                .parse::<u128>()
-                .map(Uint128::from)
-                .map_err(|_| {
-                    ContractError::Std(cosmwasm_std::StdError::generic_err(
-                        "Invalid issue_amount attribute",
-                    ))
-                })?
-        }
-        SubMsgResult::Err { .. } => {
-            return Err(ContractError::Std(cosmwasm_std::StdError::generic_err(
-                "Submessage execution failed",
-            )))
-        }
-    };
-
-    let constants = load_current_constants(&deps.as_ref(), &env)?;
-    let d_token_denom = DROP_TOKEN_INFO.load(deps.storage)?.d_token_denom;
-    let mut token_manager = TokenManager::new(&deps.as_ref());
-    let mut lock_entry = LOCKS_MAP_V2.load(deps.storage, convert_lockup_payload.lock_id)?;
-
-    handle_lock_entry_denom_conversion(
-        &mut deps,
-        &env,
-        &constants,
-        &mut token_manager,
-        &mut lock_entry,
-        &d_token_denom,
-        d_token_issued_amount,
-    )?;
-
-    Ok(Response::new()
-        .add_attribute("action", "convert_lockup_success")
-        .add_attribute("lock_id", lock_entry.lock_id.to_string())
-        .add_attribute("sender", convert_lockup_payload.sender.to_string())
-        .add_attribute("issue_amount", d_token_issued_amount.to_string()))
-}
-
 /// Allows a user to buy out (i.e., pay off) the pending slash on a specific lockup.
 ///
 /// This function:
@@ -3006,7 +2837,7 @@ pub fn buyout_pending_slash(
     lock_id: u64,
 ) -> Result<Response, ContractError> {
     // Step 1: Get the lockup
-    let lockup = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
+    let lockup = LOCKS_MAP.load(deps.storage, lock_id)?;
 
     // Step 2: Load pending slash
     let Some(slash_amount) = LOCKS_PENDING_SLASHES.may_load(deps.storage, lock_id)? else {
@@ -3410,9 +3241,6 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, ContractErro
             token_id,
             include_expired,
         )?),
-        QueryMsg::SimulateDtokenAmounts { lock_ids, address } => {
-            to_json_binary(&query_simulate_dtoken_amounts(&deps, lock_ids, address)?)
-        }
         QueryMsg::ParentLockIds { child_id } => {
             to_json_binary(&query_parent_lock_ids(deps, child_id)?)
         }
@@ -3497,7 +3325,7 @@ fn get_user_lockups_with_predicate(
     deps: &Deps,
     env: &Env,
     address: String,
-    predicate: impl FnMut(&LockEntryV2) -> bool,
+    predicate: impl FnMut(&LockEntry) -> bool,
     start_from: u32,
     limit: u32,
 ) -> StdResult<Vec<LockEntryWithPower>> {
@@ -3509,7 +3337,7 @@ fn get_user_lockups_with_predicate(
 pub fn enrich_lockups_with_power(
     deps: &Deps,
     env: &Env,
-    lockups: Vec<LockEntryV2>,
+    lockups: Vec<LockEntry>,
 ) -> StdResult<Vec<LockEntryWithPower>> {
     let constants = load_current_constants(deps, env)?;
     let current_round_id = compute_current_round_id(env, &constants)?;
@@ -3630,7 +3458,7 @@ pub fn query_expired_user_lockups(
     limit: u32,
 ) -> StdResult<ExpiredUserLockupsResponse> {
     let user_address = deps.api.addr_validate(&address)?;
-    let expired_lockup_predicate = |l: &LockEntryV2| l.lock_end < env.block.time;
+    let expired_lockup_predicate = |l: &LockEntry| l.lock_end < env.block.time;
 
     Ok(ExpiredUserLockupsResponse {
         lockups: query_user_lockups(
@@ -3932,7 +3760,7 @@ pub fn query_all_votes(deps: Deps, start_from: u32, limit: u32) -> StdResult<All
         .filter_map(|kv| {
             let ((round_id_tranche, lock_id), vote) = kv.ok()?;
             // For each vote, get the lock entry to determine the owner
-            LOCKS_MAP_V2
+            LOCKS_MAP
                 .load(deps.storage, lock_id)
                 .ok() // Skip votes where we can't find the lock entry
                 .map(|lock_entry| VoteEntry {
@@ -3967,7 +3795,7 @@ pub fn query_all_votes_round_tranche(
         .take(limit as usize)
         .filter_map(|kv| {
             let (lock_id, vote) = kv.ok()?;
-            LOCKS_MAP_V2
+            LOCKS_MAP
                 .load(deps.storage, lock_id)
                 .ok() // Skip votes where we can't find the lock entry
                 .map(|lock_entry| VoteEntry {
@@ -4091,17 +3919,17 @@ pub fn query_tranches(deps: Deps) -> StdResult<TranchesResponse> {
 fn query_user_lockups(
     deps: &Deps,
     user_address: Addr,
-    mut predicate: impl FnMut(&LockEntryV2) -> bool,
+    mut predicate: impl FnMut(&LockEntry) -> bool,
     start_from: u32,
     limit: u32,
-) -> Vec<LockEntryV2> {
+) -> Vec<LockEntry> {
     let Ok(Some(lock_ids)) = USER_LOCKS.may_load(deps.storage, user_address.clone()) else {
         return vec![];
     };
 
     lock_ids
         .into_iter()
-        .filter_map(|lock_id| LOCKS_MAP_V2.may_load(deps.storage, lock_id).ok().flatten())
+        .filter_map(|lock_id| LOCKS_MAP.may_load(deps.storage, lock_id).ok().flatten())
         .filter(|lock| predicate(lock))
         .skip(start_from as usize)
         .take(limit as usize)
@@ -4160,103 +3988,6 @@ pub fn query_can_lock_denom(
     }
 }
 
-pub fn query_simulate_dtoken_amounts(
-    deps: &Deps,
-    lock_ids: Vec<u64>,
-    address: String,
-) -> StdResult<DtokenAmountsResponse> {
-    let lock_ids_set: HashSet<u64> = lock_ids.into_iter().collect();
-
-    let lockups = query_user_lockups(
-        deps,
-        deps.api.addr_validate(&address)?,
-        |lock| lock_ids_set.contains(&lock.lock_id),
-        0,
-        lock_ids_set.len() as u32,
-    );
-
-    let drop_info = DROP_TOKEN_INFO.load(deps.storage)?;
-
-    let ratio: Decimal = deps
-        .querier
-        .query_wasm_smart(drop_info.address, &DropQueryMsg::ExchangeRate {})?;
-
-    let delegations_response = deps.querier.query_wasm_smart::<DelegationsResponse>(
-        drop_info.puppeteer_address,
-        &PuppeteerQueryMsg::Extension {
-            msg: QueryExtMsg::Delegations {},
-        },
-    )?;
-
-    let hub_transfer_channel_id = match TokenManager::new(deps).get_lsm_token_info_provider() {
-        None => {
-            return Err(StdError::generic_err(
-                "failed to obtain hub_transfer_channel_id",
-            ))
-        }
-        Some(lsm_token_info_provider) => lsm_token_info_provider.hub_transfer_channel_id,
-    };
-
-    let mut result: Vec<DtokenAmountResponse> = Vec::new();
-
-    for lockup in lockups {
-        let resp = (|| -> Result<String, StdError> {
-            let denom_trace = query_ibc_denom_trace(deps, lockup.funds.denom)?;
-            let path_parts: Vec<&str> = denom_trace.path.split("/").collect();
-            if path_parts.len() != 2
-                || path_parts[0] != TRANSFER_PORT
-                || path_parts[1] != hub_transfer_channel_id
-            {
-                return Err(StdError::generic_err("Invalid IBC denom path".to_string()));
-            }
-            let base_denom_parts: Vec<&str> = denom_trace.base_denom.split("/").collect();
-            let validator = base_denom_parts[0].to_string();
-
-            let validator_info = delegations_response
-                .delegations
-                .delegations
-                .iter()
-                .find(|one| one.validator == validator)
-                .ok_or_else(|| {
-                    StdError::generic_err(format!("validator info not found: {validator}"))
-                })?;
-
-            let input_amount = Decimal::from_atomics(lockup.funds.amount, 0)
-                .map_err(|_| new_generic_error("Invalid fund amount".to_string()))
-                .unwrap();
-
-            let share = Decimal256::from_atomics(input_amount.atomics(), 0).unwrap();
-
-            let real_amount = Uint128::try_from(
-                share.checked_mul(validator_info.share_ratio)?.atomics()
-                    / Uint256::from(10u128.pow(18)),
-            )?;
-
-            let decimal_real = Decimal::from_atomics(real_amount, 18)
-                .map_err(|_| new_generic_error("Invalid real_amount for Decimal".to_string()));
-
-            let decimal_issue_amount = (Decimal::one() / ratio) * decimal_real.unwrap();
-
-            let precision = Uint128::from(10u128.pow(18));
-            let int_part = decimal_issue_amount.atomics() / precision;
-
-            Ok(int_part.to_string())
-        })();
-
-        result.push(DtokenAmountResponse {
-            lock_id: lockup.lock_id,
-            dtoken_amount: match resp {
-                Ok(v) => v,
-                Err(e) => format!("error: {e}"),
-            },
-        });
-    }
-
-    Ok(DtokenAmountsResponse {
-        dtokens_response: result,
-    })
-}
-
 pub fn query_token_info_providers(deps: Deps) -> StdResult<TokenInfoProvidersResponse> {
     Ok(TokenInfoProvidersResponse {
         providers: TokenManager::new(&deps).token_info_providers,
@@ -4298,7 +4029,7 @@ pub fn query_lockup_voting_metrics(
     let lockups: StdResult<Vec<LockupVotingMetrics>> = lock_ids_set
         .into_iter()
         .map(|lock_id| {
-            let lockup = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
+            let lockup = LOCKS_MAP.load(deps.storage, lock_id)?;
 
             let time_weighted_shares = get_lock_time_weighted_shares(
                 &constants.round_lock_power_schedule,
@@ -4350,8 +4081,8 @@ pub fn query_all_lockups(
     let limit = limit.min(MAX_PAGINATION_LIMIT as u64) as usize;
     let min_bound = start_lock_id.map(Bound::inclusive);
 
-    let mut lockups: Vec<LockEntryV2> = vec![];
-    for item in LOCKS_MAP_V2
+    let mut lockups: Vec<LockEntry> = vec![];
+    for item in LOCKS_MAP
         .range(deps.storage, min_bound, None, Order::Ascending)
         // We request one more item than the limit to determine if there are more results
         .take(limit + 1)
@@ -4444,7 +4175,7 @@ pub fn query_converted_token_num(
     token_denom: String,
     user_provides_funds: bool,
 ) -> Result<Uint128, ContractError> {
-    let lock_entry = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
+    let lock_entry = LOCKS_MAP.load(deps.storage, lock_id)?;
 
     let constants = load_current_constants(&deps, &env)?;
     let mut token_manager = TokenManager::new(&deps);
@@ -4500,8 +4231,8 @@ fn update_voting_power_on_proposals(
     constants: &Constants,
     token_manager: &mut TokenManager,
     current_round: u64,
-    old_lock_entry: Option<LockEntryV2>,
-    new_lock_entry: LockEntryV2,
+    old_lock_entry: Option<LockEntry>,
+    new_lock_entry: LockEntry,
     token_group_id: String,
 ) -> Result<(), ContractError> {
     let round_end = compute_round_end(constants, current_round)?;
@@ -4645,7 +4376,7 @@ pub fn get_vote_for_update(
     sender: &Addr,
     current_round: u64,
     tranche_id: u64,
-    old_lock_entry: &Option<LockEntryV2>,
+    old_lock_entry: &Option<LockEntry>,
     token_group_id: &str,
 ) -> Result<Option<Vote>, ContractError> {
     if let Some(old_lock_entry) = old_lock_entry {
@@ -4690,7 +4421,7 @@ pub fn get_vote_for_update(
 pub fn can_lock_vote_for_proposal(
     current_round: u64,
     constants: &Constants,
-    lock_entry: &LockEntryV2,
+    lock_entry: &LockEntry,
     proposal: &Proposal,
 ) -> Result<bool, ContractError> {
     let power_required_round_id = current_round + proposal.deployment_duration - 1;
@@ -4708,7 +4439,7 @@ pub fn process_votes_and_apply_proposal_changes(
     round_id: u64,
     tranche_id: u64,
     votes: &[ProposalToLockups],
-    lock_entries: &HashMap<u64, LockEntryV2>,
+    lock_entries: &HashMap<u64, LockEntry>,
     unvotes_result: ProcessUnvotesResult,
 ) -> Result<ProcessVotesResult, ContractError> {
     let context = VoteProcessingContext {
@@ -4848,7 +4579,7 @@ fn calculate_number_of_tokens_to_receive(
     env: &Env,
     constants: &Constants,
     token_manager: &mut TokenManager,
-    lock_entry: &LockEntryV2,
+    lock_entry: &LockEntry,
     target_denom: &str,
     user_provides_funds: bool,
 ) -> Result<Uint128, ContractError> {
@@ -4902,7 +4633,7 @@ fn handle_lock_entry_denom_conversion(
     env: &Env,
     constants: &Constants,
     token_manager: &mut TokenManager,
-    lock_entry: &mut LockEntryV2,
+    lock_entry: &mut LockEntry,
     target_denom: &str,
     target_amount: Uint128,
 ) -> Result<(), ContractError> {
@@ -4915,7 +4646,7 @@ fn handle_lock_entry_denom_conversion(
 
     // We can update the LOCKS_MAP_V2 entry immediately, since process_unvotes() relies
     // on VOTE_MAP_V2, while proces_votes() will use the updated lock entry.
-    LOCKS_MAP_V2.save(
+    LOCKS_MAP.save(
         deps.storage,
         lock_entry.lock_id,
         lock_entry,
@@ -4996,7 +4727,7 @@ fn handle_lock_entry_denom_conversion(
             lock_ids: vec![lock_entry.lock_id],
         }];
 
-        let lock_entries: HashMap<u64, LockEntryV2> =
+        let lock_entries: HashMap<u64, LockEntry> =
             HashMap::from_iter([(lock_entry.lock_id, lock_entry.clone())]);
 
         // Process new votes
@@ -5057,9 +4788,6 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
             token_manager_handle_submsg_reply(deps, &env, token_info_provider, msg)
         }
         ReplyPayload::InstantiateGatekeeper => gatekeeper_handle_submsg_reply(deps, msg),
-        ReplyPayload::ConvertLockup(convert_lockup_payload) => {
-            convert_lockup_to_dtoken_reply(deps, env, convert_lockup_payload, msg)
-        }
     }
 }
 

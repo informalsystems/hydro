@@ -10,14 +10,6 @@ export type Binary = string;
 export type Decimal = string;
 export type Uint128 = string;
 export type TokenInfoProviderInstantiateMsg = {
-  lsm: {
-    admin?: string | null;
-    code_id: number;
-    hub_transfer_channel_id: string;
-    label: string;
-    msg: Binary;
-  };
-} | {
   lsm_hub: {
     admin?: string | null;
     code_id: number;
@@ -48,6 +40,7 @@ export interface InstantiateMsg {
   lockup_conversion_fee_percent: Decimal;
   max_deployment_duration: number;
   max_locked_tokens: Uint128;
+  migrate_info: MigrateInfo;
   round_length: number;
   round_lock_power_schedule: [number, Decimal][];
   slash_percentage_threshold: Decimal;
@@ -65,6 +58,16 @@ export interface InstantiateContractMsg {
   code_id: number;
   label: string;
   msg: Binary;
+}
+export interface MigrateInfo {
+  conversion_funds: Coin[];
+  lock_id: number;
+  paused: boolean;
+  proposal_id: number;
+}
+export interface Coin {
+  amount: Uint128;
+  denom: string;
 }
 export interface TrancheInfo {
   metadata: string;
@@ -220,16 +223,6 @@ export type ExecuteMsg = {
     operator: string;
   };
 } | {
-  set_drop_token_info: {
-    core_address: string;
-    d_token_denom: string;
-    puppeteer_address: string;
-  };
-} | {
-  convert_lockup_to_dtoken: {
-    lock_ids: number[];
-  };
-} | {
   convert_lockup: {
     lock_id: number;
     target_denom: string;
@@ -254,11 +247,8 @@ export type ExecuteMsg = {
     lock_id: number;
   };
 } | {
-  transfer_funds_to_hub: {
-    denoms: string[];
-    ibc_fee: Coin;
-    recipient_hub: string;
-    recipient_stride: string;
+  mint_lockups: {
+    lockups: LockupToMint[];
   };
 };
 export type Expiration = {
@@ -293,14 +283,17 @@ export interface UpdateConfigData {
   slash_percentage_threshold?: Decimal | null;
   slash_tokens_receiver_addr?: string | null;
 }
-export interface Coin {
-  amount: Uint128;
-  denom: string;
-}
 export interface TokenGroupRatioChange {
   new_ratio: Decimal;
   old_ratio: Decimal;
   token_group_id: string;
+}
+export interface LockupToMint {
+  funds: Coin;
+  lock_end: Timestamp;
+  lock_id: number;
+  lock_start: Timestamp;
+  owner: string;
 }
 export type QueryMsg = {
   constants: {};
@@ -498,11 +491,6 @@ export type QueryMsg = {
     start_after?: string | null;
   };
 } | {
-  simulate_dtoken_amounts: {
-    address: string;
-    lock_ids: number[];
-  };
-} | {
   parent_lock_ids: {
     child_id: number;
   };
@@ -539,10 +527,10 @@ export interface ConversionFundInfo {
 }
 export type Addr = string;
 export interface AllLockupsResponse {
-  lockups: LockEntryV2[];
+  lockups: LockEntry[];
   next_lock_id?: number | null;
 }
-export interface LockEntryV2 {
+export interface LockEntry {
   funds: Coin;
   lock_end: Timestamp;
   lock_id: number;
@@ -571,7 +559,7 @@ export interface LockupWithPerTrancheInfo {
 }
 export interface LockEntryWithPower {
   current_voting_power: Uint128;
-  lock_entry: LockEntryV2;
+  lock_entry: LockEntry;
 }
 export interface PerTrancheLockupInfo {
   current_voted_on_proposal?: number | null;
@@ -655,7 +643,7 @@ export interface CurrentRoundResponse {
   round_id: number;
 }
 export interface ExpiredUserLockupsResponse {
-  lockups: LockEntryV2[];
+  lockups: LockEntry[];
 }
 export interface GatekeeperResponse {
   gatekeeper: string;
@@ -726,13 +714,6 @@ export interface RoundTotalVotingPowerResponse {
 export interface RoundTrancheLiquidityDeploymentsResponse {
   liquidity_deployments: LiquidityDeployment[];
 }
-export interface DtokenAmountsResponse {
-  dtokens_response: DtokenAmountResponse[];
-}
-export interface DtokenAmountResponse {
-  dtoken_amount: string;
-  lock_id: number;
-}
 export interface SpecificUserLockupsResponse {
   lockups: LockEntryWithPower[];
 }
@@ -740,8 +721,6 @@ export interface SpecificUserLockupsWithTrancheInfosResponse {
   lockups_with_per_tranche_infos: LockupWithPerTrancheInfo[];
 }
 export type TokenInfoProvider = {
-  lsm: TokenInfoProviderLSM;
-} | {
   lsm_hub: TokenInfoProviderLSMHub;
 } | {
   base: TokenInfoProviderBase;
@@ -750,11 +729,6 @@ export type TokenInfoProvider = {
 };
 export interface TokenInfoProvidersResponse {
   providers: TokenInfoProvider[];
-}
-export interface TokenInfoProviderLSM {
-  cache: {};
-  contract: string;
-  hub_transfer_channel_id: string;
 }
 export interface TokenInfoProviderLSMHub {
   cache: {};

@@ -3,7 +3,6 @@ pub mod cw721;
 mod error;
 pub mod gatekeeper;
 pub mod governance;
-pub mod ibc_transfer;
 pub mod lsm_integration;
 pub mod migration;
 pub mod msg;
@@ -55,9 +54,6 @@ mod testing_locking_unlocking;
 mod testing_cw721;
 
 #[cfg(test)]
-mod testing_lockup_conversion_dtoken;
-
-#[cfg(test)]
 mod testing_lockup_conversion;
 
 #[cfg(test)]
@@ -73,4 +69,4 @@ mod testing_slashing;
 mod testing_buyout_pending_slash;
 
 #[cfg(test)]
-mod testing_transfer_funds;
+mod testing_mint_lockups;

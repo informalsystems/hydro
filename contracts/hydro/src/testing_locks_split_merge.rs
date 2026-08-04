@@ -8,27 +8,23 @@ use crate::testing::{
     get_address_as_str, get_default_instantiate_msg, get_message_info,
     get_st_atom_denom_info_mock_data, get_validator_info_mock_data,
     setup_lsm_token_info_provider_mock, setup_multiple_token_info_provider_mocks,
-    DERIVATIVE_TOKEN_PROVIDER_ADDR, IBC_DENOM_1, IBC_DENOM_2, LSM_TOKEN_PROVIDER_ADDR,
-    ONE_DAY_IN_NANO_SECONDS, ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, ST_ATOM_ON_STRIDE,
-    THREE_MONTHS_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
-    VALIDATOR_2_LST_DENOM_1,
+    DERIVATIVE_TOKEN_PROVIDER_ADDR, LSM_TOKEN_PROVIDER_ADDR, ONE_DAY_IN_NANO_SECONDS,
+    ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, THREE_MONTHS_IN_NANO_SECONDS, VALIDATOR_1,
+    VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
 };
-use crate::testing_mocks::denom_trace_grpc_query_mock;
+use crate::testing_mocks::no_op_grpc_query_mock;
 use cosmwasm_std::{from_json, testing::mock_env, Coin, Decimal, Uint128};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::vec;
 
-use crate::state::{LOCKS_MAP_V2, USER_LOCKS, USER_LOCKS_FOR_CLAIM};
+use crate::state::{LOCKS_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM};
 
 #[test]
 fn test_lock_split_flow_multiple_rounds() {
     // Instantiate contract
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -63,7 +59,10 @@ fn test_lock_split_flow_multiple_rounds() {
 
     // Lock tokens in round 0
     let initial_lock_amount = Uint128::from(50000u128);
-    let funds = vec![Coin::new(initial_lock_amount.u128(), IBC_DENOM_1)];
+    let funds = vec![Coin::new(
+        initial_lock_amount.u128(),
+        VALIDATOR_1_LST_DENOM_1,
+    )];
     let lock_info = get_message_info(&deps.api, user_address, &funds);
     env.block.time = env.block.time.plus_nanos(1);
 
@@ -201,18 +200,18 @@ fn test_lock_split_flow_multiple_rounds() {
     assert!(split_res.is_ok());
 
     // Verify that the lockup with id 0 is removed
-    assert!(crate::state::LOCKS_MAP_V2
+    assert!(crate::state::LOCKS_MAP
         .may_load(&deps.storage, first_lock_id)
         .unwrap()
         .is_none());
 
     // Check that both new locks exist and have correct amounts
-    let first_lock = crate::state::LOCKS_MAP_V2
+    let first_lock = crate::state::LOCKS_MAP
         .may_load(&deps.storage, second_lock_id)
         .unwrap()
         .unwrap();
 
-    let second_lock = crate::state::LOCKS_MAP_V2
+    let second_lock = crate::state::LOCKS_MAP
         .may_load(&deps.storage, third_lock_id)
         .unwrap()
         .unwrap();
@@ -306,17 +305,17 @@ fn test_lock_split_flow_multiple_rounds() {
     assert!(split_res.is_ok());
 
     // Verify that the lockup with id 1 is removed
-    assert!(crate::state::LOCKS_MAP_V2
+    assert!(crate::state::LOCKS_MAP
         .may_load(&deps.storage, second_lock_id)
         .unwrap()
         .is_none());
 
     // Verify that both new locks exist and have correct amounts
-    let fourth_lock = crate::state::LOCKS_MAP_V2
+    let fourth_lock = crate::state::LOCKS_MAP
         .may_load(&deps.storage, fourth_lock_id)
         .unwrap()
         .unwrap();
-    let fifth_lock = crate::state::LOCKS_MAP_V2
+    let fifth_lock = crate::state::LOCKS_MAP
         .may_load(&deps.storage, fifth_lock_id)
         .unwrap()
         .unwrap();
@@ -402,10 +401,7 @@ fn test_lock_split_flow_multiple_rounds() {
 fn test_merge_locks_flow() {
     // Instantiate contract
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -457,7 +453,7 @@ fn test_merge_locks_flow() {
     for i in 0..8 {
         let duration = if i < 4 { one_month } else { three_months };
         let amount = base_amount + Uint128::from(i as u128 * 1000);
-        let funds = vec![Coin::new(amount.u128(), IBC_DENOM_1)];
+        let funds = vec![Coin::new(amount.u128(), VALIDATOR_1_LST_DENOM_1)];
         let lock_info = get_message_info(&deps.api, user_address, &funds);
         let lock_res = execute(
             deps.as_mut(),
@@ -635,7 +631,7 @@ fn test_merge_locks_flow() {
 
     // The new lockup should have id 8
     let new_lock_id = 8u64;
-    let new_lock = LOCKS_MAP_V2
+    let new_lock = LOCKS_MAP
         .may_load(&deps.storage, new_lock_id)
         .unwrap()
         .unwrap();
@@ -646,7 +642,7 @@ fn test_merge_locks_flow() {
 
     // All old lockups should be removed
     for id in &lock_ids {
-        assert!(LOCKS_MAP_V2.may_load(&deps.storage, *id).unwrap().is_none());
+        assert!(LOCKS_MAP.may_load(&deps.storage, *id).unwrap().is_none());
     }
 
     // USER_LOCKS should contain only the new lockup
@@ -773,13 +769,7 @@ fn test_merge_locks_basic_validation() {
     // Instantiate contract
     let user_address_1 = "addr0000";
     let user_address_2 = "addr0001";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
-            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -812,9 +802,18 @@ fn test_merge_locks_basic_validation() {
     let base_amount = Uint128::from(10000u128);
 
     let user_funds = vec![
-        (user_address_1, Coin::new(base_amount.u128(), IBC_DENOM_1)),
-        (user_address_1, Coin::new(base_amount.u128(), IBC_DENOM_2)),
-        (user_address_2, Coin::new(base_amount.u128(), IBC_DENOM_1)),
+        (
+            user_address_1,
+            Coin::new(base_amount.u128(), VALIDATOR_1_LST_DENOM_1),
+        ),
+        (
+            user_address_1,
+            Coin::new(base_amount.u128(), VALIDATOR_2_LST_DENOM_1),
+        ),
+        (
+            user_address_2,
+            Coin::new(base_amount.u128(), VALIDATOR_1_LST_DENOM_1),
+        ),
     ];
 
     for (user_address, funds) in user_funds {
@@ -885,10 +884,7 @@ fn test_merge_locks_basic_validation() {
 #[test]
 fn test_merge_locks_update_proposal_powers() {
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, mut env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -939,7 +935,7 @@ fn test_merge_locks_update_proposal_powers() {
 
     for i in 0..6 {
         let amount = base_amount + Uint128::from(i as u128 * 1000);
-        let funds = vec![Coin::new(amount.u128(), IBC_DENOM_1)];
+        let funds = vec![Coin::new(amount.u128(), VALIDATOR_1_LST_DENOM_1)];
         let lock_info = get_message_info(&deps.api, user_address, &funds);
         let lock_res = execute(
             deps.as_mut(),
@@ -1185,16 +1181,7 @@ fn verify_proposal_voting_power(
 #[test]
 fn test_split_merge_locks_query_all_tokens_behavior() {
     let user_address = "addr0000";
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
     let (mut deps, env) = (
         crate::testing_mocks::mock_dependencies(grpc_query),
         mock_env(),
@@ -1253,11 +1240,11 @@ fn test_split_merge_locks_query_all_tokens_behavior() {
     );
     assert!(lock_res.is_ok(), "Failed to create non-LSM lock");
 
-    // Create an LSM lockup (using IBC_DENOM_1 which maps to LSM)
+    // Create an LSM lockup (using VALIDATOR_1_LST_DENOM_1 which maps to LSM)
     let lsm_lock_info = get_message_info(
         &deps.api,
         user_address,
-        &[Coin::new(60000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(60000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let lock_res = execute(deps.as_mut(), env.clone(), lsm_lock_info, lock_msg);
     assert!(lock_res.is_ok(), "Failed to create LSM lock");

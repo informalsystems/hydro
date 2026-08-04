@@ -12,12 +12,11 @@ use crate::{
     query::{LockEntryWithPower, LockupWithPerTrancheInfo, PerTrancheLockupInfo, RoundWithBid},
     score_keeper::get_total_power_for_round,
     state::{
-        Constants, HeightRange, LockEntryV2, Proposal, RoundLockPowerSchedule, Vote,
+        Constants, HeightRange, LockEntry, Proposal, RoundLockPowerSchedule, Vote,
         AVAILABLE_CONVERSION_FUNDS, CONSTANTS, EXTRA_LOCKED_TOKENS_CURRENT_USERS,
         EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS,
-        LOCKS_MAP_V1, LOCKS_MAP_V2, LOCK_ID, PROPOSAL_MAP, ROUND_TO_HEIGHT_RANGE,
-        SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VOTE_MAP_V2,
-        VOTING_ALLOWED_ROUND,
+        LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT,
+        USER_LOCKS, USER_LOCKS_FOR_CLAIM, VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
     },
     token_manager::TokenManager,
 };
@@ -365,23 +364,21 @@ pub fn get_current_user_voting_power(deps: &Deps, env: &Env, address: Addr) -> S
     // For each lock ID, load from LOCKS_MAP_V2, verify ownership, and compute voting power
     Ok(user_locks
         .iter()
-        .filter_map(
-            |&lock_id| match LOCKS_MAP_V2.may_load(deps.storage, lock_id) {
-                Ok(Some(lock_entry)) => Some(
-                    to_lockup_with_power(
-                        deps,
-                        &constants,
-                        &mut token_manager,
-                        current_round_id,
-                        round_end,
-                        lock_entry,
-                    )
-                    .current_voting_power
-                    .u128(),
-                ),
-                _ => None,
-            },
-        )
+        .filter_map(|&lock_id| match LOCKS_MAP.may_load(deps.storage, lock_id) {
+            Ok(Some(lock_entry)) => Some(
+                to_lockup_with_power(
+                    deps,
+                    &constants,
+                    &mut token_manager,
+                    current_round_id,
+                    round_end,
+                    lock_entry,
+                )
+                .current_voting_power
+                .u128(),
+            ),
+            _ => None,
+        })
         .sum())
 }
 
@@ -405,13 +402,9 @@ fn get_past_user_voting_power(
     Ok(user_locks_ids
         .into_iter()
         .filter_map(|lock_id| {
-            LOCKS_MAP_V2
+            LOCKS_MAP
                 .may_load_at_height(deps.storage, lock_id, height)
                 .unwrap_or_default()
-                .or(LOCKS_MAP_V1
-                    .may_load_at_height(deps.storage, (address.clone(), lock_id), height)
-                    .unwrap_or_default()
-                    .map(|v1_lockup| v1_lockup.into_v2(address.clone())))
         })
         .map(|lockup| {
             to_lockup_with_power(
@@ -457,7 +450,7 @@ pub fn to_lockup_with_power(
     token_manager: &mut TokenManager,
     round_id: u64,
     round_end: Timestamp,
-    lock_entry: LockEntryV2,
+    lock_entry: LockEntry,
 ) -> LockEntryWithPower {
     let Ok(token_ratio) = token_manager
         .validate_denom(deps, round_id, lock_entry.funds.denom.clone())
@@ -603,7 +596,7 @@ pub fn to_lockup_with_tranche_infos(
 pub fn get_lock_time_weighted_shares(
     round_lock_power_schedule: &RoundLockPowerSchedule,
     round_end: Timestamp,
-    lock_entry: &LockEntryV2,
+    lock_entry: &LockEntry,
     lock_epoch_length: u64,
 ) -> Uint128 {
     if round_end.nanos() > lock_entry.lock_end.nanos() {
@@ -665,7 +658,7 @@ pub struct LockingInfo {
 
 /// Check if sender owns the specified lock
 pub fn is_lock_owner(storage: &dyn Storage, sender: &Addr, lock_id: u64) -> bool {
-    match LOCKS_MAP_V2.may_load(storage, lock_id) {
+    match LOCKS_MAP.may_load(storage, lock_id) {
         Ok(Some(lock_entry)) => lock_entry.owner == *sender,
         _ => false,
     }
@@ -757,8 +750,8 @@ pub fn get_owned_lock_entry(
     storage: &dyn Storage,
     lock_owner: &Addr,
     lock_id: u64,
-) -> Result<LockEntryV2, ContractError> {
-    let lock_entry = LOCKS_MAP_V2.load(storage, lock_id)?;
+) -> Result<LockEntry, ContractError> {
+    let lock_entry = LOCKS_MAP.load(storage, lock_id)?;
 
     if lock_entry.owner != lock_owner {
         return Err(ContractError::Unauthorized);

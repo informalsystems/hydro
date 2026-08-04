@@ -11,6 +11,7 @@
     "lockup_conversion_fee_percent",
     "max_deployment_duration",
     "max_locked_tokens",
+    "migrate_info",
     "round_length",
     "round_lock_power_schedule",
     "slash_percentage_threshold",
@@ -75,6 +76,9 @@
     "max_locked_tokens": {
       "$ref": "#/definitions/Uint128"
     },
+    "migrate_info": {
+      "$ref": "#/definitions/MigrateInfo"
+    },
     "round_length": {
       "type": "integer",
       "format": "uint64",
@@ -129,6 +133,22 @@
       "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
       "type": "string"
     },
+    "Coin": {
+      "type": "object",
+      "required": [
+        "amount",
+        "denom"
+      ],
+      "properties": {
+        "amount": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "denom": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "CollectionInfo": {
       "type": "object",
       "required": [
@@ -177,6 +197,37 @@
       },
       "additionalProperties": false
     },
+    "MigrateInfo": {
+      "type": "object",
+      "required": [
+        "conversion_funds",
+        "lock_id",
+        "paused",
+        "proposal_id"
+      ],
+      "properties": {
+        "conversion_funds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Coin"
+          }
+        },
+        "lock_id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "proposal_id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
     "Timestamp": {
       "description": "A point in time in nanosecond precision.\n\nThis type can represent times from 1970-01-01T00:00:00Z to 2554-07-21T23:34:33Z.\n\n## Examples\n\n``` # use cosmwasm_std::Timestamp; let ts = Timestamp::from_nanos(1_000_000_202); assert_eq!(ts.nanos(), 1_000_000_202); assert_eq!(ts.seconds(), 1); assert_eq!(ts.subsec_nanos(), 202);\n\nlet ts = ts.plus_seconds(2); assert_eq!(ts.nanos(), 3_000_000_202); assert_eq!(ts.seconds(), 3); assert_eq!(ts.subsec_nanos(), 202); ```",
       "allOf": [
@@ -187,47 +238,6 @@
     },
     "TokenInfoProviderInstantiateMsg": {
       "oneOf": [
-        {
-          "type": "object",
-          "required": [
-            "lsm"
-          ],
-          "properties": {
-            "lsm": {
-              "type": "object",
-              "required": [
-                "code_id",
-                "hub_transfer_channel_id",
-                "label",
-                "msg"
-              ],
-              "properties": {
-                "admin": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "code_id": {
-                  "type": "integer",
-                  "format": "uint64",
-                  "minimum": 0.0
-                },
-                "hub_transfer_channel_id": {
-                  "type": "string"
-                },
-                "label": {
-                  "type": "string"
-                },
-                "msg": {
-                  "$ref": "#/definitions/Binary"
-                }
-              },
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        },
         {
           "type": "object",
           "required": [

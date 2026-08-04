@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use cosmwasm_std::{testing::mock_env, Coin, Decimal, Storage, Timestamp};
 
 use crate::{
@@ -8,18 +6,14 @@ use crate::{
     state::{HEIGHT_TO_ROUND, ROUND_TO_HEIGHT_RANGE, USER_LOCKS},
     testing::{
         get_default_instantiate_msg, get_message_info, setup_lsm_token_info_provider_mock,
-        IBC_DENOM_1, LSM_TOKEN_PROVIDER_ADDR, ONE_DAY_IN_NANO_SECONDS, VALIDATOR_1,
-        VALIDATOR_1_LST_DENOM_1,
+        LSM_TOKEN_PROVIDER_ADDR, ONE_DAY_IN_NANO_SECONDS, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
     },
-    testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies},
+    testing_mocks::{mock_dependencies, no_op_grpc_query_mock},
 };
 
 #[test]
 fn test_user_locks_snapshoting() {
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([(IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string())]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     let user = "addr0000";
     let initial_block_time = Timestamp::from_nanos(1737540000000000000);
@@ -60,7 +54,7 @@ fn test_user_locks_snapshoting() {
     let info = get_message_info(
         &deps.api,
         user,
-        &[Coin::new(1000u64, IBC_DENOM_1.to_string())],
+        &[Coin::new(1000u64, VALIDATOR_1_LST_DENOM_1.to_string())],
     );
     let msg = ExecuteMsg::LockTokens {
         lock_duration: instantiate_msg.lock_epoch_length,

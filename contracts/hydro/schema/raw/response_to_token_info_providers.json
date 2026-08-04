@@ -44,18 +44,6 @@
         {
           "type": "object",
           "required": [
-            "lsm"
-          ],
-          "properties": {
-            "lsm": {
-              "$ref": "#/definitions/TokenInfoProviderLSM"
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
             "lsm_hub"
           ],
           "properties": {
@@ -123,27 +111,6 @@
           "additionalProperties": false
         },
         "contract": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false
-    },
-    "TokenInfoProviderLSM": {
-      "type": "object",
-      "required": [
-        "cache",
-        "contract",
-        "hub_transfer_channel_id"
-      ],
-      "properties": {
-        "cache": {
-          "type": "object",
-          "additionalProperties": false
-        },
-        "contract": {
-          "type": "string"
-        },
-        "hub_transfer_channel_id": {
           "type": "string"
         }
       },

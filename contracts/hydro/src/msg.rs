@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{
-    to_json_binary, Addr, Binary, Coin, CosmosMsg, Decimal, StdResult, Timestamp, Uint128, WasmMsg,
+    to_json_binary, Binary, Coin, CosmosMsg, Decimal, StdResult, Timestamp, Uint128, WasmMsg,
 };
 use cw_utils::Expiration;
 use interface::{gatekeeper::SignatureInfo, hydro::TokenGroupRatioChange};
@@ -42,6 +42,19 @@ pub struct InstantiateMsg {
     pub slash_tokens_receiver_addr: String,
     // Percentage fee applied during lockup conversions when the user does not provide conversion funds.
     pub lockup_conversion_fee_percent: Decimal,
+    // Provides the initial values for LOCK_ID and PROP_ID when migrating existing lockups/proposals.
+    pub migrate_info: MigrateInfo,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct MigrateInfo {
+    // Will be true, but parametrized to make the unit tests work,
+    // since they all rely on the fact that the contract is not paused after instantiation.
+    pub paused: bool,
+    pub lock_id: u64,
+    pub proposal_id: u64,
+    pub conversion_funds: Vec<Coin>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -60,15 +73,6 @@ pub struct CollectionInfo {
 
 #[cw_serde]
 pub enum TokenInfoProviderInstantiateMsg {
-    #[serde(rename = "lsm")]
-    LSM {
-        code_id: u64,
-        msg: Binary,
-        label: String,
-        admin: Option<String>,
-        // Needed for the Hydro contract to be able to validate LSM IBC token denoms on its own
-        hub_transfer_channel_id: String,
-    },
     #[serde(rename = "lsm_hub")]
     LSMHub {
         code_id: u64,
@@ -99,16 +103,6 @@ pub struct InstantiateContractMsg {
 impl Display for TokenInfoProviderInstantiateMsg {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
-            TokenInfoProviderInstantiateMsg::LSM {
-                code_id,
-                msg,
-                label,
-                admin,
-                hub_transfer_channel_id,
-            } => write!(
-                f,
-                "LSM(code_id: {code_id}, msg: {msg}, label: {label}, admin: {admin:?}, hub_transfer_channel_id: {hub_transfer_channel_id:?})"
-            ),
             TokenInfoProviderInstantiateMsg::LSMHub {
                 code_id,
                 msg,
@@ -272,18 +266,6 @@ pub enum ExecuteMsg {
     RevokeAll {
         operator: String,
     },
-    /// Allows whitelisted admin to set the drop token info for lockup conversions.
-    SetDropTokenInfo {
-        core_address: String,
-        d_token_denom: String,
-        puppeteer_address: String,
-    },
-
-    /// Allows users to convert their lockups to dTokens.
-    /// This action is only available if the drop token info is set.
-    ConvertLockupToDtoken {
-        lock_ids: Vec<u64>,
-    },
 
     /// Allows users to convert their existing lockup to one holding a different denom.
     ConvertLockup {
@@ -313,16 +295,21 @@ pub enum ExecuteMsg {
         lock_id: u64,
     },
 
-    /// For migration purposes, allows whitelisted admins to transfer contract-held funds to a Cosmos Hub address via IBC.
-    /// All denoms are sent directly Neutron -> Hub, except stATOM, which is routed Neutron -> Stride -> Hub using PFM.
-    /// `ibc_fee` is required by Neutron's ibc-transfer-with-fee middleware and is applied as both
-    /// the ack_fee and the timeout_fee (recv_fee is always zero, per Neutron's requirement).
-    TransferFundsToHub {
-        denoms: Vec<String>,
-        recipient_hub: String,
-        recipient_stride: String,
-        ibc_fee: Coin,
+    /// For migration purposes, allows whitelisted accounts to directly mint historical lockups
+    /// (i.e. migrated from the Neutron deployment) without going through the normal LockTokens flow.
+    MintLockups {
+        lockups: Vec<LockupToMint>,
     },
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct LockupToMint {
+    pub lock_id: u64,
+    pub owner: String,
+    pub funds: Coin,
+    pub lock_start: Timestamp,
+    pub lock_end: Timestamp,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -360,13 +347,6 @@ pub struct LockTokensProof {
 }
 
 #[cw_serde]
-pub struct ConvertLockupPayload {
-    pub lock_id: u64,
-    pub amount: Uint128,
-    pub sender: Addr,
-}
-
-#[cw_serde]
 pub struct UpdateConfigData {
     pub activate_at: Timestamp,
     pub max_locked_tokens: Option<u128>,
@@ -384,7 +364,6 @@ pub struct UpdateConfigData {
 pub enum ReplyPayload {
     InstantiateTokenInfoProvider(TokenInfoProvider),
     InstantiateGatekeeper,
-    ConvertLockup(ConvertLockupPayload),
 }
 
 #[cw_serde]

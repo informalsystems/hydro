@@ -44,7 +44,7 @@
       },
       "additionalProperties": false
     },
-    "LockEntryV2": {
+    "LockEntry": {
       "type": "object",
       "required": [
         "funds",
@@ -85,7 +85,7 @@
           "$ref": "#/definitions/Uint128"
         },
         "lock_entry": {
-          "$ref": "#/definitions/LockEntryV2"
+          "$ref": "#/definitions/LockEntry"
         }
       },
       "additionalProperties": false

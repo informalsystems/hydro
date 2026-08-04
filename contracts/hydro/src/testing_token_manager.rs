@@ -23,14 +23,12 @@ use crate::{
         get_default_lsm_token_info_provider_init_msg, get_default_power_schedule, get_message_info,
         get_st_atom_denom_info_mock_data, get_validator_info_mock_data,
         setup_multiple_token_info_provider_mocks, setup_st_atom_token_info_provider_mock,
-        DERIVATIVE_TOKEN_PROVIDER_ADDR, IBC_DENOM_1, IBC_DENOM_2, LSM_TOKEN_PROVIDER_ADDR,
-        ONE_MONTH_IN_NANO_SECONDS, ST_ATOM_ON_NEUTRON, ST_ATOM_ON_STRIDE, ST_ATOM_TOKEN_GROUP,
-        VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
+        DERIVATIVE_TOKEN_PROVIDER_ADDR, LSM_TOKEN_PROVIDER_ADDR, ONE_MONTH_IN_NANO_SECONDS,
+        ST_ATOM_ON_NEUTRON, ST_ATOM_TOKEN_GROUP, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
+        VALIDATOR_2_LST_DENOM_1,
     },
-    testing_mocks::{
-        denom_trace_grpc_query_mock, mock_dependencies, no_op_grpc_query_mock, MockQuerier,
-    },
-    token_manager::{TokenInfoProvider, TokenInfoProviderDerivative, TokenInfoProviderLSM},
+    testing_mocks::{mock_dependencies, no_op_grpc_query_mock, MockQuerier},
+    token_manager::{TokenInfoProvider, TokenInfoProviderDerivative, TokenInfoProviderLSMHub},
     utils::load_current_constants,
 };
 
@@ -46,14 +44,12 @@ fn instantiate_with_lsm_token_info_provider_test() {
     let init_msg = Binary::new(vec![1, 3, 5, 7, 9]);
     let init_label = String::from("LSM Token Info Provider");
     let init_admin = None;
-    let hub_transfer_channel_id = "channel-0".to_string();
 
-    msg.token_info_providers = vec![TokenInfoProviderInstantiateMsg::LSM {
+    msg.token_info_providers = vec![TokenInfoProviderInstantiateMsg::LSMHub {
         code_id: init_code_id,
         msg: init_msg.clone(),
         label: init_label.clone(),
         admin: init_admin.clone(),
-        hub_transfer_channel_id: hub_transfer_channel_id.clone(),
     }];
 
     let res = instantiate(deps.as_mut(), env.clone(), info, msg.clone());
@@ -84,9 +80,7 @@ fn instantiate_with_lsm_token_info_provider_test() {
 
     match from_json(submsgs[0].payload.clone()).unwrap() {
         ReplyPayload::InstantiateTokenInfoProvider(provider) => match provider {
-            TokenInfoProvider::LSM(provider) => {
-                assert_eq!(provider.hub_transfer_channel_id, hub_transfer_channel_id);
-            }
+            TokenInfoProvider::LSMHub(_) => (),
             _ => panic!("Expected LSM token info provider!"),
         },
         _ => panic!("Unexpected payload type!"),
@@ -192,22 +186,19 @@ fn instantiate_with_multiple_lsm_token_info_providers_test() {
     let init_code_id = 7;
     let init_msg = Binary::new(vec![1, 3, 5, 7, 9]);
     let init_admin = None;
-    let hub_transfer_channel_id = "channel-0".to_string();
 
     msg.token_info_providers = vec![
-        TokenInfoProviderInstantiateMsg::LSM {
+        TokenInfoProviderInstantiateMsg::LSMHub {
             code_id: init_code_id,
             msg: init_msg.clone(),
             label: String::from("LSM Token Info Provider 1"),
             admin: init_admin.clone(),
-            hub_transfer_channel_id: hub_transfer_channel_id.clone(),
         },
-        TokenInfoProviderInstantiateMsg::LSM {
+        TokenInfoProviderInstantiateMsg::LSMHub {
             code_id: init_code_id,
             msg: init_msg.clone(),
             label: String::from("LSM Token Info Provider 2"),
             admin: init_admin.clone(),
-            hub_transfer_channel_id: hub_transfer_channel_id.clone(),
         },
     ];
 
@@ -293,9 +284,6 @@ fn handle_token_info_provider_instantiate_reply_test() {
     );
 
     match res.unwrap() {
-        TokenInfoProvider::LSM(_) => {
-            panic!("expected derivative token info provider, found LSM one.")
-        }
         TokenInfoProvider::LSMHub(_) => {
             panic!("expected derivative token info provider, found LSM Hub provider.")
         }
@@ -315,10 +303,9 @@ fn add_remove_token_info_provider_test() {
     let info = get_message_info(&deps.api, "addr0000", &[]);
 
     let lsm_provider_contract_address = deps.api.addr_make(LSM_TOKEN_PROVIDER_ADDR);
-    let lsm_token_info_provider = TokenInfoProviderLSM {
+    let lsm_token_info_provider = TokenInfoProviderLSMHub {
         contract: lsm_provider_contract_address.to_string(),
         cache: HashMap::new(),
-        hub_transfer_channel_id: "channel-0".to_string(),
     };
 
     CONSTANTS
@@ -353,17 +340,16 @@ fn add_remove_token_info_provider_test() {
         .save(
             &mut deps.storage,
             lsm_token_info_provider.contract.clone(),
-            &TokenInfoProvider::LSM(lsm_token_info_provider.clone()),
+            &TokenInfoProvider::LSMHub(lsm_token_info_provider.clone()),
         )
         .unwrap();
 
     // Try to add one more LSM token info provider and validate there can't be multiple of its type
-    let new_provider_info = TokenInfoProviderInstantiateMsg::LSM {
+    let new_provider_info = TokenInfoProviderInstantiateMsg::LSMHub {
         code_id: 7,
         msg: Binary::new(vec![1, 3, 5, 7, 9]),
         label: String::from("LSM Token Info Provider 2"),
         admin: None,
-        hub_transfer_channel_id: "channel-0".to_string(),
     };
 
     let constants = load_current_constants(&deps.as_ref(), &env).unwrap();
@@ -517,17 +503,7 @@ fn add_remove_token_info_provider_test() {
 fn token_info_provider_lifecycle_test() {
     let user_address = "addr0000";
 
-    let grpc_query = denom_trace_grpc_query_mock(
-        "transfer/channel-0".to_string(),
-        HashMap::from([
-            (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
-            (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
-            (
-                ST_ATOM_ON_NEUTRON.to_string(),
-                ST_ATOM_ON_STRIDE.to_string(),
-            ),
-        ]),
-    );
+    let grpc_query = no_op_grpc_query_mock();
 
     let (mut deps, mut env) = (mock_dependencies(grpc_query), mock_env());
 
@@ -605,11 +581,11 @@ fn token_info_provider_lifecycle_test() {
 
     // Have user lock some tokens for 2 rounds
     for token_to_lock in [
-        Coin::new(3000u128, IBC_DENOM_1),
-        Coin::new(5000u128, IBC_DENOM_2),
+        Coin::new(3000u128, VALIDATOR_1_LST_DENOM_1),
+        Coin::new(5000u128, VALIDATOR_2_LST_DENOM_1),
         Coin::new(1000u128, ST_ATOM_ON_NEUTRON),
-        Coin::new(1000u128, IBC_DENOM_1),
-        Coin::new(2000u128, IBC_DENOM_2),
+        Coin::new(1000u128, VALIDATOR_1_LST_DENOM_1),
+        Coin::new(2000u128, VALIDATOR_2_LST_DENOM_1),
         Coin::new(4000u128, ST_ATOM_ON_NEUTRON),
     ] {
         let locking_info = get_message_info(&deps.api, user_address, &[token_to_lock]);

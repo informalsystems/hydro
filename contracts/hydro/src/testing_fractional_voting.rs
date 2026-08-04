@@ -1,4 +1,4 @@
-use std::{collections::HashMap, slice::Iter};
+use std::slice::Iter;
 
 use cosmwasm_std::{
     testing::{mock_env, MockApi, MockStorage},
@@ -10,10 +10,10 @@ use crate::{
     msg::{ExecuteMsg, ProposalToLockups},
     testing::{
         get_default_instantiate_msg, get_message_info, setup_lsm_token_info_provider_mock,
-        IBC_DENOM_1, IBC_DENOM_2, LSM_TOKEN_PROVIDER_ADDR, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1,
-        VALIDATOR_2, VALIDATOR_2_LST_DENOM_1,
+        LSM_TOKEN_PROVIDER_ADDR, VALIDATOR_1, VALIDATOR_1_LST_DENOM_1, VALIDATOR_2,
+        VALIDATOR_2_LST_DENOM_1,
     },
-    testing_mocks::{denom_trace_grpc_query_mock, mock_dependencies, MockQuerier},
+    testing_mocks::{mock_dependencies, no_op_grpc_query_mock, MockQuerier},
 };
 
 #[derive(Clone)]
@@ -133,23 +133,23 @@ fn fractional_voting_test() {
     // therefore lockup IDs start from 1.
     let lockup_1 = TestLockup {
         lockup_id: 1,
-        token: Coin::new(lockup_1_amount, IBC_DENOM_1.to_string()),
+        token: Coin::new(lockup_1_amount, VALIDATOR_1_LST_DENOM_1.to_string()),
     };
     let lockup_2 = TestLockup {
         lockup_id: 2,
-        token: Coin::new(lockup_2_amount, IBC_DENOM_2.to_string()),
+        token: Coin::new(lockup_2_amount, VALIDATOR_2_LST_DENOM_1.to_string()),
     };
     let lockup_3 = TestLockup {
         lockup_id: 3,
-        token: Coin::new(lockup_3_amount, IBC_DENOM_2.to_string()),
+        token: Coin::new(lockup_3_amount, VALIDATOR_2_LST_DENOM_1.to_string()),
     };
     let lockup_4 = TestLockup {
         lockup_id: 4,
-        token: Coin::new(lockup_4_amount, IBC_DENOM_1.to_string()),
+        token: Coin::new(lockup_4_amount, VALIDATOR_1_LST_DENOM_1.to_string()),
     };
     let lockup_5 = TestLockup {
         lockup_id: 5,
-        token: Coin::new(lockup_5_amount, IBC_DENOM_2.to_string()),
+        token: Coin::new(lockup_5_amount, VALIDATOR_2_LST_DENOM_1.to_string()),
     };
 
     let test_cases = vec![
@@ -424,13 +424,7 @@ fn fractional_voting_test() {
     for test in test_cases {
         println!("running test case: {}", test.description);
 
-        let grpc_query = denom_trace_grpc_query_mock(
-            "transfer/channel-0".to_string(),
-            HashMap::from([
-                (IBC_DENOM_1.to_string(), VALIDATOR_1_LST_DENOM_1.to_string()),
-                (IBC_DENOM_2.to_string(), VALIDATOR_2_LST_DENOM_1.to_string()),
-            ]),
-        );
+        let grpc_query = no_op_grpc_query_mock();
         let (mut deps, env) = (mock_dependencies(grpc_query), mock_env());
         let info1 = get_message_info(&deps.api, test.voter_address, &[]);
         let instantiate_msg = get_default_instantiate_msg(&deps.api);
@@ -486,7 +480,7 @@ fn fractional_voting_test() {
         let other_user_info = get_message_info(
             &deps.api,
             "addr0001",
-            &[Coin::new(5000u128, IBC_DENOM_1.to_string())],
+            &[Coin::new(5000u128, VALIDATOR_1_LST_DENOM_1.to_string())],
         );
         let msg = ExecuteMsg::LockTokens {
             lock_duration: lock_epoch_length,

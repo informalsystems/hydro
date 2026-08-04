@@ -7,7 +7,7 @@ use crate::{
         NftInfoResponse, NumTokensResponse, OperatorsResponse, OwnerOfResponse, TokensResponse,
     },
     state::{
-        Approval, Constants, LockEntryV2, LOCKS_MAP_V2, LOCK_ID, NFT_APPROVALS, NFT_OPERATORS,
+        Approval, Constants, LockEntry, LOCKS_MAP, LOCK_ID, NFT_APPROVALS, NFT_OPERATORS,
         TOKEN_IDS, TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM,
     },
     token_manager::TokenManager,
@@ -66,7 +66,7 @@ pub fn handle_execute_transfer(
 ) -> Result<Response, ContractError> {
     let recipient_addr = deps.api.addr_validate(&recipient)?;
     let lock_id = token_id.parse().map_err(|_| Error::InvalidTokenId)?;
-    let lock_entry = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
+    let lock_entry = LOCKS_MAP.load(deps.storage, lock_id)?;
 
     // The check of the ownership or allowance to transfer is done within transfer function
     transfer(deps, &env, &info, recipient_addr, lock_entry)?;
@@ -91,7 +91,7 @@ pub fn handle_execute_send_nft(
 ) -> Result<Response, ContractError> {
     let recipient_addr = deps.api.addr_validate(&contract)?;
     let lock_id = token_id.parse().map_err(|_| Error::InvalidTokenId)?;
-    let lock_entry = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
+    let lock_entry = LOCKS_MAP.load(deps.storage, lock_id)?;
 
     // verify that recipient is a contract
     deps.querier
@@ -177,7 +177,7 @@ fn transfer(
     env: &Env,
     info: &MessageInfo,
     recipient: Addr,
-    lock_entry: LockEntryV2,
+    lock_entry: LockEntry,
 ) -> Result<(), ContractError> {
     // Check that the sender is the owner or has approval to transfer
     if !can_user_transfer(deps.storage, &info.sender, &lock_entry, &env.block)? {
@@ -200,7 +200,7 @@ fn transfer(
     }
 
     // Update the owner of the lockup
-    LOCKS_MAP_V2.update(
+    LOCKS_MAP.update(
         deps.storage,
         lock_entry.lock_id,
         env.block.height,
@@ -284,7 +284,7 @@ pub fn handle_execute_approve(
     let lock_id = token_id.parse().map_err(|_| Error::InvalidTokenId)?;
 
     // Check that we can create an approval (owner or operator)
-    let lock_entry = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
+    let lock_entry = LOCKS_MAP.load(deps.storage, lock_id)?;
     if !can_user_create_approval(deps.storage, &info.sender, &lock_entry, &env.block)? {
         return Err(ContractError::Unauthorized {});
     }
@@ -332,7 +332,7 @@ pub fn handle_execute_revoke(
     let lock_id = token_id.parse().map_err(|_| Error::InvalidTokenId)?;
 
     // Check that we can revoke an approval (owner or operator)
-    let lock_entry = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
+    let lock_entry = LOCKS_MAP.load(deps.storage, lock_id)?;
     if !can_user_create_approval(deps.storage, &info.sender, &lock_entry, &env.block)? {
         return Err(ContractError::Unauthorized {});
     }
@@ -411,7 +411,7 @@ pub fn query_owner_of(
     include_expired: Option<bool>,
 ) -> Result<OwnerOfResponse, ContractError> {
     let lock_id = token_id.parse().map_err(|_| Error::InvalidTokenId)?;
-    let lockup = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
+    let lockup = LOCKS_MAP.load(deps.storage, lock_id)?;
     let include_expired = include_expired.unwrap_or(false);
 
     let mut approvals = vec![];
@@ -446,7 +446,7 @@ pub fn query_approval(
 ) -> Result<ApprovalResponse, ContractError> {
     let spender_addr = deps.api.addr_validate(&spender)?;
     let lock_id = token_id.parse().map_err(|_| Error::InvalidTokenId)?;
-    let lockup = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
+    let lockup = LOCKS_MAP.load(deps.storage, lock_id)?;
 
     // Owner is always approved
     if lockup.owner == spender_addr {
@@ -482,7 +482,7 @@ pub fn query_approvals(
     let lock_id = token_id.parse().map_err(|_| Error::InvalidTokenId)?;
 
     // Check that the token_id is valid
-    LOCKS_MAP_V2.load(deps.storage, lock_id)?;
+    LOCKS_MAP.load(deps.storage, lock_id)?;
 
     let mut approvals = vec![];
 
@@ -567,7 +567,7 @@ pub fn query_nft_info(
     token_id: String,
 ) -> Result<NftInfoResponse, ContractError> {
     let lock_id = token_id.parse().map_err(|_| Error::InvalidTokenId)?;
-    let lockup = LOCKS_MAP_V2.load(deps.storage, lock_id)?;
+    let lockup = LOCKS_MAP.load(deps.storage, lock_id)?;
 
     let constants = load_current_constants(&deps, &env)?;
     let current_round_id = compute_current_round_id(&env, &constants)?;
@@ -717,7 +717,7 @@ fn has_valid_operator_approval(
 fn can_user_transfer(
     storage: &dyn Storage,
     user_addr: &Addr,
-    lock_entry: &LockEntryV2,
+    lock_entry: &LockEntry,
     block: &BlockInfo,
 ) -> Result<bool, ContractError> {
     Ok(lock_entry.owner == user_addr
@@ -730,7 +730,7 @@ fn can_user_transfer(
 fn can_user_create_approval(
     storage: &dyn Storage,
     user_addr: &Addr,
-    lock_entry: &LockEntryV2,
+    lock_entry: &LockEntry,
     block: &BlockInfo,
 ) -> Result<bool, ContractError> {
     Ok(lock_entry.owner == user_addr
@@ -738,10 +738,7 @@ fn can_user_create_approval(
 }
 
 /// Add a lock ID to TOKEN_IDS if it's a NFT (non-LSM lockup)
-pub fn maybe_add_token_id(
-    deps: &mut DepsMut,
-    lock_entry: &LockEntryV2,
-) -> Result<(), ContractError> {
+pub fn maybe_add_token_id(deps: &mut DepsMut, lock_entry: &LockEntry) -> Result<(), ContractError> {
     if !is_denom_lsm(&deps.as_ref(), lock_entry.funds.denom.clone())? {
         TOKEN_IDS.save(deps.storage, lock_entry.lock_id, &())?;
     }

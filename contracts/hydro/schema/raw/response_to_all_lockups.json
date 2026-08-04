@@ -9,7 +9,7 @@
     "lockups": {
       "type": "array",
       "items": {
-        "$ref": "#/definitions/LockEntryV2"
+        "$ref": "#/definitions/LockEntry"
       }
     },
     "next_lock_id": {
@@ -43,7 +43,7 @@
       },
       "additionalProperties": false
     },
-    "LockEntryV2": {
+    "LockEntry": {
       "type": "object",
       "required": [
         "funds",
