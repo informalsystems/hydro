@@ -3,19 +3,13 @@ use std::{collections::HashMap, marker::PhantomData};
 use cosmwasm_std::{
     from_json,
     testing::{MockApi, MockQuerier as BaseMockQuerier, MockStorage},
-    to_json_binary, Binary, Coin, GrpcQuery, OwnedDeps, Querier, QuerierResult, QueryRequest,
+    to_json_binary, Binary, GrpcQuery, OwnedDeps, Querier, QuerierResult, QueryRequest,
     SystemError, SystemResult, WasmQuery,
 };
 use cosmwasm_std::{ContractResult, Empty};
 use interface::{
     lsm::ValidatorInfo,
     token_info_provider::{DenomInfoResponse, TokenInfoProviderQueryMsg, ValidatorsInfoResponse},
-};
-use prost::Message;
-
-use crate::lsm_integration::DENOM_GRPC;
-use ibc_proto::ibc::apps::transfer::v1::{
-    Denom as IbcDenom, Hop as DenomHop, QueryDenomRequest, QueryDenomResponse,
 };
 
 pub type GrpcQueryFunc = dyn Fn(GrpcQuery) -> QuerierResult;
@@ -50,10 +44,6 @@ impl MockQuerier {
         WH: Fn(&WasmQuery) -> QuerierResult + 'static,
     {
         self.base_querier.update_wasm(handler);
-    }
-
-    pub fn update_balance(&mut self, addr: impl Into<String>, balance: Vec<Coin>) {
-        self.base_querier.bank.update_balance(addr, balance);
     }
 }
 
@@ -94,107 +84,6 @@ impl MockWasmQuerier {
 
 pub fn no_op_grpc_query_mock() -> Box<GrpcQueryFunc> {
     Box::new(|_query| system_result_ok_from(vec![]))
-}
-
-pub fn denom_trace_grpc_query_mock(
-    denom_trace_path: String,
-    in_out_denom_map: HashMap<String, String>,
-) -> Box<GrpcQueryFunc> {
-    Box::new(move |query: GrpcQuery| {
-        if query.path != DENOM_GRPC {
-            panic!("unexpected gRPC query path");
-        }
-
-        let request = QueryDenomRequest::decode(query.data.as_slice()).unwrap();
-        let resolved_denom = match in_out_denom_map.get(request.hash.as_str()) {
-            Some(denom) => denom.clone(),
-            _ => {
-                let expected_tokens: Vec<&String> = in_out_denom_map.keys().collect();
-                let err_msg = format!(
-                    "unexpected input token: '{}'. Expected one of: {:?}",
-                    request.hash, expected_tokens
-                );
-
-                return system_result_err_from(err_msg);
-            }
-        };
-
-        // Reconstruct the trace hops from the slash-separated path string.
-        // e.g. "transfer/channel-1" -> [{port_id: "transfer", channel_id: "channel-1"}]
-        let parts: Vec<&str> = denom_trace_path.split('/').collect();
-        let trace = parts
-            .chunks(2)
-            .filter_map(|chunk| {
-                if chunk.len() == 2 {
-                    Some(DenomHop {
-                        port_id: chunk[0].to_string(),
-                        channel_id: chunk[1].to_string(),
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        system_result_ok_from(
-            QueryDenomResponse {
-                denom: Some(IbcDenom {
-                    base: resolved_denom,
-                    trace,
-                }),
-            }
-            .encode_to_vec(),
-        )
-    })
-}
-
-pub fn grpc_query_diff_paths_mock(
-    in_out_denom_map: HashMap<String, HashMap<String, String>>,
-) -> Box<GrpcQueryFunc> {
-    Box::new(move |query: GrpcQuery| {
-        match query.path.as_str() {
-            DENOM_GRPC => {
-                let request = QueryDenomRequest::decode(query.data.as_slice()).unwrap();
-                // Find the trace path and denom for the given hash
-                let (trace_path, denom) = in_out_denom_map
-                    .iter()
-                    .find_map(|(trace_path, map)| {
-                        map.get(request.hash.as_str())
-                            .map(|resolved| (trace_path.clone(), resolved.clone()))
-                    })
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "unexpected input token hash '{}' for path {}",
-                            request.hash, DENOM_GRPC
-                        )
-                    });
-
-                // Reconstruct trace hops from the slash-separated path string.
-                let parts: Vec<&str> = trace_path.split('/').collect();
-                let trace = parts
-                    .chunks(2)
-                    .filter_map(|chunk| {
-                        if chunk.len() == 2 {
-                            Some(DenomHop {
-                                port_id: chunk[0].to_string(),
-                                channel_id: chunk[1].to_string(),
-                            })
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                system_result_ok_from(
-                    QueryDenomResponse {
-                        denom: Some(IbcDenom { base: denom, trace }),
-                    }
-                    .encode_to_vec(),
-                )
-            }
-            _ => system_result_ok_from(vec![]), // no-op
-        }
-    })
 }
 
 pub type RoundsValidators = HashMap<u64, HashMap<String, ValidatorInfo>>;

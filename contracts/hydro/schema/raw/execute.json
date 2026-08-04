@@ -860,63 +860,6 @@
       "additionalProperties": false
     },
     {
-      "description": "Allows whitelisted admin to set the drop token info for lockup conversions.",
-      "type": "object",
-      "required": [
-        "set_drop_token_info"
-      ],
-      "properties": {
-        "set_drop_token_info": {
-          "type": "object",
-          "required": [
-            "core_address",
-            "d_token_denom",
-            "puppeteer_address"
-          ],
-          "properties": {
-            "core_address": {
-              "type": "string"
-            },
-            "d_token_denom": {
-              "type": "string"
-            },
-            "puppeteer_address": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "description": "Allows users to convert their lockups to dTokens. This action is only available if the drop token info is set.",
-      "type": "object",
-      "required": [
-        "convert_lockup_to_dtoken"
-      ],
-      "properties": {
-        "convert_lockup_to_dtoken": {
-          "type": "object",
-          "required": [
-            "lock_ids"
-          ],
-          "properties": {
-            "lock_ids": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
-              }
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
       "description": "Allows users to convert their existing lockup to one holding a different denom.",
       "type": "object",
       "required": [
@@ -1060,35 +1003,23 @@
       "additionalProperties": false
     },
     {
-      "description": "For migration purposes, allows whitelisted admins to transfer contract-held funds to a Cosmos Hub address via IBC. All denoms are sent directly Neutron -> Hub, except stATOM, which is routed Neutron -> Stride -> Hub using PFM. `ibc_fee` is required by Neutron's ibc-transfer-with-fee middleware and is applied as both the ack_fee and the timeout_fee (recv_fee is always zero, per Neutron's requirement).",
+      "description": "For migration purposes, allows whitelisted accounts to directly mint historical lockups (i.e. migrated from the Neutron deployment) without going through the normal LockTokens flow.",
       "type": "object",
       "required": [
-        "transfer_funds_to_hub"
+        "mint_lockups"
       ],
       "properties": {
-        "transfer_funds_to_hub": {
+        "mint_lockups": {
           "type": "object",
           "required": [
-            "denoms",
-            "ibc_fee",
-            "recipient_hub",
-            "recipient_stride"
+            "lockups"
           ],
           "properties": {
-            "denoms": {
+            "lockups": {
               "type": "array",
               "items": {
-                "type": "string"
+                "$ref": "#/definitions/LockupToMint"
               }
-            },
-            "ibc_fee": {
-              "$ref": "#/definitions/Coin"
-            },
-            "recipient_hub": {
-              "type": "string"
-            },
-            "recipient_stride": {
-              "type": "string"
             }
           },
           "additionalProperties": false
@@ -1215,6 +1146,36 @@
       },
       "additionalProperties": false
     },
+    "LockupToMint": {
+      "type": "object",
+      "required": [
+        "funds",
+        "lock_end",
+        "lock_id",
+        "lock_start",
+        "owner"
+      ],
+      "properties": {
+        "funds": {
+          "$ref": "#/definitions/Coin"
+        },
+        "lock_end": {
+          "$ref": "#/definitions/Timestamp"
+        },
+        "lock_id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "lock_start": {
+          "$ref": "#/definitions/Timestamp"
+        },
+        "owner": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "ProposalToLockups": {
       "type": "object",
       "required": [
@@ -1284,47 +1245,6 @@
     },
     "TokenInfoProviderInstantiateMsg": {
       "oneOf": [
-        {
-          "type": "object",
-          "required": [
-            "lsm"
-          ],
-          "properties": {
-            "lsm": {
-              "type": "object",
-              "required": [
-                "code_id",
-                "hub_transfer_channel_id",
-                "label",
-                "msg"
-              ],
-              "properties": {
-                "admin": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "code_id": {
-                  "type": "integer",
-                  "format": "uint64",
-                  "minimum": 0.0
-                },
-                "hub_transfer_channel_id": {
-                  "type": "string"
-                },
-                "label": {
-                  "type": "string"
-                },
-                "msg": {
-                  "$ref": "#/definitions/Binary"
-                }
-              },
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        },
         {
           "type": "object",
           "required": [

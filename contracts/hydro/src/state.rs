@@ -98,15 +98,6 @@ pub const TOKEN_INFO_PROVIDERS: Map<String, TokenInfoProvider> = Map::new("token
 // Keeps the address of the associated Gatekeeper contract, if Hydro uses one. The Gatekeeper contract
 // determines if a user should be allowed to lock the given amount of tokens at a given time.
 pub const GATEKEEPER: Item<String> = Item::new("gatekeeper");
-#[cw_serde]
-pub struct DropTokenInfo {
-    // The core drop address
-    pub address: Addr,
-    pub d_token_denom: String,
-    pub puppeteer_address: Addr,
-}
-// Stores the information about the drop token, used for conversion of locked tokens into drop tokens.
-pub const DROP_TOKEN_INFO: Item<DropTokenInfo> = Item::new("drop_token_info");
 
 // the total number of tokens locked in the contract
 pub const LOCKED_TOKENS: Item<u128> = Item::new("locked_tokens");
@@ -127,23 +118,11 @@ pub const LOCK_ID: Item<u64> = Item::new("lock_id");
 // this is incremented every time a new proposal is created
 pub const PROP_ID: Item<u64> = Item::new("prop_id");
 
-// LOCKS_MAP_V1: Previous structure, now preserved for migration, and for historical queries
-// LOCKS_MAP_V1: key(sender_address, lock_id) -> LockEntry
-// Note: as discussed in https://github.com/informalsystems/hydro/pull/244#discussion_r2065764776,
-//  if the upgrade goes live during round 7, it could be safely removed in round 12
-pub const LOCKS_MAP_V1: SnapshotMap<(Addr, u64), LockEntryV1> = SnapshotMap::new(
+// LOCKS_MAP: key(lock_id) -> LockEntry
+pub const LOCKS_MAP: SnapshotMap<u64, LockEntry> = SnapshotMap::new(
     "locks_map",
     "locks_map__checkpoints",
     "locks_map__changelog",
-    Strategy::EveryBlock,
-);
-
-// LOCKS_MAP_V2: New structure without address in key, to enable NFT features
-// LOCKS_MAP_V2: key(lock_id) -> LockEntry
-pub const LOCKS_MAP_V2: SnapshotMap<u64, LockEntryV2> = SnapshotMap::new(
-    "locks_map_v2",
-    "locks_map_v2__checkpoints",
-    "locks_map_v2__changelog",
     Strategy::EveryBlock,
 );
 
@@ -157,27 +136,7 @@ pub const TOKEN_IDS: Map<u64, ()> = Map::new("token_ids");
 pub const LOCKS_PENDING_SLASHES: Map<u64, Uint128> = Map::new("locks_pending_slashes");
 
 #[cw_serde]
-pub struct LockEntryV1 {
-    pub lock_id: u64,
-    pub funds: Coin,
-    pub lock_start: Timestamp,
-    pub lock_end: Timestamp,
-}
-
-impl LockEntryV1 {
-    pub fn into_v2(self, owner: Addr) -> LockEntryV2 {
-        LockEntryV2 {
-            lock_id: self.lock_id,
-            owner,
-            funds: self.funds,
-            lock_start: self.lock_start,
-            lock_end: self.lock_end,
-        }
-    }
-}
-
-#[cw_serde]
-pub struct LockEntryV2 {
+pub struct LockEntry {
     pub lock_id: u64,
     pub owner: Addr,
     pub funds: Coin,

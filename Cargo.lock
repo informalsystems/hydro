@@ -741,16 +741,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmos-sdk-proto"
-version = "0.27.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95ac39be7373404accccaede7cc1ec942ccef14f0ca18d209967a756bf1dbb1f"
-dependencies = [
- "prost 0.13.5",
- "tendermint-proto 0.40.4",
-]
-
-[[package]]
 name = "cosmrs"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2148,15 +2138,12 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 name = "hydro"
 version = "3.6.14"
 dependencies = [
- "bech32 0.11.0",
- "cosmos-sdk-proto 0.20.0",
  "cosmwasm-schema 2.2.2",
  "cosmwasm-std 2.2.2",
  "cw-orch",
  "cw-storage-plus 2.0.0",
  "cw-utils 2.0.0",
  "cw2 2.0.0",
- "ibc-proto",
  "interface",
  "proptest",
  "prost 0.13.5",
@@ -2338,33 +2325,6 @@ dependencies = [
  "schemars",
  "serde",
  "thiserror 1.0.69",
-]
-
-[[package]]
-name = "ibc-proto"
-version = "0.52.0"
-source = "git+https://github.com/cosmos/ibc-proto-rs?rev=83b7f1075fd72f9a5abdd0baa3d3c02ddabf7f3b#83b7f1075fd72f9a5abdd0baa3d3c02ddabf7f3b"
-dependencies = [
- "base64 0.22.1",
- "bytes",
- "cosmos-sdk-proto 0.27.0",
- "flex-error",
- "ics23",
- "prost 0.13.5",
- "subtle-encoding",
- "tendermint-proto 0.40.4",
-]
-
-[[package]]
-name = "ics23"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73b17f1a5bd7d12ad30a21445cfa5f52fd7651cb3243ba866f9916b1ec112f12"
-dependencies = [
- "anyhow",
- "bytes",
- "hex",
- "prost 0.13.5",
 ]
 
 [[package]]
@@ -4584,21 +4544,6 @@ name = "tendermint-proto"
 version = "0.39.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf3abf34ecf33125621519e9952688e7a59a98232d51538037ba21fbe526a802"
-dependencies = [
- "bytes",
- "flex-error",
- "prost 0.13.5",
- "serde",
- "serde_bytes",
- "subtle-encoding",
- "time",
-]
-
-[[package]]
-name = "tendermint-proto"
-version = "0.40.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2c40e13d39ca19082d8a7ed22de7595979350319833698f8b1080f29620a094"
 dependencies = [
  "bytes",
  "flex-error",

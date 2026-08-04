@@ -1,6 +1,6 @@
 use crate::{
     msg::{CollectionInfo, LiquidityDeployment},
-    state::{Approval, Constants, LockEntryV2, Proposal, Tranche, Vote, VoteWithPower},
+    state::{Approval, Constants, LockEntry, Proposal, Tranche, Vote, VoteWithPower},
     token_manager::TokenInfoProvider,
 };
 use cosmwasm_schema::{cw_serde, QueryResponses};
@@ -239,10 +239,6 @@ pub enum QueryMsg {
         limit: Option<u32>,
     },
 
-    /// Lists token_ids controlled by the contract.
-    #[returns(DtokenAmountsResponse)]
-    SimulateDtokenAmounts { lock_ids: Vec<u64>, address: String },
-
     /// Returns the list of parent lock IDs (ancestors) for a given child lock.
     #[returns(ParentLockIdsResponse)]
     ParentLockIds { child_id: u64 },
@@ -351,17 +347,6 @@ pub struct TranchesResponse {
 }
 
 #[cw_serde]
-pub struct DtokenAmountsResponse {
-    pub dtokens_response: Vec<DtokenAmountResponse>,
-}
-
-#[cw_serde]
-pub struct DtokenAmountResponse {
-    pub lock_id: u64,
-    pub dtoken_amount: String,
-}
-
-#[cw_serde]
 pub struct ParentLockIdsResponse {
     pub parent_ids: Vec<u64>,
 }
@@ -371,7 +356,7 @@ pub struct ParentLockIdsResponse {
 // lockups are returned with the current voting power of the lockup.
 #[cw_serde]
 pub struct LockEntryWithPower {
-    pub lock_entry: LockEntryV2,
+    pub lock_entry: LockEntry,
     pub current_voting_power: Uint128,
 }
 
@@ -419,7 +404,7 @@ pub struct AllUserLockupsResponse {
 
 #[cw_serde]
 pub struct AllLockupsResponse {
-    pub lockups: Vec<LockEntryV2>,
+    pub lockups: Vec<LockEntry>,
     pub next_lock_id: Option<u64>,
 }
 
@@ -445,7 +430,7 @@ pub struct SpecificUserLockupsWithTrancheInfosResponse {
 
 #[cw_serde]
 pub struct ExpiredUserLockupsResponse {
-    pub lockups: Vec<LockEntryV2>,
+    pub lockups: Vec<LockEntry>,
 }
 
 #[cw_serde]

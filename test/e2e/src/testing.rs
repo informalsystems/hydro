@@ -25,15 +25,12 @@ pub fn get_default_power_schedule_vec() -> Vec<(u64, Decimal)> {
     ]
 }
 
-pub fn get_lsm_token_info_provider_init_info(
-    hub_transfer_channel_id: String,
-) -> TokenInfoProviderInstantiateMsg {
-    TokenInfoProviderInstantiateMsg::LSM {
+pub fn get_lsm_token_info_provider_init_info() -> TokenInfoProviderInstantiateMsg {
+    TokenInfoProviderInstantiateMsg::LSMHub {
         code_id: 0,
         msg: Binary::default(),
         admin: None,
         label: "LSM Token Information Provider".to_string(),
-        hub_transfer_channel_id,
     }
 }
 
@@ -64,12 +61,6 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
     );
     let round_length = 3_600_000_000_000; // 1 hour
 
-    // neutrond q ibc channel channels --node https://rpc-falcron.pion-1.ntrn.tech
-    // find the provider-consumer channel and use its connection-id in next command
-    // neutrond q ibc channel connections [CONNECTION-ID] --node https://rpc-falcron.pion-1.ntrn.tech
-    // let hub_connection_id = "connection-42".to_string();
-    let hub_transfer_channel_id = "channel-96".to_string();
-
     hydro.upload()?;
     hydro.instantiate(
         &hydro::msg::InstantiateMsg {
@@ -91,9 +82,7 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             initial_whitelist: vec![whitelist_admin_address.clone()],
             max_deployment_duration: 12,
             round_lock_power_schedule: get_default_power_schedule_vec(),
-            token_info_providers: vec![get_lsm_token_info_provider_init_info(
-                hub_transfer_channel_id,
-            )],
+            token_info_providers: vec![get_lsm_token_info_provider_init_info()],
             gatekeeper: None,
             cw721_collection_info: None,
             lock_depth_limit: 50,
@@ -101,6 +90,12 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             slash_percentage_threshold: Decimal::percent(50),
             slash_tokens_receiver_addr: String::new(),
             lockup_conversion_fee_percent: Decimal::percent(2),
+            migrate_info: hydro::msg::MigrateInfo {
+                paused: false,
+                lock_id: 0,
+                proposal_id: 0,
+                conversion_funds: vec![],
+            },
         },
         Some(&Addr::unchecked(whitelist_admin_address.clone())),
         &[],

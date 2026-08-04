@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Timestamp, Uint64, Binary, Decimal, Uint128, TokenInfoProviderInstantiateMsg, InstantiateMsg, CollectionInfo, InstantiateContractMsg, TrancheInfo, ExecuteMsg, Expiration, LockTokensProof, SignatureInfo, ProposalToLockups, UpdateConfigData, Coin, TokenGroupRatioChange, QueryMsg, AllAvailableConversionFundsResponse, ConversionFundInfo, Addr, AllLockupsResponse, LockEntryV2, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponse, LockupWithPerTrancheInfo, LockEntryWithPower, PerTrancheLockupInfo, RoundWithBid, OperatorsResponse, TokensResponse, AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, ApprovalResponse, ApprovalsResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExpiredUserLockupsResponse, GatekeeperResponse, LiquidityDeploymentResponse, LiquidityDeployment, LockVotesHistoryResponse, LockVotesHistoryEntry, LockupVotingMetricsResponse, LockupVotingMetrics, LockupsPendingSlashesResponse, NumTokensResponse, ParentLockIdsResponse, ProposalResponse, Proposal, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, DtokenAmountsResponse, DtokenAmountResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSM, TokenInfoProviderLSMHub, TokenInfoProviderBase, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotedLocksResponse, VotedLockInfo, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistResponse, WhitelistAdminsResponse } from "./HydroBase.types";
+import { Timestamp, Uint64, Binary, Decimal, Uint128, TokenInfoProviderInstantiateMsg, InstantiateMsg, CollectionInfo, InstantiateContractMsg, MigrateInfo, Coin, TrancheInfo, ExecuteMsg, Expiration, LockTokensProof, SignatureInfo, ProposalToLockups, UpdateConfigData, TokenGroupRatioChange, LockupToMint, QueryMsg, AllAvailableConversionFundsResponse, ConversionFundInfo, Addr, AllLockupsResponse, LockEntry, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponse, LockupWithPerTrancheInfo, LockEntryWithPower, PerTrancheLockupInfo, RoundWithBid, OperatorsResponse, TokensResponse, AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, ApprovalResponse, ApprovalsResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExpiredUserLockupsResponse, GatekeeperResponse, LiquidityDeploymentResponse, LiquidityDeployment, LockVotesHistoryResponse, LockVotesHistoryEntry, LockupVotingMetricsResponse, LockupVotingMetrics, LockupsPendingSlashesResponse, NumTokensResponse, ParentLockIdsResponse, ProposalResponse, Proposal, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSMHub, TokenInfoProviderBase, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotedLocksResponse, VotedLockInfo, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistResponse, WhitelistAdminsResponse } from "./HydroBase.types";
 export interface HydroBaseReadOnlyInterface {
   contractAddress: string;
   constants: () => Promise<ConstantsResponse>;
@@ -273,13 +273,6 @@ export interface HydroBaseReadOnlyInterface {
     limit?: number;
     startAfter?: string;
   }) => Promise<TokensResponse>;
-  simulateDtokenAmounts: ({
-    address,
-    lockIds
-  }: {
-    address: string;
-    lockIds: number[];
-  }) => Promise<DtokenAmountsResponse>;
   parentLockIds: ({
     childId
   }: {
@@ -360,7 +353,6 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
     this.allNftInfo = this.allNftInfo.bind(this);
     this.tokens = this.tokens.bind(this);
     this.allTokens = this.allTokens.bind(this);
-    this.simulateDtokenAmounts = this.simulateDtokenAmounts.bind(this);
     this.parentLockIds = this.parentLockIds.bind(this);
     this.lockupVotingMetrics = this.lockupVotingMetrics.bind(this);
     this.availableConversionFunds = this.availableConversionFunds.bind(this);
@@ -910,20 +902,6 @@ export class HydroBaseQueryClient implements HydroBaseReadOnlyInterface {
       }
     });
   };
-  simulateDtokenAmounts = async ({
-    address,
-    lockIds
-  }: {
-    address: string;
-    lockIds: number[];
-  }): Promise<DtokenAmountsResponse> => {
-    return this.client.queryContractSmart(this.contractAddress, {
-      simulate_dtoken_amounts: {
-        address,
-        lock_ids: lockIds
-      }
-    });
-  };
   parentLockIds = async ({
     childId
   }: {
@@ -1200,20 +1178,6 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   }: {
     operator: string;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
-  setDropTokenInfo: ({
-    coreAddress,
-    dTokenDenom,
-    puppeteerAddress
-  }: {
-    coreAddress: string;
-    dTokenDenom: string;
-    puppeteerAddress: string;
-  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
-  convertLockupToDtoken: ({
-    lockIds
-  }: {
-    lockIds: number[];
-  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   convertLockup: ({
     lockId,
     targetDenom
@@ -1247,16 +1211,10 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   }: {
     lockId: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
-  transferFundsToHub: ({
-    denoms,
-    ibcFee,
-    recipientHub,
-    recipientStride
+  mintLockups: ({
+    lockups
   }: {
-    denoms: string[];
-    ibcFee: Coin;
-    recipientHub: string;
-    recipientStride: string;
+    lockups: LockupToMint[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseInterface {
@@ -1298,14 +1256,12 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.revoke = this.revoke.bind(this);
     this.approveAll = this.approveAll.bind(this);
     this.revokeAll = this.revokeAll.bind(this);
-    this.setDropTokenInfo = this.setDropTokenInfo.bind(this);
-    this.convertLockupToDtoken = this.convertLockupToDtoken.bind(this);
     this.convertLockup = this.convertLockup.bind(this);
     this.provideConversionFunds = this.provideConversionFunds.bind(this);
     this.withdrawConversionFunds = this.withdrawConversionFunds.bind(this);
     this.slashProposalVoters = this.slashProposalVoters.bind(this);
     this.buyoutPendingSlash = this.buyoutPendingSlash.bind(this);
-    this.transferFundsToHub = this.transferFundsToHub.bind(this);
+    this.mintLockups = this.mintLockups.bind(this);
   }
   lockTokens = async ({
     lockDuration,
@@ -1724,34 +1680,6 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
       }
     }, fee, memo, _funds);
   };
-  setDropTokenInfo = async ({
-    coreAddress,
-    dTokenDenom,
-    puppeteerAddress
-  }: {
-    coreAddress: string;
-    dTokenDenom: string;
-    puppeteerAddress: string;
-  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
-    return await this.client.execute(this.sender, this.contractAddress, {
-      set_drop_token_info: {
-        core_address: coreAddress,
-        d_token_denom: dTokenDenom,
-        puppeteer_address: puppeteerAddress
-      }
-    }, fee, memo, _funds);
-  };
-  convertLockupToDtoken = async ({
-    lockIds
-  }: {
-    lockIds: number[];
-  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
-    return await this.client.execute(this.sender, this.contractAddress, {
-      convert_lockup_to_dtoken: {
-        lock_ids: lockIds
-      }
-    }, fee, memo, _funds);
-  };
   convertLockup = async ({
     lockId,
     targetDenom
@@ -1819,23 +1747,14 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
       }
     }, fee, memo, _funds);
   };
-  transferFundsToHub = async ({
-    denoms,
-    ibcFee,
-    recipientHub,
-    recipientStride
+  mintLockups = async ({
+    lockups
   }: {
-    denoms: string[];
-    ibcFee: Coin;
-    recipientHub: string;
-    recipientStride: string;
+    lockups: LockupToMint[];
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      transfer_funds_to_hub: {
-        denoms,
-        ibc_fee: ibcFee,
-        recipient_hub: recipientHub,
-        recipient_stride: recipientStride
+      mint_lockups: {
+        lockups
       }
     }, fee, memo, _funds);
   };
