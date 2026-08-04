@@ -542,7 +542,7 @@ func waitForTx(txHash, node, nodeHome string) error {
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			lastErr = fmt.Errorf("query tx %s: %w, output: %s", txHash, err, string(output))
-			time.Sleep(1 * time.Second)
+			time.Sleep(3 * time.Second)
 			continue
 		}
 
