@@ -1001,31 +1001,6 @@
         }
       },
       "additionalProperties": false
-    },
-    {
-      "description": "For migration purposes, allows whitelisted accounts to directly mint historical lockups (i.e. migrated from the Neutron deployment) without going through the normal LockTokens flow.",
-      "type": "object",
-      "required": [
-        "mint_lockups"
-      ],
-      "properties": {
-        "mint_lockups": {
-          "type": "object",
-          "required": [
-            "lockups"
-          ],
-          "properties": {
-            "lockups": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/LockupToMint"
-              }
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
     }
   ],
   "definitions": {
@@ -1142,36 +1117,6 @@
               "type": "null"
             }
           ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "LockupToMint": {
-      "type": "object",
-      "required": [
-        "funds",
-        "lock_end",
-        "lock_id",
-        "lock_start",
-        "owner"
-      ],
-      "properties": {
-        "funds": {
-          "$ref": "#/definitions/Coin"
-        },
-        "lock_end": {
-          "$ref": "#/definitions/Timestamp"
-        },
-        "lock_id": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
-        },
-        "lock_start": {
-          "$ref": "#/definitions/Timestamp"
-        },
-        "owner": {
-          "type": "string"
         }
       },
       "additionalProperties": false

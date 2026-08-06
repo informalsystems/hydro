@@ -40,7 +40,6 @@ export interface InstantiateMsg {
   lockup_conversion_fee_percent: Decimal;
   max_deployment_duration: number;
   max_locked_tokens: Uint128;
-  migrate_info: MigrateInfo;
   round_length: number;
   round_lock_power_schedule: [number, Decimal][];
   slash_percentage_threshold: Decimal;
@@ -58,16 +57,6 @@ export interface InstantiateContractMsg {
   code_id: number;
   label: string;
   msg: Binary;
-}
-export interface MigrateInfo {
-  conversion_funds: Coin[];
-  lock_id: number;
-  paused: boolean;
-  proposal_id: number;
-}
-export interface Coin {
-  amount: Uint128;
-  denom: string;
 }
 export interface TrancheInfo {
   metadata: string;
@@ -246,10 +235,6 @@ export type ExecuteMsg = {
   buyout_pending_slash: {
     lock_id: number;
   };
-} | {
-  mint_lockups: {
-    lockups: LockupToMint[];
-  };
 };
 export type Expiration = {
   at_height: number;
@@ -283,17 +268,14 @@ export interface UpdateConfigData {
   slash_percentage_threshold?: Decimal | null;
   slash_tokens_receiver_addr?: string | null;
 }
+export interface Coin {
+  amount: Uint128;
+  denom: string;
+}
 export interface TokenGroupRatioChange {
   new_ratio: Decimal;
   old_ratio: Decimal;
   token_group_id: string;
-}
-export interface LockupToMint {
-  funds: Coin;
-  lock_end: Timestamp;
-  lock_id: number;
-  lock_start: Timestamp;
-  owner: string;
 }
 export type QueryMsg = {
   constants: {};

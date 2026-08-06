@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Timestamp, Uint64, Binary, Decimal, Uint128, TokenInfoProviderInstantiateMsg, InstantiateMsg, CollectionInfo, InstantiateContractMsg, MigrateInfo, Coin, TrancheInfo, ExecuteMsg, Expiration, LockTokensProof, SignatureInfo, ProposalToLockups, UpdateConfigData, TokenGroupRatioChange, LockupToMint, QueryMsg, AllAvailableConversionFundsResponse, ConversionFundInfo, Addr, AllLockupsResponse, LockEntry, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponse, LockupWithPerTrancheInfo, LockEntryWithPower, PerTrancheLockupInfo, RoundWithBid, OperatorsResponse, TokensResponse, AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, ApprovalResponse, ApprovalsResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExpiredUserLockupsResponse, GatekeeperResponse, LiquidityDeploymentResponse, LiquidityDeployment, LockVotesHistoryResponse, LockVotesHistoryEntry, LockupVotingMetricsResponse, LockupVotingMetrics, LockupsPendingSlashesResponse, NumTokensResponse, ParentLockIdsResponse, ProposalResponse, Proposal, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSMHub, TokenInfoProviderBase, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotedLocksResponse, VotedLockInfo, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistResponse, WhitelistAdminsResponse } from "./HydroBase.types";
+import { Timestamp, Uint64, Binary, Decimal, Uint128, TokenInfoProviderInstantiateMsg, InstantiateMsg, CollectionInfo, InstantiateContractMsg, TrancheInfo, ExecuteMsg, Expiration, LockTokensProof, SignatureInfo, ProposalToLockups, UpdateConfigData, Coin, TokenGroupRatioChange, QueryMsg, AllAvailableConversionFundsResponse, ConversionFundInfo, Addr, AllLockupsResponse, LockEntry, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponse, LockupWithPerTrancheInfo, LockEntryWithPower, PerTrancheLockupInfo, RoundWithBid, OperatorsResponse, TokensResponse, AllUserLockupsResponse, AllUserLockupsWithTrancheInfosResponse, AllVotesResponse, VoteEntry, Vote, AllVotesRoundTrancheResponse, ApprovalResponse, ApprovalsResponse, CanLockDenomResponse, ConstantsResponse, Constants, RoundLockPowerSchedule, LockPowerEntry, CurrentRoundResponse, ExpiredUserLockupsResponse, GatekeeperResponse, LiquidityDeploymentResponse, LiquidityDeployment, LockVotesHistoryResponse, LockVotesHistoryEntry, LockupVotingMetricsResponse, LockupVotingMetrics, LockupsPendingSlashesResponse, NumTokensResponse, ParentLockIdsResponse, ProposalResponse, Proposal, RoundEndResponse, RoundProposalsResponse, RoundTotalVotingPowerResponse, RoundTrancheLiquidityDeploymentsResponse, SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse, TokenInfoProviderLSMHub, TokenInfoProviderBase, TokenInfoProviderDerivative, TopNProposalsResponse, TotalLockedTokensResponse, TotalPowerAtHeightResponse, TranchesResponse, Tranche, UserVotedLocksResponse, VotedLockInfo, UserVotesResponse, VoteWithPower, UserVotingPowerResponse, VotingPowerAtHeightResponse, WhitelistResponse, WhitelistAdminsResponse } from "./HydroBase.types";
 export interface HydroBaseReadOnlyInterface {
   contractAddress: string;
   constants: () => Promise<ConstantsResponse>;
@@ -1211,11 +1211,6 @@ export interface HydroBaseInterface extends HydroBaseReadOnlyInterface {
   }: {
     lockId: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
-  mintLockups: ({
-    lockups
-  }: {
-    lockups: LockupToMint[];
-  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseInterface {
   client: SigningCosmWasmClient;
@@ -1261,7 +1256,6 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     this.withdrawConversionFunds = this.withdrawConversionFunds.bind(this);
     this.slashProposalVoters = this.slashProposalVoters.bind(this);
     this.buyoutPendingSlash = this.buyoutPendingSlash.bind(this);
-    this.mintLockups = this.mintLockups.bind(this);
   }
   lockTokens = async ({
     lockDuration,
@@ -1744,17 +1738,6 @@ export class HydroBaseClient extends HydroBaseQueryClient implements HydroBaseIn
     return await this.client.execute(this.sender, this.contractAddress, {
       buyout_pending_slash: {
         lock_id: lockId
-      }
-    }, fee, memo, _funds);
-  };
-  mintLockups = async ({
-    lockups
-  }: {
-    lockups: LockupToMint[];
-  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
-    return await this.client.execute(this.sender, this.contractAddress, {
-      mint_lockups: {
-        lockups
       }
     }, fee, memo, _funds);
   };

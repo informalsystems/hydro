@@ -42,19 +42,6 @@ pub struct InstantiateMsg {
     pub slash_tokens_receiver_addr: String,
     // Percentage fee applied during lockup conversions when the user does not provide conversion funds.
     pub lockup_conversion_fee_percent: Decimal,
-    // Provides the initial values for LOCK_ID and PROP_ID when migrating existing lockups/proposals.
-    pub migrate_info: MigrateInfo,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub struct MigrateInfo {
-    // Will be true, but parametrized to make the unit tests work,
-    // since they all rely on the fact that the contract is not paused after instantiation.
-    pub paused: bool,
-    pub lock_id: u64,
-    pub proposal_id: u64,
-    pub conversion_funds: Vec<Coin>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -294,22 +281,6 @@ pub enum ExecuteMsg {
     BuyoutPendingSlash {
         lock_id: u64,
     },
-
-    /// For migration purposes, allows whitelisted accounts to directly mint historical lockups
-    /// (i.e. migrated from the Neutron deployment) without going through the normal LockTokens flow.
-    MintLockups {
-        lockups: Vec<LockupToMint>,
-    },
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub struct LockupToMint {
-    pub lock_id: u64,
-    pub owner: String,
-    pub funds: Coin,
-    pub lock_start: Timestamp,
-    pub lock_end: Timestamp,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

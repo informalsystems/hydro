@@ -15,7 +15,6 @@
       "lockup_conversion_fee_percent",
       "max_deployment_duration",
       "max_locked_tokens",
-      "migrate_info",
       "round_length",
       "round_lock_power_schedule",
       "slash_percentage_threshold",
@@ -80,9 +79,6 @@
       "max_locked_tokens": {
         "$ref": "#/definitions/Uint128"
       },
-      "migrate_info": {
-        "$ref": "#/definitions/MigrateInfo"
-      },
       "round_length": {
         "type": "integer",
         "format": "uint64",
@@ -137,22 +133,6 @@
         "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
         "type": "string"
       },
-      "Coin": {
-        "type": "object",
-        "required": [
-          "amount",
-          "denom"
-        ],
-        "properties": {
-          "amount": {
-            "$ref": "#/definitions/Uint128"
-          },
-          "denom": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
       "CollectionInfo": {
         "type": "object",
         "required": [
@@ -197,37 +177,6 @@
           },
           "msg": {
             "$ref": "#/definitions/Binary"
-          }
-        },
-        "additionalProperties": false
-      },
-      "MigrateInfo": {
-        "type": "object",
-        "required": [
-          "conversion_funds",
-          "lock_id",
-          "paused",
-          "proposal_id"
-        ],
-        "properties": {
-          "conversion_funds": {
-            "type": "array",
-            "items": {
-              "$ref": "#/definitions/Coin"
-            }
-          },
-          "lock_id": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0.0
-          },
-          "paused": {
-            "type": "boolean"
-          },
-          "proposal_id": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0.0
           }
         },
         "additionalProperties": false
@@ -1372,31 +1321,6 @@
           }
         },
         "additionalProperties": false
-      },
-      {
-        "description": "For migration purposes, allows whitelisted accounts to directly mint historical lockups (i.e. migrated from the Neutron deployment) without going through the normal LockTokens flow.",
-        "type": "object",
-        "required": [
-          "mint_lockups"
-        ],
-        "properties": {
-          "mint_lockups": {
-            "type": "object",
-            "required": [
-              "lockups"
-            ],
-            "properties": {
-              "lockups": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/definitions/LockupToMint"
-                }
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "additionalProperties": false
       }
     ],
     "definitions": {
@@ -1513,36 +1437,6 @@
                 "type": "null"
               }
             ]
-          }
-        },
-        "additionalProperties": false
-      },
-      "LockupToMint": {
-        "type": "object",
-        "required": [
-          "funds",
-          "lock_end",
-          "lock_id",
-          "lock_start",
-          "owner"
-        ],
-        "properties": {
-          "funds": {
-            "$ref": "#/definitions/Coin"
-          },
-          "lock_end": {
-            "$ref": "#/definitions/Timestamp"
-          },
-          "lock_id": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0.0
-          },
-          "lock_start": {
-            "$ref": "#/definitions/Timestamp"
-          },
-          "owner": {
-            "type": "string"
           }
         },
         "additionalProperties": false

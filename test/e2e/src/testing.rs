@@ -90,12 +90,6 @@ pub fn e2e_basic_test() -> anyhow::Result<()> {
             slash_percentage_threshold: Decimal::percent(50),
             slash_tokens_receiver_addr: String::new(),
             lockup_conversion_fee_percent: Decimal::percent(2),
-            migrate_info: hydro::msg::MigrateInfo {
-                paused: false,
-                lock_id: 0,
-                proposal_id: 0,
-                conversion_funds: vec![],
-            },
         },
         Some(&Addr::unchecked(whitelist_admin_address.clone())),
         &[],
