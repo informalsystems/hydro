@@ -6,7 +6,7 @@ use crate::contract::{
     query_gatekeeper, query_tranches, query_user_votes, query_whitelist, query_whitelist_admins,
 };
 use crate::msg::{
-    CollectionInfo, MigrateInfo, ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo,
+    CollectionInfo, ProposalToLockups, TokenInfoProviderInstantiateMsg, TrancheInfo,
     UpdateConfigData,
 };
 use crate::state::{
@@ -143,12 +143,6 @@ pub fn get_default_instantiate_msg(mock_api: &MockApi) -> InstantiateMsg {
         slash_percentage_threshold: Decimal::percent(50),
         slash_tokens_receiver_addr: slashed_tokens_receiver_address,
         lockup_conversion_fee_percent: Decimal::percent(2),
-        migrate_info: MigrateInfo {
-            paused: false,
-            lock_id: 0,
-            proposal_id: 0,
-            conversion_funds: vec![],
-        },
     }
 }
 
@@ -2989,20 +2983,6 @@ fn contract_pausing_test() {
                 .addr_make("token info provider contract")
                 .to_string(),
         },
-    ];
-
-    for msg in msgs {
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-        assert!(res.is_err());
-        assert!(res.unwrap_err().to_string().contains("Paused"));
-    }
-
-    // UpdateTokenGroupsRatios is allowed to execute while paused, so that token group
-    // ratios can still be updated for lockups migrated from the previous deployment.
-    let res = execute(
-        deps.as_mut(),
-        env.clone(),
-        info,
         ExecuteMsg::UpdateTokenGroupsRatios {
             changes: vec![TokenGroupRatioChange {
                 token_group_id: "token_group_id".to_string(),
@@ -3010,9 +2990,12 @@ fn contract_pausing_test() {
                 new_ratio: Decimal::zero(),
             }],
         },
-    );
-    if let Err(err) = res {
-        assert!(!err.to_string().contains("Paused"));
+    ];
+
+    for msg in msgs {
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("Paused"));
     }
 }
 
