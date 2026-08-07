@@ -1,8 +1,6 @@
 name: Populate Staging Contracts
 
 on:
-  push:
-    branches: ["dusan/populate-staging-contracts-hub"]
   schedule:
     # run every day at 10:05 AM UTC (new round starts at 10 AM UTC time)
     - cron: '5 10 * * *'
