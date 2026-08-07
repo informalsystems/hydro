@@ -8,6 +8,3 @@ pub mod state;
 mod testing;
 #[cfg(test)]
 mod testing_fees;
-
-#[cfg(test)]
-mod testing_migrate;

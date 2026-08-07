@@ -12,14 +12,14 @@ use cw_storage_plus::Bound;
 use interface::hydro::{CurrentRoundResponse, TokenGroupRatioChange};
 use interface::utils::{DEFAULT_PAGINATION_LIMIT, MAX_PAGINATION_LIMIT};
 
-use crate::cw721::{self, is_denom_lsm};
+use crate::cw721;
 use crate::error::{new_generic_error, ContractError};
 use crate::gatekeeper::{
     build_gatekeeper_lock_tokens_msg, build_init_gatekeeper_msg, gatekeeper_handle_submsg_reply,
 };
 use crate::governance::{query_total_power_at_height, query_voting_power_at_height};
 use crate::msg::{
-    CollectionInfo, ExecuteMsg, InstantiateMsg, LiquidityDeployment, LockTokensProof, LockupToMint,
+    CollectionInfo, ExecuteMsg, InstantiateMsg, LiquidityDeployment, LockTokensProof,
     ProposalToLockups, ReplyPayload, TokenInfoProviderInstantiateMsg, TrancheInfo,
     UpdateConfigData,
 };
@@ -48,7 +48,7 @@ use crate::state::{
     Constants, LockEntry, Proposal, RoundLockPowerSchedule, Tranche, Vote, VoteWithPower,
     AVAILABLE_CONVERSION_FUNDS, CONSTANTS, GATEKEEPER, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS,
     LOCKS_MAP, LOCKS_PENDING_SLASHES, LOCK_ID, LOCK_ID_EXPIRY, LOCK_ID_TRACKING, PROPOSAL_MAP,
-    PROPS_BY_SCORE, PROP_ID, REVERSE_LOCK_ID_TRACKING, SNAPSHOTS_ACTIVATION_HEIGHT, TOKEN_IDS,
+    PROPS_BY_SCORE, PROP_ID, REVERSE_LOCK_ID_TRACKING, SNAPSHOTS_ACTIVATION_HEIGHT,
     TOKEN_INFO_PROVIDERS, TRANCHE_ID, TRANCHE_MAP, USER_LOCKS, USER_LOCKS_FOR_CLAIM, VOTE_MAP_V1,
     VOTE_MAP_V2, VOTING_ALLOWED_ROUND, WHITELIST, WHITELIST_ADMINS,
 };
@@ -77,9 +77,6 @@ pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
 pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const MAX_LOCK_ENTRIES: usize = 100;
-
-const D_ATOM_HUB_DENOM: &str =
-    "ibc/AFC2F1B2FD45D549E34445E63921ECDECF1EAC68DA72412C2E087BEB503693F2";
 
 pub const MIN_DEPLOYMENT_DURATION: u64 = 1;
 
@@ -129,8 +126,7 @@ pub fn instantiate(
         max_locked_tokens: msg.max_locked_tokens.u128(),
         known_users_cap: 0,
         max_deployment_duration: msg.max_deployment_duration,
-        // Until we migrate the lockups, contract will stay paused
-        paused: msg.migrate_info.paused,
+        paused: false,
         round_lock_power_schedule: RoundLockPowerSchedule::new(msg.round_lock_power_schedule),
         cw721_collection_info,
         lock_expiry_duration_seconds: msg.lock_expiry_duration_seconds,
@@ -145,16 +141,8 @@ pub fn instantiate(
 
     CONSTANTS.save(deps.storage, env.block.time.nanos(), &state)?;
     LOCKED_TOKENS.save(deps.storage, &0)?;
-    LOCK_ID.save(deps.storage, &msg.migrate_info.lock_id)?;
-    PROP_ID.save(deps.storage, &msg.migrate_info.proposal_id)?;
-
-    for conversion_funds in msg.migrate_info.conversion_funds {
-        AVAILABLE_CONVERSION_FUNDS.save(
-            deps.storage,
-            conversion_funds.denom.clone(),
-            &conversion_funds.amount,
-        )?;
-    }
+    LOCK_ID.save(deps.storage, &0)?;
+    PROP_ID.save(deps.storage, &0)?;
 
     let mut whitelist_admins: Vec<Addr> = vec![];
     let mut whitelist: Vec<Addr> = vec![];
@@ -230,16 +218,8 @@ pub fn execute(
 
     // Since un-pausing can only be done through contract migration,
     // we can check that the contract is not paused within execute.
-    //
-    // For Cosmos Hub instance, if the contract is paused, we only allow
-    // the MintLockups and UpdateTokenGroupsRatios messages to be executed.
-    // Later one is needed to allow the token group ratios to be updated for the migrated lockups.
     if constants.paused {
-        match msg {
-            ExecuteMsg::MintLockups { .. } => (),
-            ExecuteMsg::UpdateTokenGroupsRatios { .. } => (),
-            _ => return Err(ContractError::Paused),
-        }
+        return Err(ContractError::Paused);
     }
 
     let current_round = compute_current_round_id(&env, &constants)?;
@@ -412,7 +392,6 @@ pub fn execute(
         ExecuteMsg::BuyoutPendingSlash { lock_id } => {
             buyout_pending_slash(deps, env, info, &constants, lock_id)
         }
-        ExecuteMsg::MintLockups { lockups } => mint_lockups(deps, env, info, &constants, lockups),
     }
 }
 
@@ -610,140 +589,6 @@ pub fn lock_tokens(
         .add_attribute("locked_tokens", info.funds[0].clone().to_string())
         .add_attribute("lock_start", lock_entry.lock_start.to_string())
         .add_attribute("lock_end", lock_entry.lock_end.to_string()))
-}
-
-// MintLockups(lockups_to_mint):
-// For migration purposes, allows whitelisted accounts to directly create lock entries
-// (i.e. lockups migrated from the Neutron deployment) without going through the normal
-// LockTokens flow. Unlike LockTokens, this does not require the sender to attach funds,
-// does not enforce MAX_LOCK_ENTRIES / lock duration schedule / max_locked_tokens, and does
-// not go through the Gatekeeper.
-fn mint_lockups(
-    mut deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    constants: &Constants,
-    lockups_to_mint: Vec<LockupToMint>,
-) -> Result<Response, ContractError> {
-    // validate that the sender is on the whitelist
-    let whitelist = WHITELIST.load(deps.storage)?;
-    if !whitelist.contains(&info.sender) {
-        return Err(ContractError::Unauthorized);
-    }
-
-    let current_round = compute_current_round_id(&env, constants)?;
-    let mut token_manager = TokenManager::new(&deps.as_ref());
-
-    let mut total_locked_tokens = LOCKED_TOKENS.load(deps.storage)?;
-    let mut seen_lock_ids: HashSet<u64> = HashSet::new();
-    let mut lock_ids_minted = vec![];
-
-    for lockup in lockups_to_mint {
-        if !seen_lock_ids.insert(lockup.lock_id) {
-            return Err(new_generic_error(format!(
-                "Duplicate lock_id {} in request",
-                lockup.lock_id
-            )));
-        }
-
-        if LOCKS_MAP.may_load(deps.storage, lockup.lock_id)?.is_some() {
-            return Err(new_generic_error(format!(
-                "Lock with id {} already exists",
-                lockup.lock_id
-            )));
-        }
-
-        let owner = deps.api.addr_validate(&lockup.owner)?;
-
-        let lock_entry = LockEntry {
-            lock_id: lockup.lock_id,
-            owner: owner.clone(),
-            funds: lockup.funds.clone(),
-            lock_start: lockup.lock_start,
-            lock_end: lockup.lock_end,
-        };
-        let lock_end = lock_entry.lock_end.nanos();
-
-        LOCKS_MAP.save(
-            deps.storage,
-            lock_entry.lock_id,
-            &lock_entry,
-            env.block.height,
-        )?;
-
-        // Add to TOKEN_IDS if it's a dATOM/stATOM lockup (non-LSM)
-        if !is_denom_lsm(&deps.as_ref(), lock_entry.funds.denom.clone())? {
-            TOKEN_IDS.save(deps.storage, lock_entry.lock_id, &())?;
-        }
-
-        USER_LOCKS.update(
-            deps.storage,
-            owner.clone(),
-            env.block.height,
-            |current_locks| -> Result<Vec<u64>, StdError> {
-                match current_locks {
-                    None => Ok(vec![lock_entry.lock_id]),
-                    Some(mut current_locks) => {
-                        current_locks.push(lock_entry.lock_id);
-                        Ok(current_locks)
-                    }
-                }
-            },
-        )?;
-
-        USER_LOCKS_FOR_CLAIM.update(
-            deps.storage,
-            owner.clone(),
-            |current_claim_locks| -> Result<Vec<u64>, StdError> {
-                match current_claim_locks {
-                    None => Ok(vec![lock_entry.lock_id]),
-                    Some(mut current_claim_locks) => {
-                        current_claim_locks.push(lock_entry.lock_id);
-                        Ok(current_claim_locks)
-                    }
-                }
-            },
-        )?;
-
-        total_locked_tokens += lock_entry.funds.amount.u128();
-        lock_ids_minted.push(lock_entry.lock_id.to_string());
-
-        let last_round_with_power = compute_round_id_for_timestamp(constants, lock_end)? - 1;
-
-        // If the lockup has already expired, we don't need to update total powers for current and future rounds.
-        if last_round_with_power >= current_round {
-            // We won't be able to validate denom of dATOM lockups. There will be no token info provider for it.
-            // Those lockups will have 0 voting power, so there is no need to update total powers for current and future rounds.
-            if lockup.funds.denom.as_str() == D_ATOM_HUB_DENOM {
-                continue;
-            }
-
-            let token_group_id = token_manager
-                .validate_denom(&deps.as_ref(), current_round, lockup.funds.denom.clone())
-                .map_err(|err| new_generic_error(format!("validating denom: {err}")))?;
-
-            update_total_time_weighted_shares(
-                &mut deps,
-                env.block.height,
-                constants,
-                &mut token_manager,
-                current_round,
-                current_round,
-                last_round_with_power,
-                lock_end,
-                token_group_id,
-                lock_entry.funds.amount,
-                |_, _, _| Uint128::zero(),
-            )?;
-        }
-    }
-
-    LOCKED_TOKENS.save(deps.storage, &total_locked_tokens)?;
-
-    Ok(Response::new()
-        .add_attribute("action", "mint_lockups")
-        .add_attribute("sender", info.sender)
-        .add_attribute("lock_ids", lock_ids_minted.join(",")))
 }
 
 // Extends the lock duration of the guiven lock entries to be current_block_time + lock_duration,

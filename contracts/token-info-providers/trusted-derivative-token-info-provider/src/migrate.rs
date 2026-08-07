@@ -13,6 +13,9 @@ pub struct MigrateMsg {}
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
     check_contract_version(deps.storage)?;
+
+    // No state migrations needed
+
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     Ok(Response::new())

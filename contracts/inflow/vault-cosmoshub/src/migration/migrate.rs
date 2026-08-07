@@ -20,7 +20,7 @@ pub fn migrate(
 ) -> Result<Response<TokenFactoryMsg>, ContractError> {
     check_contract_version(deps.storage)?;
 
-    // No state migrations needed from vX.Y.Z to vX.Y.Z+1
+    // No state migrations needed
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
