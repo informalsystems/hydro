@@ -5,23 +5,24 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
-NEUTRON_BINARY="neutrond"
-CONFIG_FILE="tools/deployment/config_mainnet.json"
+CONFIG_FILE="tools/deployment/config_mainnet_gaia.json"
 
-NEUTRON_CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
-NEUTRON_NODE=$(jq -r '.neutron_rpc_node' $CONFIG_FILE)
+CHAIN_BINARY=$(jq -r '.chain_binary' $CONFIG_FILE)
+CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
+CHAIN_NODE=$(jq -r '.chain_rpc_node' $CONFIG_FILE)
 TX_SENDER_WALLET=$(jq -r '.tx_sender_wallet' $CONFIG_FILE)
-TX_SENDER_ADDRESS=$($NEUTRON_BINARY keys show $TX_SENDER_WALLET --keyring-backend test | grep "address:" | sed 's/.*address: //')
+TX_SENDER_ADDRESS=$($CHAIN_BINARY keys show $TX_SENDER_WALLET --keyring-backend test | grep "address:" | sed 's/.*address: //')
 
-NEUTRON_CHAIN_ID_FLAG="--chain-id $NEUTRON_CHAIN_ID"
+CHAIN_ID_FLAG="--chain-id $CHAIN_ID"
 KEYRING_TEST_FLAG="--keyring-backend test"
 TX_FLAG="--gas auto --gas-adjustment 1.3"
-NEUTRON_NODE_FLAG="--node $NEUTRON_NODE"
-NEUTRON_TX_FLAGS="$TX_FLAG --gas-prices 0.0053untrn --chain-id $NEUTRON_CHAIN_ID $NEUTRON_NODE_FLAG $KEYRING_TEST_FLAG -y"
+CHAIN_NODE_FLAG="--node $CHAIN_NODE"
+CHAIN_TX_FLAGS="$TX_FLAG --gas-prices 0.005uatom $CHAIN_ID_FLAG $CHAIN_NODE_FLAG $KEYRING_TEST_FLAG -y"
 
 DAO_DEPLOYMENT_CONFIG_PATH="$1"
 DAO_NAME=$(jq -r '.dao_name' $DAO_DEPLOYMENT_CONFIG_PATH)
 DAO_DESCRIPTION=$(jq -r '.dao_description' $DAO_DEPLOYMENT_CONFIG_PATH)
+DAO_ADMIN=$(jq -r '.dao_admin' $DAO_DEPLOYMENT_CONFIG_PATH)
 DAO_VOTING_ADAPTER_CODE_ID=$(jq -r '.dao_voting_adapter_code_id' $DAO_DEPLOYMENT_CONFIG_PATH)
 HYDRO_CONTRACT_ADDRESS=$(jq -r '.hydro_contract_address' $DAO_DEPLOYMENT_CONFIG_PATH)
 PROPOSAL_SUBMISSION_APPROVER=$(jq -r '.proposal_submission_approver' $DAO_DEPLOYMENT_CONFIG_PATH)
@@ -34,9 +35,9 @@ IMAGE_URL=$(jq -r '.image_url' $DAO_DEPLOYMENT_CONFIG_PATH)
 BANNER=$(jq -r '.banner' $DAO_DEPLOYMENT_CONFIG_PATH)
 
 # https://github.com/DA0-DA0/dao-dao-ui/blob/development/packages/utils/constants/codeIds.json
-DAO_CORE_CODE_ID="2346"
-DAO_PROPOSAL_SINGLE_CODE_ID="2353"
-DAO_PREPROPOSE_APPROVAL_SINGLE_CODE_ID="2348"
+DAO_CORE_CODE_ID="179"
+DAO_PROPOSAL_SINGLE_CODE_ID="186"
+DAO_PREPROPOSE_APPROVAL_SINGLE_CODE_ID="181"
 
 DAO_VOTING_ADAPTER_INIT_MSG='{"hydro_contract":"'$HYDRO_CONTRACT_ADDRESS'"}'
 echo 'DAO Voting Adapter init msg:' $DAO_VOTING_ADAPTER_INIT_MSG
@@ -54,7 +55,7 @@ fi
 if [ -z "$UUSDC_DEPOSIT_AMOUNT" ]; then
     DEPOSIT_INFO='null'
 else
-    DEPOSIT_INFO='{"denom": {"token": {"denom": {"native": "ibc/B559A80D62249C8AA07A380E2A2BEA6E5CA9A6F079C912C3A9E9B494105E4F81"}}}, "amount": "'$UUSDC_DEPOSIT_AMOUNT'", "refund_policy": "only_passed"}'
+    DEPOSIT_INFO='{"denom": {"token": {"denom": {"native": "ibc/F663521BF1836B00F5F177680F74BFB9A8B5654A694D0D2BC249E03CF2509013"}}}, "amount": "'$UUSDC_DEPOSIT_AMOUNT'", "refund_policy": "only_passed"}'
 fi
 
 if [ -z "$IMAGE_URL" ]; then
@@ -86,12 +87,12 @@ INIT_DAODAO='{"name":"'$DAO_NAME'", "description":"'$DAO_DESCRIPTION'", "image_u
 echo 'DAO Core init msg:' $INIT_DAODAO
 echo ""
 
-echo 'Instantiating Hydro DAO...'
-$NEUTRON_BINARY tx wasm instantiate $DAO_CORE_CODE_ID "$INIT_DAODAO" --admin $TX_SENDER_ADDRESS --label "'$DAO_NAME'" --from $TX_SENDER_WALLET $NEUTRON_TX_FLAGS --output json &> ./instantiate_hydro_dao_res.json
+echo 'Instantiating Hydro Governance DAO...'
+$CHAIN_BINARY tx wasm instantiate $DAO_CORE_CODE_ID "$INIT_DAODAO" --admin $DAO_ADMIN --label "'$DAO_NAME'" --from $TX_SENDER_WALLET $CHAIN_TX_FLAGS --output json &> ./instantiate_hydro_dao_res.json
 sleep 10
 
 INSTANTIATE_HYDRO_DAO_TX_HASH=$(grep -o '{.*}' ./instantiate_hydro_dao_res.json | jq -r '.txhash')
-$NEUTRON_BINARY q tx $INSTANTIATE_HYDRO_DAO_TX_HASH $NEUTRON_NODE_FLAG --output json &> ./instantiate_hydro_dao_tx.json
+$CHAIN_BINARY q tx $INSTANTIATE_HYDRO_DAO_TX_HASH $CHAIN_NODE_FLAG --output json &> ./instantiate_hydro_dao_tx.json
 HYDRO_DAO_CONTRACT_ADDRESS=$(jq -r '[.events[] | select(.type == "instantiate") | .attributes[] | select(.key == "_contract_address") | .value] | .[0]' ./instantiate_hydro_dao_tx.json)
 
 echo 'Hydro DAO successfully instantiated: https://daodao.zone/dao/'$HYDRO_DAO_CONTRACT_ADDRESS'/home'
