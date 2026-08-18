@@ -2,7 +2,7 @@
     "chain_id": "cosmoshub-4",
     "chain_binary": "gaiad",
     "chain_rpc_node": "https://cosmos-rpc.publicnode.com:443",
-    "tx_sender_wallet": "hydro_relayer",
+    "tx_sender_wallet": "hydro_ops",
     "tribute_token_1": "uatom",
     "tribute_token_2": "ibc/B05539B66B72E2739B986B86391E5D08F12B8D5D2C2A7F8F8CF9ADF674DFA231",
     "tribute_token_3": "ibc/F663521BF1836B00F5F177680F74BFB9A8B5654A694D0D2BC249E03CF2509013"
