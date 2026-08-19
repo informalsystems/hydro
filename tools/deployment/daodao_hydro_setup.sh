@@ -174,11 +174,4 @@ HYDRO_DAO_CONTRACT_ADDRESS=$(jq -r '[.events[] | select(.type == "instantiate") 
 
 echo 'Hydro Governance DAO successfully instantiated: https://daodao.zone/dao/'$HYDRO_DAO_CONTRACT_ADDRESS'/home'
 echo ""
-echo 'Hydro Executive DAO: https://daodao.zone/dao/'$HYDRO_EXECUTIVE_DAO_CONTRACT_ADDRESS'/home'
-echo ""
-echo 'REMINDER -- follow-up steps not performed by this script:'
-echo '  1. Hydro Executive'"'"'s cw4 group has a single placeholder member (the tx sender). Replace it with the'
-echo '     real 10-member set via a cw4-group UpdateMembers proposal once addresses are finalized.'
-echo '  2. Hydro Executive'"'"'s two proposal modules have no veto configured yet. Once real membership is in'
-echo '     place, submit an Executive proposal calling UpdateConfig on each module to set'
-echo '     veto.vetoer = '$HYDRO_DAO_CONTRACT_ADDRESS' (Hydro Governance), completing the reverse relation.'
+echo 'Hydro Executive DAO successfully instantiated: https://daodao.zone/dao/'$HYDRO_EXECUTIVE_DAO_CONTRACT_ADDRESS'/home'
