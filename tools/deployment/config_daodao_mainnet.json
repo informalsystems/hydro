@@ -1,14 +1,24 @@
 {
     "dao_name": "Hydro Governance",
     "dao_description": "Hydro governance is a decentralized decision-making system that allows Hydro participants to take part in the management & evolution of the protocol. It operates through on-chain voting, where Hydro-locked ATOM holders vote on governance proposals that impact the protocol's parameters, upgrades, and treasury management.",
-    "dao_voting_adapter_code_id": "3144",
-    "hydro_contract_address": "neutron13w6sagl4clacx4c8drhuwfl20cesn3pnllhf37e65ls8zwf6gcgq93t2lp",
-    "proposal_submission_approver": "neutron1w7f40hgfc505a2wnjsl5pg35yl8qpawv48w5yekax4xj2m43j09s5fa44f",
+    "dao_admin": "cosmos1elg0jdr2cn7jdqu4agqnvhmy8n4aayxg365esmudgk56vn7dlf0s8v0j39",
+    "dao_voting_adapter_code_id": "722",
+    "hydro_contract_address": "cosmos1tj45y3729uu07pv8hq50pfx9u790rh6e0qssucs3yusxaag32t8svhlxgw",
+    "proposal_submission_approver": "cosmos1elg0jdr2cn7jdqu4agqnvhmy8n4aayxg365esmudgk56vn7dlf0s8v0j39",
     "allowed_proposal_submitter": "",
     "uusdc_deposit_amount": "50000000",
     "max_voting_period": "345600",
     "quorum_percent": "0.1",
     "only_members_execute": "false",
     "image_url": "ipfs://QmNsj6WYt3WpyWT6jMG71uhZNj2UwnZn7S3B595RYZ1qyd",
-    "banner": "ipfs://QmScf4q2hADFBcTPBsGsuhvCUmFnVrz6DXdZUXB45KkYBu"
+    "banner": "ipfs://QmScf4q2hADFBcTPBsGsuhvCUmFnVrz6DXdZUXB45KkYBu",
+    "executive_dao_name": "Hydro Executive",
+    "executive_dao_description": "The Hydro Executive carries out actions on behalf of Hydro Governance. It is strictly limited to executing instructions defined in passed governance proposals and has the authority to move funds and submit transactions in the same way Hydro Governance can. Any action taken by the Hydro Executive remains subject to oversight. Hydro Governance retains full veto power and can halt any operation through a veto proposal.",
+    "executive_image_url": "ipfs://QmNsj6WYt3WpyWT6jMG71uhZNj2UwnZn7S3B595RYZ1qyd",
+    "executive_banner": "ipfs://QmScf4q2hADFBcTPBsGsuhvCUmFnVrz6DXdZUXB45KkYBu",
+    "executive_max_voting_period": "172800",
+    "executive_single_choice_threshold_percent": "0.49",
+    "executive_single_choice_quorum_percent": "0.2",
+    "executive_multiple_choice_quorum_percent": "0.2",
+    "executive_only_members_execute": "true"
 }
