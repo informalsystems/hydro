@@ -59,6 +59,7 @@ schema:
 	cd contracts/inflow/cctp-adapter-cosmoshub && cargo run --bin inflow_cctp_adapter_cosmoshub_schema
 	cd contracts/inflow/skip-adapter-cosmoshub && cargo run --bin inflow_skip_adapter_cosmoshub_schema
 	cd contracts/inflow/basic-adapter-cosmoshub && cargo run --bin inflow_basic_adapter_cosmoshub_schema
+	cd contracts/inflow/ibc-eureka-adapter-cosmoshub && cargo run --bin inflow_ibc_eureka_adapter_cosmoshub_schema
 	cd contracts/claim && cargo run --bin claim_schema
 
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/hydro/schema NAME=HydroBase
@@ -84,6 +85,7 @@ schema:
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/cctp-adapter-cosmoshub/schema NAME=InflowCCTPAdapterCosmosHubBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/skip-adapter-cosmoshub/schema NAME=InflowSkipAdapterCosmosHubBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/basic-adapter-cosmoshub/schema NAME=InflowBasicAdapterCosmosHubBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/ibc-eureka-adapter-cosmoshub/schema NAME=InflowIBCEurekaAdapterCosmosHubBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/claim/schema NAME=ClaimBase
 
 ts-codegen-inner:

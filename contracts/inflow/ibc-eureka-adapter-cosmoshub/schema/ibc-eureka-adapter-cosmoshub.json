@@ -1,0 +1,976 @@
+{
+  "contract_name": "ibc-eureka-adapter-cosmoshub",
+  "contract_version": "3.6.16",
+  "idl_version": "1.0.0",
+  "instantiate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "InstantiateMsg",
+    "description": "Message for instantiating the IBC Eureka adapter contract",
+    "type": "object",
+    "required": [
+      "admins",
+      "eureka_fee_receiver",
+      "eureka_fee_timeout_seconds",
+      "ibc_transfer_timeout_seconds",
+      "initial_allowed_destination_addresses",
+      "initial_denoms",
+      "initial_depositors",
+      "initial_executors",
+      "skip_swap_entry_point_contract",
+      "source_channel"
+    ],
+    "properties": {
+      "admins": {
+        "description": "The config admins who can update the config and manage denoms/depositors/executors",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "eureka_fee_receiver": {
+        "description": "Address on Cosmos Hub that receives the IBC Eureka relayer fee",
+        "type": "string"
+      },
+      "eureka_fee_timeout_seconds": {
+        "description": "Timeout, in seconds, for the Eureka relayer fees to be received (converted to nanoseconds when building the message)",
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "ibc_transfer_timeout_seconds": {
+        "description": "Timeout, in seconds, to be used when building IBC Eureka transfer messages",
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "initial_allowed_destination_addresses": {
+        "description": "Initial allowed EVM destination addresses (can be empty array)",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "initial_denoms": {
+        "description": "Initial allowed token denoms for this adapter instance (can be empty array)",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "initial_depositors": {
+        "description": "Initial depositors to register during instantiation (can be empty array)",
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/InitialDepositor"
+        }
+      },
+      "initial_executors": {
+        "description": "Initial executors who can perform operations (can be empty array)",
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/InitialExecutor"
+        }
+      },
+      "skip_swap_entry_point_contract": {
+        "description": "Address of the Skip swap entry-point contract on Cosmos Hub",
+        "type": "string"
+      },
+      "source_channel": {
+        "description": "IBC Eureka source channel ID used for bridging to the destination chain",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "DepositorCapabilities": {
+        "description": "Depositor capabilities for the IBC Eureka adapter",
+        "type": "object",
+        "required": [
+          "can_withdraw"
+        ],
+        "properties": {
+          "can_withdraw": {
+            "description": "Whether this depositor can withdraw funds",
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "InitialDepositor": {
+        "description": "Initial depositor configuration for instantiation",
+        "type": "object",
+        "required": [
+          "address"
+        ],
+        "properties": {
+          "address": {
+            "description": "Depositor address to register",
+            "type": "string"
+          },
+          "capabilities": {
+            "description": "Optional capabilities for this depositor If not provided, defaults to { can_withdraw: true }",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/DepositorCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "InitialExecutor": {
+        "description": "Initial executor configuration for instantiation",
+        "type": "object",
+        "required": [
+          "address"
+        ],
+        "properties": {
+          "address": {
+            "description": "Executor address to register",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "execute": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExecuteMsg",
+    "description": "Top-level execute message wrapper for the IBC Eureka adapter",
+    "oneOf": [
+      {
+        "description": "Standard adapter interface messages (deposit, withdraw, manage depositors)",
+        "type": "object",
+        "required": [
+          "standard_action"
+        ],
+        "properties": {
+          "standard_action": {
+            "$ref": "#/definitions/AdapterInterfaceMsg"
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "IBC Eureka adapter-specific custom messages",
+        "type": "object",
+        "required": [
+          "custom_action"
+        ],
+        "properties": {
+          "custom_action": {
+            "$ref": "#/definitions/IbcEurekaAdapterMsg"
+          }
+        },
+        "additionalProperties": false
+      }
+    ],
+    "definitions": {
+      "AdapterInterfaceMsg": {
+        "description": "Standard execute messages that all protocol adapters must implement",
+        "oneOf": [
+          {
+            "description": "Deposit tokens into the protocol Only callable by whitelisted depositors The coin is sent in info.funds",
+            "type": "object",
+            "required": [
+              "deposit"
+            ],
+            "properties": {
+              "deposit": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Withdraw tokens from the protocol Only callable by whitelisted depositors The execution MUST fail if insufficient funds are available",
+            "type": "object",
+            "required": [
+              "withdraw"
+            ],
+            "properties": {
+              "withdraw": {
+                "type": "object",
+                "required": [
+                  "coin"
+                ],
+                "properties": {
+                  "coin": {
+                    "description": "Coin (denom + amount) to withdraw",
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/Coin"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Register new depositor address (admin only)",
+            "type": "object",
+            "required": [
+              "register_depositor"
+            ],
+            "properties": {
+              "register_depositor": {
+                "type": "object",
+                "required": [
+                  "depositor_address"
+                ],
+                "properties": {
+                  "depositor_address": {
+                    "description": "New depositor address to register",
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "description": "Optional adapter-specific metadata (e.g., capabilities) Serialized as Binary for flexibility",
+                    "anyOf": [
+                      {
+                        "$ref": "#/definitions/Binary"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Unregister depositor address (admin only)",
+            "type": "object",
+            "required": [
+              "unregister_depositor"
+            ],
+            "properties": {
+              "unregister_depositor": {
+                "type": "object",
+                "required": [
+                  "depositor_address"
+                ],
+                "properties": {
+                  "depositor_address": {
+                    "description": "Depositor address to unregister. The account should not have any funds deployed.",
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Toggle depositor address as enabled/disabled (admin only)",
+            "type": "object",
+            "required": [
+              "set_depositor_enabled"
+            ],
+            "properties": {
+              "set_depositor_enabled": {
+                "type": "object",
+                "required": [
+                  "depositor_address",
+                  "enabled"
+                ],
+                "properties": {
+                  "depositor_address": {
+                    "description": "Depositor address to enable or disable",
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Add a new admin (admin only)",
+            "type": "object",
+            "required": [
+              "add_admin"
+            ],
+            "properties": {
+              "add_admin": {
+                "type": "object",
+                "required": [
+                  "admin_address"
+                ],
+                "properties": {
+                  "admin_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Remove an admin (admin only)",
+            "type": "object",
+            "required": [
+              "remove_admin"
+            ],
+            "properties": {
+              "remove_admin": {
+                "type": "object",
+                "required": [
+                  "admin_address"
+                ],
+                "properties": {
+                  "admin_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "Binary": {
+        "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
+        "type": "string"
+      },
+      "Coin": {
+        "type": "object",
+        "required": [
+          "amount",
+          "denom"
+        ],
+        "properties": {
+          "amount": {
+            "$ref": "#/definitions/Uint128"
+          },
+          "denom": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "IbcEurekaAdapterMsg": {
+        "description": "IBC Eureka adapter-specific execute messages",
+        "oneOf": [
+          {
+            "description": "Update contract configuration (admin only)",
+            "type": "object",
+            "required": [
+              "update_config"
+            ],
+            "properties": {
+              "update_config": {
+                "type": "object",
+                "required": [
+                  "update"
+                ],
+                "properties": {
+                  "update": {
+                    "$ref": "#/definitions/UpdateConfigData"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Add a new executor (config admin only)",
+            "type": "object",
+            "required": [
+              "add_executor"
+            ],
+            "properties": {
+              "add_executor": {
+                "type": "object",
+                "required": [
+                  "executor_address"
+                ],
+                "properties": {
+                  "executor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Remove an executor (config admin only)",
+            "type": "object",
+            "required": [
+              "remove_executor"
+            ],
+            "properties": {
+              "remove_executor": {
+                "type": "object",
+                "required": [
+                  "executor_address"
+                ],
+                "properties": {
+                  "executor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Add an allowed token denom for this adapter instance (config admin only)",
+            "type": "object",
+            "required": [
+              "add_allowed_denom"
+            ],
+            "properties": {
+              "add_allowed_denom": {
+                "type": "object",
+                "required": [
+                  "denom"
+                ],
+                "properties": {
+                  "denom": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Remove an allowed token denom for this adapter instance (config admin only)",
+            "type": "object",
+            "required": [
+              "remove_allowed_denom"
+            ],
+            "properties": {
+              "remove_allowed_denom": {
+                "type": "object",
+                "required": [
+                  "denom"
+                ],
+                "properties": {
+                  "denom": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Add an allowed EVM destination address (config admin only)",
+            "type": "object",
+            "required": [
+              "add_allowed_destination_address"
+            ],
+            "properties": {
+              "add_allowed_destination_address": {
+                "type": "object",
+                "required": [
+                  "address"
+                ],
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Remove an allowed EVM destination address (config admin only)",
+            "type": "object",
+            "required": [
+              "remove_allowed_destination_address"
+            ],
+            "properties": {
+              "remove_allowed_destination_address": {
+                "type": "object",
+                "required": [
+                  "address"
+                ],
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Transfer funds via IBC Eureka to the destination EVM chain",
+            "type": "object",
+            "required": [
+              "transfer_funds"
+            ],
+            "properties": {
+              "transfer_funds": {
+                "type": "object",
+                "required": [
+                  "amount",
+                  "denom",
+                  "fee_amount",
+                  "recipient"
+                ],
+                "properties": {
+                  "amount": {
+                    "description": "Amount to bridge, excluding the Eureka relayer fee",
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/Uint128"
+                      }
+                    ]
+                  },
+                  "denom": {
+                    "description": "Token denom to bridge; must be a registered allowed denom",
+                    "type": "string"
+                  },
+                  "fee_amount": {
+                    "description": "Eureka relayer fee, paid in the same denom as the bridged amount",
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/Uint128"
+                      }
+                    ]
+                  },
+                  "recipient": {
+                    "description": "Destination EVM address; must be in the allowed destination address list",
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "Uint128": {
+        "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+        "type": "string"
+      },
+      "UpdateConfigData": {
+        "description": "Data for updating the contract config.",
+        "type": "object",
+        "properties": {
+          "encoding": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "eureka_fee_receiver": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "eureka_fee_timeout_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "ibc_transfer_timeout_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "skip_swap_entry_point_contract": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_channel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "query": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "QueryMsg",
+    "description": "Top-level query message wrapper for the IBC Eureka adapter",
+    "oneOf": [
+      {
+        "description": "Standard adapter interface queries",
+        "type": "object",
+        "required": [
+          "standard_query"
+        ],
+        "properties": {
+          "standard_query": {
+            "$ref": "#/definitions/AdapterInterfaceQueryMsg"
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "IBC Eureka adapter-specific custom queries",
+        "type": "object",
+        "required": [
+          "custom_query"
+        ],
+        "properties": {
+          "custom_query": {
+            "$ref": "#/definitions/IbcEurekaAdapterQueryMsg"
+          }
+        },
+        "additionalProperties": false
+      }
+    ],
+    "definitions": {
+      "AdapterInterfaceQueryMsg": {
+        "description": "Standard query messages that all protocol adapters should support Note: QueryResponses derive is handled by each adapter's QueryMsg wrapper",
+        "oneOf": [
+          {
+            "description": "Returns the maximum amount that can be deposited Accounts for protocol deposit caps and other limitations",
+            "type": "object",
+            "required": [
+              "available_for_deposit"
+            ],
+            "properties": {
+              "available_for_deposit": {
+                "type": "object",
+                "required": [
+                  "denom",
+                  "depositor_address"
+                ],
+                "properties": {
+                  "denom": {
+                    "type": "string"
+                  },
+                  "depositor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns the amount available for immediate withdrawal for a specific denom",
+            "type": "object",
+            "required": [
+              "available_for_withdraw"
+            ],
+            "properties": {
+              "available_for_withdraw": {
+                "type": "object",
+                "required": [
+                  "denom",
+                  "depositor_address"
+                ],
+                "properties": {
+                  "denom": {
+                    "type": "string"
+                  },
+                  "depositor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns estimated blocks/time required for withdrawal Returns 0 for instant withdrawals (like Mars lending)",
+            "type": "object",
+            "required": [
+              "time_to_withdraw"
+            ],
+            "properties": {
+              "time_to_withdraw": {
+                "type": "object",
+                "required": [
+                  "coin",
+                  "depositor_address"
+                ],
+                "properties": {
+                  "coin": {
+                    "$ref": "#/definitions/Coin"
+                  },
+                  "depositor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns adapter configuration (adapter-specific response type)",
+            "type": "object",
+            "required": [
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns total positions across all depositors for all denoms",
+            "type": "object",
+            "required": [
+              "all_positions"
+            ],
+            "properties": {
+              "all_positions": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns list of registered depositors with their enabled status Optionally filter by enabled status (Some(true), Some(false), or None for all)",
+            "type": "object",
+            "required": [
+              "registered_depositors"
+            ],
+            "properties": {
+              "registered_depositors": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns the current position for a specific depositor and denom When working with Inflow vaults, the position should not be included in the \"deployed\" amount as it will be included, together with the balance, in the total pool value calculation",
+            "type": "object",
+            "required": [
+              "depositor_position"
+            ],
+            "properties": {
+              "depositor_position": {
+                "type": "object",
+                "required": [
+                  "denom",
+                  "depositor_address"
+                ],
+                "properties": {
+                  "denom": {
+                    "type": "string"
+                  },
+                  "depositor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns all positions for a specific depositor across all denoms",
+            "type": "object",
+            "required": [
+              "depositor_positions"
+            ],
+            "properties": {
+              "depositor_positions": {
+                "type": "object",
+                "required": [
+                  "depositor_address"
+                ],
+                "properties": {
+                  "depositor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Returns list of admins",
+            "type": "object",
+            "required": [
+              "admins"
+            ],
+            "properties": {
+              "admins": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "Coin": {
+        "type": "object",
+        "required": [
+          "amount",
+          "denom"
+        ],
+        "properties": {
+          "amount": {
+            "$ref": "#/definitions/Uint128"
+          },
+          "denom": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "IbcEurekaAdapterQueryMsg": {
+        "description": "IBC Eureka adapter-specific query messages",
+        "oneOf": [
+          {
+            "description": "Get all allowed token denoms",
+            "type": "object",
+            "required": [
+              "allowed_denoms"
+            ],
+            "properties": {
+              "allowed_denoms": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Get list of executors",
+            "type": "object",
+            "required": [
+              "executors"
+            ],
+            "properties": {
+              "executors": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Get depositor capabilities",
+            "type": "object",
+            "required": [
+              "depositor_capabilities"
+            ],
+            "properties": {
+              "depositor_capabilities": {
+                "type": "object",
+                "required": [
+                  "depositor_address"
+                ],
+                "properties": {
+                  "depositor_address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Get allowed EVM destination addresses",
+            "type": "object",
+            "required": [
+              "allowed_destination_addresses"
+            ],
+            "properties": {
+              "allowed_destination_addresses": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint32",
+                    "minimum": 0.0
+                  },
+                  "start_after": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "Uint128": {
+        "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+        "type": "string"
+      }
+    }
+  },
+  "migrate": null,
+  "sudo": null,
+  "responses": {
+    "custom_query": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Binary",
+      "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
+      "type": "string"
+    },
+    "standard_query": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Binary",
+      "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
+      "type": "string"
+    }
+  }
+}
