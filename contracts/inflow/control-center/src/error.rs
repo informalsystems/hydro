@@ -1,4 +1,6 @@
-use cosmwasm_std::{CheckedFromRatioError, ConversionOverflowError, OverflowError, StdError};
+use cosmwasm_std::{
+    CheckedFromRatioError, ConversionOverflowError, OverflowError, StdError, Timestamp,
+};
 use cw_utils::PaymentError;
 use thiserror::Error;
 
@@ -30,6 +32,9 @@ pub enum ContractError {
 
     #[error("Fee recipient must be set before setting a non-zero fee rate")]
     FeeRecipientNotSet,
+
+    #[error("Submission expired: the timeout ({0}) is in the past")]
+    SubmissionExpired(Timestamp),
 }
 
 pub fn new_generic_error(msg: impl Into<String>) -> ContractError {

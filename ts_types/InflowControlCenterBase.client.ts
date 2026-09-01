@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
-import { Uint128, Decimal, InstantiateMsg, FeeConfigInit, ExecuteMsg, DeploymentDirection, UpdateConfigData, QueryMsg, ConfigResponse, Config, FeeAccrualInfoResponse, Addr, FeeConfigResponse, PoolInfoResponse, SubvaultsResponse, WhitelistResponse } from "./InflowControlCenterBase.types";
+import { Uint128, Decimal, InstantiateMsg, FeeConfigInit, ExecuteMsg, Timestamp, Uint64, DeploymentDirection, UpdateConfigData, QueryMsg, ConfigResponse, Config, FeeAccrualInfoResponse, Addr, FeeConfigResponse, PoolInfoResponse, SubvaultsResponse, WhitelistResponse } from "./InflowControlCenterBase.types";
 export interface InflowControlCenterBaseReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
@@ -71,9 +71,11 @@ export interface InflowControlCenterBaseInterface extends InflowControlCenterBas
   contractAddress: string;
   sender: string;
   submitDeployedAmount: ({
-    amount
+    amount,
+    timeout
   }: {
     amount: Uint128;
+    timeout: Timestamp;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   updateDeployedAmount: ({
     amount,
@@ -136,13 +138,16 @@ export class InflowControlCenterBaseClient extends InflowControlCenterBaseQueryC
     this.updateFeeConfig = this.updateFeeConfig.bind(this);
   }
   submitDeployedAmount = async ({
-    amount
+    amount,
+    timeout
   }: {
     amount: Uint128;
+    timeout: Timestamp;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       submit_deployed_amount: {
-        amount
+        amount,
+        timeout
       }
     }, fee, memo, _funds);
   };
