@@ -95,14 +95,14 @@ pub enum IbcEurekaAdapterMsg {
     /// Remove an allowed EVM destination address (config admin only)
     RemoveAllowedDestinationAddress { address: String },
 
-    /// Transfer funds via IBC Eureka to the destination EVM chain
+    /// Transfer funds via IBC Eureka to the destination EVM chain.
+    /// The executor must attach the Eureka relayer fee via `info.funds`, in the
+    /// same denom as `denom` - it is not drawn from the adapter's own balance.
     TransferFunds {
         /// Token denom to bridge; must be a registered allowed denom
         denom: String,
         /// Amount to bridge, excluding the Eureka relayer fee
         amount: Uint128,
-        /// Eureka relayer fee, paid in the same denom as the bridged amount
-        fee_amount: Uint128,
         /// Destination EVM address; must be in the allowed destination address list
         recipient: String,
     },

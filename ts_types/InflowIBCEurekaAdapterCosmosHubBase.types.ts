@@ -94,7 +94,6 @@ export type IbcEurekaAdapterMsg = {
   transfer_funds: {
     amount: Uint128;
     denom: string;
-    fee_amount: Uint128;
     recipient: string;
   };
 };

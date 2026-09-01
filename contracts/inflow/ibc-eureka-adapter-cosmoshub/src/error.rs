@@ -28,9 +28,6 @@ pub enum ContractError {
     #[error("Zero amount not allowed")]
     ZeroAmount {},
 
-    #[error("Zero fee amount not allowed")]
-    ZeroFeeAmount {},
-
     #[error("Insufficient balance. Has: {has}, needs: {needs}")]
     InsufficientBalance { has: Uint128, needs: Uint128 },
 

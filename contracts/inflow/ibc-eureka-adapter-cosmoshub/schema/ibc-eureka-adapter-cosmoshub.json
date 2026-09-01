@@ -522,7 +522,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Transfer funds via IBC Eureka to the destination EVM chain",
+            "description": "Transfer funds via IBC Eureka to the destination EVM chain. The executor must attach the Eureka relayer fee via `info.funds`, in the same denom as `denom` - it is not drawn from the adapter's own balance.",
             "type": "object",
             "required": [
               "transfer_funds"
@@ -533,7 +533,6 @@
                 "required": [
                   "amount",
                   "denom",
-                  "fee_amount",
                   "recipient"
                 ],
                 "properties": {
@@ -548,14 +547,6 @@
                   "denom": {
                     "description": "Token denom to bridge; must be a registered allowed denom",
                     "type": "string"
-                  },
-                  "fee_amount": {
-                    "description": "Eureka relayer fee, paid in the same denom as the bridged amount",
-                    "allOf": [
-                      {
-                        "$ref": "#/definitions/Uint128"
-                      }
-                    ]
                   },
                   "recipient": {
                     "description": "Destination EVM address; must be in the allowed destination address list",

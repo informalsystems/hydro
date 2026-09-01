@@ -1,4 +1,4 @@
-use cosmwasm_std::{coin, testing::mock_env, MessageInfo, Uint128};
+use cosmwasm_std::{coin, coins, testing::mock_env, MessageInfo, Uint128};
 
 use crate::contract::execute;
 use crate::error::ContractError;
@@ -201,11 +201,10 @@ fn test_add_remove_allowed_destination_address() {
     ));
 }
 
-fn transfer_funds_msg(amount: u128, fee_amount: u128) -> ExecuteMsg {
+fn transfer_funds_msg(amount: u128) -> ExecuteMsg {
     custom(IbcEurekaAdapterMsg::TransferFunds {
         denom: TEST_DENOM.to_string(),
         amount: Uint128::new(amount),
-        fee_amount: Uint128::new(fee_amount),
         recipient: TEST_DESTINATION_ADDRESS.to_string(),
     })
 }
@@ -217,15 +216,15 @@ fn test_transfer_funds_success() {
 
     deps.querier.bank.update_balance(
         env.contract.address.clone(),
-        vec![coin(10_000_000, TEST_DENOM)],
+        vec![coin(10_000_213, TEST_DENOM)],
     );
 
     let info = MessageInfo {
         sender: test_data.executor.clone(),
-        funds: vec![],
+        funds: coins(213, TEST_DENOM),
     };
 
-    let res = execute(deps.as_mut(), env, info, transfer_funds_msg(9_999_787, 213)).unwrap();
+    let res = execute(deps.as_mut(), env, info, transfer_funds_msg(9_999_787)).unwrap();
 
     assert_eq!(res.messages.len(), 1);
     assert!(res
@@ -241,10 +240,10 @@ fn test_transfer_funds_unauthorized() {
 
     let info = MessageInfo {
         sender: test_data.non_admin.clone(),
-        funds: vec![],
+        funds: coins(10, TEST_DENOM),
     };
 
-    let err = execute(deps.as_mut(), env, info, transfer_funds_msg(1_000, 10)).unwrap_err();
+    let err = execute(deps.as_mut(), env, info, transfer_funds_msg(1_000)).unwrap_err();
     assert_eq!(err, ContractError::UnauthorizedExecutor {});
 }
 
@@ -255,15 +254,15 @@ fn test_transfer_funds_zero_amount() {
 
     let info = MessageInfo {
         sender: test_data.executor.clone(),
-        funds: vec![],
+        funds: coins(10, TEST_DENOM),
     };
 
-    let err = execute(deps.as_mut(), env, info, transfer_funds_msg(0, 10)).unwrap_err();
+    let err = execute(deps.as_mut(), env, info, transfer_funds_msg(0)).unwrap_err();
     assert_eq!(err, ContractError::ZeroAmount {});
 }
 
 #[test]
-fn test_transfer_funds_zero_fee_amount() {
+fn test_transfer_funds_missing_fee() {
     let (mut deps, test_data) = setup_contract_with_denom();
     let env = mock_env();
 
@@ -272,8 +271,8 @@ fn test_transfer_funds_zero_fee_amount() {
         funds: vec![],
     };
 
-    let err = execute(deps.as_mut(), env, info, transfer_funds_msg(1_000, 0)).unwrap_err();
-    assert_eq!(err, ContractError::ZeroFeeAmount {});
+    let err = execute(deps.as_mut(), env, info, transfer_funds_msg(1_000)).unwrap_err();
+    assert!(matches!(err, ContractError::PaymentError(_)));
 }
 
 #[test]
@@ -283,10 +282,10 @@ fn test_transfer_funds_denom_not_allowed() {
 
     let info = MessageInfo {
         sender: test_data.executor.clone(),
-        funds: vec![],
+        funds: coins(10, TEST_DENOM),
     };
 
-    let err = execute(deps.as_mut(), env, info, transfer_funds_msg(1_000, 10)).unwrap_err();
+    let err = execute(deps.as_mut(), env, info, transfer_funds_msg(1_000)).unwrap_err();
     assert!(matches!(err, ContractError::DenomNotAllowed { .. }));
 }
 
@@ -297,10 +296,10 @@ fn test_transfer_funds_insufficient_balance() {
 
     let info = MessageInfo {
         sender: test_data.executor.clone(),
-        funds: vec![],
+        funds: coins(10, TEST_DENOM),
     };
 
-    let err = execute(deps.as_mut(), env, info, transfer_funds_msg(1_000, 10)).unwrap_err();
+    let err = execute(deps.as_mut(), env, info, transfer_funds_msg(1_000)).unwrap_err();
     assert!(matches!(err, ContractError::InsufficientBalance { .. }));
 }
 
@@ -311,18 +310,17 @@ fn test_transfer_funds_recipient_not_allowed() {
 
     deps.querier.bank.update_balance(
         env.contract.address.clone(),
-        vec![coin(10_000_000, TEST_DENOM)],
+        vec![coin(10_000_010, TEST_DENOM)],
     );
 
     let info = MessageInfo {
         sender: test_data.executor.clone(),
-        funds: vec![],
+        funds: coins(10, TEST_DENOM),
     };
 
     let msg = custom(IbcEurekaAdapterMsg::TransferFunds {
         denom: TEST_DENOM.to_string(),
         amount: Uint128::new(1_000),
-        fee_amount: Uint128::new(10),
         recipient: "0x000000000000000000000000000000000000dead".to_string(),
     });
 

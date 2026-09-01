@@ -220,9 +220,8 @@ fn dispatch_execute_custom(
         IbcEurekaAdapterMsg::TransferFunds {
             denom,
             amount,
-            fee_amount,
             recipient,
-        } => execute_transfer_funds(deps, env, info, denom, amount, fee_amount, recipient),
+        } => execute_transfer_funds(deps, env, info, denom, amount, recipient),
         IbcEurekaAdapterMsg::AddExecutor { executor_address } => {
             execute_add_executor(deps, info, executor_address)
         }
@@ -402,14 +401,12 @@ fn execute_set_depositor_enabled(
 }
 
 /// Handle TransferFunds - initiate an IBC Eureka bridge to the destination EVM chain
-#[allow(clippy::too_many_arguments)]
 fn execute_transfer_funds(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
     denom: String,
     amount: Uint128,
-    fee_amount: Uint128,
     recipient: String,
 ) -> Result<Response, ContractError> {
     // Validate executor role
@@ -419,10 +416,6 @@ fn execute_transfer_funds(
         return Err(ContractError::ZeroAmount {});
     }
 
-    if fee_amount.is_zero() {
-        return Err(ContractError::ZeroFeeAmount {});
-    }
-
     // Validate denom is registered as allowed for this adapter instance
     if !ALLOWED_DENOMS.has(deps.storage, denom.clone()) {
         return Err(ContractError::DenomNotAllowed { denom });
@@ -430,7 +423,9 @@ fn execute_transfer_funds(
 
     let config = CONFIG.load(deps.storage)?;
 
-    // Both the bridged amount and the relayer fee are drawn from the adapter's own balance
+    // Executor must attach the fee amount in the same denom as the token that is being transfered
+    let fee_amount = cw_utils::must_pay(&info, &denom)?;
+
     let total_transfer_amount = amount + fee_amount;
 
     // Verify contract has sufficient balance
