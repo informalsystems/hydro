@@ -7,7 +7,6 @@
 export interface InstantiateMsg {
   admins: string[];
   eureka_fee_receiver: string;
-  eureka_fee_timeout_seconds: number;
   ibc_transfer_timeout_seconds: number;
   initial_allowed_destination_addresses: string[];
   initial_denoms: string[];
@@ -94,6 +93,7 @@ export type IbcEurekaAdapterMsg = {
   transfer_funds: {
     amount: Uint128;
     denom: string;
+    quote_expiry_timestamp_nanos: number;
     recipient: string;
   };
 };
@@ -104,7 +104,6 @@ export interface Coin {
 export interface UpdateConfigData {
   encoding?: string | null;
   eureka_fee_receiver?: string | null;
-  eureka_fee_timeout_seconds?: number | null;
   ibc_transfer_timeout_seconds?: number | null;
   skip_swap_entry_point_contract?: string | null;
   source_channel?: string | null;

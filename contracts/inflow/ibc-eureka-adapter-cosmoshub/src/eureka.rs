@@ -44,6 +44,9 @@ pub struct EurekaFeeInfo {
 }
 
 /// Parameters needed to build an IBC Eureka transfer message.
+///
+/// The fields `action_timeout_timestamp` and `fee_timeout_timestamp` are deliberately in different
+/// units (seconds vs. nanoseconds). This matches what Skip:Go's entry-point contract expects for each field.
 pub struct EurekaTransferParams {
     pub skip_swap_entry_point_contract: String,
     pub source_channel: String,

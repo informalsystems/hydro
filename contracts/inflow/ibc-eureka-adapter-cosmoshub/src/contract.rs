@@ -145,7 +145,6 @@ pub fn instantiate(
         eureka_fee_receiver: eureka_fee_receiver.to_string(),
         encoding: SOLIDITY_ENCODING.to_string(),
         ibc_transfer_timeout_seconds: msg.ibc_transfer_timeout_seconds,
-        eureka_fee_timeout_seconds: msg.eureka_fee_timeout_seconds,
     };
     CONFIG.save(deps.storage, &config)?;
 
@@ -221,7 +220,16 @@ fn dispatch_execute_custom(
             denom,
             amount,
             recipient,
-        } => execute_transfer_funds(deps, env, info, denom, amount, recipient),
+            quote_expiry_timestamp_nanos,
+        } => execute_transfer_funds(
+            deps,
+            env,
+            info,
+            denom,
+            amount,
+            recipient,
+            quote_expiry_timestamp_nanos,
+        ),
         IbcEurekaAdapterMsg::AddExecutor { executor_address } => {
             execute_add_executor(deps, info, executor_address)
         }
@@ -401,6 +409,7 @@ fn execute_set_depositor_enabled(
 }
 
 /// Handle TransferFunds - initiate an IBC Eureka bridge to the destination EVM chain
+#[allow(clippy::too_many_arguments)]
 fn execute_transfer_funds(
     deps: DepsMut,
     env: Env,
@@ -408,6 +417,7 @@ fn execute_transfer_funds(
     denom: String,
     amount: Uint128,
     recipient: String,
+    quote_expiry_timestamp_nanos: u64,
 ) -> Result<Response, ContractError> {
     // Validate executor role
     validate_executor_caller(&deps, &info)?;
@@ -443,17 +453,21 @@ fn execute_transfer_funds(
     // Look up destination address from allowlist
     let destination_address = get_destination_address(&deps.as_ref(), &recipient)?;
 
+    // The two timeouts below are deliberately in different units.
+    // This matches what Skip:Go's entry contract expects.
     let action_timeout_timestamp = env
         .block
         .time
         .plus_seconds(config.ibc_transfer_timeout_seconds)
-        .seconds(); // Skip:Go specifies this value in seconds
+        .seconds();
 
-    let fee_timeout_timestamp = env
-        .block
-        .time
-        .plus_seconds(config.eureka_fee_timeout_seconds)
-        .nanos(); // Skip:Go specifies this value in nano seconds
+    if quote_expiry_timestamp_nanos <= env.block.time.nanos() {
+        return Err(ContractError::FeeQuoteExpired {
+            quote_expiry_timestamp: quote_expiry_timestamp_nanos,
+            block_time: env.block.time.nanos(),
+        });
+    }
+    let fee_timeout_timestamp = quote_expiry_timestamp_nanos;
 
     let wasm_msg = build_eureka_transfer_msg(EurekaTransferParams {
         skip_swap_entry_point_contract: config.skip_swap_entry_point_contract.clone(),
@@ -559,20 +573,6 @@ fn execute_update_config(
             );
 
         config.ibc_transfer_timeout_seconds = ibc_transfer_timeout_seconds;
-    }
-
-    if let Some(eureka_fee_timeout_seconds) = update.eureka_fee_timeout_seconds {
-        response = response
-            .add_attribute(
-                "old_eureka_fee_timeout_seconds",
-                config.eureka_fee_timeout_seconds.to_string(),
-            )
-            .add_attribute(
-                "new_eureka_fee_timeout_seconds",
-                eureka_fee_timeout_seconds.to_string(),
-            );
-
-        config.eureka_fee_timeout_seconds = eureka_fee_timeout_seconds;
     }
 
     CONFIG.save(deps.storage, &config)?;

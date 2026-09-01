@@ -65,7 +65,6 @@ pub fn setup_contract_with_defaults() -> (
         source_channel: "08-wasm-1369".to_string(),
         eureka_fee_receiver: test_data.eureka_fee_receiver.to_string(),
         ibc_transfer_timeout_seconds: 3600,
-        eureka_fee_timeout_seconds: 600,
         initial_depositors: vec![InitialDepositor {
             address: test_data.depositor.to_string(),
             capabilities: None, // Default capabilities (can_withdraw: true)
@@ -101,7 +100,6 @@ pub fn setup_contract_with_denom() -> (
         source_channel: "08-wasm-1369".to_string(),
         eureka_fee_receiver: test_data.eureka_fee_receiver.to_string(),
         ibc_transfer_timeout_seconds: 3600,
-        eureka_fee_timeout_seconds: 600,
         initial_depositors: vec![InitialDepositor {
             address: test_data.depositor.to_string(),
             capabilities: None,

@@ -201,11 +201,16 @@ fn test_add_remove_allowed_destination_address() {
     ));
 }
 
+// mock_env()'s fixed block time is 1_571_797_419_879_305_533 nanos; use a quote
+// expiry comfortably after it so tests aren't tied to that exact value.
+const FUTURE_QUOTE_EXPIRY_TIMESTAMP: u64 = 1_571_797_419_879_305_533 + 600_000_000_000;
+
 fn transfer_funds_msg(amount: u128) -> ExecuteMsg {
     custom(IbcEurekaAdapterMsg::TransferFunds {
         denom: TEST_DENOM.to_string(),
         amount: Uint128::new(amount),
         recipient: TEST_DESTINATION_ADDRESS.to_string(),
+        quote_expiry_timestamp_nanos: FUTURE_QUOTE_EXPIRY_TIMESTAMP,
     })
 }
 
@@ -322,6 +327,7 @@ fn test_transfer_funds_recipient_not_allowed() {
         denom: TEST_DENOM.to_string(),
         amount: Uint128::new(1_000),
         recipient: "0x000000000000000000000000000000000000dead".to_string(),
+        quote_expiry_timestamp_nanos: FUTURE_QUOTE_EXPIRY_TIMESTAMP,
     });
 
     let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
@@ -329,4 +335,31 @@ fn test_transfer_funds_recipient_not_allowed() {
         err,
         ContractError::DestinationAddressNotAllowed { .. }
     ));
+}
+
+#[test]
+fn test_transfer_funds_expired_quote() {
+    let (mut deps, test_data) = setup_contract_with_denom();
+    let env = mock_env();
+
+    deps.querier.bank.update_balance(
+        env.contract.address.clone(),
+        vec![coin(10_000_213, TEST_DENOM)],
+    );
+
+    let info = MessageInfo {
+        sender: test_data.executor.clone(),
+        funds: coins(213, TEST_DENOM),
+    };
+
+    let msg = custom(IbcEurekaAdapterMsg::TransferFunds {
+        denom: TEST_DENOM.to_string(),
+        amount: Uint128::new(9_999_787),
+        recipient: TEST_DESTINATION_ADDRESS.to_string(),
+        // Not after the mock env's block time - must be rejected.
+        quote_expiry_timestamp_nanos: env.block.time.nanos(),
+    });
+
+    let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+    assert!(matches!(err, ContractError::FeeQuoteExpired { .. }));
 }

@@ -17,8 +17,6 @@ pub struct Config {
     pub encoding: String,
     /// Timeout, in seconds, to be used when building IBC Eureka transfer messages
     pub ibc_transfer_timeout_seconds: u64,
-    /// Timeout, in seconds, for the Eureka relayer fees to be received (converted to nanoseconds when building the message)
-    pub eureka_fee_timeout_seconds: u64,
 }
 
 /// Depositor capabilities for the IBC Eureka adapter

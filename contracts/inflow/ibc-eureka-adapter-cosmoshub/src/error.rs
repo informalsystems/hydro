@@ -28,6 +28,12 @@ pub enum ContractError {
     #[error("Zero amount not allowed")]
     ZeroAmount {},
 
+    #[error("Fee quote already expired: quote_expiry_timestamp {quote_expiry_timestamp} is not after current block time {block_time}")]
+    FeeQuoteExpired {
+        quote_expiry_timestamp: u64,
+        block_time: u64,
+    },
+
     #[error("Insufficient balance. Has: {has}, needs: {needs}")]
     InsufficientBalance { has: Uint128, needs: Uint128 },
 

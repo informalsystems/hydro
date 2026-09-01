@@ -63,8 +63,6 @@ Use the data from the request above and the response received in order to instan
     "eureka_fee_receiver": "cosmos1066ea436np9m6gf4q95q0nte2ctq84wuzahttk",
     // Skip:Go uses 12 hours; transfers may fail if this value is too small
     "ibc_transfer_timeout_seconds": 43200,
-    // Skip:Go uses 30 minutes
-    "eureka_fee_timeout_seconds": 1800,
     "initial_depositors": [{"address": "cosmos1k00qymyetxt36uga8kp88nxyj3hvxfn2v0hgnn"}],
     "initial_denoms": ["ibc/D742E8566B0B8CC8F569D950051C09CF57988A88F0E45574BFB3079D41DE6462"],
     "initial_allowed_destination_addresses": ["0xc2a7e8FEe8fF0B35e752345772C46ba1Db36a6eF"],

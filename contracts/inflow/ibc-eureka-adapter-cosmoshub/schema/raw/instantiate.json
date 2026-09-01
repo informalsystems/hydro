@@ -6,7 +6,6 @@
   "required": [
     "admins",
     "eureka_fee_receiver",
-    "eureka_fee_timeout_seconds",
     "ibc_transfer_timeout_seconds",
     "initial_allowed_destination_addresses",
     "initial_denoms",
@@ -26,12 +25,6 @@
     "eureka_fee_receiver": {
       "description": "Address on Cosmos Hub that receives the IBC Eureka relayer fee",
       "type": "string"
-    },
-    "eureka_fee_timeout_seconds": {
-      "description": "Timeout, in seconds, for the Eureka relayer fees to be received (converted to nanoseconds when building the message)",
-      "type": "integer",
-      "format": "uint64",
-      "minimum": 0.0
     },
     "ibc_transfer_timeout_seconds": {
       "description": "Timeout, in seconds, to be used when building IBC Eureka transfer messages",

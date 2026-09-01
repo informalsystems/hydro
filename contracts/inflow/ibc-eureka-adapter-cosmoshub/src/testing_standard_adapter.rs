@@ -37,7 +37,6 @@ fn test_instantiate_requires_at_least_one_admin() {
         source_channel: "08-wasm-1369".to_string(),
         eureka_fee_receiver: deps.api.addr_make("eureka_fee_receiver").to_string(),
         ibc_transfer_timeout_seconds: 3600,
-        eureka_fee_timeout_seconds: 600,
         initial_depositors: vec![],
         initial_denoms: vec![],
         initial_allowed_destination_addresses: vec![],
@@ -64,7 +63,6 @@ fn test_instantiate_rejects_empty_source_channel() {
         source_channel: "  ".to_string(),
         eureka_fee_receiver: test_data.eureka_fee_receiver.to_string(),
         ibc_transfer_timeout_seconds: 3600,
-        eureka_fee_timeout_seconds: 600,
         initial_depositors: vec![],
         initial_denoms: vec![],
         initial_allowed_destination_addresses: vec![],
@@ -91,7 +89,6 @@ fn test_instantiate_rejects_duplicate_depositor() {
         source_channel: "08-wasm-1369".to_string(),
         eureka_fee_receiver: test_data.eureka_fee_receiver.to_string(),
         ibc_transfer_timeout_seconds: 3600,
-        eureka_fee_timeout_seconds: 600,
         initial_depositors: vec![
             InitialDepositor {
                 address: test_data.depositor.to_string(),

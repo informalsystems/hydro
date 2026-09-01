@@ -22,8 +22,6 @@ pub struct InstantiateMsg {
     pub eureka_fee_receiver: String,
     /// Timeout, in seconds, to be used when building IBC Eureka transfer messages
     pub ibc_transfer_timeout_seconds: u64,
-    /// Timeout, in seconds, for the Eureka relayer fees to be received (converted to nanoseconds when building the message)
-    pub eureka_fee_timeout_seconds: u64,
     /// Initial depositors to register during instantiation (can be empty array)
     pub initial_depositors: Vec<InitialDepositor>,
     /// Initial allowed token denoms for this adapter instance (can be empty array)
@@ -68,7 +66,6 @@ pub struct UpdateConfigData {
     pub eureka_fee_receiver: Option<String>,
     pub encoding: Option<String>,
     pub ibc_transfer_timeout_seconds: Option<u64>,
-    pub eureka_fee_timeout_seconds: Option<u64>,
 }
 
 /// IBC Eureka adapter-specific execute messages
@@ -105,6 +102,8 @@ pub enum IbcEurekaAdapterMsg {
         amount: Uint128,
         /// Destination EVM address; must be in the allowed destination address list
         recipient: String,
+        /// Expiration of the Skip fee quote, passed as a Unix timestamp in nanoseconds
+        quote_expiry_timestamp_nanos: u64,
     },
 }
 
