@@ -112,6 +112,10 @@ export type ExecuteMsg = {
 } | {
   unpause: {};
 } | {
+  swap_deposit_denom: {
+    new_denom: string;
+  };
+} | {
   mint_for_migration: {
     conversion_contract: string;
     deployed_amount?: Uint128 | null;
