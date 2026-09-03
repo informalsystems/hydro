@@ -197,7 +197,9 @@ pub enum ExecuteMsg {
     /// Only meaningful for denoms of (basically) the same value, e.g. USDC.noble to
     /// USDC.injective, since vault shares and queued withdrawals are denominated in
     /// raw token units and are not re-priced. Reverts if the vault contract or any
-    /// registered adapter still holds a balance of the current deposit denom.
+    /// registered adapter still holds the current deposit denom, either as a bank
+    /// balance or as a position deployed in the adapter's external protocol. If a
+    /// token info provider is configured, it must already support the new denom.
     SwapDepositDenom {
         new_denom: String,
     },

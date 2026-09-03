@@ -1658,10 +1658,13 @@ fn mint_for_migration(
 /// in the new denom once funds are provided to the contract.
 ///
 /// The current deposit denom must not be held by the vault contract itself, nor by any
-/// registered adapter. Any remaining funds in the current denom would be stranded and
-/// become inaccessible once the denom is swapped. Since the vault balance includes any
-/// tokens users have deposited, a deposit landing just before the swap makes the swap
-/// fail, so no separate locking of the vault is required.
+/// registered adapter — neither as a bank balance, nor as a position deployed in the
+/// adapter's external protocol. Any remaining funds in the current denom would be
+/// stranded and become inaccessible once the denom is swapped. Since the vault balance
+/// includes any tokens users have deposited, a deposit landing just before the swap
+/// makes the swap fail, so no separate locking of the vault is required.
+///
+/// If a token info provider is configured, it must already support the new denom.
 fn swap_deposit_denom(
     deps: DepsMut<TokenFactoryQuery>,
     env: Env,
@@ -1681,7 +1684,30 @@ fn swap_deposit_denom(
         ));
     }
 
+    if new_denom == config.vault_shares_denom {
+        return Err(new_generic_error(
+            "new deposit denom must differ from the vault shares denom",
+        ));
+    }
+
     let current_denom = config.deposit_denom.clone();
+
+    // If a token info provider is configured, it must already support the new denom,
+    // otherwise pool value accounting (and therefore deposits, withdrawals and share
+    // pricing) would break immediately after the swap.
+    if let Some(provider) = &config.token_info_provider_contract {
+        let ratio: StdResult<Decimal> = deps.querier.query_wasm_smart(
+            provider.to_string(),
+            &TokenInfoProviderQueryMsg::RatioToBaseToken {
+                denom: new_denom.clone(),
+            },
+        );
+        if ratio.is_err() {
+            return Err(new_generic_error(format!(
+                "token info provider {provider} does not support the new deposit denom {new_denom}"
+            )));
+        }
+    }
 
     // The vault contract itself must not hold any of the current deposit denom
     let vault_balance = deps
@@ -1710,6 +1736,36 @@ fn swap_deposit_denom(
         if !adapter_balance.amount.is_zero() {
             return Err(ContractError::DepositDenomStillHeld {
                 holder: format!("adapter {}", adapter_info.name),
+                denom: current_denom.clone(),
+            });
+        }
+
+        // The adapter must also have no capital deployed in the current denom in the
+        // external protocol — such a position would be withdrawn back in the old denom
+        // after the swap and become stranded, even though its bank balance is zero.
+        // A failing position query rejects the swap: an adapter that cannot report its
+        // position must not green-light the operation.
+        let position: DepositorPositionResponse = deps
+            .querier
+            .query_wasm_smart(
+                adapter_info.address.to_string(),
+                &AdapterInterfaceQuery {
+                    standard_query: &AdapterInterfaceQueryMsg::DepositorPosition {
+                        depositor_address: env.contract.address.to_string(),
+                        denom: current_denom.clone(),
+                    },
+                },
+            )
+            .map_err(|e| {
+                new_generic_error(format!(
+                    "failed to query the position of adapter {}: {e}",
+                    adapter_info.name
+                ))
+            })?;
+
+        if !position.amount.is_zero() {
+            return Err(ContractError::DepositDenomStillHeld {
+                holder: format!("adapter {} (deployed position)", adapter_info.name),
                 denom: current_denom.clone(),
             });
         }
