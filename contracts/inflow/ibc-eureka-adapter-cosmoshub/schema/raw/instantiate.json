@@ -1,0 +1,128 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "description": "Message for instantiating the IBC Eureka adapter contract",
+  "type": "object",
+  "required": [
+    "admins",
+    "eureka_fee_receiver",
+    "ibc_transfer_timeout_seconds",
+    "initial_allowed_destination_addresses",
+    "initial_denoms",
+    "initial_depositors",
+    "initial_executors",
+    "skip_swap_entry_point_contract",
+    "source_channel"
+  ],
+  "properties": {
+    "admins": {
+      "description": "The config admins who can update the config and manage denoms/depositors/executors",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "eureka_fee_receiver": {
+      "description": "Address on Cosmos Hub that receives the IBC Eureka relayer fee",
+      "type": "string"
+    },
+    "ibc_transfer_timeout_seconds": {
+      "description": "Timeout, in seconds, to be used when building IBC Eureka transfer messages",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "initial_allowed_destination_addresses": {
+      "description": "Initial allowed EVM destination addresses (can be empty array)",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "initial_denoms": {
+      "description": "Initial allowed token denoms for this adapter instance (can be empty array)",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "initial_depositors": {
+      "description": "Initial depositors to register during instantiation (can be empty array)",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/InitialDepositor"
+      }
+    },
+    "initial_executors": {
+      "description": "Initial executors who can perform operations (can be empty array)",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/InitialExecutor"
+      }
+    },
+    "skip_swap_entry_point_contract": {
+      "description": "Address of the Skip swap entry-point contract on Cosmos Hub",
+      "type": "string"
+    },
+    "source_channel": {
+      "description": "IBC Eureka source channel ID used for bridging to the destination chain",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "DepositorCapabilities": {
+      "description": "Depositor capabilities for the IBC Eureka adapter",
+      "type": "object",
+      "required": [
+        "can_withdraw"
+      ],
+      "properties": {
+        "can_withdraw": {
+          "description": "Whether this depositor can withdraw funds",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "InitialDepositor": {
+      "description": "Initial depositor configuration for instantiation",
+      "type": "object",
+      "required": [
+        "address"
+      ],
+      "properties": {
+        "address": {
+          "description": "Depositor address to register",
+          "type": "string"
+        },
+        "capabilities": {
+          "description": "Optional capabilities for this depositor If not provided, defaults to { can_withdraw: true }",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DepositorCapabilities"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "InitialExecutor": {
+      "description": "Initial executor configuration for instantiation",
+      "type": "object",
+      "required": [
+        "address"
+      ],
+      "properties": {
+        "address": {
+          "description": "Executor address to register",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
