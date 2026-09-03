@@ -1133,6 +1133,125 @@ fn refund_tribute_test() {
     }
 }
 
+#[test]
+fn refund_tribute_rejects_mismatched_proposal_coordinates() {
+    // Proposal A: zero deployment → refundable
+    let proposal_a = Proposal {
+        round_id: 10,
+        tranche_id: 0,
+        proposal_id: 5,
+        title: "proposal A".to_string(),
+        description: "".to_string(),
+        power: Uint128::new(10000),
+        percentage: Uint128::zero(),
+        minimum_atom_liquidity_request: Uint128::zero(),
+        deployment_duration: 1,
+    };
+    // Proposal B: non-zero deployment → claimable, NOT refundable
+    let proposal_b = Proposal {
+        round_id: 10,
+        tranche_id: 0,
+        proposal_id: 6,
+        title: "proposal B".to_string(),
+        description: "".to_string(),
+        power: Uint128::new(10000),
+        percentage: Uint128::zero(),
+        minimum_atom_liquidity_request: Uint128::zero(),
+        deployment_duration: 1,
+    };
+
+    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let hydro_contract_address = get_address_as_str(&deps.api, HYDRO_CONTRACT_ADDRESS);
+
+    // Round 10 is still active during tribute creation
+    let mock_querier = MockWasmQuerier::new(
+        hydro_contract_address.clone(),
+        10,
+        vec![proposal_a.clone(), proposal_b.clone()],
+        vec![],
+        vec![],
+        None,
+    );
+    deps.querier.update_wasm(move |q| mock_querier.handler(q));
+
+    let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
+    let msg = get_instantiate_msg(hydro_contract_address.clone());
+    instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
+
+    // Add tribute_0 to proposal A (tribute_id = 0)
+    let info = get_message_info(
+        &deps.api,
+        USER_ADDRESS_1,
+        &[Coin::new(1000u64, DEFAULT_DENOM)],
+    );
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::AddTribute {
+            round_id: 10,
+            tranche_id: 0,
+            proposal_id: 5,
+        },
+    )
+    .unwrap();
+
+    // Add tribute_1 to proposal B (tribute_id = 1)
+    let info = get_message_info(
+        &deps.api,
+        USER_ADDRESS_1,
+        &[Coin::new(2000u64, DEFAULT_DENOM)],
+    );
+    execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::AddTribute {
+            round_id: 10,
+            tranche_id: 0,
+            proposal_id: 6,
+        },
+    )
+    .unwrap();
+
+    // Round 11 is now active: round 10 has ended
+    let mock_querier = MockWasmQuerier::new(
+        hydro_contract_address.clone(),
+        11,
+        vec![proposal_a.clone(), proposal_b.clone()],
+        vec![],
+        vec![
+            get_zero_deployment_for_proposal(proposal_a),
+            get_nonzero_deployment_for_proposal(proposal_b),
+        ],
+        None,
+    );
+    deps.querier.update_wasm(move |q| mock_querier.handler(q));
+
+    // Attack: supply coordinates of refundable proposal A but tribute_id=1 which belongs to
+    // claimable proposal B. Without the fix this would succeed; with the fix it must fail.
+    let info = get_message_info(&deps.api, USER_ADDRESS_1, &[]);
+    let err = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::RefundTribute {
+            round_id: 10,
+            tranche_id: 0,
+            proposal_id: 5, // proposal A (refundable)
+            tribute_id: 1,  // tribute that belongs to proposal B (not refundable)
+        },
+    )
+    .unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("Tribute does not belong to the specified proposal"),
+        "expected mismatch error, got: {}",
+        err
+    );
+}
+
 fn verify_tokens_received(
     res: Response,
     expected_receiver: &String,
