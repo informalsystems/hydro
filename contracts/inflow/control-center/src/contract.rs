@@ -1,6 +1,6 @@
 use cosmwasm_std::{
     entry_point, to_json_binary, Addr, Binary, Decimal, Deps, DepsMut, Env, MessageInfo, Order,
-    Response, StdResult, Uint128, WasmMsg,
+    Response, StdResult, Timestamp, Uint128, WasmMsg,
 };
 use cw2::set_contract_version;
 use interface::{
@@ -142,8 +142,8 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::SubmitDeployedAmount { amount } => {
-            submit_deployed_amount(deps, env, info, amount)
+        ExecuteMsg::SubmitDeployedAmount { amount, timeout } => {
+            submit_deployed_amount(deps, env, info, amount, timeout)
         }
         ExecuteMsg::UpdateDeployedAmount { amount, direction } => {
             update_deployed_amount(deps, env, info, amount, direction)
@@ -168,8 +168,16 @@ fn submit_deployed_amount(
     env: Env,
     info: MessageInfo,
     amount: Uint128,
+    timeout: Timestamp,
 ) -> Result<Response, ContractError> {
     validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    // The submission may sit in a (DAO) proposal for an unbounded time between
+    // being signed and being executed. Reject it once the deadline has passed so
+    // stale proposals cannot overwrite the deployed amount with outdated values.
+    if env.block.time > timeout {
+        return Err(ContractError::SubmissionExpired(timeout));
+    }
 
     // Update deployed amount first so fee accrual sees the new pool value.
     DEPLOYED_AMOUNT.save(deps.storage, &amount, env.block.height)?;
@@ -200,7 +208,8 @@ fn submit_deployed_amount(
     Ok(response
         .add_attribute("action", "submit_deployed_amount")
         .add_attribute("sender", info.sender)
-        .add_attribute("amount", amount))
+        .add_attribute("amount", amount)
+        .add_attribute("timeout", timeout.to_string()))
 }
 
 fn update_deployed_amount(

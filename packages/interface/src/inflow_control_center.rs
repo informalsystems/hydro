@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Decimal, Uint128};
+use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
 
 #[cw_serde]
 pub struct Config {
@@ -42,7 +42,15 @@ pub enum DeploymentDirection {
 pub enum ExecuteMsg {
     /// Submits the total amount of tokens deployed by the whitelisted addresses.
     /// Action can be performed only by the whitelisted addresses.
-    SubmitDeployedAmount { amount: Uint128 },
+    SubmitDeployedAmount {
+        amount: Uint128,
+        /// Deadline after which this submission may no longer be executed, as a
+        /// Unix timestamp in nanoseconds. Execution fails if `env.block.time` is
+        /// strictly greater than this value. Since submissions typically sit in a
+        /// DAO proposal between being created and executed, this bounds how long
+        /// such a proposal stays executable.
+        timeout: Timestamp,
+    },
 
     /// Updates the total amount of tokens deployed by adding or subtracting the specified amount.
     /// Action can be performed only by the associated sub-vault smart contracts.

@@ -9,6 +9,7 @@ use interface::inflow_control_center::{DeploymentDirection, ExecuteMsg, QueryMsg
 
 use crate::{
     contract::{execute, instantiate, query},
+    error::ContractError,
     msg::InstantiateMsg,
     state::{DEPLOYED_AMOUNT, SUBVAULTS},
 };
@@ -68,6 +69,7 @@ fn submit_deployed_amount_test() {
     // Try submitting deployed amount with a user that is not whitelisted
     let exec_msg = ExecuteMsg::SubmitDeployedAmount {
         amount: Uint128::from(100u128),
+        timeout: env.block.time.plus_seconds(3600),
     };
     let info_user_1 = get_message_info(&deps.api, user1_address.as_ref(), &[]);
 
@@ -99,6 +101,59 @@ fn submit_deployed_amount_test() {
 
     // Deployed amount should be updated after whitelisted user submits it
     let query_res = query(deps.as_ref(), env.clone(), query_msg);
+    assert!(query_res.is_ok());
+    let value: Uint128 = from_json(query_res.unwrap()).unwrap();
+    assert_eq!(value, Uint128::from(100u128));
+}
+
+#[test]
+fn submit_deployed_amount_timeout_test() {
+    let (mut deps, env) = (mock_dependencies(), mock_env());
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST);
+
+    let instantiate_msg = get_default_instantiate_msg(DEFAULT_DEPOSIT_CAP, whitelist_addr, vec![]);
+
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let info_whitelisted = get_message_info(&deps.api, WHITELIST, &[]);
+
+    // A submission whose timeout is in the past must be rejected, even by a
+    // whitelisted sender, and must not change the deployed amount.
+    let expired_timeout = env.block.time.minus_seconds(1);
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info_whitelisted.clone(),
+        ExecuteMsg::SubmitDeployedAmount {
+            amount: Uint128::from(100u128),
+            timeout: expired_timeout,
+        },
+    );
+    assert!(matches!(
+        res,
+        Err(ContractError::SubmissionExpired(timeout)) if timeout == expired_timeout
+    ));
+
+    let query_res = query(deps.as_ref(), env.clone(), QueryMsg::DeployedAmount {});
+    assert!(query_res.is_ok());
+    let value: Uint128 = from_json(query_res.unwrap()).unwrap();
+    assert_eq!(value, Uint128::zero());
+
+    // A submission executed exactly at its timeout is still valid.
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info_whitelisted,
+        ExecuteMsg::SubmitDeployedAmount {
+            amount: Uint128::from(100u128),
+            timeout: env.block.time,
+        },
+    );
+    assert!(res.is_ok());
+
+    let query_res = query(deps.as_ref(), env.clone(), QueryMsg::DeployedAmount {});
     assert!(query_res.is_ok());
     let value: Uint128 = from_json(query_res.unwrap()).unwrap();
     assert_eq!(value, Uint128::from(100u128));
