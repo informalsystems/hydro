@@ -221,6 +221,9 @@ pub fn execute(
         }
         ExecuteMsg::Pause {} => pause(deps, info),
         ExecuteMsg::Unpause {} => unpause(deps, info),
+        ExecuteMsg::SwapDepositDenom { new_denom } => {
+            swap_deposit_denom(deps, env, info, config, new_denom)
+        }
         ExecuteMsg::MintForMigration {
             shares_to_mint,
             deployed_amount,
@@ -1644,6 +1647,82 @@ fn mint_for_migration(
     }
 
     Ok(response)
+}
+
+/// Swaps the vault's deposit denom to a new one. Whitelisted only.
+///
+/// The swap is only meaningful for denoms of (basically) the same value — e.g.
+/// USDC.noble to USDC.injective — since vault shares and queued withdrawal amounts
+/// are denominated in raw token units and are not re-priced by the swap. Any pending
+/// withdrawal requests that have not been funded yet will consequently be paid out
+/// in the new denom once funds are provided to the contract.
+///
+/// The current deposit denom must not be held by the vault contract itself, nor by any
+/// registered adapter. Any remaining funds in the current denom would be stranded and
+/// become inaccessible once the denom is swapped. Since the vault balance includes any
+/// tokens users have deposited, a deposit landing just before the swap makes the swap
+/// fail, so no separate locking of the vault is required.
+fn swap_deposit_denom(
+    deps: DepsMut<TokenFactoryQuery>,
+    env: Env,
+    info: MessageInfo,
+    mut config: Config,
+    new_denom: String,
+) -> Result<Response<TokenFactoryMsg>, ContractError> {
+    validate_address_is_whitelisted(&deps, info.sender.clone())?;
+
+    if new_denom.is_empty() {
+        return Err(new_generic_error("new deposit denom cannot be empty"));
+    }
+
+    if new_denom == config.deposit_denom {
+        return Err(new_generic_error(
+            "new deposit denom must differ from the current one",
+        ));
+    }
+
+    let current_denom = config.deposit_denom.clone();
+
+    // The vault contract itself must not hold any of the current deposit denom
+    let vault_balance = deps
+        .querier
+        .query_balance(env.contract.address.clone(), &current_denom)?;
+    if !vault_balance.amount.is_zero() {
+        return Err(ContractError::DepositDenomStillHeld {
+            holder: env.contract.address.to_string(),
+            denom: current_denom.clone(),
+        });
+    }
+
+    // No registered adapter may hold any of the current deposit denom
+    let adapters: Vec<AdapterInfo> = ADAPTERS
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter_map(|entry| match entry {
+            Ok((_, info)) => Some(info),
+            _ => None,
+        })
+        .collect();
+
+    for adapter_info in adapters {
+        let adapter_balance = deps
+            .querier
+            .query_balance(adapter_info.address.clone(), &current_denom)?;
+        if !adapter_balance.amount.is_zero() {
+            return Err(ContractError::DepositDenomStillHeld {
+                holder: format!("adapter {}", adapter_info.name),
+                denom: current_denom.clone(),
+            });
+        }
+    }
+
+    config.deposit_denom = new_denom.clone();
+    CONFIG.save(deps.storage, &config)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "swap_deposit_denom")
+        .add_attribute("sender", info.sender)
+        .add_attribute("previous_deposit_denom", current_denom)
+        .add_attribute("new_deposit_denom", new_denom))
 }
 
 /// Calculates venue allocation based on registered adapters.

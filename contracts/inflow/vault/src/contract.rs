@@ -224,6 +224,7 @@ pub fn execute(
             mint_fee_shares(deps, env, info, &config, amount, recipient)
         }
         ExecuteMsg::MintForMigration { .. } => Err(ContractError::Unauthorized),
+        ExecuteMsg::SwapDepositDenom { .. } => Err(ContractError::Unauthorized),
         ExecuteMsg::Pause {} => pause(deps, info),
         ExecuteMsg::Unpause {} => unpause(deps, info),
     }
