@@ -19,6 +19,40 @@ forge install \
   --no-git
 ```
 
+## Environments and deployment
+
+Deployments are driven by the scripts in `bin/`. There is one script per step and none
+per environment: the target is chosen with `--env <target>`, which makes the script read
+`.env.<target>` (or plain `.env` when `--env` is omitted) and nothing else. Staging and
+production therefore run identical code, and a staging run cannot pick up a production
+value.
+
+Copy `.env.example` to `.env.<target>` and fill it in. Every `.env*` file except the
+example is gitignored.
+
+| Step | Script | Purpose |
+|---|---|---|
+| 1 | `bin/01_deploy_inflow_vault.sh` | Deploy the vault implementation and proxy |
+| 2 | `bin/02_deploy_reserve_adapter.sh` | Deploy ReserveAdapter |
+| 3 | `bin/03_safe_tx_link_adapter.sh` | Generate the Safe batch that links adapter and vault |
+| 4 | `bin/04_safe_tx_approve_vault.sh` | Generate the Safe batch approving the vault to pull the asset |
+| 5 | `bin/05_test_deposit_flow.sh` | Deposit and redeem against a live deployment, or seed it with `SKIP_REDEEM=true` |
+| 6 | `bin/06_verify_contracts.sh` | Submit a deployed stack for explorer verification |
+
+Steps 3 and 4 produce batches rather than transactions because the vault's privileged
+roles are held by Safes, not by the deployer. See [Role split](#role-split) below.
+
+Common flags: `--env <target>`, `--dry-run` (simulate without broadcasting), `--yes`
+(skip the confirmation prompt). Shared helpers live in `bin/lib/common.sh`.
+
+Two guards apply to every script. `EXPECTED_CHAIN_ID` must match the chain the RPC
+reports, and any address that will sign the vault handshake must already be
+vault-whitelisted. Both are checked before a transaction is broadcast.
+
+Safe batches are written to `out/safe-tx/<target>-*.json`, which is gitignored: they are
+per-deployment artifacts, reproducible from the script plus the config file. Import them
+in the Safe UI under Apps then Transaction Builder.
+
 ## CCTP USDC Forwarder
 This smart contract will be used as a temporary holder of USDC tokens on EVM chains, until we bridge those tokens to Neutron chain for Inflow USDC vault deployment. There will be an off-chain component which will monitor balance changes of this contract and, once the contract has certain amount of USDC tokens, it will initiate the bridging request.
 Constructor parameters:
@@ -81,10 +115,11 @@ forge script script/DeployInflowVault.s.sol \
 
 The script prints the proxy and implementation addresses on completion.
 
-Alternatively, a shell script is provided that loads `.env` automatically, accepts `PRIVATE_KEY` or `MNEMONIC`, and sets sensible Arc testnet defaults for all optional variables:
+Alternatively, the shell wrapper reads every variable above from the target's config file,
+resolves the signer, checks the chain, and prints a summary before broadcasting:
 
 ```bash
-bash bin/deploy_inflow_vault.sh
+./bin/01_deploy_inflow_vault.sh --env staging
 ```
 
 ### BasicInflowAdapter
@@ -105,21 +140,97 @@ A minimal `IAdapter` implementation that holds tokens directly without deploying
 |---|---|
 | `ADAPTER_ADMIN` | Address granted admin rights on the adapter; defaults to the deployer |
 
-Or use the shell script (reads `.env` automatically):
+There is no `bin/` wrapper for this adapter. It is a reference implementation and a test
+fixture, not something we deploy: `script/DeployBasicAdapter.s.sol` wires the vault from
+the deployer EOA in the same broadcast, which only works where that EOA is
+vault-whitelisted. ReserveAdapter below is the adapter we actually run, and its two-step
+Safe flow is the model to copy for any new one.
+
+### ReserveAdapter
+
+A shared backstop reserve that one or more vaults draw on to smooth reported APY. Unlike
+BasicInflowAdapter it keeps a single shared pool with no per-depositor accounting, since
+several vaults holding the same asset are meant to draw on one reserve.
+
+> **Operational contract.** The adapter is registered with `tracked = true`, so the vault
+> adjusts `deployedAmount` by the moved amount on every transfer to or from the reserve.
+> Parked reserve funds must not count toward the share ratio in either direction, so each
+> transfer **must** be followed by a `submitDeployedAmount` call that cancels that
+> adjustment back out. Nothing enforces this on-chain. `depositorPosition()` is hardcoded
+> to `0`, which keeps the adapter always disconnectable but also means
+> `unregisterAdapter`'s position guard offers no protection here. Read the NatSpec in
+> `contracts/ReserveAdapter.sol` before operating it.
+
+#### Role split
+
+The vault keeps two independent whitelists, and our deployments put a separate Safe behind
+each. That separation is what shapes the deployment flow:
+
+| Role | Held by | Gates |
+|---|---|---|
+| `whitelist` | `ADMIN_SAFE` | `registerAdapter`, `unregisterAdapter`, `depositToAdapter`, `withdrawFromAdapter`, `withdrawForDeployment`, `depositFromDeployment`, `updateDepositCap`, `updateFeeConfig`, upgrades, and membership of both whitelists |
+| `deployedAmountWhitelist` | `SUBMIT_SAFE` | `submitDeployedAmount` only |
+
+So the Safe that moves funds cannot also restate what the vault is worth. That matters
+most for ReserveAdapter, whose compensating `submitDeployedAmount` is exactly the call on
+the other side of the split.
+
+Three consequences, which are the reason steps 3 and 4 exist:
+
+- The deployer EOA is in neither whitelist. It only pays gas, so it cannot call
+  `registerAdapter` and cannot wire the adapter it just deployed. `WIRE_MODE=safe` leaves
+  the handshake to `bin/03`, which emits a batch for `ADMIN_SAFE` to execute.
+- `depositFromDeployment` pulls the asset with `safeTransferFrom(asset, msg.sender, ...)`,
+  and `msg.sender` is `ADMIN_SAFE`. The Safe must therefore approve the vault once, which
+  is the batch `bin/04` emits.
+- `SUBMIT_SAFE` needs no deployment step. It signs `submitDeployedAmount` from the Safe UI
+  during operation, after every reserve transfer.
+
+#### Deploying
+
+Deploy, then execute the two batches from `ADMIN_SAFE`:
 
 ```bash
-bash bin/deploy_basic_adapter.sh
+./bin/02_deploy_reserve_adapter.sh --env staging --dry-run   # simulate first
+./bin/02_deploy_reserve_adapter.sh --env staging
+
+# then generate the Safe batches and execute them from ADMIN_SAFE
+./bin/03_safe_tx_link_adapter.sh --env staging <VAULT_ADDRESS> <ADAPTER_ADDRESS>
+./bin/04_safe_tx_approve_vault.sh --env staging
 ```
+
+Set `WIRE_MODE=deployer` in the config file to deploy and wire in a single broadcast
+instead, which works only where the deployer EOA is itself vault-whitelisted.
+
+**Required environment variables**
+
+| Variable | Description |
+|---|---|
+| `VAULT_ADDRESS` | Proxy address of the vault to attach to |
+| `EXPECTED_CHAIN_ID` | Chain the deploy is intended for; a mismatch aborts |
+| `ADMIN_SAFE` | Adapter admin, and the vault-whitelisted signer of the batches from steps 3 and 4 |
+| `PRIVATE_KEY`, `MNEMONIC` or `ACCOUNT_NAME` | Signing key, one of the three |
+
+**Optional environment variables**
+
+| Variable | Description |
+|---|---|
+| `WIRE_MODE` | `safe` (default) or `deployer` |
+| `ADAPTER_NAME` | Vault-side adapter name; defaults to `reserve` |
+| `ADAPTER_ADMIN` | Overrides `ADMIN_SAFE` as the initial adapter admin |
 
 ### End-to-end deposit test
 
 After deploying both the vault and the adapter, verify the full deposit → adapter routing → redeem flow:
 
 ```bash
-bash bin/test_deposit_flow.sh
+./bin/05_test_deposit_flow.sh --env staging
 ```
 
-Reads `VAULT_ADDRESS`, `ADAPTER_ADDRESS`, `PRIVATE_KEY` (or `MNEMONIC`), and optionally `DEPOSIT_AMOUNT` / `SKIP_REDEEM` from `.env`. See `.env.example` for all variables.
+Reads `VAULT_ADDRESS`, the signing key, and optionally `ADAPTER_ADDRESS`, `DEPOSIT_AMOUNT`,
+`SKIP_REDEEM` and `EXPECTED_DEPLOYER` from the target's config file. With `SKIP_REDEEM=true`
+it stops after the deposit, which is how you seed a vault before rehearsing the withdraw
+and deposit-for-deployment flow. See `.env.example` for all variables.
 
 ### Upgrade
 
@@ -174,9 +285,12 @@ forge script script/UpgradeInflowVault.s.sol \
 forge test
 ```
 
-Unit tests are split across two files:
-- `test/InflowVaultCancelWithdrawal.t.sol` — withdrawal queue and cancellation scenarios
-- `test/InflowVaultAdapters.t.sol` — adapter pull-pattern and multi-token fund movement
+Unit tests live in `test/`, one file per area: vault initialisation, configuration, access
+control, deposits, withdrawals, the withdrawal queue, cancellation, fees, adapters,
+upgrades, and `test/ReserveAdapter.t.sol` for the reserve adapter.
+
+Every test must pass against a plain checkout with no network access. Tests that need
+live chain state belong behind a fork configuration, not in the default suite.
 
 ## Before committing
 
