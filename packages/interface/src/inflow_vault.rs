@@ -193,6 +193,17 @@ pub enum ExecuteMsg {
     /// Unpause the vault. Whitelisted only.
     Unpause {},
 
+    /// Swaps the vault's deposit denom (Cosmos Hub vault only, whitelisted only).
+    /// Only meaningful for denoms of (basically) the same value, e.g. USDC.noble to
+    /// USDC.injective, since vault shares and queued withdrawals are denominated in
+    /// raw token units and are not re-priced. Reverts if the vault contract or any
+    /// registered adapter still holds the current deposit denom, either as a bank
+    /// balance or as a position deployed in the adapter's external protocol. If a
+    /// token info provider is configured, it must already support the new denom.
+    SwapDepositDenom {
+        new_denom: String,
+    },
+
     /// One-time migration: mints vault shares and sends them to a conversion contract.
     /// Guarded by a one-shot flag — reverts if already called.
     /// Only implemented on the Cosmos Hub vault; returns Unauthorized on Neutron.

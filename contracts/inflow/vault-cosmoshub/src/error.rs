@@ -56,6 +56,9 @@ pub enum ContractError {
 
     #[error("Contract is paused")]
     ContractPaused,
+
+    #[error("Current deposit denom {denom} is still held by {holder}")]
+    DepositDenomStillHeld { holder: String, denom: String },
 }
 
 pub fn new_generic_error(msg: impl Into<String>) -> ContractError {
