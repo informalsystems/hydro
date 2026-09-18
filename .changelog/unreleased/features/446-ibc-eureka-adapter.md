@@ -1,0 +1,1 @@
+- Introduce IBC Eureka Inflow adapter. ([\#446](https://github.com/informalsystems/hydro/pull/446))

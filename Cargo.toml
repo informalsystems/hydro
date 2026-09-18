@@ -22,6 +22,7 @@ members = [
     "contracts/inflow/cctp-adapter",
     "contracts/inflow/basic-adapter-cosmoshub",
     "contracts/inflow/cctp-adapter-cosmoshub",
+    "contracts/inflow/ibc-eureka-adapter-cosmoshub",
     "contracts/inflow/skip-adapter-cosmoshub",
     "contracts/inflow/user-registry",
     "contracts/claim",
