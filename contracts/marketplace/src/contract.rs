@@ -7,7 +7,6 @@ use cosmwasm_std::{
 use cw2::set_contract_version;
 use hydro::msg::ExecuteMsg as HydroExecuteMsg;
 use hydro::query::{ApprovalResponse, OwnerOfResponse, QueryMsg as HydroQueryMsg};
-use neutron_sdk::bindings::msg::NeutronMsg;
 use serde_json::json;
 
 use crate::error::ContractError;
@@ -133,7 +132,7 @@ pub fn execute(
     env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::List {
             collection,
@@ -174,7 +173,7 @@ pub fn execute_propose_new_admin(
     deps: DepsMut,
     info: MessageInfo,
     new_admin: Option<String>,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     // Check that the sender is admin
     state::assert_admin(deps.as_ref(), &info.sender)?;
 
@@ -199,7 +198,7 @@ pub fn execute_propose_new_admin(
 pub fn execute_claim_admin_role(
     deps: DepsMut,
     info: MessageInfo,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let new_admin =
         state::get_new_admin_proposal(deps.storage)?.ok_or(ContractError::NoNewAdminProposed {})?;
 
@@ -235,7 +234,7 @@ pub fn execute_remove_collection(
     deps: DepsMut,
     info: MessageInfo,
     collection: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     // Check that the sender is admin
     state::assert_admin(deps.as_ref(), &info.sender)?;
 
@@ -262,7 +261,7 @@ pub fn execute_add_or_update_collection(
     info: MessageInfo,
     collection: String,
     config: CollectionConfig,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     // Check the sender is admin
     state::assert_admin(deps.as_ref(), &info.sender)?;
 
@@ -299,7 +298,7 @@ pub fn execute_list(
     collection: String,
     token_id: String,
     price: Coin,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     // Check that the collection is valid and is whitelisted
     let collection_addr = deps.api.addr_validate(&collection)?;
     let collection_config = state::get_collection_config(deps.as_ref(), collection_addr.clone())
@@ -406,7 +405,7 @@ pub fn execute_buy(
     info: MessageInfo,
     collection: String,
     token_id: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let collection_addr = deps.api.addr_validate(&collection)?;
 
     // Retrieve the listing
@@ -555,7 +554,7 @@ pub fn execute_unlist(
     info: MessageInfo,
     collection: String,
     token_id: String,
-) -> Result<Response<NeutronMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     // We do not check if the collection is whitelisted, as we should allow unlisting even if the collection has been removed
     let collection_addr = deps.api.addr_validate(&collection)?;
 

@@ -336,6 +336,11 @@ export interface InflowVaultCosmosHubBaseInterface extends InflowVaultCosmosHubB
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   pause: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   unpause: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  swapDepositDenom: ({
+    newDenom
+  }: {
+    newDenom: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   mintForMigration: ({
     conversionContract,
     deployedAmount,
@@ -376,6 +381,7 @@ export class InflowVaultCosmosHubBaseClient extends InflowVaultCosmosHubBaseQuer
     this.mintFeeShares = this.mintFeeShares.bind(this);
     this.pause = this.pause.bind(this);
     this.unpause = this.unpause.bind(this);
+    this.swapDepositDenom = this.swapDepositDenom.bind(this);
     this.mintForMigration = this.mintForMigration.bind(this);
   }
   deposit = async ({
@@ -622,6 +628,17 @@ export class InflowVaultCosmosHubBaseClient extends InflowVaultCosmosHubBaseQuer
   unpause = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       unpause: {}
+    }, fee, memo, _funds);
+  };
+  swapDepositDenom = async ({
+    newDenom
+  }: {
+    newDenom: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      swap_deposit_denom: {
+        new_denom: newDenom
+      }
     }, fee, memo, _funds);
   };
   mintForMigration = async ({

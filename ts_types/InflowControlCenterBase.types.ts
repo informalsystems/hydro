@@ -19,6 +19,7 @@ export interface FeeConfigInit {
 export type ExecuteMsg = {
   submit_deployed_amount: {
     amount: Uint128;
+    timeout: Timestamp;
   };
 } | {
   update_deployed_amount: {
@@ -53,6 +54,8 @@ export type ExecuteMsg = {
     fee_recipient?: string | null;
   };
 };
+export type Timestamp = Uint64;
+export type Uint64 = string;
 export type DeploymentDirection = "add" | "subtract";
 export interface UpdateConfigData {
   deposit_cap?: Uint128 | null;

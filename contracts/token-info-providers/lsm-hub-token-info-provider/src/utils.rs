@@ -34,59 +34,66 @@ pub fn is_validator_store_initialized(storage: &dyn Storage, round_id: u64) -> b
 }
 
 // Initializes the validator store for the given round by lazily copying from previous rounds.
-pub fn initialize_validator_store(storage: &mut dyn Storage, round_id: u64) -> StdResult<()> {
-    let mut current_round = round_id;
-    while !is_validator_store_initialized(storage, current_round) {
-        if current_round == 0 {
+pub fn initialize_validator_store(storage: &mut dyn Storage, current_round: u64) -> StdResult<()> {
+    let mut last_initialized_round = current_round;
+
+    while !is_validator_store_initialized(storage, last_initialized_round) {
+        if last_initialized_round == 0 {
             return Err(StdError::generic_err(
                 "Cannot initialize store for the first round because it has not been initialized yet",
             ));
         }
-        current_round -= 1;
+        last_initialized_round -= 1;
     }
 
-    while current_round < round_id {
-        current_round += 1;
-        initialize_validator_store_helper(storage, current_round)?;
-    }
+    initialize_validator_store_helper(storage, last_initialized_round, current_round)?;
 
     Ok(())
 }
 
 pub fn initialize_validator_store_helper(
     storage: &mut dyn Storage,
-    round_id: u64,
+    last_initialized_round: u64,
+    end_round: u64,
 ) -> StdResult<()> {
-    if round_id == 0 || is_validator_store_initialized(storage, round_id) {
+    if last_initialized_round >= end_round {
         return Ok(());
     }
 
-    if !is_validator_store_initialized(storage, round_id - 1) {
+    if !is_validator_store_initialized(storage, last_initialized_round) {
         return Err(StdError::generic_err(format!(
-            "Cannot initialize store for round {} because store for round {} has not been initialized yet",
-            round_id,
-            round_id - 1
+            "Cannot initialize store for next rounds because store for round {} has not been initialized yet",
+            last_initialized_round,
         )));
     }
 
-    let val_infos = load_validators_infos(storage, round_id - 1);
+    // Load the validator information from the last initialized round to copy over to the next rounds.
+    let val_infos = load_validators_infos(storage, last_initialized_round);
 
-    for val_info in val_infos {
-        let address = val_info.clone().address;
-        VALIDATORS_INFO
-            .save(storage, (round_id, address.clone()), &val_info)
-            .unwrap();
+    // Start from the first uninitialized round and initialize all rounds up to end_round.
+    let mut round_id = last_initialized_round + 1;
 
-        VALIDATORS_PER_ROUND
-            .save(
-                storage,
-                (round_id, val_info.delegated_tokens.u128(), address.clone()),
-                &address,
-            )
-            .unwrap();
+    while round_id <= end_round {
+        for val_info in val_infos.iter() {
+            let address = val_info.clone().address;
+
+            VALIDATORS_INFO
+                .save(storage, (round_id, address.clone()), val_info)
+                .unwrap();
+
+            VALIDATORS_PER_ROUND
+                .save(
+                    storage,
+                    (round_id, val_info.delegated_tokens.u128(), address.clone()),
+                    &address,
+                )
+                .unwrap();
+        }
+
+        VALIDATORS_STORE_INITIALIZED.save(storage, round_id, &true)?;
+
+        round_id += 1;
     }
-
-    VALIDATORS_STORE_INITIALIZED.save(storage, round_id, &true)?;
 
     Ok(())
 }

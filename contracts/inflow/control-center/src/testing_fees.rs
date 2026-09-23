@@ -1519,6 +1519,7 @@ fn test_submit_deployed_amount_with_fees_disabled() {
         info,
         ExecuteMsg::SubmitDeployedAmount {
             amount: Uint128::new(500),
+            timeout: env.block.time.plus_seconds(3600),
         },
     );
 

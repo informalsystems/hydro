@@ -5,17 +5,16 @@ CONFIG_FILE="$1"
 HYDRO_CONTRACT_ADDRESS="$2"
 TRANCHES_NUM=$3
 
-NEUTRON_CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
-NEUTRON_NODE=$(jq -r '.neutron_rpc_node' $CONFIG_FILE)
+CHAIN_ID=$(jq -r '.chain_id' $CONFIG_FILE)
+CHAIN_BINARY=$(jq -r '.chain_binary' $CONFIG_FILE)
+CHAIN_NODE=$(jq -r '.chain_rpc_node' $CONFIG_FILE)
 TX_SENDER_WALLET=$(jq -r '.tx_sender_wallet' $CONFIG_FILE)
-TX_SENDER_ADDRESS=$(neutrond keys show $TX_SENDER_WALLET --keyring-backend test | grep "address:" | sed 's/.*address: //')
+TX_SENDER_ADDRESS=$($CHAIN_BINARY keys show $TX_SENDER_WALLET --keyring-backend test | grep "address:" | sed 's/.*address: //')
 
-NEUTRON_BINARY="neutrond"
-NEUTRON_CHAIN_ID_FLAG="--chain-id $NEUTRON_CHAIN_ID"
+CHAIN_ID_FLAG="--chain-id $CHAIN_ID"
 KEYRING_TEST_FLAG="--keyring-backend test"
-TX_FLAG="--gas auto --gas-adjustment 1.3"
-NEUTRON_NODE_FLAG="--node $NEUTRON_NODE"
-NEUTRON_TX_FLAGS="$TX_FLAG --gas-prices 0.0053untrn --chain-id $NEUTRON_CHAIN_ID $NEUTRON_NODE_FLAG $KEYRING_TEST_FLAG -y"
+TX_FLAG="--gas auto --gas-adjustment 1.2"
+CHAIN_NODE_FLAG="--node $CHAIN_NODE"
 
 NON_ZERO_FUNDS=1000
 
@@ -27,7 +26,7 @@ enter_liquidity_deployments() {
 
     # Query all (round, tranche) liquidity deployment infos
     QUERY='{"round_tranche_liquidity_deployments":{"round_id": '$ROUND_ID', "tranche_id": '$TRANCHE_ID', "start_from":0, "limit": 100}}'
-    $NEUTRON_BINARY q wasm contract-state smart $HYDRO_CONTRACT_ADDRESS "$QUERY" $NEUTRON_NODE_FLAG -o json > ./query_res.json
+    $CHAIN_BINARY q wasm contract-state smart $HYDRO_CONTRACT_ADDRESS "$QUERY" $CHAIN_NODE_FLAG -o json > ./query_res.json
 
     # Safety check if the liquidity deployment infos are already entered. It is assumed that information
     # isn't entered partialy (e.g. only for some proposals).
@@ -38,7 +37,7 @@ enter_liquidity_deployments() {
 
     # Query all round proposals
     QUERY='{"round_proposals":{"round_id": '$ROUND_ID', "tranche_id": '$TRANCHE_ID', "start_from":0, "limit": 100}}'
-    $NEUTRON_BINARY q wasm contract-state smart $HYDRO_CONTRACT_ADDRESS "$QUERY" $NEUTRON_NODE_FLAG -o json > ./query_res.json
+    $CHAIN_BINARY q wasm contract-state smart $HYDRO_CONTRACT_ADDRESS "$QUERY" $CHAIN_NODE_FLAG -o json > ./query_res.json
 
     # Safety check in case there are no proposals
     if [ "$(jq '.data.proposals | length' query_res.json)" -eq 0 ]; then
@@ -66,7 +65,7 @@ enter_liquidity_deployments() {
 
 query_previous_round() {
     QUERY='{"current_round": {}}'
-    $NEUTRON_BINARY q wasm contract-state smart $HYDRO_CONTRACT_ADDRESS "$QUERY" $NEUTRON_NODE_FLAG -o json > ./query_res.json
+    $CHAIN_BINARY q wasm contract-state smart $HYDRO_CONTRACT_ADDRESS "$QUERY" $CHAIN_NODE_FLAG -o json > ./query_res.json
 
     ROUND_ID=$(jq '.data.round_id' query_res.json)
     PREVIOUS_ROUND_ID=$((ROUND_ID - 1))
