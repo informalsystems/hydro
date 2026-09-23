@@ -101,6 +101,8 @@ pub struct MigrateMsg {}
 
 #[entry_point]
 pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+    // No state migrations needed
+
     Ok(Response::default())
 }
 
