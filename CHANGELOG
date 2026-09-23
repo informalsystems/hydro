@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## v3.6.17
+
+Date: September 23rd, 2026
+
+### FEATURES
+
+- Introduce IBC Eureka Inflow adapter. ([\#446](https://github.com/informalsystems/hydro/pull/446))
+- Add a mandatory `timeout` to the `SubmitDeployedAmount` execute message. Execution fails if the timeout is in the past, so stale DAO proposals can no longer be executed indefinitely.
+  ([\#447](https://github.com/informalsystems/hydro/pull/447))
+- Add the `SwapDepositDenom` execute message to the Cosmos Hub Inflow vault, allowing operators
+  to swap the deposit denom (e.g. `USDC.noble` to `USDC.injective`). The swap is whitelist-gated
+  and reverts unless the vault and all registered adapters hold no funds in the current deposit
+  denom.
+  ([\#448](https://github.com/informalsystems/hydro/pull/448))
+
 ## v3.6.16
 
 Date: August 7th, 2026

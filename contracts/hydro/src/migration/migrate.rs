@@ -13,10 +13,10 @@ use cosmwasm_std::entry_point;
 pub struct MigrateMsg {}
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(mut deps: DepsMut, env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
     check_contract_version(deps.storage)?;
 
-    unpause_contract_after_migration(&mut deps, env)?;
+    // No state migrations needed
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
@@ -51,7 +51,7 @@ fn _pause_contract_before_migration(deps: &mut DepsMut, env: &Env) -> Result<(),
     Ok(())
 }
 
-fn unpause_contract_after_migration(deps: &mut DepsMut, env: Env) -> Result<(), ContractError> {
+fn _unpause_contract_after_migration(deps: &mut DepsMut, env: Env) -> Result<(), ContractError> {
     let (timestamp, mut constants) =
         load_constants_active_at_timestamp(&deps.as_ref(), env.block.time)?;
 
