@@ -126,10 +126,12 @@ Reads `VAULT_ADDRESS`, `ADAPTER_ADDRESS`, `PRIVATE_KEY` (or `MNEMONIC`), and opt
 The upgrade script deploys a new implementation contract and calls `upgradeToAndCall` on the existing proxy. The signing wallet must be whitelisted on the vault (`_authorizeUpgrade()` in InflowVault enforces this). Upgrades support execution of functions in the new version of `InflowVault` contract that are marked with `reinitializer` modifier. These `reinitializer` functions allow setting the new smart contract version, as well as initialization of newly introduced smart contract fields. An example of such function would be:
 
 ```bash
-function reinitializeV2(string calldata initialValue) external reinitializer(2) {
+function reinitializeV3(string calldata initialValue) external reinitializer(3) {
   _newStringField = initialValue;
 }
 ```
+
+Version `2` is taken: `initialize()` brings a new proxy straight to version 2, and `resetHighWaterMark()` (see [High-water mark reset upgrade](#high-water-mark-reset-upgrade)) brings a version-1 proxy to it.
 
 **Required environment variables**
 
@@ -158,7 +160,7 @@ forge script script/UpgradeInflowVault.s.sol \
 ```bash
 # Upgrade and call a reinitializer on the new implementation
 export PROXY=0xYourProxyAddress
-export MIGRATION_DATA=$(cast calldata "reinitializeV2(string)" "initial field value")
+export MIGRATION_DATA=$(cast calldata "reinitializeV3(string)" "initial field value")
 export PRIVATE_KEY=0xYourAdminPrivateKey
 export RPC_URL=https://rpc.testnet.arc.network
 
@@ -167,6 +169,43 @@ forge script script/UpgradeInflowVault.s.sol \
 ```
 
 > **Note:** Storage layout compatibility between implementation versions must be verified manually before upgrading.
+
+### High-water mark reset upgrade
+
+`accrueFees()` records the share price **after** the fee shares are minted as the high-water mark, so a vault sits exactly at its mark once an accrual completes. Vaults initialized at version 1 recorded the price *before* the mint, which leaves their mark above the share price by the dilution of the last fee mint. `resetHighWaterMark()` corrects that once:
+
+- callable by a whitelisted address only, takes no argument;
+- lowers the mark to the current share price and emits `HighWaterMarkReset(old, new)` when the mark sits above the share price;
+- does nothing (no write, no event, no revert) when the share price is at or above the mark, so the upgrade never fails because the price moved while the transaction was waiting for signatures;
+- treats a vault without shares as priced at `1e18`, the mark a new vault starts from;
+- is a `reinitializer(2)` that is consumed even when it does nothing: it can run once on a version-1 proxy and never on a proxy set up through `initialize()`.
+
+Every version-1 vault should be upgraded with this call, including those whose mark needs no correction: an upgrade with empty `data` leaves the one-shot available to the vault's whitelist.
+
+It is meant to be executed atomically with the upgrade, as the `data` argument of `upgradeToAndCall`. `script/UpgradeInflowVaultResetHwm.s.sol` simulates that call from the whitelisted Safe against the RPC state, reports whether the reset lowers the mark or does nothing, checks the result, and prints the transaction for the Safe. It never sends a transaction to the proxy, and sends nothing at all unless `DEPLOY_IMPLEMENTATION=true` is set **and** `--broadcast` is passed, in which case it only deploys the new implementation.
+
+| Variable | Description |
+|---|---|
+| `PROXY` | Address of the existing `ERC1967Proxy` (required) |
+| `ADMIN_SAFE` | Whitelisted address that will execute `upgradeToAndCall` (required) |
+| `IMPLEMENTATION` | Already deployed new implementation; when set, nothing is deployed and the printed calldata is final |
+| `DEPLOY_IMPLEMENTATION` | `true` to broadcast the implementation deployment (also needs `--broadcast`); defaults to `false` |
+
+```bash
+# Dry run: nothing is sent, the implementation only exists in the simulation
+export PROXY=0xYourProxyAddress
+export ADMIN_SAFE=0xYourWhitelistedSafe
+export RPC_URL=https://rpc.testnet.arc.network
+
+forge script script/UpgradeInflowVaultResetHwm.s.sol --rpc-url $RPC_URL -vvvv
+```
+
+```bash
+# Final Safe transaction for an implementation that is already deployed
+export IMPLEMENTATION=0xNewImplementationAddress
+
+forge script script/UpgradeInflowVaultResetHwm.s.sol --rpc-url $RPC_URL -vvvv
+```
 
 ### Testing
 
