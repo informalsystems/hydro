@@ -175,11 +175,14 @@ forge script script/UpgradeInflowVault.s.sol \
 `accrueFees()` records the share price **after** the fee shares are minted as the high-water mark, so a vault sits exactly at its mark once an accrual completes. Vaults initialized at version 1 recorded the price *before* the mint, which leaves their mark above the share price by the dilution of the last fee mint. `resetHighWaterMark()` corrects that once:
 
 - callable by a whitelisted address only, takes no argument;
-- sets the mark to the current share price and emits `HighWaterMarkReset(old, new)`;
-- reverts unless the current share price is strictly below the mark;
-- is a `reinitializer(2)`: it can run once on a version-1 proxy and never on a proxy set up through `initialize()`.
+- lowers the mark to the current share price and emits `HighWaterMarkReset(old, new)` when the mark sits above the share price;
+- does nothing (no write, no event, no revert) when the share price is at or above the mark, so the upgrade never fails because the price moved while the transaction was waiting for signatures;
+- treats a vault without shares as priced at `1e18`, the mark a new vault starts from;
+- is a `reinitializer(2)` that is consumed even when it does nothing: it can run once on a version-1 proxy and never on a proxy set up through `initialize()`.
 
-It is meant to be executed atomically with the upgrade, as the `data` argument of `upgradeToAndCall`. `script/UpgradeInflowVaultResetHwm.s.sol` simulates that call from the whitelisted Safe against the RPC state, checks the result, and prints the transaction for the Safe. It never sends a transaction to the proxy, and sends nothing at all unless `DEPLOY_IMPLEMENTATION=true` is set **and** `--broadcast` is passed, in which case it only deploys the new implementation.
+Every version-1 vault should be upgraded with this call, including those whose mark needs no correction: an upgrade with empty `data` leaves the one-shot available to the vault's whitelist.
+
+It is meant to be executed atomically with the upgrade, as the `data` argument of `upgradeToAndCall`. `script/UpgradeInflowVaultResetHwm.s.sol` simulates that call from the whitelisted Safe against the RPC state, reports whether the reset lowers the mark or does nothing, checks the result, and prints the transaction for the Safe. It never sends a transaction to the proxy, and sends nothing at all unless `DEPLOY_IMPLEMENTATION=true` is set **and** `--broadcast` is passed, in which case it only deploys the new implementation.
 
 | Variable | Description |
 |---|---|

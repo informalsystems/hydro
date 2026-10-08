@@ -8,6 +8,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 /// @notice Tests for the post-mint high-water mark recorded by accrueFees() and for the
 /// one-shot resetHighWaterMark() available to vaults initialized at version 1.
@@ -42,6 +43,15 @@ contract InflowVaultHighWaterMarkTest is InflowVaultBase {
 
     function _implementation(address proxy) internal view returns (address) {
         return address(uint160(uint256(vm.load(proxy, IMPL_SLOT))));
+    }
+
+    /// @dev True when a HighWaterMarkReset event was recorded since the last vm.recordLogs().
+    function _emittedHighWaterMarkReset() internal returns (bool) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == InflowVault.HighWaterMarkReset.selector) return true;
+        }
+        return false;
     }
 
     /// @dev Deploy a proxy on the version-1 implementation with a 10% fee.
@@ -264,40 +274,78 @@ contract InflowVaultHighWaterMarkTest is InflowVaultBase {
         assertEq(v.highWaterMarkPrice(), hwm, "HWM unchanged");
     }
 
-    function test_reset_hwm_reverts_when_price_equals_hwm() public {
+    function test_reset_hwm_is_noop_when_price_equals_hwm() public {
         InflowVaultV1 v1 = _deployV1Vault();
         _depositV1(v1, user, 100_000e6);
         InflowVault v = _upgradeWithoutReset(v1);
 
+        vm.recordLogs();
         vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(InflowVault.HighWaterMarkNotAboveSharePrice.selector, WAD, WAD));
         v.resetHighWaterMark();
 
         assertEq(v.highWaterMarkPrice(), WAD, "HWM unchanged");
-        assertEq(_initializedVersion(address(v)), 1, "one-shot not consumed by a revert");
+        assertFalse(_emittedHighWaterMarkReset(), "no HighWaterMarkReset on a no-op");
+        assertEq(_initializedVersion(address(v)), 2, "one-shot consumed by the no-op");
+
+        vm.prank(admin);
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        v.resetHighWaterMark();
     }
 
-    function test_reset_hwm_reverts_when_price_above_hwm() public {
+    function test_reset_hwm_is_noop_when_price_above_hwm() public {
         InflowVaultV1 v1 = _deployV1Vault();
         _depositV1(v1, user, 100_000e6);
         asset.mint(address(v1), 5_000e6); // price = 1.05, HWM = 1.0, fees not accrued yet
         InflowVault v = _upgradeWithoutReset(v1);
 
+        vm.recordLogs();
         vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(InflowVault.HighWaterMarkNotAboveSharePrice.selector, WAD, 1.05e18));
         v.resetHighWaterMark();
+
+        assertEq(v.highWaterMarkPrice(), WAD, "HWM not raised to the share price");
+        assertFalse(_emittedHighWaterMarkReset(), "no HighWaterMarkReset on a no-op");
+        assertEq(_initializedVersion(address(v)), 2, "one-shot consumed by the no-op");
 
         // The pending gain is still charged in full against the untouched HWM.
         v.accrueFees();
         assertGt(v.balanceOf(feeRecipient), 0, "pending gain still charged");
     }
 
-    function test_reset_hwm_reverts_without_shares() public {
+    function test_reset_hwm_is_noop_without_shares_at_initial_hwm() public {
         InflowVault v = _upgradeWithoutReset(_deployV1Vault());
+        assertEq(v.totalSupply(), 0);
 
+        vm.recordLogs();
         vm.prank(admin);
-        vm.expectRevert(InflowVault.NoSharesIssued.selector);
         v.resetHighWaterMark();
+
+        assertEq(v.highWaterMarkPrice(), WAD, "HWM unchanged");
+        assertFalse(_emittedHighWaterMarkReset(), "no HighWaterMarkReset on a no-op");
+        assertEq(_initializedVersion(address(v)), 2, "one-shot consumed by the no-op");
+    }
+
+    /// A vault emptied after an accrual keeps its HWM; the reset brings it back to WAD, the
+    /// mark a new vault starts from.
+    function test_reset_hwm_without_shares_lowers_to_wad() public {
+        InflowVaultV1 v1 = _deployV1VaultAfterCyclesAccrual();
+
+        uint256 userShares = v1.balanceOf(user);
+        vm.prank(user);
+        v1.redeem(userShares, user, user);
+        vm.prank(feeRecipient);
+        v1.redeem(CYCLES_FEE_SHARES, feeRecipient, feeRecipient);
+        assertEq(v1.totalSupply(), 0, "vault emptied");
+        assertEq(v1.highWaterMarkPrice(), CYCLES_HWM, "HWM survives the withdrawals");
+
+        InflowVault v = _upgradeWithoutReset(v1);
+
+        vm.expectEmit(false, false, false, true, address(v));
+        emit InflowVault.HighWaterMarkReset(CYCLES_HWM, WAD);
+        vm.prank(admin);
+        v.resetHighWaterMark();
+
+        assertEq(v.highWaterMarkPrice(), WAD, "HWM lowered to WAD");
+        assertEq(_initializedVersion(address(v)), 2);
     }
 
     function test_reset_hwm_unauthorized_reverts() public {
@@ -479,14 +527,34 @@ contract InflowVaultHighWaterMarkTest is InflowVaultBase {
         script.simulateUpgrade(address(v1), stranger, address(newImpl));
     }
 
-    function test_upgrade_script_rejects_price_not_below_hwm() public {
+    /// With the share price at the HWM, the script reports a no-op reset and the upgrade
+    /// still goes through, consuming the one-shot.
+    function test_upgrade_script_noop_reset_when_price_not_below_hwm() public {
         InflowVaultV1 v1 = _deployV1Vault();
         _depositV1(v1, user, 100_000e6);
         InflowVault newImpl = new InflowVault();
         UpgradeInflowVaultResetHwm script = new UpgradeInflowVaultResetHwm();
 
-        vm.expectRevert("share price is not below the high-water mark");
         script.simulateUpgrade(address(v1), admin, address(newImpl));
+
+        InflowVault v = InflowVault(address(v1));
+        assertEq(_implementation(address(v)), address(newImpl), "implementation switched");
+        assertEq(v.highWaterMarkPrice(), WAD, "HWM unchanged");
+        assertEq(_initializedVersion(address(v)), 2, "one-shot consumed");
+    }
+
+    /// A vault without shares does not make the script divide by zero.
+    function test_upgrade_script_handles_vault_without_shares() public {
+        InflowVaultV1 v1 = _deployV1Vault();
+        InflowVault newImpl = new InflowVault();
+        UpgradeInflowVaultResetHwm script = new UpgradeInflowVaultResetHwm();
+
+        script.simulateUpgrade(address(v1), admin, address(newImpl));
+
+        InflowVault v = InflowVault(address(v1));
+        assertEq(_implementation(address(v)), address(newImpl), "implementation switched");
+        assertEq(v.highWaterMarkPrice(), WAD, "HWM unchanged");
+        assertEq(_initializedVersion(address(v)), 2, "one-shot consumed");
     }
 
     // ── freshly deployed vault ────────────────────────────────────────────────

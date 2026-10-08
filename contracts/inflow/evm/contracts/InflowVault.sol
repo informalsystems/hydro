@@ -46,7 +46,6 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     error DeployedAmountWhitelistCannotBeEmpty();
     error TokenIsDepositAsset();
     error InsufficientAvailableBalance(uint256 available, uint256 requested);
-    error HighWaterMarkNotAboveSharePrice(uint256 highWaterMarkPrice, uint256 sharePrice);
 
     // EVENTS
 
@@ -450,23 +449,22 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     }
 
     /// @notice Whitelisted only, usable once. Lowers highWaterMarkPrice to the current share
-    /// price. Reverts unless the current share price is strictly below highWaterMarkPrice.
+    /// price when the mark sits above it, and leaves the mark untouched otherwise. A vault
+    /// without shares counts as priced at WAD, the mark a new vault starts from.
     ///
     /// @dev For vaults initialized at version 1, whose HWM was recorded before the fee shares
     /// of an accrual were minted and therefore sits above the share price by that dilution.
     /// Intended to be the `data` call of upgradeToAndCall, so that it runs atomically with
-    /// the upgrade. It consumes INITIALIZED_VERSION: it cannot run a second time, and it
-    /// cannot run at all on a vault set up through initialize().
+    /// the upgrade. It consumes INITIALIZED_VERSION whether or not it lowers the mark: it
+    /// cannot run a second time, and it cannot run at all on a vault set up through
+    /// initialize(). HighWaterMarkReset is emitted only when the mark is lowered.
     function resetHighWaterMark() external onlyWhitelisted reinitializer(INITIALIZED_VERSION) {
         uint256 supply = totalSupply();
-        if (supply == 0) revert NoSharesIssued();
+        uint256 currentSharePrice = supply == 0 ? WAD : totalAssets().mulDiv(WAD, supply, Math.Rounding.Floor);
 
         VaultStorage storage $ = _getStorage();
-        uint256 currentSharePrice = totalAssets().mulDiv(WAD, supply, Math.Rounding.Floor);
         uint256 oldHighWaterMarkPrice = $.highWaterMarkPrice;
-        if (currentSharePrice >= oldHighWaterMarkPrice) {
-            revert HighWaterMarkNotAboveSharePrice(oldHighWaterMarkPrice, currentSharePrice);
-        }
+        if (currentSharePrice >= oldHighWaterMarkPrice) return;
 
         $.highWaterMarkPrice = currentSharePrice;
         emit HighWaterMarkReset(oldHighWaterMarkPrice, currentSharePrice);

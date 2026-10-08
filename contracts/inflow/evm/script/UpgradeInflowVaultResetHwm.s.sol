@@ -7,6 +7,8 @@ import {InflowVault} from "../contracts/InflowVault.sol";
 
 /// @notice Prepares the upgrade of a version-1 InflowVault proxy to the current implementation
 /// with the one-shot resetHighWaterMark() call, for execution by a whitelisted Safe.
+/// The reset lowers the high-water mark to the share price when the mark sits above it and
+/// does nothing otherwise; the script reports which of the two applies.
 ///
 /// The script never calls the proxy on-chain. It simulates the Safe's upgradeToAndCall
 /// against the RPC state, checks the outcome, and prints the transaction for the Safe to sign.
@@ -95,8 +97,10 @@ contract UpgradeInflowVaultResetHwm is Script {
         uint256 totalSupply = vault.totalSupply();
         uint256 feeRate = vault.feeRate();
         address feeRecipient = vault.feeRecipient();
-        uint256 sharePrice = Math.mulDiv(totalAssets, WAD, totalSupply);
-        require(sharePrice < oldHighWaterMarkPrice, "share price is not below the high-water mark");
+        // A vault without shares counts as priced at WAD, as in resetHighWaterMark().
+        uint256 sharePrice = totalSupply == 0 ? WAD : Math.mulDiv(totalAssets, WAD, totalSupply);
+        bool lowersHighWaterMark = sharePrice < oldHighWaterMarkPrice;
+        uint256 expectedHighWaterMarkPrice = lowersHighWaterMark ? sharePrice : oldHighWaterMarkPrice;
 
         console2.log("Proxy:                  ", proxy);
         console2.log("Admin Safe:             ", adminSafe);
@@ -106,6 +110,11 @@ contract UpgradeInflowVaultResetHwm is Script {
         console2.log("totalSupply:            ", totalSupply);
         console2.log("Share price (WAD):      ", sharePrice);
         console2.log("HWM before (WAD):       ", oldHighWaterMarkPrice);
+        console2.log(
+            lowersHighWaterMark
+                ? "Reset:                   lowers the HWM to the share price"
+                : "Reset:                   no-op, the share price is not below the HWM"
+        );
 
         upgradeCalldata = abi.encodeCall(
             vault.upgradeToAndCall, (implementation, abi.encodeCall(InflowVault.resetHighWaterMark, ()))
@@ -120,7 +129,9 @@ contract UpgradeInflowVaultResetHwm is Script {
         }
 
         require(_implementation(proxy) == implementation, "implementation not switched");
-        require(vault.highWaterMarkPrice() == sharePrice, "high-water mark not reset to the share price");
+        require(
+            vault.highWaterMarkPrice() == expectedHighWaterMarkPrice, "unexpected high-water mark after the upgrade"
+        );
         require(vault.totalAssets() == totalAssets, "totalAssets changed");
         require(vault.totalSupply() == totalSupply, "totalSupply changed");
         require(vault.feeRate() == feeRate, "feeRate changed");
@@ -133,7 +144,11 @@ contract UpgradeInflowVaultResetHwm is Script {
         } catch {}
 
         console2.log("HWM after (WAD):        ", vault.highWaterMarkPrice());
-        console2.log("Simulation OK: implementation switched, HWM reset, reset no longer callable.");
+        console2.log(
+            lowersHighWaterMark
+                ? "Simulation OK: implementation switched, HWM lowered, reset no longer callable."
+                : "Simulation OK: implementation switched, HWM unchanged, reset no longer callable."
+        );
     }
 
     function _implementation(address proxy) private view returns (address) {
