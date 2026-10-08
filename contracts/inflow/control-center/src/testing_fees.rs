@@ -7,7 +7,8 @@ use cosmwasm_std::{
     QuerierResult, Response, SystemError, SystemResult, Uint128, WasmQuery,
 };
 use interface::inflow_control_center::{
-    ExecuteMsg, FeeAccrualInfoResponse, FeeConfigInit, FeeConfigResponse, QueryMsg,
+    AccrueFeesResponse, ExecuteMsg, FeeAccrualInfoResponse, FeeConfigInit, FeeConfigResponse,
+    QueryMsg,
 };
 use interface::inflow_vault::{
     PoolInfoResponse as VaultPoolInfoResponse, QueryMsg as VaultQueryMsg,
@@ -634,11 +635,13 @@ fn test_accrue_fees_basic_yield() {
     // Verify MintFeeShares message was generated
     assert!(!response.messages.is_empty());
 
-    // Verify high-water mark was updated
+    // Verify high-water mark was updated to the share price after the fee shares are minted:
+    //   total_yield = 100, fee_amount = 20, shares_to_mint = 20 / 1.1 ≈ 18.18 -> 18
+    //   high-water mark = 1100 / (1000 + 18)
     let high_water_mark_price = HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap();
     assert_eq!(
         high_water_mark_price,
-        Decimal::from_ratio(1100u128, 1000u128)
+        Decimal::from_ratio(1100u128, 1018u128)
     );
 }
 
@@ -890,7 +893,11 @@ fn test_high_water_mark_consecutive_accruals() {
         execute(deps.as_mut(), env.clone(), info, ExecuteMsg::AccrueFees {}).unwrap()
     };
 
+    // The high-water mark is the share price after the fee shares are minted. The mock
+    // subvault keeps reporting 1000 shares, so each step is 1000 shares plus that step's mint.
+
     // First accrual: 5% yield (price 1.0 -> 1.05)
+    //   fee_amount = 50 * 0.2 = 10, shares_to_mint = 10 / 1.05 ≈ 9.52 -> 9
     let res1 = run_accrual(&mut deps, &env, 1000, 1050);
     assert!(res1
         .attributes
@@ -898,10 +905,11 @@ fn test_high_water_mark_consecutive_accruals() {
         .any(|a| a.key == "result" && a.value == "fees_accrued"));
     assert_eq!(
         HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
-        Decimal::from_ratio(1050u128, 1000u128)
+        Decimal::from_ratio(1050u128, 1009u128)
     );
 
     // Second accrual: another 5% yield (price 1.05 -> ~1.10)
+    //   fee_amount = (1.1 - 1050/1009) * 1000 * 0.2 ≈ 11.87, shares_to_mint ≈ 10.79 -> 10
     let res2 = run_accrual(&mut deps, &env, 1000, 1100);
     assert!(res2
         .attributes
@@ -909,10 +917,11 @@ fn test_high_water_mark_consecutive_accruals() {
         .any(|a| a.key == "result" && a.value == "fees_accrued"));
     assert_eq!(
         HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
-        Decimal::from_ratio(1100u128, 1000u128)
+        Decimal::from_ratio(1100u128, 1010u128)
     );
 
     // Third accrual: another ~5% yield
+    //   fee_amount = (1.15 - 1100/1010) * 1000 * 0.2 ≈ 12.18, shares_to_mint ≈ 10.59 -> 10
     let res3 = run_accrual(&mut deps, &env, 1000, 1150);
     assert!(res3
         .attributes
@@ -920,7 +929,7 @@ fn test_high_water_mark_consecutive_accruals() {
         .any(|a| a.key == "result" && a.value == "fees_accrued"));
     assert_eq!(
         HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
-        Decimal::from_ratio(1150u128, 1000u128)
+        Decimal::from_ratio(1150u128, 1010u128)
     );
 }
 
@@ -978,7 +987,10 @@ fn test_high_water_mark_recovery_from_loss() {
         execute(deps.as_mut(), env.clone(), info, ExecuteMsg::AccrueFees {}).unwrap()
     };
 
-    // Step 1: Yield to 1.2 -> fees charged, hwm = 1.2
+    // Step 1: Yield to 1.2 -> fees charged, hwm = price after the fee mint
+    //   fee_amount = 200 * 0.2 = 40, shares_to_mint = 40 / 1.2 ≈ 33.33 -> 33
+    //   hwm = 1200 / (1000 + 33) ≈ 1.1617
+    let hwm_after_gain = Decimal::from_ratio(1200u128, 1033u128);
     let res1 = run_accrual(&mut deps, &env, 1000, 1200);
     assert!(res1
         .attributes
@@ -986,7 +998,7 @@ fn test_high_water_mark_recovery_from_loss() {
         .any(|a| a.key == "result" && a.value == "fees_accrued"));
     assert_eq!(
         HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
-        Decimal::from_ratio(1200u128, 1000u128)
+        hwm_after_gain
     );
 
     // Step 2: Loss to 0.9 -> no fees
@@ -995,25 +1007,26 @@ fn test_high_water_mark_recovery_from_loss() {
         .attributes
         .iter()
         .any(|a| a.key == "result" && a.value == "below_high_water_mark"));
-    // hwm should remain at 1.2
+    // hwm should remain unchanged
     assert_eq!(
         HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
-        Decimal::from_ratio(1200u128, 1000u128)
+        hwm_after_gain
     );
 
-    // Step 3: Recovery to 1.1 -> no fees (1.1 < hwm 1.2)
+    // Step 3: Recovery to 1.1 -> no fees (1.1 < hwm ≈ 1.1617)
     let res3 = run_accrual(&mut deps, &env, 1000, 1100);
     assert!(res3
         .attributes
         .iter()
         .any(|a| a.key == "result" && a.value == "below_high_water_mark"));
-    // hwm should remain at 1.2
+    // hwm should remain unchanged
     assert_eq!(
         HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
-        Decimal::from_ratio(1200u128, 1000u128)
+        hwm_after_gain
     );
 
-    // Step 4: New high at 1.3 -> fees on (1.3 - 1.2) = 0.1
+    // Step 4: New high at 1.3 -> fees on (1.3 - hwm) ≈ 0.1383
+    //   fee_amount ≈ 138.33 * 0.2 ≈ 27.67, shares_to_mint ≈ 21.28 -> 21
     let res4 = run_accrual(&mut deps, &env, 1000, 1300);
     assert!(res4
         .attributes
@@ -1021,7 +1034,7 @@ fn test_high_water_mark_recovery_from_loss() {
         .any(|a| a.key == "result" && a.value == "fees_accrued"));
     assert_eq!(
         HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
-        Decimal::from_ratio(1300u128, 1000u128)
+        Decimal::from_ratio(1300u128, 1021u128)
     );
 }
 
@@ -1163,11 +1176,12 @@ fn test_dust_yield_does_not_update_high_water_mark() {
         "Expected fees_accrued when yield is large enough"
     );
 
-    // NOW the high-water mark should be updated to 1.02
+    // NOW the high-water mark should be updated to the price after the 3 fee shares
+    // are minted: 1020 / 1003
     let hwm_after_accrual = HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap();
     assert_eq!(
         hwm_after_accrual,
-        Decimal::from_ratio(1020u128, 1000u128),
+        Decimal::from_ratio(1020u128, 1003u128),
         "High-water mark should be updated after successful fee accrual"
     );
 }
@@ -1228,7 +1242,7 @@ fn test_reenable_fees_resets_high_water_mark() {
         };
 
     // Step 2: Accrue fees with 10% yield (price 1.0 -> 1.1)
-    // This sets high-water mark to 1.1
+    // This mints 18 fee shares and sets high-water mark to 1100 / 1018 ≈ 1.0806
     setup_vault_state(&mut deps, 1000, 1100);
     let info = get_message_info(&deps.api, USER1, &[]);
     let res = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::AccrueFees {});
@@ -1240,7 +1254,7 @@ fn test_reenable_fees_resets_high_water_mark() {
         .any(|a| a.key == "result" && a.value == "fees_accrued"));
     assert_eq!(
         HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
-        Decimal::from_ratio(1100u128, 1000u128) // 1.1
+        Decimal::from_ratio(1100u128, 1018u128)
     );
 
     // Step 3: Disable fees by setting fee_rate to 0
@@ -1256,7 +1270,7 @@ fn test_reenable_fees_resets_high_water_mark() {
     );
     assert!(res.is_ok());
 
-    // Step 4: Simulate yield while fees are disabled (price goes from 1.1 to 1.5)
+    // Step 4: Simulate yield while fees are disabled (price goes to 1.5)
     // This yield should NOT be subject to fees when fees are re-enabled
     setup_vault_state(&mut deps, 1000, 1500);
 
@@ -1274,7 +1288,7 @@ fn test_reenable_fees_resets_high_water_mark() {
     assert!(res.is_ok());
 
     // CRITICAL CHECK: After re-enabling fees, the high-water mark should be reset
-    // to the current share price (1.5), NOT remain at the old value (1.1)
+    // to the current share price (1.5), NOT remain at the old value (≈ 1.0806)
     let high_water_mark = HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap();
     assert_eq!(
         high_water_mark,
@@ -1541,4 +1555,200 @@ fn test_submit_deployed_amount_with_fees_disabled() {
         .attributes
         .iter()
         .any(|attr| attr.key == "fees_accrued"));
+}
+
+/// Tests that the high-water mark stored by an accrual is the share price once the fee
+/// shares are minted, so the pool sits exactly at the high-water mark afterwards and the
+/// next yield, however small, is charged without first having to re-earn the fee dilution.
+#[test]
+fn test_high_water_mark_is_post_mint_share_price() {
+    let (mut deps, env) = (mock_dependencies(), mock_env());
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST);
+    let treasury_addr = deps.api.addr_make(TREASURY);
+    let subvault1_addr = deps.api.addr_make(SUBVAULT1);
+
+    let instantiate_msg = get_instantiate_msg(
+        DEFAULT_DEPOSIT_CAP,
+        whitelist_addr.clone(),
+        vec![subvault1_addr.clone()],
+        Some(FeeConfigInit {
+            fee_rate: Decimal::percent(20),
+            fee_recipient: Some(treasury_addr.to_string()),
+        }),
+    );
+
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    let setup_vault_state =
+        |deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>, shares: u128, balance: u128| {
+            let subvault_addr = deps.api.addr_make(SUBVAULT1).to_string();
+            deps.querier.update_wasm({
+                let addr = subvault_addr.clone();
+                move |query| match query {
+                    WasmQuery::Smart { contract_addr, .. } if contract_addr == &addr => {
+                        let response = to_json_binary(&VaultPoolInfoResponse {
+                            shares_issued: Uint128::new(shares),
+                            balance_base_tokens: Uint128::new(balance),
+                            adapter_deposits_base_tokens: Uint128::zero(),
+                            withdrawal_queue_base_tokens: Uint128::zero(),
+                        })
+                        .unwrap();
+                        SystemResult::Ok(ContractResult::Ok(response))
+                    }
+                    _ => SystemResult::Err(SystemError::NoSuchContract {
+                        addr: "unknown".to_string(),
+                    }),
+                }
+            });
+        };
+    let has_attribute = |response: &Response, key: &str, value: &str| {
+        response
+            .attributes
+            .iter()
+            .any(|a| a.key == key && a.value == value)
+    };
+
+    // Step 1: 10% yield on 1,000,000 shares (price 1.0 -> 1.1)
+    //   total_yield = 100000, fee_amount = 20000
+    //   shares_to_mint = 20000 / 1.1 ≈ 18181.81 -> 18181
+    let shares = 1_000_000u128;
+    let balance = 1_100_000u128;
+    let fee_shares = 18_181u128;
+    setup_vault_state(&mut deps, shares, balance);
+
+    let info = get_message_info(&deps.api, USER1, &[]);
+    let response = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::AccrueFees {}).unwrap();
+    assert!(has_attribute(&response, "result", "fees_accrued"));
+    assert!(has_attribute(
+        &response,
+        "shares_minted",
+        &fee_shares.to_string()
+    ));
+
+    let accrue_data: AccrueFeesResponse = from_json(response.data.clone().unwrap()).unwrap();
+    assert_eq!(accrue_data.total_shares_minted, Uint128::new(fee_shares));
+
+    // The stored high-water mark is the post-mint price, below the pre-mint price of 1.1
+    let post_mint_price = Decimal::from_ratio(balance, shares + fee_shares);
+    assert_eq!(
+        HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
+        post_mint_price
+    );
+    assert!(post_mint_price < Decimal::from_ratio(balance, shares));
+
+    // The response reports both the price the fee was valued at and the new high-water mark
+    assert!(has_attribute(
+        &response,
+        "current_share_price",
+        &Decimal::from_ratio(balance, shares).to_string()
+    ));
+    assert!(has_attribute(
+        &response,
+        "high_water_mark_price",
+        &post_mint_price.to_string()
+    ));
+
+    // Step 2: the subvault executed the MintFeeShares message, same pool value
+    let shares = shares + fee_shares;
+    setup_vault_state(&mut deps, shares, balance);
+
+    // The pool is exactly at the high-water mark: nothing is pending
+    let query_res = query(deps.as_ref(), env.clone(), QueryMsg::FeeAccrualInfo {}).unwrap();
+    let accrual_info: FeeAccrualInfoResponse = from_json(query_res).unwrap();
+    assert_eq!(accrual_info.high_water_mark_price, post_mint_price);
+    assert_eq!(accrual_info.current_share_price, post_mint_price);
+    assert_eq!(accrual_info.pending_yield, Uint128::zero());
+    assert_eq!(accrual_info.pending_fee, Uint128::zero());
+
+    let info = get_message_info(&deps.api, USER1, &[]);
+    let response = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::AccrueFees {}).unwrap();
+    assert!(has_attribute(&response, "result", "below_high_water_mark"));
+    assert!(response.messages.is_empty());
+
+    // Step 3: a 0.1% yield (1100 tokens) is charged right away, although the share price
+    // (≈ 1.0814) is still below the pre-mint price of the first accrual (1.1)
+    //   fee_amount ≈ 1100 * 0.2 = 220, shares_to_mint ≈ 220 / 1.0814 -> 203
+    let balance = balance + 1_100;
+    setup_vault_state(&mut deps, shares, balance);
+    assert!(
+        Decimal::from_ratio(balance, shares) < Decimal::from_ratio(1_100_000u128, 1_000_000u128)
+    );
+
+    let info = get_message_info(&deps.api, USER1, &[]);
+    let response = execute(deps.as_mut(), env.clone(), info, ExecuteMsg::AccrueFees {}).unwrap();
+    assert!(has_attribute(&response, "result", "fees_accrued"));
+    assert_eq!(response.messages.len(), 1);
+
+    let accrue_data: AccrueFeesResponse = from_json(response.data.unwrap()).unwrap();
+    assert_eq!(accrue_data.total_shares_minted, Uint128::new(203));
+    assert_eq!(
+        HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
+        Decimal::from_ratio(balance, shares + 203)
+    );
+}
+
+/// Tests that SubmitDeployedAmount stores the post-mint share price as the high-water
+/// mark and reports it next to the price the fee was valued at.
+#[test]
+fn test_submit_deployed_amount_stores_post_mint_high_water_mark() {
+    let (mut deps, env) = (mock_dependencies(), mock_env());
+
+    let whitelist_addr = deps.api.addr_make(WHITELIST);
+    let treasury_addr = deps.api.addr_make(TREASURY);
+    let subvault1_addr = deps.api.addr_make(SUBVAULT1);
+
+    let instantiate_msg = get_instantiate_msg(
+        DEFAULT_DEPOSIT_CAP,
+        whitelist_addr.clone(),
+        vec![subvault1_addr.clone()],
+        Some(FeeConfigInit {
+            fee_rate: Decimal::percent(20),
+            fee_recipient: Some(treasury_addr.to_string()),
+        }),
+    );
+
+    let info = get_message_info(&deps.api, "creator", &[]);
+    instantiate(deps.as_mut(), env.clone(), info, instantiate_msg).unwrap();
+
+    // The subvault holds 1,000,000 shares backed 1:1 by its balance
+    setup_mock_querier_with_subvaults(
+        &mut deps,
+        vec![(subvault1_addr.to_string(), Uint128::new(1_000_000))],
+    );
+
+    // Reporting 100,000 deployed tokens takes the pool value to 1,100,000 (price 1.1)
+    //   fee_amount = 20000, shares_to_mint = 20000 / 1.1 -> 18181
+    let info = get_message_info(&deps.api, WHITELIST, &[]);
+    let response = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::SubmitDeployedAmount {
+            amount: Uint128::new(100_000),
+            timeout: env.block.time.plus_seconds(3600),
+        },
+    )
+    .unwrap();
+
+    let post_mint_price = Decimal::from_ratio(1_100_000u128, 1_018_181u128);
+    assert_eq!(
+        HIGH_WATER_MARK_PRICE.load(&deps.storage).unwrap(),
+        post_mint_price
+    );
+
+    let has_attribute = |key: &str, value: &str| {
+        response
+            .attributes
+            .iter()
+            .any(|a| a.key == key && a.value == value)
+    };
+    assert!(has_attribute("fees_accrued", "true"));
+    assert!(has_attribute("fee_shares_minted", "18181"));
+    assert!(has_attribute("fee_share_price", "1.1"));
+    assert!(has_attribute(
+        "high_water_mark_price",
+        &post_mint_price.to_string()
+    ));
 }

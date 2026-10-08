@@ -191,6 +191,7 @@ fn submit_deployed_amount(
         total_yield,
         fee_amount,
         current_share_price,
+        high_water_mark_price,
     } = try_accrue_fees_internal(&mut deps, &env)?
     {
         response = response
@@ -202,7 +203,8 @@ fn submit_deployed_amount(
                 "fee_shares_minted",
                 response_data.total_shares_minted.to_string(),
             )
-            .add_attribute("fee_share_price", current_share_price.to_string());
+            .add_attribute("fee_share_price", current_share_price.to_string())
+            .add_attribute("high_water_mark_price", high_water_mark_price.to_string());
     }
 
     Ok(response
@@ -395,7 +397,10 @@ enum AccrueFeesResult {
         response_data: AccrueFeesResponse,
         total_yield: Decimal,
         fee_amount: Decimal,
+        /// Share price before the fee shares are minted, used to value the fee
         current_share_price: Decimal,
+        /// Share price after the fee shares are minted, stored as the high-water mark
+        high_water_mark_price: Decimal,
     },
     /// Fees are disabled (fee_rate is zero)
     Disabled {
@@ -478,7 +483,15 @@ fn try_accrue_fees_internal(
 
     // Update high-water mark only after confirming we will mint shares
     // This ensures dust yield accumulates across multiple accrual calls
-    HIGH_WATER_MARK_PRICE.save(deps.storage, &current_share_price)?;
+    // The fee shares are minted by the messages returned below, so the high-water mark is
+    // the share price the pool will have once they are executed
+    let high_water_mark_price = Decimal::from_ratio(
+        pool_info.total_pool_value,
+        pool_info
+            .total_shares_issued
+            .checked_add(shares_to_mint_uint)?,
+    );
+    HIGH_WATER_MARK_PRICE.save(deps.storage, &high_water_mark_price)?;
 
     // Get all subvaults with non-zero shares
     let subvaults: Vec<Addr> = SUBVAULTS
@@ -560,6 +573,7 @@ fn try_accrue_fees_internal(
         total_yield,
         fee_amount,
         current_share_price,
+        high_water_mark_price,
     })
 }
 
@@ -608,6 +622,7 @@ fn accrue_fees(mut deps: DepsMut, env: Env) -> Result<Response, ContractError> {
             total_yield,
             fee_amount,
             current_share_price,
+            high_water_mark_price,
         } => Ok(Response::new()
             .add_messages(msgs)
             .set_data(to_json_binary(&response_data)?)
@@ -619,7 +634,8 @@ fn accrue_fees(mut deps: DepsMut, env: Env) -> Result<Response, ContractError> {
                 "shares_minted",
                 response_data.total_shares_minted.to_string(),
             )
-            .add_attribute("current_share_price", current_share_price.to_string())),
+            .add_attribute("current_share_price", current_share_price.to_string())
+            .add_attribute("high_water_mark_price", high_water_mark_price.to_string())),
     }
 }
 
