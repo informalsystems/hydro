@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## v3.6.18
+
+Date: October 8th, 2026
+
+### BUG FIXES
+
+- Record the high-water mark of the EVM `InflowVault` as the share price after the fee shares are
+  minted, so a vault no longer has to re-earn the dilution of its own fee mint before fees accrue again.
+  Add the one-shot, whitelist-gated `resetHighWaterMark()` reinitializer, which lowers the mark of an
+  already deployed vault to its current share price during the upgrade and does nothing when the mark
+  is not above the share price.
+  `FeesAccrued.sharePrice` still carries the price before the mint, so `highWaterMarkPrice()` is now
+  lower than it after an accrual: read the mark from the contract instead of deriving it from the event.
+  ([\#453](https://github.com/informalsystems/hydro/pull/453))
+- Record the high-water mark of the Inflow control center as the share price after the fee shares are
+  minted, so a vault no longer has to re-earn the dilution of its own fee mint before fees accrue again.
+  `accrue_fees` and `submit_deployed_amount` report it in a new `high_water_mark_price` attribute;
+  `current_share_price` and `fee_share_price` still carry the price before the mint.
+  ([\#454](https://github.com/informalsystems/hydro/pull/454))
+
 ## v3.6.17
 
 Date: September 23rd, 2026
