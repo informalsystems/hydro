@@ -47,7 +47,7 @@ contract InflowVaultFeesTest is InflowVaultBase {
 
     // ── accrueFees — basic yield ──────────────────────────────────────────────
 
-    /// 10% yield, 20% fee rate -> correct shares minted; HWM updated; event emitted.
+    /// 10% yield, 20% fee rate -> correct shares minted; HWM updated to the post-mint price; event emitted.
     /// Corresponds to test_accrue_fees_basic_yield (control-center/testing_fees.rs:577).
     /// Uses direct token mint to vault to avoid submitDeployedAmount calling accrueFees internally.
     function test_accrue_fees_basic_yield() public {
@@ -73,7 +73,11 @@ contract InflowVaultFeesTest is InflowVaultBase {
         vault.accrueFees();
 
         assertEq(vault.balanceOf(feeRecipient), expectedShares, "correct fee shares minted");
-        assertEq(vault.highWaterMarkPrice(), currentPrice, "HWM updated to current price");
+        assertEq(
+            vault.highWaterMarkPrice(),
+            assets.mulDiv(WAD, supply + expectedShares, Math.Rounding.Floor),
+            "HWM updated to post-mint price"
+        );
     }
 
     // ── accrueFees — permissionless ───────────────────────────────────────────

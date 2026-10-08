@@ -7,11 +7,15 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {InflowAdapterLib} from "./InflowAdapterLib.sol";
-import {InflowWithdrawalQueueLib} from "./InflowWithdrawalQueueLib.sol";
+import {InflowAdapterLib} from "../../contracts/InflowAdapterLib.sol";
+import {InflowWithdrawalQueueLib} from "../../contracts/InflowWithdrawalQueueLib.sol";
 
-/// @title InflowVault
-/// @notice ERC-4626 tokenised vault with adapter-based deployment, a two-phase withdrawal
+/// @title InflowVaultV1
+/// @notice Test fixture: verbatim copy of the InflowVault implementation initialized at
+/// version 1 (hydro commit c3550b6), which stores the pre-mint share price as the high-water
+/// mark. Used to exercise upgrades of already-deployed vaults to the current implementation.
+///
+/// ERC-4626 tokenised vault with adapter-based deployment, a two-phase withdrawal
 /// queue, and an embedded high-water-mark performance fee system.
 ///
 /// Design highlights
@@ -24,7 +28,7 @@ import {InflowWithdrawalQueueLib} from "./InflowWithdrawalQueueLib.sol";
 /// * Fee accrual is based on a high-water-mark model.
 /// * Adapters can be Automated (included in deposit/withdraw flows) or Manual (explicit
 ///   calls only), and Tracked (counted in deployedAmount) or Untracked (queried directly).
-contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgradeable {
+contract InflowVaultV1 is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgradeable {
     using Math for uint256;
     using InflowAdapterLib for InflowAdapterLib.AdapterStorage;
     using InflowWithdrawalQueueLib for InflowWithdrawalQueueLib.QueueStorage;
@@ -65,10 +69,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
 
     event DeployedAmountSubmitted(address indexed caller, uint256 newAmount);
     event FeeConfigUpdated(uint256 feeRate, address feeRecipient);
-    /// @dev `sharePrice` is the price before the fee shares are minted, at which `feeAssets`
-    /// is converted into `sharesMinted`.
     event FeesAccrued(address indexed recipient, uint256 sharesMinted, uint256 sharePrice, uint256 feeAssets);
-    event HighWaterMarkReset(uint256 oldHighWaterMarkPrice, uint256 newHighWaterMarkPrice);
 
     /// @notice Emitted when a withdrawal cannot be fulfilled immediately and is queued.
     event WithdrawalQueued(
@@ -91,11 +92,6 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
 
     /// @dev 1e18 fixed-point unit used for fee rate and share price arithmetic.
     uint256 private constant WAD = 1e18;
-
-    /// @dev Initializable version shared by initialize() and resetHighWaterMark(). A proxy
-    /// can run at most one of the two: initialize() on a new proxy, resetHighWaterMark() on
-    /// a proxy that an earlier implementation initialized at version 1.
-    uint64 private constant INITIALIZED_VERSION = 2;
 
     // ERC-7201 NAMESPACED STORAGE
     //
@@ -123,7 +119,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         // Fee system
         uint256 feeRate; // WAD: 0 = disabled, 1e18 = 100 %
         address feeRecipient;
-        uint256 highWaterMarkPrice; // WAD share price right after the last fee accrual minted its fee shares
+        uint256 highWaterMarkPrice; // WAD share price during the last fee accrual
         // Adapter registry
         InflowAdapterLib.AdapterStorage adapterStorage;
         // Withdrawal queue
@@ -149,15 +145,6 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     modifier onlyDeployedAmountWhitelisted() {
         _onlyDeployedAmountWhitelisted();
         _;
-    }
-
-    modifier onlyUninitialized() {
-        _onlyUninitialized();
-        _;
-    }
-
-    function _onlyUninitialized() internal view {
-        if (_getInitializedVersion() != 0) revert InvalidInitialization();
     }
 
     function _onlyWhitelisted() internal view {
@@ -186,8 +173,6 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     /// @param initialDeployedAmountWhitelist       At least one address must be provided.
     /// @param feeRate_                             Performance fee rate in WAD (0 = disabled, 1e18 = 100%).
     /// @param feeRecipient_                        Recipient of fee shares; required when feeRate_ > 0.
-    /// @dev Only runs on a proxy that was never initialized and takes it straight to
-    /// INITIALIZED_VERSION, which leaves resetHighWaterMark() permanently unavailable on it.
     function initialize(
         IERC20 asset_,
         string memory name_,
@@ -198,7 +183,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         address[] memory initialDeployedAmountWhitelist,
         uint256 feeRate_,
         address feeRecipient_
-    ) external onlyUninitialized reinitializer(INITIALIZED_VERSION) {
+    ) external initializer {
         __ERC20_init(name_, symbol_);
         __ERC4626_init(asset_);
 
@@ -369,10 +354,6 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
     ///   totalYield  = (sharePrice − HWM) * totalSupply / WAD
     ///   feeAssets   = totalYield * feeRate / WAD
     ///   sharesToMint = feeAssets * WAD / sharePrice
-    ///   HWM         = totalAssets * WAD / (totalSupply + sharesToMint)
-    ///
-    /// The new HWM is the share price after the fee shares are minted, so the vault sits
-    /// exactly at its HWM once the accrual completes and any later gain is charged.
     ///
     /// If sharesToMint rounds to 0 (dust), HWM is NOT updated so dust accumulates over
     /// multiple calls until enough yield has built up to mint at least one share.
@@ -405,7 +386,7 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
 
         if (sharesToMint == 0) return; // dust; do not update HWM
 
-        $.highWaterMarkPrice = assets.mulDiv(WAD, supply + sharesToMint, Math.Rounding.Floor);
+        $.highWaterMarkPrice = currentSharePrice;
         _mint($.feeRecipient, sharesToMint);
         emit FeesAccrued($.feeRecipient, sharesToMint, currentSharePrice, feeAssets);
     }
@@ -446,28 +427,6 @@ contract InflowVault is ERC4626Upgradeable, ReentrancyGuardTransient, UUPSUpgrad
         if (newRecipient != address(0)) $.feeRecipient = newRecipient;
 
         emit FeeConfigUpdated($.feeRate, $.feeRecipient);
-    }
-
-    /// @notice Whitelisted only, usable once. Lowers highWaterMarkPrice to the current share
-    /// price when the mark sits above it, and leaves the mark untouched otherwise. A vault
-    /// without shares counts as priced at WAD, the mark a new vault starts from.
-    ///
-    /// @dev For vaults initialized at version 1, whose HWM was recorded before the fee shares
-    /// of an accrual were minted and therefore sits above the share price by that dilution.
-    /// Intended to be the `data` call of upgradeToAndCall, so that it runs atomically with
-    /// the upgrade. It consumes INITIALIZED_VERSION whether or not it lowers the mark: it
-    /// cannot run a second time, and it cannot run at all on a vault set up through
-    /// initialize(). HighWaterMarkReset is emitted only when the mark is lowered.
-    function resetHighWaterMark() external onlyWhitelisted reinitializer(INITIALIZED_VERSION) {
-        uint256 supply = totalSupply();
-        uint256 currentSharePrice = supply == 0 ? WAD : totalAssets().mulDiv(WAD, supply, Math.Rounding.Floor);
-
-        VaultStorage storage $ = _getStorage();
-        uint256 oldHighWaterMarkPrice = $.highWaterMarkPrice;
-        if (currentSharePrice >= oldHighWaterMarkPrice) return;
-
-        $.highWaterMarkPrice = currentSharePrice;
-        emit HighWaterMarkReset(oldHighWaterMarkPrice, currentSharePrice);
     }
 
     // DEPLOYMENT FLOWS
