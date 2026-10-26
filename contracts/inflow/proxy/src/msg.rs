@@ -6,8 +6,8 @@ use crate::state::{Config, State};
 #[cw_serde]
 pub struct InstantiateMsg {
     pub admins: Vec<String>,
-    // List of Control Center contract addresses used to discover and interact with Inflow vaults
-    pub control_centers: Vec<String>,
+    // Registry of Control Center contracts used to discover and interact with Inflow vaults
+    pub control_center_registry: String,
 }
 
 #[cw_serde]

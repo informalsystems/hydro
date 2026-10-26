@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use crate::{
     execute, instantiate,
-    testing_mocks::{control_center_subvaults_mock, inflow_config_mock},
+    testing_mocks::{
+        control_center_registry_mock, control_center_subvaults_mock, inflow_config_mock,
+    },
     ExecuteMsg, InstantiateMsg,
 };
 use cosmwasm_std::{
@@ -24,6 +26,7 @@ const ADMIN_1: &str = "admin1";
 const NON_ADMIN: &str = "non_admin";
 const RECIPIENT: &str = "recipient";
 
+const CONTROL_CENTER_REGISTRY: &str = "control_center_registry";
 const CONTROL_CENTER_1: &str = "control_center_1";
 const CONTROL_CENTER_2: &str = "control_center_2";
 const INFLOW_VAULT_1: &str = "inflow_vault_1";
@@ -38,13 +41,10 @@ const SHARES_DENOM_1: &str = "shares_denom_1";
 const SHARES_DENOM_2: &str = "shares_denom_2";
 const SHARES_DENOM_3: &str = "shares_denom_3";
 
-fn get_default_instantiate_msg(admins: Vec<Addr>, control_centers: Vec<Addr>) -> InstantiateMsg {
+fn get_default_instantiate_msg(admins: Vec<Addr>, registry: Addr) -> InstantiateMsg {
     InstantiateMsg {
         admins: admins.into_iter().map(|addr| addr.to_string()).collect(),
-        control_centers: control_centers
-            .into_iter()
-            .map(|addr| addr.to_string())
-            .collect(),
+        control_center_registry: registry.to_string(),
     }
 }
 
@@ -69,13 +69,13 @@ fn instantiate_test() {
     let creator_info = get_message_info(&deps.api, CREATOR, &[]);
 
     let admin1 = deps.api.addr_make(ADMIN_1);
-    let control_center_1 = deps.api.addr_make(CONTROL_CENTER_1);
+    let registry = deps.api.addr_make(CONTROL_CENTER_REGISTRY);
 
     let err = instantiate(
         deps.as_mut(),
         env.clone(),
         creator_info.clone(),
-        get_default_instantiate_msg(vec![], vec![]),
+        get_default_instantiate_msg(vec![], registry.clone()),
     )
     .unwrap_err();
     assert!(err
@@ -87,21 +87,26 @@ fn instantiate_test() {
         deps.as_mut(),
         env.clone(),
         creator_info.clone(),
-        get_default_instantiate_msg(vec![admin1.clone()], vec![]),
+        get_default_instantiate_msg(vec![admin1.clone()], Addr::unchecked("invalid")),
     )
     .unwrap_err();
-    assert!(err
-        .to_string()
-        .to_lowercase()
-        .contains("no control centers provided"));
+    assert!(matches!(err, crate::error::ContractError::Std(_)));
 
     instantiate(
         deps.as_mut(),
         env.clone(),
         creator_info.clone(),
-        get_default_instantiate_msg(vec![admin1.clone()], vec![control_center_1.clone()]),
+        get_default_instantiate_msg(vec![admin1.clone()], registry.clone()),
     )
     .unwrap();
+
+    assert_eq!(
+        crate::state::CONFIG
+            .load(&deps.storage)
+            .unwrap()
+            .control_center_registry,
+        registry
+    );
 }
 
 #[test]
@@ -113,6 +118,7 @@ fn forward_to_inflow_test() {
     let proxy = deps.api.addr_make(PROXY);
     let admin1 = deps.api.addr_make(ADMIN_1);
 
+    let registry = deps.api.addr_make(CONTROL_CENTER_REGISTRY);
     let control_center_1 = deps.api.addr_make(CONTROL_CENTER_1);
     let control_center_2 = deps.api.addr_make(CONTROL_CENTER_2);
 
@@ -128,16 +134,17 @@ fn forward_to_inflow_test() {
         deps.as_mut(),
         env.clone(),
         creator_info.clone(),
-        get_default_instantiate_msg(
-            vec![admin1.clone()],
-            vec![control_center_1.clone(), control_center_2.clone()],
-        ),
+        get_default_instantiate_msg(vec![admin1.clone()], registry.clone()),
     )
     .unwrap();
 
     env.contract.address = proxy.clone();
 
     let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_contract_smart_query_mock(
+            registry.clone(),
+            control_center_registry_mock(vec![control_center_1.clone(), control_center_2.clone()]),
+        ),
         setup_contract_smart_query_mock(
             control_center_1.clone(),
             control_center_subvaults_mock(vec![inflow_vault_1.clone(), inflow_vault_2.clone()]),
@@ -225,13 +232,13 @@ fn withdraw_receipt_tokens_test() {
     let admin1 = deps.api.addr_make(ADMIN_1);
     let recipient = deps.api.addr_make(RECIPIENT);
 
-    let control_center_1 = deps.api.addr_make(CONTROL_CENTER_1);
+    let registry = deps.api.addr_make(CONTROL_CENTER_REGISTRY);
 
     instantiate(
         deps.as_mut(),
         env.clone(),
         creator_info.clone(),
-        get_default_instantiate_msg(vec![admin1.clone()], vec![control_center_1.clone()]),
+        get_default_instantiate_msg(vec![admin1.clone()], registry.clone()),
     )
     .unwrap();
 
@@ -314,6 +321,7 @@ fn withdraw_funds_test() {
     let admin1 = deps.api.addr_make(ADMIN_1);
     let recipient = deps.api.addr_make(RECIPIENT);
 
+    let registry = deps.api.addr_make(CONTROL_CENTER_REGISTRY);
     let control_center_1 = deps.api.addr_make(CONTROL_CENTER_1);
 
     let inflow_vault_1 = deps.api.addr_make(INFLOW_VAULT_1);
@@ -326,13 +334,17 @@ fn withdraw_funds_test() {
         deps.as_mut(),
         env.clone(),
         creator_info.clone(),
-        get_default_instantiate_msg(vec![admin1.clone()], vec![control_center_1.clone()]),
+        get_default_instantiate_msg(vec![admin1.clone()], registry.clone()),
     )
     .unwrap();
 
     env.contract.address = proxy.clone();
 
     let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_contract_smart_query_mock(
+            registry.clone(),
+            control_center_registry_mock(vec![control_center_1.clone()]),
+        ),
         setup_contract_smart_query_mock(
             control_center_1.clone(),
             control_center_subvaults_mock(vec![inflow_vault_1.clone(), inflow_vault_2.clone()]),
@@ -437,5 +449,123 @@ fn withdraw_funds_test() {
             assert_eq!(funds[0].clone().amount, vault_shares_1_balance.amount);
         }
         _ => panic!("unexpected msg"),
+    }
+}
+
+#[test]
+fn registry_updates_apply_without_reinstantiating_proxy() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+    let registry = deps.api.addr_make(CONTROL_CENTER_REGISTRY);
+    let center1 = deps.api.addr_make(CONTROL_CENTER_1);
+    let center2 = deps.api.addr_make(CONTROL_CENTER_2);
+    let vault1 = deps.api.addr_make(INFLOW_VAULT_1);
+    let vault2 = deps.api.addr_make(INFLOW_VAULT_2);
+    let admin_info = get_message_info(&deps.api, ADMIN_1, &[]);
+    let caller_info = get_message_info(&deps.api, NON_ADMIN, &[]);
+    let recipient = deps.api.addr_make(RECIPIENT);
+
+    instantiate(
+        deps.as_mut(),
+        env.clone(),
+        admin_info.clone(),
+        get_default_instantiate_msg(vec![admin_info.sender.clone()], registry.clone()),
+    )
+    .unwrap();
+
+    let wasm_querier = MockWasmQuerier::new(HashMap::from_iter([
+        setup_contract_smart_query_mock(
+            center1.clone(),
+            control_center_subvaults_mock(vec![vault1.clone()]),
+        ),
+        setup_contract_smart_query_mock(
+            center2.clone(),
+            control_center_subvaults_mock(vec![vault2.clone()]),
+        ),
+        setup_contract_smart_query_mock(
+            vault1.clone(),
+            inflow_config_mock(get_default_inflow_config(
+                &deps.api,
+                DEPOSIT_DENOM_1,
+                SHARES_DENOM_1,
+            )),
+        ),
+        setup_contract_smart_query_mock(
+            vault2.clone(),
+            inflow_config_mock(get_default_inflow_config(
+                &deps.api,
+                DEPOSIT_DENOM_2,
+                SHARES_DENOM_2,
+            )),
+        ),
+    ]));
+    let querier = wasm_querier.clone();
+    deps.querier.update_wasm(move |q| querier.handler(q));
+    deps.querier.bank.update_balance(
+        &env.contract.address,
+        vec![
+            Coin::new(100u128, DEPOSIT_DENOM_1),
+            Coin::new(200u128, DEPOSIT_DENOM_2),
+            Coin::new(300u128, SHARES_DENOM_1),
+        ],
+    );
+
+    for (centers, expected_vaults) in [
+        (vec![], vec![]),
+        (vec![center1.clone()], vec![vault1.clone()]),
+        (
+            vec![center1.clone(), center2.clone()],
+            vec![vault1.clone(), vault2.clone()],
+        ),
+        (vec![center2], vec![vault2]),
+        (vec![], vec![]),
+    ] {
+        wasm_querier.insert_mock(setup_contract_smart_query_mock(
+            registry.clone(),
+            control_center_registry_mock(centers),
+        ));
+        let response = execute(
+            deps.as_mut(),
+            env.clone(),
+            caller_info.clone(),
+            ExecuteMsg::ForwardToInflow {},
+        )
+        .unwrap();
+        let actual_vaults: Vec<_> = response
+            .messages
+            .iter()
+            .map(|submsg| match &submsg.msg {
+                CosmosMsg::Wasm(WasmMsg::Execute { contract_addr, .. }) => contract_addr.clone(),
+                _ => panic!("unexpected message"),
+            })
+            .collect();
+        assert_eq!(
+            actual_vaults,
+            expected_vaults
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        );
+
+        let withdrawal = execute(
+            deps.as_mut(),
+            env.clone(),
+            admin_info.clone(),
+            ExecuteMsg::WithdrawFunds {
+                address: recipient.to_string(),
+                coin: Coin::new(300u128, SHARES_DENOM_1),
+            },
+        );
+        if expected_vaults.contains(&vault1) {
+            let response = withdrawal.unwrap();
+            assert!(matches!(&response.messages[0].msg,
+                CosmosMsg::Wasm(WasmMsg::Execute { contract_addr, .. }) if contract_addr == vault1.as_str()
+            ));
+        } else {
+            assert!(withdrawal
+                .unwrap_err()
+                .to_string()
+                .contains("no Inflow vault found"));
+        }
     }
 }
