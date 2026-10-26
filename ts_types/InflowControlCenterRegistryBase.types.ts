@@ -9,6 +9,10 @@ export interface InstantiateMsg {
   control_centers: string[];
 }
 export type ExecuteMsg = {
+  update_admin: {
+    new_admin: string;
+  };
+} | {
   add_control_center: {
     address: string;
   };

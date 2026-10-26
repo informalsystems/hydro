@@ -12,6 +12,7 @@ pub struct InstantiateMsg {
 
 #[cw_serde]
 pub enum ExecuteMsg {
+    UpdateAdmin { new_admin: String },
     AddControlCenter { address: String },
     RemoveControlCenter { address: String },
 }

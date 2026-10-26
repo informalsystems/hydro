@@ -73,6 +73,9 @@ fn only_admin_can_add_and_remove_control_centers() {
     .unwrap();
 
     for msg in [
+        ExecuteMsg::UpdateAdmin {
+            new_admin: creator.to_string(),
+        },
         ExecuteMsg::AddControlCenter {
             address: deps.api.addr_make("another_center").to_string(),
         },
@@ -89,6 +92,101 @@ fn only_admin_can_add_and_remove_control_centers() {
     let centers: ControlCentersResponse =
         from_json(query(deps.as_ref(), env, QueryMsg::ControlCenters {}).unwrap()).unwrap();
     assert_eq!(centers.control_centers, vec![center]);
+}
+
+#[test]
+fn admin_rotation_validates_address_and_transfers_permissions() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+    let admin = deps.api.addr_make("admin");
+    let new_admin = deps.api.addr_make("new_admin");
+    let center = deps.api.addr_make("center");
+    instantiate(
+        deps.as_mut(),
+        env.clone(),
+        message_info(&admin, &[]),
+        InstantiateMsg {
+            admin: admin.to_string(),
+            control_centers: vec![center.to_string()],
+        },
+    )
+    .unwrap();
+
+    assert!(matches!(
+        execute(
+            deps.as_mut(),
+            env.clone(),
+            message_info(&admin, &[]),
+            ExecuteMsg::UpdateAdmin {
+                new_admin: "invalid".into(),
+            },
+        ),
+        Err(ContractError::Std(_))
+    ));
+    let config: ConfigResponse =
+        from_json(query(deps.as_ref(), env.clone(), QueryMsg::Config {}).unwrap()).unwrap();
+    assert_eq!(config.admin, admin);
+
+    let response = execute(
+        deps.as_mut(),
+        env.clone(),
+        message_info(&admin, &[]),
+        ExecuteMsg::UpdateAdmin {
+            new_admin: new_admin.to_string(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        response.attributes,
+        vec![
+            cosmwasm_std::attr("action", "update_admin"),
+            cosmwasm_std::attr("old_admin", &admin),
+            cosmwasm_std::attr("new_admin", &new_admin),
+        ]
+    );
+    let config: ConfigResponse =
+        from_json(query(deps.as_ref(), env.clone(), QueryMsg::Config {}).unwrap()).unwrap();
+    assert_eq!(config.admin, new_admin);
+    let centers: ControlCentersResponse =
+        from_json(query(deps.as_ref(), env.clone(), QueryMsg::ControlCenters {}).unwrap()).unwrap();
+    assert_eq!(centers.control_centers, vec![center.clone()]);
+
+    for msg in [
+        ExecuteMsg::UpdateAdmin {
+            new_admin: admin.to_string(),
+        },
+        ExecuteMsg::AddControlCenter {
+            address: center.to_string(),
+        },
+        ExecuteMsg::RemoveControlCenter {
+            address: center.to_string(),
+        },
+    ] {
+        assert!(matches!(
+            execute(deps.as_mut(), env.clone(), message_info(&admin, &[]), msg),
+            Err(ContractError::Unauthorized {})
+        ));
+    }
+
+    for msg in [
+        ExecuteMsg::RemoveControlCenter {
+            address: center.to_string(),
+        },
+        ExecuteMsg::AddControlCenter {
+            address: center.to_string(),
+        },
+        ExecuteMsg::UpdateAdmin {
+            new_admin: admin.to_string(),
+        },
+    ] {
+        execute(
+            deps.as_mut(),
+            env.clone(),
+            message_info(&new_admin, &[]),
+            msg,
+        )
+        .unwrap();
+    }
 }
 
 #[test]

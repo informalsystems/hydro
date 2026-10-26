@@ -49,6 +49,14 @@ pub fn execute(
     }
 
     let (action, address) = match msg {
+        ExecuteMsg::UpdateAdmin { new_admin } => {
+            let new_admin = deps.api.addr_validate(&new_admin)?;
+            ADMIN.save(deps.storage, &new_admin)?;
+            return Ok(Response::new()
+                .add_attribute("action", "update_admin")
+                .add_attribute("old_admin", info.sender)
+                .add_attribute("new_admin", new_admin));
+        }
         ExecuteMsg::AddControlCenter { address } => {
             let address = deps.api.addr_validate(&address)?;
             if CONTROL_CENTERS.has(deps.storage, address.clone()) {

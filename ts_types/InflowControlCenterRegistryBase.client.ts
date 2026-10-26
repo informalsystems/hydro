@@ -35,6 +35,11 @@ export class InflowControlCenterRegistryBaseQueryClient implements InflowControl
 export interface InflowControlCenterRegistryBaseInterface extends InflowControlCenterRegistryBaseReadOnlyInterface {
   contractAddress: string;
   sender: string;
+  updateAdmin: ({
+    newAdmin
+  }: {
+    newAdmin: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   addControlCenter: ({
     address
   }: {
@@ -55,9 +60,21 @@ export class InflowControlCenterRegistryBaseClient extends InflowControlCenterRe
     this.client = client;
     this.sender = sender;
     this.contractAddress = contractAddress;
+    this.updateAdmin = this.updateAdmin.bind(this);
     this.addControlCenter = this.addControlCenter.bind(this);
     this.removeControlCenter = this.removeControlCenter.bind(this);
   }
+  updateAdmin = async ({
+    newAdmin
+  }: {
+    newAdmin: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      update_admin: {
+        new_admin: newAdmin
+      }
+    }, fee, memo, _funds);
+  };
   addControlCenter = async ({
     address
   }: {
