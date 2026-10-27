@@ -30,10 +30,10 @@
       {
         "type": "object",
         "required": [
-          "update_admin"
+          "propose_admin"
         ],
         "properties": {
-          "update_admin": {
+          "propose_admin": {
             "type": "object",
             "required": [
               "new_admin"
@@ -43,6 +43,19 @@
                 "type": "string"
               }
             },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "accept_admin"
+        ],
+        "properties": {
+          "accept_admin": {
+            "type": "object",
             "additionalProperties": false
           }
         },
@@ -137,6 +150,16 @@
       "properties": {
         "admin": {
           "$ref": "#/definitions/Addr"
+        },
+        "pending_admin": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Addr"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,

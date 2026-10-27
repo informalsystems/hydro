@@ -9,9 +9,11 @@ export interface InstantiateMsg {
   control_centers: string[];
 }
 export type ExecuteMsg = {
-  update_admin: {
+  propose_admin: {
     new_admin: string;
   };
+} | {
+  accept_admin: {};
 } | {
   add_control_center: {
     address: string;
@@ -29,6 +31,7 @@ export type QueryMsg = {
 export type Addr = string;
 export interface ConfigResponse {
   admin: Addr;
+  pending_admin?: Addr | null;
 }
 export interface ControlCentersResponse {
   control_centers: Addr[];

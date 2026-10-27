@@ -13,6 +13,7 @@ pub enum QueryMsg {
 #[cw_serde]
 pub struct ConfigResponse {
     pub admin: Addr,
+    pub pending_admin: Option<Addr>,
 }
 
 #[cw_serde]

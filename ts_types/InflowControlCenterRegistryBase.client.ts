@@ -35,11 +35,12 @@ export class InflowControlCenterRegistryBaseQueryClient implements InflowControl
 export interface InflowControlCenterRegistryBaseInterface extends InflowControlCenterRegistryBaseReadOnlyInterface {
   contractAddress: string;
   sender: string;
-  updateAdmin: ({
+  proposeAdmin: ({
     newAdmin
   }: {
     newAdmin: string;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  acceptAdmin: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   addControlCenter: ({
     address
   }: {
@@ -60,19 +61,25 @@ export class InflowControlCenterRegistryBaseClient extends InflowControlCenterRe
     this.client = client;
     this.sender = sender;
     this.contractAddress = contractAddress;
-    this.updateAdmin = this.updateAdmin.bind(this);
+    this.proposeAdmin = this.proposeAdmin.bind(this);
+    this.acceptAdmin = this.acceptAdmin.bind(this);
     this.addControlCenter = this.addControlCenter.bind(this);
     this.removeControlCenter = this.removeControlCenter.bind(this);
   }
-  updateAdmin = async ({
+  proposeAdmin = async ({
     newAdmin
   }: {
     newAdmin: string;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      update_admin: {
+      propose_admin: {
         new_admin: newAdmin
       }
+    }, fee, memo, _funds);
+  };
+  acceptAdmin = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      accept_admin: {}
     }, fee, memo, _funds);
   };
   addControlCenter = async ({

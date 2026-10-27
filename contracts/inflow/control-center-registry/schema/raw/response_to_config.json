@@ -8,6 +8,16 @@
   "properties": {
     "admin": {
       "$ref": "#/definitions/Addr"
+    },
+    "pending_admin": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Addr"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "additionalProperties": false,
