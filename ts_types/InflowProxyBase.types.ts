@@ -6,7 +6,7 @@
 
 export interface InstantiateMsg {
   admins: string[];
-  control_centers: string[];
+  control_center_registry: string;
 }
 export type ExecuteMsg = {
   forward_to_inflow: {};
@@ -37,7 +37,7 @@ export interface ConfigResponse {
 }
 export interface Config {
   admins: Addr[];
-  control_centers: Addr[];
+  control_center_registry: Addr;
 }
 export type ActionState = ("idle" | "forwarded") | {
   withdraw_receipt_tokens: {

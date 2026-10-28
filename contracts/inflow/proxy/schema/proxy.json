@@ -8,7 +8,7 @@
     "type": "object",
     "required": [
       "admins",
-      "control_centers"
+      "control_center_registry"
     ],
     "properties": {
       "admins": {
@@ -17,11 +17,8 @@
           "type": "string"
         }
       },
-      "control_centers": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
+      "control_center_registry": {
+        "type": "string"
       }
     },
     "additionalProperties": false
@@ -174,7 +171,7 @@
           "type": "object",
           "required": [
             "admins",
-            "control_centers"
+            "control_center_registry"
           ],
           "properties": {
             "admins": {
@@ -183,11 +180,8 @@
                 "$ref": "#/definitions/Addr"
               }
             },
-            "control_centers": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/Addr"
-              }
+            "control_center_registry": {
+              "$ref": "#/definitions/Addr"
             }
           },
           "additionalProperties": false

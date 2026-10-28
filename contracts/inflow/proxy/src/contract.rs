@@ -8,6 +8,9 @@ use interface::compat::StdErrExt;
 
 use interface::{
     inflow_control_center::{QueryMsg as ControlCenterQueryMsg, SubvaultsResponse},
+    inflow_control_center_registry::{
+        ControlCentersResponse, QueryMsg as ControlCenterRegistryQueryMsg,
+    },
     inflow_vault::{
         Config as InflowConfig, ConfigResponse as InflowConfigResponse,
         ExecuteMsg as InflowExecuteMsg, QueryMsg as InflowQueryMsg,
@@ -41,19 +44,11 @@ pub fn instantiate(
         return Err(new_generic_error("no admins provided"));
     }
 
-    let control_centers = msg
-        .control_centers
-        .iter()
-        .map(|addr| deps.api.addr_validate(addr))
-        .collect::<StdResult<Vec<Addr>>>()?;
-
-    if control_centers.is_empty() {
-        return Err(new_generic_error("no control centers provided"));
-    }
+    let control_center_registry = deps.api.addr_validate(&msg.control_center_registry)?;
 
     let config = Config {
         admins,
-        control_centers,
+        control_center_registry,
     };
     CONFIG.save(deps.storage, &config)?;
     STATE.save(deps.storage, &State::default())?;
@@ -322,7 +317,12 @@ pub fn get_all_inflow_vaults_configs(
 ) -> Result<Vec<InflowVaultConfig>, ContractError> {
     let mut vaults_configs = vec![];
 
-    for control_center in &config.control_centers {
+    let control_centers: ControlCentersResponse = deps.querier.query_wasm_smart(
+        &config.control_center_registry,
+        &ControlCenterRegistryQueryMsg::ControlCenters {},
+    )?;
+
+    for control_center in &control_centers.control_centers {
         let subvaults = deps
             .querier
             .query_wasm_smart::<SubvaultsResponse>(

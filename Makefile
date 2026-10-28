@@ -50,6 +50,7 @@ schema:
 	cd contracts/inflow/vault-cosmoshub && cargo run --bin inflow_vault_schema
 	cd contracts/inflow/shares-converter && cargo run --bin shares_converter_schema
 	cd contracts/inflow/proxy && cargo run --bin inflow_proxy_schema
+	cd contracts/inflow/control-center-registry && cargo run --bin inflow_control_center_registry_schema
 	cd contracts/inflow/control-center && cargo run --bin inflow_control_center_schema
 	cd contracts/inflow/user-registry && cargo run --bin inflow_user_registry_schema
 	cd contracts/inflow/mars-adapter && cargo run --bin inflow_mars_adapter_schema
@@ -76,6 +77,7 @@ schema:
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/vault-cosmoshub/schema NAME=InflowVaultCosmosHubBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/shares-converter/schema NAME=InflowSharesConverterBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/proxy/schema NAME=InflowProxyBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/control-center-registry/schema NAME=InflowControlCenterRegistryBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/control-center/schema NAME=InflowControlCenterBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/user-registry/schema NAME=InflowUserRegistryBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/inflow/mars-adapter/schema NAME=InflowMarsAdapterBase

@@ -5,7 +5,7 @@ use cw_storage_plus::Item;
 #[cw_serde]
 pub struct Config {
     pub admins: Vec<Addr>,
-    pub control_centers: Vec<Addr>,
+    pub control_center_registry: Addr,
 }
 
 pub const CONFIG: Item<Config> = Item::new("config");

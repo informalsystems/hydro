@@ -19,6 +19,7 @@ members = [
     "contracts/inflow/ibc-adapter",
     "contracts/inflow/skip-adapter",
     "contracts/inflow/proxy",
+    "contracts/inflow/control-center-registry",
     "contracts/inflow/cctp-adapter",
     "contracts/inflow/basic-adapter-cosmoshub",
     "contracts/inflow/cctp-adapter-cosmoshub",
