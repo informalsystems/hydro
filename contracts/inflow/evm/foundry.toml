@@ -13,6 +13,11 @@ optimizer = true
 optimizer_runs = 200
 via_ir = true
 
+[fmt]
+# Vendored dependencies are not ours to reformat: without this, `forge fmt` rewrites
+# every file under lib/ and the diff drowns out the project's own changes.
+ignore = ["lib/**"]
+
 [lint]
 exclude_lints = ["asm-keccak256"]
 

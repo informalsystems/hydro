@@ -1,54 +1,72 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Deploys InflowVault (UUPS upgradeable proxy) to Arc testnet.
-# Wraps script/DeployInflowVault.s.sol — see that file for full details.
-# Run from contracts/inflow/evm/
-# Reads config from .env — see .env.example for all variables.
-
-# ── Config ────────────────────────────────────────────────────────────────────
-
-RPC_URL="https://rpc.testnet.arc.network"
-
-# ── Load secrets ──────────────────────────────────────────────────────────────
+# Deploys InflowVault (implementation + ERC1967 proxy) to the target named by --env.
+# Wraps script/DeployInflowVault.s.sol.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/../.env"
-if [[ -f "$ENV_FILE" ]]; then
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-fi
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
 
-if [[ -z "${PRIVATE_KEY:-}" ]]; then
-  if [[ -n "${MNEMONIC:-}" ]]; then
-    PRIVATE_KEY=$(cast wallet private-key --mnemonic "$MNEMONIC")
-  else
-    echo "Error: set PRIVATE_KEY or MNEMONIC in .env or env"
-    exit 1
-  fi
-fi
+usage() {
+  cat <<USAGE
+Usage: $(basename "$0") [--env <target>] [--dry-run] [--yes]
 
-MY_ADDRESS=$(cast wallet address --private-key "$PRIVATE_KEY")
-echo "Deployer: $MY_ADDRESS"
+  --env <target>  read .env.<target> instead of .env
+  --dry-run       simulate without broadcasting
+  --yes           skip the confirmation prompt
+USAGE
+}
 
-# ── Export env vars expected by DeployInflowVault.s.sol ──────────────────────
+parse_args "$@"
+cd "$EVM_ROOT"
+load_env
+check_chain
+resolve_signer
 
-export ASSET="${ASSET:-0x3600000000000000000000000000000000000000}"   # USDC on Arc
-export VAULT_NAME="${VAULT_NAME:-inflow_usdc_share}"
-export VAULT_SYMBOL="${VAULT_SYMBOL:-inflow_usdc_share}"
-export DEPOSIT_CAP="${DEPOSIT_CAP:-1000000000000}"                    # 1 000 000 USDC (6 decimals)
-export MAX_WITHDRAWALS_PER_USER="${MAX_WITHDRAWALS_PER_USER:-10}"
-export INITIAL_ADMIN="${INITIAL_ADMIN:-$MY_ADDRESS}"
+require_vars ASSET VAULT_NAME VAULT_SYMBOL DEPOSIT_CAP MAX_WITHDRAWALS_PER_USER INITIAL_ADMIN
+
+export ASSET VAULT_NAME VAULT_SYMBOL DEPOSIT_CAP MAX_WITHDRAWALS_PER_USER INITIAL_ADMIN
 export INITIAL_DEPLOYED_AMOUNT_ADMIN="${INITIAL_DEPLOYED_AMOUNT_ADMIN:-$INITIAL_ADMIN}"
 export FEE_RATE="${FEE_RATE:-0}"
 export FEE_RECIPIENT="${FEE_RECIPIENT:-}"
-export RPC_URL
 
-# ── Deploy ────────────────────────────────────────────────────────────────────
+[[ "$FEE_RATE" == "0" || -n "$FEE_RECIPIENT" ]] || die "FEE_RECIPIENT is required when FEE_RATE > 0"
 
-echo ""
+require_contract "$ASSET" "ASSET"
+
+VERIFY_ARGS=()
+if [[ -n "${ETHERSCAN_API_KEY:-}" ]]; then
+  VERIFY_ARGS=(--verify --etherscan-api-key "$ETHERSCAN_API_KEY")
+fi
+
+cat <<SUMMARY
+
+  Deploy InflowVault to chain $CHAIN_ID
+
+    Deployer              : $DEPLOYER
+    Asset                 : $ASSET
+    Share token           : $VAULT_NAME ($VAULT_SYMBOL)
+    Deposit cap           : $DEPOSIT_CAP
+    Max withdrawals/user  : $MAX_WITHDRAWALS_PER_USER
+    Whitelist admin       : $INITIAL_ADMIN
+    Deployed-amount admin : $INITIAL_DEPLOYED_AMOUNT_ADMIN
+    Fee rate / recipient  : $FEE_RATE / ${FEE_RECIPIENT:-none}
+    Verification          : $([[ ${#VERIFY_ARGS[@]} -gt 0 ]] && echo enabled || echo "skipped (set ETHERSCAN_API_KEY)")
+
+SUMMARY
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  echo "  DRY RUN, nothing will be broadcast."
+  forge script script/DeployInflowVault.s.sol --rpc-url "$RPC_URL" "${SIGNER_ARGS[@]}" -vvv
+  exit 0
+fi
+
+confirm deploy
+
 forge script script/DeployInflowVault.s.sol \
   --rpc-url "$RPC_URL" \
   --broadcast \
-  --private-key "$PRIVATE_KEY" \
-  -vvvv
+  "${SIGNER_ARGS[@]}" \
+  ${VERIFY_ARGS[@]+"${VERIFY_ARGS[@]}"} \
+  -vvv

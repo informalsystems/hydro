@@ -13,6 +13,7 @@
 # Foundry script runs output
 /broadcast
 
-# Local secrets — never commit
-.env
-.env.local
+# Local secrets and per-environment deployment config. Deny by default so a new
+# .env.<target> cannot be committed by accident; the example file is the only exception.
+.env*
+!.env.example
