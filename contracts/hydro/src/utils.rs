@@ -384,7 +384,7 @@ pub fn get_current_user_voting_power(deps: &Deps, env: &Env, address: Addr) -> S
 
 /// Utility function intended to be used by get_user_voting_power_for_past_round() and get_user_voting_power_for_past_height().
 /// Both of these functions will ensure that the provided height indeed matches the given round, and vice versa.
-/// If the function is used in different context, the caller is responsible for ensuring this condition is satisifed.
+/// If the function is used in a different context, the caller is responsible for ensuring this condition is satisfied.
 fn get_past_user_voting_power(
     deps: &Deps,
     constants: &Constants,
