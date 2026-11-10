@@ -26,6 +26,7 @@ members = [
     "contracts/inflow/ibc-eureka-adapter-cosmoshub",
     "contracts/inflow/skip-adapter-cosmoshub",
     "contracts/inflow/user-registry",
+    "contracts/inflow/liquid-gate",
     "contracts/claim",
     "packages/cw-orch-interface",
     "packages/interface",
