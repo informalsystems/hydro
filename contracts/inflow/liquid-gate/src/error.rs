@@ -99,6 +99,9 @@ pub enum ContractError {
     #[error("the vault has unfunded queued withdrawals")]
     QueueNotEmpty,
 
+    #[error("the {step} submessage failed: {error}")]
+    SubmessageFailed { step: String, error: String },
+
     #[error("invariant violated: {0}")]
     Invariant(String),
 }

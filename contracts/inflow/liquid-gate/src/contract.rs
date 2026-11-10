@@ -97,17 +97,22 @@ pub fn instantiate(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
     let stored = cw2::get_contract_version(deps.storage)?;
-    let v = |s: &str| {
-        s.split('.')
-            .map(|x| x.parse::<u64>().unwrap_or(0))
-            .collect::<Vec<_>>()
-    };
-    if stored.contract != CONTRACT_NAME || v(&stored.version) > v(CONTRACT_VERSION) {
+    if stored.contract != CONTRACT_NAME {
         return Err(StdError::generic_err(format!(
-            "cannot migrate from {} {}",
-            stored.contract, stored.version
+            "cannot migrate from another contract: {}",
+            stored.contract
         ))
         .into());
+    }
+    let parse = |v: &str| {
+        semver::Version::parse(v)
+            .map_err(|e| StdError::generic_err(format!("invalid version {v}: {e}")))
+    };
+    let (from, to) = (parse(&stored.version)?, parse(CONTRACT_VERSION)?);
+    if from > to {
+        return Err(
+            StdError::generic_err(format!("cannot migrate down from {from} to {to}")).into(),
+        );
     }
     cw2::set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     Ok(Response::new()
@@ -314,7 +319,8 @@ fn set_batch_target(
 }
 
 /// `WithdrawProfit { atom?, shares? }` (SPEC §8): ATOM from `free`, shares from the inventory
-/// at their average cost, to `profit_recipient`. Never reserved ATOM.
+/// at their average cost, to `profit_recipient`. Never reserved ATOM. Shares are checked only
+/// against the inventory, not against their value: they may leave below cost basis on purpose.
 fn withdraw_profit(
     deps: DepsMut,
     env: Env,
@@ -391,7 +397,8 @@ fn sweep(deps: DepsMut, env: Env, cfg: &Config, denom: String) -> Result<Respons
         .add_message(assert_msg(&env, None)?))
 }
 
-/// The final self-call (SPEC §9): finishes the operation in progress, checks the invariants and
+/// The final self-call (SPEC §9), internal: `execute` refuses it from anyone but the contract
+/// itself. Finishes the operation in progress, checks the invariants and
 /// clears the operation guard.
 fn assert_invariants(
     deps: DepsMut,
@@ -463,18 +470,24 @@ fn assert_invariants(
 pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
     let cfg = CONFIG.load(deps.storage)?;
     let result = msg.result.into_result();
+    // These three are sent with `reply_on_success`, so the chain normally reverts on their failure
+    // before any reply; a failed result reaching here still keeps its inner error.
+    let failed = |step: &str| {
+        let step = step.to_string();
+        move |error: String| ContractError::SubmessageFailed { step, error }
+    };
     match msg.id {
         REPLY_MINT => {
-            let r = result.map_err(StdError::generic_err)?;
+            let r = result.map_err(failed("hATOM mint"))?;
             trade::on_minted(deps, &cfg, chain::execute_response_data(&r)?)
         }
         REPLY_COMPOUND => batch::on_compound(deps, env, &cfg, result),
         REPLY_WITHDRAW => {
-            result.map_err(StdError::generic_err)?;
+            result.map_err(failed("vault withdrawal"))?;
             batch::on_withdrawn(deps, env, &cfg)
         }
         REPLY_BURN => {
-            let r = result.map_err(StdError::generic_err)?;
+            let r = result.map_err(failed("hATOM burn"))?;
             batch::on_burned(env, chain::execute_response_data(&r)?)
         }
         id if id >= REPLY_UNDELEGATE => {

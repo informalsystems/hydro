@@ -59,6 +59,8 @@ pub struct HatomMock {
 
 #[derive(Clone, Default)]
 pub struct VaultMock {
+    /// The deposit denom the vault reports (default: hATOM's).
+    pub deposit_denom: Option<String>,
     pub issued: u128,
     /// hATOM deployed outside the vault (counts in the pool, not in the balance).
     pub deployed: u128,
@@ -299,7 +301,11 @@ impl World {
         match from_json(msg).map_err(err)? {
             VaultQueryMsg::Config {} => to_json_binary(&VaultConfigResponse {
                 config: VaultConfig {
-                    deposit_denom: HATOM.to_string(),
+                    deposit_denom: self
+                        .vault
+                        .deposit_denom
+                        .clone()
+                        .unwrap_or(HATOM.to_string()),
                     vault_shares_denom: SHARES.to_string(),
                     control_center_contract: Addr::unchecked(&self.cc_addr),
                     token_info_provider_contract: Some(Addr::unchecked(&self.hatom_addr)),

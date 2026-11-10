@@ -1106,7 +1106,92 @@ fn book_exit_curve_capacity_and_claims() {
             },
             &[]
         ),
-        Err(e(ContractError::UnknownBooking))
+        Ok(())
+    );
+    assert_eq!(app.attrs_all("not_found"), vec![booking_id.to_string()]);
+    assert_eq!(app.bal(&user, BOND), q.atom.u128());
+}
+
+#[test]
+fn claim_bookings_skips_unknown_and_claimed() {
+    let mut app = setup();
+    let id = make_batch(&mut app, 10_000 * SHARE);
+    let (alice, bob) = (app.addr("alice"), app.addr("bob"));
+    let book = |app: &mut App, user: &Addr| -> (u64, u128) {
+        app.give_shares(user, 1_000 * SHARE);
+        app.execute(
+            user,
+            ExecuteMsg::BookExit {
+                batch_id: id,
+                recipient: None,
+                min_out: None,
+            },
+            &[coin(1_000 * SHARE, SHARES)],
+        )
+        .unwrap();
+        (
+            app.attr("booking_id").unwrap().parse().unwrap(),
+            app.attr("atom_owed").unwrap().parse().unwrap(),
+        )
+    };
+    let (a, owed_a) = book(&mut app, &alice);
+    let (b, owed_b) = book(&mut app, &bob);
+    app.advance(21 * DAY + 60);
+    let anyone = app.addr("anyone");
+    // A duplicate id in one call is paid once; an unknown id is skipped.
+    app.execute(
+        &anyone,
+        ExecuteMsg::ClaimBookings {
+            booking_ids: vec![a, a, 999],
+        },
+        &[],
+    )
+    .unwrap();
+    assert_eq!(app.bal(&alice, BOND), owed_a);
+    assert_eq!(app.attrs_all("paid"), vec![format!("{a}:{owed_a}")]);
+    assert_eq!(
+        app.attrs_all("not_found"),
+        vec![a.to_string(), "999".to_string()]
+    );
+    assert_eq!(position(&app).reserved.u128(), owed_b);
+    // An id claimed in an earlier call is skipped; the others are still paid.
+    app.execute(
+        &anyone,
+        ExecuteMsg::ClaimBookings {
+            booking_ids: vec![a, b],
+        },
+        &[],
+    )
+    .unwrap();
+    assert_eq!(app.attrs_all("not_found"), vec![a.to_string()]);
+    assert_eq!(app.bal(&alice, BOND), owed_a);
+    assert_eq!(app.bal(&bob, BOND), owed_b);
+    assert_eq!(position(&app).reserved.u128(), 0);
+}
+
+#[test]
+fn instantiate_refuses_a_vault_of_another_denom() {
+    let mut app = setup();
+    app.world.borrow_mut().vault.deposit_denom = Some("uatom".into());
+    let msg = crate::msg::InstantiateMsg {
+        admin: app.admin.to_string(),
+        operators: vec![],
+        keeper: app.keeper.to_string(),
+        profit_recipient: app.profit.to_string(),
+        hatom: app.addr("hatom").to_string(),
+        vault: app.addr("vault").to_string(),
+        settings: settings(),
+    };
+    let info = cosmwasm_std::MessageInfo {
+        sender: app.admin.clone(),
+        funds: vec![],
+    };
+    let env = app.env();
+    assert_eq!(
+        crate::contract::instantiate(app.deps.as_mut(), env, info, msg),
+        Err(ContractError::InvalidConfig(
+            "the vault's deposit denom is not the hATOM denom"
+        ))
     );
 }
 
@@ -1615,8 +1700,38 @@ fn migrate_keeps_state() {
     let user = app.addr("user");
     exit_instant(&mut app, &user, SHARE).unwrap();
     let env = app.env();
-    crate::contract::migrate(app.deps.as_mut(), env.clone(), crate::msg::MigrateMsg {}).unwrap();
+    let migrate = |app: &mut App| {
+        crate::contract::migrate(app.deps.as_mut(), env.clone(), crate::msg::MigrateMsg {})
+    };
+    let name = crate::contract::CONTRACT_NAME;
+    let current = crate::contract::CONTRACT_VERSION;
+    // Same version, then a normal upgrade from an older one: both pass, and state is kept.
+    migrate(&mut app).unwrap();
+    cw2::set_contract_version(&mut app.deps.storage, name, "3.6.9").unwrap();
+    migrate(&mut app).unwrap();
+    assert_eq!(
+        cw2::get_contract_version(&app.deps.storage)
+            .unwrap()
+            .version,
+        current
+    );
     assert_eq!(position(&app).price_ref, Some(Uint128::new(1_375_000)));
+    // Semver order, not string order: 3.6.10 is newer than 3.6.9.
+    let (major_minor, patch) = current.rsplit_once('.').unwrap();
+    let newer = format!("{major_minor}.{}", patch.parse::<u64>().unwrap() + 10);
+    cw2::set_contract_version(&mut app.deps.storage, name, &newer).unwrap();
+    assert!(migrate(&mut app)
+        .unwrap_err()
+        .to_string()
+        .contains("cannot migrate down"));
+    // A stored version that does not parse is refused.
+    cw2::set_contract_version(&mut app.deps.storage, name, "3.6").unwrap();
+    assert!(migrate(&mut app)
+        .unwrap_err()
+        .to_string()
+        .contains("invalid version"));
+    cw2::set_contract_version(&mut app.deps.storage, name, current).unwrap();
+    let env = app.env();
     cw2::set_contract_version(&mut app.deps.storage, "crates.io:other", "1.0.0").unwrap();
     assert!(
         crate::contract::migrate(app.deps.as_mut(), env.clone(), crate::msg::MigrateMsg {})

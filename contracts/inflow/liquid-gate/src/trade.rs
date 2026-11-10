@@ -469,8 +469,9 @@ pub fn book_exit(
         .add_message(assert_msg(&env, None)?))
 }
 
-/// `ClaimBookings` (anyone): pays each listed booking of a matured batch, each by its own send;
-/// bookings of batches not matured yet are skipped.
+/// `ClaimBookings` (anyone): pays each listed booking of a matured batch, each by its own send.
+/// Bookings of batches not matured yet are skipped (attribute `not_matured`), and so are unknown
+/// or already claimed ids, a repeat in the same call included (attribute `not_found`).
 pub fn claim_bookings(
     deps: DepsMut,
     env: Env,
@@ -480,9 +481,10 @@ pub fn claim_bookings(
     let mut m = maturity::advance(deps.storage, env.block.time)?;
     let mut res = Response::new().add_attribute("action", "claim_bookings");
     for id in booking_ids {
-        let booking = BOOKINGS
-            .may_load(deps.storage, id)?
-            .ok_or(ContractError::UnknownBooking)?;
+        let Some(booking) = BOOKINGS.may_load(deps.storage, id)? else {
+            res = res.add_attribute("not_found", id.to_string());
+            continue;
+        };
         let mut batch = BATCHES.load(deps.storage, booking.batch_id)?;
         if !is_matured(&m, &batch) {
             res = res.add_attribute("not_matured", id.to_string());

@@ -2661,6 +2661,7 @@ dependencies = [
  "interface",
  "prost 0.12.6",
  "schemars",
+ "semver",
  "serde",
  "thiserror 1.0.69",
 ]

@@ -20,4 +20,5 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 schemars = { workspace = true }
 prost = { workspace = true }
+semver = "1.0.27"
 interface = { path = "../../../packages/interface" }

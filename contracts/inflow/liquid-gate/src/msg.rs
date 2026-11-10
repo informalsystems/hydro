@@ -122,7 +122,8 @@ pub enum ExecuteMsg {
         recipient: Option<String>,
         min_out: Option<Uint128>,
     },
-    /// Anyone: pays the listed bookings of matured batches to their owners.
+    /// Anyone: pays the listed bookings of matured batches to their owners. Ids of batches not
+    /// matured yet (`not_matured`) and unknown or already claimed ids (`not_found`) are skipped.
     ClaimBookings {
         booking_ids: Vec<u64>,
     },
@@ -149,7 +150,10 @@ pub enum ExecuteMsg {
         admin: String,
     },
     AcceptAdmin {},
+    /// Operator or admin: refuses `EnterSwap`, `EnterDirect`, `ExitInstant`, `BookExit`, `Unwind`
+    /// and `ProcessBatch`. Never `ClaimBookings`: a pause never blocks what users are owed.
     Pause {},
+    /// Admin only.
     Unpause {},
     /// Admin or operator: `price` is the share price (ATOM per 10^6 share units) they verified.
     ResetPriceReference {
@@ -160,6 +164,9 @@ pub enum ExecuteMsg {
         shares: Uint128,
     },
     /// Admin: ATOM from the free buffer and shares from the inventory, to `profit_recipient`.
+    /// Shares are checked only against the inventory and leave at their average cost basis,
+    /// whatever their value: withdrawing them below cost is allowed on purpose (it is Hydro's
+    /// own inventory).
     WithdrawProfit {
         atom: Option<Uint128>,
         shares: Option<Uint128>,
@@ -169,7 +176,8 @@ pub enum ExecuteMsg {
         denom: String,
     },
 
-    /// Internal: the final self-call of every operation that changes balances (SPEC §9).
+    /// Internal: the final self-call of every operation that changes balances (SPEC §9). Only
+    /// the contract itself may call it (`Unauthorized` otherwise).
     AssertInvariants {
         swap: Option<SwapCheck>,
     },

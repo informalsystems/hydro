@@ -139,7 +139,7 @@
       "additionalProperties": false
     },
     {
-      "description": "Anyone: pays the listed bookings of matured batches to their owners.",
+      "description": "Anyone: pays the listed bookings of matured batches to their owners. Ids of batches not matured yet (`not_matured`) and unknown or already claimed ids (`not_found`) are skipped.",
       "type": "object",
       "required": [
         "claim_bookings"
@@ -306,6 +306,7 @@
       "additionalProperties": false
     },
     {
+      "description": "Operator or admin: refuses `EnterSwap`, `EnterDirect`, `ExitInstant`, `BookExit`, `Unwind` and `ProcessBatch`. Never `ClaimBookings`: a pause never blocks what users are owed.",
       "type": "object",
       "required": [
         "pause"
@@ -319,6 +320,7 @@
       "additionalProperties": false
     },
     {
+      "description": "Admin only.",
       "type": "object",
       "required": [
         "unpause"
@@ -376,7 +378,7 @@
       "additionalProperties": false
     },
     {
-      "description": "Admin: ATOM from the free buffer and shares from the inventory, to `profit_recipient`.",
+      "description": "Admin: ATOM from the free buffer and shares from the inventory, to `profit_recipient`. Shares are checked only against the inventory and leave at their average cost basis, whatever their value: withdrawing them below cost is allowed on purpose (it is Hydro's own inventory).",
       "type": "object",
       "required": [
         "withdraw_profit"
@@ -434,7 +436,7 @@
       "additionalProperties": false
     },
     {
-      "description": "Internal: the final self-call of every operation that changes balances (SPEC §9).",
+      "description": "Internal: the final self-call of every operation that changes balances (SPEC §9). Only the contract itself may call it (`Unauthorized` otherwise).",
       "type": "object",
       "required": [
         "assert_invariants"
