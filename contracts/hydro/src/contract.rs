@@ -61,10 +61,11 @@ use crate::utils::{
     get_current_user_voting_power, get_higest_voting_allowed_round,
     get_highest_known_height_for_round_id, get_lock_time_weighted_shares, get_lock_vote,
     get_next_lock_id, get_owned_lock_entry, get_proposal, get_slice_as_attribute,
-    get_user_claimable_locks, increase_available_conversion_funds,
+    get_user_claimable_locks, increase_available_conversion_funds, is_lock_denom_blocked,
     load_constants_active_at_timestamp, load_current_constants, run_on_each_transaction,
     scale_lockup_power, to_lockup_with_power, to_lockup_with_tranche_infos,
-    update_locked_tokens_info, validate_locked_tokens_caps, verify_historical_data_availability,
+    update_locked_tokens_info, validate_lock_denom_not_blocked, validate_locked_tokens_caps,
+    verify_historical_data_availability,
 };
 use crate::vote::{
     process_unvotes, process_votes, validate_proposals_and_locks_for_voting, ProcessUnvotesResult,
@@ -463,6 +464,8 @@ pub fn lock_tokens(
     }
 
     let funds = info.funds[0].clone();
+
+    validate_lock_denom_not_blocked(deps.storage, &funds.denom)?;
 
     let mut token_manager = TokenManager::new(&deps.as_ref());
     let token_group_id = token_manager
@@ -2511,6 +2514,8 @@ pub fn convert_lockup(
     lock_id: u64,
     target_denom: String,
 ) -> Result<Response, ContractError> {
+    validate_lock_denom_not_blocked(deps.storage, &target_denom)?;
+
     // If user provided funds in the message, ensure they match the target denom
     let user_provided_funds = if !info.funds.is_empty() {
         Some(cw_utils::must_pay(&info, &target_denom)?)
@@ -3806,6 +3811,13 @@ pub fn query_can_lock_denom(
     env: &Env,
     token_denom: String,
 ) -> StdResult<CanLockDenomResponse> {
+    if is_lock_denom_blocked(deps.storage, &token_denom)? {
+        return Ok(CanLockDenomResponse {
+            denom: token_denom,
+            can_be_locked: false,
+        });
+    }
+
     let constants = load_current_constants(deps, env)?;
     let current_round = compute_current_round_id(env, &constants)?;
 

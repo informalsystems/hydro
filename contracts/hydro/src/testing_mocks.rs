@@ -45,6 +45,10 @@ impl MockQuerier {
     {
         self.base_querier.update_wasm(handler);
     }
+
+    pub fn update_balance(&mut self, addr: impl Into<String>, balance: Vec<cosmwasm_std::Coin>) {
+        self.base_querier.bank.update_balance(addr, balance);
+    }
 }
 
 // Overrides raw_query() to support gRPC queries. If the QueryRequest is

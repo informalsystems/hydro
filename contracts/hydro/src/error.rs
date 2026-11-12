@@ -35,6 +35,9 @@ pub enum ContractError {
 
     #[error("Paused")]
     Paused,
+
+    #[error("Denom {denom} can no longer be locked")]
+    LockDenomBlocked { denom: String },
 }
 
 pub fn new_generic_error(msg: impl Into<String>) -> ContractError {

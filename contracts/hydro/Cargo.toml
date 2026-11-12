@@ -19,7 +19,7 @@ crate-type = ["cdylib", "rlib"]
 library = []
 
 [dependencies]
-cosmwasm-std = { workspace = true }
+cosmwasm-std = { workspace = true, features = ["stargate"] }
 schemars = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }

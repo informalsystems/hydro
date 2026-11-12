@@ -13,13 +13,37 @@ use crate::{
     score_keeper::get_total_power_for_round,
     state::{
         Constants, HeightRange, LockEntry, Proposal, RoundLockPowerSchedule, Vote,
-        AVAILABLE_CONVERSION_FUNDS, CONSTANTS, EXTRA_LOCKED_TOKENS_CURRENT_USERS,
-        EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND, LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS,
-        LOCKS_MAP, LOCK_ID, PROPOSAL_MAP, ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT,
-        USER_LOCKS, USER_LOCKS_FOR_CLAIM, VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
+        AVAILABLE_CONVERSION_FUNDS, BLOCKED_LOCK_DENOMS, CONSTANTS,
+        EXTRA_LOCKED_TOKENS_CURRENT_USERS, EXTRA_LOCKED_TOKENS_ROUND_TOTAL, HEIGHT_TO_ROUND,
+        LIQUIDITY_DEPLOYMENTS_MAP, LOCKED_TOKENS, LOCKS_MAP, LOCK_ID, PROPOSAL_MAP,
+        ROUND_TO_HEIGHT_RANGE, SNAPSHOTS_ACTIVATION_HEIGHT, USER_LOCKS, USER_LOCKS_FOR_CLAIM,
+        VOTE_MAP_V2, VOTING_ALLOWED_ROUND,
     },
     token_manager::TokenManager,
 };
+
+/// Returns true if the given denom has been blocked from being put into a lockup.
+pub fn is_lock_denom_blocked(storage: &dyn Storage, denom: &str) -> StdResult<bool> {
+    Ok(BLOCKED_LOCK_DENOMS
+        .may_load(storage)?
+        .unwrap_or_default()
+        .iter()
+        .any(|blocked_denom| blocked_denom == denom))
+}
+
+/// Returns an error if the given denom has been blocked from being put into a lockup.
+pub fn validate_lock_denom_not_blocked(
+    storage: &dyn Storage,
+    denom: &str,
+) -> Result<(), ContractError> {
+    if is_lock_denom_blocked(storage, denom)? {
+        return Err(ContractError::LockDenomBlocked {
+            denom: denom.to_string(),
+        });
+    }
+
+    Ok(())
+}
 
 /// Loads the constants that are active for the current block according to the block timestamp.
 pub fn load_current_constants(deps: &Deps, env: &Env) -> StdResult<Constants> {

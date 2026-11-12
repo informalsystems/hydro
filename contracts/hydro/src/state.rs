@@ -319,3 +319,8 @@ pub const NFT_OPERATORS: Map<(Addr, Addr), Expiration> = Map::new("nft_operators
 // or last owner before lock was removed)
 // USER_LOCKS_FOR_CLAIM: key(user_address) -> Vec<lock_ids>
 pub const USER_LOCKS_FOR_CLAIM: Map<Addr, Vec<u64>> = Map::new("user_locks_for_claim");
+
+// Denoms that can no longer be put into a lockup (e.g. by locking them or by converting a lockup into them).
+// Existing lockups holding these denoms are not affected. Set by a contract migration.
+// BLOCKED_LOCK_DENOMS: Vec<denom>
+pub const BLOCKED_LOCK_DENOMS: Item<Vec<String>> = Item::new("blocked_lock_denoms");
