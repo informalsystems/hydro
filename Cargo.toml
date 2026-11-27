@@ -6,6 +6,7 @@ members = [
     "contracts/liquid-collateral",
     "contracts/token-info-providers/st-token-info-provider",
     "contracts/token-info-providers/d-token-info-provider",
+    "contracts/token-info-providers/h-token-info-provider",
     "contracts/token-info-providers/lsm-token-info-provider",
     "contracts/token-info-providers/lsm-hub-token-info-provider",
     "contracts/token-info-providers/trusted-derivative-token-info-provider",

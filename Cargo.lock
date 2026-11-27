@@ -1949,6 +1949,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "h-token-info-provider"
+version = "3.6.18"
+dependencies = [
+ "cosmwasm-schema 2.2.2",
+ "cosmwasm-std 2.2.2",
+ "cw-storage-plus 2.0.0",
+ "cw2 2.0.0",
+ "interface",
+ "schemars",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "h2"
 version = "0.3.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
