@@ -1,5 +1,7 @@
 # Vortex Contract Usage Guide
 
+> **Deprecated:** the Vortex contract (liquid-collateral, Osmosis) is no longer used by Hydro. Since Rust 1.100 it is excluded from `make clippy` and `make test-unit`, because its test dependency `osmosis-test-tube` cannot build with cargo's new build-dir layout.
+
 This guide provides a step-by-step walkthrough for deploying and interacting with the Vortex CosmWasm contract on Osmosis mainnet.
 
 ---

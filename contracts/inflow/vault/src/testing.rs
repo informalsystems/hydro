@@ -2860,8 +2860,8 @@ fn execute_claim_unbonded_withdrawals(
         .map(|expected_res| (expected_res.0.to_string(), expected_res.1))
         .collect();
 
-    for i in 0..claim_unbodned_withdrawals_res.messages.len() {
-        let bank_msg = claim_unbodned_withdrawals_res.messages[i].msg.clone();
+    for message in &claim_unbodned_withdrawals_res.messages {
+        let bank_msg = message.msg.clone();
         match bank_msg {
             CosmosMsg::Bank(BankMsg::Send { to_address, amount }) => {
                 // Successful get verifies that the recipient is expected
