@@ -41,6 +41,7 @@ schema:
 	cd contracts/dao-voting-adapter && cargo run --bin dao_voting_adapter_schema
 	cd contracts/token-info-providers/st-token-info-provider && cargo run --bin st_token_info_provider_schema
 	cd contracts/token-info-providers/d-token-info-provider && cargo run --bin d_token_info_provider_schema
+	cd contracts/token-info-providers/h-token-info-provider && cargo run --bin h_token_info_provider_schema
 	cd contracts/token-info-providers/lsm-token-info-provider && cargo run --bin lsm_token_info_provider_schema
 	cd contracts/token-info-providers/lsm-hub-token-info-provider && cargo run --bin lsm_hub_token_info_provider_schema
 	cd contracts/token-info-providers/trusted-derivative-token-info-provider && cargo run --bin trusted_derivative_token_info_provider_schema
@@ -68,6 +69,7 @@ schema:
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/dao-voting-adapter/schema NAME=DAOVotingAdapterBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/st-token-info-provider/schema NAME=STTokenInfoProviderBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/d-token-info-provider/schema NAME=DTokenInfoProviderBase
+	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/h-token-info-provider/schema NAME=HTokenInfoProviderBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/lsm-token-info-provider/schema NAME=LSMTokenInfoProviderBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/lsm-hub-token-info-provider/schema NAME=LSMHubTokenInfoProviderBase
 	$(MAKE) ts-codegen-inner SCHEMA_LOCATION=./contracts/token-info-providers/trusted-derivative-token-info-provider/schema NAME=TrustedDerivativeTokenInfoProviderBase
