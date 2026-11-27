@@ -7,14 +7,14 @@ fmt-check:
 	cargo fmt --all -- --check
 
 clippy:
-	cargo clippy --all --all-targets -- -D warnings
+	cargo clippy --all --exclude liquid-collateral --all-targets -- -D warnings
 
 test-unit:
-	cargo test --workspace --exclude test-e2e --lib --no-fail-fast
+	cargo test --workspace --exclude test-e2e --exclude liquid-collateral --lib --no-fail-fast
 
 # run locally: make test-e2e E2E_TESTS_MNEMONIC="24 word mnemonic"
 test-e2e:
-	cargo test e2e --no-fail-fast -- "mnemonic: $(E2E_TESTS_MNEMONIC)"
+	cargo test --workspace --exclude liquid-collateral e2e --no-fail-fast -- "mnemonic: $(E2E_TESTS_MNEMONIC)"
 
 # Note: If the neutron-org/neutron-query-relayer docker image does not exist locally, run `make build-docker-relayer` before running the interchain tests.
 test-interchain:
@@ -22,7 +22,7 @@ test-interchain:
 
 coverage:
 	# to install see here: https://crates.io/crates/cargo-tarpaulin
-	cargo tarpaulin --skip-clean --frozen --out html
+	cargo tarpaulin --workspace --exclude liquid-collateral --skip-clean --frozen --out html
 
 compile: WORK_DIR=$(CURDIR)
 compile: compile-inner
