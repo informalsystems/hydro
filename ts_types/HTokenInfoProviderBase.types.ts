@@ -5,8 +5,8 @@
 */
 
 export interface InstantiateMsg {
+  h_token_contract: string;
   h_token_denom: string;
-  hatom_contract: string;
   token_group_id: string;
 }
 export type ExecuteMsg = {
@@ -28,8 +28,8 @@ export interface ConfigResponse {
   config: Config;
 }
 export interface Config {
+  h_token_contract: Addr;
   h_token_denom: string;
-  hatom_contract: Addr;
   hydro_contract_address: Addr;
   token_group_id: string;
 }

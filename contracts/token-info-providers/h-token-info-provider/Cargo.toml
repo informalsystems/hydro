@@ -2,7 +2,7 @@
 name = "h-token-info-provider"
 version = { workspace = true }
 edition = { workspace = true }
-authors = ["Philip Offtermatt", "Dusan Maksimovic"]
+authors = ["Philip Offtermatt", "arlai-mk"]
 
 exclude = [
   # Those files are rust-optimizer artifacts. You might want to commit them for convenience but they should not be part of the source code publication.

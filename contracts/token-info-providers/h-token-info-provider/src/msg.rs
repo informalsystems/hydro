@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct InstantiateMsg {
     pub h_token_denom: String,
     pub token_group_id: String,
-    pub hatom_contract: String,
+    pub h_token_contract: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

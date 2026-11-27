@@ -26,17 +26,17 @@ pub struct ConfigResponse {
     pub config: Config,
 }
 
-// Query and response types of the hATOM contract (hatom-contracts, `contracts/hatom/schema/hatom.json`).
+// Query and response types of the h token contract (its `rate {}` query).
 #[cw_serde]
 #[derive(QueryResponses)]
-pub enum HatomQueryMsg {
-    #[returns(HatomRateResponse)]
+pub enum HTokenQueryMsg {
+    #[returns(HTokenRateResponse)]
     Rate {},
 }
 
 #[cw_serde]
-pub struct HatomRateResponse {
-    /// Bond denom per hATOM.
+pub struct HTokenRateResponse {
+    /// Bond denom per h token.
     pub exchange_rate: Decimal256,
     pub holders_value: Uint256,
     pub supply: Uint128,

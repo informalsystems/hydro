@@ -9,7 +9,7 @@ pub struct Config {
     pub hydro_contract_address: Addr,
     pub h_token_denom: String,
     pub token_group_id: String,
-    pub hatom_contract: Addr,
+    pub h_token_contract: Addr,
 }
 
 // TOKEN_RATIO: key(round_id) -> token_ratio

@@ -7,7 +7,7 @@ use interface::token_info_provider::DenomInfoResponse;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
-use crate::query::{ConfigResponse, HatomQueryMsg, HatomRateResponse, QueryMsg};
+use crate::query::{ConfigResponse, HTokenQueryMsg, HTokenRateResponse, QueryMsg};
 use crate::state::{Config, CONFIG, TOKEN_RATIO};
 use interface::hydro::{
     CurrentRoundResponse as HydroCurrentRoundResponse, ExecuteMsg as HydroExecuteMsg,
@@ -28,12 +28,12 @@ pub fn instantiate(
 ) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    let hatom_contract = deps.api.addr_validate(&msg.hatom_contract)?;
+    let h_token_contract = deps.api.addr_validate(&msg.h_token_contract)?;
     let config = Config {
         hydro_contract_address: info.sender.clone(),
         h_token_denom: msg.h_token_denom.clone(),
         token_group_id: msg.token_group_id.clone(),
-        hatom_contract: hatom_contract.clone(),
+        h_token_contract: h_token_contract.clone(),
     };
 
     CONFIG.save(deps.storage, &config)?;
@@ -44,7 +44,7 @@ pub fn instantiate(
         .add_attribute("sender", info.sender)
         .add_attribute("h_token_denom", msg.h_token_denom)
         .add_attribute("token_group_id", msg.token_group_id)
-        .add_attribute("hatom_contract", hatom_contract))
+        .add_attribute("h_token_contract", h_token_contract))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -69,9 +69,9 @@ fn execute_update_token_ratio(deps: DepsMut, info: MessageInfo) -> Result<Respon
             )))
         })?;
 
-    let rate: HatomRateResponse = deps
+    let rate: HTokenRateResponse = deps
         .querier
-        .query_wasm_smart(config.hatom_contract, &HatomQueryMsg::Rate {})?;
+        .query_wasm_smart(config.h_token_contract, &HTokenQueryMsg::Rate {})?;
     let new_ratio = exchange_rate_to_decimal(rate.exchange_rate)?;
 
     // Make sure that the correct old token ratio value is used. If the ratio is being updated for the first time
@@ -154,11 +154,11 @@ fn query_ratio_to_base_denom(deps: Deps, denom: String) -> StdResult<Decimal> {
     find_latest_known_token_ratio(deps.storage, round_id)
 }
 
-// Converts the hATOM exchange rate (bond denom per hATOM) to the Decimal type used by Hydro.
+// Converts the h token exchange rate (bond denom per h token) to the Decimal type used by Hydro.
 pub fn exchange_rate_to_decimal(exchange_rate: Decimal256) -> StdResult<Decimal> {
     Decimal::try_from(exchange_rate).map_err(|e| {
         StdError::generic_err(format!(
-            "hATOM exchange rate {exchange_rate} does not fit into Decimal: {e}"
+            "h token exchange rate {exchange_rate} does not fit into Decimal: {e}"
         ))
     })
 }
@@ -175,7 +175,7 @@ pub fn query_current_round_id(deps: &Deps, hydro_contract: &Addr) -> Result<u64,
 // that has the token ratio initialized. This is useful for our token information provider API in case when
 // a new round starts, so that we don't have to initialize the new round data immediately, but without stoping
 // our users from locking their tokens in the new round. Once we run the UpdateTokenRatio, it will first copy
-// the same old value from the last known round, and then update it with the new value queried from the hATOM contract,
+// the same old value from the last known round, and then update it with the new value queried from the h token contract,
 // so there is no risk of using different ratios for the same round in different contexts.
 pub fn find_latest_known_token_ratio(
     storage: &dyn Storage,

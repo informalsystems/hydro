@@ -7,15 +7,15 @@
     "title": "InstantiateMsg",
     "type": "object",
     "required": [
+      "h_token_contract",
       "h_token_denom",
-      "hatom_contract",
       "token_group_id"
     ],
     "properties": {
-      "h_token_denom": {
+      "h_token_contract": {
         "type": "string"
       },
-      "hatom_contract": {
+      "h_token_denom": {
         "type": "string"
       },
       "token_group_id": {
@@ -130,17 +130,17 @@
         "Config": {
           "type": "object",
           "required": [
+            "h_token_contract",
             "h_token_denom",
-            "hatom_contract",
             "hydro_contract_address",
             "token_group_id"
           ],
           "properties": {
+            "h_token_contract": {
+              "$ref": "#/definitions/Addr"
+            },
             "h_token_denom": {
               "type": "string"
-            },
-            "hatom_contract": {
-              "$ref": "#/definitions/Addr"
             },
             "hydro_contract_address": {
               "$ref": "#/definitions/Addr"

@@ -3,7 +3,7 @@ use std::str::FromStr;
 use crate::contract::exchange_rate_to_decimal;
 use crate::contract::{execute, instantiate, query};
 use crate::msg::{ExecuteMsg, InstantiateMsg};
-use crate::query::{HatomQueryMsg, HatomRateResponse, QueryMsg};
+use crate::query::{HTokenQueryMsg, HTokenRateResponse, QueryMsg};
 use cosmwasm_std::{
     testing::{mock_dependencies, mock_env, MockApi},
     to_json_binary, Coin, ContractResult, Decimal, Decimal256, MessageInfo, QuerierResult, SubMsg,
@@ -15,10 +15,10 @@ use interface::hydro::{
 };
 use interface::token_info_provider::DenomInfoResponse;
 
-const H_TOKEN_DENOM: &str = "ibc/hatom";
-const TOKEN_GROUP_ID: &str = "hATOM";
+const H_TOKEN_DENOM: &str = "ibc/htoken";
+const TOKEN_GROUP_ID: &str = "hTOKEN";
 const HYDRO_CONTRACT: &str = "hydro";
-const HATOM_CONTRACT: &str = "hatom";
+const H_TOKEN_CONTRACT: &str = "h_token";
 
 pub type WasmQueryFunc = dyn Fn(&WasmQuery) -> QuerierResult;
 
@@ -44,9 +44,9 @@ pub fn external_contracts_mock(current_round: u64, current_ratio: Decimal) -> Bo
                     .unwrap(),
                 ));
             }
-            if let Ok(HatomQueryMsg::Rate {}) = cosmwasm_std::from_json(msg) {
+            if let Ok(HTokenQueryMsg::Rate {}) = cosmwasm_std::from_json(msg) {
                 return SystemResult::Ok(ContractResult::Ok(
-                    to_json_binary(&HatomRateResponse {
+                    to_json_binary(&HTokenRateResponse {
                         exchange_rate: Decimal256::from(current_ratio),
                         holders_value: Uint256::zero(),
                         supply: Uint128::zero(),
@@ -69,7 +69,7 @@ fn denom_info_query_and_update_test() {
     let instantiate_msg = InstantiateMsg {
         h_token_denom: H_TOKEN_DENOM.to_string(),
         token_group_id: TOKEN_GROUP_ID.to_string(),
-        hatom_contract: deps.api.addr_make(HATOM_CONTRACT).to_string(),
+        h_token_contract: deps.api.addr_make(H_TOKEN_CONTRACT).to_string(),
     };
 
     let info_hydro = get_message_info(&deps.api, HYDRO_CONTRACT, &[]);
@@ -101,7 +101,7 @@ fn denom_info_query_and_update_test() {
     let denom_info: DenomInfoResponse = cosmwasm_std::from_json(&res).unwrap();
     assert_eq!(denom_info.ratio, Decimal::zero());
 
-    // Execute UpdateTokenRatio to set the hATOM ratio for the current (0) round
+    // Execute UpdateTokenRatio to set the h token ratio for the current (0) round
     let exec_msg = ExecuteMsg::UpdateTokenRatio {};
     let res = execute(deps.as_mut(), env.clone(), info_user.clone(), exec_msg);
     assert!(res.is_ok());
@@ -139,7 +139,7 @@ fn denom_info_query_and_update_test() {
     deps.querier
         .update_wasm(external_contracts_mock(5, round_5_token_ratio_1));
 
-    // Execute UpdateTokenRatio to set the hATOM ratio for the current (5) round
+    // Execute UpdateTokenRatio to set the h token ratio for the current (5) round
     let exec_msg = ExecuteMsg::UpdateTokenRatio {};
     let res = execute(deps.as_mut(), env.clone(), info_user.clone(), exec_msg);
     assert!(res.is_ok());
@@ -212,7 +212,7 @@ fn update_token_ratio_fails_when_exchange_rate_overflows_decimal() {
     let instantiate_msg = InstantiateMsg {
         h_token_denom: H_TOKEN_DENOM.to_string(),
         token_group_id: TOKEN_GROUP_ID.to_string(),
-        hatom_contract: deps.api.addr_make(HATOM_CONTRACT).to_string(),
+        h_token_contract: deps.api.addr_make(H_TOKEN_CONTRACT).to_string(),
     };
     let info_hydro = get_message_info(&deps.api, HYDRO_CONTRACT, &[]);
     instantiate(deps.as_mut(), env.clone(), info_hydro, instantiate_msg).unwrap();
@@ -230,7 +230,7 @@ fn update_token_ratio_fails_when_exchange_rate_overflows_decimal() {
                 ));
             }
             SystemResult::Ok(ContractResult::Ok(
-                to_json_binary(&HatomRateResponse {
+                to_json_binary(&HTokenRateResponse {
                     exchange_rate: too_large,
                     holders_value: Uint256::zero(),
                     supply: Uint128::zero(),
